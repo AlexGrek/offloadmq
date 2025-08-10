@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -23,6 +23,22 @@ pub struct UnassignedTask {
     pub created_at: DateTime<Utc>,
 }
 
+impl UnassignedTask {
+    pub fn assign_to(&self, agent_id: &str) -> AssignedTask {
+        AssignedTask {
+            id: self.id.clone(),
+            capability: self.capability.clone(),
+            urgent: self.urgent,
+            restartable: self.restartable,
+            payload: self.payload.clone(),
+            agent_id: agent_id.to_string(),
+            created_at: self.created_at.clone(),
+            assigned_at: Utc::now(),
+            ..AssignedTask::default()
+        }
+    }
+}
+
 /// Represents a single historical event in a task's lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,7 +50,7 @@ pub struct TaskEvent {
 }
 
 /// A task that has been assigned to an agent and is being processed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AssignedTask {
     /// The unique ID assigned to this task by the MQ.
@@ -57,6 +73,9 @@ pub struct AssignedTask {
     pub created_at: DateTime<Utc>,
     /// When the task was assigned to this agent.
     pub assigned_at: DateTime<Utc>,
+    // task execution result (populated on success with data or on failure with logs, depends on specific task, may be empty)
+    #[serde(default)]
+    pub result: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +90,18 @@ pub struct Agent {
     pub tier: u8,
     pub capacity: u32,
     pub system_info: SystemInfo,
+}
+
+impl Agent {
+    const ONLINE_TIMEOUT_SECS: i64 = 120;
+    pub fn is_online(&self) -> bool {
+        if let Some(last) = self.last_contact {
+            let now = Utc::now();
+            now.signed_duration_since(last) <= Duration::seconds(Self::ONLINE_TIMEOUT_SECS)
+        } else {
+            false
+        }
+    }
 }
 
 impl From<AgentRegistrationRequest> for Agent {

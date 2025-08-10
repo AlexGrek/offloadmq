@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth = Auth::new(config.jwt_secret.as_bytes());
     // Create app state
     let app_state = AppState::new(app_storage, config.clone(), auth);
-    let shared_state = Arc::new(app_state.clone());
+    let shared_state = Arc::new(app_state);
 
     // Build the application router
     let app = Router::new()
@@ -61,12 +61,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/private/agent",
             Router::new()
                 .route("/ping", get(health_check))
+                .route("/get_task_urgent", get(mq::fetch_task_handler))
+                .route("/take_urgent/{id}", post(mq::try_take_task_handler))
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,
                 )),
         )
-        .with_state(app_state)
+        .with_state(shared_state.clone())
         .layer(TraceLayer::new_for_http());
 
     // Start the server
@@ -80,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Agent handlers
-async fn list_agents(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
+async fn list_agents(State(state): State<Arc<AppState>>) -> Result<Json<Value>, StatusCode> {
     // Note: This would need a list_all_agents method in AppStorage
     // For now, return a placeholder
     let stats = state.storage.get_agent_cache_stats();
@@ -92,7 +94,7 @@ async fn list_agents(State(state): State<AppState>) -> Result<Json<Value>, Statu
 }
 
 async fn create_agent(
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     Json(agent): Json<schema::AgentRegistrationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     validate_api_key(&state.config.agent_api_keys, &agent.api_key)?;
@@ -106,7 +108,7 @@ async fn create_agent(
 }
 
 async fn auth_agent(
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     Json(request): Json<schema::AgentLoginRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let mk_auth_err = || AppError::Authorization("Incorrect credentials".to_string());
@@ -130,7 +132,7 @@ pub fn validate_api_key(keys: &Vec<String>, key: &str) -> Result<(), AppError> {
 }
 
 async fn get_agent(
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Agent>, StatusCode> {
     match state.storage.get_agent(&id) {
@@ -140,7 +142,7 @@ async fn get_agent(
 }
 
 async fn update_agent(
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(mut agent): Json<Agent>,
 ) -> Result<Json<Value>, StatusCode> {
@@ -159,7 +161,7 @@ async fn update_agent(
 }
 
 async fn delete_agent(
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
     match state.storage.delete_agent(&id) {
@@ -174,7 +176,7 @@ async fn delete_agent(
 }
 
 // Utility handlers
-async fn health_check(State(state): State<AppState>) -> Json<Value> {
+async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {
     let stats = state.storage.get_agent_cache_stats();
     Json(json!({
         "status": "healthy",
@@ -184,7 +186,7 @@ async fn health_check(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
-async fn get_stats(State(state): State<AppState>) -> Json<Value> {
+async fn get_stats(State(state): State<Arc<AppState>>) -> Json<Value> {
     // Trigger cleanup and get fresh stats
     state.storage.cleanup_expired();
     let stats = state.storage.get_agent_cache_stats();

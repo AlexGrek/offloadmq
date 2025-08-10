@@ -20,6 +20,8 @@ pub enum TaskStatus {
     Pending,
     /// The task is in the queue, waiting for an available agent.
     Queued,
+    /// The task has been assigned to an agent
+    Assigned,
     /// The task has been assigned to an agent and is in progress.
     Running,
     /// The task was completed successfully by an agent.
@@ -28,6 +30,12 @@ pub enum TaskStatus {
     Failed,
     /// The task was cancelled by a client.
     Canceled,
+}
+
+impl Default for TaskStatus {
+    fn default() -> Self {
+        Self::Assigned
+    }
 }
 
 /// Represents the final result status that an agent can report.
