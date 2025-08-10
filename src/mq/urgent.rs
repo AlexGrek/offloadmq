@@ -94,7 +94,7 @@ impl UrgentTaskStore {
         false
     }
 
-    pub async fn complete_task(&self, task_id: &Uuid, success: bool, payload: serde_json::Value) -> Result<(), AppError> {
+    pub async fn complete_task(&self, task_id: &Uuid, success: bool, payload: serde_json::Value) -> Result<bool, AppError> {
         let mut tasks = self.tasks.write().await;
         if let Some(entry) = tasks.get_mut(task_id) {
             entry.assigned_task.as_mut().ok_or(AppError::Conflict("Task is not assigned but reported".to_string()))?.result = Some(payload);
@@ -105,8 +105,9 @@ impl UrgentTaskStore {
                 TaskStatus::Failed
             };
             let _ = entry.state.notify.send(status.clone());
+            return Ok(true)
         }
-        Ok(())
+        Ok(false)
     }
 
     /// Call periodically or in a background task

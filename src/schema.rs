@@ -176,6 +176,7 @@ pub struct TaskAssignment {
 #[serde(rename_all = "camelCase")]
 pub struct TaskResultReport {
     pub task_id: Uuid,
+    pub capability: String,
     pub status: TaskResultStatus,
     /// The output data if the task completed successfully, or an error
     /// object if it failed.

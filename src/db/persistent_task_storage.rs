@@ -1,11 +1,12 @@
-
 use anyhow::Result;
 use chrono::Utc;
 use sled::Db;
 use uuid::Uuid;
 
 use crate::{
-    error::AppError, models::{AssignedTask, UnassignedTask}, schema::TaskStatus
+    error::AppError,
+    models::{AssignedTask, UnassignedTask},
+    schema::TaskStatus,
 };
 
 /// Your enums & structs from the previous step should be imported here
@@ -48,7 +49,12 @@ impl TaskStorage {
     }
 
     /// Move a task from unassigned to assigned when agent confirms
-    pub fn assign_task(&self, capability: &str, id: Uuid, agent_id: &str) -> Result<AssignedTask, AppError> {
+    pub fn assign_task(
+        &self,
+        capability: &str,
+        id: Uuid,
+        agent_id: &str,
+    ) -> Result<AssignedTask, AppError> {
         let key = Self::make_key(capability, id);
         if let Some(value) = self.unassigned.remove(key.as_bytes())? {
             let unassigned: UnassignedTask = rmp_serde::from_slice(&value)?;
@@ -57,9 +63,12 @@ impl TaskStorage {
 
             let bytes = rmp_serde::to_vec_named(&assigned)?;
             self.assigned.insert(key.as_bytes(), bytes)?;
-            return Ok(assigned)
+            return Ok(assigned);
         }
-        Err(AppError::Conflict(format!("Unassigned task not found: {}|{:?}", capability, id)))
+        Err(AppError::Conflict(format!(
+            "Unassigned task not found: {}|{:?}",
+            capability, id
+        )))
     }
 
     /// Archive tasks older than 7 days that are NOT running
@@ -103,6 +112,13 @@ impl TaskStorage {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn update_assigned(&self, assigned: &AssignedTask) -> Result<()> {
+        let bytes = rmp_serde::to_vec_named(assigned)?;
+        let key = Self::make_key(&assigned.capability, assigned.id);
+        self.assigned.insert(key.as_bytes(), bytes)?;
+        return Ok(());
     }
 
     /// List unassigned tasks for a given capability

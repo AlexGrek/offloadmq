@@ -18,7 +18,7 @@ use offloadmq::{
 };
 use offloadmq::{middleware::auth::Auth, *};
 use serde_json::{Value, json};
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, time};
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
@@ -81,6 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Router::new()
                 .route("/ping", get(health_check))
                 .route("/task/urgent", post(mq::submit_urgent_task_handler))
+                .route("/task", post(mq::submit_regular_task_handler))
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::apikey_auth_middleware_user,
@@ -93,6 +94,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind_address = format!("{}:{}", config.host, config.port);
     let listener = TcpListener::bind(&bind_address).await?;
     info!("Server starting on http://{}", bind_address);
+
+    tokio::spawn(async move {
+        let mut interval = time::interval(time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            shared_state.storage.agents.log_online_agents();
+        }
+    });
 
     axum::serve(listener, app).await?;
 

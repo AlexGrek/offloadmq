@@ -5,13 +5,13 @@ use uuid::Uuid;
 
 use crate::{
     db::{
-        agent::{CachedAgentStorage},
+        agent::CachedAgentStorage,
         persistent_task_storage::TaskStorage,
     },
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
     mq::urgent::UrgentTaskStore,
-    schema::{TaskResultReport, TaskResultStatus},
+    schema::{TaskResultReport, TaskResultStatus, TaskStatus}, state::AppState,
 };
 
 pub async fn find_urgent_tasks_with_capabilities(
@@ -29,10 +29,10 @@ pub async fn find_assignable_non_urgent_tasks_with_capabilities_for_tier(
 ) -> Result<Vec<UnassignedTask>, AppError> {
     let all = store.list_unassigned_with_caps(caps)?;
     let mut collected = vec![];
-    info!("Total jobs available: {}", all.len());
+    info!("Total jobs available: {} (our tier is {})", all.len(), tier);
     for task in all {
         let top_online_tier = all_online_agents_for(&task.capability, agents).await.into_iter().map(|agent|agent.tier).max().unwrap_or_default();
-        if !top_online_tier > tier {
+        if top_online_tier > tier {
             info!("Ingoring task with capability {}, as higher tier agents exist: {top_online_tier}", task.capability)
         } else {
             collected.push(task);
@@ -72,12 +72,26 @@ pub async fn report_urgent_task<'a>(
     store: &'a UrgentTaskStore,
     report: TaskResultReport,
     task_id: Uuid,
-) -> Result<impl IntoResponse + use<>, AppError> {
+) -> Result<bool, AppError> {
     let success = report.status == TaskResultStatus::Completed;
     store
         .complete_task(&task_id, success, report.output.clone().unwrap_or_default())
-        .await?;
-    Ok(Json(json!({"status": "confirmed"})))
+        .await
+}
+
+pub async fn report_non_urgent_task<'a>(
+    store: &TaskStorage,
+    report: TaskResultReport,
+    task_id: Uuid,
+    
+) -> Result<(), AppError> {
+    let capability = &report.capability;
+    let success = report.status == TaskResultStatus::Completed;
+    let mut got = store.get_assigned(capability, task_id)?.ok_or(AppError::NotFound(task_id.to_string()))?;
+    got.status = if success {TaskStatus::Completed} else {TaskStatus::Failed};
+    got.result = report.output;
+    store.update_assigned(&got);
+    Ok(())
 }
 
 pub async fn has_potential_agents_for(
