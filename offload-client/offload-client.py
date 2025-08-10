@@ -152,6 +152,81 @@ def execute_shell_bash(task_id: uuid.UUID, payload: dict, server_url: str, heade
         print(f"Failed to report task result for {task_id}: {e}")
         return False
 
+def execute_llm_query(task_id: uuid.UUID, capability: str, payload: dict, server_url: str, headers: dict):
+    """
+    Handles LLM tasks by running a query through Ollama.
+    """
+    try:
+        # Extract the model name from the capability string, e.g., "LLM::mistral" -> "mistral"
+        model_name = capability.split("::")[-1]
+        
+        # Extract the query from the payload
+        query = payload.get("query")
+        if not query:
+            error_output = {"error": "No 'query' provided in LLM payload."}
+            report = TaskResultReport(task_id=task_id, status="failed", output=error_output)
+            report_url = f"{server_url}/private/agent/task/{report.task_id}"
+            requests.post(report_url, json=report.to_json(), headers=headers).raise_for_status()
+            return False
+
+        print(f"Executing LLM query for task {task_id} with model '{model_name}': {query}")
+
+        # Construct and run the ollama command
+        command = f'ollama run {model_name} "{query}"'
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        # Ollama command executed successfully
+        report_output = {
+            "stdout": result.stdout,
+            "stderr": result.stderr
+        }
+        report = TaskResultReport(
+            task_id=task_id,
+            status="completed",
+            output=report_output
+        )
+    
+    except subprocess.CalledProcessError as e:
+        # Ollama command failed
+        report_output = {
+            "stdout": e.stdout,
+            "stderr": e.stderr,
+            "return_code": e.returncode
+        }
+        report = TaskResultReport(
+            task_id=task_id,
+            status="failed",
+            output=report_output
+        )
+    except Exception as e:
+        # Other errors, like malformed capability
+        report_output = {
+            "error": str(e)
+        }
+        report = TaskResultReport(
+            task_id=task_id,
+            status="failed",
+            output=report_output
+        )
+
+    # Send the report back to the server
+    report_url = f"{server_url}/private/agent/task/{report.task_id}"
+    try:
+        print(f"Reporting LLM query result for task {task_id}")
+        response = requests.post(report_url, json=report.to_json(), headers=headers)
+        response.raise_for_status()
+        print(f"Task result for {task_id} reported successfully. Status Code: {response.status_code}")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to report LLM task result for {task_id}: {e}")
+        return False
+
 
 def serve_tasks(server_url: str, jwt_token: str):
     """
@@ -172,8 +247,6 @@ def serve_tasks(server_url: str, jwt_token: str):
             poll_response = requests.get(poll_url, headers=headers)
             poll_response.raise_for_status()
             
-            print(poll_response.text)
-            
             task_info = poll_response.json()
             
             if task_info and task_info.get("id"):
@@ -191,14 +264,17 @@ def serve_tasks(server_url: str, jwt_token: str):
 
                 print(f"Received new task: {task_id} with capability '{capability}'")
                 
-                executor = capability_map.get(capability)
-                if executor:
-                    executor(task_id, payload, server_url, headers)
+                if capability.startswith("LLM::"):
+                    execute_llm_query(task_id, capability, payload, server_url, headers)
                 else:
-                    print(f"Unknown capability: {capability}")
-                    # You might want to report this failure back to the server
-                    # as an unhandled task.
-                    # This is a good place to add a new function for error reporting.
+                    executor = capability_map.get(capability)
+                    if executor:
+                        executor(task_id, payload, server_url, headers)
+                    else:
+                        print(f"Unknown capability: {capability}")
+                        # You might want to report this failure back to the server
+                        # as an unhandled task.
+                        # This is a good place to add a new function for error reporting.
 
             time.sleep(5)  # Poll every 5 seconds
 
@@ -553,7 +629,6 @@ def main():
     args = parser.parse_args()
     
     config = load_config()
-    server = args.server or config.get("server")
 
     if args.action == 'sysinfo':
         system_info = collect_system_info()
@@ -569,6 +644,9 @@ def main():
             print("No Ollama capabilities detected.")
 
     elif args.action == 'register':
+        # Determine server URL from args or config
+        server = args.server or config.get("server")
+        
         # Determine API key
         api_key = args.key or config.get("apiKey")
         
@@ -635,6 +713,9 @@ def main():
             sys.exit(1)
 
     elif args.action == 'serve':
+        # Determine server URL from args or config
+        server = args.server or config.get("server")
+        
         if not server:
             print("Error: Server URL must be provided via --server or stored in config")
             sys.exit(1)
