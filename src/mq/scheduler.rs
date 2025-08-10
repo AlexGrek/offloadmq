@@ -1,9 +1,13 @@
 use axum::{Json, response::IntoResponse};
+use log::info;
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
-    db::agent::{self, CachedAgentStorage},
+    db::{
+        agent::{self, CachedAgentStorage},
+        persistent_task_storage::TaskStorage,
+    },
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
     mq::urgent::UrgentTaskStore,
@@ -15,6 +19,26 @@ pub async fn find_urgent_tasks_with_capabilities(
     caps: &Vec<String>,
 ) -> Option<UnassignedTask> {
     store.find_with_capabilities(caps).await
+}
+
+pub async fn find_assignable_non_urgent_tasks_with_capabilities_for_tier(
+    store: &TaskStorage,
+    caps: &Vec<String>,
+    tier: u8,
+    agents: &CachedAgentStorage,
+) -> Result<Vec<UnassignedTask>, AppError> {
+    let all = store.list_unassigned_with_caps(caps)?;
+    let mut collected = vec![];
+    info!("Total jobs available: {}", all.len());
+    for task in all {
+        let top_online_tier = all_online_agents_for(&task.capability, agents).await.into_iter().map(|agent|agent.tier).max().unwrap_or_default();
+        if !top_online_tier > tier {
+            info!("Ingoring task with capability {}, as higher tier agents exist: {top_online_tier}", task.capability)
+        } else {
+            collected.push(task);
+        }
+    }
+    Ok(collected)
 }
 
 pub async fn try_pick_up_urgent_task(
@@ -56,4 +80,17 @@ pub async fn has_potential_agents_for(
         }
     }
     return false;
+}
+
+pub async fn all_online_agents_for(
+    cap: &std::string::String,
+    agents: &CachedAgentStorage,
+) -> Vec<Agent> {
+    let mut collection = vec![];
+    for agent in agents.list_all_agents() {
+        if agent.capabilities.contains(cap) && agent.is_online() {
+            collection.push(agent);
+        }
+    }
+    return collection;
 }

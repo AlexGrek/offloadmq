@@ -7,6 +7,7 @@ use axum::{
 };
 use chrono::Utc;
 use log::info;
+use rand::seq::IndexedRandom;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -18,6 +19,7 @@ use crate::{
     models::UnassignedTask,
     mq::{
         scheduler::{
+            find_assignable_non_urgent_tasks_with_capabilities_for_tier,
             find_urgent_tasks_with_capabilities, has_potential_agents_for, report_urgent_task,
             try_pick_up_urgent_task,
         },
@@ -88,7 +90,37 @@ pub async fn submit_urgent_task_handler(
     Ok(data)
 }
 
-pub async fn fetch_task_handler(
+pub async fn submit_regular_task_handler(
+    State(app_state): State<Arc<AppState>>,
+    Json(req): Json<TaskSubmissionRequest>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    let task = UnassignedTask {
+        id: Uuid::new_v4(),
+        capability: req.capability,
+        urgent: req.urgent,
+        restartable: req.restartable,
+        payload: req.payload,
+        created_at: Utc::now(),
+    };
+    info!("New unassigned task: {:?}", task);
+    if req.urgent {
+        let data = submit_urgent_task(&app_state.urgent, &app_state.storage.agents, task)
+            .await?
+            .into_response();
+        Ok(data)
+    } else {
+        // non-urgent task, use regular queue
+        app_state.storage.tasks.add_unassigned(&task)?;
+        return Ok(Json(json!({
+            "id": task.id,
+            "status": "pending",
+            "message": "Added to tasks queue"
+        }))
+        .into_response());
+    }
+}
+
+pub async fn fetch_task_urgent_handler(
     AuthenticatedAgent(mut agent): AuthenticatedAgent,
     State(app_state): State<Arc<AppState>>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
@@ -97,6 +129,30 @@ pub async fn fetch_task_handler(
     let caps = &agent.capabilities;
     let urgent = find_urgent_tasks_with_capabilities(&app_state.urgent, caps).await;
     Ok(Json(urgent))
+}
+
+pub async fn fetch_task_non_urgent_handler(
+    AuthenticatedAgent(mut agent): AuthenticatedAgent,
+    State(app_state): State<Arc<AppState>>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    // check urgent tasks first
+    agent = app_state.storage.agents.update_agent_last_contact(agent)?;
+    let caps = &agent.capabilities;
+    let all = find_assignable_non_urgent_tasks_with_capabilities_for_tier(
+        &app_state.storage.tasks,
+        caps,
+        agent.tier,
+        &app_state.storage.agents,
+    )
+    .await?;
+    if all.len() > 0 {
+        // pick random
+        let mut rng = rand::rng();
+        let random_item = all.choose(&mut rng).unwrap(); // we already checked length
+        Ok(Json(random_item).into_response())
+    } else {
+        Ok(Json(Option::<UnassignedTask>::None).into_response())
+    }
 }
 
 // #[derive(Deserialize)]
