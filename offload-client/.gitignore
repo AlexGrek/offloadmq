@@ -1,2 +1,5 @@
 /venv
 .offload-client.json
+/build
+/dist
+offload-client.spec

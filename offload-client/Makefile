@@ -11,4 +11,20 @@ sysinfo: venv
 ollama: venv
 	bash -c "source venv/bin/activate && python offload-client.py ollama"
 
-.PHONY: sysinfo register ollama
+# The build target creates the standalone binary using PyInstaller
+build:
+	@echo "Installing PyInstaller..."
+	bash -c "source venv/bin/activate && pip install pyinstaller --quiet"
+	@echo "Building binary with PyInstaller..."
+	bash -c "source venv/bin/activate && pyinstaller --onefile --name offload-client offload-client.py"
+	@echo ""
+	@echo "Build complete. The binary is located in the 'dist' directory."
+
+# The clean target removes all generated build files and the binary
+clean:
+	@echo "Cleaning up build artifacts..."
+	rm -rf build/ dist/ offload-client.spec
+	@echo "Cleanup complete."
+
+
+.PHONY: sysinfo register ollama build clean
