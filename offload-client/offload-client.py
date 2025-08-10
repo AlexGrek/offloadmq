@@ -14,52 +14,84 @@ import argparse
 import requests
 import sys
 import re
+import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 CONFIG_FILE = ".offload-client.json"
 
+def get_ollama_models() -> List[str]:
+    """
+    Scans for installed Ollama models via the CLI and returns them
+    as a list of strings prefixed with "LLM::".
+    """
+    try:
+        # Check if ollama is installed and the command is available
+        subprocess.run(['ollama', '--version'], check=True, capture_output=True)
+        
+        # Run 'ollama list' to get the list of installed models
+        result = subprocess.run(['ollama', 'list'], check=True, capture_output=True, text=True)
+        output_lines = result.stdout.strip().split('\n')
+        
+        if len(output_lines) < 2:
+            print("No Ollama models found.")
+            return []
+
+        # The first line is the header, so we process from the second line
+        models = []
+        for line in output_lines[1:]:
+            parts = line.split()
+            if parts:
+                model_name = parts[0]
+                # Remove the ':latest' tag if it exists
+                if model_name.endswith(':latest'):
+                    model_name = model_name[:-7]
+                # Prefix the model name as requested
+                models.append(f"LLM::{model_name}")
+        
+        return models
+        
+    except FileNotFoundError:
+        print("Warning: Ollama is not installed. No LLM capabilities will be added.")
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: Failed to run 'ollama list'. Error: {e.stderr.strip()}")
+    except Exception as e:
+        print(f"Warning: An unexpected error occurred while detecting Ollama models: {e}")
+
+    return []
+
 def get_gpu_info() -> Optional[Dict[str, Any]]:
     """
     Get GPU information if available.
-    Updated to be more robust on Windows with verbose logging.
     """
-    print("Attempting to detect GPU...")
     system = platform.system().lower()
 
     if system == "windows":
-        print("  -> Platform detected as Windows.")
         try:
             # Try NVIDIA first using pynvml
             try:
-                print("  -> Trying pynvml...")
                 import pynvml
                 pynvml.nvmlInit()
                 handle_count = pynvml.nvmlDeviceGetCount()
                 for i in range(handle_count):
                     handle = pynvml.nvmlDeviceGetHandleByIndex(i)
                     name = pynvml.nvmlDeviceGetName(handle)
-                    # pynvml can return bytes or str depending on version, so handle both
                     if isinstance(name, bytes):
                         name = name.decode('utf-8')
-                    print(f"     -> Found device: {name}")
                     if "NVIDIA" in name.upper():
                         memory_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
                         pynvml.nvmlShutdown()
-                        print(f"  -> Successfully detected GPU with pynvml.")
                         return {
                             "vendor": "NVIDIA",
                             "model": name,
                             "vramMb": memory_info.total // (1024 * 1024)
                         }
                 pynvml.nvmlShutdown()
-                print("  -> No NVIDIA GPU found with pynvml.")
-            except Exception as e:
-                print(f"  -> pynvml failed with error: {e}. Falling back to wmic.")
+            except Exception:
+                pass
                 
             # Fallback to wmic if pynvml fails
             try:
-                print("  -> Trying wmic...")
                 import subprocess
                 result = subprocess.run(['wmic', 'path', 'win32_videocontroller', 'get', 'caption,AdapterRAM', '/format:list'], 
                                         capture_output=True, text=True, check=True)
@@ -74,23 +106,19 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
                             ram = int(line.split('=', 1)[1].strip())
                         
                         if caption and ram and 'NVIDIA' in caption.upper():
-                            print("  -> Successfully detected GPU with wmic.")
                             return {
                                 "vendor": "NVIDIA",
                                 "model": caption,
                                 "vramMb": ram // (1024 * 1024)
                             }
-                print("  -> No NVIDIA GPU found with wmic.")
-            except Exception as e:
-                print(f"  -> wmic failed with error: {e}.")
-        except Exception as e:
-            print(f"  -> An unexpected error occurred in the Windows detection block: {e}")
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     elif system == "linux":
-        print("  -> Platform detected as Linux.")
         try:
             # Try lspci for Linux
-            print("  -> Trying lspci...")
             import subprocess
             result = subprocess.run(['lspci', '-v'], capture_output=True, text=True)
             if result.returncode == 0:
@@ -103,22 +131,16 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
                             vendor = "NVIDIA" if "NVIDIA" in gpu_info else \
                                     "AMD" if "AMD" in gpu_info else \
                                     "Intel" if "Intel" in gpu_info else "Unknown"
-                            print(f"  -> Successfully detected GPU with lspci: {gpu_info}")
                             return {
                                 "vendor": vendor,
                                 "model": gpu_info,
                                 "vramMb": 0  # Cannot reliably detect VRAM from lspci
                             }
-                print("  -> No GPU found with lspci.")
-            else:
-                print("  -> lspci command failed.")
-        except Exception as e:
-            print(f"  -> lspci detection failed with error: {e}")
+        except Exception:
+            pass
     
     elif system == "darwin":  # macOS
-        print("  -> Platform detected as macOS.")
         try:
-            print("  -> Trying system_profiler...")
             import subprocess
             result = subprocess.run(['system_profiler', 'SPDisplaysDataType', '-json'], 
                                   capture_output=True, text=True, check=True)
@@ -129,36 +151,30 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
                 vram_str = displays[0].get('spdisplays_vram', '0 MB')
                 vram_mb = int(vram_str.split()[0]) if vram_str.split()[0].isdigit() else 0
                 vendor = "Apple" if "Apple" in model else "Unknown"
-                print(f"  -> Successfully detected GPU with system_profiler: {model}")
                 return {
                     "vendor": vendor,
                     "model": model,
                     "vramMb": vram_mb
                 }
-            print("  -> No GPU found with system_profiler.")
-        except Exception as e:
-            print(f"  -> system_profiler detection failed with error: {e}")
+        except Exception:
+            pass
     
     # Try AMD/other GPUs using GPUtil as a last resort
     try:
-        print("  -> Trying GPUtil as a fallback...")
         import GPUtil
         gpus = GPUtil.getGPUs()
         if gpus:
             gpu = gpus[0]
-            print(f"  -> Successfully detected GPU with GPUtil: {gpu.name}")
             return {
                 "vendor": "Unknown",
                 "model": gpu.name,
                 "vramMb": int(gpu.memoryTotal)
             }
-        print("  -> No GPU found with GPUtil.")
     except ImportError:
-        print("  -> GPUtil is not installed.")
-    except Exception as e:
-        print(f"  -> GPUtil failed with error: {e}")
+        pass
+    except Exception:
+        pass
 
-    print("No GPU detected.")
     return None
 
 def collect_system_info() -> Dict[str, Any]:
@@ -210,6 +226,18 @@ def collect_system_info() -> Dict[str, Any]:
     }
     
     return system_info
+
+def print_system_info(system_info: Dict[str, Any]) -> None:
+    """Print system info in a human-readable format."""
+    print("Collecting system information...")
+    print(f"OS: {system_info['os']}")
+    print(f"Architecture: {system_info['cpuArch']}")
+    print(f"Memory: {system_info['totalMemoryMb']} MB")
+    if system_info['gpu']:
+        gpu = system_info['gpu']
+        print(f"GPU: {gpu['vendor']} {gpu['model']} ({gpu['vramMb']} MB VRAM)")
+    else:
+        print("GPU: None detected")
 
 def load_config() -> Dict[str, Any]:
     """Load configuration from file."""
@@ -283,111 +311,131 @@ def test_ping(server: str, jwt_token: str) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Register agent with offload server",
+        description="Offload Client Registration and System Info Script",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
-    parser.add_argument(
+
+    subparsers = parser.add_subparsers(dest='action', required=True, help='Action to perform')
+
+    # Subparser for the 'register' action
+    register_parser = subparsers.add_parser('register', help='Register a new agent with the server')
+    register_parser.add_argument(
         "--server", 
         help="Server URL (required if not in config)"
     )
-    parser.add_argument(
+    register_parser.add_argument(
         "--key", 
         help="API key (required if not in config)"
     )
-    parser.add_argument(
+    register_parser.add_argument(
         "--tier", 
         type=int, 
         default=5,
         help="Performance tier (0-255, default: 5)"
     )
-    parser.add_argument(
+    register_parser.add_argument(
         "--caps", 
         nargs='*',
         default=["GENERAL_COMPUTE"],
         help="Agent capabilities (default: ['GENERAL_COMPUTE'])"
     )
-    parser.add_argument(
+    register_parser.add_argument(
         "--capacity",
         type=int,
         default=1,
         help="Concurrent task capacity (default: 1)"
     )
+
+    # Subparser for the 'sysinfo' action
+    subparsers.add_parser('sysinfo', help='Display system information')
     
+    # Subparser for the 'ollama' action
+    subparsers.add_parser('ollama', help='Display detected Ollama models')
+
     args = parser.parse_args()
     
-    # Load existing configuration
-    config = load_config()
+    if args.action == 'sysinfo':
+        system_info = collect_system_info()
+        print_system_info(system_info)
     
-    # Determine server URL
-    server = args.server or config.get("server")
-    if not server:
-        print("Error: Server URL must be provided via --server or stored in config")
-        sys.exit(1)
-    
-    # Determine API key
-    api_key = args.key or config.get("apiKey")
-    if not api_key:
-        print("Error: API key must be provided via --key or stored in config")
-        sys.exit(1)
-    
-    # Validate tier
-    if not (0 <= args.tier <= 255):
-        print("Error: Tier must be between 0 and 255")
-        sys.exit(1)
-    
-    print("Collecting system information...")
-    system_info = collect_system_info()
-    print(f"OS: {system_info['os']}")
-    print(f"Architecture: {system_info['cpuArch']}")
-    print(f"Memory: {system_info['totalMemoryMb']} MB")
-    if system_info['gpu']:
-        gpu = system_info['gpu']
-        print(f"GPU: {gpu['vendor']} {gpu['model']} ({gpu['vramMb']} MB VRAM)")
-    else:
-        print("GPU: None detected")
-    
-    print(f"\nRegistering with server: {server}")
-    print(f"Capabilities: {args.caps}")
-    print(f"Tier: {args.tier}")
-    print(f"Capacity: {args.capacity}")
-    
-    # Register agent
-    registration_response = register_agent(server, args.caps, args.tier, args.capacity, api_key)
-    print(f"\nRegistration successful!")
-    print(f"Agent ID: {registration_response['agentId']}")
-    print(f"Message: {registration_response['message']}")
-    
-    # Update config with registration info
-    config.update({
-        "server": server,
-        "apiKey": api_key,
-        "agentId": registration_response["agentId"],
-        "key": registration_response["key"]
-    })
-    
-    print("\nAuthenticating...")
-    # Authenticate and get JWT token
-    auth_response = authenticate_agent(server, registration_response["agentId"], registration_response["key"])
-    print("Authentication successful!")
-    
-    # Update config with JWT info
-    config.update({
-        "jwtToken": auth_response["token"],
-        "tokenExpiresIn": auth_response["expiresIn"]
-    })
-    
-    # Save updated configuration
-    save_config(config)
-    print(f"Configuration saved to {CONFIG_FILE}")
-    
-    # Test ping
-    print("\nTesting connection...")
-    if test_ping(server, auth_response["token"]):
-        print("✅ Ping test successful - agent is ready!")
-    else:
-        print("❌ Ping test failed - check server connection")
-        sys.exit(1)
+    elif args.action == 'ollama':
+        ollama_capabilities = get_ollama_models()
+        if ollama_capabilities:
+            print("Ollama capabilities to be sent to server:")
+            for cap in ollama_capabilities:
+                print(f" - {cap}")
+        else:
+            print("No Ollama capabilities detected.")
+
+    elif args.action == 'register':
+        # Load existing configuration
+        config = load_config()
+        
+        # Determine server URL
+        server = args.server or config.get("server")
+        if not server:
+            print("Error: Server URL must be provided via --server or stored in config")
+            sys.exit(1)
+        
+        # Determine API key
+        api_key = args.key or config.get("apiKey")
+        if not api_key:
+            print("Error: API key must be provided via --key or stored in config")
+            sys.exit(1)
+        
+        # Validate tier
+        if not (0 <= args.tier <= 255):
+            print("Error: Tier must be between 0 and 255")
+            sys.exit(1)
+
+        system_info = collect_system_info()
+        print_system_info(system_info)
+
+        # Get Ollama models and combine with user-provided capabilities
+        ollama_models = get_ollama_models()
+        combined_capabilities = args.caps + ollama_models
+
+        print(f"\nRegistering with server: {server}")
+        print(f"Capabilities: {combined_capabilities}")
+        print(f"Tier: {args.tier}")
+        print(f"Capacity: {args.capacity}")
+        
+        # Register agent with combined capabilities
+        registration_response = register_agent(server, combined_capabilities, args.tier, args.capacity, api_key)
+        print(f"\nRegistration successful!")
+        print(f"Agent ID: {registration_response['agentId']}")
+        print(f"Message: {registration_response['message']}")
+        
+        # Update config with registration info
+        config.update({
+            "server": server,
+            "apiKey": api_key,
+            "agentId": registration_response["agentId"],
+            "key": registration_response["key"]
+        })
+        
+        print("\nAuthenticating...")
+        # Authenticate and get JWT token
+        auth_response = authenticate_agent(server, registration_response["agentId"], registration_response["key"])
+        print("Authentication successful!")
+        
+        # Update config with JWT info
+        config.update({
+            "jwtToken": auth_response["token"],
+            "tokenExpiresIn": auth_response["expiresIn"]
+        })
+        
+        # Save updated configuration
+        save_config(config)
+        print(f"Configuration saved to {CONFIG_FILE}")
+        
+        # Test ping
+        print("\nTesting connection...")
+        if test_ping(server, auth_response["token"]):
+            print("✅ Ping test successful - agent is ready!")
+        else:
+            print("❌ Ping test failed - check server connection")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()
