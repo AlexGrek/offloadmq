@@ -55,6 +55,7 @@ pub struct AgentRegistrationRequest {
     pub capacity: u32,
     /// Information about the agent's host system.
     pub system_info: SystemInfo,
+    pub api_key: String,
 }
 
 /// A simple confirmation response after a successful agent registration.
@@ -63,6 +64,7 @@ pub struct AgentRegistrationRequest {
 pub struct AgentRegistrationResponse {
     /// The unique ID assigned to this agent by the server.
     pub agent_id: String,
+    pub key: String,
     /// A confirmation message.
     pub message: String,
 }
@@ -74,6 +76,7 @@ pub struct AgentRegistrationResponse {
 pub struct AgentLoginRequest {
     /// The ID of the agent wishing to log in.
     pub agent_id: String,
+    pub key: String,
 }
 
 /// Response containing the session JWT for an authenticated agent.
@@ -83,7 +86,7 @@ pub struct AgentLoginResponse {
     /// The JSON Web Token for the agent to use in subsequent requests.
     pub token: String,
     /// The token's validity period in seconds.
-    pub expires_in: i64,
+    pub expires_in: usize,
 }
 
 /// Basic system information reported by an agent.
