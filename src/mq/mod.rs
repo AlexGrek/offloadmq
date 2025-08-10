@@ -2,13 +2,12 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Path, State},
     response::IntoResponse,
 };
 use chrono::Utc;
 use log::info;
 use rand::seq::IndexedRandom;
-use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 

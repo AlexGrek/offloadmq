@@ -7,7 +7,6 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use axum::body::to_bytes;
 use serde::Deserialize;
 
 pub mod auth;

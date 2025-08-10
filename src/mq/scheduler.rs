@@ -5,13 +5,13 @@ use uuid::Uuid;
 
 use crate::{
     db::{
-        agent::{self, CachedAgentStorage},
+        agent::{CachedAgentStorage},
         persistent_task_storage::TaskStorage,
     },
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
     mq::urgent::UrgentTaskStore,
-    schema::{TaskResultReport, TaskResultStatus, TaskStatus},
+    schema::{TaskResultReport, TaskResultStatus},
 };
 
 pub async fn find_urgent_tasks_with_capabilities(
