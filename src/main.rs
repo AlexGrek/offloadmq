@@ -61,7 +61,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/private/agent",
             Router::new()
                 .route("/ping", get(health_check))
-                .route("/task_urgent/poll", get(mq::fetch_task_handler))
+                .route("/task_urgent/poll", get(mq::fetch_task_urgent_handler))
+                .route("/task_non_urgent/poll", get(mq::fetch_task_non_urgent_handler))
                 .route("/take_urgent/{id}", post(mq::try_take_task_handler))
                 .route("/task/{id}", post(mq::post_task_resolution))
                 .layer(from_fn_with_state(

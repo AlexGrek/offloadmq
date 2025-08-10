@@ -134,4 +134,24 @@ impl TaskStorage {
 
         Ok(result)
     }
+
+    pub fn list_unassigned_with_caps(&self, caps: &Vec<String>) -> Result<Vec<UnassignedTask>> {
+        Ok(caps
+            .iter()
+            .filter_map(|x| self.list_unassigned_for_capability(x).ok())
+            .flatten()
+            .collect())
+    }
+
+    pub fn list_unassigned_all(&self) -> Result<Vec<UnassignedTask>> {
+        let mut result = Vec::new();
+        // The iter() method returns an iterator over all key-value pairs in the tree.
+        for item in self.unassigned.iter() {
+            // Each item is a sled::Result<(IVec, IVec)>
+            let (_key, value) = item?;
+            let task: UnassignedTask = rmp_serde::from_slice(&value)?;
+            result.push(task);
+        }
+        Ok(result)
+    }
 }
