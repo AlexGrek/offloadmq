@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{models::Agent, schema::SystemInfo};
+use crate::{error::AppError, models::Agent, schema::SystemInfo};
 use chrono::{DateTime, Utc};
 use log::info;
 use lru_time_cache::LruCache;
@@ -107,6 +107,11 @@ impl CachedAgentStorage {
         }
 
         None
+    }
+
+    pub fn update_agent_last_contact(&self, mut agent: Agent) -> Result<Agent, sled::Error> {
+        agent.last_contact = Some(Utc::now());
+        self.update_agent(agent.clone()).map(|()| agent)
     }
 
     pub fn update_agent(&self, agent: Agent) -> sled::Result<()> {

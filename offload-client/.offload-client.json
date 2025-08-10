@@ -1,8 +1,8 @@
 {
   "server": "http://localhost:3069",
   "apiKey": "ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e",
-  "agentId": "4d35f52a-dedf-48e3-afea-a211a99d08df",
-  "key": "28a37fc6-ffb2-4af4-a556-c5242cefae11",
-  "jwtToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0ZDM1ZjUyYS1kZWRmLTQ4ZTMtYWZlYS1hMjExYTk5ZDA4ZGYiLCJleHAiOjE3NTU0NDc0MDl9.2eXo_d5woAdsrMoGklx4EpnH3WWwg_BcU7cfPeFyQm4",
-  "tokenExpiresIn": 1755446677
+  "agentId": "85aa4455-da8b-4d2d-ad66-ccd0b126e353",
+  "key": "d12d8542-e345-436c-b4d0-bdeff885d434",
+  "jwtToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI4NWFhNDQ1NS1kYThiLTRkMmQtYWQ2Ni1jY2QwYjEyNmUzNTMiLCJleHAiOjE3NTU0NDk4OTZ9.3uxfVd1GxoEbhVXKLROuvhggSRCgO4IWuqePb4cYXwo",
+  "tokenExpiresIn": 1755449889
 }

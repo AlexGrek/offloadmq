@@ -1,11 +1,13 @@
-use axum::{response::IntoResponse, Json};
+use axum::{Json, response::IntoResponse};
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
+    db::agent::{self, CachedAgentStorage},
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
-    mq::urgent::UrgentTaskStore, schema::{TaskResultReport, TaskResultStatus, TaskStatus},
+    mq::urgent::UrgentTaskStore,
+    schema::{TaskResultReport, TaskResultStatus, TaskStatus},
 };
 
 pub async fn find_urgent_tasks_with_capabilities(
@@ -35,10 +37,23 @@ pub async fn try_pick_up_urgent_task(
 pub async fn report_urgent_task<'a>(
     store: &'a UrgentTaskStore,
     report: TaskResultReport,
-    task_id: Uuid
+    task_id: Uuid,
 ) -> Result<impl IntoResponse + use<>, AppError> {
     let success = report.status == TaskResultStatus::Completed;
-    store.complete_task(&task_id, success, report.output.clone().unwrap_or_default()).await?;
+    store
+        .complete_task(&task_id, success, report.output.clone().unwrap_or_default())
+        .await?;
     Ok(Json(json!({"status": "confirmed"})))
 }
 
+pub async fn has_potential_agents_for(
+    cap: &std::string::String,
+    agents: &CachedAgentStorage,
+) -> bool {
+    for agent in agents.list_all_agents() {
+        if agent.capabilities.contains(cap) && agent.is_online() {
+            return true;
+        }
+    }
+    return false;
+}

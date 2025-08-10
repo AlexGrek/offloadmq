@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
 use thiserror::Error;
@@ -35,6 +35,9 @@ pub enum AppError {
     #[error("Bad request: {0}")]
     BadRequest(String),
 
+    #[error("Scheduling impossible: {0}")]
+    SchedulingImpossible(String),
+
     #[error("JWT error: {0}")]
     Jwt(#[from] jsonwebtoken::errors::Error),
 
@@ -65,6 +68,7 @@ impl AppError {
             AppError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::Parse(_) => StatusCode::BAD_REQUEST,
             AppError::BcryptError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::SchedulingImpossible(_) => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 
@@ -84,28 +88,27 @@ impl AppError {
             AppError::Io(_) => "io_error",
             AppError::Parse(_) => "parse_error",
             AppError::BcryptError(_) => "bcrypt_error",
+            AppError::SchedulingImpossible(_) => "scheduling impossible",
         }
     }
 
     /// Check if this error should be logged
     pub fn should_log(&self) -> bool {
         match self {
-            // Don't log client errors (4xx)
-            AppError::Authentication(_) 
-            | AppError::Authorization(_) 
-            | AppError::Validation(_) 
-            | AppError::NotFound(_) 
-            | AppError::BadRequest(_) 
-            | AppError::Jwt(_) 
+            AppError::Authentication(_)
+            | AppError::Authorization(_)
+            | AppError::Validation(_)
+            | AppError::NotFound(_)
+            | AppError::BadRequest(_)
+            | AppError::Jwt(_)
             | AppError::Parse(_) => false,
-            
-            // Log server errors (5xx) and conflicts
-            AppError::Database(_) 
-            | AppError::Internal(_) 
-            | AppError::Serialization(_) 
-            | AppError::Io(_) 
+            AppError::Database(_)
+            | AppError::Internal(_)
+            | AppError::Serialization(_)
+            | AppError::Io(_)
             | AppError::Conflict(_)
             | AppError::BcryptError(_) => true,
+            AppError::SchedulingImpossible(_) => true,
         }
     }
 }
@@ -114,7 +117,7 @@ impl AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = self.status_code();
-        
+
         // Log server errors
         if self.should_log() {
             tracing::error!("AppError: {} (status: {})", self, status);
@@ -209,18 +212,43 @@ mod tests {
 
     #[test]
     fn test_error_status_codes() {
-        assert_eq!(AppError::authentication("test").status_code(), StatusCode::UNAUTHORIZED);
-        assert_eq!(AppError::authorization("test").status_code(), StatusCode::FORBIDDEN);
-        assert_eq!(AppError::validation("test").status_code(), StatusCode::BAD_REQUEST);
-        assert_eq!(AppError::not_found("test").status_code(), StatusCode::NOT_FOUND);
-        assert_eq!(AppError::conflict("test").status_code(), StatusCode::CONFLICT);
+        assert_eq!(
+            AppError::authentication("test").status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            AppError::authorization("test").status_code(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            AppError::validation("test").status_code(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            AppError::not_found("test").status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            AppError::conflict("test").status_code(),
+            StatusCode::CONFLICT
+        );
     }
 
     #[test]
     fn test_error_types() {
-        assert_eq!(AppError::authentication("test").error_type(), "authentication_error");
-        assert_eq!(AppError::Database(sled::Error::Unsupported("test".to_string())).error_type(), "database_error");
-        assert_eq!(AppError::BcryptError(bcrypt::BcryptError::InvalidHash("test".to_string())).error_type(), "bcrypt_error");
+        assert_eq!(
+            AppError::authentication("test").error_type(),
+            "authentication_error"
+        );
+        assert_eq!(
+            AppError::Database(sled::Error::Unsupported("test".to_string())).error_type(),
+            "database_error"
+        );
+        assert_eq!(
+            AppError::BcryptError(bcrypt::BcryptError::InvalidHash("test".to_string()))
+                .error_type(),
+            "bcrypt_error"
+        );
     }
 
     #[test]

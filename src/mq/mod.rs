@@ -12,12 +12,14 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
+    db::agent::CachedAgentStorage,
     error::AppError,
     middleware::AuthenticatedAgent,
     models::UnassignedTask,
     mq::{
         scheduler::{
-            find_urgent_tasks_with_capabilities, report_urgent_task, try_pick_up_urgent_task,
+            find_urgent_tasks_with_capabilities, has_potential_agents_for, report_urgent_task,
+            try_pick_up_urgent_task,
         },
         urgent::UrgentTaskStore,
     },
@@ -30,8 +32,15 @@ pub mod urgent;
 
 async fn submit_urgent_task(
     store: &UrgentTaskStore,
+    agents: &CachedAgentStorage,
     task: UnassignedTask,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
+    if !has_potential_agents_for(&task.capability, agents).await {
+        return Err(AppError::SchedulingImpossible(format!(
+            "no online runners for capability {}",
+            task.capability
+        )));
+    }
     let state = store.add_task(task.clone(), 60).await?;
 
     let mut rx = state.notify.subscribe();
@@ -73,17 +82,18 @@ pub async fn submit_urgent_task_handler(
         created_at: Utc::now(),
     };
     info!("New urgent task: {:?}", task);
-    let data = submit_urgent_task(&app_state.urgent, task)
+    let data = submit_urgent_task(&app_state.urgent, &app_state.storage.agents, task)
         .await?
         .into_response();
     Ok(data)
 }
 
 pub async fn fetch_task_handler(
-    AuthenticatedAgent(agent): AuthenticatedAgent,
+    AuthenticatedAgent(mut agent): AuthenticatedAgent,
     State(app_state): State<Arc<AppState>>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     // check urgent tasks first
+    agent = app_state.storage.agents.update_agent_last_contact(agent)?;
     let caps = &agent.capabilities;
     let urgent = find_urgent_tasks_with_capabilities(&app_state.urgent, caps).await;
     Ok(Json(urgent))
@@ -108,12 +118,13 @@ pub async fn try_take_task_handler(
 }
 
 pub async fn post_task_resolution(
-    AuthenticatedAgent(agent): AuthenticatedAgent,
+    AuthenticatedAgent(mut agent): AuthenticatedAgent,
     State(app_state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(report): Json<TaskResultReport>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     // check urgent tasks first
+    agent = app_state.storage.agents.update_agent_last_contact(agent)?;
     let task_id = uuid::Uuid::parse_str(&id).map_err(|_e| AppError::BadRequest(id))?;
     info!("Agent {} reporting task {task_id}", agent.uid_short);
     report_urgent_task(&app_state.urgent, report, task_id).await
