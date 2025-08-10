@@ -5,8 +5,7 @@ use sled::Db;
 use uuid::Uuid;
 
 use crate::{
-    models::{AssignedTask, TaskEvent, UnassignedTask},
-    schema::TaskStatus,
+    error::AppError, models::{AssignedTask, UnassignedTask}, schema::TaskStatus
 };
 
 /// Your enums & structs from the previous step should be imported here
@@ -49,32 +48,18 @@ impl TaskStorage {
     }
 
     /// Move a task from unassigned to assigned when agent confirms
-    pub fn assign_task(&self, capability: &str, id: Uuid, agent_id: String) -> Result<()> {
+    pub fn assign_task(&self, capability: &str, id: Uuid, agent_id: &str) -> Result<AssignedTask, AppError> {
         let key = Self::make_key(capability, id);
         if let Some(value) = self.unassigned.remove(key.as_bytes())? {
             let unassigned: UnassignedTask = rmp_serde::from_slice(&value)?;
 
-            let assigned = AssignedTask {
-                id: unassigned.id,
-                capability: unassigned.capability.clone(),
-                urgent: unassigned.urgent,
-                restartable: unassigned.restartable,
-                payload: unassigned.payload.clone(),
-                agent_id,
-                status: TaskStatus::Running,
-                history: vec![TaskEvent {
-                    timestamp: Utc::now(),
-                    description: "Task assigned to agent".into(),
-                }],
-                created_at: unassigned.created_at,
-                assigned_at: Utc::now(),
-                result: Option::default(),
-            };
+            let assigned = unassigned.assign_to(agent_id);
 
             let bytes = rmp_serde::to_vec_named(&assigned)?;
             self.assigned.insert(key.as_bytes(), bytes)?;
+            return Ok(assigned)
         }
-        Ok(())
+        Err(AppError::Conflict(format!("Unassigned task not found: {}|{:?}", capability, id)))
     }
 
     /// Archive tasks older than 7 days that are NOT running
