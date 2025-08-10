@@ -19,8 +19,8 @@ use crate::{
     mq::{
         scheduler::{
             find_assignable_non_urgent_tasks_with_capabilities_for_tier,
-            find_urgent_tasks_with_capabilities, has_potential_agents_for, report_urgent_task,
-            try_pick_up_non_urgent_task, try_pick_up_urgent_task,
+            find_urgent_tasks_with_capabilities, has_potential_agents_for, report_non_urgent_task,
+            report_urgent_task, try_pick_up_non_urgent_task, try_pick_up_urgent_task,
         },
         urgent::UrgentTaskStore,
     },
@@ -112,6 +112,7 @@ pub async fn submit_regular_task_handler(
         app_state.storage.tasks.add_unassigned(&task)?;
         return Ok(Json(json!({
             "id": task.id,
+            "capability": task.capability,
             "status": "pending",
             "message": "Added to tasks queue"
         }))
@@ -137,6 +138,10 @@ pub async fn fetch_task_non_urgent_handler(
     // check urgent tasks first
     agent = app_state.storage.agents.update_agent_last_contact(agent)?;
     let caps = &agent.capabilities;
+    info!(
+        "Searching for tasks for agent {:?} with tier {:?}",
+        agent, agent.tier
+    );
     let all = find_assignable_non_urgent_tasks_with_capabilities_for_tier(
         &app_state.storage.tasks,
         caps,
@@ -196,7 +201,16 @@ pub async fn post_task_resolution(
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     // check urgent tasks first
     agent = app_state.storage.agents.update_agent_last_contact(agent)?;
-    let task_id = uuid::Uuid::parse_str(&id).map_err(|_e| AppError::BadRequest(id))?;
+    let task_id = uuid::Uuid::parse_str(&id).map_err(|_e| AppError::BadRequest(id.clone()))?;
+    if report.task_id != task_id {
+        return Err(AppError::BadRequest(id));
+    }
     info!("Agent {} reporting task {task_id}", agent.uid_short);
-    report_urgent_task(&app_state.urgent, report, task_id).await
+    info!("Report: {:?}", &report);
+
+    let found = report_urgent_task(&app_state.urgent, report.clone(), task_id).await?;
+    if !found {
+        report_non_urgent_task(&app_state.storage.tasks, report, task_id).await?;
+    }
+    Ok(Json(json!({"message": "task report confirmed"})))
 }

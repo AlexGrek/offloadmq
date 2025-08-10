@@ -26,6 +26,7 @@ class TaskResultReport:
     task_id: uuid.UUID
     status: str
     output: Optional[dict]
+    capability: str
 
     def to_json(self):
         """
@@ -35,10 +36,11 @@ class TaskResultReport:
         return {
             "taskId": str(self.task_id),
             "status": self.status,
-            "output": self.output
+            "output": self.output,
+            "capability": self.capability
         }
 
-def execute_debug_echo(task_id: uuid.UUID, payload: dict, server_url: str, headers):
+def execute_debug_echo(task_id: uuid.UUID, capability: str, payload: dict, server_url: str, headers):
     """
     Implements the 'debug::echo' capability.
     It takes the payload and sends it back as the output in a TaskResultReport.
@@ -53,7 +55,8 @@ def execute_debug_echo(task_id: uuid.UUID, payload: dict, server_url: str, heade
         report = TaskResultReport(
             task_id=task_id,
             status="completed",
-            output=result_output
+            output=result_output,
+            capability=capability
         )
 
         # Send the report via POST to the specified server endpoint
@@ -72,7 +75,7 @@ def execute_debug_echo(task_id: uuid.UUID, payload: dict, server_url: str, heade
         print(f"Failed to report task result for {task_id}: {e}")
         return False
     
-def execute_shell_bash(task_id: uuid.UUID, payload: dict, server_url: str, headers: dict):
+def execute_shell_bash(task_id: uuid.UUID, capability: str, payload: dict, server_url: str, headers: dict):
     """
     Implements the 'shell::bash' capability.
     It executes a bash command and returns stdout and stderr as output.
@@ -85,7 +88,8 @@ def execute_shell_bash(task_id: uuid.UUID, payload: dict, server_url: str, heade
         report = TaskResultReport(
             task_id=task_id,
             status="failed",
-            output=error_output
+            output=error_output,
+            capability=capability
         )
         report_url = f"{server_url}/private/agent/task/{report.task_id}"
         try:
@@ -112,7 +116,8 @@ def execute_shell_bash(task_id: uuid.UUID, payload: dict, server_url: str, heade
         report = TaskResultReport(
             task_id=task_id,
             status="completed",
-            output=report_output
+            output=report_output,
+            capability=capability
         )
 
     except subprocess.CalledProcessError as e:
@@ -125,7 +130,8 @@ def execute_shell_bash(task_id: uuid.UUID, payload: dict, server_url: str, heade
         report = TaskResultReport(
             task_id=task_id,
             status="failed",
-            output=report_output
+            output=report_output,
+            capability=capability
         )
     except Exception as e:
         # Other errors, like file not found
@@ -135,7 +141,8 @@ def execute_shell_bash(task_id: uuid.UUID, payload: dict, server_url: str, heade
         report = TaskResultReport(
             task_id=task_id,
             status="failed",
-            output=report_output
+            output=report_output,
+            capability = capability,
         )
 
     # Send the report via POST to the specified server endpoint
@@ -164,7 +171,7 @@ def execute_llm_query(task_id: uuid.UUID, capability: str, payload: dict, server
         query = payload.get("query")
         if not query:
             error_output = {"error": "No 'query' provided in LLM payload."}
-            report = TaskResultReport(task_id=task_id, status="failed", output=error_output)
+            report = TaskResultReport(task_id=task_id, status="failed", output=error_output, capability=capability)
             report_url = f"{server_url}/private/agent/task/{report.task_id}"
             requests.post(report_url, json=report.to_json(), headers=headers).raise_for_status()
             return False
@@ -189,7 +196,8 @@ def execute_llm_query(task_id: uuid.UUID, capability: str, payload: dict, server
         report = TaskResultReport(
             task_id=task_id,
             status="completed",
-            output=report_output
+            output=report_output,
+            capability=capability
         )
     
     except subprocess.CalledProcessError as e:
@@ -202,7 +210,8 @@ def execute_llm_query(task_id: uuid.UUID, capability: str, payload: dict, server
         report = TaskResultReport(
             task_id=task_id,
             status="failed",
-            output=report_output
+            output=report_output,
+            capability=capability
         )
     except Exception as e:
         # Other errors, like malformed capability
@@ -212,7 +221,8 @@ def execute_llm_query(task_id: uuid.UUID, capability: str, payload: dict, server
         report = TaskResultReport(
             task_id=task_id,
             status="failed",
-            output=report_output
+            output=report_output,
+            capability=capability
         )
 
     # Send the report back to the server
@@ -243,7 +253,7 @@ def serve_tasks(server_url: str, jwt_token: str):
     try:
         while True:
             # Poll for an urgent task
-            poll_url = f"{server_url}/private/agent/task_urgent/poll"
+            poll_url = f"{server_url}/private/agent/task_non_urgent/poll"
             poll_response = requests.get(poll_url, headers=headers)
             poll_response.raise_for_status()
             
@@ -251,9 +261,10 @@ def serve_tasks(server_url: str, jwt_token: str):
             
             if task_info and task_info.get("id"):
                 task_id = task_info.get("id")
+                task_cap = task_info.get("capability")
                 
                 # Now, make a POST request to 'take' the task
-                take_url = f"{server_url}/private/agent/take_urgent/{task_id}"
+                take_url = f"{server_url}/private/agent/take_non_urgent/{task_id}/{task_cap}"
                 take_response = requests.post(take_url, headers=headers)
                 take_response.raise_for_status()
                 
@@ -269,7 +280,7 @@ def serve_tasks(server_url: str, jwt_token: str):
                 else:
                     executor = capability_map.get(capability)
                     if executor:
-                        executor(task_id, payload, server_url, headers)
+                        executor(task_id, capability, payload, server_url, headers)
                     else:
                         print(f"Unknown capability: {capability}")
                         # You might want to report this failure back to the server

@@ -161,6 +161,14 @@ impl CachedAgentStorage {
         agents
     }
 
+    pub fn log_online_agents(&self) {
+        let agents: Vec<_> = self.list_all_agents().into_iter().filter(|agent|agent.is_online()).collect();
+        info!("Online agents: ");
+        for agent in agents {
+            info!("     {:?}", agent);
+        }
+    }
+
     // Token handling with LRU cache
 
     pub fn has_token(&self, token: &str) -> bool {
