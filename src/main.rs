@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Server starting on http://{}", bind_address);
 
     tokio::spawn(async move {
-        let mut interval = time::interval(time::Duration::from_secs(30));
+        let mut interval = time::interval(time::Duration::from_secs(120));
         loop {
             interval.tick().await;
             shared_state.storage.agents.log_online_agents();

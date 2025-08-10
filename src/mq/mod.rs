@@ -6,7 +6,7 @@ use axum::{
     response::IntoResponse,
 };
 use chrono::Utc;
-use log::info;
+use log::{debug, info};
 use rand::seq::IndexedRandom;
 use serde_json::json;
 use uuid::Uuid;
@@ -138,7 +138,7 @@ pub async fn fetch_task_non_urgent_handler(
     // check urgent tasks first
     agent = app_state.storage.agents.update_agent_last_contact(agent)?;
     let caps = &agent.capabilities;
-    info!(
+    debug!(
         "Searching for tasks for agent {:?} with tier {:?}",
         agent, agent.tier
     );
@@ -206,7 +206,7 @@ pub async fn post_task_resolution(
         return Err(AppError::BadRequest(id));
     }
     info!("Agent {} reporting task {task_id}", agent.uid_short);
-    info!("Report: {:?}", &report);
+    debug!("Report: {:?}", &report);
 
     let found = report_urgent_task(&app_state.urgent, report.clone(), task_id).await?;
     if !found {

@@ -1,6 +1,4 @@
-use axum::{Json, response::IntoResponse};
-use log::info;
-use serde_json::json;
+use log::debug;
 use uuid::Uuid;
 
 use crate::{
@@ -11,7 +9,7 @@ use crate::{
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
     mq::urgent::UrgentTaskStore,
-    schema::{TaskResultReport, TaskResultStatus, TaskStatus}, state::AppState,
+    schema::{TaskResultReport, TaskResultStatus, TaskStatus},
 };
 
 pub async fn find_urgent_tasks_with_capabilities(
@@ -29,11 +27,11 @@ pub async fn find_assignable_non_urgent_tasks_with_capabilities_for_tier(
 ) -> Result<Vec<UnassignedTask>, AppError> {
     let all = store.list_unassigned_with_caps(caps)?;
     let mut collected = vec![];
-    info!("Total jobs available: {} (our tier is {})", all.len(), tier);
+    debug!("Total jobs available: {} (our tier is {})", all.len(), tier);
     for task in all {
         let top_online_tier = all_online_agents_for(&task.capability, agents).await.into_iter().map(|agent|agent.tier).max().unwrap_or_default();
         if top_online_tier > tier {
-            info!("Ingoring task with capability {}, as higher tier agents exist: {top_online_tier}", task.capability)
+            debug!("Ingoring task with capability {}, as higher tier agents exist: {top_online_tier}", task.capability)
         } else {
             collected.push(task);
         }
@@ -90,7 +88,7 @@ pub async fn report_non_urgent_task<'a>(
     let mut got = store.get_assigned(capability, task_id)?.ok_or(AppError::NotFound(task_id.to_string()))?;
     got.status = if success {TaskStatus::Completed} else {TaskStatus::Failed};
     got.result = report.output;
-    store.update_assigned(&got);
+    store.update_assigned(&got)?;
     Ok(())
 }
 
