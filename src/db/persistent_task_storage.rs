@@ -1,3 +1,5 @@
+use std::default;
+
 use anyhow::Result;
 use chrono::Utc;
 use sled::Db;
@@ -67,6 +69,7 @@ impl TaskStorage {
                 }],
                 created_at: unassigned.created_at,
                 assigned_at: Utc::now(),
+                result: Option::default(),
             };
 
             let bytes = rmp_serde::to_vec_named(&assigned)?;
