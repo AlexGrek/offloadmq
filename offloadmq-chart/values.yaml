@@ -1,0 +1,32 @@
+replicaCount: 1
+
+image:
+  repository: your-docker-registry/offloadmq
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 3069
+
+env:
+  SERVER_ADDRESS: "0.0.0.0:3069"
+  DATABASE_ROOT_PATH: "/data/db"
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: "" # leave empty to use cluster default
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+secrets:
+  JWT_SECRET: "your-super-secret-and-long-jwt-key"
+  CLIENT_API_KEYS: "client_secret_key_123"
+  AGENT_API_KEYS: "ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e"
