@@ -5,6 +5,7 @@ use std::{
 
 use crate::{models::Agent, schema::SystemInfo};
 use chrono::{DateTime, Utc};
+use log::info;
 use lru_time_cache::LruCache;
 use rmp_serde::{from_slice, to_vec_named};
 use serde::{Deserialize, Serialize};
@@ -83,6 +84,8 @@ impl CachedAgentStorage {
         self.db.flush()?;
 
         self.agent_cache.write().unwrap().insert(id, agent.clone());
+
+        info!("Created agent {:?}", agent);
         Ok(())
     }
 
