@@ -1,0 +1,8 @@
+{
+  "server": "http://localhost:3069",
+  "apiKey": "ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e",
+  "agentId": "e1690d8d-a8ba-4da8-b3bf-c914d5a27348",
+  "key": "909191a7-0d3e-421f-b41b-80786e0acaee",
+  "jwtToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJlMTY5MGQ4ZC1hOGJhLTRkYTgtYjNiZi1jOTE0ZDVhMjczNDgiLCJleHAiOjE3NTUzOTQ2OTV9.5fNZsxsdCAE-CNJWWKvac6myzCwGAcMchviHGREBTmw",
+  "tokenExpiresIn": 1755394695
+}
