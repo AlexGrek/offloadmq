@@ -2,3 +2,4 @@
 /db
 /data
 **/.DS_Store
+.secrets.yaml
