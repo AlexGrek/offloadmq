@@ -3,12 +3,11 @@ use std::{
     time::Duration,
 };
 
-use crate::{error::AppError, models::Agent, schema::SystemInfo};
-use chrono::{DateTime, Utc};
+use crate::models::Agent;
+use chrono::Utc;
 use log::info;
 use lru_time_cache::LruCache;
 use rmp_serde::{from_slice, to_vec_named};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub struct CachedAgentStorage {

@@ -10,7 +10,7 @@ use axum::{
 use hyper::StatusCode;
 use log::{info, warn};
 use offloadmq::{
-    db::{agent, app_storage::AppStorage},
+    db::app_storage::AppStorage,
     error::AppError,
     models::Agent,
     schema::{AgentLoginResponse, AgentRegistrationResponse},
