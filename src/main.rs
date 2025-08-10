@@ -27,14 +27,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // tracing_subscriber::init();
 
     let config = config::AppConfig::from_env()?;
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("debug"));
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     info!("Starting application with config:");
     info!("  Host: {}", config.host);
     info!("  Port: {}", config.port);
     info!("  Database path: {}", config.database_root_path);
-    info!("  Agent API keys count: {:?}", config.agent_api_keys);
-    info!("  Client API keys count: {:?}", config.client_api_keys);
+    info!("  Agent API keys: {:?}", config.agent_api_keys);
+    info!("  Client API keys: {:?}", config.client_api_keys);
 
     // Initialize storage with config path and default 120s TTL
     let app_storage =
@@ -61,11 +61,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/private/agent",
             Router::new()
                 .route("/ping", get(health_check))
-                .route("/get_task_urgent", get(mq::fetch_task_handler))
+                .route("/task_urgent/poll", get(mq::fetch_task_handler))
                 .route("/take_urgent/{id}", post(mq::try_take_task_handler))
+                .route("/task/{id}", post(mq::post_task_resolution))
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,
+                )),
+        )
+        .nest(
+            "/api",
+            Router::new()
+                .route("/ping", get(health_check))
+                .route("/task/urgent", post(mq::submit_urgent_task_handler))
+                .layer(from_fn_with_state(
+                    shared_state.clone(),
+                    middleware::apikey_auth_middleware_user,
                 )),
         )
         .with_state(shared_state.clone())

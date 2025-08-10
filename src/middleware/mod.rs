@@ -7,6 +7,8 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use axum::body::to_bytes;
+use serde::Deserialize;
 
 pub mod auth;
 
@@ -100,4 +102,40 @@ pub async fn jwt_auth_middleware_agent(
             Err(AppError::Authorization("JWT token invalid".to_string()))
         }
     }
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct ApiKeyPayload {
+    api_key: String,
+}
+
+pub async fn apikey_auth_middleware_user(
+    State(app_state): State<Arc<AppState>>,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, AppError> {
+    let (parts, body) = req.into_parts();
+
+    // Read the body into bytes
+    let body_bytes = axum::body::to_bytes(body, 500000)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    // Attempt to parse the API key from the JSON payload
+    let api_key_payload: ApiKeyPayload = serde_json::from_slice(&body_bytes)
+        .map_err(|e| AppError::Authorization(format!("Failed to parse JSON body: {}", e)))?;
+
+    if !app_state
+        .config
+        .client_api_keys
+        .contains(&api_key_payload.api_key)
+    {
+        return Err(AppError::Authorization(format!(
+            "Unauthorized: {api_key_payload:?}"
+        )));
+    }
+    let new_body = Body::from(body_bytes);
+    let req = Request::from_parts(parts, new_body);
+    Ok(next.run(req).await)
 }

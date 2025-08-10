@@ -1,17 +1,35 @@
 use std::sync::Arc;
 
-use axum::{extract::{Query, State}, response::IntoResponse, Json};
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+    response::IntoResponse,
+};
+use chrono::Utc;
+use log::info;
+use serde::Deserialize;
 use serde_json::json;
+use uuid::Uuid;
 
 use crate::{
-    error::AppError, middleware::AuthenticatedAgent, models::UnassignedTask, mq::{scheduler::{find_urgent_tasks_with_capabilities, try_pick_up_urgent_task}, urgent::UrgentTaskStore}, schema::TaskStatus, state::AppState
+    error::AppError,
+    middleware::AuthenticatedAgent,
+    models::UnassignedTask,
+    mq::{
+        scheduler::{
+            find_urgent_tasks_with_capabilities, report_urgent_task, try_pick_up_urgent_task,
+        },
+        urgent::UrgentTaskStore,
+    },
+    schema::{TaskResultReport, TaskStatus, TaskSubmissionRequest},
+    state::AppState,
 };
 
-pub mod urgent;
 pub mod scheduler;
+pub mod urgent;
 
-async fn submit_urgent_task_handler(
-    store: Arc<UrgentTaskStore>,
+async fn submit_urgent_task(
+    store: &UrgentTaskStore,
     task: UnassignedTask,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     let state = store.add_task(task.clone(), 60).await?;
@@ -42,6 +60,25 @@ async fn submit_urgent_task_handler(
     }
 }
 
+pub async fn submit_urgent_task_handler(
+    State(app_state): State<Arc<AppState>>,
+    Json(req): Json<TaskSubmissionRequest>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    let task = UnassignedTask {
+        id: Uuid::new_v4(),
+        capability: req.capability,
+        urgent: true,
+        restartable: false,
+        payload: req.payload,
+        created_at: Utc::now(),
+    };
+    info!("New urgent task: {:?}", task);
+    let data = submit_urgent_task(&app_state.urgent, task)
+        .await?
+        .into_response();
+    Ok(data)
+}
+
 pub async fn fetch_task_handler(
     AuthenticatedAgent(agent): AuthenticatedAgent,
     State(app_state): State<Arc<AppState>>,
@@ -52,13 +89,32 @@ pub async fn fetch_task_handler(
     Ok(Json(urgent))
 }
 
+// #[derive(Deserialize)]
+// pub struct TaskUidQuery {
+//     id: String,
+// }
+
 pub async fn try_take_task_handler(
     AuthenticatedAgent(agent): AuthenticatedAgent,
     State(app_state): State<Arc<AppState>>,
-    Query(id): Query<String>
+    Path(id): Path<String>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     // check urgent tasks first
     let task_id = uuid::Uuid::parse_str(&id).map_err(|_e| AppError::BadRequest(id))?;
-    Ok(Json(try_pick_up_urgent_task(&app_state.urgent, &agent, &task_id).await?))
+    info!("Agent {} picking up task {task_id}", agent.uid_short);
+    Ok(Json(
+        try_pick_up_urgent_task(&app_state.urgent, &agent, &task_id).await?,
+    ))
 }
 
+pub async fn post_task_resolution(
+    AuthenticatedAgent(agent): AuthenticatedAgent,
+    State(app_state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(report): Json<TaskResultReport>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    // check urgent tasks first
+    let task_id = uuid::Uuid::parse_str(&id).map_err(|_e| AppError::BadRequest(id))?;
+    info!("Agent {} reporting task {task_id}", agent.uid_short);
+    report_urgent_task(&app_state.urgent, report, task_id).await
+}

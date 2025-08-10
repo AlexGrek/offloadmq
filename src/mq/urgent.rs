@@ -9,8 +9,7 @@ use tokio::{sync::watch, time};
 use uuid::Uuid;
 
 use crate::{
-    models::{AssignedTask, UnassignedTask},
-    schema::TaskStatus,
+    error::AppError, models::{AssignedTask, UnassignedTask}, schema::TaskStatus
 };
 
 pub struct TaskState {
@@ -99,9 +98,10 @@ impl UrgentTaskStore {
         false
     }
 
-    pub async fn complete_task(&self, task_id: &Uuid, success: bool) {
+    pub async fn complete_task(&self, task_id: &Uuid, success: bool, payload: serde_json::Value) -> Result<(), AppError> {
         let mut tasks = self.tasks.write().await;
         if let Some(entry) = tasks.get_mut(task_id) {
+            entry.assigned_task.as_mut().ok_or(AppError::Conflict("Task is not assigned but reported".to_string()))?.result = Some(payload);
             let mut status = entry.state.status.write().await;
             *status = if success {
                 TaskStatus::Completed
@@ -110,6 +110,7 @@ impl UrgentTaskStore {
             };
             let _ = entry.state.notify.send(status.clone());
         }
+        Ok(())
     }
 
     /// Call periodically or in a background task
