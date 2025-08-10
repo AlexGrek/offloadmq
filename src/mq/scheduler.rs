@@ -58,6 +58,16 @@ pub async fn try_pick_up_urgent_task(
     }
 }
 
+pub async fn try_pick_up_non_urgent_task(
+    store: &TaskStorage,
+    agent: &Agent,
+    uid: uuid::Uuid,
+    capability: &str,
+) -> Result<AssignedTask, AppError> {
+    let assigned = store.assign_task(capability, uid, &agent.uid)?;
+    Ok(assigned)
+}
+
 pub async fn report_urgent_task<'a>(
     store: &'a UrgentTaskStore,
     report: TaskResultReport,

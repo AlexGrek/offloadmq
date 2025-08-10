@@ -20,7 +20,7 @@ use crate::{
         scheduler::{
             find_assignable_non_urgent_tasks_with_capabilities_for_tier,
             find_urgent_tasks_with_capabilities, has_potential_agents_for, report_urgent_task,
-            try_pick_up_urgent_task,
+            try_pick_up_non_urgent_task, try_pick_up_urgent_task,
         },
         urgent::UrgentTaskStore,
     },
@@ -159,16 +159,32 @@ pub async fn fetch_task_non_urgent_handler(
 //     id: String,
 // }
 
-pub async fn try_take_task_handler(
+pub async fn try_take_task_urgent_handler(
     AuthenticatedAgent(agent): AuthenticatedAgent,
     State(app_state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     // check urgent tasks first
     let task_id = uuid::Uuid::parse_str(&id).map_err(|_e| AppError::BadRequest(id))?;
-    info!("Agent {} picking up task {task_id}", agent.uid_short);
+    info!("Agent {} picking up urgent task {task_id}", agent.uid_short);
     Ok(Json(
         try_pick_up_urgent_task(&app_state.urgent, &agent, &task_id).await?,
+    ))
+}
+
+pub async fn try_take_task_non_urgent_handler(
+    AuthenticatedAgent(agent): AuthenticatedAgent,
+    State(app_state): State<Arc<AppState>>,
+    Path((id, capability)): Path<(String, String)>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    // check urgent tasks first
+    let task_id = uuid::Uuid::parse_str(&id).map_err(|_e| AppError::BadRequest(id))?;
+    info!(
+        "Agent {} picking up regular task {task_id}",
+        agent.uid_short
+    );
+    Ok(Json(
+        try_pick_up_non_urgent_task(&app_state.storage.tasks, &agent, task_id, &capability).await?,
     ))
 }
 
