@@ -137,6 +137,7 @@ pub struct TaskSubmissionRequest {
     /// The task-specific data payload.
     /// Can be any valid JSON object.
     pub payload: Value,
+    pub api_key: String,
 }
 
 /// Response sent to a client after a task is successfully submitted.

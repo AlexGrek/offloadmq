@@ -1,7 +1,11 @@
+use axum::{response::IntoResponse, Json};
+use serde_json::json;
+use uuid::Uuid;
+
 use crate::{
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
-    mq::urgent::UrgentTaskStore,
+    mq::urgent::UrgentTaskStore, schema::{TaskResultReport, TaskResultStatus, TaskStatus},
 };
 
 pub async fn find_urgent_tasks_with_capabilities(
@@ -27,3 +31,14 @@ pub async fn try_pick_up_urgent_task(
         Err(AppError::Conflict(uid.to_string()))
     }
 }
+
+pub async fn report_urgent_task<'a>(
+    store: &'a UrgentTaskStore,
+    report: TaskResultReport,
+    task_id: Uuid
+) -> Result<impl IntoResponse + use<>, AppError> {
+    let success = report.status == TaskResultStatus::Completed;
+    store.complete_task(&task_id, success, report.output.clone().unwrap_or_default()).await?;
+    Ok(Json(json!({"status": "confirmed"})))
+}
+

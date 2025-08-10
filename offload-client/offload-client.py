@@ -14,9 +14,199 @@ import argparse
 import requests
 import sys
 import re
+import uuid
 import subprocess
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+
+@dataclass
+class TaskResultReport:
+    task_id: uuid.UUID
+    status: str
+    output: Optional[dict]
+
+    def to_json(self):
+        """
+        Custom serialization for the TaskResultReport object.
+        Handles UUID and Enum types.
+        """
+        return {
+            "taskId": str(self.task_id),
+            "status": self.status,
+            "output": self.output
+        }
+
+def execute_debug_echo(task_id: uuid.UUID, payload: dict, server_url: str, headers):
+    """
+    Implements the 'debug::echo' capability.
+    It takes the payload and sends it back as the output in a TaskResultReport.
+    """
+    print(f"Executing debug::echo for task {task_id} with payload: {payload}")
+
+    try:
+        # The debug::echo task just returns the payload as the output
+        result_output = payload
+        
+        # Create the TaskResultReport
+        report = TaskResultReport(
+            task_id=task_id,
+            status="completed",
+            output=result_output
+        )
+
+        # Send the report via POST to the specified server endpoint
+        report_url = f"{server_url}/private/agent/task/{report.task_id}"
+        
+        # requests.post with the 'json' parameter automatically serializes
+        # the dictionary and sets the Content-Type header
+        print("Reporting echo:", report.to_json())
+        response = requests.post(report_url, json=report.to_json(), headers=headers)
+        print(response.text)
+        response.raise_for_status()
+
+        print(f"Task result for {task_id} reported successfully. Status Code: {response.status_code}")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to report task result for {task_id}: {e}")
+        return False
+    
+def execute_shell_bash(task_id: uuid.UUID, payload: dict, server_url: str, headers: dict):
+    """
+    Implements the 'shell::bash' capability.
+    It executes a bash command and returns stdout and stderr as output.
+    """
+    print(f"Executing shell::bash for task {task_id} with payload: {payload}")
+
+    command = payload.get("command")
+    if not command:
+        error_output = {"error": "No 'command' provided in payload."}
+        report = TaskResultReport(
+            task_id=task_id,
+            status="failed",
+            output=error_output
+        )
+        report_url = f"{server_url}/private/agent/task/{report.task_id}"
+        try:
+            requests.post(report_url, json=report.to_json(), headers=headers).raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to report command error for task {task_id}: {e}")
+        return False
+
+    try:
+        # Use subprocess.run to execute the bash command
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        # Command executed successfully
+        report_output = {
+            "stdout": result.stdout,
+            "stderr": result.stderr
+        }
+        report = TaskResultReport(
+            task_id=task_id,
+            status="completed",
+            output=report_output
+        )
+
+    except subprocess.CalledProcessError as e:
+        # Command failed to execute
+        report_output = {
+            "stdout": e.stdout,
+            "stderr": e.stderr,
+            "return_code": e.returncode
+        }
+        report = TaskResultReport(
+            task_id=task_id,
+            status="failed",
+            output=report_output
+        )
+    except Exception as e:
+        # Other errors, like file not found
+        report_output = {
+            "error": str(e)
+        }
+        report = TaskResultReport(
+            task_id=task_id,
+            status="failed",
+            output=report_output
+        )
+
+    # Send the report via POST to the specified server endpoint
+    report_url = f"{server_url}/private/agent/task/{report.task_id}"
+    
+    try:
+        print(f"Reporting shell::bash result for task {task_id}")
+        response = requests.post(report_url, json=report.to_json(), headers=headers)
+        print(response.text)
+        response.raise_for_status()
+        print(f"Task result for {task_id} reported successfully. Status Code: {response.status_code}")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to report task result for {task_id}: {e}")
+        return False
+
+
+def serve_tasks(server_url: str, jwt_token: str):
+    """
+    Connects to the server, polls for tasks, and executes them.
+    """
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    
+    # Simple mapping of capabilities to functions
+    capability_map = {
+        "debug::echo": execute_debug_echo,
+        "shell::bash": execute_shell_bash
+    }
+
+    try:
+        while True:
+            # Poll for an urgent task
+            poll_url = f"{server_url}/private/agent/task_urgent/poll"
+            poll_response = requests.get(poll_url, headers=headers)
+            poll_response.raise_for_status()
+            
+            print(poll_response.text)
+            
+            task_info = poll_response.json()
+            
+            if task_info and task_info.get("id"):
+                task_id = task_info.get("id")
+                
+                # Now, make a POST request to 'take' the task
+                take_url = f"{server_url}/private/agent/take_urgent/{task_id}"
+                take_response = requests.post(take_url, headers=headers)
+                take_response.raise_for_status()
+                
+                task = take_response.json()
+                task_id = uuid.UUID(task.get("id"))
+                capability = task.get("capability")
+                payload = task.get("payload")
+
+                print(f"Received new task: {task_id} with capability '{capability}'")
+                
+                executor = capability_map.get(capability)
+                if executor:
+                    executor(task_id, payload, server_url, headers)
+                else:
+                    print(f"Unknown capability: {capability}")
+                    # You might want to report this failure back to the server
+                    # as an unhandled task.
+                    # This is a good place to add a new function for error reporting.
+
+            time.sleep(5)  # Poll every 5 seconds
+
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred while serving tasks: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
 
 CONFIG_FILE = ".offload-client.json"
 
@@ -309,6 +499,7 @@ def test_ping(server: str, jwt_token: str) -> bool:
     except requests.exceptions.RequestException:
         return False
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Offload Client Registration and System Info Script",
@@ -336,7 +527,7 @@ def main():
     register_parser.add_argument(
         "--caps", 
         nargs='*',
-        default=["GENERAL_COMPUTE"],
+        default=["GENERAL_COMPUTE", "debug::echo", "shell::bash"],
         help="Agent capabilities (default: ['GENERAL_COMPUTE'])"
     )
     register_parser.add_argument(
@@ -351,9 +542,19 @@ def main():
     
     # Subparser for the 'ollama' action
     subparsers.add_parser('ollama', help='Display detected Ollama models')
+    
+    # Subparser for the 'serve' action
+    serve_parser = subparsers.add_parser('serve', help='Periodically poll for and take urgent tasks')
+    serve_parser.add_argument(
+        "--server",
+        help="Server URL (required if not in config)"
+    )
 
     args = parser.parse_args()
     
+    config = load_config()
+    server = args.server or config.get("server")
+
     if args.action == 'sysinfo':
         system_info = collect_system_info()
         print_system_info(system_info)
@@ -368,17 +569,13 @@ def main():
             print("No Ollama capabilities detected.")
 
     elif args.action == 'register':
-        # Load existing configuration
-        config = load_config()
+        # Determine API key
+        api_key = args.key or config.get("apiKey")
         
-        # Determine server URL
-        server = args.server or config.get("server")
+        # Check for required arguments
         if not server:
             print("Error: Server URL must be provided via --server or stored in config")
             sys.exit(1)
-        
-        # Determine API key
-        api_key = args.key or config.get("apiKey")
         if not api_key:
             print("Error: API key must be provided via --key or stored in config")
             sys.exit(1)
@@ -436,6 +633,33 @@ def main():
         else:
             print("❌ Ping test failed - check server connection")
             sys.exit(1)
+
+    elif args.action == 'serve':
+        if not server:
+            print("Error: Server URL must be provided via --server or stored in config")
+            sys.exit(1)
+            
+        agent_id = config.get("agentId")
+        key = config.get("key")
+        jwt_token = config.get("jwtToken")
+        
+        if not all([agent_id, key, jwt_token]):
+            print("Error: Agent not registered or configuration file is incomplete.")
+            print("Please run 'register' action first.")
+            sys.exit(1)
+
+        print("Authenticating to get a fresh JWT token...")
+        try:
+            auth_response = authenticate_agent(server, agent_id, key)
+            jwt_token = auth_response["token"]
+            print("Authentication successful.")
+            config["jwtToken"] = jwt_token
+            save_config(config)
+        except requests.exceptions.RequestException as e:
+            print(f"Authentication failed: {e}")
+            sys.exit(1)
+
+        serve_tasks(server, jwt_token)
 
 if __name__ == "__main__":
     main()
