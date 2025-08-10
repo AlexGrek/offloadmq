@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: offloadmq
+spec:
+  serviceName: offloadmq
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: offloadmq
+  template:
+    metadata:
+      labels:
+        app: offloadmq
+    spec:
+      containers:
+        - name: offloadmq
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          env:
+            - name: SERVER_ADDRESS
+              value: {{ .Values.env.SERVER_ADDRESS | quote }}
+            - name: DATABASE_ROOT_PATH
+              value: {{ .Values.env.DATABASE_ROOT_PATH | quote }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: offloadmq-secrets
+                  key: JWT_SECRET
+            - name: CLIENT_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: offloadmq-secrets
+                  key: CLIENT_API_KEYS
+            - name: AGENT_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: offloadmq-secrets
+                  key: AGENT_API_KEYS
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+        storageClassName: {{ if .Values.persistence.storageClass }}{{ .Values.persistence.storageClass | quote }}{{ else }}null{{ end }}
