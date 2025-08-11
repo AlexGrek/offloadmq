@@ -30,6 +30,7 @@ use crate::{
 
 pub mod scheduler;
 pub mod urgent;
+pub mod heuristic;
 
 async fn submit_urgent_task(
     store: &UrgentTaskStore,
