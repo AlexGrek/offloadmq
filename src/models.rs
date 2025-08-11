@@ -121,3 +121,13 @@ impl From<AgentRegistrationRequest> for Agent {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientApiKey {
+    pub key: String,
+    pub capabilities: Vec<String>,
+    pub is_predefined: bool,
+    pub created: DateTime<Utc>,
+    pub is_revoked: bool,
+}
