@@ -2,10 +2,9 @@ use std::sync::Arc;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use tokio::{sync::watch, time};
-use uuid::Uuid;
 
 use crate::{
-    error::AppError, models::{AssignedTask, UnassignedTask}, schema::TaskStatus
+    error::AppError, models::{AssignedTask, UnassignedTask}, schema::{TaskId, TaskStatus}
 };
 
 pub struct TaskState {
@@ -23,7 +22,7 @@ pub struct UrgentTaskEntry {
 }
 
 pub struct UrgentTaskStore {
-    pub tasks: tokio::sync::RwLock<indexmap::IndexMap<Uuid, UrgentTaskEntry>>,
+    pub tasks: tokio::sync::RwLock<indexmap::IndexMap<TaskId, UrgentTaskEntry>>,
 }
 
 impl UrgentTaskStore {
@@ -52,7 +51,7 @@ impl UrgentTaskStore {
             .read()
             .await
             .iter()
-            .find(|item| item.1.assigned_task.is_none() && caps.contains(&item.1.task.capability))
+            .find(|item| item.1.assigned_task.is_none() && caps.contains(&item.1.task.id.cap))
             .map(|(_id, item)| item.task.clone())
     }
 
@@ -75,12 +74,12 @@ impl UrgentTaskStore {
             ttl: TimeDelta::seconds(ttl_secs),
         };
 
-        self.tasks.write().await.insert(entry.task.id, entry);
+        self.tasks.write().await.insert(entry.task.id.clone(), entry);
 
         Ok(state)
     }
 
-    pub async fn assign_task(&self, task_id: &Uuid, agent: &str) -> bool {
+    pub async fn assign_task(&self, task_id: &TaskId, agent: &str) -> bool {
         let mut tasks = self.tasks.write().await;
         if let Some(entry) = tasks.get_mut(task_id) {
             entry.assigned_task = Some(entry.task.assign_to(agent));
@@ -94,7 +93,7 @@ impl UrgentTaskStore {
         false
     }
 
-    pub async fn complete_task(&self, task_id: &Uuid, success: bool, payload: serde_json::Value) -> Result<bool, AppError> {
+    pub async fn complete_task(&self, task_id: &TaskId, success: bool, payload: serde_json::Value) -> Result<bool, AppError> {
         let mut tasks = self.tasks.write().await;
         if let Some(entry) = tasks.get_mut(task_id) {
             entry.assigned_task.as_mut().ok_or(AppError::Conflict("Task is not assigned but reported".to_string()))?.result = Some(payload);
@@ -133,7 +132,7 @@ impl UrgentTaskStore {
         }
     }
 
-    pub async fn get_assigned_task(&self, task_id: &Uuid) -> Option<AssignedTask> {
+    pub async fn get_assigned_task(&self, task_id: &TaskId) -> Option<AssignedTask> {
         let assigned = self.tasks.read().await;
         assigned
             .get(task_id)
@@ -142,7 +141,7 @@ impl UrgentTaskStore {
             .flatten()
     }
 
-    pub async fn remove_task(&self, task_id: &Uuid) {
+    pub async fn remove_task(&self, task_id: &TaskId) {
         {
             let mut tasks = self.tasks.write().await;
             tasks.shift_remove(task_id);

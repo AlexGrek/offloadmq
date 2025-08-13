@@ -61,16 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/private/agent",
             Router::new()
                 .route("/ping", get(health_check))
-                .route("/task_urgent/poll", get(mq::fetch_task_urgent_handler))
+                .route("/task/poll_urgent", get(api::agent::fetch_task_urgent_handler))
+                .route("/task/poll", get(api::agent::fetch_task_non_urgent_handler))
                 .route(
-                    "/task_non_urgent/poll",
-                    get(mq::fetch_task_non_urgent_handler),
+                    "/take/{cap}/{id}",
+                    post(api::agent::try_take_task_handler),
                 )
-                .route(
-                    "/take_non_urgent/{id}/{capability}",
-                    post(mq::try_take_task_non_urgent_handler),
-                )
-                .route("/task/{id}", post(mq::post_task_resolution))
+                .route("/task/resolve/{cap}/{id}", post(api::agent::post_task_resolution))
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,
@@ -80,8 +77,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api",
             Router::new()
                 .route("/ping", get(health_check))
-                .route("/task/urgent", post(mq::submit_urgent_task_handler))
-                .route("/task", post(mq::submit_regular_task_handler))
+                .route("/task/submit", post(api::client::submit_task))
+                .route(
+                    "/task/submit_blocking",
+                    post(api::client::submit_task_blocking),
+                )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::apikey_auth_middleware_user,

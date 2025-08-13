@@ -4,9 +4,14 @@
 //! These structs define the JSON contracts for requests and responses
 //! between clients, agents, and the message queue server.
 
+use std::fmt::Display;
+
+use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value; // Using Value for flexible payloads
 use uuid::Uuid;
+
+use crate::utils::time_sortable_uid;
 
 //=============================================================================
 //  Enums & Common Types
@@ -20,9 +25,13 @@ pub enum TaskStatus {
     Pending,
     /// The task is in the queue, waiting for an available agent.
     Queued,
-    /// The task has been assigned to an agent
+    /// The task is locked for a specific agent, but this agent did not picked it up yet
+    Pinned,
+    /// The task has been assigned to an agent and transferred to the agent
     Assigned,
-    /// The task has been assigned to an agent and is in progress.
+    /// Agent is preparing the task for execution
+    Starting,
+    /// The task is in progress
     Running,
     /// The task was completed successfully by an agent.
     Completed,
@@ -30,11 +39,15 @@ pub enum TaskStatus {
     Failed,
     /// The task was cancelled by a client.
     Canceled,
+    /// Task is restartable and is returned to the queue
+    FailedRetryPending,
+    /// Task is delayed after failure
+    FailedRetryDelayed,
 }
 
 impl Default for TaskStatus {
     fn default() -> Self {
-        Self::Assigned
+        Self::Pending
     }
 }
 
@@ -42,8 +55,21 @@ impl Default for TaskStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum TaskResultStatus {
-    Completed,
-    Failed,
+    Success(Duration),
+    Failure(String, Duration),
+    NotExecuted(String)
+}
+
+/// Task retry on failure policy
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRetryConfiguration {
+    /// Can retry run on the same node, if true - it can, if false - another node is required
+    pub retry_on_same_node: bool,
+    /// Maximun retries count, setting it to 0 makes it actually non-restartable
+    pub max_retries: u64,
+    /// Retry delay: how much time should pass before another retry
+    pub retry_delay: Duration
 }
 
 
@@ -78,7 +104,6 @@ pub struct AgentRegistrationResponse {
 }
 
 /// Request body for an agent to log in and receive a JWT.
-/// The agent should send its permanent API key in an `X-API-Key` header.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentLoginRequest {
@@ -122,7 +147,7 @@ pub struct GpuInfo {
 //=============================================================================
 
 /// Request body for a client to submit a new task.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskSubmissionRequest {
     /// The specific capability required to execute this task.
@@ -140,19 +165,42 @@ pub struct TaskSubmissionRequest {
     pub api_key: String,
 }
 
+/// Unique task identifier that contains queue id (capability) and task id within that queue
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Eq, PartialEq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskId {
+    /// Capability, also doubles as a queue id
+    pub cap: String,
+    /// Unique task identifier, incremental string
+    pub id: String
+}
+
+impl TaskId {
+    pub fn new_with_cap(cap: String) -> TaskId {
+        Self {
+            cap, id: time_sortable_uid()
+        }
+    }
+}
+
+impl Display for TaskId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}/{}", self.cap, self.id)
+    }
+}
+
 /// Response sent to a client after a task is successfully submitted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskSubmissionResponse {
-    /// The unique ID assigned to this task.
-    pub task_id: Uuid,
+    task: TaskId
 }
 
-/// Response body for a client polling the status of a task (`GET /tasks/{task_id}`).
+/// Response body for a client polling the status of a task (`GET /tasks/{cap}/{id}`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskStatusResponse {
-    pub task_id: Uuid,
+    pub id: TaskId,
     pub status: TaskStatus,
     /// Optional field describing the current stage (e.g., "processing_data").
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -166,8 +214,7 @@ pub struct TaskStatusResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskAssignment {
-    pub task_id: Uuid,
-    pub capability: String,
+    pub id: TaskId,
     pub payload: Value,
 }
 
@@ -175,7 +222,7 @@ pub struct TaskAssignment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskResultReport {
-    pub task_id: Uuid,
+    pub id: TaskId,
     pub capability: String,
     pub status: TaskResultStatus,
     /// The output data if the task completed successfully, or an error
