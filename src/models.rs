@@ -1,24 +1,19 @@
-use chrono::{DateTime, Duration, Utc};
+use std::time::Duration;
+
+use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
-use crate::schema::*;
+use crate::{schema::*, utils::time_sortable_uid};
 
 /// A task that has been received but not yet assigned to any agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnassignedTask {
     /// The unique ID assigned to this task by the MQ.
-    pub id: uuid::Uuid,
-    /// The capability required for this task.
-    pub capability: String,
-    /// Whether the task is urgent.
-    pub urgent: bool,
-    /// Whether the task can be retried on another agent after failure.
-    pub restartable: bool,
-    /// The task payload.
-    pub payload: Value,
+    pub id: TaskId,
+    /// Request data
+    pub data: TaskSubmissionRequest,
     /// When the task was created.
     pub created_at: DateTime<Utc>,
 }
@@ -27,12 +22,20 @@ impl UnassignedTask {
     pub fn assign_to(&self, agent_id: &str) -> AssignedTask {
         AssignedTask {
             id: self.id.clone(),
-            capability: self.capability.clone(),
-            urgent: self.urgent,
-            restartable: self.restartable,
-            payload: self.payload.clone(),
+            data: self.data.clone(),
             agent_id: agent_id.to_string(),
             created_at: self.created_at.clone(),
+            assigned_at: Utc::now(),
+            ..AssignedTask::default()
+        }
+    }
+
+    pub fn into_assigned(self, agent_id: &str) -> AssignedTask {
+        AssignedTask {
+            id: self.id,
+            data: self.data,
+            agent_id: agent_id.to_string(),
+            created_at: self.created_at,
             assigned_at: Utc::now(),
             ..AssignedTask::default()
         }
@@ -54,16 +57,10 @@ pub struct TaskEvent {
 #[serde(rename_all = "camelCase")]
 pub struct AssignedTask {
     /// The unique ID assigned to this task by the MQ.
-    pub id: uuid::Uuid,
-    /// The capability required for this task.
-    pub capability: String,
-    /// Whether the task is urgent.
-    pub urgent: bool,
-    /// Whether the task can be retried on another agent after failure.
-    pub restartable: bool,
-    /// The task payload.
-    pub payload: Value,
-    /// The ID of the agent currently processing this task.
+    pub id: TaskId,
+    /// The data provided by client required for this task.
+    data: TaskSubmissionRequest,
+    /// Agent assigned to this task
     pub agent_id: String,
     /// The current status of the task.
     pub status: TaskStatus,
@@ -97,7 +94,7 @@ impl Agent {
     pub fn is_online(&self) -> bool {
         if let Some(last) = self.last_contact {
             let now = Utc::now();
-            now.signed_duration_since(last) <= Duration::seconds(Self::ONLINE_TIMEOUT_SECS)
+            now.signed_duration_since(last) <= TimeDelta::seconds(Self::ONLINE_TIMEOUT_SECS)
         } else {
             false
         }
@@ -109,7 +106,7 @@ impl From<AgentRegistrationRequest> for Agent {
         let now = Utc::now();
 
         Agent {
-            uid: String::new(),
+            uid: time_sortable_uid(),
             uid_short: String::new(), // Default to empty string
             registered_at: now,       // Current timestamp
             personal_login_token: Uuid::new_v4().into(),

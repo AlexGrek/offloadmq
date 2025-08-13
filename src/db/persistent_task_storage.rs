@@ -1,16 +1,12 @@
 use anyhow::Result;
 use chrono::Utc;
 use sled::Db;
-use uuid::Uuid;
 
 use crate::{
     error::AppError,
     models::{AssignedTask, UnassignedTask},
-    schema::TaskStatus,
+    schema::{TaskId, TaskStatus},
 };
-
-/// Your enums & structs from the previous step should be imported here
-/// (TaskStatus, TaskResultStatus, TaskSubmissionRequest, TaskSubmissionResponse, UnassignedTask, AssignedTask, TaskEvent)
 
 pub struct TaskStorage {
     _db: Db,
@@ -36,26 +32,21 @@ impl TaskStorage {
     }
 
     /// Create composite key: "capability|uuid"
-    fn make_key(capability: &str, id: Uuid) -> String {
-        format!("{}|{}", capability, id)
+    fn make_key(id: &TaskId) -> String {
+        format!("{}|{}", id.cap, id.id)
     }
 
     /// Add a new unassigned task
     pub fn add_unassigned(&self, task: &UnassignedTask) -> Result<()> {
-        let key = Self::make_key(&task.capability, task.id);
+        let key = Self::make_key(&task.id);
         let bytes = rmp_serde::to_vec_named(task)?;
         self.unassigned.insert(key.as_bytes(), bytes)?;
         Ok(())
     }
 
     /// Move a task from unassigned to assigned when agent confirms
-    pub fn assign_task(
-        &self,
-        capability: &str,
-        id: Uuid,
-        agent_id: &str,
-    ) -> Result<AssignedTask, AppError> {
-        let key = Self::make_key(capability, id);
+    pub fn assign_task(&self, id: &TaskId, agent_id: &str) -> Result<AssignedTask, AppError> {
+        let key = Self::make_key(id);
         if let Some(value) = self.unassigned.remove(key.as_bytes())? {
             let unassigned: UnassignedTask = rmp_serde::from_slice(&value)?;
 
@@ -67,7 +58,7 @@ impl TaskStorage {
         }
         Err(AppError::Conflict(format!(
             "Unassigned task not found: {}|{:?}",
-            capability, id
+            id.cap, id
         )))
     }
 
@@ -95,8 +86,8 @@ impl TaskStorage {
     }
 
     /// Get an unassigned task by id
-    pub fn get_unassigned(&self, capability: &str, id: Uuid) -> Result<Option<UnassignedTask>> {
-        let key = Self::make_key(capability, id);
+    pub fn get_unassigned(&self, id: &TaskId) -> Result<Option<UnassignedTask>> {
+        let key = Self::make_key(id);
         if let Some(value) = self.unassigned.get(key.as_bytes())? {
             Ok(Some(rmp_serde::from_slice(&value)?))
         } else {
@@ -105,8 +96,8 @@ impl TaskStorage {
     }
 
     /// Get an assigned task by id
-    pub fn get_assigned(&self, capability: &str, id: Uuid) -> Result<Option<AssignedTask>> {
-        let key = Self::make_key(capability, id);
+    pub fn get_assigned(&self, id: &TaskId) -> Result<Option<AssignedTask>> {
+        let key = Self::make_key(id);
         if let Some(value) = self.assigned.get(key.as_bytes())? {
             Ok(Some(rmp_serde::from_slice(&value)?))
         } else {
@@ -116,7 +107,7 @@ impl TaskStorage {
 
     pub fn update_assigned(&self, assigned: &AssignedTask) -> Result<()> {
         let bytes = rmp_serde::to_vec_named(assigned)?;
-        let key = Self::make_key(&assigned.capability, assigned.id);
+        let key = Self::make_key(&assigned.id);
         self.assigned.insert(key.as_bytes(), bytes)?;
         return Ok(());
     }
