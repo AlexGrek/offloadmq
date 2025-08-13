@@ -127,6 +127,8 @@ pub struct AgentLoginResponse {
 #[serde(rename_all = "camelCase")]
 pub struct SystemInfo {
     pub os: String,
+    pub client: String,
+    pub runtime: String,
     pub cpu_arch: String,
     pub total_memory_mb: u64,
     pub gpu: Option<GpuInfo>,
