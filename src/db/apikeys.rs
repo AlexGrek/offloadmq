@@ -2,10 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use sled::Db;
 
-use crate::{
-    error::AppError,
-    models::ClientApiKey,
-};
+use crate::{error::AppError, models::ClientApiKey};
 
 pub struct ApiKeysStorage {
     _db: Db,
@@ -53,6 +50,21 @@ impl ApiKeysStorage {
             }
         }
         return false;
+    }
+
+    pub fn list_all(&self) -> Vec<ClientApiKey> {
+        let mut keys = Vec::new();
+
+        // Get all agents from database (cache might not have all due to TTL)
+        for item in self.active.iter() {
+            if let Ok((_, v)) = item {
+                if let Ok(k) = rmp_serde::from_slice::<ClientApiKey>(&v) {
+                    keys.push(k);
+                }
+            }
+        }
+
+        keys
     }
 
     /// Check if the given capability is allowed by the key's capabilities (supporting wildcards)
