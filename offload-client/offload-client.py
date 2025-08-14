@@ -17,6 +17,7 @@ import requests
 import sys
 import re
 import uuid
+from urllib.parse import quote
 import subprocess
 import time
 from dataclasses import dataclass
@@ -57,7 +58,7 @@ class TaskId:
 
 
 def parse_id(d: Dict[str, str]):
-    return TaskId(id=d["id"], cap=d["cap"])
+    return TaskId(id=quote(d["id"], safe=""), cap=d["cap"])
 
 
 @dataclass
@@ -277,7 +278,8 @@ def execute_llm_query(
         )
 
     # Send the report back to the main server
-    report_url = f"{server_url}/private/agent/task/resolve/{report.task_id.cap}/{report.task_id.id}"
+    quoted = quote(report.task_id.cap, safe='')
+    report_url = f"{server_url}/private/agent/task/resolve/{quoted}/{report.task_id.id}"
     try:
         print(f"Reporting LLM query result for task {task_id}")
         response = requests.post(report_url, json=report.to_json(), headers=headers)
@@ -315,7 +317,7 @@ def serve_tasks(server_url: str, jwt_token: str):
 
                 if task_info and task_info.get("id"):
                     task_id_str = task_info.get("id").get("id")
-                    task_cap = task_info.get("id").get("cap")
+                    task_cap = quote(task_info.get("id").get("cap"), safe="")
 
                     # Now, make a POST request to 'take' the task
                     take_url = (
