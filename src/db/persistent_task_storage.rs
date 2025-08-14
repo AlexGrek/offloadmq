@@ -57,8 +57,8 @@ impl TaskStorage {
             return Ok(assigned);
         }
         Err(AppError::Conflict(format!(
-            "Unassigned task not found: {}|{:?}",
-            id.cap, id
+            "Unassigned task not found: {}",
+            id
         )))
     }
 

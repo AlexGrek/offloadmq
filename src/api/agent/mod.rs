@@ -45,6 +45,10 @@ pub async fn fetch_task_non_urgent_handler(
         "Searching for tasks for agent {:?} with tier {:?}",
         agent, agent.tier
     );
+    let urgent = find_urgent_tasks_with_capabilities(&app_state.urgent, caps).await;
+    if let Some(urgent_found) = urgent {
+        return Ok(Json(urgent_found).into_response());
+    }
     let all = find_assignable_non_urgent_tasks_with_capabilities_for_tier(
         &app_state.storage.tasks,
         caps,

@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     middleware::from_fn_with_state,
+    response::IntoResponse,
     routing::*,
 };
 use hyper::StatusCode;
@@ -11,7 +12,9 @@ use log::{info, warn};
 use offloadmq::{
     api::agent::{auth_agent, register_agent, update_agent_info},
     db::app_storage::AppStorage,
+    error::AppError,
     models::Agent,
+    schema::{AgentLoginResponse, AgentRegistrationResponse},
     state::AppState,
 };
 use offloadmq::{middleware::auth::Auth, *};
