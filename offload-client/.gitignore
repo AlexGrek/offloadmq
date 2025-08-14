@@ -3,3 +3,5 @@
 /build
 /dist
 offload-client.spec
+**/__pycache__
+**/*.pyc

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {Trash} from "lucide-react";
+import { Trash } from "lucide-react";
 import './App.css';
+import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
 
 // ----- Utility: API fetch with Authorization header from LocalStorage -----
 const TOKEN_KEY = "offload-mq-mgmt-token";
@@ -25,25 +26,25 @@ async function apiFetch(path, options = {}) {
 // ----- Icons (inline SVG) -----
 const Icon = {
   menu: (p) => (
-    <svg viewBox="0 0 24 24" width="20" height="20" {...p}><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+    <svg viewBox="0 0 24 24" width="20" height="20" {...p}><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
   ),
   refresh: (p) => (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path d="M20 12a8 8 0 1 1-2.343-5.657" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M20 4v6h-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+    <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path d="M20 12a8 8 0 1 1-2.343-5.657" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><path d="M20 4v6h-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
   ),
   trash: (p) => (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path d="M3 6h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" strokeWidth="2"/><path d="M10 6V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2" stroke="currentColor" strokeWidth="2"/></svg>
+    <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path d="M3 6h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" strokeWidth="2" /><path d="M10 6V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2" stroke="currentColor" strokeWidth="2" /></svg>
   ),
   key: (p) => (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path d="M21 10l-6 6h-3l-2 2H7v-3l2-2v-3l6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="16" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
+    <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path d="M21 10l-6 6h-3l-2 2H7v-3l2-2v-3l6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><circle cx="16" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="2" /></svg>
   ),
   settings: (p) => (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="currentColor" strokeWidth="2" fill="none"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V22a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 6.04 3.4l.06.06A1.65 1.65 0 0 0 7.92 3a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H22a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" strokeWidth="1.5" fill="none"/></svg>
+    <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="currentColor" strokeWidth="2" fill="none" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V22a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 6.04 3.4l.06.06A1.65 1.65 0 0 0 7.92 3a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H22a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" strokeWidth="1.5" fill="none" /></svg>
   ),
   check: (p) => (
-    <svg viewBox="0 0 24 24" width="16" height="16" {...p}><path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round"/></svg>
+    <svg viewBox="0 0 24 24" width="16" height="16" {...p}><path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" /></svg>
   ),
   x: (p) => (
-    <svg viewBox="0 0 24 24" width="16" height="16" {...p}><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+    <svg viewBox="0 0 24 24" width="16" height="16" {...p}><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
   ),
 };
 
@@ -92,7 +93,6 @@ function AgentsPage() {
   const toggle = (uid) => setExpanded((s) => ({ ...s, [uid]: !s[uid] }));
 
   const onDelete = async (uid) => {
-    if (!confirm("Delete this agent?")) return;
     try {
       await apiFetch(`/management/agents/delete/${encodeURIComponent(uid)}`, { method: "POST" });
       await load();
@@ -130,12 +130,13 @@ function AgentsPage() {
                     <div className="row-sub">
                       <Chip>Tier {a.tier}</Chip>
                       <Chip>Capacity {a.capacity}</Chip>
-                      <Chip>{(a.capabilities||[]).length} caps</Chip>
-                      <Chip>{a.lastContact ? "Seen " + new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(Math.round((new Date(a.lastContact)-Date.now())/60000), "minute") : "Never"}</Chip>
+                      <Chip>{(a.capabilities || []).length} caps</Chip>
+                      <Chip>{a.lastContact ? "Seen " + new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(Math.round((new Date(a.lastContact) - Date.now()) / 60000), "minute") : "Never"}</Chip>
                     </div>
                   </div>
                   <div className="row-actions">
-                    <button className="btn danger" onClick={(e)=>{e.stopPropagation(); onDelete(a.uid);}} title="Delete"><Trash/></button>
+                    <ExpandableDeleteButton onDelete={() => { onDelete(a.uid); }} itemName={a.uid} />
+                    {/* <button className="btn danger" onClick={(e)=>{e.stopPropagation(); onDelete(a.uid);}} title="Delete"><Trash/></button> */}
                   </div>
                 </div>
 
@@ -171,7 +172,7 @@ function AgentsPage() {
                         </div>
                         <div>
                           <div className="section-title">Capabilities</div>
-                          <div className="chips-wrap">{(a.capabilities||[]).map((c,i)=>(<Chip key={i}>{c}</Chip>))}</div>
+                          <div className="chips-wrap">{(a.capabilities || []).map((c, i) => (<Chip key={i}>{c}</Chip>))}</div>
                         </div>
                       </div>
                     </motion.div>
@@ -206,11 +207,11 @@ function ApiKeysPage() {
     }
   };
 
-  useEffect(()=>{ load(); }, []);
+  useEffect(() => { load(); }, []);
 
   const onCreate = async (e) => {
     e.preventDefault();
-    const capabilities = caps.split(",").map(s=>s.trim()).filter(Boolean);
+    const capabilities = caps.split(",").map(s => s.trim()).filter(Boolean);
     try {
       await apiFetch("/management/client_api_keys/update", {
         method: "POST",
@@ -222,7 +223,6 @@ function ApiKeysPage() {
   };
 
   const onRevoke = async (key) => {
-    if (!confirm("Revoke this API key?")) return;
     try {
       await apiFetch(`/management/client_api_keys/revoke/${encodeURIComponent(key)}`, { method: "POST" });
       await load();
@@ -233,19 +233,19 @@ function ApiKeysPage() {
     <div className="page">
       <div className="page-head">
         <div className="title">API Keys</div>
-        <div className="actions"><button className="btn" onClick={load}><Icon.refresh/> <span>Refresh</span></button></div>
+        <div className="actions"><button className="btn" onClick={load}><Icon.refresh /> <span>Refresh</span></button></div>
       </div>
 
       <form className="card form" onSubmit={onCreate}>
         <div className="form-row">
           <label>Key</label>
-          <input value={keyVal} onChange={(e)=>setKeyVal(e.target.value)} placeholder="my-app-key-123" required />
+          <input value={keyVal} onChange={(e) => setKeyVal(e.target.value)} placeholder="my-app-key-123" required />
         </div>
         <div className="form-row">
           <label>Capabilities</label>
-          <input value={caps} onChange={(e)=>setCaps(e.target.value)} placeholder="capA, capB, capC" />
+          <input value={caps} onChange={(e) => setCaps(e.target.value)} placeholder="capA, capB, capC" />
         </div>
-        <div className="form-actions"><button className="btn primary" type="submit"><Icon.key/> <span>Create / Update</span></button></div>
+        <div className="form-actions"><button className="btn primary" type="submit"><Icon.key /> <span>Create / Update</span></button></div>
       </form>
 
       {error && <Banner kind="error">{error}</Banner>}
@@ -254,7 +254,7 @@ function ApiKeysPage() {
         <div className="loader" aria-busy="true">Loading…</div>
       ) : (
         <ul className="list">
-          {items.map((it)=> (
+          {items.map((it) => (
             <li key={it.key} className="card">
               <div className="row">
                 <div className="row-main">
@@ -266,13 +266,13 @@ function ApiKeysPage() {
                   </div>
                 </div>
                 <div className="row-actions">
-                  <button className="btn danger" onClick={()=>onRevoke(it.key)} disabled={it.isRevoked}>Revoke</button>
+                  <ExpandableDeleteButton onDelete={() => onRevoke(it.key)} disabled={it.isRevoked} customActionText="Revoke" itemName={it.key}/>
                 </div>
               </div>
-              {(it.capabilities||[]).length>0 && (
+              {(it.capabilities || []).length > 0 && (
                 <div className="pad">
                   <div className="section-title">Capabilities</div>
-                  <div className="chips-wrap">{it.capabilities.map((c,i)=>(<Chip key={i}>{c}</Chip>))}</div>
+                  <div className="chips-wrap">{it.capabilities.map((c, i) => (<Chip key={i}>{c}</Chip>))}</div>
                 </div>
               )}
             </li>
@@ -286,7 +286,7 @@ function ApiKeysPage() {
 // ----- Settings Page -----
 function SettingsPage() {
   const [token, setToken] = useState("");
-  useEffect(()=>{ setToken(localStorage.getItem(TOKEN_KEY)||""); }, []);
+  useEffect(() => { setToken(localStorage.getItem(TOKEN_KEY) || ""); }, []);
   const save = () => { localStorage.setItem(TOKEN_KEY, token); alert("Token saved"); };
 
   return (
@@ -297,10 +297,10 @@ function SettingsPage() {
       <div className="card form">
         <div className="form-row">
           <label>Management Token</label>
-          <input value={token} onChange={(e)=>setToken(e.target.value)} placeholder="paste your token here" />
+          <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="paste your token here" />
         </div>
         <div className="form-actions">
-          <button className="btn primary" onClick={save}><Icon.check/> <span>Save</span></button>
+          <button className="btn primary" onClick={save}><Icon.check /> <span>Save</span></button>
         </div>
       </div>
       {!token && (
@@ -320,34 +320,34 @@ const Placeholder = ({ title }) => (
 
 // ----- App Shell -----
 const routes = [
-  { id: "agents", label: "Agents", icon: <Icon.check/> },
-  { id: "api-keys", label: "API keys", icon: <Icon.key/> },
-  { id: "tasks", label: "Tasks", icon: <Icon.check/> },
-  { id: "sandbox", label: "Sandbox", icon: <Icon.check/> },
+  { id: "agents", label: "Agents", icon: <Icon.check /> },
+  { id: "api-keys", label: "API keys", icon: <Icon.key /> },
+  { id: "tasks", label: "Tasks", icon: <Icon.check /> },
+  { id: "sandbox", label: "Sandbox", icon: <Icon.check /> },
 ];
 
 export default function App() {
   const [route, setRoute] = useState("agents");
   const [navOpen, setNavOpen] = useState(false);
-  const tokenMissing = !(localStorage.getItem(TOKEN_KEY)||"");
+  const tokenMissing = !(localStorage.getItem(TOKEN_KEY) || "");
 
-  useEffect(()=>{
+  useEffect(() => {
     const onResize = () => { if (window.innerWidth > 900) setNavOpen(true); };
     onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  useEffect(()=>{ if (window.innerWidth > 900) setNavOpen(true); }, []);
+  useEffect(() => { if (window.innerWidth > 900) setNavOpen(true); }, []);
 
-  const Page = useMemo(()=>{
-    switch(route){
-      case "agents": return <AgentsPage/>;
-      case "api-keys": return <ApiKeysPage/>;
-      case "tasks": return <Placeholder title="Tasks"/>;
-      case "sandbox": return <Placeholder title="Sandbox"/>;
-      case "settings": return <SettingsPage/>;
-      default: return <AgentsPage/>;
+  const Page = useMemo(() => {
+    switch (route) {
+      case "agents": return <AgentsPage />;
+      case "api-keys": return <ApiKeysPage />;
+      case "tasks": return <Placeholder title="Tasks" />;
+      case "sandbox": return <Placeholder title="Sandbox" />;
+      case "settings": return <SettingsPage />;
+      default: return <AgentsPage />;
     }
   }, [route]);
 
@@ -355,9 +355,9 @@ export default function App() {
     <div className="app">
 
       <header className="topbar">
-        <button className="icon" onClick={()=>setNavOpen(s=>!s)} aria-label="Toggle menu"><Icon.menu/></button>
+        <button className="icon" onClick={() => setNavOpen(s => !s)} aria-label="Toggle menu"><Icon.menu /></button>
         <div className="brand">Offload MQ – Management</div>
-        <div className="spacer"/>
+        <div className="spacer" />
         {tokenMissing && <span className="badge warn">No token</span>}
       </header>
 
@@ -367,15 +367,15 @@ export default function App() {
             <motion.aside className="sidebar" initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} transition={{ type: "spring", stiffness: 150, damping: 18 }}>
               <nav>
                 {routes.map(r => (
-                  <button key={r.id} className={`nav-item ${route===r.id?"active":""}`} onClick={()=>{ setRoute(r.id); if (window.innerWidth < 900) setNavOpen(false); }}>
+                  <button key={r.id} className={`nav-item ${route === r.id ? "active" : ""}`} onClick={() => { setRoute(r.id); if (window.innerWidth < 900) setNavOpen(false); }}>
                     <span className="icon-wrap">{r.icon}</span>
                     <span>{r.label}</span>
                   </button>
                 ))}
               </nav>
               <div className="bottom">
-                <button className={`nav-item ${route==="settings"?"active":""}`} onClick={()=>{ setRoute("settings"); if (window.innerWidth < 900) setNavOpen(false); }}>
-                  <span className="icon-wrap"><Icon.settings/></span>
+                <button className={`nav-item ${route === "settings" ? "active" : ""}`} onClick={() => { setRoute("settings"); if (window.innerWidth < 900) setNavOpen(false); }}>
+                  <span className="icon-wrap"><Icon.settings /></span>
                   <span>Settings</span>
                 </button>
               </div>
