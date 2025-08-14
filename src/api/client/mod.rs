@@ -77,8 +77,8 @@ pub async fn submit_task(
 
 pub async fn poll_task_status(
     State(app_state): State<Arc<AppState>>,
-    Json(req): Json<ApiKeyRequest>,
     Path((cap, id)): Path<(String, String)>,
+    Json(req): Json<ApiKeyRequest>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     let task_id = TaskId { cap, id };
     let task = app_state

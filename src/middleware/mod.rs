@@ -126,9 +126,9 @@ pub async fn apikey_auth_middleware_user(
         .map_err(|e| AppError::Authorization(format!("Failed to parse JSON body: {}", e)))?;
 
     if !app_state
-        .config
-        .client_api_keys
-        .contains(&api_key_payload.api_key)
+        .storage
+        .client_keys
+        .is_key_real_not_revoked(&api_key_payload.api_key)
     {
         return Err(AppError::Authorization(format!(
             "Unauthorized: {api_key_payload:?}"

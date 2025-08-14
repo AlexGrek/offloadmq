@@ -4,8 +4,7 @@ use sled::Db;
 
 use crate::{
     error::AppError,
-    models::{AssignedTask, ClientApiKey, UnassignedTask},
-    schema::{TaskId, TaskStatus},
+    models::ClientApiKey,
 };
 
 pub struct ApiKeysStorage {
@@ -45,6 +44,15 @@ impl ApiKeysStorage {
             }
         }
         return Err(AppError::Authorization("API key invalid".to_string()));
+    }
+
+    pub fn is_key_real_not_revoked(&self, key: &str) -> bool {
+        if let Some(key_descr) = self.find_active(key).unwrap_or(None) {
+            if !key_descr.is_revoked {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// Check if the given capability is allowed by the key's capabilities (supporting wildcards)

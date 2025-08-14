@@ -4,7 +4,6 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     middleware::from_fn_with_state,
-    response::IntoResponse,
     routing::*,
 };
 use hyper::StatusCode;
@@ -12,9 +11,7 @@ use log::{info, warn};
 use offloadmq::{
     api::agent::{auth_agent, register_agent, update_agent_info},
     db::app_storage::AppStorage,
-    error::AppError,
     models::Agent,
-    schema::{AgentLoginResponse, AgentRegistrationResponse},
     state::AppState,
 };
 use offloadmq::{middleware::auth::Auth, *};
@@ -87,6 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Router::new()
                 .route("/ping", get(health_check))
                 .route("/task/submit", post(api::client::submit_task))
+                .route("/task/poll/{cap}/{id}", post(api::client::poll_task_status))
                 .route(
                     "/task/submit_blocking",
                     post(api::client::submit_task_blocking),
