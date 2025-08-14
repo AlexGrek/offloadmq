@@ -4,7 +4,9 @@ use chrono::{DateTime, TimeDelta, Utc};
 use tokio::{sync::watch, time};
 
 use crate::{
-    error::AppError, models::{AssignedTask, UnassignedTask}, schema::{TaskId, TaskStatus}
+    error::AppError,
+    models::{AssignedTask, UnassignedTask},
+    schema::{TaskId, TaskStatus},
 };
 
 pub struct TaskState {
@@ -74,7 +76,10 @@ impl UrgentTaskStore {
             ttl: TimeDelta::seconds(ttl_secs),
         };
 
-        self.tasks.write().await.insert(entry.task.id.clone(), entry);
+        self.tasks
+            .write()
+            .await
+            .insert(entry.task.id.clone(), entry);
 
         Ok(state)
     }
@@ -93,10 +98,24 @@ impl UrgentTaskStore {
         false
     }
 
-    pub async fn complete_task(&self, task_id: &TaskId, success: bool, payload: serde_json::Value) -> Result<bool, AppError> {
+    pub async fn complete_task(
+        &self,
+        task_id: &TaskId,
+        success: bool,
+        payload: serde_json::Value,
+    ) -> Result<bool, AppError> {
         let mut tasks = self.tasks.write().await;
         if let Some(entry) = tasks.get_mut(task_id) {
-            entry.assigned_task.as_mut().ok_or(AppError::Conflict("Task is not assigned but reported".to_string()))?.result = Some(payload);
+            let task = entry.assigned_task.as_mut().ok_or(AppError::Conflict(
+                "Task is not assigned but reported".to_string(),
+            ))?;
+            task.result = Some(payload);
+            task.change_status(if success {
+                TaskStatus::Completed
+            } else {
+                TaskStatus::Failed
+            });
+
             let mut status = entry.state.status.write().await;
             *status = if success {
                 TaskStatus::Completed
@@ -104,7 +123,7 @@ impl UrgentTaskStore {
                 TaskStatus::Failed
             };
             let _ = entry.state.notify.send(status.clone());
-            return Ok(true)
+            return Ok(true);
         }
         Ok(false)
     }
