@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use axum::{Json, extract::State, response::IntoResponse};
+use axum::{
+    Json,
+    extract::{Path, State},
+    response::IntoResponse,
+};
 use chrono::Utc;
 use log::info;
 use serde_json::json;
@@ -9,7 +13,7 @@ use crate::{
     error::AppError,
     models::UnassignedTask,
     mq::scheduler::submit_urgent_task,
-    schema::{TaskId, TaskSubmissionRequest},
+    schema::{ApiKeyRequest, TaskId, TaskSubmissionRequest},
     state::AppState,
 };
 
@@ -68,5 +72,47 @@ pub async fn submit_task(
             "message": "Added to tasks queue"
         }))
         .into_response());
+    }
+}
+
+pub async fn poll_task_status(
+    State(app_state): State<Arc<AppState>>,
+    Json(req): Json<ApiKeyRequest>,
+    Path((cap, id)): Path<(String, String)>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    let task_id = TaskId { cap, id };
+    let task = app_state
+        .storage
+        .tasks
+        .get_assigned(&task_id)?
+        .map(|ass| {
+            if ass.data.api_key != req.api_key {
+                None
+            } else {
+                Some(ass)
+            }
+        })
+        .flatten()
+        .map(|ass| Json(ass).into_response())
+        .or(app_state
+            .storage
+            .tasks
+            .get_unassigned(&task_id)?
+            .map(|unass| {
+                if unass.data.api_key != req.api_key {
+                    None
+                } else {
+                    Some(unass)
+                }
+            })
+            .flatten()
+            .map(|un| Json(un).into_response()));
+    if let Some(response) = task {
+        return Ok(response);
+    } else {
+        if let Some(urgent) = app_state.urgent.get_assigned_task(&task_id).await {
+            return Ok(Json(urgent).into_response());
+        }
+        return Err(AppError::NotFound(task_id.to_string()));
     }
 }

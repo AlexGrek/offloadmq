@@ -181,6 +181,13 @@ pub struct TaskSubmissionRequest {
     pub api_key: String,
 }
 
+/// Request body for a client with api_key field.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiKeyRequest {
+    pub api_key: String,
+}
+
 /// Unique task identifier that contains queue id (capability) and task id within that queue
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Eq, PartialEq, Hash)]
 #[serde(rename_all = "camelCase")]

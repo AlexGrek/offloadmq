@@ -59,7 +59,7 @@ pub struct AssignedTask {
     /// The unique ID assigned to this task by the MQ.
     pub id: TaskId,
     /// The data provided by client required for this task.
-    data: TaskSubmissionRequest,
+    pub data: TaskSubmissionRequest,
     /// Agent assigned to this task
     pub agent_id: String,
     /// The current status of the task.
