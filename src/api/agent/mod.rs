@@ -5,6 +5,7 @@ use axum::{
     extract::{Path, State},
     response::IntoResponse,
 };
+use chrono::Utc;
 use log::{debug, info};
 use rand::seq::IndexedRandom;
 use serde_json::json;
@@ -12,13 +13,13 @@ use serde_json::json;
 use crate::{
     error::AppError,
     middleware::AuthenticatedAgent,
-    models::UnassignedTask,
+    models::{Agent, UnassignedTask},
     mq::scheduler::{
         find_assignable_non_urgent_tasks_with_capabilities_for_tier,
         find_urgent_tasks_with_capabilities, report_non_urgent_task, report_urgent_task,
         try_pick_up_non_urgent_task, try_pick_up_urgent_task,
     },
-    schema::{TaskId, TaskResultReport},
+    schema::{self, TaskId, TaskResultReport},
     state::AppState,
 };
 
@@ -59,6 +60,66 @@ pub async fn fetch_task_non_urgent_handler(
     } else {
         Ok(Json(Option::<UnassignedTask>::None).into_response())
     }
+}
+
+pub async fn update_agent_info(
+    AuthenticatedAgent(mut agent): AuthenticatedAgent,
+    State(state): State<Arc<AppState>>,
+    Json(info): Json<schema::AgentUpdateRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    agent.capabilities = info.capabilities;
+    agent.capacity = info.capacity;
+    agent.last_contact = Some(Utc::now());
+    agent.system_info = info.system_info;
+    agent.tier = info.tier;
+
+    let uid = agent.uid.clone();
+    let key = agent.personal_login_token.clone();
+
+    state.storage.agents.update_agent(agent)?;
+    Ok(Json(schema::AgentRegistrationResponse {
+        agent_id: uid,
+        message: "Updated".to_string(),
+        key: key,
+    }))
+}
+
+pub async fn register_agent(
+    State(state): State<Arc<AppState>>,
+    Json(agent): Json<schema::AgentRegistrationRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    validate_api_key(&state.config.agent_api_keys, &agent.api_key)?;
+    let mut agent_object: Agent = agent.into();
+    state.storage.agents.create_agent(&mut agent_object)?;
+    Ok(Json(schema::AgentRegistrationResponse {
+        agent_id: agent_object.uid,
+        message: "Registered".to_string(),
+        key: agent_object.personal_login_token,
+    }))
+}
+
+pub async fn auth_agent(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<schema::AgentLoginRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let mk_auth_err = || AppError::Authorization("Incorrect credentials".to_string());
+    let agent = state
+        .storage
+        .agents
+        .get_agent(&request.agent_id)
+        .ok_or_else(|| mk_auth_err())?;
+    if agent.personal_login_token != request.key {
+        return Err(mk_auth_err());
+    }
+    let (token, expires_in) = state.auth.create_token(&agent.uid)?;
+    Ok(Json(schema::AgentLoginResponse { token, expires_in }))
+}
+
+pub fn validate_api_key(keys: &Vec<String>, key: &str) -> Result<(), AppError> {
+    if keys.iter().find(|item| *item == key).is_none() {
+        return Err(AppError::Authorization("Incorrect API key".to_string()));
+    }
+    Ok(())
 }
 
 pub async fn try_take_task_handler(

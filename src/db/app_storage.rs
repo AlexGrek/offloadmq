@@ -1,8 +1,7 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use crate::{db::{
-    agent::CachedAgentStorage,
-    persistent_task_storage::TaskStorage,
+    agent::CachedAgentStorage, apikeys::ApiKeysStorage, persistent_task_storage::TaskStorage
 }, models::Agent};
 
 // Composite storage for both agents and tasks
@@ -10,6 +9,7 @@ use crate::{db::{
 pub struct AppStorage {
     pub agents: Arc<CachedAgentStorage>,
     pub tasks: Arc<TaskStorage>,
+    pub client_keys: Arc<ApiKeysStorage>
 }
 
 impl AppStorage {
@@ -27,6 +27,9 @@ impl AppStorage {
 
         let mut tasks_path = PathBuf::from(base_path);
         tasks_path.push("tasks");
+
+        let mut client_keys_path = PathBuf::from(base_path);
+        client_keys_path.push("client_api_keys");
 
         // Create directories if they don't exist
         if let Some(parent) = agents_path.parent() {
@@ -54,8 +57,9 @@ impl AppStorage {
         )?);
 
         let tasks = Arc::new(TaskStorage::open(tasks_path.to_str().unwrap())?);
+        let client_keys = Arc::new(ApiKeysStorage::open(client_keys_path.to_str().unwrap())?);
 
-        Ok(Self { agents, tasks })
+        Ok(Self { agents, tasks, client_keys })
     }
 
     /// Get cache statistics for agents

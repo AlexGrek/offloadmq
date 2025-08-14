@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{Json, extract::State, response::IntoResponse};
 use chrono::Utc;
-use log::{info};
+use log::info;
 use serde_json::json;
 
 use crate::{
@@ -17,6 +17,10 @@ pub async fn submit_task_blocking(
     State(app_state): State<Arc<AppState>>,
     Json(req): Json<TaskSubmissionRequest>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
+    app_state
+        .storage
+        .client_keys
+        .verify_key(&req.api_key, &req.capability)?;
     if !req.urgent {
         return Err(AppError::BadRequest(
             "Only urgent tasks can be submitted to this endpoint".to_string(),
@@ -38,6 +42,10 @@ pub async fn submit_task(
     State(app_state): State<Arc<AppState>>,
     Json(req): Json<TaskSubmissionRequest>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
+    app_state
+        .storage
+        .client_keys
+        .verify_key(&req.api_key, &req.capability)?;
     let urgent = req.urgent;
     let task = UnassignedTask {
         id: TaskId::new_with_cap(req.capability.clone()),

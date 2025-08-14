@@ -26,7 +26,7 @@ pub enum TaskStatus {
     /// The task is in the queue, waiting for an available agent.
     Queued,
     /// The task is locked for a specific agent, but this agent did not picked it up yet
-    Pinned,
+    Pinned(String),
     /// The task has been assigned to an agent and transferred to the agent
     Assigned,
     /// Agent is preparing the task for execution
@@ -90,6 +90,20 @@ pub struct AgentRegistrationRequest {
     /// Information about the agent's host system.
     pub system_info: SystemInfo,
     pub api_key: String,
+}
+
+/// Body of the request for an agent to update itself.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentUpdateRequest {
+    /// A list of capabilities this agent provides (e.g., "LLM::mistral").
+    pub capabilities: Vec<String>,
+    /// The performance tier of the agent (higher is better).
+    pub tier: u8,
+    /// The number of concurrent tasks this agent can handle. Defaults to 1.
+    pub capacity: u32,
+    /// Information about the agent's host system.
+    pub system_info: SystemInfo,
 }
 
 /// A simple confirmation response after a successful agent registration.

@@ -10,6 +10,7 @@ use axum::{
 use hyper::StatusCode;
 use log::{info, warn};
 use offloadmq::{
+    api::agent::{auth_agent, register_agent, update_agent_info},
     db::app_storage::AppStorage,
     error::AppError,
     models::Agent,
@@ -44,13 +45,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create app state
     let app_state = AppState::new(app_storage, config.clone(), auth);
     let shared_state = Arc::new(app_state);
+    shared_state
+        .storage
+        .client_keys
+        .initialize_from_list(&shared_state.config.client_api_keys)?;
 
     // Build the application router
     let app = Router::new()
         // Agent routes
         .route("/agents", get(list_agents))
-        .route("/agents", post(create_agent))
+        .route("/agent/register", post(register_agent))
         .route("/agent/auth", post(auth_agent))
+        .route("/agent/update", post(update_agent_info))
         .route("/agents/{id}", get(get_agent))
         .route("/agents/{id}", put(update_agent))
         .route("/agents/{id}", delete(delete_agent))
@@ -61,13 +67,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/private/agent",
             Router::new()
                 .route("/ping", get(health_check))
-                .route("/task/poll_urgent", get(api::agent::fetch_task_urgent_handler))
-                .route("/task/poll", get(api::agent::fetch_task_non_urgent_handler))
                 .route(
-                    "/take/{cap}/{id}",
-                    post(api::agent::try_take_task_handler),
+                    "/task/poll_urgent",
+                    get(api::agent::fetch_task_urgent_handler),
                 )
-                .route("/task/resolve/{cap}/{id}", post(api::agent::post_task_resolution))
+                .route("/task/poll", get(api::agent::fetch_task_non_urgent_handler))
+                .route("/take/{cap}/{id}", post(api::agent::try_take_task_handler))
+                .route(
+                    "/task/resolve/{cap}/{id}",
+                    post(api::agent::post_task_resolution),
+                )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,
@@ -118,44 +127,6 @@ async fn list_agents(State(state): State<Arc<AppState>>) -> Result<Json<Value>, 
         "cached_agents": stats.0,
         "cached_tokens": stats.1
     })))
-}
-
-async fn create_agent(
-    State(state): State<Arc<AppState>>,
-    Json(agent): Json<schema::AgentRegistrationRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    validate_api_key(&state.config.agent_api_keys, &agent.api_key)?;
-    let mut agent_object: Agent = agent.into();
-    state.storage.agents.create_agent(&mut agent_object)?;
-    Ok(Json(AgentRegistrationResponse {
-        agent_id: agent_object.uid,
-        message: "Registered".to_string(),
-        key: agent_object.personal_login_token,
-    }))
-}
-
-async fn auth_agent(
-    State(state): State<Arc<AppState>>,
-    Json(request): Json<schema::AgentLoginRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let mk_auth_err = || AppError::Authorization("Incorrect credentials".to_string());
-    let agent = state
-        .storage
-        .agents
-        .get_agent(&request.agent_id)
-        .ok_or_else(|| mk_auth_err())?;
-    if agent.personal_login_token != request.key {
-        return Err(mk_auth_err());
-    }
-    let (token, expires_in) = state.auth.create_token(&agent.uid)?;
-    Ok(Json(AgentLoginResponse { token, expires_in }))
-}
-
-pub fn validate_api_key(keys: &Vec<String>, key: &str) -> Result<(), AppError> {
-    if keys.iter().find(|item| *item == key).is_none() {
-        return Err(AppError::Authorization("Incorrect API key".to_string()));
-    }
-    Ok(())
 }
 
 async fn get_agent(
