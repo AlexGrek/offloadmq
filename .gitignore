@@ -4,3 +4,5 @@
 **/.DS_Store
 .secrets.yaml
 /.vite
+**/__pycache__
+**/*.pyc

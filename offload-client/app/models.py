@@ -49,7 +49,7 @@ class TaskResultReport(BaseModel):
     capability: str
 
     class Config:
-        allow_population_by_field_name = True
+        validate_by_name = True
 
     def to_wire(self) -> Dict[str, Any]:
         return {

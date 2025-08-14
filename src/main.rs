@@ -2,16 +2,14 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::State,
     middleware::from_fn_with_state,
     routing::*,
 };
-use hyper::StatusCode;
-use log::{info, warn};
+use log::info;
 use offloadmq::{
     api::agent::{auth_agent, register_agent, update_agent_info},
     db::app_storage::AppStorage,
-    models::Agent,
     state::AppState,
 };
 use offloadmq::{middleware::auth::Auth, *};
@@ -51,13 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build the application router
     let app = Router::new()
         // Agent routes
-        .route("/agents", get(list_agents))
         .route("/agent/register", post(register_agent))
         .route("/agent/auth", post(auth_agent))
-        .route("/agent/update", post(update_agent_info))
-        .route("/agents/{id}", get(get_agent))
-        .route("/agents/{id}", put(update_agent))
-        .route("/agents/{id}", delete(delete_agent))
         // Health check and stats
         .route("/health", get(health_check))
         .route("/stats", get(get_stats))
@@ -65,6 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/private/agent",
             Router::new()
                 .route("/ping", get(health_check))
+                .route("/info/update", post(update_agent_info))
                 .route(
                     "/task/poll_urgent",
                     get(api::agent::fetch_task_urgent_handler),
@@ -140,61 +134,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// Agent handlers
-async fn list_agents(State(state): State<Arc<AppState>>) -> Result<Json<Value>, StatusCode> {
-    // Note: This would need a list_all_agents method in AppStorage
-    // For now, return a placeholder
-    let stats = state.storage.get_agent_cache_stats();
-    Ok(Json(json!({
-        "message": "List agents endpoint",
-        "cached_agents": stats.0,
-        "cached_tokens": stats.1
-    })))
-}
-
-async fn get_agent(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<String>,
-) -> Result<Json<Agent>, StatusCode> {
-    match state.storage.get_agent(&id) {
-        Some(agent) => Ok(Json(agent)),
-        None => Err(StatusCode::NOT_FOUND),
-    }
-}
-
-async fn update_agent(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(mut agent): Json<Agent>,
-) -> Result<Json<Value>, StatusCode> {
-    // Ensure the agent ID matches the path parameter
-    agent.uid = id;
-
-    match state.storage.update_agent(agent) {
-        Ok(()) => Ok(Json(json!({
-            "message": "Agent updated successfully"
-        }))),
-        Err(e) => {
-            warn!("Failed to update agent: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}
-
-async fn delete_agent(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<String>,
-) -> Result<Json<Value>, StatusCode> {
-    match state.storage.delete_agent(&id) {
-        Ok(()) => Ok(Json(json!({
-            "message": "Agent deleted successfully"
-        }))),
-        Err(e) => {
-            warn!("Failed to delete agent: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}
 
 // Utility handlers
 async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {
