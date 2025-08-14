@@ -5,6 +5,8 @@ psutil>=5.8.0
 # GPU detection (optional but recommended)
 pynvml>=11.4.0
 GPUtil>=1.4.0
+typer[all]
+pydantic
 
 # Note: pynvml is for NVIDIA GPU detection
 # GPUtil provides a more general GPU interface
