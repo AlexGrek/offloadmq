@@ -1,4 +1,3 @@
-
 use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -25,6 +24,11 @@ impl UnassignedTask {
             agent_id: agent_id.to_string(),
             created_at: self.created_at.clone(),
             assigned_at: Utc::now(),
+            status: TaskStatus::Assigned,
+            history: vec![TaskEvent {
+                timestamp: Utc::now(),
+                description: format!("Assigned to {agent_id}"),
+            }],
             ..AssignedTask::default()
         }
     }
@@ -36,6 +40,11 @@ impl UnassignedTask {
             agent_id: agent_id.to_string(),
             created_at: self.created_at,
             assigned_at: Utc::now(),
+            status: TaskStatus::Assigned,
+            history: vec![TaskEvent {
+                timestamp: Utc::now(),
+                description: format!("Assigned to {agent_id}"),
+            }],
             ..AssignedTask::default()
         }
     }
@@ -72,6 +81,16 @@ pub struct AssignedTask {
     // task execution result (populated on success with data or on failure with logs, depends on specific task, may be empty)
     #[serde(default)]
     pub result: Option<serde_json::Value>,
+}
+
+impl AssignedTask {
+    pub fn change_status(&mut self, new_status: TaskStatus) {
+        self.history.push(TaskEvent {
+            timestamp: Utc::now(),
+            description: format!("Status set to {:?}", new_status),
+        });
+        self.status = new_status;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

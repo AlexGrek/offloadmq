@@ -52,7 +52,7 @@ pub async fn try_pick_up_urgent_task(
 ) -> Result<Option<AssignedTask>, AppError> {
     let success = store.assign_task(uid, &agent.uid).await;
     if !success {
-        return Ok(None)
+        return Ok(None);
     }
     let task_opt = store.get_assigned_task(uid).await;
     if let Some(task) = task_opt {
@@ -98,11 +98,11 @@ pub async fn report_non_urgent_task<'a>(
     let mut got = store
         .get_assigned(&report.id)?
         .ok_or(AppError::NotFound(report.id.to_string()))?;
-    got.status = if success {
+    got.change_status(if success {
         TaskStatus::Completed
     } else {
         TaskStatus::Failed
-    };
+    });
     got.result = report.output;
     store.update_assigned(&got)?;
     Ok(())
