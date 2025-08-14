@@ -32,7 +32,7 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
             try:
                 vram_mb = int(float(mem))
             except ValueError:
-                vram_mb = None
+                vram_mb = 0
             return {"vendor": "NVIDIA", "model": name, "vramMb": vram_mb}
 
     # 2) macOS via system_profiler
@@ -47,7 +47,7 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
                     model = g.get("_name") or "GPU"
                     vram = g.get("spdisplays_vram") or g.get("spdisplays_vram_shared")
                     # system_profiler doesn't give exact MB easily; leave None when unclear
-                    return {"vendor": "Apple/AMD", "model": model, "vramMb": None}
+                    return {"vendor": "Apple/AMD", "model": model, "vramMb": 0}
             except Exception:
                 pass
 
@@ -58,7 +58,7 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
             line = out.strip()
             model = line.split(":")[-1].strip() if ":" in line else line
             vendor = "AMD" if "AMD" in model or "Advanced Micro Devices" in model else ("Intel" if "Intel" in model else ("NVIDIA" if "NVIDIA" in model else "Unknown"))
-            return {"vendor": vendor, "model": model, "vramMb": None}
+            return {"vendor": vendor, "model": model, "vramMb": 0}
 
     # 4) Windows via PowerShell CIM (wmic deprecated)
     if platform.system() == "Windows":

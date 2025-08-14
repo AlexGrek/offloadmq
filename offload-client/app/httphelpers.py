@@ -33,7 +33,9 @@ def register_agent(
         "apiKey": api_key,
     }
     url = server.rstrip("/") + "/agent/register"
+    print(registration_data)
     resp = requests.post(url, json=registration_data, timeout=30)
+    print(resp.content)
     resp.raise_for_status()
     return resp.json()
 
