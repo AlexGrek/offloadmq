@@ -9,7 +9,6 @@ use std::fmt::Display;
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value; // Using Value for flexible payloads
-use uuid::Uuid;
 
 use crate::utils::time_sortable_uid;
 
