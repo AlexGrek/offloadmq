@@ -34,7 +34,7 @@ def cli_register(
     key: Optional[str] = typer.Option(None, help="API key (required if not in config)"),
     tier: int = typer.Option(5, help="Performance tier (0-255)"),
     caps: List[str] = typer.Option(
-        ["debug::echo", "shell::bash"], help="Agent capabilities"
+        ["debug::echo", "shell::bash", "TTS::kokoro"], help="Agent capabilities"
     ),
     capacity: int = typer.Option(1, help="Concurrent task capacity"),
 ):

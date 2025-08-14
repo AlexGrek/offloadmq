@@ -529,7 +529,7 @@ def register(
     server: Optional[str] = typer.Option(None, help="Server URL (required if not in config)"),
     key: Optional[str] = typer.Option(None, help="API key (required if not in config)"),
     tier: int = typer.Option(5, help="Performance tier (0-255, default: 5)"),
-    caps: List[str] = typer.Option(["debug::echo", "shell::bash"], "--cap", help="Agent capability; repeatable"),
+    caps: List[str] = typer.Option(["debug::echo", "shell::bash", "TTS::kokoro"], "--cap", help="Agent capability; repeatable"),
     capacity: int = typer.Option(1, help="Concurrent task capacity (default: 1)"),
 ):
     """Register a new agent with the server"""
