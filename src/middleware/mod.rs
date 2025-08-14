@@ -103,6 +103,38 @@ pub async fn jwt_auth_middleware_agent(
     }
 }
 
+pub async fn token_auth_middleware_mgmt(
+    State(app_state): State<Arc<AppState>>,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, AppError> {
+    let (parts, body) = req.into_parts();
+
+    let path = parts.uri.path();
+
+    if path == "/register" || path == "/login" {
+        let req = Request::from_parts(parts, body);
+        return Ok(next.run(req).await);
+    }
+
+    let auth_header = parts
+        .headers
+        .get("Authorization")
+        .and_then(|header| header.to_str().ok());
+
+    let token =
+        auth_header.and_then(|header| header.strip_prefix("Bearer ").map(|s| s.to_string()));
+
+    let token = token.ok_or(AppError::Authorization("Unauthorized".to_string()))?;
+
+    if token == app_state.config.management_token {
+        let req = Request::from_parts(parts, body);
+        Ok(next.run(req).await)
+    } else {
+        Err(AppError::Authorization("Unauthorized".to_string()))
+    }
+}
+
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct ApiKeyPayload {

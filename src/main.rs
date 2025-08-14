@@ -4,7 +4,6 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     middleware::from_fn_with_state,
-    response::IntoResponse,
     routing::*,
 };
 use hyper::StatusCode;
@@ -12,9 +11,7 @@ use log::{info, warn};
 use offloadmq::{
     api::agent::{auth_agent, register_agent, update_agent_info},
     db::app_storage::AppStorage,
-    error::AppError,
     models::Agent,
-    schema::{AgentLoginResponse, AgentRegistrationResponse},
     state::AppState,
 };
 use offloadmq::{middleware::auth::Auth, *};
@@ -36,6 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  Database path: {}", config.database_root_path);
     info!("  Agent API keys: {:?}", config.agent_api_keys);
     info!("  Client API keys: {:?}", config.client_api_keys);
+    info!("  Management token: {}", config.management_token);
 
     // Initialize storage with config path and default 120s TTL
     let app_storage =
@@ -80,6 +78,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,
+                )),
+        )
+        .nest(
+            "/management",
+            Router::new()
+                .route(
+                    "/capabilities/list/online",
+                    get(api::mgmt::capabilities_online),
+                )
+                .route("/agents/list", get(api::mgmt::list_agents))
+                .route("/agents/list/online", get(api::mgmt::list_agents_online))
+                .route("/agents/delete/{agent_id}", post(api::mgmt::remove_agent))
+                .route("/client_api_keys/list", get(api::mgmt::client_api_keys))
+                .route(
+                    "/client_api_keys/update",
+                    post(api::mgmt::add_client_api_key),
+                )
+                .route(
+                    "/client_api_keys/revoke/{id}",
+                    post(api::mgmt::revoke_client_api_key),
+                )
+                .layer(from_fn_with_state(
+                    shared_state.clone(),
+                    middleware::token_auth_middleware_mgmt,
                 )),
         )
         .nest(

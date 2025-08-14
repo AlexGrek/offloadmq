@@ -146,3 +146,15 @@ pub struct ClientApiKey {
     pub created: DateTime<Utc>,
     pub is_revoked: bool,
 }
+
+impl From<CreateApiKeyRequest> for ClientApiKey {
+    fn from(value: CreateApiKeyRequest) -> Self {
+        Self {
+            key: value.key,
+            capabilities: value.capabilities,
+            is_predefined: false,
+            created: Utc::now(),
+            is_revoked: false
+        }
+    }
+}

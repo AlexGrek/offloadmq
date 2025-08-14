@@ -10,7 +10,10 @@ use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value; // Using Value for flexible payloads
 
-use crate::{error::AppError, utils::{time_sortable_uid, url_decode, url_encode}};
+use crate::{
+    error::AppError,
+    utils::{time_sortable_uid, url_decode},
+};
 
 //=============================================================================
 //  Enums & Common Types
@@ -56,7 +59,7 @@ impl Default for TaskStatus {
 pub enum TaskResultStatus {
     Success(f64),
     Failure(String, f64),
-    NotExecuted(String)
+    NotExecuted(String),
 }
 
 /// Task retry on failure policy
@@ -68,9 +71,8 @@ pub struct TaskRetryConfiguration {
     /// Maximun retries count, setting it to 0 makes it actually non-restartable
     pub max_retries: u64,
     /// Retry delay: how much time should pass before another retry
-    pub retry_delay: Duration
+    pub retry_delay: Duration,
 }
-
 
 //=============================================================================
 //  Agent Lifecycle API
@@ -103,6 +105,14 @@ pub struct AgentUpdateRequest {
     pub capacity: u32,
     /// Information about the agent's host system.
     pub system_info: SystemInfo,
+}
+
+/// Body of management request to create API key
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateApiKeyRequest {
+    pub key: String,
+    pub capabilities: Vec<String>,
 }
 
 /// A simple confirmation response after a successful agent registration.
@@ -156,7 +166,6 @@ pub struct GpuInfo {
     pub vram_mb: u64,
 }
 
-
 //=============================================================================
 //  Task Lifecycle API
 //=============================================================================
@@ -194,19 +203,21 @@ pub struct TaskId {
     /// Capability, also doubles as a queue id
     pub cap: String,
     /// Unique task identifier, incremental string
-    pub id: String
+    pub id: String,
 }
 
 impl TaskId {
     pub fn new_with_cap(cap: String) -> TaskId {
         Self {
-            cap, id: time_sortable_uid()
+            cap,
+            id: time_sortable_uid(),
         }
     }
 
     pub fn from_url(id: String, cap: String) -> Result<TaskId, AppError> {
         Ok(Self {
-            cap: url_decode(&cap)?, id
+            cap: url_decode(&cap)?,
+            id,
         })
     }
 }
@@ -221,7 +232,7 @@ impl Display for TaskId {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskSubmissionResponse {
-    task: TaskId
+    task: TaskId,
 }
 
 /// Response body for a client polling the status of a task (`GET /tasks/{cap}/{id}`).

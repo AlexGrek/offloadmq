@@ -8,6 +8,7 @@ pub struct AppConfig {
     pub database_root_path: String,
     pub agent_api_keys: Vec<String>,
     pub client_api_keys: Vec<String>,
+    pub management_token: String,
     pub host: String,
     pub port: u16,
 }
@@ -20,6 +21,9 @@ impl AppConfig {
 
         let jwt_secret = env::var("JWT_SECRET")
             .unwrap_or_else(|_| "default_jwt_secret_change_in_production".to_string());
+
+        let management_token = env::var("MGMT_TOKEN")
+            .unwrap_or_else(|_| "default_mgmt_token_change_in_production".to_string());
 
         let database_root_path = env::var("DATABASE_ROOT_PATH")
             .unwrap_or_else(|_| "./data".to_string());
@@ -52,6 +56,7 @@ impl AppConfig {
             client_api_keys,
             host,
             port,
+            management_token
         })
     }
 }

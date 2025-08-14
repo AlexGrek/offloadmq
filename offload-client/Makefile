@@ -12,7 +12,7 @@ ollama: venv
 	bash -c "source venv/bin/activate && python offload-client.py ollama"
 
 # The build target creates the standalone binary using PyInstaller
-build:
+build: venv
 	@echo "Installing PyInstaller..."
 	bash -c "source venv/bin/activate && pip install pyinstaller --quiet"
 	@echo "Building binary with PyInstaller..."
