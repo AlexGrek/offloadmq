@@ -10,7 +10,7 @@ use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value; // Using Value for flexible payloads
 
-use crate::utils::time_sortable_uid;
+use crate::{error::AppError, utils::{time_sortable_uid, url_decode, url_encode}};
 
 //=============================================================================
 //  Enums & Common Types
@@ -202,6 +202,12 @@ impl TaskId {
         Self {
             cap, id: time_sortable_uid()
         }
+    }
+
+    pub fn from_url(id: String, cap: String) -> Result<TaskId, AppError> {
+        Ok(Self {
+            cap: url_decode(&cap)?, id
+        })
     }
 }
 

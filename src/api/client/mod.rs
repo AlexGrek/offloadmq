@@ -80,7 +80,7 @@ pub async fn poll_task_status(
     Path((cap, id)): Path<(String, String)>,
     Json(req): Json<ApiKeyRequest>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
-    let task_id = TaskId { cap, id };
+    let task_id = TaskId::from_url(id, cap)?;
     let task = app_state
         .storage
         .tasks

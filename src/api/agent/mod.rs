@@ -119,7 +119,7 @@ pub async fn auth_agent(
     Ok(Json(schema::AgentLoginResponse { token, expires_in }))
 }
 
-pub fn validate_api_key(keys: &Vec<String>, key: &str) -> Result<(), AppError> {
+fn validate_api_key(keys: &Vec<String>, key: &str) -> Result<(), AppError> {
     if keys.iter().find(|item| *item == key).is_none() {
         return Err(AppError::Authorization("Incorrect API key".to_string()));
     }
@@ -132,7 +132,7 @@ pub async fn try_take_task_handler(
     Path((cap, id)): Path<(String, String)>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     // check urgent tasks first
-    let task_id = TaskId { cap, id };
+    let task_id = TaskId::from_url(id, cap)?;
     info!("Agent {} picking up task {task_id}", agent.uid_short);
     if let Some(picked) = try_pick_up_urgent_task(&app_state.urgent, &agent, &task_id).await? {
         Ok(Json(picked))
@@ -151,10 +151,7 @@ pub async fn post_task_resolution(
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     // check urgent tasks first
     agent = app_state.storage.agents.update_agent_last_contact(agent)?;
-    let task_id = TaskId {
-        cap,
-        id: id.clone(),
-    };
+    let task_id = TaskId::from_url(id.clone(), cap)?;
     if report.id != task_id {
         return Err(AppError::BadRequest(id));
     }
