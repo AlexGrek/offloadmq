@@ -54,8 +54,8 @@ impl Default for TaskStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum TaskResultStatus {
-    Success(Duration),
-    Failure(String, Duration),
+    Success(f64),
+    Failure(String, f64),
     NotExecuted(String)
 }
 
@@ -207,7 +207,7 @@ impl TaskId {
 
 impl Display for TaskId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}/{}", self.cap, self.id)
+        write!(f, "{}[{}]", self.cap, self.id)
     }
 }
 
