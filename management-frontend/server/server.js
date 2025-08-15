@@ -9,8 +9,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // Environment variables (with defaults)
-const API_TARGET = process.env.API_TARGET || 'http://localhost:5000';
-const MGMT_TARGET = process.env.MGMT_TARGET || 'http://localhost:5001';
+const API_TARGET = process.env.API_TARGET + '/api' || 'http://localhost:5000';
+const MGMT_TARGET = process.env.MGMT_TARGET + '/management' || 'http://localhost:5001';
 const PORT = process.env.PORT || 8080;
 
 console.log('Starting proxy server...');
