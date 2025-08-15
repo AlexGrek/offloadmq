@@ -19,8 +19,7 @@ app.use(
   createProxyMiddleware({
     target: API_TARGET,
     changeOrigin: true,
-    pathRewrite: { '^/api': '/api' },
-    logLevel: 'warn',
+    logLevel: 'debug',
   })
 );
 
@@ -29,8 +28,7 @@ app.use(
   createProxyMiddleware({
     target: MGMT_TARGET,
     changeOrigin: true,
-    pathRewrite: { '^/management': '/management' },
-    logLevel: 'warn',
+    logLevel: 'debug',
   })
 );
 
