@@ -50,8 +50,12 @@ app.get('*', (req, res) => {
 async function testBackendAuth() {
   try {
     const res = await fetch(`${MGMT_TARGET}/management/agents/list`);
-    if (res.status === 401) {
-      console.log(`[Startup] Backend management endpoint returned expected UNAUTHORIZED (401)`);
+    if (res.status === 403) {
+      console.log(`[Startup] Backend management endpoint returned expected FORBIDDEN (403)`);
+      const text = await res.text();
+      if (text) {
+        console.log(`[Startup] Backend management endpoint response: ${text}`);
+      }
     } else {
       console.error(`[Startup] Unexpected status from backend: ${res.status} ${res.statusText}`);
     }
