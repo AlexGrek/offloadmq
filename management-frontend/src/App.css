@@ -48,7 +48,9 @@ body {
 }
 
 .topbar .brand {
-  font-weight: 700;
+  font-weight: 400;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: large;
   letter-spacing: .2px
 }
 

@@ -2,19 +2,14 @@ import React, { useEffect, useMemo, useCallback, useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
-import { HardDriveDownload, KeySquare, ListChecks, Menu, Settings2, SquarePlay } from "lucide-react";
+import { Brackets, HardDriveDownload, KeySquare, ListChecks, Menu, Settings2, SquarePlay } from "lucide-react";
 import AgentsPage from "./components/AgentsPage";
 import { TOKEN_KEY } from "./utils";
 import ApiKeysPage from "./components/ApiKeysPage";
 import SettingsPage from "./components/SettingsPage";
-
-// ----- Dummy Pages -----
-const Placeholder = ({ title }) => (
-  <div className="page">
-    <div className="page-head"><div className="title">{title}</div></div>
-    <div className="card">This is a placeholder page. Build your UI here.</div>
-  </div>
-);
+import TasksPage from "./components/TasksPage";
+import ApiTestingTool from "./components/ApiTestingTool";
+import SandboxApps from "./components/SandboxApps";
 
 // ----- App Shell -----
 const routes = [
@@ -22,6 +17,7 @@ const routes = [
   { id: "api-keys", label: "API keys", icon: <KeySquare /> },
   { id: "tasks", label: "Tasks", icon: <ListChecks /> },
   { id: "sandbox", label: "Sandbox", icon: <SquarePlay /> },
+  { id: "json", label: "JSON", icon: <Brackets /> },
 ];
 
 export default function App() {
@@ -42,8 +38,9 @@ export default function App() {
     switch (route) {
       case "agents": return <AgentsPage />;
       case "api-keys": return <ApiKeysPage />;
-      case "tasks": return <Placeholder title="Tasks" />;
-      case "sandbox": return <Placeholder title="Sandbox" />;
+      case "tasks": return <TasksPage />;
+      case "sandbox": return <SandboxApps />;
+      case "json": return <ApiTestingTool />;
       case "settings": return <SettingsPage />;
       default: return <AgentsPage />;
     }
@@ -54,7 +51,7 @@ export default function App() {
 
       <header className="topbar">
         <button className="icon" onClick={() => setNavOpen(s => !s)} aria-label="Toggle menu"><Menu /></button>
-        <div className="brand">Offload MQ – Management</div>
+        <div className="brand">Offload MQ Management Console</div>
         <div className="spacer" />
         {tokenMissing && <span className="badge warn">No token</span>}
       </header>

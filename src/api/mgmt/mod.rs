@@ -87,7 +87,7 @@ pub async fn add_client_api_key(
 }
 
 pub async fn list_tasks(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, AppError> {
-    let tasks = state.urgent.tasks.blocking_read();
+    let tasks = state.urgent.tasks.read().await;
     let urgent: Vec<_> = tasks.iter().map(|entry| entry.1).collect();
     let urgent_assigned: Vec<_> = urgent
         .iter()
