@@ -8,130 +8,103 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// CRITICAL: Add this FIRST to see if Express is even seeing the requests
-app.use((req, res, next) => {
-  if (req.path.startsWith('/management') || req.path.startsWith('/api')) {
-    console.log(`[INTERCEPT] ${req.method} ${req.path} - Before proxy middleware`);
-  }
-  next();
-});
-
 // Environment variables (with defaults)
 const API_TARGET = process.env.API_TARGET || 'http://localhost:5000';
 const MGMT_TARGET = process.env.MGMT_TARGET || 'http://localhost:5001';
 const PORT = process.env.PORT || 8080;
 
-// Removed general request logging as requested
+console.log('Starting proxy server...');
+console.log(`API_TARGET: ${API_TARGET}`);
+console.log(`MGMT_TARGET: ${MGMT_TARGET}`);
 
-// Direct proxy setup - simpler and more reliable
-app.use('/api', createProxyMiddleware({
-  target: API_TARGET,
-  changeOrigin: true,
-  logLevel: 'debug',
-  onProxyReq: (proxyReq, req) => {
-    console.log(`[API] PROXYING: ${req.method} ${req.originalUrl} -> ${API_TARGET}${proxyReq.path}`);
-  },
-  onProxyRes: (proxyRes, req) => {
-    console.log(`[API] RESPONSE: ${proxyRes.statusCode} for ${req.method} ${req.originalUrl}`);
-  },
-  onError: (err, req, res) => {
-    console.error(`[API] PROXY ERROR for ${req.originalUrl}:`, err.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'API proxy error', details: err.message });
-    }
-  }
-}));
+// MINIMAL DEBUG - see what's hitting the server
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
 
-// Direct proxy setup with explicit pathRewrite to handle nested paths
-app.use('/management', createProxyMiddleware({
+// VERSION 3.x SYNTAX - filter function + options
+const managementProxy = createProxyMiddleware({
   target: MGMT_TARGET,
   changeOrigin: true,
-  logLevel: 'debug',
-  pathRewrite: {
-    '^/management': '/management' // Keep the /management prefix
-  },
-  onProxyReq: (proxyReq, req) => {
-    console.log(`[MGMT] PROXYING: ${req.method} ${req.originalUrl} -> ${MGMT_TARGET}${proxyReq.path}`);
-  },
-  onProxyRes: (proxyRes, req) => {
-    console.log(`[MGMT] RESPONSE: ${proxyRes.statusCode} for ${req.method} ${req.originalUrl}`);
-  },
-  onError: (err, req, res) => {
-    console.error(`[MGMT] PROXY ERROR for ${req.originalUrl}:`, err.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Management proxy error', details: err.message });
+  logger: console,
+  on: {
+    proxyReq: function(proxyReq, req, res) {
+      console.log(`>>> MGMT PROXY REQ: ${req.method} ${req.url} -> ${MGMT_TARGET}${proxyReq.path}`);
+    },
+    proxyRes: function(proxyRes, req, res) {
+      console.log(`<<< MGMT PROXY RES: ${proxyRes.statusCode} ${req.method} ${req.url}`);
+    },
+    error: function(err, req, res) {
+      console.log(`!!! MGMT PROXY ERROR: ${err.message} for ${req.method} ${req.url}`);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Management proxy error: ' + err.message);
+      }
     }
   }
-}));
+});
 
-console.log("Proxy servers initialized");
-console.log(`API Proxy: /api -> ${API_TARGET}`);
-console.log(`MGMT Proxy: /management -> ${MGMT_TARGET}`);
+const apiProxy = createProxyMiddleware({
+  target: API_TARGET,
+  changeOrigin: true,
+  logger: console,
+  on: {
+    proxyReq: function(proxyReq, req, res) {
+      console.log(`>>> API PROXY REQ: ${req.method} ${req.url} -> ${API_TARGET}${proxyReq.path}`);
+    },
+    proxyRes: function(proxyRes, req, res) {
+      console.log(`<<< API PROXY RES: ${proxyRes.statusCode} ${req.method} ${req.url}`);
+    },
+    error: function(err, req, res) {
+      console.log(`!!! API PROXY ERROR: ${err.message} for ${req.method} ${req.url}`);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('API proxy error: ' + err.message);
+      }
+    }
+  }
+});
 
-// IMPORTANT: Proxy middlewares MUST come BEFORE static file serving
-// Otherwise static middleware will catch all requests first
+// Apply the proxies
+app.use('/management', managementProxy);
+app.use('/api', apiProxy);
 
-// Serve static frontend - but AFTER proxies
+// TEST ENDPOINTS - to verify server is working
+app.get('/test', (req, res) => {
+  res.json({ message: 'Server is working', timestamp: new Date().toISOString() });
+});
+
+app.get('/proxy-test', (req, res) => {
+  res.json({ 
+    message: 'Proxy test endpoint',
+    targets: {
+      api: API_TARGET,
+      management: MGMT_TARGET
+    }
+  });
+});
+
+// Serve static files AFTER proxies
 const staticPath = path.join(__dirname, 'dist');
-// app.use(express.static(staticPath));
-console.log("Static initialized: " + staticPath);
+app.use(express.static(staticPath));
 
-// SPA fallback: send all unknown requests to index.html
+// SPA fallback - LAST
 app.get('*', (req, res) => {
-  console.log(`[SPA] Serving index.html for: ${req.originalUrl}`);
   res.sendFile(path.join(staticPath, 'index.html'));
 });
 
-async function testBackendAuth() {
-  console.log(`[Startup] Testing backend connectivity...`);
-  
-  // Test both endpoints
-  const endpoints = [
-    { name: 'API', url: `${API_TARGET}/api/health` },
-    { name: 'MGMT', url: `${MGMT_TARGET}/management/agents/list` }
-  ];
-  
-  for (const endpoint of endpoints) {
-    try {
-      console.log(`[Startup] Testing ${endpoint.name}: ${endpoint.url}`);
-      const res = await fetch(endpoint.url);
-      console.log(`[Startup] ${endpoint.name} responded with status: ${res.status} ${res.statusText}`);
-      
-      if (res.status === 403) {
-        console.log(`[Startup] ${endpoint.name} returned expected FORBIDDEN (403)`);
-      } else if (res.status === 404) {
-        console.log(`[Startup] ${endpoint.name} endpoint not found (404) - check if backend is running`);
-      }
-      
-      const text = await res.text();
-      if (text) {
-        console.log(`[Startup] ${endpoint.name} response body:`, text.substring(0, 200));
-      }
-    } catch (err) {
-      console.error(`[Startup] Error reaching ${endpoint.name} (${endpoint.url}):`, err.message);
-    }
-  }
-}
-
-// Add error handling middleware
-app.use((err, req, res, next) => {
-  console.error('[ERROR] Express error handler:', err);
-  if (!res.headersSent) {
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
+// Start server
 app.listen(PORT, () => {
-  console.log(`Frontend server running at http://localhost:${PORT}`);
-  console.log(`Proxy /api -> ${API_TARGET}`);
-  console.log(`Proxy /management -> ${MGMT_TARGET}`);
-  console.log(`Static files serving from ${staticPath}`);
-  console.log(`---`);
-  console.log(`Test URLs:`);
-  console.log(`  Frontend: http://localhost:${PORT}`);
-  console.log(`  API Proxy: http://localhost:${PORT}/api/...`);
-  console.log(`  MGMT Proxy: http://localhost:${PORT}/management/...`);
-  console.log(`---`);
-  
-  testBackendAuth();
+  console.log(`===========================================`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Management proxy: /management -> ${MGMT_TARGET}`);
+  console.log(`API proxy: /api -> ${API_TARGET}`);
+  console.log(`Static files: ${staticPath}`);
+  console.log(`===========================================`);
+  console.log(`Test with:`);
+  console.log(`  curl http://localhost:${PORT}/test`);
+  console.log(`  curl http://localhost:${PORT}/management/anything`);
+  console.log(`  curl http://localhost:${PORT}/api/anything`);
+  console.log(`===========================================`);
 });
