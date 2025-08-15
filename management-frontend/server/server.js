@@ -13,11 +13,7 @@ const API_TARGET = process.env.API_TARGET || 'http://localhost:5000';
 const MGMT_TARGET = process.env.MGMT_TARGET || 'http://localhost:5001';
 const PORT = process.env.PORT || 8080;
 
-// Add request logging middleware BEFORE proxy setup
-app.use((req, res, next) => {
-  console.log(`[REQUEST] ${req.method} ${req.originalUrl} - Headers:`, req.headers);
-  next();
-});
+// Removed general request logging as requested
 
 // Direct proxy setup - simpler and more reliable
 app.use('/api', createProxyMiddleware({
@@ -38,10 +34,14 @@ app.use('/api', createProxyMiddleware({
   }
 }));
 
+// Direct proxy setup with explicit pathRewrite to handle nested paths
 app.use('/management', createProxyMiddleware({
   target: MGMT_TARGET,
   changeOrigin: true,
   logLevel: 'debug',
+  pathRewrite: {
+    '^/management': '/management' // Keep the /management prefix
+  },
   onProxyReq: (proxyReq, req) => {
     console.log(`[MGMT] PROXYING: ${req.method} ${req.originalUrl} -> ${MGMT_TARGET}${proxyReq.path}`);
   },
@@ -60,7 +60,10 @@ console.log("Proxy servers initialized");
 console.log(`API Proxy: /api -> ${API_TARGET}`);
 console.log(`MGMT Proxy: /management -> ${MGMT_TARGET}`);
 
-// Serve static frontend
+// IMPORTANT: Proxy middlewares MUST come BEFORE static file serving
+// Otherwise static middleware will catch all requests first
+
+// Serve static frontend - but AFTER proxies
 const staticPath = path.join(__dirname, 'dist');
 app.use(express.static(staticPath));
 console.log("Static initialized: " + staticPath);
