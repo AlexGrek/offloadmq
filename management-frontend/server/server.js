@@ -76,17 +76,6 @@ const staticPath = path.join(__dirname, 'dist');
 app.use(express.static(staticPath));
 console.log("Static initialized: " + staticPath);
 
-// Add a catch-all 404 handler BEFORE the SPA fallback
-app.use('/api/*', (req, res) => {
-  console.log(`[404] API route not handled by proxy: ${req.originalUrl}`);
-  res.status(404).json({ error: 'API endpoint not found', path: req.originalUrl });
-});
-
-app.use('/management/*', (req, res) => {
-  console.log(`[404] Management route not handled by proxy: ${req.originalUrl}`);
-  res.status(404).json({ error: 'Management endpoint not found', path: req.originalUrl });
-});
-
 // SPA fallback: send all unknown requests to index.html
 app.get('*', (req, res) => {
   console.log(`[SPA] Serving index.html for: ${req.originalUrl}`);
