@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "offloadmq-frontend.fullname" . }}
+  labels:
+    app: {{ include "offloadmq-frontend.name" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "offloadmq-frontend.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "offloadmq-frontend.name" . }}
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 80
+          env:
+            - name: API_TARGET
+              value: {{ .Values.backend.apiUrl | quote }}
+            - name: MGMT_TARGET
+              value: {{ .Values.backend.managementUrl | quote }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "offloadmq-frontend.fullname" . }}
+  labels:
+    app: {{ include "offloadmq-frontend.name" . }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 80
+      protocol: TCP
+  selector:
+    app: {{ include "offloadmq-frontend.name" . }}
