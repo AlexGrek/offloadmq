@@ -8,6 +8,14 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// CRITICAL: Add this FIRST to see if Express is even seeing the requests
+app.use((req, res, next) => {
+  if (req.path.startsWith('/management') || req.path.startsWith('/api')) {
+    console.log(`[INTERCEPT] ${req.method} ${req.path} - Before proxy middleware`);
+  }
+  next();
+});
+
 // Environment variables (with defaults)
 const API_TARGET = process.env.API_TARGET || 'http://localhost:5000';
 const MGMT_TARGET = process.env.MGMT_TARGET || 'http://localhost:5001';
