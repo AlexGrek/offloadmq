@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: your-docker-registry/offloadmq-frontend
+  repository: docker-registry/offloadmq-frontend
   tag: latest
   pullPolicy: Always
 

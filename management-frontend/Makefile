@@ -1,5 +1,5 @@
 APP_NAME := offloadmq-frontend
-CHART_DIR := management-chart
+CHART_DIR := offloadmq-frontend-chart
 NAMESPACE := offloadmq-frontend
 RELEASE := offloadmq-frontend
 
