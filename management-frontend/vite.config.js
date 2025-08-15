@@ -9,7 +9,12 @@ export default defineConfig({
       '/management': {
         target: 'http://localhost:3069',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '/api')
+        rewrite: (path) => path
+      },
+      '/api': {
+        target: 'http://localhost:3069',
+        changeOrigin: true,
+        rewrite: (path) => path
       }
     }
   }
