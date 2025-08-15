@@ -1,11 +1,6 @@
 use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    middleware::from_fn_with_state,
-    routing::*,
-};
+use axum::{Json, Router, extract::State, middleware::from_fn_with_state, routing::*};
 use log::info;
 use offloadmq::{
     api::agent::{auth_agent, register_agent, update_agent_info},
@@ -81,6 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/capabilities/list/online",
                     get(api::mgmt::capabilities_online),
                 )
+                .route("/tasks/list", get(api::mgmt::list_tasks))
                 .route("/agents/list", get(api::mgmt::list_agents))
                 .route("/agents/list/online", get(api::mgmt::list_agents_online))
                 .route("/agents/delete/{agent_id}", post(api::mgmt::remove_agent))
@@ -133,7 +129,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
 
 // Utility handlers
 async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {

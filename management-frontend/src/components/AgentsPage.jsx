@@ -4,6 +4,7 @@ import { apiFetch, fmtDate } from "../utils";
 import { RefreshCw } from "lucide-react";
 import Banner from "./Banner";
 import Chip from "./Chip";
+import ExpandableDeleteButton from "./ExpandableDeleteButton";
 
 function AgentsPage() {
     const [agents, setAgents] = useState([]);
@@ -73,7 +74,6 @@ function AgentsPage() {
                                     </div>
                                     <div className="row-actions">
                                         <ExpandableDeleteButton onDelete={() => { onDelete(a.uid); }} itemName={a.uid} />
-                                        {/* <button className="btn danger" onClick={(e)=>{e.stopPropagation(); onDelete(a.uid);}} title="Delete"><Trash/></button> */}
                                     </div>
                                 </div>
 

@@ -145,4 +145,16 @@ impl TaskStorage {
         }
         Ok(result)
     }
+
+    pub fn list_assigned_all(&self) -> Result<Vec<AssignedTask>> {
+        let mut result = Vec::new();
+        // The iter() method returns an iterator over all key-value pairs in the tree.
+        for item in self.assigned.iter() {
+            // Each item is a sled::Result<(IVec, IVec)>
+            let (_key, value) = item?;
+            let task: AssignedTask = rmp_serde::from_slice(&value)?;
+            result.push(task);
+        }
+        Ok(result)
+    }
 }
