@@ -23,6 +23,8 @@ spec:
           env:
             - name: API_TARGET
               value: {{ .Values.backend.apiUrl | quote }}
+            - name: PORT
+              value: "80"
             - name: MGMT_TARGET
               value: {{ .Values.backend.managementUrl | quote }}
           resources:
