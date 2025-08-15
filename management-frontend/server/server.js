@@ -47,9 +47,23 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(staticPath, 'index.html'));
 });
 
+async function testBackendAuth() {
+  try {
+    const res = await fetch(`${MGMT_TARGET}/management/agents/list`);
+    if (res.status === 401) {
+      console.log(`[Startup] Backend management endpoint returned expected UNAUTHORIZED (401)`);
+    } else {
+      console.error(`[Startup] Unexpected status from backend: ${res.status} ${res.statusText}`);
+    }
+  } catch (err) {
+    console.error(`[Startup] Error reaching backend: ${err.message}`);
+  }
+}
+
 app.listen(PORT, () => {
     console.log(`Frontend server running at http://localhost:${PORT}`);
     console.log(`Proxy /api -> ${API_TARGET}`);
     console.log(`Proxy /management -> ${MGMT_TARGET}`);
     console.log(`Static files are serving from ${staticPath}`);
+    testBackendAuth();
 });
