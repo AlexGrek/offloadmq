@@ -73,7 +73,7 @@ console.log(`MGMT Proxy: /management -> ${MGMT_TARGET}`);
 
 // Serve static frontend - but AFTER proxies
 const staticPath = path.join(__dirname, 'dist');
-app.use(express.static(staticPath));
+// app.use(express.static(staticPath));
 console.log("Static initialized: " + staticPath);
 
 // SPA fallback: send all unknown requests to index.html
