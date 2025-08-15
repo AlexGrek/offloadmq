@@ -34,9 +34,13 @@ function logProxy(label) {
 app.use('/api', createProxyMiddleware(logProxy('API')));
 app.use('/management', createProxyMiddleware(logProxy('MGMT')));
 
+console.log("Proxy servers initialized")
+
 // Serve static frontend
 const staticPath = path.join(__dirname, 'dist');
 app.use(express.static(staticPath));
+
+console.log("Static initialized: " + staticPath)
 
 // SPA fallback: send all unknown requests to index.html
 app.get('*', (req, res) => {
@@ -47,4 +51,5 @@ app.listen(PORT, () => {
     console.log(`Frontend server running at http://localhost:${PORT}`);
     console.log(`Proxy /api -> ${API_TARGET}`);
     console.log(`Proxy /management -> ${MGMT_TARGET}`);
+    console.log(`Static files are serving from ${staticPath}`);
 });
