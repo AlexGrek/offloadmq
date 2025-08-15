@@ -39,6 +39,11 @@ spec:
                 secretKeyRef:
                   name: offloadmq-secrets
                   key: AGENT_API_KEYS
+            - name: MGMT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: offloadmq-secrets
+                  key: MGMT_TOKEN
           resources:
 {{ toYaml .Values.resources | indent 12 }}
           volumeMounts:
