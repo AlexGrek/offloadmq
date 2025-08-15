@@ -136,17 +136,18 @@ const SandboxApps = () => {
 
           .modal-overlay {
             position: fixed;
-            top: 24px;
+            top: 44px; /* Anchor to the top */
             left: 0;
             width: 100%;
             height: 100%;
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start; /* Align content to the top */
             background-color: rgba(255, 255, 255, 0.75);
             backdrop-filter: blur(8px);
+            padding-top: 24px; /* Add padding from the top */
           }
-
+          
           .modal-content {
             background: #ffffff;
             padding: 24px;
@@ -157,12 +158,21 @@ const SandboxApps = () => {
             position: relative;
             z-index: 10000;
             overflow-y: auto;
-            max-height: 90vh;
+            max-height: calc(100vh - 48px); /* Adjust max-height for mobile */
+          }
+
+          @media (max-width: 600px) {
+            .modal-content {
+              width: 100%;
+              height: 100%;
+              max-height: 100%; /* Take full height on smaller screens */
+              border-radius: 0; /* Remove border radius for a full-screen feel */
+            }
           }
 
           .modal-header {
             display: flex;
-            justify-content: flex-start;
+            justify-content: flex-end; /* Move the close button to the right */
             margin-bottom: 16px;
           }
 
@@ -193,13 +203,18 @@ const SandboxApps = () => {
           
           .api-input-container {
             display: flex;
-            flex-wrap: auto;
+            flex-wrap: nowrap; /* Prevent wrapping */
+            align-items: center; /* Center items vertically */
+            gap: 10px; /* Space between input and button */
             width: 100%;
             max-width: 800px;
             margin-bottom: 24px;
             text-align: center;
             font-size: 14px;
-            margin-bottom: 3em;
+          }
+
+          .api-input-container label {
+            white-space: nowrap; /* Prevent label from wrapping */
           }
 
           .api-input {
@@ -222,6 +237,7 @@ const SandboxApps = () => {
             color: #6b7280;
             line-height: 1.6;
           }
+
           .modal-api-key {
             background-color: #e5e7eb;
             padding: 8px 12px;
