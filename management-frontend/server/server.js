@@ -19,47 +19,42 @@ app.use((req, res, next) => {
   next();
 });
 
-function logProxy(label) {
-  const target = label === 'API' ? API_TARGET : MGMT_TARGET;
-  
-  return {
-    target: target,
-    changeOrigin: true,
-    logLevel: 'debug',
-    // Add pathRewrite if needed to remove the prefix
-    // pathRewrite: {
-    //   [`^/${label.toLowerCase()}`]: '', // Remove /api or /management prefix
-    // },
-    onProxyReq: (proxyReq, req) => {
-      console.log(`[${label}] PROXYING: ${req.method} ${req.originalUrl} -> ${target}${proxyReq.path}`);
-      console.log(`[${label}] Target URL: ${proxyReq.protocol}//${proxyReq.host}${proxyReq.path}`);
-    },
-    onProxyRes: (proxyRes, req) => {
-      console.log(`[${label}] RESPONSE: ${proxyRes.statusCode} for ${req.method} ${req.originalUrl}`);
-    },
-    onError: (err, req, res) => {
-      console.error(`[${label}] PROXY ERROR for ${req.originalUrl}:`, err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Proxy error', details: err.message });
-      }
+// Direct proxy setup - simpler and more reliable
+app.use('/api', createProxyMiddleware({
+  target: API_TARGET,
+  changeOrigin: true,
+  logLevel: 'debug',
+  onProxyReq: (proxyReq, req) => {
+    console.log(`[API] PROXYING: ${req.method} ${req.originalUrl} -> ${API_TARGET}${proxyReq.path}`);
+  },
+  onProxyRes: (proxyRes, req) => {
+    console.log(`[API] RESPONSE: ${proxyRes.statusCode} for ${req.method} ${req.originalUrl}`);
+  },
+  onError: (err, req, res) => {
+    console.error(`[API] PROXY ERROR for ${req.originalUrl}:`, err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'API proxy error', details: err.message });
     }
-  };
-}
+  }
+}));
 
-// Create proxy middlewares
-const apiProxy = createProxyMiddleware('/api', logProxy('API'));
-const mgmtProxy = createProxyMiddleware('/management', logProxy('MGMT'));
-
-// Apply proxy middlewares
-app.use('/api', (req, res, next) => {
-  console.log(`[DEBUG] API proxy middleware hit for: ${req.originalUrl}`);
-  apiProxy(req, res, next);
-});
-
-app.use('/management', (req, res, next) => {
-  console.log(`[DEBUG] MGMT proxy middleware hit for: ${req.originalUrl}`);
-  mgmtProxy(req, res, next);
-});
+app.use('/management', createProxyMiddleware({
+  target: MGMT_TARGET,
+  changeOrigin: true,
+  logLevel: 'debug',
+  onProxyReq: (proxyReq, req) => {
+    console.log(`[MGMT] PROXYING: ${req.method} ${req.originalUrl} -> ${MGMT_TARGET}${proxyReq.path}`);
+  },
+  onProxyRes: (proxyRes, req) => {
+    console.log(`[MGMT] RESPONSE: ${proxyRes.statusCode} for ${req.method} ${req.originalUrl}`);
+  },
+  onError: (err, req, res) => {
+    console.error(`[MGMT] PROXY ERROR for ${req.originalUrl}:`, err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Management proxy error', details: err.message });
+    }
+  }
+}));
 
 console.log("Proxy servers initialized");
 console.log(`API Proxy: /api -> ${API_TARGET}`);
