@@ -11,6 +11,8 @@ const LlmApp = ({ apiKey }) => {
   const [response, setResponse] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDebug, setIsDebug] = useState(false);
+  const [request, setRequest] = useState(null);
 
   // Function to handle the API request
   const handleSubmit = async (e) => {
@@ -41,6 +43,7 @@ const LlmApp = ({ apiKey }) => {
     };
 
     try {
+      setRequest(JSON.stringify(payload, null, 2));
       // Send the request to the specified endpoint
       const res = await fetch('/api/task/submit_blocking', {
         method: 'POST',
@@ -116,6 +119,10 @@ const LlmApp = ({ apiKey }) => {
         {error && <pre style={styles.error}>{error}</pre>}
         {response && <p style={styles.response}>{response}</p>}
       </div>
+      {!isDebug && <button onClick={() => setIsDebug(true)}>Enable debug mode</button>}
+      {isDebug && <div style={styles.responseContainer}>
+        {request && <p style={styles.response}>{request}</p>}
+      </div>}
     </div>
   );
 };
