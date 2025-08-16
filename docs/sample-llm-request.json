@@ -1,0 +1,19 @@
+{
+  "capability": "LLM::dolphin-mistral",
+  "urgent": true,
+  "payload": {
+    "model": "dolphin-mistral",
+    "stream": false,
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a witty, concise writing assistant that rewrites user text into microfiction (≤200 words) in the voice of a 1970s travel guide. Keep sentences short, sprinkle one ironic aside, and always end with a tiny surprise."
+      },
+      {
+        "role": "user",
+        "content": "Write a 150-word kinky microfiction about a lost metro token that changes hands across Kyiv during a hot summer day. Include one vivid sensory detail, a brief character beat for two different holders, and finish with a twist that reframes the token's importance."
+      }
+    ]
+  },
+  "apiKey": "client_secret_key_123"
+}
