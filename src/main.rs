@@ -10,7 +10,7 @@ use offloadmq::{
 use offloadmq::{middleware::auth::Auth, *};
 use serde_json::{Value, json};
 use tokio::{net::TcpListener, time};
-use tower_http::trace::TraceLayer;
+use tower_http::{cors::{Any, CorsLayer}, trace::TraceLayer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/capabilities/list/online",
                     get(api::mgmt::capabilities_online),
                 )
-                .route("/tasks/list", get(api::mgmt::list_tasks))
+                .route("/tasks/list", get(api::mgmt::list_tasks)
                 .route("/agents/list", get(api::mgmt::list_agents))
                 .route("/agents/list/online", get(api::mgmt::list_agents_online))
                 .route("/agents/delete/{agent_id}", post(api::mgmt::remove_agent))
@@ -110,7 +110,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )),
         )
         .with_state(shared_state.clone())
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any) // or Origin::exact("http://localhost:3000".parse().unwrap())
+                .allow_methods(Any)
+                .allow_headers(Any),
+        );
 
     // Start the server
     let bind_address = format!("{}:{}", config.host, config.port);
