@@ -26,6 +26,16 @@ function TasksPage() {
         }
     }, []);
 
+    const handleReset = useCallback(async () => {
+        const url = "/management/tasks/reset";
+        try {
+            await apiFetch(url, { method: "POST" });
+            await load();
+        } catch (e) {
+            alert(`Failed to reset: ${e.message}`);
+        }
+    }, [load]);
+
     useEffect(() => { load(); }, [load]);
 
     return (
@@ -33,6 +43,7 @@ function TasksPage() {
             <div className="page-head">
                 <div className="title">Tasks</div>
                 <div className="actions">
+                    <ExpandableDeleteButton onDelete={handleReset} itemName="everything" customActionText="Reset" />
                     <label className="toggle">
                         <input type="checkbox" checked={newOnly} onChange={(e) => setNewOnly(e.target.checked)} />
                         <span>Unassigned only</span>
