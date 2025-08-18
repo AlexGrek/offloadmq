@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
+use log::info;
 use sled::Db;
 
 use crate::{
@@ -110,6 +111,14 @@ impl TaskStorage {
         let key = Self::make_key(&assigned.id);
         self.assigned.insert(key.as_bytes(), bytes)?;
         return Ok(());
+    }
+
+    pub fn hard_clear(&self) -> Result<()> {
+        info!("Performing tasks database cleanup");
+        self.assigned.clear()?;
+        self.unassigned.clear()?;
+        self.archived.clear()?;
+        Ok(())
     }
 
     /// List unassigned tasks for a given capability

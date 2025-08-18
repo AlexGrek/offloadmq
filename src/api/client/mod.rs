@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use axum::{
     Json,
@@ -10,8 +10,9 @@ use log::info;
 use serde_json::json;
 
 use crate::{
+    db::apikeys::ApiKeysStorage,
     error::AppError,
-    models::UnassignedTask,
+    models::{Agent, UnassignedTask},
     mq::scheduler::submit_urgent_task,
     schema::{ApiKeyRequest, TaskId, TaskSubmissionRequest},
     state::AppState,
@@ -115,4 +116,26 @@ pub async fn poll_task_status(
         }
         return Err(AppError::NotFound(task_id.to_string()));
     }
+}
+
+pub async fn capabilities_online(
+    State(app_state): State<Arc<AppState>>,
+    Json(req): Json<ApiKeyRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let key = app_state
+        .storage
+        .client_keys
+        .find_active(&req.api_key)?
+        .ok_or_else(|| AppError::Authorization("API key not found".to_string()))?;
+    let mut capabilities = HashSet::new();
+    app_state
+        .storage
+        .agents
+        .list_all_agents()
+        .into_iter()
+        .filter(Agent::is_online)
+        .map(|agent| agent.capabilities)
+        .for_each(|cap_list| capabilities.extend(cap_list));
+    capabilities.retain(|el| ApiKeysStorage::has_capability(&key.capabilities, el));
+    Ok(Json(capabilities))
 }

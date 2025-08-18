@@ -36,7 +36,7 @@ impl ApiKeysStorage {
 
     pub fn verify_key(&self, key: &str, cap: &str) -> Result<(), AppError> {
         if let Some(key_descr) = self.find_active(key)? {
-            if !key_descr.is_revoked && self.has_capability(&key_descr.capabilities, cap) {
+            if !key_descr.is_revoked && Self::has_capability(&key_descr.capabilities, cap) {
                 return Ok(());
             }
         }
@@ -68,7 +68,7 @@ impl ApiKeysStorage {
     }
 
     /// Check if the given capability is allowed by the key's capabilities (supporting wildcards)
-    fn has_capability(&self, key_capabilities: &[String], required_cap: &str) -> bool {
+    pub fn has_capability(key_capabilities: &[String], required_cap: &str) -> bool {
         for cap in key_capabilities {
             if cap == "*" {
                 // Universal wildcard allows everything

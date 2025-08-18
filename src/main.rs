@@ -10,7 +10,7 @@ use offloadmq::{
 use offloadmq::{middleware::auth::Auth, *};
 use serde_json::{Value, json};
 use tokio::{net::TcpListener, time};
-use tower_http::trace::TraceLayer;
+use tower_http::{cors::{Any, CorsLayer}, trace::TraceLayer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -77,7 +77,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     get(api::mgmt::capabilities_online),
                 )
                 .route("/tasks/list", get(api::mgmt::list_tasks))
+                .route("/tasks/reset", post(api::mgmt::reset_tasks))
                 .route("/agents/list", get(api::mgmt::list_agents))
+                .route("/agents/reset", post(api::mgmt::reset_agents))
                 .route("/agents/list/online", get(api::mgmt::list_agents_online))
                 .route("/agents/delete/{agent_id}", post(api::mgmt::remove_agent))
                 .route("/client_api_keys/list", get(api::mgmt::client_api_keys))
@@ -104,13 +106,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/task/submit_blocking",
                     post(api::client::submit_task_blocking),
                 )
+                .route("/capabilities/online", post(api::client::capabilities_online))
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::apikey_auth_middleware_user,
                 )),
         )
         .with_state(shared_state.clone())
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any) // or Origin::exact("http://localhost:3000".parse().unwrap())
+                .allow_methods(Any)
+                .allow_headers(Any),
+        );
 
     // Start the server
     let bind_address = format!("{}:{}", config.host, config.port);

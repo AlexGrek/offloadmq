@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, TimeDelta, Utc};
+use log::info;
 use tokio::{sync::watch, time};
 
 use crate::{
@@ -96,6 +97,12 @@ impl UrgentTaskStore {
             }
         }
         false
+    }
+
+    pub async fn hard_clear(&self) {
+        info!("Cleaning up urgent tasks queue");
+        
+        self.tasks.write().await.clear();
     }
 
     pub async fn complete_task(

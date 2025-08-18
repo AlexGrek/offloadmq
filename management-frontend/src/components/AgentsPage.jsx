@@ -39,11 +39,22 @@ function AgentsPage() {
         }
     };
 
+    const handleReset = useCallback(async () => {
+        const url = "/management/agents/reset";
+        try {
+            await apiFetch(url, { method: "POST" });
+            await load();
+        } catch (e) {
+            alert(`Failed to reset: ${e.message}`);
+        }
+    }, [load]);
+
     return (
         <div className="page">
             <div className="page-head">
                 <div className="title">Agents</div>
                 <div className="actions">
+                    <ExpandableDeleteButton onDelete={handleReset} itemName="everything" customActionText="Reset" />
                     <label className="toggle">
                         <input type="checkbox" checked={onlineOnly} onChange={(e) => setOnlineOnly(e.target.checked)} />
                         <span>Online only</span>

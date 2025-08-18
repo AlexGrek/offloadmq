@@ -6,6 +6,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde_json::json;
+use tracing::info;
 
 use crate::{
     error::AppError,
@@ -104,4 +105,21 @@ pub async fn list_tasks(State(state): State<Arc<AppState>>) -> Result<impl IntoR
                                 "unassigned": urgent_unassigned},
                             "regular": {"assigned": regular_assigned,
                                 "unassigned": regular_unassigned}})))
+}
+
+pub async fn reset_tasks(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    info!("Tasks reset triggered");
+    state.storage.tasks.hard_clear()?;
+    state.urgent.hard_clear().await;
+    Ok(Json(json!({"result": "Reset successful"})))
+}
+
+pub async fn reset_agents(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    info!("Agents reset triggered");
+    state.storage.agents.clear()?;
+    Ok(Json(json!({"result": "Reset successful"})))
 }

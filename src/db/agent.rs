@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use crate::models::Agent;
+use crate::{error::AppError, models::Agent};
 use chrono::Utc;
 use log::info;
 use lru_time_cache::LruCache;
@@ -143,6 +143,13 @@ impl CachedAgentStorage {
         self.db.flush()?;
 
         self.agent_cache.write().unwrap().remove(id);
+        Ok(())
+    }
+
+    pub fn clear(&self) -> Result<(), AppError> {
+        self.db.clear()?;
+        self.agent_cache.write().unwrap().clear();
+        self.token_cache.write().unwrap().clear();
         Ok(())
     }
 
