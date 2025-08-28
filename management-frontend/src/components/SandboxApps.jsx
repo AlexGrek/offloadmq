@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, FileText, Image, Mail, Music, SaveAll, Settings, User, X } from 'lucide-react';
+import { BrainCircuit, FileText, Image, Mail, Music, SaveAll, Settings, Shell, User, X } from 'lucide-react';
 
 // Define the content for each app as a functional component.
 // In a real-world application, these would be in separate files and imported.
@@ -53,14 +53,10 @@ const ProfileApp = ({ apiKey }) => (
 );
 
 const LlmApp = React.lazy(() => import('./LlmApp'))
+const BashApp = React.lazy(() => import('./BashApp'))
 
 const apps = [
-    { id: 'notes', name: 'Notes', logo: FileText, app: NotesApp },
-    { id: 'photos', name: 'Photos', logo: Image, app: PhotosApp },
-    { id: 'mail', name: 'Mail', logo: Mail, app: MailApp },
-    { id: 'music', name: 'Music', logo: Music, app: MusicApp },
-    { id: 'settings', name: 'Settings', logo: Settings, app: SettingsApp },
-    { id: 'profile', name: 'Profile', logo: User, app: ProfileApp },
+    { id: 'bash', name: 'LLM', logo: Shell, app: BashApp },
     { id: 'llm', name: 'LLM', logo: BrainCircuit, app: LlmApp },
 ];
 

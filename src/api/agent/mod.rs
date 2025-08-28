@@ -164,3 +164,25 @@ pub async fn post_task_resolution(
     }
     Ok(Json(json!({"message": "task report confirmed"})))
 }
+
+pub async fn post_task_progress_update(
+    AuthenticatedAgent(mut agent): AuthenticatedAgent,
+    State(app_state): State<Arc<AppState>>,
+    Path((cap, id)): Path<(String, String)>,
+    Json(report): Json<TaskResultReport>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    // check urgent tasks first
+    agent = app_state.storage.agents.update_agent_last_contact(agent)?;
+    let task_id = TaskId::from_url(id.clone(), cap)?;
+    if report.id != task_id {
+        return Err(AppError::BadRequest(id));
+    }
+    info!("Agent {} reporting task {task_id}", agent.uid_short);
+    debug!("Report: {:?}", &report);
+
+    let found = report_urgent_task(&app_state.urgent, report.clone(), task_id).await?;
+    if !found {
+        report_non_urgent_task(&app_state.storage.tasks, report).await?;
+    }
+    Ok(Json(json!({"message": "task report confirmed"})))
+}
