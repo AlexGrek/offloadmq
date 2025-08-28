@@ -247,6 +247,8 @@ pub struct TaskStatusResponse {
     /// The final output of the task, present only when status is 'completed'.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<Value>,
+
+    pub log: Option<String>
 }
 
 /// The message pushed to an agent via WebSocket to assign a new task.
@@ -268,4 +270,16 @@ pub struct TaskResultReport {
     /// object if it failed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskUpdate {
+    pub id: TaskId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
+    /// The output data if the task completed successfully, or an error
+    /// object if it failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_update: Option<String>,
 }
