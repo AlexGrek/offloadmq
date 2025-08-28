@@ -59,3 +59,6 @@ deploy: build push
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
 		$(MAKE) install; \
 	fi
+
+dev:
+	npm run dev
