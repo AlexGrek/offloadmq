@@ -149,7 +149,54 @@ const BashApp = ({ apiKey }) => {
             <div style={styles.responseContainer}>
                 {isLoading && <p style={styles.loading}>Executing command...</p>}
                 {error && <pre style={styles.error}>{error}</pre>}
-                {response && <pre style={styles.response}>{JSON.stringify(response, null, 2)}</pre>}
+                {response && (
+                    <div style={styles.terminal}>
+                        {(() => {
+                            try {
+                                // Try to parse as JSON
+                                const parsed = typeof response === 'string' ? JSON.parse(response) : response;
+
+                                if (parsed && typeof parsed === 'object' && ('stderr' in parsed || 'stdout' in parsed)) {
+                                    return (
+                                        <>
+                                            {parsed.stderr && (
+                                                <div style={styles.stderr}>
+                                                    <div style={styles.streamLabel}>stderr:</div>
+                                                    <pre style={{ ...styles.streamContent, color: '#FF6B6B' }}>{parsed.stderr}</pre>
+                                                </div>
+                                            )}
+                                            {parsed.stdout && (
+                                                <div style={styles.stdout}>
+                                                    <div style={styles.streamLabel}>stdout:</div>
+                                                    <pre style={styles.streamContent}>{parsed.stdout}</pre>
+                                                </div>
+                                            )}
+                                            {!parsed.stderr && !parsed.stdout && (
+                                                <pre style={styles.streamContent}>
+                                                    {JSON.stringify(parsed, null, 2)}
+                                                </pre>
+                                            )}
+                                        </>
+                                    );
+                                } else {
+                                    // Not the expected format, show as JSON
+                                    return (
+                                        <pre style={styles.streamContent}>
+                                            {JSON.stringify(parsed, null, 2)}
+                                        </pre>
+                                    );
+                                }
+                            } catch (e) {
+                                // Not valid JSON, show as raw text
+                                return (
+                                    <pre style={styles.streamContent}>
+                                        {typeof response === 'string' ? response : JSON.stringify(response, null, 2)}
+                                    </pre>
+                                );
+                            }
+                        })()}
+                    </div>
+                )}
             </div>
 
             {!isDebug && <button style={styles.debugButton} onClick={() => setIsDebug(true)}>Enable debug mode</button>}
@@ -261,6 +308,38 @@ const styles = {
         padding: '8px',
         border: '1px solid #E0E0E0',
         borderRadius: '4px',
+    },
+    terminal: {
+        backgroundColor: '#000000',
+        padding: '12px',
+        borderRadius: '4px',
+        border: '1px solid #333',
+        fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+        fontSize: '13px',
+        lineHeight: '1.4',
+    },
+    stderr: {
+        marginBottom: '8px',
+    },
+    stdout: {
+        marginBottom: '8px',
+    },
+    streamLabel: {
+        color: '#888',
+        fontSize: '11px',
+        marginBottom: '4px',
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+    },
+    streamContent: {
+        margin: '0',
+        padding: '0',
+        whiteSpace: 'pre-wrap',
+        wordWrap: 'break-word',
+        fontFamily: 'inherit',
+        fontSize: 'inherit',
+        lineHeight: 'inherit',
+        color: '#FFFFFF',
     },
     error: {
         whiteSpace: 'pre-wrap',

@@ -63,3 +63,13 @@ deploy: build push
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
 		$(MAKE) install; \
 	fi
+
+
+dev-mq:
+	cargo run
+
+dev-agent:
+	cd offload-client && make serve
+
+dev-frontend:
+	cd management-frontend && npm run dev

@@ -5,7 +5,10 @@ from .helpers import *
 
 def execute_shell_bash(http: HttpClient, task_id: TaskId, capability: str, payload: dict) -> bool:
     typer.echo(f"Executing shell::bash for task {task_id.dict()} with payload: {payload}")
-    command = (payload or {}).get("command")
+    if isinstance(payload, str):
+        command = payload
+    else:
+        command = (payload or {}).get("command")
     if not command:
         report = make_failure_report(task_id, capability, "No 'command' provided in payload.", extra_output={"error": "No 'command' provided in payload."})
         return report_result(http, report)
