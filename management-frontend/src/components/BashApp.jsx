@@ -143,7 +143,7 @@ const BashApp = ({ apiKey }) => {
                 <button type="button" style={styles.button} disabled={isLoading} onClick={handleSubmit}>
                     {isLoading ? 'Executing...' : 'Execute Command'}
                 </button>
-            </form>
+            </div>
 
             {/* Response/Error display area */}
             <div style={styles.responseContainer}>
