@@ -82,3 +82,12 @@ pub fn url_decode(input: &str) -> Result<String, AppError> {
     String::from_utf8(decoded)
         .map_err(|e| AppError::BadRequest(format!("Invalid UTF-8 sequence: {}", e)))
 }
+
+pub fn get_last_six_chars(s: &str) -> String {
+    let len = s.len();
+    if len <= 6 {
+        s.to_string()
+    } else {
+        s[len - 6..].to_string()
+    }
+}

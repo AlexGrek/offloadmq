@@ -58,3 +58,19 @@ class TaskResultReport(BaseModel):
             "output": self.output,
             "capability": self.capability,
         }
+
+
+class TaskProgressReport(BaseModel):
+    task_id: TaskId = Field(..., alias="id")
+    stage: Optional[str]
+    log_update: Optional[str]
+
+    class Config:
+        validate_by_name = True
+
+    def to_wire(self) -> Dict[str, Any]:
+        return {
+            "id": self.task_id.to_wire(),
+            "stage": str(self.stage),
+            "logUpdate": str(self.log_update),
+        }

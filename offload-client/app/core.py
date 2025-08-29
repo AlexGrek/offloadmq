@@ -8,6 +8,7 @@ from .exec.llm import *
 from .exec.tts import *
 from .exec.debug import *
 from .exec.shell import *
+from .exec.shellcmd import *
 
 
 def serve_tasks(server_url: str, jwt_token: str) -> None:
@@ -20,7 +21,8 @@ def serve_tasks(server_url: str, jwt_token: str) -> None:
         return {
             "debug::echo": execute_debug_echo,
             "shell::bash": execute_shell_bash,
-            "TTS::kokoro": execute_kokoro_tts
+            "shellcmd::bash": execute_shellcmd_bash,
+            "TTS::kokoro": execute_kokoro_tts,
         }.get(cap)
 
     try:

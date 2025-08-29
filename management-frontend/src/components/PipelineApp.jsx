@@ -1,3 +1,4 @@
+import { Trash2 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 
 // Main pipeline application component
@@ -18,6 +19,7 @@ const PipelineApp = ({ apiKey }) => {
     const [isDebug, setIsDebug] = useState(false);
     const [request, setRequest] = useState(null);
     const [capabilities, setCapabilities] = useState([]);
+    const [log, setLog] = useState('');
 
     // Ref to hold the interval ID for polling
     const pollIntervalRef = useRef(null);
@@ -31,7 +33,7 @@ const PipelineApp = ({ apiKey }) => {
             }
             const storedTaskIds = localStorage.getItem('pipelineAppTaskIds');
             if (storedTaskIds) {
-                setTaskIds(JSON.parse(storedTaskIds));
+                setTaskIds(JSON.parse(storedTaskIds) || []);
             }
         } catch (e) {
             console.error("Failed to parse data from localStorage", e);
@@ -91,9 +93,9 @@ const PipelineApp = ({ apiKey }) => {
                 const data = await res.json();
 
                 // Check for a final result or an error to stop polling
-                if (data.result) {
+                if (data.output) {
                     setIsLoading(false);
-                    setResponse(data.result);
+                    setResponse(data.output);
                     setPollingStatus('');
                     setCurrentTask(null); // Stop polling
                 } else if (data.error) {
@@ -102,6 +104,10 @@ const PipelineApp = ({ apiKey }) => {
                     setPollingStatus('');
                     setCurrentTask(null); // Stop polling
                 }
+                if (data.log) {
+                    setLog(data.log)
+                }
+                setPollingStatus("Status: " + data.status)
                 // If neither result nor error, we are still pending, so the interval continues.
 
             } catch (err) {
@@ -114,7 +120,7 @@ const PipelineApp = ({ apiKey }) => {
 
         // Start polling immediately and then on an interval
         poll();
-        pollIntervalRef.current = setInterval(poll, 3000); // Poll every 3 seconds
+        pollIntervalRef.current = setInterval(poll, 2000); // Poll every 3 seconds
 
         // Cleanup function to clear interval
         return () => {
@@ -169,7 +175,7 @@ const PipelineApp = ({ apiKey }) => {
                 setError(data.error.message);
                 setIsLoading(false);
                 setPollingStatus('');
-            // **CHANGED**: Handle the nested response structure: data.id.id and data.id.cap
+                // **CHANGED**: Handle the nested response structure: data.id.id and data.id.cap
             } else if (data.id && data.id.id && data.id.cap) {
                 const taskId = data.id.id;
                 const taskCapability = data.id.cap;
@@ -226,18 +232,6 @@ const PipelineApp = ({ apiKey }) => {
                     )}
                 </div>
 
-                <div style={styles.formGroup}>
-                    <label style={styles.checkboxContainer}>
-                        <input
-                            type="checkbox"
-                            checked={false}
-                            disabled={true}
-                            style={styles.checkbox}
-                        />
-                        <span style={styles.checkboxLabel}>Urgent (disabled for pipeline)</span>
-                    </label>
-                </div>
-
                 <button type="button" style={styles.button} disabled={isLoading} onClick={handleSubmit}>
                     {isLoading ? (pollingStatus.startsWith('Polling') ? 'Polling...' : 'Submitting...') : 'Execute Command'}
                 </button>
@@ -281,14 +275,25 @@ const PipelineApp = ({ apiKey }) => {
                 )}
             </div>
 
+            <div style={styles.form}>
+                <div style={styles.terminal}>
+                    <pre>{log}</pre>
+                </div>
+            </div>
+
             {/* Submitted Task IDs Display */}
-            {taskIds.length > 0 && (
+            {taskIds && taskIds.length > 0 && (
                 <div style={styles.taskIdsContainer}>
                     <h4 style={styles.debugLabel}>Submitted Task IDs:</h4>
                     <ul style={styles.taskList}>
                         {taskIds.map(id => <li key={id}>{id}</li>)}
                     </ul>
+                    <button style={styles.debugButton} onClick={() => {
+                        setTaskIds([])
+                        localStorage.setItem('pipelineAppTaskIds', [])
+                    }}><Trash2 /></button>
                 </div>
+
             )}
 
 
@@ -419,6 +424,8 @@ const styles = {
         border: '1px solid #333',
         fontFamily: 'Consolas, Monaco, "Courier New", monospace',
         fontSize: '13px',
+        maxHeight: '24em',
+        overflowY: 'auto'
     },
     stderr: {
         marginBottom: '8px',

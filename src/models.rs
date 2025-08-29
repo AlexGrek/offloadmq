@@ -2,7 +2,10 @@ use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{schema::*, utils::time_sortable_uid};
+use crate::{
+    schema::*,
+    utils::{get_last_six_chars, time_sortable_uid},
+};
 
 /// A task that has been received but not yet assigned to any agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +33,16 @@ impl UnassignedTask {
                 description: format!("Assigned to {agent_id}"),
             }],
             ..AssignedTask::default()
+        }
+    }
+
+    pub fn into_status_report(self) -> TaskStatusResponse {
+        TaskStatusResponse {
+            id: self.id,
+            status: TaskStatus::Pending,
+            stage: None,
+            output: None,
+            log: None,
         }
     }
 
@@ -111,6 +124,16 @@ impl AssignedTask {
     pub fn change_stage(&mut self, stage: &str) {
         self.stage = Some(stage.to_owned())
     }
+
+    pub fn into_status_report(self) -> TaskStatusResponse {
+        TaskStatusResponse {
+            id: self.id,
+            status: self.status,
+            stage: self.stage,
+            output: self.result,
+            log: self.log,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,11 +165,13 @@ impl Agent {
 impl From<AgentRegistrationRequest> for Agent {
     fn from(request: AgentRegistrationRequest) -> Self {
         let now = Utc::now();
+        let uid = time_sortable_uid();
+        let short = get_last_six_chars(&uid);
 
         Agent {
-            uid: time_sortable_uid(),
-            uid_short: String::new(), // Default to empty string
-            registered_at: now,       // Current timestamp
+            uid: uid,
+            uid_short: short,   // Default to empty string
+            registered_at: now, // Current timestamp
             personal_login_token: Uuid::new_v4().into(),
             last_contact: None,
             capabilities: request.capabilities,
