@@ -17,9 +17,10 @@ use crate::{
     mq::scheduler::{
         find_assignable_non_urgent_tasks_with_capabilities_for_tier,
         find_urgent_tasks_with_capabilities, report_non_urgent_task, report_urgent_task,
-        try_pick_up_non_urgent_task, try_pick_up_urgent_task,
+        try_pick_up_non_urgent_task, try_pick_up_urgent_task, update_non_urgent_task,
+        update_urgent_task,
     },
-    schema::{self, TaskId, TaskResultReport},
+    schema::{self, TaskId, TaskResultReport, TaskUpdate},
     state::AppState,
 };
 
@@ -169,7 +170,7 @@ pub async fn post_task_progress_update(
     AuthenticatedAgent(mut agent): AuthenticatedAgent,
     State(app_state): State<Arc<AppState>>,
     Path((cap, id)): Path<(String, String)>,
-    Json(report): Json<TaskResultReport>,
+    Json(report): Json<TaskUpdate>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     // check urgent tasks first
     agent = app_state.storage.agents.update_agent_last_contact(agent)?;
@@ -177,12 +178,12 @@ pub async fn post_task_progress_update(
     if report.id != task_id {
         return Err(AppError::BadRequest(id));
     }
-    info!("Agent {} reporting task {task_id}", agent.uid_short);
-    debug!("Report: {:?}", &report);
+    info!("Agent {} updating task {task_id}", agent.uid_short);
+    debug!("Update: {:?}", &report);
 
-    let found = report_urgent_task(&app_state.urgent, report.clone(), task_id).await?;
+    let found = update_urgent_task(&app_state.urgent, report.clone(), task_id).await?;
     if !found {
-        report_non_urgent_task(&app_state.storage.tasks, report).await?;
+        update_non_urgent_task(&app_state.storage.tasks, report).await?;
     }
     Ok(Json(json!({"message": "task report confirmed"})))
 }

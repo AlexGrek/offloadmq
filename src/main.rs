@@ -10,7 +10,10 @@ use offloadmq::{
 use offloadmq::{middleware::auth::Auth, *};
 use serde_json::{Value, json};
 use tokio::{net::TcpListener, time};
-use tower_http::{cors::{Any, CorsLayer}, trace::TraceLayer};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    trace::TraceLayer,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -64,6 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/task/resolve/{cap}/{id}",
                     post(api::agent::post_task_resolution),
                 )
+                .route(
+                    "/task/progress/{cap}/{id}",
+                    post(api::agent::post_task_progress_update),
+                )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,
@@ -106,7 +113,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/task/submit_blocking",
                     post(api::client::submit_task_blocking),
                 )
-                .route("/capabilities/online", post(api::client::capabilities_online))
+                .route(
+                    "/capabilities/online",
+                    post(api::client::capabilities_online),
+                )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::apikey_auth_middleware_user,

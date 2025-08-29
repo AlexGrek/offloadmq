@@ -7,7 +7,7 @@ use crate::{
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
     mq::urgent::UrgentTaskStore,
-    schema::{TaskId, TaskResultReport, TaskResultStatus, TaskStatus},
+    schema::{TaskId, TaskResultReport, TaskResultStatus, TaskStatus, TaskUpdate},
 };
 
 pub async fn find_urgent_tasks_with_capabilities(
@@ -86,6 +86,16 @@ pub async fn report_urgent_task<'a>(
         .await
 }
 
+pub async fn update_urgent_task<'a>(
+    store: &'a UrgentTaskStore,
+    report: TaskUpdate,
+    task_id: TaskId,
+) -> Result<bool, AppError> {
+    store
+        .update_task(&task_id, report.log_update, report.stage)
+        .await
+}
+
 pub async fn report_non_urgent_task<'a>(
     store: &TaskStorage,
     report: TaskResultReport,
@@ -104,6 +114,21 @@ pub async fn report_non_urgent_task<'a>(
         TaskStatus::Failed
     });
     got.result = report.output;
+    store.update_assigned(&got)?;
+    Ok(())
+}
+
+pub async fn update_non_urgent_task<'a>(
+    store: &TaskStorage,
+    report: TaskUpdate,
+) -> Result<(), AppError> {
+    let mut got = store
+        .get_assigned(&report.id)?
+        .ok_or(AppError::NotFound(report.id.to_string()))?;
+    got.append_log(report.log_update);
+    if report.stage.is_some() {
+        got.stage = report.stage
+    }
     store.update_assigned(&got)?;
     Ok(())
 }
