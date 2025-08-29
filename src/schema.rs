@@ -248,7 +248,7 @@ pub struct TaskStatusResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<Value>,
 
-    pub log: Option<String>
+    pub log: Option<String>,
 }
 
 /// The message pushed to an agent via WebSocket to assign a new task.

@@ -90,11 +90,10 @@ pub async fn poll_task_status(
             if ass.data.api_key != req.api_key {
                 None
             } else {
-                Some(ass)
+                Some(ass.into_status_report())
             }
         })
         .flatten()
-        .map(|ass| Json(ass).into_response())
         .or(app_state
             .storage
             .tasks
@@ -103,13 +102,12 @@ pub async fn poll_task_status(
                 if unass.data.api_key != req.api_key {
                     None
                 } else {
-                    Some(unass)
+                    Some(unass.into_status_report())
                 }
             })
-            .flatten()
-            .map(|un| Json(un).into_response()));
+            .flatten());
     if let Some(response) = task {
-        return Ok(response);
+        return Ok(Json(response).into_response());
     } else {
         if let Some(urgent) = app_state.urgent.get_assigned_task(&task_id).await {
             return Ok(Json(urgent).into_response());

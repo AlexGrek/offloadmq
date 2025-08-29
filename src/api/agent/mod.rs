@@ -178,12 +178,16 @@ pub async fn post_task_progress_update(
     if report.id != task_id {
         return Err(AppError::BadRequest(id));
     }
-    info!("Agent {} updating task {task_id}", agent.uid_short);
+    info!(
+        "Agent {} updating task {task_id} with log: {:?}",
+        agent.uid_short,
+        report.log_update.clone().map(|s| s.len()).unwrap_or(0)
+    );
     debug!("Update: {:?}", &report);
 
     let found = update_urgent_task(&app_state.urgent, report.clone(), task_id).await?;
     if !found {
         update_non_urgent_task(&app_state.storage.tasks, report).await?;
     }
-    Ok(Json(json!({"message": "task report confirmed"})))
+    Ok(Json(json!({"message": "task update confirmed"})))
 }
