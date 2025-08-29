@@ -101,7 +101,7 @@ impl UrgentTaskStore {
 
     pub async fn hard_clear(&self) {
         info!("Cleaning up urgent tasks queue");
-        
+
         self.tasks.write().await.clear();
     }
 
@@ -130,6 +130,26 @@ impl UrgentTaskStore {
                 TaskStatus::Failed
             };
             let _ = entry.state.notify.send(status.clone());
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    pub async fn update_task(
+        &self,
+        task_id: &TaskId,
+        log: Option<String>,
+        stage: Option<String>,
+    ) -> Result<bool, AppError> {
+        let mut tasks = self.tasks.write().await;
+        if let Some(entry) = tasks.get_mut(task_id) {
+            let task = entry.assigned_task.as_mut().ok_or(AppError::Conflict(
+                "Task is not assigned but reported".to_string(),
+            ))?;
+            task.append_log(log);
+            if let Some(stage_text) = stage {
+                task.change_stage(&stage_text);
+            }
             return Ok(true);
         }
         Ok(false)

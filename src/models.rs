@@ -41,6 +41,7 @@ impl UnassignedTask {
             created_at: self.created_at,
             assigned_at: Utc::now(),
             status: TaskStatus::Assigned,
+            log: None,
             history: vec![TaskEvent {
                 timestamp: Utc::now(),
                 description: format!("Assigned to {agent_id}"),
@@ -81,6 +82,10 @@ pub struct AssignedTask {
     // task execution result (populated on success with data or on failure with logs, depends on specific task, may be empty)
     #[serde(default)]
     pub result: Option<serde_json::Value>,
+    #[serde(default)]
+    pub log: Option<String>,
+    #[serde(default)]
+    pub stage: Option<String>,
 }
 
 impl AssignedTask {
@@ -90,6 +95,21 @@ impl AssignedTask {
             description: format!("Status set to {:?}", new_status),
         });
         self.status = new_status;
+    }
+
+    pub fn append_log(&mut self, log: Option<String>) {
+        if log.is_none() {
+            return;
+        }
+        let logstr = log.unwrap();
+        self.log = match &self.log {
+            Some(s) => Some(s.to_string() + &logstr),
+            None => Some(logstr),
+        };
+    }
+
+    pub fn change_stage(&mut self, stage: &str) {
+        self.stage = Some(stage.to_owned())
     }
 }
 
@@ -154,7 +174,7 @@ impl From<CreateApiKeyRequest> for ClientApiKey {
             capabilities: value.capabilities,
             is_predefined: false,
             created: Utc::now(),
-            is_revoked: false
+            is_revoked: false,
         }
     }
 }

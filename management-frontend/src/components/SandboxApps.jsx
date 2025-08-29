@@ -1,91 +1,93 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, Construction, SaveAll, X } from 'lucide-react';
+import { BrainCircuit, Construction, Pipette, SaveAll, X } from 'lucide-react';
 
 // Define the content for each app as a functional component.
 // In a real-world application, these would be in separate files and imported.
 const NotesApp = ({ apiKey }) => (
-    <div>
-        <h3 className="text-xl font-semibold mb-4">Notes App</h3>
-        <p>This is where you'd write and manage your notes. The application has access to the API key for back-end services.</p>
-        <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
-    </div>
+  <div>
+    <h3 className="text-xl font-semibold mb-4">Notes App</h3>
+    <p>This is where you'd write and manage your notes. The application has access to the API key for back-end services.</p>
+    <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
+  </div>
 );
 
 const PhotosApp = ({ apiKey }) => (
-    <div>
-        <h3 className="text-xl font-semibold mb-4">Photos App</h3>
-        <p>Your photos will be displayed here. The API key can be used to load images from a cloud storage service.</p>
-        <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
-    </div>
+  <div>
+    <h3 className="text-xl font-semibold mb-4">Photos App</h3>
+    <p>Your photos will be displayed here. The API key can be used to load images from a cloud storage service.</p>
+    <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
+  </div>
 );
 
 const MailApp = ({ apiKey }) => (
-    <div>
-        <h3 className="text-xl font-semibold mb-4">Mail App</h3>
-        <p>This app handles your emails. The API key could be used to connect to your email service provider.</p>
-        <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
-    </div>
+  <div>
+    <h3 className="text-xl font-semibold mb-4">Mail App</h3>
+    <p>This app handles your emails. The API key could be used to connect to your email service provider.</p>
+    <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
+  </div>
 );
 
 const MusicApp = ({ apiKey }) => (
-    <div>
-        <h3 className="text-xl font-semibold mb-4">Music App</h3>
-        <p>Listen to your favorite music here. The API key might be for a music streaming service or a playlist manager.</p>
-        <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
-    </div>
+  <div>
+    <h3 className="text-xl font-semibold mb-4">Music App</h3>
+    <p>Listen to your favorite music here. The API key might be for a music streaming service or a playlist manager.</p>
+    <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
+  </div>
 );
 
 const SettingsApp = ({ apiKey }) => (
-    <div>
-        <h3 className="text-xl font-semibold mb-4">Settings App</h3>
-        <p>Manage application settings. The API key could be used to save your preferences to a remote server.</p>
-        <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
-    </div>
+  <div>
+    <h3 className="text-xl font-semibold mb-4">Settings App</h3>
+    <p>Manage application settings. The API key could be used to save your preferences to a remote server.</p>
+    <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
+  </div>
 );
 
 const ProfileApp = ({ apiKey }) => (
-    <div>
-        <h3 className="text-xl font-semibold mb-4">Profile App</h3>
-        <p>View and edit your user profile. The API key can be used to authenticate and retrieve your profile data.</p>
-        <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
-    </div>
+  <div>
+    <h3 className="text-xl font-semibold mb-4">Profile App</h3>
+    <p>View and edit your user profile. The API key can be used to authenticate and retrieve your profile data.</p>
+    <p className="mt-4">Received API Key: <code className="bg-gray-200 text-gray-800 p-1 rounded text-sm">{apiKey || 'No API key entered'}</code></p>
+  </div>
 );
 
 const LlmApp = React.lazy(() => import('./LlmApp'))
 const BashApp = React.lazy(() => import('./BashApp'))
+const PipelineApp = React.lazy(() => import('./PipelineApp'))
 
 const apps = [
-    { id: 'bash', name: 'Bash', logo: Construction, app: BashApp },
-    { id: 'llm', name: 'LLM', logo: BrainCircuit, app: LlmApp },
+  { id: 'bash', name: 'Bash', logo: Construction, app: BashApp },
+  { id: 'llm', name: 'LLM', logo: BrainCircuit, app: LlmApp },
+  { id: 'pipeline', name: 'Pipeline', logo: Pipette, app: PipelineApp },
 ];
 
 const SandboxApps = () => {
-    const [selectedId, setSelectedId] = useState(null);
-    const [apiKey, setApiKey] = useState('client_secret_key_123');
-    const selectedApp = apps.find((app) => app.id === selectedId);
+  const [selectedId, setSelectedId] = useState(null);
+  const [apiKey, setApiKey] = useState('client_secret_key_123');
+  const selectedApp = apps.find((app) => app.id === selectedId);
 
-    // Sync prop and local state
-    useEffect(() => {
-        let item = localStorage.getItem('offroadmq-api-key');
-        if (item) setApiKey(item);
-    }, []);
+  // Sync prop and local state
+  useEffect(() => {
+    let item = localStorage.getItem('offroadmq-api-key');
+    if (item) setApiKey(item);
+  }, []);
 
-    // Function to save API key to local storage
-    const handleSaveApiKey = () => {
-        if (apiKey) {
-            localStorage.setItem('offroadmq-api-key', apiKey);
-            console.log('API key saved to local storage.');
-        }
-    };
+  // Function to save API key to local storage
+  const handleSaveApiKey = () => {
+    if (apiKey) {
+      localStorage.setItem('offroadmq-api-key', apiKey);
+      console.log('API key saved to local storage.');
+    }
+  };
 
-    const transition = { type: "tween", duration: 0.3, ease: "easeInOut" };
+  const transition = { type: "tween", duration: 0.3, ease: "easeInOut" };
 
-    return (
-        <div className="flex justify-center items-center min-h-screen p-8 bg-gray-100 font-sans text-gray-900">
-            {/* CSS for the component */}
-            <style>
-                {`
+  return (
+    <div className="flex justify-center items-center min-h-screen p-8 bg-gray-100 font-sans text-gray-900">
+      {/* CSS for the component */}
+      <style>
+        {`
           .app-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -243,76 +245,76 @@ const SandboxApps = () => {
             margin-top: 16px;
           }
         `}
-            </style>
+      </style>
 
-            <div className="flex flex-col items-center w-full max-w-[800px]">
-                <div className="api-input-container">
-                    <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700 mb-2">Enter API Key</label>
-                    <input
-                        id="apiKey"
-                        type="text"
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        placeholder="e.g., sk-xxxxxxxxxxxxxxxxxxxxxxxx"
-                        className="api-input"
-                    />
-                    <button className='btn' onClick={() => handleSaveApiKey()}><SaveAll /></button>
-                </div>
-
-                {/* The main app grid container */}
-                <motion.div layout className="app-grid">
-                    {apps.map((app) => (
-                        // Each app tile is a Framer Motion div
-                        <motion.div
-                            key={app.id}
-                            layoutId={app.id} // This is the key for the tile-to-modal animation
-                            className="app-tile"
-                            onClick={() => setSelectedId(app.id)}
-                            whileTap={{ scale: 0.95 }}
-                            transition={transition}
-                        >
-                            <div className="app-logo">
-                                {React.createElement(app.logo, { size: 36, color: '#4b5563' })}
-                            </div>
-                            <div className="app-name">{app.name}</div>
-                        </motion.div>
-                    ))}
-                </motion.div>
-            </div>
-
-            {/* Use AnimatePresence to handle the mount/unmount animations of the modal */}
-            <AnimatePresence>
-                {selectedId && selectedApp && (
-                    <motion.div
-                        className="modal-overlay"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                    >
-                        <motion.div
-                            layoutId={selectedId} // The modal shares the same layoutId as the clicked tile
-                            className="modal-content"
-                            transition={transition}
-                            exit={{ opacity: 0, transition: { duration: 0.2 } }}
-                        >
-                            <div className="modal-header">
-                                <button
-                                    className="close-button"
-                                    onClick={() => setSelectedId(null)}
-                                >
-                                    {/* The X icon for the close button */}
-                                    <X size={8} color="#fff" />
-                                </button>
-                            </div>
-                            <div className="modal-body">
-                                <selectedApp.app apiKey={apiKey} />
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+      <div className="flex flex-col items-center w-full max-w-[800px]">
+        <div className="api-input-container">
+          <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700 mb-2">Enter API Key</label>
+          <input
+            id="apiKey"
+            type="text"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="e.g., sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+            className="api-input"
+          />
+          <button className='btn' onClick={() => handleSaveApiKey()}><SaveAll /></button>
         </div>
-    );
+
+        {/* The main app grid container */}
+        <motion.div layout className="app-grid">
+          {apps.map((app) => (
+            // Each app tile is a Framer Motion div
+            <motion.div
+              key={app.id}
+              layoutId={app.id} // This is the key for the tile-to-modal animation
+              className="app-tile"
+              onClick={() => setSelectedId(app.id)}
+              whileTap={{ scale: 0.95 }}
+              transition={transition}
+            >
+              <div className="app-logo">
+                {React.createElement(app.logo, { size: 36, color: '#4b5563' })}
+              </div>
+              <div className="app-name">{app.name}</div>
+            </motion.div>
+          ))}
+        </motion.div>
+      </div>
+
+      {/* Use AnimatePresence to handle the mount/unmount animations of the modal */}
+      <AnimatePresence>
+        {selectedId && selectedApp && (
+          <motion.div
+            className="modal-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              layoutId={selectedId} // The modal shares the same layoutId as the clicked tile
+              className="modal-content"
+              transition={transition}
+              exit={{ opacity: 0, transition: { duration: 0.2 } }}
+            >
+              <div className="modal-header">
+                <button
+                  className="close-button"
+                  onClick={() => setSelectedId(null)}
+                >
+                  {/* The X icon for the close button */}
+                  <X size={8} color="#fff" />
+                </button>
+              </div>
+              <div className="modal-body">
+                <selectedApp.app apiKey={apiKey} />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 export default SandboxApps;
