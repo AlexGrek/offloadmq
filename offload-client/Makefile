@@ -1,9 +1,12 @@
+SERVER ?= http://localhost:3069
+KEY ?= ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
+
 venv:
 	python3 -m venv venv
 	bash -c "source venv/bin/activate && pip3 install -r requirements.txt"
 
 register: venv
-	bash -c "source venv/bin/activate && python offload-client.py register --server http://localhost:3069 --key ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e"
+	bash -c "source venv/bin/activate && python offload-client.py register --server $(SERVER) --key $(KEY)"
 
 serve: register
 	bash -c "source venv/bin/activate && python offload-client.py serve"
