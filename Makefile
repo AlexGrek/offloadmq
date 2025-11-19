@@ -2,21 +2,32 @@ APP_NAME := offloadmq
 CHART_DIR := offloadmq-chart
 NAMESPACE := offloadmq
 RELEASE := offloadmq
-
+REGISTRY ?= localhost:5000
 # Detect Git version if TAG is not provided
 TAG ?= $(shell git describe --tags --always --dirty)
-IMAGE ?= localhost:5000/offloadmq
+IMAGE ?= ${REGISTRY}/offloadmq
 SECRETS_FILE ?= .secrets.yaml
+
+# Detect container runtime: prefer podman, fallback to docker
+CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null)
+ifndef CONTAINER_RUNTIME
+    CONTAINER_RUNTIME := $(shell command -v docker 2>/dev/null)
+endif
+ifndef CONTAINER_RUNTIME
+    $(error Neither podman nor docker found in PATH. Please install one of them.)
+endif
 
 .PHONY: build push install upgrade uninstall status template deploy
 
-# Build Docker image
+# Build container image
 build:
-	docker build -t $(IMAGE):$(TAG) .
+	@echo "Building with $(CONTAINER_RUNTIME)..."
+	$(CONTAINER_RUNTIME) build -t $(IMAGE):$(TAG) .
 
-# Push Docker image
+# Push container image
 push:
-	docker push $(IMAGE):$(TAG)
+	@echo "Pushing with $(CONTAINER_RUNTIME)..."
+	$(CONTAINER_RUNTIME) push $(IMAGE):$(TAG)
 
 # Install Helm chart
 install:
@@ -63,7 +74,6 @@ deploy: build push
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
 		$(MAKE) install; \
 	fi
-
 
 dev-mq:
 	cargo run
