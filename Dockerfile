@@ -1,5 +1,5 @@
 # ---- Build stage ----
-FROM rust:1.87 AS builder
+FROM rust:1.91.1 AS builder
 WORKDIR /app
 COPY . .
 RUN cargo build --release
@@ -16,4 +16,4 @@ COPY --from=builder /app/target/release/offloadmq /app/offloadmq
 EXPOSE 3069
 
 # Entrypoint
-ENTRYPOINT ["/app/offloadmq"]
+ENTRYPOINT ["bash", "-c", "/app/offloadmq"]
