@@ -1,8 +1,11 @@
+import logging
 from ..models import *
 from ..httphelpers import *
 from .helpers import *
 
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def execute_llm_query(
@@ -28,7 +31,7 @@ def execute_llm_query(
         is_streaming = api_payload.get("stream", False)
 
         if is_streaming:
-            print("Streaming enabled. Buffering and printing every 2 seconds...")
+            logger.info("Streaming enabled. Buffering and printing every 2 seconds...")
             full_response_text = ""
             buffer = ""
             last_print_time = time.time()
@@ -90,7 +93,7 @@ def execute_llm_query(
 
         else:
             # Original non-streaming logic
-            print("Streaming is not enabled. Waiting for full response...")
+            logger.info("Streaming is not enabled. Waiting for full response...")
             r = requests.post(OLLAMA_API_URL, json=api_payload, timeout=300)
             r.raise_for_status()
             report = make_success_report(task_id, capability, r.json())
