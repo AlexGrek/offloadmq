@@ -167,6 +167,7 @@ pub struct GpuInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct FileReference {
     path: String,
     #[serde(default)]

@@ -2,9 +2,11 @@ from ..models import *
 from ..httphelpers import *
 from .helpers import *
 
+from pathlib import Path
+
 
 def execute_shellcmd_bash(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict
+    http: HttpClient, task_id: TaskId, capability: str, payload: dict, data: Path
 ) -> bool:
     typer.echo(
         f"Executing shellcmd::bash for task {task_id.dict()} with payload: {payload}"
@@ -24,7 +26,12 @@ def execute_shellcmd_bash(
 
     try:
         result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, check=True
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=str(data),
         )
         output = {"stdout": result.stdout, "stderr": result.stderr}
         report = make_success_report(task_id, capability, output)

@@ -10,6 +10,8 @@ from .exec.debug import *
 from .exec.shell import *
 from .exec.shellcmd import *
 from .data.updn import process_data_download
+from .data.fs_utils import *
+
 
 def serve_tasks(server_url: str, jwt_token: str) -> None:
     http = HttpClient(server_url, jwt_token)
@@ -56,16 +58,23 @@ def serve_tasks(server_url: str, jwt_token: str) -> None:
                     )
                     capability = task_id.cap
                     payload = (task.get("data") or {}).get("payload")
+                    fetch_files = (task.get("data") or {}).get("fetch_files") or []
 
                     typer.echo(
                         f"Received new task: {task_id.to_wire()} with capability '{capability}'"
                     )
 
                     executor = _route(capability)
+                    data_path = pick_directory(task_id)
                     if executor:
-                        process_data_download(data_path, [{}])
-                        executor(http, task_id, capability, payload)
-                        
+                        for fileref in fetch_files:
+                            try:
+                                process_data_download(data_path, fileref)
+                            except Exception as e:
+                                report = make_failure_report(task_id, capability, str(e))
+                                report_result(http, report)
+                                return
+                        executor(http, task_id, capability, payload, data_path)
                     else:
                         msg = f"Unknown capability: {capability}"
                         typer.echo(msg)

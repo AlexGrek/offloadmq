@@ -2,9 +2,11 @@ from ..models import *
 from ..httphelpers import *
 from .helpers import *
 
+from pathlib import Path
+
 
 def execute_llm_query(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict
+    http: HttpClient, task_id: TaskId, capability: str, payload: dict, data: Path
 ) -> bool:
     """Send LLM request to local Ollama REST API (chat or generate style).
 

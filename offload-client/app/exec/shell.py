@@ -2,6 +2,7 @@ import subprocess
 import threading
 import queue
 import time
+from pathlib import Path
 from ..models import *
 from ..httphelpers import *
 from .helpers import *
@@ -14,7 +15,7 @@ def enqueue_output(out, q):
 
 
 def execute_shell_bash(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict
+    http: HttpClient, task_id: TaskId, capability: str, payload: dict, data: Path
 ) -> bool:
     typer.echo(
         f"Executing shell::bash for task {task_id.dict()} with payload: {payload}"
@@ -39,6 +40,7 @@ def execute_shell_bash(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            cwd=str(data)
         )
 
         q_stdout = queue.Queue()
