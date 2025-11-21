@@ -83,3 +83,6 @@ dev-agent:
 
 dev-frontend:
 	cd management-frontend && npm run dev
+
+test:
+	cd itests && make run
