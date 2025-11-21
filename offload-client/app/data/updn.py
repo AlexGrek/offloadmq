@@ -97,6 +97,7 @@ def download_http_file(
     if auth_header:
         headers["Authorization"] = auth_header
     if custom_headers:
+        logger.warning(f"Custom headers detected: {custom_headers}")
         headers.update(custom_headers)
 
     auth = (auth_user, auth_password) if auth_user and auth_password else None

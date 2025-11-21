@@ -167,7 +167,7 @@ def test_http_with_custom_header():
         FileReference(
             path="downloads/api-response.json",
             get="https://api.github.com/zen",
-            custom_header="Accept: application/json"
+            custom_header={"Accept": "application/json"}
         )
     ]
     

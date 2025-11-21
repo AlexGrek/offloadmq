@@ -4,7 +4,7 @@
 //! These structs define the JSON contracts for requests and responses
 //! between clients, agents, and the message queue server.
 
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -185,7 +185,7 @@ pub struct FileReference {
     #[serde(default)]
     http_auth_header: Option<String>,
     #[serde(default)]
-    custom_header: Option<String>,
+    custom_header: Option<HashMap<String, String>>,
     #[serde(default)]
     s3_file: Option<String>,
     #[serde(default)]
