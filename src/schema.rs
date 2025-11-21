@@ -166,6 +166,31 @@ pub struct GpuInfo {
     pub vram_mb: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FileReference {
+    path: String,
+    #[serde(default)]
+    git_clone: Option<String>,
+    #[serde(default)]
+    get: Option<String>,
+    #[serde(default)]
+    post: Option<String>,
+    #[serde(default)]
+    request: Option<String>,
+    #[serde(default)]
+    http_login: Option<String>,
+    #[serde(default)]
+    http_password: Option<String>,
+    #[serde(default)]
+    http_auth_header: Option<String>,
+    #[serde(default)]
+    custom_header: Option<String>,
+    #[serde(default)]
+    s3_file: Option<String>,
+    #[serde(default)]
+    custom_auth: Option<String>,
+}
+
 //=============================================================================
 //  Task Lifecycle API
 //=============================================================================
@@ -186,6 +211,10 @@ pub struct TaskSubmissionRequest {
     /// The task-specific data payload.
     /// Can be any valid JSON object.
     pub payload: Value,
+    #[serde(default)]
+    pub fetch_files:  Vec<FileReference>,
+    #[serde(default)]
+    pub artifacts:  Vec<FileReference>,
     pub api_key: String,
 }
 
