@@ -9,7 +9,7 @@ from .exec.tts import *
 from .exec.debug import *
 from .exec.shell import *
 from .exec.shellcmd import *
-
+from .data.updn import process_data_download
 
 def serve_tasks(server_url: str, jwt_token: str) -> None:
     http = HttpClient(server_url, jwt_token)
@@ -63,7 +63,9 @@ def serve_tasks(server_url: str, jwt_token: str) -> None:
 
                     executor = _route(capability)
                     if executor:
+                        process_data_download(data_path, [{}])
                         executor(http, task_id, capability, payload)
+                        
                     else:
                         msg = f"Unknown capability: {capability}"
                         typer.echo(msg)

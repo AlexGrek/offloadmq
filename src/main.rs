@@ -3,9 +3,7 @@ use std::sync::Arc;
 use axum::{Json, Router, extract::State, middleware::from_fn_with_state, routing::*};
 use log::info;
 use offloadmq::{
-    api::agent::{auth_agent, register_agent, update_agent_info},
-    db::app_storage::AppStorage,
-    state::AppState,
+    api::agent::{auth_agent, register_agent, update_agent_info}, db::app_storage::AppStorage, preferences::init_config, state::AppState
 };
 use offloadmq::{middleware::auth::Auth, *};
 use serde_json::{Value, json};
@@ -19,6 +17,8 @@ use tower_http::{
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing
     // tracing_subscriber::init();
+
+    init_config(true, false);
 
     let config = config::AppConfig::from_env()?;
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
