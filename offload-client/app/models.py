@@ -3,26 +3,6 @@ from typing import Optional, Dict, Any, List, Tuple
 from datetime import timedelta
 from urllib.parse import quote
 
-
-class FileReference(BaseModel):
-    path: str
-    git_clone: Optional[str] = None
-    get: Optional[str] = None
-    post: Optional[str] = None
-    request: Optional[str] = None
-    http_login: Optional[str] = None
-    http_password: Optional[str] = None
-    http_auth_header: Optional[str] = None
-    custom_header: Optional[str] = None
-    s3_file: Optional[str] = None
-    custom_auth: Optional[str] = None
-
-    class Config:
-        # Equivalent to Rust's #[serde(default)]
-        # This allows missing fields to default to None
-        use_enum_values = True
-
-
 class TaskResultStatus(BaseModel):
     status: str
     # For success -> timedelta; for failure -> Tuple[str, timedelta]; for notExecuted -> Any

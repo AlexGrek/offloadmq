@@ -1,3 +1,4 @@
+import logging
 import subprocess
 import threading
 import queue
@@ -6,6 +7,8 @@ from pathlib import Path
 from ..models import *
 from ..httphelpers import *
 from .helpers import *
+
+logger = logging.getLogger(__name__)
 
 
 def enqueue_output(out, q):
@@ -18,7 +21,7 @@ def execute_shell_bash(
     http: HttpClient, task_id: TaskId, capability: str, payload: dict, data: Path
 ) -> bool:
     typer.echo(
-        f"Executing shell::bash for task {task_id.dict()} with payload: {payload}"
+        f"Executing shell::bash for task {task_id.dict()} with payload: {payload} in {data}"
     )
     if isinstance(payload, str):
         command = payload

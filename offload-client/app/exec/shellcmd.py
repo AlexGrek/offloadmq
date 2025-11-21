@@ -1,15 +1,18 @@
+import logging
 from ..models import *
 from ..httphelpers import *
 from .helpers import *
 
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 
 def execute_shellcmd_bash(
     http: HttpClient, task_id: TaskId, capability: str, payload: dict, data: Path
 ) -> bool:
     typer.echo(
-        f"Executing shellcmd::bash for task {task_id.dict()} with payload: {payload}"
+        f"Executing shellcmd::bash for task {task_id.dict()} with payload: {payload} in {data}"
     )
     if isinstance(payload, str):
         command = payload
