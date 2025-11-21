@@ -2,12 +2,13 @@ import base64
 from ..models import *
 from ..httphelpers import *
 from .helpers import *
+from pathlib import Path
 
 KOKORO_API_URL = "http://192.168.0.191:4069/api/v1/audio/speech"  # adjust if needed
 KOKORO_API_KEY = "your-api-key-hehehe"  # set if you use KW_SECRET_API_KEY
 
 def execute_kokoro_tts(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict
+    http: HttpClient, task_id: TaskId, capability: str, payload: dict, data: Path
 ) -> bool:
     """Send TTS request to Kokoro-Web API (OpenAI-compatible).
     
