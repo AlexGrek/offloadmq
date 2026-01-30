@@ -89,6 +89,63 @@ All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nes
 3. Scheduler matches tasks to online agents by capability, tier, and capacity
 4. Urgent tasks use in-memory store with 60s TTL; regular tasks persist to Sled DB
 
+### Task Scheduling Logic
+
+#### Urgent vs Non-Urgent Tasks
+
+| Aspect               | Urgent                                                    | Non-Urgent                                                                                  |
+| -------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Storage**          | In-memory IndexMap ([src/mq/urgent.rs](src/mq/urgent.rs)) | Sled persistent DB ([src/db/persistent_task_storage.rs](src/db/persistent_task_storage.rs)) |
+| **TTL**              | 60 seconds (auto-expires)                                 | No TTL (archived after 7 days)                                                              |
+| **Client Blocking**  | Yes - `/submit_blocking` waits for result                 | No - `/submit` returns immediately with task ID                                             |
+| **Tier Filtering**   | None (FIFO)                                               | Higher-tier agents get priority                                                             |
+| **Polling Endpoint** | `GET /private/agent/task/poll_urgent`                     | `GET /private/agent/task/poll` (checks urgent first)                                        |
+
+#### Submission Flow
+
+**Urgent Tasks** ([src/api/client/mod.rs](src/api/client/mod.rs) lines 21-44):
+1. Client calls `POST /api/task/submit_blocking`
+2. Task stored in memory with `tokio::sync::watch` channel for status notifications
+3. Client connection blocks waiting for completion
+4. Background expiration task removes stale tasks every 10 seconds
+
+**Non-Urgent Tasks** ([src/api/client/mod.rs](src/api/client/mod.rs) lines 46-77):
+1. Client calls `POST /api/task/submit`
+2. Task persisted to Sled DB `tasks_unassigned` tree
+3. Returns immediately with task ID and "pending" status
+
+#### Agent Polling & Assignment
+
+**Polling** ([src/api/agent/mod.rs](src/api/agent/mod.rs)):
+- Agents periodically poll for tasks matching their capabilities
+- Non-urgent polling always checks urgent queue first (line 49)
+- Updates agent's `last_contact` timestamp (online if < 120 seconds ago)
+
+**Tier-Based Scheduling** ([src/mq/scheduler.rs](src/mq/scheduler.rs) lines 20-46):
+```
+For each non-urgent task matching capability:
+  1. Find all ONLINE agents with same capability
+  2. Get MAX tier among those agents
+  3. If requesting agent's tier < max tier:
+     - Skip task (reserve for higher-tier agents)
+  4. Else:
+     - Include task in available pool
+  5. Randomly select from eligible tasks
+```
+This ensures high-performance agents get priority while lower-tier agents still receive tasks when no higher-tier agents are online.
+
+**Task Pickup** ([src/api/agent/mod.rs](src/api/agent/mod.rs) lines 130-145):
+1. Agent calls `POST /private/agent/take/{cap}/{id}`
+2. Task atomically moved from unassigned → assigned state
+3. For urgent tasks: status updated via watch channel notifies waiting client
+
+#### Task Resolution
+
+**Progress Updates**: `POST /private/agent/task/progress/{cap}/{id}` - appends logs and stage info
+**Completion**: `POST /private/agent/task/resolve/{cap}/{id}` - sets final status (Completed/Failed)
+
+For urgent tasks, resolution triggers the watch channel to unblock the waiting client and return the result.
+
 ### Storage Layer
 
 - **Sled DB** ([src/db/](src/db/)) - Embedded key-value store for persistent data
