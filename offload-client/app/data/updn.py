@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Union
+from typing import List, Optional
 from pathlib import Path
 import os
 import subprocess
@@ -6,8 +6,6 @@ import logging
 from urllib.parse import urlparse
 import requests
 
-# Configure logger
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class FileReference:
@@ -17,19 +15,49 @@ class FileReference:
         git_clone: Optional[str] = None,
         s3_file: Optional[str] = None,
         get: Optional[str] = None,
+        post: Optional[str] = None,
+        request: Optional[str] = None,
         http_login: Optional[str] = None,
         http_password: Optional[str] = None,
         http_auth_header: Optional[str] = None,
         custom_header: Optional[dict] = None,
+        custom_auth: Optional[str] = None,
     ):
         self.path = path
         self.git_clone = git_clone
         self.s3_file = s3_file
         self.get = get
+        self.post = post
+        self.request = request
         self.http_login = http_login
         self.http_password = http_password
         self.http_auth_header = http_auth_header
         self.custom_header = custom_header
+        self.custom_auth = custom_auth
+
+# ----------------------------
+# Helper functions
+# ----------------------------
+
+def parse_s3_url(s3_url: str) -> tuple:
+    """
+    Parse S3 URL into (bucket, key, endpoint).
+    Supports both s3:// URLs and HTTP(S) URLs for custom endpoints.
+    Raises ValueError if URL is malformed.
+    """
+    if s3_url.startswith("s3://"):
+        parts = s3_url[5:].split("/", 1)
+        if len(parts) < 2 or not parts[1]:
+            raise ValueError(f"Invalid S3 URL '{s3_url}': must be s3://bucket/key")
+        return parts[0], parts[1], None
+    else:
+        parsed = urlparse(s3_url)
+        parts = parsed.path.lstrip("/").split("/", 1)
+        if len(parts) < 2 or not parts[1]:
+            raise ValueError(f"Invalid S3 URL '{s3_url}': must include bucket and key in path")
+        endpoint = f"{parsed.scheme}://{parsed.netloc}"
+        return parts[0], parts[1], endpoint
+
 
 # ----------------------------
 # Download helpers
@@ -69,19 +97,7 @@ def download_s3_file(
     logger.info(f"Downloading S3 file {s3_url} to {target_path}")
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Parse S3 URL to determine bucket, key, and potential custom endpoint
-    endpoint = None
-    if s3_url.startswith("s3://"):
-        parts = s3_url[5:].split("/", 1)
-        bucket = parts[0]
-        key = parts[1]
-    else:
-        # Handle custom endpoints like MinIO or R2 if passed as http(s) URL
-        parsed = urlparse(s3_url)
-        parts = parsed.path.lstrip("/").split("/", 1)
-        bucket = parts[0]
-        key = parts[1]
-        endpoint = f"{parsed.scheme}://{parsed.netloc}"
+    bucket, key, endpoint = parse_s3_url(s3_url)
 
     # Prepare Client Config
     s3_kwargs = {
@@ -110,6 +126,7 @@ def download_http_file(
     auth_password: Optional[str] = None,
     auth_header: Optional[str] = None,
     custom_headers: Optional[dict] = None,
+    custom_auth: Optional[str] = None,
     verify_ssl: bool = True,
 ) -> None:
     """Download via HTTP GET."""
@@ -117,10 +134,13 @@ def download_http_file(
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
     headers = {}
-    if auth_header:
-        headers["Authorization"] = auth_header
     if custom_headers:
         headers.update(custom_headers)
+    # custom_auth takes priority over auth_header
+    if custom_auth:
+        headers["Authorization"] = custom_auth
+    elif auth_header:
+        headers["Authorization"] = auth_header
 
     # Determine Basic Auth tuple
     auth = None
@@ -144,6 +164,120 @@ def download_http_file(
     logger.info(f"Successfully downloaded {url}")
 
 
+def download_http_post_file(
+    url: str,
+    target_path: Path,
+    auth_user: Optional[str] = None,
+    auth_password: Optional[str] = None,
+    auth_header: Optional[str] = None,
+    custom_headers: Optional[dict] = None,
+    custom_auth: Optional[str] = None,
+    verify_ssl: bool = True,
+) -> None:
+    """Download via HTTP POST (for APIs that return files on POST requests)."""
+    logger.info(f"Downloading via HTTP POST {url} to {target_path}")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    headers = {}
+    if custom_headers:
+        headers.update(custom_headers)
+    # custom_auth takes priority over auth_header
+    if custom_auth:
+        headers["Authorization"] = custom_auth
+    elif auth_header:
+        headers["Authorization"] = auth_header
+
+    auth = None
+    if auth_user and auth_password:
+        auth = (auth_user, auth_password)
+
+    if not verify_ssl:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    response = requests.post(
+        url, auth=auth, headers=headers, verify=verify_ssl, stream=True, timeout=60
+    )
+    response.raise_for_status()
+
+    with open(target_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+
+    logger.info(f"Successfully downloaded {url}")
+
+
+def download_http_request(
+    request_config: str,
+    target_path: Path,
+    auth_user: Optional[str] = None,
+    auth_password: Optional[str] = None,
+    auth_header: Optional[str] = None,
+    custom_headers: Optional[dict] = None,
+    custom_auth: Optional[str] = None,
+    verify_ssl: bool = True,
+) -> None:
+    """
+    Download via generic HTTP request configured as JSON string.
+    Expected format: {"method": "GET/POST/PUT", "url": "...", "body": {...}, "headers": {...}}
+    """
+    import json
+
+    logger.info(f"Downloading via HTTP request to {target_path}")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        config = json.loads(request_config)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid request configuration JSON: {e}")
+
+    method = config.get("method", "GET").upper()
+    url = config.get("url")
+    body = config.get("body")
+    config_headers = config.get("headers", {})
+
+    if not url:
+        raise ValueError("Request configuration must include 'url'")
+
+    headers = {}
+    headers.update(config_headers)
+    if custom_headers:
+        headers.update(custom_headers)
+    # custom_auth takes priority over auth_header
+    if custom_auth:
+        headers["Authorization"] = custom_auth
+    elif auth_header:
+        headers["Authorization"] = auth_header
+
+    auth = None
+    if auth_user and auth_password:
+        auth = (auth_user, auth_password)
+
+    if not verify_ssl:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    response = requests.request(
+        method=method,
+        url=url,
+        auth=auth,
+        headers=headers,
+        json=body if body else None,
+        verify=verify_ssl,
+        stream=True,
+        timeout=60
+    )
+    response.raise_for_status()
+
+    with open(target_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+
+    logger.info(f"Successfully downloaded from {url}")
+
+
 # ----------------------------
 # Upload helpers
 # ----------------------------
@@ -162,22 +296,11 @@ def upload_s3_file(
     from botocore.client import Config
 
     logger.info(f"Uploading file {local_path} to S3 {s3_url}")
-    
+
     if not local_path.exists():
         raise FileNotFoundError(f"Source file not found: {local_path}")
 
-    # Parse S3 URL
-    endpoint = None
-    if s3_url.startswith("s3://"):
-        parts = s3_url[5:].split("/", 1)
-        bucket = parts[0]
-        key = parts[1]
-    else:
-        parsed = urlparse(s3_url)
-        parts = parsed.path.lstrip("/").split("/", 1)
-        bucket = parts[0]
-        key = parts[1]
-        endpoint = f"{parsed.scheme}://{parsed.netloc}"
+    bucket, key, endpoint = parse_s3_url(s3_url)
 
     # Prepare Client Config
     s3_kwargs = {
@@ -205,19 +328,23 @@ def upload_http_file(
     auth_password: Optional[str] = None,
     auth_header: Optional[str] = None,
     custom_headers: Optional[dict] = None,
+    custom_auth: Optional[str] = None,
     verify_ssl: bool = True,
 ) -> None:
     """Upload via HTTP POST (Multipart)."""
     logger.info(f"Uploading HTTP {local_path} to {url}")
-    
+
     if not local_path.exists():
         raise FileNotFoundError(f"Source file not found: {local_path}")
 
     headers = {}
-    if auth_header:
-        headers["Authorization"] = auth_header
     if custom_headers:
         headers.update(custom_headers)
+    # custom_auth takes priority over auth_header
+    if custom_auth:
+        headers["Authorization"] = custom_auth
+    elif auth_header:
+        headers["Authorization"] = auth_header
 
     auth = None
     if auth_user and auth_password:
@@ -275,6 +402,28 @@ def process_data_download(base_path: Path, d: FileReference) -> None:
                 secret_key=d.http_password
             )
 
+        elif d.request:
+            download_http_request(
+                request_config=d.request,
+                target_path=save_path,
+                auth_user=d.http_login,
+                auth_password=d.http_password,
+                auth_header=d.http_auth_header,
+                custom_headers=d.custom_header,
+                custom_auth=d.custom_auth
+            )
+
+        elif d.post:
+            download_http_post_file(
+                url=d.post,
+                target_path=save_path,
+                auth_user=d.http_login,
+                auth_password=d.http_password,
+                auth_header=d.http_auth_header,
+                custom_headers=d.custom_header,
+                custom_auth=d.custom_auth
+            )
+
         elif d.get:
             download_http_file(
                 url=d.get,
@@ -282,11 +431,12 @@ def process_data_download(base_path: Path, d: FileReference) -> None:
                 auth_user=d.http_login,
                 auth_password=d.http_password,
                 auth_header=d.http_auth_header,
-                custom_headers=d.custom_header
+                custom_headers=d.custom_header,
+                custom_auth=d.custom_auth
             )
-            
+
         else:
-            raise ValueError(f"No download source (git, s3, get) specified for {d.path}")
+            raise ValueError(f"No download source (git, s3, get, post, request) specified for {d.path}")
 
     except Exception as e:
         logger.error(f"Failed to download {d.path}: {str(e)}")
@@ -296,7 +446,11 @@ def process_data_download(base_path: Path, d: FileReference) -> None:
 def process_data_upload(base_path: Path, d: FileReference) -> None:
     """Dispatch upload to correct handler based on populated fields."""
     source_path = base_path / d.path
-    
+
+    # Security check to prevent directory traversal
+    if not os.path.abspath(source_path).startswith(os.path.abspath(base_path)):
+        raise ValueError(f"Invalid path: {d.path} traverses outside source directory")
+
     logger.info(f"Processing Upload: {d.path}")
 
     try:
@@ -311,19 +465,31 @@ def process_data_upload(base_path: Path, d: FileReference) -> None:
                 secret_key=d.http_password
             )
 
+        elif d.post:
+            upload_http_file(
+                url=d.post,
+                local_path=source_path,
+                auth_user=d.http_login,
+                auth_password=d.http_password,
+                auth_header=d.http_auth_header,
+                custom_headers=d.custom_header,
+                custom_auth=d.custom_auth
+            )
+
         elif d.get:
-            # Using 'get' field as the target URL for upload
+            # Using 'get' field as the target URL for upload (legacy support)
             upload_http_file(
                 url=d.get,
                 local_path=source_path,
                 auth_user=d.http_login,
                 auth_password=d.http_password,
                 auth_header=d.http_auth_header,
-                custom_headers=d.custom_header
+                custom_headers=d.custom_header,
+                custom_auth=d.custom_auth
             )
-            
+
         else:
-            raise ValueError(f"No upload destination (s3, get) specified for {d.path}")
+            raise ValueError(f"No upload destination (s3, post, get) specified for {d.path}")
 
     except Exception as e:
         logger.error(f"Failed to upload {d.path}: {str(e)}")
