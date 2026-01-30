@@ -1,5 +1,5 @@
 {
-  "capability": "LLM::dolphin-mistral",
+  "capability": "llm.dolphin-mistral",
   "urgent": true,
   "payload": {
     "model": "dolphin-mistral",

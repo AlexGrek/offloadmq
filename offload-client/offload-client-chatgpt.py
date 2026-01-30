@@ -121,7 +121,7 @@ def get_ollama_models() -> List[str]:
             name = parts[0]
             if name.endswith(":latest"):
                 name = name[:-7]
-            models.append(f"LLM::{name}")
+            models.append(f"llm.{name}")
         return models
     except FileNotFoundError:
         print("Warning: Ollama not installed; no LLM capabilities will be added.")
@@ -339,7 +339,7 @@ def report_task_result(server_url: str, report: TaskResultReport, headers: Dict[
 # =========================
 
 def execute_debug_echo(task_id: TaskId, capability: str, payload: dict, server_url: str, headers: Dict[str, str]) -> bool:
-    print(f"Executing debug::echo for task {task_id.to_json()} with payload: {payload}")
+    print(f"Executing debug.echo for task {task_id.to_json()} with payload: {payload}")
     report = TaskResultReport(
         task_id=task_id,
         status=TaskResultStatus(status="success", data=timedelta(seconds=12.5)),
@@ -349,7 +349,7 @@ def execute_debug_echo(task_id: TaskId, capability: str, payload: dict, server_u
     return report_task_result(server_url, report, headers)
 
 def execute_shell_bash(task_id: TaskId, capability: str, payload: dict, server_url: str, headers: Dict[str, str]) -> bool:
-    print(f"Executing shell::bash for task {task_id.to_json()} with payload: {payload}")
+    print(f"Executing shell.bash for task {task_id.to_json()} with payload: {payload}")
     command = (payload or {}).get("command")
     if not command:
         error_output = {"error": "No 'command' provided in payload."}
@@ -388,13 +388,13 @@ def execute_shell_bash(task_id: TaskId, capability: str, payload: dict, server_u
 def execute_llm_query(task_id: TaskId, capability: str, payload: dict, server_url: str, headers: Dict[str, str]) -> bool:
     """
     Handles LLM tasks by sending a query to the local Ollama REST API.
-    capability format: 'LLM::<model-name>'
+    capability format: 'llm.<model-name>'
     payload is passed through to Ollama's /api/chat (allows messages or prompt formats).
     """
     try:
-        model_name = capability.split("::", 1)[-1]
+        model_name = capability.split(".", 1)[-1]
         if not model_name:
-            raise ValueError("LLM capability missing model name (expected 'LLM::<model>').")
+            raise ValueError("LLM capability missing model name (expected 'llm.<model>').")
 
         # Be permissive: if payload is a string, wrap as a simple prompt.
         # If it's a dict, pass through (user may send full chat payload already).
@@ -449,9 +449,9 @@ def serve_tasks(server_url: str, jwt_token: str) -> None:
     headers = {"Authorization": f"Bearer {jwt_token}"}
 
     executors = {
-        "debug::echo": execute_debug_echo,
-        "shell::bash": execute_shell_bash,
-        # All capabilities starting with LLM:: use execute_llm_query
+        "debug.echo": execute_debug_echo,
+        "shell.bash": execute_shell_bash,
+        # All capabilities starting with llm. use execute_llm_query
     }
 
     while True:
@@ -476,7 +476,7 @@ def serve_tasks(server_url: str, jwt_token: str) -> None:
 
                 print(f"Received task: {task_id.to_json()} capability='{capability}'")
 
-                if capability.startswith("LLM::"):
+                if capability.startswith("llm."):
                     execute_llm_query(task_id, capability, payload, server_url, headers)
                 else:
                     executor = executors.get(capability)
@@ -515,7 +515,7 @@ def sysinfo() -> None:
 
 @app.command()
 def ollama() -> None:
-    """Display detected Ollama models (as LLM capabilities)"""
+    """Display detected Ollama models (as llm.* capabilities)"""
     caps = get_ollama_models()
     if caps:
         print("Detected Ollama capabilities:")
@@ -529,7 +529,7 @@ def register(
     server: Optional[str] = typer.Option(None, help="Server URL (required if not in config)"),
     key: Optional[str] = typer.Option(None, help="API key (required if not in config)"),
     tier: int = typer.Option(5, help="Performance tier (0-255, default: 5)"),
-    caps: List[str] = typer.Option(["debug::echo", "shell::bash", "TTS::kokoro"], "--cap", help="Agent capability; repeatable"),
+    caps: List[str] = typer.Option(["debug.echo", "shell.bash", "tts.kokoro"], "--cap", help="Agent capability; repeatable"),
     capacity: int = typer.Option(1, help="Concurrent task capacity (default: 1)"),
 ):
     """Register a new agent with the server"""

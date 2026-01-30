@@ -155,7 +155,7 @@ const PipelineApp = ({ apiKey }) => {
         const bashCommand = `bash -c '${escapedCommand}'`;
 
         const payload = {
-            capability: "shell::bash",
+            capability: "shell.bash",
             urgent: false, // Non-blocking, as requested
             payload: bashCommand,
             apiKey: apiKey,

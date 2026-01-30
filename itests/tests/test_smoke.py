@@ -95,34 +95,34 @@ def temp_dir():
 
 def test_simple_bash_command():
     result = submit_task(
-        capability="shell::bash",
+        capability="shell.bash",
         payload={"command": "echo 'Hello World'"}
     )
     
-    assert result["data"]["capability"] == "shell::bash"
+    assert result["data"]["capability"] == "shell.bash"
     assert result["status"] in ["completed", "success"]
     assert "result" in result or "output" in result
 
 
 def test_bash_list_directory():
     result = submit_task(
-        capability="shell::bash",
+        capability="shell.bash",
         payload={"command": "ls -la"}
     )
     
-    assert result["data"]["capability"] == "shell::bash"
+    assert result["data"]["capability"] == "shell.bash"
     assert result["status"] in ["completed", "success"]
 
 
 def test_bash_with_multiline():
     result = submit_task(
-        capability="shell::bash",
+        capability="shell.bash",
         payload={
             "command": "echo 'Line 1'\necho 'Line 2'\necho 'Line 3'"
         }
     )
     
-    assert result["data"]["capability"] == "shell::bash"
+    assert result["data"]["capability"] == "shell.bash"
     assert result["status"] in ["completed", "success"]
 
 
@@ -135,12 +135,12 @@ def test_git_clone_fetch():
     ]
     
     result = submit_task(
-        capability="shell::bash",
+        capability="shell.bash",
         payload={"command": "ls -la repos/test-repo"},
         fetch_files=fetch_files
     )
     
-    assert result["data"]["capability"] == "shell::bash"
+    assert result["data"]["capability"] == "shell.bash"
     assert result["status"] in ["completed", "success"]
 
 
@@ -153,12 +153,12 @@ def test_http_get_fetch():
     ]
     
     result = submit_task(
-        capability="shell::bash",
+        capability="shell.bash",
         payload={"command": "cat downloads/test.json"},
         fetch_files=fetch_files
     )
     
-    assert result["data"]["capability"] == "shell::bash"
+    assert result["data"]["capability"] == "shell.bash"
     assert result["status"] in ["completed", "success"]
 
 
@@ -172,12 +172,12 @@ def test_http_with_custom_header():
     ]
     
     result = submit_task(
-        capability="shell::bash",
+        capability="shell.bash",
         payload={"command": "cat downloads/api-response.json"},
         fetch_files=fetch_files
     )
     
-    assert result["data"]["capability"] == "shell::bash"
+    assert result["data"]["capability"] == "shell.bash"
     assert result["status"] in ["completed", "success"]
 
 
@@ -194,35 +194,35 @@ def test_multiple_fetch_files():
     ]
     
     result = submit_task(
-        capability="shell::bash",
+        capability="shell.bash",
         payload={"command": "ls -la && cat file1.txt"},
         fetch_files=fetch_files
     )
     
-    assert result["data"]["capability"] == "shell::bash"
+    assert result["data"]["capability"] == "shell.bash"
     assert result["status"] in ["completed", "success"]
 
 
 def test_urgent_task():
     result = submit_task(
-        capability="shell::bash",
+        capability="shell.bash",
         payload={"command": "echo 'Urgent task'"},
         urgent=True
     )
     
-    assert result["data"]["capability"] == "shell::bash"
+    assert result["data"]["capability"] == "shell.bash"
     assert result["data"]["urgent"] == True
     assert result["status"] in ["completed", "success"]
 
 
 def test_restartable_task():
     result = submit_task(
-        capability="shell::bash",
+        capability="shell.bash",
         payload={"command": "echo 'Restartable task'"},
         restartable=True
     )
     
-    assert result["data"]["capability"] == "shell::bash"
+    assert result["data"]["capability"] == "shell.bash"
     assert result["data"]["restartable"] == True
     assert result["status"] in ["completed", "success"]
 
@@ -235,10 +235,10 @@ def test_artifact_creation():
     ]
     
     result = submit_task(
-        capability="shell::bash",
+        capability="shell.bash",
         payload={"command": "mkdir -p output && echo 'Result data' > output/result.txt"},
         artifacts=artifacts
     )
     
-    assert result["data"]["capability"] == "shell::bash"
+    assert result["data"]["capability"] == "shell.bash"
     assert result["status"] in ["completed", "success"]

@@ -253,7 +253,7 @@ const ApiTestingTool = () => {
                             type="text"
                             value={capability}
                             onChange={(e) => setCapability(e.target.value)}
-                            placeholder="e.g., TTS::kokoro"
+                            placeholder="e.g., tts.kokoro"
                             style={styles.input}
                         />
                     </label>

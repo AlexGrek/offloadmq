@@ -49,7 +49,7 @@ python offload_client.py \
   --server https://your-server.com \
   --key your-api-key \
   --tier 8 \
-  --caps "LLM::mistral" "SUMMARIZATION" "TRANSLATION" \
+  --caps "llm.mistral" "summarization" "translation" \
   --capacity 4
 ```
 
@@ -76,13 +76,13 @@ The script will use saved configuration from `.offload-client.json`.
 ### Capability Examples
 
 Common capability strings:
-- `LLM::mistral-7b` - Large Language Model
-- `LLM::llama2-13b` - Specific model variant
-- `TEXT_GENERATION` - Generic text generation
-- `SUMMARIZATION` - Document summarization
-- `TRANSLATION::en-fr` - Language translation
-- `IMAGE_PROCESSING` - Image analysis/editing
-- `AUDIO_PROCESSING` - Audio transcription/generation
+- `llm.mistral-7b` - Large Language Model
+- `llm.llama2-13b` - Specific model variant
+- `text.generation` - Generic text generation
+- `summarization` - Document summarization
+- `translation.en-fr` - Language translation
+- `image.processing` - Image analysis/editing
+- `audio.processing` - Audio transcription/generation
 
 ## 🔧 Configuration File
 
@@ -152,7 +152,7 @@ Memory: 32768 MB
 GPU: NVIDIA GeForce RTX 4090 (24576 MB VRAM)
 
 Registering with server: https://compute.example.com
-Capabilities: ['LLM::mistral-7b', 'SUMMARIZATION']
+Capabilities: ['llm.mistral-7b', 'summarization']
 Tier: 8
 Capacity: 4
 

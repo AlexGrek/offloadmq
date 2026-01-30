@@ -82,7 +82,7 @@ pub struct TaskRetryConfiguration {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRegistrationRequest {
-    /// A list of capabilities this agent provides (e.g., "LLM::mistral").
+    /// A list of capabilities this agent provides (e.g., "llm.mistral").
     pub capabilities: Vec<String>,
     /// The performance tier of the agent (higher is better).
     pub tier: u8,
@@ -97,7 +97,7 @@ pub struct AgentRegistrationRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentUpdateRequest {
-    /// A list of capabilities this agent provides (e.g., "LLM::mistral").
+    /// A list of capabilities this agent provides (e.g., "llm.mistral").
     pub capabilities: Vec<String>,
     /// The performance tier of the agent (higher is better).
     pub tier: u8,
