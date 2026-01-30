@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{Json, Router, extract::State, middleware::from_fn_with_state, routing::*};
 use log::info;
 use offloadmq::{
-    api::agent::{auth_agent, register_agent, update_agent_info}, db::app_storage::AppStorage, preferences::init_config, state::AppState
+    api::agent::{auth_agent, register_agent, update_agent_info, websocket_handler}, db::app_storage::AppStorage, preferences::init_config, state::AppState
 };
 use offloadmq::{middleware::auth::Auth, *};
 use serde_json::{Value, json};
@@ -49,6 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Agent routes
         .route("/agent/register", post(register_agent))
         .route("/agent/auth", post(auth_agent))
+        // Agent WebSocket (auth via query params)
+        .route("/private/agent/ws", get(websocket_handler))
         // Health check and stats
         .route("/health", get(health_check))
         .route("/stats", get(get_stats))

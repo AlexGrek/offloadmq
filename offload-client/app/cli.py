@@ -5,6 +5,7 @@ from .systeminfo import *
 from .models import *
 from .httphelpers import *
 from .core import serve_tasks
+from .websocket_client import serve_websocket
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Offload Client CLI")
@@ -102,7 +103,10 @@ def cli_register(
 def cli_serve(
     server: Optional[str] = typer.Option(
         None, help="Server URL (required if not in config)"
-    )
+    ),
+    ws: bool = typer.Option(
+        False, "--ws", help="Use WebSocket connection instead of polling"
+    ),
 ):
     cfg = load_config()
     server = server or cfg.get("server")
@@ -139,5 +143,9 @@ def cli_serve(
     cfg["jwtToken"] = jwt
     save_config(cfg)
 
-    typer.echo("Starting task polling...")
-    serve_tasks(server, jwt)
+    if ws:
+        typer.echo("Starting WebSocket connection...")
+        serve_websocket(server, jwt)
+    else:
+        typer.echo("Starting task polling...")
+        serve_tasks(server, jwt)
