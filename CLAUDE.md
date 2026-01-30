@@ -34,9 +34,23 @@ npm run lint             # Run ESLint
 
 ### Integration Tests
 ```bash
+# From project root:
+make test-full           # Full test: start server+agent, run tests, stop everything
+make test-unit           # Run Rust unit tests only
+make test                # Run integration tests (requires running server+agent)
+make test-start          # Start server and agent for manual testing
+make test-stop           # Stop server and agent
+make test-logs           # Show server and agent logs
+
+# From itests directory:
 cd itests
 make venv                # Setup test environment
-make run                 # Run pytest integration tests
+make test-full           # Full automated test run
+make start-server        # Start server in background
+make start-agent         # Start agent in background (starts server if needed)
+make stop-all            # Stop server and agent
+make logs                # Show logs
+make run                 # Run pytest (server+agent must be running)
 ```
 
 ### Docker/Kubernetes Deployment

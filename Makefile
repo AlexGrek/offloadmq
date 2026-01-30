@@ -84,5 +84,26 @@ dev-agent:
 dev-frontend:
 	cd management-frontend && npm run dev
 
+# Run Rust unit tests
+test-unit:
+	cargo test
+
+# Run integration tests (requires server and agent already running)
 test:
 	cd itests && make run
+
+# Run full integration tests (starts server + agent, runs tests, stops everything)
+test-full:
+	cd itests && make test-full
+
+# Start server and agent for manual testing
+test-start:
+	cd itests && make start-agent
+
+# Stop server and agent
+test-stop:
+	cd itests && make stop-all
+
+# Show test infrastructure logs
+test-logs:
+	cd itests && make logs
