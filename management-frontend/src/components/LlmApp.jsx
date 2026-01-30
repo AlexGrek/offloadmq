@@ -38,7 +38,7 @@ const LlmApp = ({ apiKey }) => {
           setError(data.error.message);
         } else if (data) {
           // Directly set the message content as the response
-          setCapabilities(data.filter((cap) => cap.startsWith("LLM")))
+          setCapabilities(data.filter((cap) => cap.startsWith("llm.")))
         } else {
           setError('Unexpected response format.');
         }
@@ -62,7 +62,7 @@ const LlmApp = ({ apiKey }) => {
 
     // Construct the dynamic payload based on user input
     const payload = {
-      capability: `LLM::${model}`,
+      capability: `llm.${model}`,
       urgent: true,
       payload: {
         model: model,
@@ -124,7 +124,7 @@ const LlmApp = ({ apiKey }) => {
             style={styles.input}
           />
           <p style={{ lineHeight: 'normal' }}>{capabilities.map(cap => {
-            let strip = cap.replaceAll("LLM::", "");
+            let strip = cap.replaceAll("llm.", "");
             return <a key={cap} style={{ marginRight: '8pt', display: 'inline', fontSize: 'x-small' }} href="#" onClick={() => setModel(strip)}>{strip}</a>
           })}
           </p>

@@ -61,7 +61,7 @@ def get_ollama_models() -> List[str]:
             name = parts[0]
             if name.endswith(":latest"):
                 name = name[:-7]
-            models.append(f"LLM::{name}")
+            models.append(f"llm.{name}")
         return models
     except FileNotFoundError:
         typer.echo(

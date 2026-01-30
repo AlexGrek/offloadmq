@@ -101,14 +101,14 @@ def download_required_files(http, task_id: TaskId, capability: str, fetch_files:
 
 def route_executor(cap: str):
     """Pick function based on capability string."""
-    if cap.startswith("LLM::"):
+    if cap.startswith("llm."):
         return execute_llm_query
 
     return {
-        "debug::echo": execute_debug_echo,
-        "shell::bash": execute_shell_bash,
-        "shellcmd::bash": execute_shellcmd_bash,
-        "TTS::kokoro": execute_kokoro_tts,
+        "debug.echo": execute_debug_echo,
+        "shell.bash": execute_shell_bash,
+        "shellcmd.bash": execute_shellcmd_bash,
+        "tts.kokoro": execute_kokoro_tts,
     }.get(cap)
 
 

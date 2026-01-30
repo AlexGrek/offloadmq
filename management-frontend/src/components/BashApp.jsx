@@ -67,7 +67,7 @@ const BashApp = ({ apiKey }) => {
 
         // Construct the dynamic payload
         const payload = {
-            capability: "shell::bash",
+            capability: "shell.bash",
             urgent: true, // Always true and cannot be changed
             payload: bashCommand,
             apiKey: apiKey, // Use the apiKey passed via props

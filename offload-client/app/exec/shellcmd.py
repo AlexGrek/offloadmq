@@ -12,7 +12,7 @@ def execute_shellcmd_bash(
     http: HttpClient, task_id: TaskId, capability: str, payload: dict, data: Path
 ) -> bool:
     logger.info(
-        f"Executing shellcmd::bash for task {task_id.dict()} with payload: {payload} in {data}"
+        f"Executing shellcmd.bash for task {task_id.dict()} with payload: {payload} in {data}"
     )
     if isinstance(payload, str):
         command = payload
