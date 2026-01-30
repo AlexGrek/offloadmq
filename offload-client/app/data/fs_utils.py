@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 import platform
 from ..models import TaskId
-from.updn import FileReference
+from .updn import FileReference
 
 
 def pick_directory(task_id: TaskId):
@@ -45,15 +45,22 @@ def parse_file_reference(raw: dict) -> FileReference:
     """
     Convert a raw camelCase payload dict into a FileReference instance.
     Unknown fields are ignored gracefully.
+    Raises ValueError if required 'path' field is missing.
     """
+    path = raw.get("path")
+    if not path:
+        raise ValueError("FileReference must have a 'path' field")
 
     return FileReference(
-        path=raw.get("path"),
+        path=path,
         git_clone=raw.get("gitClone"),
         s3_file=raw.get("s3File"),
         get=raw.get("get"),
+        post=raw.get("post"),
+        request=raw.get("request"),
         http_login=raw.get("httpLogin"),
         http_password=raw.get("httpPassword"),
         http_auth_header=raw.get("httpAuthHeader"),
         custom_header=raw.get("customHeader"),
+        custom_auth=raw.get("customAuth"),
     )
