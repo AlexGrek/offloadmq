@@ -2,12 +2,14 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State, WebSocketUpgrade, ws::{Message, WebSocket}},
     response::IntoResponse,
 };
 use chrono::Utc;
-use log::{debug, info};
+use futures::{SinkExt, StreamExt};
+use log::{debug, info, warn};
 use rand::seq::IndexedRandom;
+use serde::Deserialize;
 use serde_json::json;
 
 use crate::{
@@ -190,4 +192,102 @@ pub async fn post_task_progress_update(
         update_non_urgent_task(&app_state.storage.tasks, report).await?;
     }
     Ok(Json(json!({"message": "task update confirmed"})))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WsAuthQuery {
+    pub token: String,
+}
+
+pub async fn websocket_handler(
+    ws: WebSocketUpgrade,
+    Query(query): Query<WsAuthQuery>,
+    State(app_state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate JWT token from query params
+    let claims = app_state
+        .auth
+        .decode_token(&query.token)
+        .map_err(|_| AppError::Authorization("Invalid or expired token".to_string()))?;
+
+    // Get the agent from storage
+    let agent = app_state
+        .storage
+        .get_agent(&claims.sub)
+        .ok_or_else(|| AppError::Authorization("Agent not found".to_string()))?;
+
+    info!("Agent {} connected via WebSocket", agent.uid_short);
+
+    Ok(ws.on_upgrade(move |socket| handle_agent_websocket(socket, agent.uid_short)))
+}
+
+async fn handle_agent_websocket(socket: WebSocket, agent_id: String) {
+    let (mut sender, mut receiver) = socket.split();
+
+    // Send welcome message
+    let welcome = json!({
+        "type": "connected",
+        "agent_id": agent_id,
+        "message": "WebSocket connection established"
+    });
+    if sender
+        .send(Message::Text(welcome.to_string().into()))
+        .await
+        .is_err()
+    {
+        warn!("Failed to send welcome message to agent {}", agent_id);
+        return;
+    }
+
+    // Spawn a task to send periodic dummy messages
+    let agent_id_clone = agent_id.clone();
+    let send_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+        let mut counter: u64 = 0;
+        loop {
+            interval.tick().await;
+            counter += 1;
+            let msg = json!({
+                "type": "heartbeat",
+                "counter": counter,
+                "timestamp": Utc::now().to_rfc3339()
+            });
+            if sender
+                .send(Message::Text(msg.to_string().into()))
+                .await
+                .is_err()
+            {
+                warn!("Failed to send heartbeat to agent {}", agent_id_clone);
+                break;
+            }
+            debug!("Sent heartbeat {} to agent {}", counter, agent_id_clone);
+        }
+    });
+
+    // Handle incoming messages from the agent
+    while let Some(result) = receiver.next().await {
+        match result {
+            Ok(Message::Text(text)) => {
+                debug!("Received from agent {}: {}", agent_id, text);
+            }
+            Ok(Message::Close(_)) => {
+                info!("Agent {} closed WebSocket connection", agent_id);
+                break;
+            }
+            Ok(Message::Ping(data)) => {
+                debug!("Received ping from agent {}", agent_id);
+                // Pong is automatically sent by axum
+                let _ = data; // suppress unused warning
+            }
+            Ok(_) => {}
+            Err(e) => {
+                warn!("WebSocket error for agent {}: {}", agent_id, e);
+                break;
+            }
+        }
+    }
+
+    // Abort the send task when connection closes
+    send_task.abort();
+    info!("Agent {} WebSocket connection closed", agent_id);
 }

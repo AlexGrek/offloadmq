@@ -1,6 +1,7 @@
 # Core dependencies
 requests>=2.25.0
 psutil>=5.8.0
+websocket-client>=1.6.0
 
 # GPU detection (optional but recommended)
 boto3
