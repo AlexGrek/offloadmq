@@ -17,7 +17,7 @@ ifndef CONTAINER_RUNTIME
     $(error Neither podman nor docker found in PATH. Please install one of them.)
 endif
 
-.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform
+.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force
 
 # Build container image
 build:
@@ -39,6 +39,37 @@ build-multiplatform:
 push:
 	@echo "Pushing with $(CONTAINER_RUNTIME)..."
 	$(CONTAINER_RUNTIME) push $(IMAGE):$(TAG)
+
+# Generate .secrets.yaml file with random secrets
+secrets:
+	@echo "Generating $(SECRETS_FILE)..."
+	@if [ -f $(SECRETS_FILE) ]; then \
+		echo "WARNING: $(SECRETS_FILE) already exists. Remove it first or use 'make secrets-force'"; \
+		exit 1; \
+	fi
+	@AGENT_KEY=$$(openssl rand -base64 24 | tr -d '\n' | base64 | tr -d '\n'); \
+	CLIENT_KEY=$$(openssl rand -base64 24 | tr -d '\n' | base64 | tr -d '\n'); \
+	JWT_SECRET=$$(openssl rand -base64 48 | tr -d '\n' | base64 | tr -d '\n'); \
+	MGMT_TOKEN=$$(openssl rand -base64 48 | tr -d '\n' | base64 | tr -d '\n'); \
+	cat > $(SECRETS_FILE) <<EOF ;\
+apiVersion: v1\n\
+kind: Secret\n\
+metadata:\n\
+  name: offloadmq-secrets\n\
+  namespace: $(NAMESPACE)\n\
+data:\n\
+  AGENT_API_KEYS: $$AGENT_KEY\n\
+  CLIENT_API_KEYS: $$CLIENT_KEY\n\
+  JWT_SECRET: $$JWT_SECRET\n\
+  MGMT_TOKEN: $$MGMT_TOKEN\n\
+type: Opaque\n\
+EOF
+	@echo "✓ Generated $(SECRETS_FILE) with random secrets"
+
+# Force regenerate secrets (overwrites existing file)
+secrets-force:
+	@rm -f $(SECRETS_FILE)
+	@$(MAKE) secrets
 
 # Install Helm chart
 install:
