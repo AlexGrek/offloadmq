@@ -155,7 +155,8 @@ pub async fn all_online_agents_for(
             collection.push(agent);
         }
     }
-    return collection;
+    collection.sort_by(|a, b| b.tier.cmp(&a.tier));
+    collection
 }
 
 pub async fn submit_urgent_task(
