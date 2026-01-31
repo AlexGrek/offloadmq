@@ -17,12 +17,23 @@ ifndef CONTAINER_RUNTIME
     $(error Neither podman nor docker found in PATH. Please install one of them.)
 endif
 
-.PHONY: build push install upgrade uninstall status template deploy
+.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform
 
 # Build container image
 build:
 	@echo "Building with $(CONTAINER_RUNTIME)..."
 	$(CONTAINER_RUNTIME) build -t $(IMAGE):$(TAG) .
+
+# Build multiplatform image with buildx (amd64 and arm64)
+# Set PLATFORMS to override (e.g., make build-multiplatform PLATFORMS=linux/amd64,linux/arm64,linux/arm/v7)
+PLATFORMS ?= linux/amd64,linux/arm64
+build-multiplatform:
+	@echo "Building multiplatform image for $(PLATFORMS)..."
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		--tag $(IMAGE):$(TAG) \
+		--push \
+		.
 
 # Push container image
 push:
@@ -63,6 +74,20 @@ template:
 
 # Build, push, and install/upgrade in one go
 deploy: build push
+	@if [ ! -f $(SECRETS_FILE) ]; then \
+		echo "ERROR: Secrets file '$(SECRETS_FILE)' not found!"; \
+		exit 1; \
+	fi
+	@if helm status $(RELEASE) -n $(NAMESPACE) >/dev/null 2>&1; then \
+		echo "Upgrading $(RELEASE) to $(IMAGE):$(TAG) ..."; \
+		$(MAKE) upgrade; \
+	else \
+		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
+		$(MAKE) install; \
+	fi
+
+# Build multiplatform, and install/upgrade in one go
+deploy-multiplatform: build-multiplatform
 	@if [ ! -f $(SECRETS_FILE) ]; then \
 		echo "ERROR: Secrets file '$(SECRETS_FILE)' not found!"; \
 		exit 1; \
