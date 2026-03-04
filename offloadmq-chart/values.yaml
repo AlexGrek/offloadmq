@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: your-docker-registry/offloadmq
+  repository: grekodocker/offloadmq
   tag: latest
   pullPolicy: IfNotPresent
 

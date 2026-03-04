@@ -5,7 +5,7 @@ RELEASE := offloadmq-frontend
 
 # Detect Git version if TAG is not provided
 TAG ?= $(shell git describe --tags --always --dirty)
-IMAGE ?= localhost:5000/offloadmq-frontend
+IMAGE ?= grekodocker/offloadmq-frontend
 
 .PHONY: build push install upgrade uninstall status template deploy
 

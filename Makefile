@@ -2,20 +2,13 @@ APP_NAME := offloadmq
 CHART_DIR := offloadmq-chart
 NAMESPACE := offloadmq
 RELEASE := offloadmq
-REGISTRY ?= localhost:5000
+REGISTRY ?= grekodocker
 # Detect Git version if TAG is not provided
 TAG ?= $(shell git describe --tags --always --dirty)
 IMAGE ?= ${REGISTRY}/offloadmq
 SECRETS_FILE ?= .secrets.yaml
 
-# Detect container runtime: prefer podman, fallback to docker
-CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null)
-ifndef CONTAINER_RUNTIME
-    CONTAINER_RUNTIME := $(shell command -v docker 2>/dev/null)
-endif
-ifndef CONTAINER_RUNTIME
-    $(error Neither podman nor docker found in PATH. Please install one of them.)
-endif
+CONTAINER_RUNTIME := docker
 
 .PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force
 
