@@ -33,4 +33,7 @@ clean:
 	@echo "Cleanup complete."
 
 
-.PHONY: sysinfo register ollama build clean
+webui: venv
+	bash -c "source venv/bin/activate && python webui.py"
+
+.PHONY: sysinfo register ollama build clean webui
