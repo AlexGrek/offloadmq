@@ -1,7 +1,7 @@
 /venv
-.offload-client.json
+.offload-agent.json
 /build
 /dist
-offload-client.spec
+offload-agent.spec
 **/__pycache__
 **/*.pyc

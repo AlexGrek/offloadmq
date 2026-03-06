@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-webui.py — FastAPI web dashboard for offload-client
+webui.py — FastAPI web dashboard for offload-agent
 
-Wraps the existing offload-client.py CLI. Provides a web UI for
+Wraps the existing offload-agent.py CLI. Provides a web UI for
 configuring capabilities, then runs `register + serve` as a background
 subprocess when the user clicks Start.
 
@@ -20,7 +20,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# ── Bootstrap: run from offload-client directory ───────────────────────────────
+# ── Bootstrap: run from offload-agent directory ───────────────────────────────
 SCRIPT_DIR = Path(__file__).parent.resolve()
 os.chdir(SCRIPT_DIR)
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -273,7 +273,7 @@ def _systemd_status() -> Dict[str, Any]:
     if sys.platform != "linux":
         import platform
         return {"ok": False, "reason": f"Linux only (current OS: {platform.system()})"}
-    bin_path = sys.executable if getattr(sys, "frozen", False) else "/usr/local/bin/offload-client"
+    bin_path = sys.executable if getattr(sys, "frozen", False) else "/usr/local/bin/offload-agent"
     if not os.path.isfile(bin_path):
         return {"ok": False, "reason": f"Binary not found at {bin_path} — run 'install bin' first", "bin_path": bin_path}
     return {"ok": True, "reason": "", "bin_path": bin_path}
@@ -305,11 +305,11 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Offload Client</title>
+<title>Offload Agent</title>
 <style>{_CSS}</style>
 </head>
 <body>
-<h1>Offload Client</h1>
+<h1>Offload Agent</h1>
 <div class="grid">
 
   <!-- Agent status + controls -->
@@ -395,7 +395,7 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
 
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
-app = FastAPI(title="Offload Client")
+app = FastAPI(title="Offload Agent")
 
 
 @app.on_event("startup")
@@ -480,11 +480,11 @@ async def route_install_systemd():
         return RedirectResponse("/", status_code=303)
 
     bin_path = sd["bin_path"]
-    service_name = "offload-client"
+    service_name = "offload-agent"
     service_path = f"/etc/systemd/system/{service_name}.service"
     unit = f"""\
 [Unit]
-Description=Offload Client Agent (Web UI)
+Description=Offload Agent (Web UI)
 After=network-online.target
 Wants=network-online.target
 
@@ -556,12 +556,12 @@ async def route_logs():
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Offload Client Web UI")
+    parser = argparse.ArgumentParser(description="Offload Agent Web UI")
     parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8080, help="Bind port (default: 8080)")
     args = parser.parse_args()
 
     atexit.register(stop_agent)
 
-    print(f"Starting Offload Client Web UI on http://{args.host}:{args.port}")
+    print(f"Starting Offload Agent Web UI on http://{args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port)

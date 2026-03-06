@@ -7,16 +7,19 @@
       "Bash(kubectl get pods,svc,deploy -n offloadmq)",
       "Bash(helm list -n offloadmq)",
       "Bash(kubectl logs pod/offloadmq-0 -n offloadmq --tail=30)",
-      "Bash(python offload-client.py)",
-      "Bash(python offload-client.py cli --help)",
-      "Bash(python offload-client.py webui --help)",
-      "Bash(python offload-client.py unknowncmd)",
-      "Bash(python offload-client.py install bin --dest /tmp/offload-test)",
+      "Bash(python offload-agent.py)",
+      "Bash(python offload-agent.py cli --help)",
+      "Bash(python offload-agent.py webui --help)",
+      "Bash(python offload-agent.py unknowncmd)",
+      "Bash(python offload-agent.py install bin --dest /tmp/offload-test)",
       "Read(//tmp/**)",
-      "Bash(pyinstaller --onefile --name offload-client --add-data \"app:app\" --add-data \"webui.py:.\" offload-client.py)",
-      "Bash(venv/bin/python -m PyInstaller --onefile --name offload-client --add-data \"app:app\" --add-data \"webui.py:.\" offload-client.py)",
-      "Bash(./dist/offload-client install bin --dest /tmp/offload-test2)",
-      "Bash(python -c \":*)"
+      "Bash(pyinstaller --onefile --name offload-agent --add-data \"app:app\" --add-data \"webui.py:.\" offload-agent.py)",
+      "Bash(venv/bin/python -m PyInstaller --onefile --name offload-agent --add-data \"app:app\" --add-data \"webui.py:.\" offload-agent.py)",
+      "Bash(./dist/offload-agent install bin --dest /tmp/offload-test2)",
+      "Bash(python -c \":*)",
+      "Bash(mv .offload-agent.json .offload-agent.json)",
+      "Bash(mv offload-agent-chatgpt.py offload-agent-chatgpt.py)",
+      "Bash(mv offload-agent.spec offload-agent.spec)"
     ]
   }
 }

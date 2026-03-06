@@ -8,7 +8,7 @@ from .core import serve_tasks
 from .websocket_client import serve_websocket
 
 
-app = typer.Typer(add_completion=False, no_args_is_help=True, help="Offload Client CLI")
+app = typer.Typer(add_completion=False, no_args_is_help=True, help="Offload Agent CLI")
 
 
 @app.command("sysinfo", help="Display system information")

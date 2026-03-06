@@ -33,7 +33,7 @@ def pick_directory(task_id: TaskId):
         )
 
     # Create the full path
-    dir_path = base_path / "offload_client" / "runs" / str(task_id.id)
+    dir_path = base_path / "offload_agent" / "runs" / str(task_id.id)
 
     # Create all directories in the path if they don't exist
     dir_path.mkdir(parents=True, exist_ok=True)

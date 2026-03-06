@@ -5,7 +5,7 @@ PYTEST := $(VENV)/bin/pytest
 
 # Paths relative to itests directory
 ROOT_DIR := $(shell cd .. && pwd)
-AGENT_DIR := $(ROOT_DIR)/offload-client
+AGENT_DIR := $(ROOT_DIR)/offload-agent
 SERVER_PID_FILE := /tmp/offloadmq-server.pid
 AGENT_PID_FILE := /tmp/offloadmq-agent.pid
 

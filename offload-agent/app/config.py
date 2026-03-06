@@ -8,7 +8,7 @@ from app.ollama import *
 import typer
 from pydantic import BaseModel, Field
 
-CONFIG_FILE = ".offload-client.json"
+CONFIG_FILE = ".offload-agent.json"
 
 def load_config() -> Dict[str, Any]:
     p = Path(CONFIG_FILE)

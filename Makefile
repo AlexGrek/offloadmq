@@ -124,18 +124,18 @@ deploy-multiplatform: build-multiplatform
 		$(MAKE) install; \
 	fi
 
-# Build the offload-client standalone binary
+# Build the offload-agent standalone binary
 build-client:
-	cd offload-client && make build
+	cd offload-agent && make build
 
 rebuild-client:
-	cd offload-client && make rebuild
+	cd offload-agent && make rebuild
 
 dev-mq:
 	cargo run
 
 dev-agent:
-	cd offload-client && make serve
+	cd offload-agent && make serve
 
 dev-frontend:
 	cd management-frontend && npm run dev
