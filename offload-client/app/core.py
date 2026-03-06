@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 import requests
 from colorlog import ColoredFormatter
@@ -153,10 +154,10 @@ def handle_task(http: HttpClient, task: dict):
 # Main loop
 # -----------------------------------------
 
-def serve_tasks(server_url: str, jwt_token: str) -> None:
+def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | None = None) -> None:
     http = HttpClient(server_url, jwt_token)
 
-    while True:
+    while not (stop_event and stop_event.is_set()):
         try:
             task_info = poll_task(http)
             if not task_info or not task_info.get("id"):

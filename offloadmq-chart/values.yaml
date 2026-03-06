@@ -9,6 +9,22 @@ service:
   type: ClusterIP
   port: 3069
 
+ingress:
+  enabled: true
+  className: "traefik"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    kubernetes.io/ingress.class: "traefik"
+  hosts:
+    - host: "offloadmq.alexgr.space"
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: offloadmq-tls
+      hosts:
+        - offloadmq.alexgr.space
+
 env:
   SERVER_ADDRESS: "0.0.0.0:3069"
   DATABASE_ROOT_PATH: "/data/db"
