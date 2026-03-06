@@ -12,8 +12,8 @@ Usage:
 
 import argparse
 import atexit
+import logging
 import os
-import subprocess
 import sys
 import threading
 from collections import deque
@@ -34,8 +34,9 @@ from app.config import load_config, save_config
 # ── Constants ──────────────────────────────────────────────────────────────────
 BUILTIN_CAPS: List[str] = ["debug.echo", "shell.bash", "shellcmd.bash", "tts.kokoro"]
 
-# ── Agent-process state (module-level, protected by _lock) ────────────────────
-_proc: Optional[subprocess.Popen] = None
+# ── Agent-thread state (module-level, protected by _lock) ─────────────────────
+_serve_thread: Optional[threading.Thread] = None
+_stop_event: threading.Event = threading.Event()
 _log_buf: deque = deque(maxlen=500)
 _log_lock = threading.Lock()
 _start_lock = threading.Lock()
@@ -46,71 +47,72 @@ def _log(msg: str) -> None:
         _log_buf.append(msg)
 
 
-def _pipe_reader(stream, tag: str) -> None:
-    """Pump subprocess stdout/stderr lines into the log buffer."""
-    try:
-        for raw in iter(stream.readline, b""):
-            line = raw.decode("utf-8", errors="replace").rstrip()
-            _log(f"[{tag}] {line}")
-    except Exception:
-        pass
+class _BufHandler(logging.Handler):
+    """Redirect the agent logger into the webui log buffer."""
+    def emit(self, record: logging.LogRecord) -> None:
+        _log(self.format(record))
 
 
 def _do_start(server: str, api_key: str, caps: List[str]) -> None:
-    """Run register → serve in a daemon thread."""
-    global _proc
+    """Register, authenticate, then run the serve loop in this thread."""
+    from app.httphelpers import register_agent, authenticate_agent
+    from app.core import serve_tasks
+    from app.ollama import get_ollama_models
 
-    python = sys.executable
-
-    # Step 1: Register with selected capabilities (synchronous so we see output) -
-    _log("[webui] Registering agent…")
-    reg_cmd = [python, "offload-client.py", "register",
-               "--server", server, "--key", api_key]
-    for cap in caps:
-        reg_cmd += ["--caps", cap]
+    # Attach webui log capture to the agent logger
+    agent_logger = logging.getLogger("agent")
+    handler = _BufHandler()
+    handler.setFormatter(logging.Formatter("[agent] %(message)s"))
+    agent_logger.addHandler(handler)
 
     try:
-        result = subprocess.run(
-            reg_cmd,
-            cwd=str(SCRIPT_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=30,
-        )
-        for line in result.stdout.decode("utf-8", errors="replace").splitlines():
-            _log(f"[reg] {line}")
-        if result.returncode != 0:
-            _log(f"[webui] ERROR: registration failed (exit {result.returncode})")
+        # Step 1: Register -------------------------------------------------------
+        _log("[webui] Registering agent…")
+        try:
+            ollama_caps = get_ollama_models()
+            combined_caps = sorted(set(caps + ollama_caps))
+            reg = register_agent(server, combined_caps, tier=5, capacity=1, api_key=api_key)
+        except Exception as exc:
+            _log(f"[webui] ERROR: registration failed: {exc}")
             return
-    except subprocess.TimeoutExpired:
-        _log("[webui] ERROR: registration timed out")
-        return
-    except Exception as exc:
-        _log(f"[webui] ERROR during registration: {exc}")
-        return
+        _log(f"[webui] Registered (agentId={reg.get('agentId')})")
 
-    # Step 2: Start serve loop as long-lived background process ----------------
-    _log("[webui] Starting serve loop…")
-    try:
-        _proc = subprocess.Popen(
-            [python, "offload-client.py", "serve"],
-            cwd=str(SCRIPT_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=1,
-        )
-        _log(f"[webui] Agent process started (pid={_proc.pid})")
-        threading.Thread(target=_pipe_reader, args=(_proc.stdout, "out"), daemon=True).start()
-        threading.Thread(target=_pipe_reader, args=(_proc.stderr, "err"), daemon=True).start()
-    except Exception as exc:
-        _log(f"[webui] ERROR starting serve: {exc}")
+        # Step 2: Authenticate ---------------------------------------------------
+        _log("[webui] Authenticating…")
+        try:
+            auth = authenticate_agent(server, reg["agentId"], reg["key"])
+        except Exception as exc:
+            _log(f"[webui] ERROR: authentication failed: {exc}")
+            return
+        jwt = auth["token"]
+        _log("[webui] Authentication successful")
+
+        # Persist to config
+        cfg = load_config()
+        cfg.update({
+            "server": server,
+            "apiKey": api_key,
+            "agentId": reg["agentId"],
+            "key": reg["key"],
+            "jwtToken": jwt,
+            "tokenExpiresIn": auth.get("expiresIn"),
+        })
+        save_config(cfg)
+
+        # Step 3: Serve loop (blocks until stop_event is set) --------------------
+        _log("[webui] Starting serve loop…")
+        _stop_event.clear()
+        serve_tasks(server, jwt, stop_event=_stop_event)
+        _log("[webui] Serve loop exited")
+    finally:
+        agent_logger.removeHandler(handler)
 
 
 def start_agent() -> str:
-    """Kick off registration+serve in the background. Returns status string."""
-    global _proc
+    """Kick off registration+serve in a background thread. Returns status string."""
+    global _serve_thread
     with _start_lock:
-        if _proc is not None and _proc.poll() is None:
+        if _serve_thread is not None and _serve_thread.is_alive():
             return "already_running"
 
     cfg = load_config()
@@ -122,38 +124,29 @@ def start_agent() -> str:
         _log("[webui] ERROR: save Server URL and API Key before starting")
         return "error: missing config"
 
-    threading.Thread(target=_do_start, args=(server, api_key, caps), daemon=True).start()
+    _serve_thread = threading.Thread(target=_do_start, args=(server, api_key, caps), daemon=True)
+    _serve_thread.start()
     return "starting"
 
 
 def stop_agent() -> str:
-    """Terminate the agent process."""
-    global _proc
+    """Signal the serve loop to stop and wait for the thread to exit."""
+    global _serve_thread
     with _start_lock:
-        if _proc is None or _proc.poll() is not None:
-            _proc = None
+        if _serve_thread is None or not _serve_thread.is_alive():
+            _serve_thread = None
             return "not_running"
-        try:
-            _proc.terminate()
-            try:
-                _proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                _proc.kill()
-            _log("[webui] Agent stopped")
-        except Exception as exc:
-            _log(f"[webui] ERROR stopping agent: {exc}")
-        finally:
-            _proc = None
+        _stop_event.set()
+        _serve_thread.join(timeout=10)
+        _serve_thread = None
+        _log("[webui] Agent stopped")
     return "stopped"
 
 
 def get_status() -> Dict[str, Any]:
-    if _proc is None:
+    if _serve_thread is None or not _serve_thread.is_alive():
         return {"running": False}
-    rc = _proc.poll()
-    if rc is None:
-        return {"running": True, "pid": _proc.pid}
-    return {"running": False, "exit_code": rc}
+    return {"running": True}
 
 
 # ── HTML template ──────────────────────────────────────────────────────────────
@@ -193,8 +186,7 @@ _JS = """
 function poll() {
   fetch('/agent/status').then(r => r.json()).then(d => {
     document.getElementById('dot').className = 'dot ' + (d.running ? 'running' : 'stopped');
-    let txt = d.running ? 'Running (pid ' + d.pid + ')' :
-              ('exit_code' in d ? 'Stopped (exit ' + d.exit_code + ')' : 'Stopped');
+    let txt = d.running ? 'Running' : 'Stopped';
     document.getElementById('st').textContent = txt;
   });
   fetch('/agent/logs').then(r => r.json()).then(d => {
@@ -212,12 +204,7 @@ setInterval(poll, 2000);
 def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
     st = get_status()
     dot_cls = "running" if st["running"] else "stopped"
-    if st["running"]:
-        st_text = f"Running (pid {st.get('pid')})"
-    elif "exit_code" in st:
-        st_text = f"Stopped (exit {st['exit_code']})"
-    else:
-        st_text = "Stopped"
+    st_text = "Running" if st["running"] else "Stopped"
 
     boxes = "".join(
         f'<label class="cap"><input type="checkbox" name="caps" value="{c}"'

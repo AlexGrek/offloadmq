@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make --version)",
+      "Bash(make -n push)",
+      "Bash(kubectl describe ingress tg-monitor-bot)",
+      "Bash(kubectl get pods,svc,deploy -n offloadmq)",
+      "Bash(helm list -n offloadmq)",
+      "Bash(kubectl logs pod/offloadmq-0 -n offloadmq --tail=30)"
+    ]
+  }
+}

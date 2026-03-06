@@ -1,0 +1,49 @@
+name: Build Client
+
+on:
+  push:
+    branches: ["master", "release"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: offload-client
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build single-file executable
+        working-directory: offload-client
+        run: |
+          pyinstaller \
+            --onefile \
+            --name offload-client-webui \
+            --add-data "app:app" \
+            webui.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: offload-client-webui-linux-amd64
+          path: offload-client/dist/offload-client-webui
+          if-no-files-found: error
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: offload-client/dist/offload-client-webui
