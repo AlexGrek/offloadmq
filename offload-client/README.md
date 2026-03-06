@@ -49,16 +49,40 @@ offload-client cli serve --help
 
 ### `webui` — web dashboard
 
-Starts a FastAPI web UI on port 8080 (default). From the UI you can configure the server URL and API key, select capabilities, start/stop the agent, and watch live logs.
+Starts a FastAPI web UI on port 8080 (default). From the UI you can:
+
+- Configure server URL and API key
+- View detected system info (OS, RAM, GPU) and Ollama models — rescanned on demand
+- Select capabilities
+- Toggle **Autostart on launch** — agent starts automatically when the webui starts (only when `--agent-autostart` is also passed)
+- Start / stop the agent and watch live logs
+- Install as a systemd service (Linux only, binary must be installed first)
 
 Requires web dependencies: `fastapi`, `uvicorn[standard]`, `python-multipart`.
 
 ```bash
 offload-client webui
 offload-client webui --host 127.0.0.1 --port 9000
+
+# Start webui and honor the autostart config setting (used by the systemd service)
+offload-client webui --agent-autostart
+
+# Enable autostart permanently (saves autostart=true to config) and start agent now
+offload-client webui --agent-autostart-enable
 ```
 
 The webui runs register + serve internally (no subprocess) when you click **Start**.
+
+#### Autostart behavior
+
+| Launch | `autostart` in config | Result |
+|---|---|---|
+| `webui` (manual) | any | Never autostarts |
+| `webui --agent-autostart` | `false` | Does not start |
+| `webui --agent-autostart` | `true` | Autostarts agent |
+| `webui --agent-autostart-enable` | set to `true` | Autostarts + persists |
+
+The **Autostart on launch** checkbox in the UI writes `autostart` to config. The systemd service always passes `--agent-autostart`, so the checkbox controls whether the agent actually starts on boot.
 
 ### `install bin` — install the binary system-wide
 
@@ -75,7 +99,7 @@ offload-client install bin --dest ~/bin
 ### `install systemd` — create a systemd service (Linux only)
 
 Writes `/etc/systemd/system/offload-client.service`, enables it, and starts it.
-The service runs `offload-client webui` with a 30-second startup delay after the network is online.
+The service runs `offload-client webui --agent-autostart` with a 30-second startup delay after the network is online, so the **Autostart on launch** checkbox in the UI controls whether the agent actually starts on boot.
 
 ```bash
 # Requires: Linux, binary already installed, sudo
@@ -87,6 +111,8 @@ sudo offload-client install systemd --bin-path /usr/local/bin/offload-client \
 ```
 
 Refuses to run on non-Linux platforms or if the binary is not found at `--bin-path`.
+
+You can also install the service directly from the **webui** using the **Service** card. The button is grayed out with a reason if the platform is not Linux or the binary is not installed.
 
 ---
 
@@ -155,9 +181,19 @@ Saved to `.offload-client.json` in the working directory:
   "key": "7e17cecc-3209-498b-9839-58da9990ef4f",
   "jwtToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
   "capabilities": ["debug.echo", "shell.bash"],
-  "custom_caps": []
+  "custom_caps": [],
+  "autostart": false
 }
 ```
+
+| Field | Description |
+|---|---|
+| `server` | OffloadMQ server URL |
+| `apiKey` | Agent registration API key |
+| `agentId`, `key`, `jwtToken` | Set automatically after registration |
+| `capabilities` | Active capability list |
+| `custom_caps` | User-defined extra capabilities |
+| `autostart` | If `true` and `--agent-autostart` is passed, agent starts when webui launches |
 
 ---
 

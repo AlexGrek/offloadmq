@@ -31,9 +31,6 @@ import uvicorn
 
 from app.config import load_config, save_config
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-BUILTIN_CAPS: List[str] = ["debug.echo", "shell.bash", "shellcmd.bash", "tts.kokoro"]
-
 # ── Agent-thread state (module-level, protected by _lock) ─────────────────────
 _serve_thread: Optional[threading.Thread] = None
 _stop_event: threading.Event = threading.Event()
@@ -61,23 +58,16 @@ _scan_lock = threading.Lock()
 
 
 def _run_scan() -> None:
-    """Detect Ollama models and collect system info; results cached in _scan."""
-    import contextlib, io
-    from app.ollama import get_ollama_models
+    """Detect available capabilities and collect system info; results cached in _scan."""
+    from app.capabilities import detect_capabilities
     from app.systeminfo import collect_system_info
 
-    _log("[scan] Scanning system…")
+    _log("[scan] Scanning system capabilities…")
     try:
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            caps = get_ollama_models()
-        for line in buf.getvalue().splitlines():
-            if line.strip():
-                _log(f"[scan] {line}")
-        _log(f"[scan] Ollama caps: {caps if caps else 'none'}")
+        caps = detect_capabilities(log_fn=_log)
     except Exception as exc:
         caps = []
-        _log(f"[scan] Ollama error: {exc}")
+        _log(f"[scan] Capability detection error: {exc}")
 
     try:
         info = collect_system_info()
@@ -95,7 +85,7 @@ def _run_scan() -> None:
         _scan["caps"] = caps
         _scan["sysinfo"] = info
         _scan["scanning"] = False
-    _log("[scan] Done")
+    _log(f"[scan] Done — {len(caps)} capability(s) available: {', '.join(caps) if caps else 'none'}")
 
 
 def _start_scan() -> None:
@@ -126,10 +116,7 @@ def _do_start(server: str, api_key: str, caps: List[str]) -> None:
         # Step 1: Register -------------------------------------------------------
         _log("[webui] Registering agent…")
         try:
-            with _scan_lock:
-                ollama_caps = list(_scan["caps"])
-            combined_caps = sorted(set(caps + ollama_caps))
-            reg = register_agent(server, combined_caps, tier=5, capacity=1, api_key=api_key)
+            reg = register_agent(server, sorted(set(caps)), tier=5, capacity=1, api_key=api_key)
         except Exception as exc:
             _log(f"[webui] ERROR: registration failed: {exc}")
             return
@@ -176,7 +163,10 @@ def start_agent() -> str:
     cfg = load_config()
     server = cfg.get("server", "").strip()
     api_key = cfg.get("apiKey", "").strip()
-    caps = cfg.get("capabilities", BUILTIN_CAPS[:])
+    # Fall back to all detected caps if the user hasn't made a selection yet
+    with _scan_lock:
+        detected = list(_scan["caps"])
+    caps = cfg.get("capabilities") or detected
 
     if not server or not api_key:
         _log("[webui] ERROR: save Server URL and API Key before starting")
@@ -419,11 +409,13 @@ async def _on_startup() -> None:
 
 def _get_all_caps(cfg: Dict) -> tuple[List[str], List[str]]:
     """Return (all_caps_for_display, selected_caps) using the scan cache."""
-    selected = list(cfg.get("capabilities", BUILTIN_CAPS[:]))
     custom = list(cfg.get("custom_caps", []))
     with _scan_lock:
-        ollama = list(_scan["caps"])
-    all_caps = sorted(set(BUILTIN_CAPS + ollama + custom + selected))
+        detected = list(_scan["caps"])
+    saved = cfg.get("capabilities")
+    # Use all detected caps as default when the user hasn't saved a selection
+    selected = list(saved) if saved is not None else list(detected)
+    all_caps = sorted(set(detected + custom + selected))
     return all_caps, selected
 
 
