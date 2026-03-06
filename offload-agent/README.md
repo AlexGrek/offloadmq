@@ -1,6 +1,6 @@
-# offload-client
+# offload-agent
 
-Python agent client for [offloadmq](https://github.com/offloadmq). Registers with the server, polls for tasks, and executes them.
+Python agent for [offloadmq](https://github.com/offloadmq). Registers with the server, polls for tasks, and executes them.
 
 Can run as a plain Python script or as a self-contained single-file binary built with PyInstaller.
 
@@ -9,14 +9,14 @@ Can run as a plain Python script or as a self-contained single-file binary built
 ## Usage
 
 ```
-offload-client <command> [options]
+offload-agent <command> [options]
 
 Commands:
   cli        Run the CLI agent (register, serve, etc.)
   webui      Start the web UI dashboard
   install    Install the binary or configure the system service
 
-offload-client --help
+offload-agent --help
 ```
 
 ### `cli` — agent CLI
@@ -25,8 +25,8 @@ Passes all arguments directly to the agent CLI. Works with only the core depende
 
 ```bash
 # Register and start serving
-offload-client cli register --server http://your-server:3069 --key ak_live_...
-offload-client cli serve
+offload-agent cli register --server http://your-server:3069 --key ak_live_...
+offload-agent cli serve
 
 # One-liner with make
 make register SERVER=http://your-server:3069 KEY=ak_live_...
@@ -43,8 +43,8 @@ Available sub-commands:
 | `ollama`    | Print detected Ollama model capabilities |
 
 ```bash
-offload-client cli register --help
-offload-client cli serve --help
+offload-agent cli register --help
+offload-agent cli serve --help
 ```
 
 ### `webui` — web dashboard
@@ -61,14 +61,14 @@ Starts a FastAPI web UI on port 8080 (default). From the UI you can:
 Requires web dependencies: `fastapi`, `uvicorn[standard]`, `python-multipart`.
 
 ```bash
-offload-client webui
-offload-client webui --host 127.0.0.1 --port 9000
+offload-agent webui
+offload-agent webui --host 127.0.0.1 --port 9000
 
 # Start webui and honor the autostart config setting (used by the systemd service)
-offload-client webui --agent-autostart
+offload-agent webui --agent-autostart
 
 # Enable autostart permanently (saves autostart=true to config) and start agent now
-offload-client webui --agent-autostart-enable
+offload-agent webui --agent-autostart-enable
 ```
 
 The webui runs register + serve internally (no subprocess) when you click **Start**.
@@ -90,21 +90,21 @@ Copies the running binary to a target directory and sets `rwxr-xr-x` permissions
 
 ```bash
 # Install to /usr/local/bin (default, requires sudo)
-sudo offload-client install bin
+sudo offload-agent install bin
 
 # Install to a custom location
-offload-client install bin --dest ~/bin
+offload-agent install bin --dest ~/bin
 ```
 
 ### `install systemd` — create a systemd service (Linux only)
 
-Writes `/etc/systemd/system/offload-client.service`, enables it, and starts it.
-The service runs `offload-client webui --agent-autostart` with a 30-second startup delay after the network is online, so the **Autostart on launch** checkbox in the UI controls whether the agent actually starts on boot.
+Writes `/etc/systemd/system/offload-agent.service`, enables it, and starts it.
+The service runs `offload-agent webui --agent-autostart` with a 30-second startup delay after the network is online, so the **Autostart on launch** checkbox in the UI controls whether the agent actually starts on boot.
 
 ```bash
 # Requires: Linux, binary already installed, sudo
-sudo offload-client install systemd
-sudo offload-client install systemd --bin-path /usr/local/bin/offload-client \
+sudo offload-agent install systemd
+sudo offload-agent install systemd --bin-path /usr/local/bin/offload-agent \
                                     --user myuser \
                                     --host 0.0.0.0 \
                                     --port 8080
@@ -123,16 +123,16 @@ You can also install the service directly from the **webui** using the **Service
 Download the pre-built binary from the [Releases](../../releases) page and run:
 
 ```bash
-chmod +x offload-client
-sudo ./offload-client install bin          # copies to /usr/local/bin
-sudo offload-client install systemd        # Linux: creates systemd service
+chmod +x offload-agent
+sudo ./offload-agent install bin          # copies to /usr/local/bin
+sudo offload-agent install systemd        # Linux: creates systemd service
 ```
 
 ### From source
 
 ```bash
 git clone ...
-cd offload-client
+cd offload-agent
 
 # Core only (cli command)
 pip install requests psutil websocket-client typer colorlog pydantic
@@ -140,8 +140,8 @@ pip install requests psutil websocket-client typer colorlog pydantic
 # With webui support
 pip install -r requirements.txt
 
-python offload-client.py cli register --server http://localhost:3069 --key ak_live_...
-python offload-client.py cli serve
+python offload-agent.py cli register --server http://localhost:3069 --key ak_live_...
+python offload-agent.py cli serve
 ```
 
 Or use make:
@@ -156,7 +156,7 @@ make webui      # start web UI
 ### Build the binary yourself
 
 ```bash
-make build          # build dist/offload-client
+make build          # build dist/offload-agent
 make rebuild        # clean + build
 ```
 
@@ -171,7 +171,7 @@ make rebuild-client # clean + build
 
 ## Configuration
 
-Saved to `.offload-client.json` in the working directory:
+Saved to `.offload-agent.json` in the working directory:
 
 ```json
 {

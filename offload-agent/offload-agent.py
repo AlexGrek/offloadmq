@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Offload Client
+Offload Agent
 
 Usage:
-  offload-client webui [--host HOST] [--port PORT]
-  offload-client cli <command> [options]
-  offload-client install bin [--dest DIR]
-  offload-client install systemd [--bin-path PATH] [--user USER] [--host HOST] [--port PORT]
-  offload-client --help
+  offload-agent webui [--host HOST] [--port PORT]
+  offload-agent cli <command> [options]
+  offload-agent install bin [--dest DIR]
+  offload-agent install systemd [--bin-path PATH] [--user USER] [--host HOST] [--port PORT]
+  offload-agent --help
 """
 
 import sys
@@ -27,14 +27,14 @@ def _this_binary() -> str:
 def _cmd_install_bin(argv: list[str]) -> None:
     import argparse, os, shutil, stat
 
-    parser = argparse.ArgumentParser(prog="offload-client install bin")
+    parser = argparse.ArgumentParser(prog="offload-agent install bin")
     parser.add_argument("--dest", default="/usr/local/bin",
                         help="Directory to install the binary into (default: /usr/local/bin)")
     args = parser.parse_args(argv)
 
     src = _this_binary()
     dest_dir = args.dest
-    dest = os.path.join(dest_dir, "offload-client")
+    dest = os.path.join(dest_dir, "offload-agent")
 
     try:
         os.makedirs(dest_dir, exist_ok=True)
@@ -50,9 +50,9 @@ def _cmd_install_bin(argv: list[str]) -> None:
 def _cmd_install_systemd(argv: list[str]) -> None:
     import argparse, getpass, os
 
-    parser = argparse.ArgumentParser(prog="offload-client install systemd")
-    parser.add_argument("--bin-path", default="/usr/local/bin/offload-client",
-                        help="Path to the installed binary (default: /usr/local/bin/offload-client)")
+    parser = argparse.ArgumentParser(prog="offload-agent install systemd")
+    parser.add_argument("--bin-path", default="/usr/local/bin/offload-agent",
+                        help="Path to the installed binary (default: /usr/local/bin/offload-agent)")
     parser.add_argument("--user", default=getpass.getuser(),
                         help="System user to run the service as (default: current user)")
     parser.add_argument("--host", default="0.0.0.0",
@@ -67,15 +67,15 @@ def _cmd_install_systemd(argv: list[str]) -> None:
 
     if not os.path.isfile(args.bin_path):
         print(f"Error: binary not found at {args.bin_path!r}.")
-        print(f"Run 'offload-client install bin' first.")
+        print(f"Run 'offload-agent install bin' first.")
         sys.exit(1)
 
-    service_name = "offload-client"
+    service_name = "offload-agent"
     service_path = f"/etc/systemd/system/{service_name}.service"
 
     unit = f"""\
 [Unit]
-Description=Offload Client Agent (Web UI)
+Description=Offload Agent (Web UI)
 After=network-online.target
 Wants=network-online.target
 
@@ -127,7 +127,7 @@ def main():
             print("Install them with: pip install fastapi uvicorn[standard] python-multipart")
             sys.exit(1)
 
-        parser = argparse.ArgumentParser(prog="offload-client webui")
+        parser = argparse.ArgumentParser(prog="offload-agent webui")
         parser.add_argument("--host", default="0.0.0.0")
         parser.add_argument("--port", type=int, default=8080)
         parser.add_argument("--agent-autostart", action="store_true",
@@ -146,7 +146,7 @@ def main():
             webui._autostart = True
 
         atexit.register(stop_agent)
-        print(f"Starting Offload Client Web UI on http://{args.host}:{args.port}")
+        print(f"Starting Offload Agent Web UI on http://{args.host}:{args.port}")
         uvicorn.run(fastapi_app, host=args.host, port=args.port)
 
     elif cmd == "cli":
@@ -161,7 +161,7 @@ def main():
         elif sub == "systemd":
             _cmd_install_systemd(sys.argv[3:])
         else:
-            print(f"Usage: offload-client install {{bin|systemd}} [options]")
+            print(f"Usage: offload-agent install {{bin|systemd}} [options]")
             sys.exit(1)
 
     else:

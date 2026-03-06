@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Offload Client (refactored)
+Offload Agent (refactored)
 
 - Pydantic models instead of dataclasses
 - Consistent URL-quoting for ALL path parts (IDs, caps, etc.)
@@ -33,7 +33,7 @@ from urllib.parse import quote
 
 app = typer.Typer(help="Offload client CLI")
 
-CONFIG_FILE = ".offload-client.json"
+CONFIG_FILE = ".offload-agent.json"
 OLLAMA_BASE = "http://127.0.0.1:11434"
 OLLAMA_CHAT = f"{OLLAMA_BASE}/api/chat"
 DEFAULT_POLL_SLEEP_SEC = 5
@@ -214,7 +214,7 @@ def collect_system_info() -> Dict[str, Any]:
         "cpuArch": cpu_arch,
         "totalMemoryMb": memory_mb,
         "gpu": get_gpu_info(),
-        "client": "offload-client.py",
+        "client": "offload-agent.py",
         "runtime": "python",
     }
 

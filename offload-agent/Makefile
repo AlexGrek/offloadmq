@@ -6,23 +6,23 @@ venv:
 	bash -c "source venv/bin/activate && pip3 install -r requirements.txt"
 
 register: venv
-	bash -c "source venv/bin/activate && python offload-client.py cli register --server $(SERVER) --key $(KEY)"
+	bash -c "source venv/bin/activate && python offload-agent.py cli register --server $(SERVER) --key $(KEY)"
 
 serve: register
-	bash -c "source venv/bin/activate && python offload-client.py cli serve"
+	bash -c "source venv/bin/activate && python offload-agent.py cli serve"
 
 sysinfo: venv
-	bash -c "source venv/bin/activate && python offload-client.py cli sysinfo"
+	bash -c "source venv/bin/activate && python offload-agent.py cli sysinfo"
 
 ollama: venv
-	bash -c "source venv/bin/activate && python offload-client.py cli ollama"
+	bash -c "source venv/bin/activate && python offload-agent.py cli ollama"
 
 # The build target creates the standalone binary using PyInstaller
 build: venv
 	@echo "Installing PyInstaller..."
 	bash -c "source venv/bin/activate && pip install pyinstaller --quiet"
 	@echo "Building binary with PyInstaller..."
-	bash -c "source venv/bin/activate && python -m PyInstaller --onefile --name offload-client --add-data 'app:app' --add-data 'webui.py:.' offload-client.py"
+	bash -c "source venv/bin/activate && python -m PyInstaller --onefile --name offload-agent --add-data 'app:app' --add-data 'webui.py:.' offload-agent.py"
 	@echo ""
 	@echo "Build complete. The binary is located in the 'dist' directory."
 
@@ -32,11 +32,11 @@ rebuild: clean build
 # The clean target removes all generated build files and the binary
 clean:
 	@echo "Cleaning up build artifacts..."
-	rm -rf build/ dist/ offload-client.spec
+	rm -rf build/ dist/ offload-agent.spec
 	@echo "Cleanup complete."
 
 
 webui: venv
-	bash -c "source venv/bin/activate && python offload-client.py webui"
+	bash -c "source venv/bin/activate && python offload-agent.py webui"
 
 .PHONY: sysinfo register ollama build rebuild clean webui

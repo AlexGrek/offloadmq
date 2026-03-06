@@ -15,9 +15,9 @@ cargo build              # Build release
 cargo test               # Run Rust unit tests
 ```
 
-### Python Agent Client
+### Python Agent
 ```bash
-cd offload-client
+cd offload-agent
 make venv                # Create virtualenv and install dependencies
 make serve               # Register agent and start serving (requires running server)
 make register            # Register agent only

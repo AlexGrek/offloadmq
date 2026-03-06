@@ -90,7 +90,7 @@ def collect_system_info() -> Dict[str, Any]:
         "cpuArch": platform.machine(),
         "totalMemoryMb": memory_mb,
         "gpu": get_gpu_info(),
-        "client": "offload-client.py",
+        "client": "offload-agent.py",
         "runtime": "python",
     }
 
