@@ -6,7 +6,13 @@
       "Bash(kubectl describe ingress tg-monitor-bot)",
       "Bash(kubectl get pods,svc,deploy -n offloadmq)",
       "Bash(helm list -n offloadmq)",
-      "Bash(kubectl logs pod/offloadmq-0 -n offloadmq --tail=30)"
+      "Bash(kubectl logs pod/offloadmq-0 -n offloadmq --tail=30)",
+      "Bash(python offload-client.py)",
+      "Bash(python offload-client.py cli --help)",
+      "Bash(python offload-client.py webui --help)",
+      "Bash(python offload-client.py unknowncmd)",
+      "Bash(python offload-client.py install bin --dest /tmp/offload-test)",
+      "Read(//tmp/**)"
     ]
   }
 }
