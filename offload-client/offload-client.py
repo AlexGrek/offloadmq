@@ -61,6 +61,15 @@ def _cmd_install_systemd(argv: list[str]) -> None:
                         help="Web UI port (default: 8080)")
     args = parser.parse_args(argv)
 
+    if sys.platform != "linux":
+        print(f"Error: systemd installation is only supported on Linux (current platform: {sys.platform}).")
+        sys.exit(1)
+
+    if not os.path.isfile(args.bin_path):
+        print(f"Error: binary not found at {args.bin_path!r}.")
+        print(f"Run 'offload-client install bin' first.")
+        sys.exit(1)
+
     service_name = "offload-client"
     service_path = f"/etc/systemd/system/{service_name}.service"
 
@@ -74,7 +83,7 @@ Wants=network-online.target
 Type=simple
 User={args.user}
 ExecStartPre=/bin/sleep 30
-ExecStart={args.bin_path} webui --host {args.host} --port {args.port}
+ExecStart={args.bin_path} webui --host {args.host} --port {args.port} --agent-autostart
 Restart=on-failure
 RestartSec=10
 
@@ -108,14 +117,33 @@ def main():
     cmd = sys.argv[1]
 
     if cmd == "webui":
-        import argparse
-        from webui import app as fastapi_app, stop_agent
-        import atexit, uvicorn
+        import argparse, atexit
+        try:
+            import webui
+            from webui import app as fastapi_app, stop_agent
+            import uvicorn
+        except ImportError as e:
+            print(f"Error: webui dependencies not installed ({e}).")
+            print("Install them with: pip install fastapi uvicorn[standard] python-multipart")
+            sys.exit(1)
 
         parser = argparse.ArgumentParser(prog="offload-client webui")
         parser.add_argument("--host", default="0.0.0.0")
         parser.add_argument("--port", type=int, default=8080)
+        parser.add_argument("--agent-autostart", action="store_true",
+                            help="Honor the autostart config setting (always passed by the systemd service)")
+        parser.add_argument("--agent-autostart-enable", action="store_true",
+                            help="Persist autostart=true to config and start the agent immediately")
         args = parser.parse_args(sys.argv[2:])
+
+        if args.agent_autostart_enable:
+            from app.config import load_config, save_config
+            cfg = load_config()
+            cfg["autostart"] = True
+            save_config(cfg)
+            webui._autostart = True
+        elif args.agent_autostart:
+            webui._autostart = True
 
         atexit.register(stop_agent)
         print(f"Starting Offload Client Web UI on http://{args.host}:{args.port}")

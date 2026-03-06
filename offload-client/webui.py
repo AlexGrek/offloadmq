@@ -37,6 +37,8 @@ BUILTIN_CAPS: List[str] = ["debug.echo", "shell.bash", "shellcmd.bash", "tts.kok
 # ── Agent-thread state (module-level, protected by _lock) ─────────────────────
 _serve_thread: Optional[threading.Thread] = None
 _stop_event: threading.Event = threading.Event()
+# Set to True by --agent-autostart / --agent-autostart-enable before uvicorn.run
+_autostart: bool = False
 _log_buf: deque = deque(maxlen=500)
 _log_lock = threading.Lock()
 _start_lock = threading.Lock()
@@ -53,11 +55,66 @@ class _BufHandler(logging.Handler):
         _log(self.format(record))
 
 
+# ── System scan cache ──────────────────────────────────────────────────────────
+_scan: Dict[str, Any] = {"caps": [], "sysinfo": {}, "scanning": False}
+_scan_lock = threading.Lock()
+
+
+def _run_scan() -> None:
+    """Detect Ollama models and collect system info; results cached in _scan."""
+    import contextlib, io
+    from app.ollama import get_ollama_models
+    from app.systeminfo import collect_system_info
+
+    _log("[scan] Scanning system…")
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            caps = get_ollama_models()
+        for line in buf.getvalue().splitlines():
+            if line.strip():
+                _log(f"[scan] {line}")
+        _log(f"[scan] Ollama caps: {caps if caps else 'none'}")
+    except Exception as exc:
+        caps = []
+        _log(f"[scan] Ollama error: {exc}")
+
+    try:
+        info = collect_system_info()
+        _log(f"[scan] {info['os']} {info['cpuArch']}, RAM {info['totalMemoryMb']}MB")
+        if info.get("gpu"):
+            g = info["gpu"]
+            _log(f"[scan] GPU: {g.get('vendor')} {g.get('model')} ({g.get('vramMb')}MB VRAM)")
+        else:
+            _log("[scan] GPU: none detected")
+    except Exception as exc:
+        info = {}
+        _log(f"[scan] sysinfo error: {exc}")
+
+    with _scan_lock:
+        _scan["caps"] = caps
+        _scan["sysinfo"] = info
+        _scan["scanning"] = False
+    _log("[scan] Done")
+
+
+def _start_scan() -> None:
+    """Start a background scan unless one is already running."""
+    with _scan_lock:
+        if _scan["scanning"]:
+            return
+        _scan["scanning"] = True
+    threading.Thread(target=_run_scan, daemon=True).start()
+
+
+# Kick off initial scan at startup
+_start_scan()
+
+
 def _do_start(server: str, api_key: str, caps: List[str]) -> None:
     """Register, authenticate, then run the serve loop in this thread."""
     from app.httphelpers import register_agent, authenticate_agent
     from app.core import serve_tasks
-    from app.ollama import get_ollama_models
 
     # Attach webui log capture to the agent logger
     agent_logger = logging.getLogger("agent")
@@ -69,7 +126,8 @@ def _do_start(server: str, api_key: str, caps: List[str]) -> None:
         # Step 1: Register -------------------------------------------------------
         _log("[webui] Registering agent…")
         try:
-            ollama_caps = get_ollama_models()
+            with _scan_lock:
+                ollama_caps = list(_scan["caps"])
             combined_caps = sorted(set(caps + ollama_caps))
             reg = register_agent(server, combined_caps, tier=5, capacity=1, api_key=api_key)
         except Exception as exc:
@@ -180,6 +238,8 @@ button:hover{opacity:.85}
   padding:.7rem;font:12px/1.4 monospace;height:240px;overflow-y:auto;
   white-space:pre-wrap;color:#94a3b8}
 hr{border:none;border-top:1px solid #334155;margin:.75rem 0}
+.si{font-size:.8rem;color:#94a3b8;line-height:1.8}
+.scanning{font-size:.8rem;color:#64748b;font-style:italic}
 """
 
 _JS = """
@@ -201,10 +261,39 @@ setInterval(poll, 2000);
 """
 
 
+def _render_sysinfo_html() -> str:
+    with _scan_lock:
+        scanning = _scan["scanning"]
+        info = dict(_scan["sysinfo"])
+    if scanning:
+        return '<span class="scanning">Scanning…</span>'
+    if not info:
+        return '<span class="scanning">No scan data yet</span>'
+    gpu = info.get("gpu")
+    gpu_str = f"{gpu.get('vendor')} {gpu.get('model')} ({gpu.get('vramMb')}MB VRAM)" if gpu else "None"
+    return (
+        f'<div class="si">{info.get("os")} · {info.get("cpuArch")}</div>'
+        f'<div class="si">RAM: {info.get("totalMemoryMb")}MB</div>'
+        f'<div class="si">GPU: {gpu_str}</div>'
+    )
+
+
+def _systemd_status() -> Dict[str, Any]:
+    """Check whether systemd install is available from this environment."""
+    if sys.platform != "linux":
+        import platform
+        return {"ok": False, "reason": f"Linux only (current OS: {platform.system()})"}
+    bin_path = sys.executable if getattr(sys, "frozen", False) else "/usr/local/bin/offload-client"
+    if not os.path.isfile(bin_path):
+        return {"ok": False, "reason": f"Binary not found at {bin_path} — run 'install bin' first", "bin_path": bin_path}
+    return {"ok": True, "reason": "", "bin_path": bin_path}
+
+
 def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
     st = get_status()
     dot_cls = "running" if st["running"] else "stopped"
     st_text = "Running" if st["running"] else "Stopped"
+    autostart_checked = "checked" if cfg.get("autostart") else ""
 
     boxes = "".join(
         f'<label class="cap"><input type="checkbox" name="caps" value="{c}"'
@@ -214,6 +303,12 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
 
     server_val = cfg.get("server", "")
     api_key_val = cfg.get("apiKey", "")
+    sysinfo_html = _render_sysinfo_html()
+    sd = _systemd_status()
+    if sd["ok"]:
+        systemd_html = '<form method="post" action="/install/systemd"><button class="btn-p btn-s" type="submit">Install systemd service</button></form>'
+    else:
+        systemd_html = f'<button class="btn-p btn-s" disabled style="opacity:.4;cursor:not-allowed">Install systemd service</button><div class="si" style="margin-top:.5rem;color:#64748b">{sd["reason"]}</div>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -241,6 +336,14 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
         <button class="btn-r" type="submit">&#9632; Stop</button>
       </form>
     </div>
+    <div class="row" style="margin-top:.75rem">
+      <form method="post" action="/config/autostart">
+        <label class="cap">
+          <input type="checkbox" name="autostart" value="1" {autostart_checked}
+            onchange="this.form.submit()"> Autostart on launch
+        </label>
+      </form>
+    </div>
   </div>
 
   <!-- Connection settings -->
@@ -253,6 +356,24 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
       <input type="text" name="apiKey" value="{api_key_val}" placeholder="ak_live_...">
       <button class="btn-p" type="submit">Save</button>
     </form>
+  </div>
+
+  <!-- System info -->
+  <div class="card">
+    <h2>System</h2>
+    {sysinfo_html}
+    <div class="row">
+      <form method="post" action="/scan">
+        <button class="btn-p btn-s" type="submit">Rescan</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Systemd install -->
+  <div class="card">
+    <h2>Service</h2>
+    <div class="si" style="margin-bottom:.6rem">Install as a systemd service that autostarts with the system.</div>
+    <div class="row">{systemd_html}</div>
   </div>
 
   <!-- Capabilities -->
@@ -287,15 +408,21 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
 app = FastAPI(title="Offload Client")
 
 
+@app.on_event("startup")
+async def _on_startup() -> None:
+    """Auto-start agent if --agent-autostart flag or config autostart is set."""
+    cfg = load_config()
+    if _autostart and cfg.get("autostart"):
+        _log("[webui] Autostart enabled — starting agent…")
+        start_agent()
+
+
 def _get_all_caps(cfg: Dict) -> tuple[List[str], List[str]]:
-    """Return (all_caps_for_display, selected_caps)."""
+    """Return (all_caps_for_display, selected_caps) using the scan cache."""
     selected = list(cfg.get("capabilities", BUILTIN_CAPS[:]))
     custom = list(cfg.get("custom_caps", []))
-    try:
-        from app.ollama import get_ollama_models
-        ollama = get_ollama_models()
-    except Exception:
-        ollama = []
+    with _scan_lock:
+        ollama = list(_scan["caps"])
     all_caps = sorted(set(BUILTIN_CAPS + ollama + custom + selected))
     return all_caps, selected
 
@@ -343,6 +470,68 @@ async def save_capabilities(
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/config/autostart")
+async def save_autostart(request: Request):
+    form = await request.form()
+    cfg = load_config()
+    cfg["autostart"] = bool(form.get("autostart"))
+    save_config(cfg)
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/install/systemd")
+async def route_install_systemd():
+    import subprocess, getpass
+    sd = _systemd_status()
+    if not sd["ok"]:
+        _log(f"[install] ERROR: {sd['reason']}")
+        return RedirectResponse("/", status_code=303)
+
+    bin_path = sd["bin_path"]
+    service_name = "offload-client"
+    service_path = f"/etc/systemd/system/{service_name}.service"
+    unit = f"""\
+[Unit]
+Description=Offload Client Agent (Web UI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={getpass.getuser()}
+ExecStartPre=/bin/sleep 30
+ExecStart={bin_path} webui --host 0.0.0.0 --port 8080 --agent-autostart
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+"""
+    try:
+        os.makedirs(os.path.dirname(service_path), exist_ok=True)
+        with open(service_path, "w") as f:
+            f.write(unit)
+        _log(f"[install] Wrote {service_path}")
+    except PermissionError:
+        _log(f"[install] ERROR: permission denied writing {service_path} — re-run webui with sudo")
+        return RedirectResponse("/", status_code=303)
+
+    for cmd in [
+        ["systemctl", "daemon-reload"],
+        ["systemctl", "enable", service_name],
+        ["systemctl", "start", service_name],
+    ]:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        label = " ".join(cmd)
+        if r.returncode == 0:
+            _log(f"[install] {label}: OK")
+        else:
+            _log(f"[install] {label}: {r.stderr.strip() or r.stdout.strip()}")
+
+    _log(f"[install] Done. Check: systemctl status {service_name}")
+    return RedirectResponse("/", status_code=303)
+
+
 @app.post("/agent/start")
 async def route_start():
     start_agent()
@@ -358,6 +547,12 @@ async def route_stop():
 @app.get("/agent/status")
 async def route_status():
     return JSONResponse(get_status())
+
+
+@app.post("/scan")
+async def route_scan():
+    _start_scan()
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/agent/logs")
