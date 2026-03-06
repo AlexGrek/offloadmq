@@ -10,7 +10,7 @@ SECRETS_FILE ?= .secrets.yaml
 
 CONTAINER_RUNTIME := docker
 
-.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force
+.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client
 
 # Build container image
 build:
@@ -123,6 +123,13 @@ deploy-multiplatform: build-multiplatform
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
 		$(MAKE) install; \
 	fi
+
+# Build the offload-client standalone binary
+build-client:
+	cd offload-client && make build
+
+rebuild-client:
+	cd offload-client && make rebuild
 
 dev-mq:
 	cargo run

@@ -12,7 +12,11 @@
       "Bash(python offload-client.py webui --help)",
       "Bash(python offload-client.py unknowncmd)",
       "Bash(python offload-client.py install bin --dest /tmp/offload-test)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(pyinstaller --onefile --name offload-client --add-data \"app:app\" --add-data \"webui.py:.\" offload-client.py)",
+      "Bash(venv/bin/python -m PyInstaller --onefile --name offload-client --add-data \"app:app\" --add-data \"webui.py:.\" offload-client.py)",
+      "Bash(./dist/offload-client install bin --dest /tmp/offload-test2)",
+      "Bash(python -c \":*)"
     ]
   }
 }

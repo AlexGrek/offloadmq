@@ -1,211 +1,186 @@
-# 🚀 offloadmq Client script
+# offload-client
 
-A cross-platform Python client for registering agents with offload compute servers. Automatically detects system capabilities and handles authentication flow with JWT tokens.
+Python agent client for [offloadmq](https://github.com/offloadmq). Registers with the server, polls for tasks, and executes them.
 
-Can be used as base for your custom offloadmq clients
-
-## ✨ Features
-
-- 🖥️ **Cross-platform system detection** - Works on Windows, macOS, and Linux
-- 🎮 **Smart GPU detection** - Supports NVIDIA, AMD, and integrated graphics
-- 🔐 **Automatic authentication** - Handles registration, JWT tokens, and renewal
-- 💾 **Persistent configuration** - Saves settings to `.offload-client.json`
-- 🔧 **Flexible capabilities** - Customize agent capabilities and performance tier
-- 📊 **System information** - Automatically collects OS, CPU, memory, and GPU details
-- ⚡ **Ready to use** - Simple command-line interface with sensible defaults
-
-## 🛠️ Installation
-
-1. **Clone or download** the script
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Dependencies
-
-- **Core** (required):
-  - `requests` - HTTP client for server communication
-  - `psutil` - Cross-platform system information
-
-- **Optional** (for GPU detection):
-  - `pynvml` - NVIDIA GPU detection
-  - `GPUtil` - General GPU interface
-
-## 🚀 Quick Start
-
-### First Time Setup
-
-Register your agent with the server:
-
-```bash
-python offload_client.py --server https://your-server.com --key your-api-key
-```
-
-### Advanced Configuration
-
-```bash
-python offload_client.py \
-  --server https://your-server.com \
-  --key your-api-key \
-  --tier 8 \
-  --caps "llm.mistral" "summarization" "translation" \
-  --capacity 4
-```
-
-### Subsequent Runs
-
-After initial setup, simply run:
-
-```bash
-python offload_client.py
-```
-
-The script will use saved configuration from `.offload-client.json`.
-
-## 📋 Command Line Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--server` | *from config* | Server URL (required on first run) |
-| `--key` | *from config* | API key (required on first run) |
-| `--tier` | `5` | Performance tier (0-255, higher = better) |
-| `--caps` | `["GENERAL_COMPUTE"]` | Agent capabilities |
-| `--capacity` | `1` | Number of concurrent tasks |
-
-### Capability Examples
-
-Common capability strings:
-- `llm.mistral-7b` - Large Language Model
-- `llm.llama2-13b` - Specific model variant
-- `text.generation` - Generic text generation
-- `summarization` - Document summarization
-- `translation.en-fr` - Language translation
-- `image.processing` - Image analysis/editing
-- `audio.processing` - Audio transcription/generation
-
-## 🔧 Configuration File
-
-The script maintains configuration in `.offload-client.json`:
-
-```json
-{
-  "server": "https://your-server.com",
-  "apiKey": "your-api-key",
-  "agentId": "22550957-9deb-4c98-bbdc-2e7649684fe0",
-  "key": "7e17cecc-3209-498b-9839-58da9990ef4f",
-  "jwtToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-  "tokenExpiresIn": 1755393572
-}
-```
-
-## 🖥️ System Detection
-
-The client automatically detects:
-
-### Operating System
-- **Windows**: `Windows 10 Pro`, `Windows 11 Home`
-- **macOS**: `macOS 13.2.1`, `macOS 14.0`
-- **Linux**: `Ubuntu 22.04.3 LTS`, `Fedora 38`, etc.
-
-### Hardware
-- **CPU Architecture**: `x86_64`, `arm64`, `i686`
-- **Memory**: Total system RAM in MB
-- **GPU**: Vendor, model, and VRAM (when available)
-
-### GPU Support Matrix
-
-| Platform | NVIDIA | AMD | Intel | Apple Silicon |
-|----------|--------|-----|-------|---------------|
-| Windows  | ✅ | ⚠️ | ⚠️ | N/A |
-| macOS    | ✅ | ✅ | ✅ | ✅ |
-| Linux    | ✅ | ⚠️ | ⚠️ | N/A |
-
-✅ Full support &nbsp;&nbsp; ⚠️ Basic detection
-
-## 📡 API Flow
-
-The registration process follows this flow:
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Server
-    
-    C->>S: POST /agents (registration)
-    S->>C: {agentId, key, message}
-    
-    C->>S: POST /agent/auth (authentication)
-    S->>C: {token, expiresIn}
-    
-    C->>S: GET /private/agent/ping (test)
-    S->>C: 200 OK
-```
-
-## 🔍 Example Output
-
-```
-Collecting system information...
-OS: Ubuntu 22.04.3 LTS
-Architecture: x86_64
-Memory: 32768 MB
-GPU: NVIDIA GeForce RTX 4090 (24576 MB VRAM)
-
-Registering with server: https://compute.example.com
-Capabilities: ['llm.mistral-7b', 'summarization']
-Tier: 8
-Capacity: 4
-
-Registration successful!
-Agent ID: 22550957-9deb-4c98-bbdc-2e7649684fe0
-Message: Registered
-
-Authenticating...
-Authentication successful!
-Configuration saved to .offload-client.json
-
-Testing connection...
-✅ Ping test successful - agent is ready!
-```
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**GPU not detected:**
-- Install optional dependencies: `pip install pynvml GPUtil`
-- On Linux, ensure you have proper GPU drivers
-- Script works fine without GPU - it will report `gpu: null`
-
-**Permission errors on config file:**
-- Ensure write permissions in current directory
-- On some systems, run with appropriate user permissions
-
-**Connection failures:**
-- Verify server URL is correct and accessible
-- Check firewall settings
-- Ensure API key is valid
-
-### Debug Information
-
-For additional debug output, you can modify the script or check:
-- Network connectivity: `ping your-server.com`
-- Python version: `python --version`
-- Installed packages: `pip list`
-
-## 🤝 Contributing
-
-Contributions welcome! Areas for improvement:
-- Enhanced GPU detection for more vendors
-- Better error handling and retry logic
-- Configuration validation
-- Logging system
-- Docker containerization
-
-## 📄 License
-
-MIT License - see LICENSE file for details.
+Can run as a plain Python script or as a self-contained single-file binary built with PyInstaller.
 
 ---
 
-**Made with ❤️ for distributed computing**
+## Usage
+
+```
+offload-client <command> [options]
+
+Commands:
+  cli        Run the CLI agent (register, serve, etc.)
+  webui      Start the web UI dashboard
+  install    Install the binary or configure the system service
+
+offload-client --help
+```
+
+### `cli` — agent CLI
+
+Passes all arguments directly to the agent CLI. Works with only the core dependencies (no `fastapi`/`uvicorn` required).
+
+```bash
+# Register and start serving
+offload-client cli register --server http://your-server:3069 --key ak_live_...
+offload-client cli serve
+
+# One-liner with make
+make register SERVER=http://your-server:3069 KEY=ak_live_...
+make serve
+```
+
+Available sub-commands:
+
+| Sub-command | Description |
+|-------------|-------------|
+| `register`  | Register this machine as an agent |
+| `serve`     | Poll for and execute tasks (runs forever) |
+| `sysinfo`   | Print detected system information |
+| `ollama`    | Print detected Ollama model capabilities |
+
+```bash
+offload-client cli register --help
+offload-client cli serve --help
+```
+
+### `webui` — web dashboard
+
+Starts a FastAPI web UI on port 8080 (default). From the UI you can configure the server URL and API key, select capabilities, start/stop the agent, and watch live logs.
+
+Requires web dependencies: `fastapi`, `uvicorn[standard]`, `python-multipart`.
+
+```bash
+offload-client webui
+offload-client webui --host 127.0.0.1 --port 9000
+```
+
+The webui runs register + serve internally (no subprocess) when you click **Start**.
+
+### `install bin` — install the binary system-wide
+
+Copies the running binary to a target directory and sets `rwxr-xr-x` permissions.
+
+```bash
+# Install to /usr/local/bin (default, requires sudo)
+sudo offload-client install bin
+
+# Install to a custom location
+offload-client install bin --dest ~/bin
+```
+
+### `install systemd` — create a systemd service (Linux only)
+
+Writes `/etc/systemd/system/offload-client.service`, enables it, and starts it.
+The service runs `offload-client webui` with a 30-second startup delay after the network is online.
+
+```bash
+# Requires: Linux, binary already installed, sudo
+sudo offload-client install systemd
+sudo offload-client install systemd --bin-path /usr/local/bin/offload-client \
+                                    --user myuser \
+                                    --host 0.0.0.0 \
+                                    --port 8080
+```
+
+Refuses to run on non-Linux platforms or if the binary is not found at `--bin-path`.
+
+---
+
+## Installation
+
+### From binary (recommended)
+
+Download the pre-built binary from the [Releases](../../releases) page and run:
+
+```bash
+chmod +x offload-client
+sudo ./offload-client install bin          # copies to /usr/local/bin
+sudo offload-client install systemd        # Linux: creates systemd service
+```
+
+### From source
+
+```bash
+git clone ...
+cd offload-client
+
+# Core only (cli command)
+pip install requests psutil websocket-client typer colorlog pydantic
+
+# With webui support
+pip install -r requirements.txt
+
+python offload-client.py cli register --server http://localhost:3069 --key ak_live_...
+python offload-client.py cli serve
+```
+
+Or use make:
+
+```bash
+make venv       # create virtualenv + install all deps
+make register   # register agent
+make serve      # register + serve
+make webui      # start web UI
+```
+
+### Build the binary yourself
+
+```bash
+make build          # build dist/offload-client
+make rebuild        # clean + build
+```
+
+From the repo root:
+
+```bash
+make build-client   # same as above
+make rebuild-client # clean + build
+```
+
+---
+
+## Configuration
+
+Saved to `.offload-client.json` in the working directory:
+
+```json
+{
+  "server": "http://your-server:3069",
+  "apiKey": "ak_live_...",
+  "agentId": "22550957-9deb-4c98-bbdc-2e7649684fe0",
+  "key": "7e17cecc-3209-498b-9839-58da9990ef4f",
+  "jwtToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "capabilities": ["debug.echo", "shell.bash"],
+  "custom_caps": []
+}
+```
+
+---
+
+## Built-in capabilities
+
+| Capability      | Description                     |
+|-----------------|---------------------------------|
+| `debug.echo`    | Echo task payload back           |
+| `shell.bash`    | Execute bash scripts             |
+| `shellcmd.bash` | Execute single shell commands    |
+| `tts.kokoro`    | Text-to-speech via Kokoro        |
+| `llm.*`         | LLM inference (auto-detected via Ollama) |
+
+---
+
+## Dependencies
+
+**Core** (required for `cli`):
+- `requests`, `psutil`, `websocket-client`, `typer`, `colorlog`, `pydantic`
+
+**Web UI** (required for `webui`):
+- `fastapi`, `uvicorn[standard]`, `python-multipart`
+
+**Optional**:
+- `GPUtil`, `pynvml` — GPU detection
+- `boto3` — AWS integration
