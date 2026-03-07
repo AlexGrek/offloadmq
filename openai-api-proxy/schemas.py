@@ -15,7 +15,7 @@ def capability_for_model(model: str) -> str:
     Agents register capabilities like 'llm.mistral', 'llm.llama3', etc.
     We strip ':latest' or any tag suffix and prefix with 'llm.'.
     """
-    name = model.split(":")[0]  # drop tag like ':latest'
+    name = model
     if name.startswith("llm."):
         return name
     return f"llm.{name}"

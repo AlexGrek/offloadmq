@@ -11,6 +11,8 @@ pub struct AppConfig {
     pub management_token: String,
     pub host: String,
     pub port: u16,
+    /// Maximum request body size in bytes for the client API (env: MAX_REQUEST_BODY_BYTES).
+    pub max_request_body_bytes: usize,
 }
 
 
@@ -49,6 +51,10 @@ impl AppConfig {
             .unwrap_or_else(|_| "3069".to_string())
             .parse::<u16>()?;
 
+        let max_request_body_bytes = env::var("MAX_REQUEST_BODY_BYTES")
+            .unwrap_or_else(|_| "5000000".to_string())
+            .parse::<usize>()?;
+
         Ok(Self {
             jwt_secret,
             database_root_path,
@@ -56,7 +62,8 @@ impl AppConfig {
             client_api_keys,
             host,
             port,
-            management_token
+            management_token,
+            max_request_body_bytes,
         })
     }
 }
