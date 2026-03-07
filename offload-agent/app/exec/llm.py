@@ -24,8 +24,37 @@ def execute_llm_query(
         if isinstance(payload, str):
             payload = {"messages": [{"role": "user", "content": payload}]}
 
+        # Convert OpenAI-style messages to Ollama format (handles image_url content parts)
+        converted_messages = []
+        for msg in payload.get("messages", []):
+            content = msg.get("content")
+            if isinstance(content, list):
+                text_parts = []
+                images = []
+                for part in content:
+                    if part.get("type") == "text":
+                        text_parts.append(part.get("text", ""))
+                    elif part.get("type") == "image_url":
+                        url = part.get("image_url", {}).get("url", "")
+                        if url.startswith("data:"):
+                            # Strip the data URI prefix, keep only base64 payload
+                            b64 = url.split(",", 1)[-1]
+                        else:
+                            b64 = url
+                        images.append(b64)
+                new_msg = {**msg, "content": "\n".join(text_parts)}
+                if images:
+                    new_msg["images"] = images
+                converted_messages.append(new_msg)
+            else:
+                converted_messages.append(msg)
+
+        converted_payload = {**payload}
+        if converted_messages:
+            converted_payload["messages"] = converted_messages
+
         # Construct payload for Ollama chat/generate API
-        api_payload = {**payload, "model": model_name}
+        api_payload = {**converted_payload, "model": model_name}
 
         logger.info(f"Sending to Ollama ({OLLAMA_API_URL}): {api_payload}")
 
