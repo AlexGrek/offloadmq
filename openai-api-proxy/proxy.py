@@ -45,8 +45,11 @@ def main():
         help="Log level (default: info)",
     )
     parser.add_argument(
-        "--max-image-dim", type=int, default=MAX_DIMENSION,
-        help=f"Maximum image dimension in pixels before resizing (default: {MAX_DIMENSION})",
+        "--max-image-dim", type=int, default=None,
+        help=(
+            f"Maximum image dimension in pixels before resizing "
+            f"(default: {MAX_DIMENSION}; server body limit is ~500 KB so keep this low)"
+        ),
     )
 
     args = parser.parse_args()
@@ -57,7 +60,7 @@ def main():
     )
 
     # Apply image dimension override if requested
-    if args.max_image_dim != MAX_DIMENSION:
+    if args.max_image_dim is not None:
         import image_utils
         image_utils.MAX_DIMENSION = args.max_image_dim
 
@@ -84,7 +87,7 @@ def main():
 
     logger.info("Starting OpenAI API proxy on %s:%d", args.host, args.port)
     logger.info("OffloadMQ server: %s", args.server)
-    logger.info("Max image dimension: %d px", args.max_image_dim)
+    logger.info("Max image dimension: %d px", args.max_image_dim or MAX_DIMENSION)
     logger.info("Endpoints:")
     logger.info("  OpenAI:  POST http://%s:%d/v1/chat/completions", args.host, args.port)
     logger.info("  Ollama:  POST http://%s:%d/api/chat", args.host, args.port)

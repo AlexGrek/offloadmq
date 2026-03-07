@@ -25,16 +25,23 @@ logger = logging.getLogger("openai-proxy.image")
 # ---------------------------------------------------------------------------
 
 # Maximum width or height in pixels after resizing.
-# 1120 px is a common sweet-spot for local vision models (LLaVA, BakLLaVA, …).
-MAX_DIMENSION = 1120
+# 672 px matches LLaVA 1.5/1.6 tile size and is safe for most Ollama vision
+# models. Override via --max-image-dim on the CLI.
+MAX_DIMENSION = 672
 
-# JPEG re-encoding quality (1-95). 85 gives a good size/fidelity balance.
-JPEG_QUALITY = 85
+# JPEG quality sequence used during iterative compression.
+# Each step is tried in order until the image fits within MAX_IMAGE_BYTES.
+JPEG_QUALITY_STEPS = (85, 70, 55, 40)
 
-# If the image is still larger than this after the first resize+encode pass,
-# we do a second pass at reduced quality to push it below the limit.
-MAX_BYTES_SOFT = 1 * 1024 * 1024   # 1 MB — try harder above this
-MAX_BYTES_HARD = 2 * 1024 * 1024   # 2 MB — hard cap (warn and truncate if exceeded)
+# The OffloadMQ server middleware reads request bodies with a hard cap of
+# 500 KB (axum::body::to_bytes limit in the auth middleware). The entire
+# JSON body — all messages, model name, options, AND all base64 images —
+# must fit within that budget. We target well below 500 KB to leave room.
+SERVER_BODY_LIMIT = 500_000        # bytes — enforced by the server
+IMAGE_BUDGET_PER_REQUEST = 350_000 # bytes — raw binary budget for ALL images combined
+
+# Per-image binary byte cap (base64 adds ~33 % overhead on top).
+MAX_IMAGE_BYTES = 180_000          # ~240 KB after base64 encoding
 
 # ---------------------------------------------------------------------------
 # PIL availability check (done once at import time)
@@ -103,9 +110,12 @@ def _encode(img: "Image.Image", fmt: str, quality: int) -> bytes:
 
 def process_image_b64(b64_data: str, mime_hint: str = "image/jpeg") -> tuple[str, str]:
     """
-    Decode *b64_data*, resize if needed, re-encode, return (new_b64, new_mime).
+    Decode *b64_data*, resize to MAX_DIMENSION, compress to fit within
+    MAX_IMAGE_BYTES, re-encode as base64, return (new_b64, new_mime).
 
-    *mime_hint* is used to choose the output format (JPEG vs PNG).
+    Uses an iterative quality ladder (JPEG_QUALITY_STEPS) and, if quality
+    alone is not enough, halves the resolution until the image fits.
+
     If Pillow is unavailable the original data is returned unchanged.
     """
     if not _PIL_AVAILABLE:
@@ -119,37 +129,47 @@ def process_image_b64(b64_data: str, mime_hint: str = "image/jpeg") -> tuple[str
         img = _normalise_mode(img)
         orig_size = img.size
 
+        # Always resize down to MAX_DIMENSION first
         img = _resize(img, MAX_DIMENSION)
 
-        # Choose output format: keep PNG for lossless originals, JPEG otherwise
-        use_jpeg = mime_hint not in ("image/png", "image/gif", "image/webp")
-        fmt = "JPEG" if use_jpeg else "PNG"
-        new_mime = "image/jpeg" if use_jpeg else "image/png"
+        # Always convert to JPEG (PNG is usually larger; vision models don't
+        # care about lossless quality for inference)
+        new_mime = "image/jpeg"
+        encoded = b""
 
-        encoded = _encode(img, fmt, JPEG_QUALITY)
-
-        # Second pass if still too large: reduce JPEG quality
-        if fmt == "JPEG" and len(encoded) > MAX_BYTES_SOFT:
-            encoded = _encode(img, fmt, 65)
-
-        # Hard-cap warning (we can't do much more without destroying fidelity)
-        if len(encoded) > MAX_BYTES_HARD:
-            logger.warning(
-                "Image still %.1f KB after compression (hard cap is %d KB); "
-                "sending anyway — the agent may reject it.",
-                len(encoded) / 1024,
-                MAX_BYTES_HARD // 1024,
-            )
+        # Iterative quality reduction
+        for quality in JPEG_QUALITY_STEPS:
+            encoded = _encode(img, "JPEG", quality)
+            if len(encoded) <= MAX_IMAGE_BYTES:
+                break
+        else:
+            # Quality ladder exhausted — shrink resolution further by halving
+            # until the encoded bytes fit or the image becomes trivially small
+            shrink_img = img
+            while len(encoded) > MAX_IMAGE_BYTES:
+                w, h = shrink_img.size
+                if min(w, h) <= 64:
+                    logger.warning(
+                        "Image cannot be reduced below %d×%d while staying "
+                        "under %d KB; server may reject the request.",
+                        w, h, MAX_IMAGE_BYTES // 1024,
+                    )
+                    break
+                shrink_img = shrink_img.resize(
+                    (max(1, w // 2), max(1, h // 2)), Image.LANCZOS
+                )
+                encoded = _encode(shrink_img, "JPEG", JPEG_QUALITY_STEPS[-1])
+            img = shrink_img  # for logging
 
         new_b64 = base64.b64encode(encoded).decode()
 
         logger.debug(
-            "Image processed: %dx%d -> %dx%d | %.1f KB -> %.1f KB | fmt=%s",
+            "Image processed: %dx%d -> %dx%d | %.1f KB -> %.1f KB (base64: %.1f KB)",
             orig_size[0], orig_size[1],
             img.size[0], img.size[1],
             orig_kb,
             len(encoded) / 1024,
-            fmt,
+            len(new_b64) / 1024,
         )
         return new_b64, new_mime
 

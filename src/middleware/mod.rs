@@ -149,7 +149,7 @@ pub async fn apikey_auth_middleware_user(
     let (parts, body) = req.into_parts();
 
     // Read the body into bytes
-    let body_bytes = axum::body::to_bytes(body, 500000)
+    let body_bytes = axum::body::to_bytes(body, 5_000_000)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
