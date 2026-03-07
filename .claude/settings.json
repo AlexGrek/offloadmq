@@ -20,7 +20,9 @@
       "Bash(mv .offload-agent.json .offload-agent.json)",
       "Bash(mv offload-agent-chatgpt.py offload-agent-chatgpt.py)",
       "Bash(mv offload-agent.spec offload-agent.spec)",
-      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''proxy.py''\\).read\\(\\)\\); print\\(''Syntax OK''\\)\")"
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''proxy.py''\\).read\\(\\)\\); print\\(''Syntax OK''\\)\")",
+      "Bash(python3 -c \":*)",
+      "Bash(.venv/bin/python3 -c \":*)"
     ]
   }
 }
