@@ -1,11 +1,16 @@
 import typer
+import logging
 from ..models import *
 from ..httphelpers import *
+
+logger = logging.getLogger(__name__)
 
 
 def report_result(http: HttpClient, report: TaskResultReport) -> bool:
     # POST /private/agent/task/resolve/{cap}/{id}
     q = report.task_id.quoted()
+    wire = report.to_wire()
+    logger.info(f"Sending resolve report: {wire}")
     try:
         typer.echo(f"Reporting result for task id={q.id} cap={q.cap}")
         resp = http.post(

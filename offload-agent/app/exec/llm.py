@@ -27,6 +27,8 @@ def execute_llm_query(
         # Construct payload for Ollama chat/generate API
         api_payload = {**payload, "model": model_name}
 
+        logger.info(f"Sending to Ollama ({OLLAMA_API_URL}): {api_payload}")
+
         # Check if streaming is enabled
         is_streaming = api_payload.get("stream", False)
 
@@ -89,12 +91,15 @@ def execute_llm_query(
                     {}
                 )  # Or handle as an error if the stream ended unexpectedly
 
+            logger.info(f"Final streamed response: {final_response}")
             report = make_success_report(task_id, capability, final_response)
 
         else:
             # Original non-streaming logic
             logger.info("Streaming is not enabled. Waiting for full response...")
             r = requests.post(OLLAMA_API_URL, json=api_payload, timeout=300)
+            logger.info(f"Ollama response status: {r.status_code}")
+            logger.info(f"Ollama response body: {r.text[:2000]}")
             r.raise_for_status()
             report = make_success_report(task_id, capability, r.json())
 
