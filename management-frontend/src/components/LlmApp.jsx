@@ -175,7 +175,6 @@ const LlmApp = ({ apiKey }) => {
 const styles = {
   content: {
     padding: '4px',
-    backgroundColor: '#FFFFFF', // Retained for a clean background
   },
   form: {
     display: 'flex',
@@ -189,24 +188,28 @@ const styles = {
   label: {
     fontSize: '14px',
     fontWeight: '600',
-    color: '#333',
+    color: 'var(--text)',
     marginBottom: '6px',
   },
   input: {
     padding: '8px 12px',
     fontSize: '14px',
-    border: '1px solid #D0D0D0',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
     transition: 'border-color 0.2s',
     outline: 'none',
+    background: 'var(--input-bg)',
+    color: 'var(--text)',
   },
   textarea: {
     padding: '8px 12px',
     fontSize: '14px',
-    border: '1px solid #D0D0D0',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
     resize: 'vertical',
     outline: 'none',
+    background: 'var(--input-bg)',
+    color: 'var(--text)',
   },
   button: {
     padding: '10px 16px',
@@ -226,32 +229,32 @@ const styles = {
   responseContainer: {
     marginTop: '24px',
     padding: '16px',
-    backgroundColor: '#F7F7F7',
-    border: '1px solid #E0E0E0',
+    background: 'var(--glass)',
+    border: '1px solid var(--border)',
     borderRadius: '8px',
   },
   responseLabel: {
     fontSize: '14px',
     fontWeight: '600',
-    color: '#333',
+    color: 'var(--text)',
     marginTop: '0',
   },
   loading: {
-    color: '#888',
+    color: 'var(--muted)',
     fontStyle: 'italic',
   },
   response: {
     whiteSpace: 'pre-wrap',
     wordWrap: 'break-word',
     fontSize: '12px',
-    color: '#222',
+    color: 'var(--text)',
     margin: '0',
   },
   error: {
     whiteSpace: 'pre-wrap',
     wordWrap: 'break-word',
     fontSize: '12px',
-    color: '#D9534F',
+    color: 'var(--danger)',
     margin: '0',
   },
 };

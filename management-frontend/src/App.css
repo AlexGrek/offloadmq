@@ -8,6 +8,24 @@
   --primary: #2563eb;
   --danger: #ef4444;
   --shadow: 0 10px 30px rgba(31, 41, 55, 0.08), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+  --input-bg: var(--glass-strong);
+  --code-bg: rgba(2, 6, 23, 0.06);
+  --chip-bg: rgba(2, 6, 23, 0.04);
+}
+
+[data-theme="dark"] {
+  --bg: #0f1117;
+  --glass: rgba(30, 33, 43, 0.7);
+  --glass-strong: rgba(30, 33, 43, 0.9);
+  --border: rgba(255, 255, 255, 0.1);
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --primary: #3b82f6;
+  --danger: #f87171;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+  --input-bg: rgba(15, 17, 23, 0.6);
+  --code-bg: rgba(255, 255, 255, 0.06);
+  --chip-bg: rgba(255, 255, 255, 0.06);
 }
 
 * {
@@ -25,6 +43,10 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji;
   color: var(--text);
   background: radial-gradient(1200px 800px at 80% -10%, #fafcff, #eaf0ff 40%, #e9edf5 75%, #e6ebf2 100%);
+}
+
+[data-theme="dark"] body {
+  background: radial-gradient(1200px 800px at 80% -10%, #151820, #111525 40%, #0f1117 75%, #0b0d14 100%);
 }
 
 .app {
@@ -59,7 +81,8 @@ body {
   border: 0;
   padding: .4rem;
   border-radius: 10px;
-  cursor: pointer
+  cursor: pointer;
+  color: var(--text)
 }
 
 .topbar .icon:hover {
@@ -100,6 +123,10 @@ body {
   box-shadow: var(--shadow)
 }
 
+[data-theme="dark"] .sidebar {
+  background: linear-gradient(180deg, rgba(20, 22, 30, 0.9), rgba(15, 17, 23, 0.85));
+}
+
 .sidebar nav {
   display: flex;
   flex-direction: column;
@@ -116,7 +143,8 @@ body {
   border-radius: 14px;
   font-size: .95rem;
   cursor: pointer;
-  text-align: left
+  text-align: left;
+  color: var(--text)
 }
 
 .nav-item:hover {
@@ -256,7 +284,8 @@ body {
   padding: .7rem .8rem;
   background: transparent;
   border: 0;
-  cursor: pointer
+  cursor: pointer;
+  color: var(--text)
 }
 
 .row .row-main {
@@ -331,7 +360,7 @@ body {
 }
 
 .kv code {
-  background: rgba(2, 6, 23, 0.06);
+  background: var(--code-bg);
   border: 1px solid var(--border);
   padding: .2rem .35rem;
   border-radius: 8px
@@ -348,7 +377,7 @@ body {
   padding: 0 .5rem;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: rgba(2, 6, 23, 0.04);
+  background: var(--chip-bg);
   font-size: .8rem
 }
 
@@ -382,7 +411,8 @@ body {
   padding: .55rem .7rem;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--glass-strong)
+  background: var(--input-bg);
+  color: var(--text)
 }
 
 .form-actions {
@@ -395,7 +425,7 @@ body {
   padding: .6rem .8rem;
   border-radius: 14px;
   border: 1px solid var(--border);
-  background: rgba(2, 6, 23, 0.04)
+  background: var(--chip-bg)
 }
 
 .banner.error {
@@ -404,9 +434,22 @@ body {
   color: #7f1d1d
 }
 
+[data-theme="dark"] .banner.error {
+  color: #fca5a5
+}
+
 .banner.warn {
   border-color: #f59e0b66;
   background: #fff7ed
+}
+
+[data-theme="dark"] .banner.warn {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24
+}
+
+[data-theme="dark"] .badge.warn {
+  color: #fbbf24
 }
 
 .loader {
@@ -464,4 +507,71 @@ body {
   .grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Dark mode: sandbox modal & inline-styled apps */
+[data-theme="dark"] .modal-overlay {
+  background-color: rgba(0, 0, 0, 0.75) !important;
+}
+
+[data-theme="dark"] .modal-content {
+  background: #1e212b !important;
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .app-tile {
+  background-color: #1e212b !important;
+}
+
+[data-theme="dark"] .app-logo {
+  background-color: #2a2d3a !important;
+}
+
+[data-theme="dark"] .app-name {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .api-input {
+  background-color: #0f1117 !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Dark mode: sandbox app inline-style overrides */
+[data-theme="dark"] .modal-body input,
+[data-theme="dark"] .modal-body textarea,
+[data-theme="dark"] .modal-body select {
+  background: #0f1117 !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .modal-body label {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .modal-body p,
+[data-theme="dark"] .modal-body pre,
+[data-theme="dark"] .modal-body span {
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .modal-body a {
+  color: #94a3b8 !important;
+}
+
+/* Dark mode: theme toggle */
+.theme-toggle {
+  background: transparent;
+  border: 0;
+  padding: .4rem;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--text);
+  display: grid;
+  place-items: center;
+}
+
+.theme-toggle:hover {
+  background: var(--glass-strong);
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useCallback, useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
-import { Brackets, HardDriveDownload, KeySquare, ListChecks, Menu, Settings2, SquarePlay } from "lucide-react";
+import { Brackets, HardDriveDownload, KeySquare, ListChecks, Menu, Moon, Settings2, SquarePlay, Sun } from "lucide-react";
 import AgentsPage from "./components/AgentsPage";
 import { TOKEN_KEY } from "./utils";
 import ApiKeysPage from "./components/ApiKeysPage";
@@ -23,7 +23,13 @@ const routes = [
 export default function App() {
   const [route, setRoute] = useState("agents");
   const [navOpen, setNavOpen] = useState(false);
+  const [dark, setDark] = useState(() => localStorage.getItem("offloadmq-theme") === "dark");
   const tokenMissing = !(localStorage.getItem(TOKEN_KEY) || "");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    localStorage.setItem("offloadmq-theme", dark ? "dark" : "light");
+  }, [dark]);
 
   useEffect(() => {
     const onResize = () => { if (window.innerWidth > 900) setNavOpen(true); };
@@ -53,6 +59,9 @@ export default function App() {
         <button className="icon" onClick={() => setNavOpen(s => !s)} aria-label="Toggle menu"><Menu /></button>
         <div className="brand">Offload MQ Management Console</div>
         <div className="spacer" />
+        <button className="theme-toggle" onClick={() => setDark(d => !d)} aria-label="Toggle theme">
+          {dark ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
         {tokenMissing && <span className="badge warn">No token</span>}
       </header>
 
