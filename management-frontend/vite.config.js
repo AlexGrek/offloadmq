@@ -7,12 +7,12 @@ export default defineConfig({
   server: {
     proxy: {
       '/management': {
-        target: 'http://localhost:3069',
+        target: process.env.VITE_SERVER_URL || 'http://localhost:3069',
         changeOrigin: true,
         rewrite: (path) => path
       },
       '/api': {
-        target: 'http://localhost:3069',
+        target: process.env.VITE_SERVER_URL || 'http://localhost:3069',
         changeOrigin: true,
         rewrite: (path) => path
       }

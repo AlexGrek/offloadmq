@@ -214,7 +214,6 @@ const BashApp = ({ apiKey }) => {
 const styles = {
     content: {
         padding: '4px',
-        backgroundColor: '#FFFFFF',
     },
     form: {
         display: 'flex',
@@ -228,17 +227,19 @@ const styles = {
     label: {
         fontSize: '14px',
         fontWeight: '600',
-        color: '#333',
+        color: 'var(--text)',
         marginBottom: '6px',
     },
     input: {
         padding: '8px 12px',
         fontSize: '14px',
-        border: '1px solid #D0D0D0',
+        border: '1px solid var(--border)',
         borderRadius: '6px',
         transition: 'border-color 0.2s',
         outline: 'none',
         fontFamily: 'monospace',
+        background: 'var(--input-bg)',
+        color: 'var(--text)',
     },
     checkboxContainer: {
         display: 'flex',
@@ -273,9 +274,9 @@ const styles = {
         padding: '6px 12px',
         fontSize: '12px',
         fontWeight: '400',
-        color: '#666',
-        backgroundColor: '#F8F9FA',
-        border: '1px solid #D0D0D0',
+        color: 'var(--muted)',
+        background: 'var(--glass)',
+        border: '1px solid var(--border)',
         borderRadius: '4px',
         cursor: 'pointer',
         marginTop: '12px',
@@ -283,14 +284,14 @@ const styles = {
     responseContainer: {
         marginTop: '24px',
         padding: '16px',
-        backgroundColor: '#F7F7F7',
-        border: '1px solid #E0E0E0',
+        background: 'var(--glass)',
+        border: '1px solid var(--border)',
         borderRadius: '8px',
     },
     debugLabel: {
         fontSize: '14px',
         fontWeight: '600',
-        color: '#333',
+        color: 'var(--text)',
         margin: '0 0 8px 0',
     },
     loading: {
@@ -301,12 +302,12 @@ const styles = {
         whiteSpace: 'pre-wrap',
         wordWrap: 'break-word',
         fontSize: '12px',
-        color: '#222',
+        color: 'var(--text)',
         margin: '0',
         fontFamily: 'monospace',
-        backgroundColor: '#FFFFFF',
+        background: 'var(--code-bg)',
         padding: '8px',
-        border: '1px solid #E0E0E0',
+        border: '1px solid var(--border)',
         borderRadius: '4px',
     },
     terminal: {
