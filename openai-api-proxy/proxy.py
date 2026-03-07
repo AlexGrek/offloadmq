@@ -28,8 +28,8 @@ def main():
         help="Port to listen on (default: 11434, Ollama's default)",
     )
     parser.add_argument(
-        "--host", type=str, default="127.0.0.1",
-        help="Host to bind to (default: 127.0.0.1)",
+        "--host", type=str, default="0.0.0.0",
+        help="Host to bind to (default: 0.0.0.0)",
     )
     parser.add_argument(
         "--server", type=str, default="http://localhost:3069",

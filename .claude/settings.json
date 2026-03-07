@@ -22,7 +22,19 @@
       "Bash(mv offload-agent.spec offload-agent.spec)",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\(''proxy.py''\\).read\\(\\)\\); print\\(''Syntax OK''\\)\")",
       "Bash(python3 -c \":*)",
-      "Bash(.venv/bin/python3 -c \":*)"
+      "Bash(.venv/bin/python3 -c \":*)",
+      "Bash(.venv/bin/python ./proxy.py --server=\"https://offloadmq.alexgr.space\" --api-key=Zy38bW3x6rIIifO2)",
+      "Bash(python3 -m json.tool)",
+      "Bash(lsof -ti :11434)",
+      "Bash(lsof -i :11434)",
+      "Bash(launchctl stop com.ollama.ollama)",
+      "Bash(brew services stop ollama)",
+      "Bash(brew list)",
+      "Bash(ps -p 91753 -o pid,ppid,command)",
+      "Bash(ls -la /proc)",
+      "Bash(lsof -p 91753)",
+      "Bash(ps -p 81849 -o pid,ppid,command)",
+      "Bash(osascript -e 'quit app \"\"Ollama\"\"')"
     ]
   }
 }
