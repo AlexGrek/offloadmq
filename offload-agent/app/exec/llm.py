@@ -67,6 +67,7 @@ def execute_llm_query(
             buffer = ""
             last_print_time = time.time()
             final_data = {}
+            tool_calls = None
 
             # Make the request with streaming enabled
             r = requests.post(
@@ -79,11 +80,17 @@ def execute_llm_query(
                 if line.strip():
                     try:
                         data = json.loads(line)
-                        # Accumulate content in the buffer
-                        if "content" in data.get("message", {}):
-                            content = data["message"]["content"]
+                        msg = data.get("message", {})
+
+                        # Accumulate text content
+                        if "content" in msg:
+                            content = msg["content"]
                             buffer += content
                             full_response_text += content
+
+                        # Capture tool_calls if present
+                        if "tool_calls" in msg:
+                            tool_calls = msg["tool_calls"]
 
                         # Print buffered content every 2 seconds
                         current_time = time.time()
@@ -108,17 +115,19 @@ def execute_llm_query(
 
             # Construct the final response to match the non-streaming format
             if final_data:
+                final_msg: dict = {"role": "assistant", "content": full_response_text}
+                if tool_calls:
+                    final_msg["tool_calls"] = tool_calls
                 final_response = {
                     "model": final_data.get("model"),
                     "created_at": final_data.get("created_at"),
-                    "message": {"role": "assistant", "content": full_response_text},
+                    "message": final_msg,
                     "done": True,
+                    "done_reason": final_data.get("done_reason", "stop"),
                     "total_duration": final_data.get("total_duration"),
                 }
             else:
-                final_response = (
-                    {}
-                )  # Or handle as an error if the stream ended unexpectedly
+                final_response = {}  # Stream ended unexpectedly
 
             logger.info(f"Final streamed response: {final_response}")
             report = make_success_report(task_id, capability, final_response)

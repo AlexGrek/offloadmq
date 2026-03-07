@@ -227,7 +227,7 @@ def create_app(mq: OffloadMQClient) -> FastAPI:
             "stream": bool(stream),
         }
         for key in ("temperature", "top_p", "top_k", "seed", "num_predict",
-                    "stop", "repeat_penalty", "num_ctx"):
+                    "stop", "repeat_penalty", "num_ctx", "tools", "tool_choice"):
             if key in body:
                 payload[key] = body[key]
         if "max_tokens" in body and "num_predict" not in payload:
@@ -424,6 +424,7 @@ def create_app(mq: OffloadMQClient) -> FastAPI:
             yield make_chat_chunk(model, "", chunk_id)
 
             logger.info("Streaming: submitting non-urgent task for cap=%s", capability)
+            final_output = {}
             for event, data in _poll_stream(mq, capability, payload):
                 if event == "error":
                     yield f"data: {json.dumps({'error': data})}\n\n"
@@ -431,8 +432,16 @@ def create_app(mq: OffloadMQClient) -> FastAPI:
                     return
                 if event == "text":
                     yield make_chat_chunk(model, data, chunk_id)
+                if event == "done":
+                    final_output = data or {}
 
-            yield make_chat_chunk(model, "", chunk_id, finish_reason="stop")
+            tool_calls = final_output.get("message", {}).get("tool_calls")
+            if tool_calls:
+                yield make_chat_chunk(model, "", chunk_id,
+                                      finish_reason="tool_calls",
+                                      tool_calls=tool_calls)
+            else:
+                yield make_chat_chunk(model, "", chunk_id, finish_reason="stop")
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(
@@ -452,6 +461,7 @@ def create_app(mq: OffloadMQClient) -> FastAPI:
                                  *, content_key: str):
         def generate():
             logger.info("Ollama streaming: submitting non-urgent task for cap=%s", capability)
+            final_output = {}
             for event, data in _poll_stream(mq, capability, payload):
                 if event == "error":
                     yield json.dumps({"error": data}) + "\n"
@@ -459,9 +469,36 @@ def create_app(mq: OffloadMQClient) -> FastAPI:
                 if event == "text":
                     yield make_ollama_chunk(model, data, done=False,
                                            content_key=content_key)
+                if event == "done":
+                    final_output = data or {}
 
-            yield make_ollama_chunk(model, "", done=True,
-                                   content_key=content_key, done_reason="stop")
+            # Build the final done chunk, preserving tool_calls if present
+            final_message = final_output.get("message", {})
+            tool_calls = final_message.get("tool_calls")
+            done_obj: dict = {
+                "model": model,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "done": True,
+                "done_reason": "stop",
+            }
+            if content_key == "message":
+                msg: dict = {"role": "assistant", "content": ""}
+                if tool_calls:
+                    msg["tool_calls"] = tool_calls
+                    done_obj["done_reason"] = "tool_calls"
+                done_obj["message"] = msg
+            else:
+                done_obj["response"] = ""
+                done_obj.update({
+                    "context": [],
+                    "total_duration": 0,
+                    "load_duration": 0,
+                    "prompt_eval_count": 0,
+                    "prompt_eval_duration": 0,
+                    "eval_count": 0,
+                    "eval_duration": 0,
+                })
+            yield json.dumps(done_obj) + "\n"
 
         return StreamingResponse(generate(), media_type="application/x-ndjson")
 

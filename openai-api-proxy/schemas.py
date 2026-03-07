@@ -121,12 +121,15 @@ def make_chat_chunk(
     content: str,
     chunk_id: str,
     finish_reason: Optional[str] = None,
+    tool_calls: Optional[list] = None,
 ) -> str:
     """Build a single SSE data line for streaming chat completions."""
     delta: dict = {}
     if content:
         delta["content"] = content
-    if finish_reason is None and not content:
+    if tool_calls:
+        delta["tool_calls"] = tool_calls
+    if finish_reason is None and not content and not tool_calls:
         delta["role"] = "assistant"
 
     chunk = {
