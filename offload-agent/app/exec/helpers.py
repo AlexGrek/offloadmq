@@ -3,7 +3,7 @@ import logging
 from ..models import *
 from ..httphelpers import *
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("agent")
 
 
 def report_result(http: HttpClient, report: TaskResultReport) -> bool:
