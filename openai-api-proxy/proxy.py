@@ -90,8 +90,12 @@ def main():
     logger.info("Max image dimension: %d px", args.max_image_dim or MAX_DIMENSION)
     logger.info("Endpoints:")
     logger.info("  OpenAI:  POST http://%s:%d/v1/chat/completions", args.host, args.port)
-    logger.info("  Ollama:  POST http://%s:%d/api/chat", args.host, args.port)
     logger.info("  Models:  GET  http://%s:%d/v1/models", args.host, args.port)
+    logger.info("  Ollama:  POST http://%s:%d/api/chat", args.host, args.port)
+    logger.info("  Ollama:  POST http://%s:%d/api/generate", args.host, args.port)
+    logger.info("  Ollama:  GET  http://%s:%d/api/tags", args.host, args.port)
+    logger.info("  Ollama:  POST http://%s:%d/api/show", args.host, args.port)
+    logger.info("  Ollama:  GET  http://%s:%d/api/ps", args.host, args.port)
 
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
 
