@@ -279,6 +279,52 @@ def _systemd_status() -> Dict[str, Any]:
     return {"ok": True, "reason": "", "bin_path": bin_path}
 
 
+# ── Windows startup (Registry) ────────────────────────────────────────────────
+_WIN_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_WIN_REG_NAME = "OffloadAgent"
+
+
+def _win_startup_available() -> bool:
+    """Return True if we can manage Windows startup (frozen .exe on Windows)."""
+    return sys.platform == "win32" and getattr(sys, "frozen", False)
+
+
+def _win_startup_enabled() -> bool:
+    """Check whether the registry Run entry exists for this app."""
+    if not _win_startup_available():
+        return False
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_READ) as key:
+            winreg.QueryValueEx(key, _WIN_REG_NAME)
+            return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+
+
+def _win_startup_set(enable: bool) -> None:
+    """Add or remove the HKCU Run registry entry."""
+    if not _win_startup_available():
+        return
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            if enable:
+                exe_path = sys.executable
+                winreg.SetValueEx(key, _WIN_REG_NAME, 0, winreg.REG_SZ, f'"{exe_path}"')
+                _log(f"[startup] Enabled Windows startup: {exe_path}")
+            else:
+                try:
+                    winreg.DeleteValue(key, _WIN_REG_NAME)
+                    _log("[startup] Disabled Windows startup")
+                except FileNotFoundError:
+                    pass
+    except OSError as exc:
+        _log(f"[startup] ERROR: {exc}")
+
+
 def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
     st = get_status()
     dot_cls = "running" if st["running"] else "stopped"
@@ -299,6 +345,11 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
         systemd_html = '<form method="post" action="/install/systemd"><button class="btn-p btn-s" type="submit">Install systemd service</button></form>'
     else:
         systemd_html = f'<button class="btn-p btn-s" disabled style="opacity:.4;cursor:not-allowed">Install systemd service</button><div class="si" style="margin-top:.5rem;color:#64748b">{sd["reason"]}</div>'
+
+    # Windows startup toggle
+    win_startup_avail = _win_startup_available()
+    win_startup_on = _win_startup_enabled() if win_startup_avail else False
+    win_startup_checked = "checked" if win_startup_on else ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -359,9 +410,19 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
     </div>
   </div>
 
-  <!-- Systemd install -->
+  <!-- Service / startup -->
   <div class="card">
     <h2>Service</h2>
+    {"" if not win_startup_avail else '''
+    <div class="si" style="margin-bottom:.6rem">Launch Offload Agent when you log in to Windows.</div>
+    <form method="post" action="/config/win-startup">
+      <label class="cap">
+        <input type="checkbox" name="win_startup" value="1" ''' + win_startup_checked + '''
+          onchange="this.form.submit()"> Start with Windows
+      </label>
+    </form>
+    <hr>
+    '''}
     <div class="si" style="margin-bottom:.6rem">Install as a systemd service that autostarts with the system.</div>
     <div class="row">{systemd_html}</div>
   </div>
@@ -468,6 +529,20 @@ async def save_autostart(request: Request):
     cfg = load_config()
     cfg["autostart"] = bool(form.get("autostart"))
     save_config(cfg)
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/config/win-startup")
+async def save_win_startup(request: Request):
+    form = await request.form()
+    enable = bool(form.get("win_startup"))
+    _win_startup_set(enable)
+    # When enabling startup, also enable autostart so the agent runs automatically
+    if enable:
+        cfg = load_config()
+        cfg["autostart"] = True
+        save_config(cfg)
+        _log("[startup] Also enabled 'Autostart on launch' so the agent starts automatically")
     return RedirectResponse("/", status_code=303)
 
 
