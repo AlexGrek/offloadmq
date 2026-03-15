@@ -131,15 +131,17 @@ deploy-multiplatform: build-multiplatform build-frontend push-frontend
 		$(MAKE) install; \
 	fi
 
-# Build management frontend image
+# Build management frontend image (linux/amd64 only, pushed directly via buildx)
 build-frontend:
-	@echo "Building frontend with $(CONTAINER_RUNTIME)..."
-	$(CONTAINER_RUNTIME) build -t $(FRONTEND_IMAGE):$(TAG) management-frontend/
+	@echo "Building frontend for linux/amd64..."
+	docker buildx build \
+		--platform linux/amd64 \
+		--tag $(FRONTEND_IMAGE):$(TAG) \
+		--push \
+		management-frontend/
 
-# Push management frontend image
 push-frontend:
-	@echo "Pushing frontend with $(CONTAINER_RUNTIME)..."
-	$(CONTAINER_RUNTIME) push $(FRONTEND_IMAGE):$(TAG)
+	@true # build-frontend already pushes via buildx
 
 # Build the offload-agent standalone binary
 build-client:
