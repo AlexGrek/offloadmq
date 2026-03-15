@@ -13,10 +13,14 @@ CONTAINER_RUNTIME := docker
 
 .PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend
 
-# Build container image
+# Build container image (linux/amd64 only, pushed directly via buildx)
 build:
-	@echo "Building with $(CONTAINER_RUNTIME)..."
-	$(CONTAINER_RUNTIME) build -t $(IMAGE):$(TAG) .
+	@echo "Building for linux/amd64..."
+	docker buildx build \
+		--platform linux/amd64 \
+		--tag $(IMAGE):$(TAG) \
+		--push \
+		.
 
 # Build multiplatform image with buildx (amd64 and arm64)
 # Set PLATFORMS to override (e.g., make build-multiplatform PLATFORMS=linux/amd64,linux/arm64,linux/arm/v7)
@@ -29,10 +33,8 @@ build-multiplatform:
 		--push \
 		.
 
-# Push container image
 push:
-	@echo "Pushing with $(CONTAINER_RUNTIME)..."
-	$(CONTAINER_RUNTIME) push $(IMAGE):$(TAG)
+	@true # build already pushes via buildx
 
 # Generate .secrets.yaml file with random secrets
 secrets:
