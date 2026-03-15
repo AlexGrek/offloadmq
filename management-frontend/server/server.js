@@ -12,6 +12,7 @@ const app = express();
 const API_TARGET = process.env.API_TARGET + '/api' || 'http://localhost:5000';
 const MGMT_TARGET = process.env.MGMT_TARGET + '/management' || 'http://localhost:5001';
 const PORT = process.env.PORT || 8080;
+const BASE_PATH = process.env.BASE_PATH || '/ui';
 
 console.log('Starting proxy server...');
 console.log(`API_TARGET: ${API_TARGET}`);
@@ -87,10 +88,10 @@ app.get('/proxy-test', (req, res) => {
 
 // Serve static files AFTER proxies
 const staticPath = path.join(__dirname, 'dist');
-app.use(express.static(staticPath));
+app.use(BASE_PATH, express.static(staticPath));
 
 // SPA fallback - LAST
-app.get('*', (req, res) => {
+app.get(`${BASE_PATH}*`, (req, res) => {
   res.sendFile(path.join(staticPath, 'index.html'));
 });
 

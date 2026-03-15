@@ -26,6 +26,26 @@ _OLLAMA_VERSION = "0.6.0"
 _TERMINAL_STATUSES = ("completed", "failed", "canceled")
 
 
+def _to_openai_tool_calls(tool_calls: list) -> list:
+    """Convert Ollama tool_calls (arguments as dict) to OpenAI format (arguments as JSON string)."""
+    result = []
+    for i, tc in enumerate(tool_calls):
+        func = tc.get("function", {})
+        arguments = func.get("arguments", {})
+        if isinstance(arguments, dict):
+            arguments = json.dumps(arguments)
+        result.append({
+            "index": tc.get("index", i),
+            "id": tc.get("id") or f"call_{uuid.uuid4().hex[:12]}",
+            "type": "function",
+            "function": {
+                "name": func.get("name", ""),
+                "arguments": arguments,
+            },
+        })
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Shared streaming poll loop
 # ---------------------------------------------------------------------------
@@ -413,7 +433,12 @@ def create_app(mq: OffloadMQClient) -> FastAPI:
         output = result.get("result") or result.get("output") or {}
         message = output.get("message", {})
         content = message.get("content", "")
-        return JSONResponse(make_chat_response(model, content))
+        tool_calls = message.get("tool_calls")
+        resp = make_chat_response(model, content,
+                                  finish_reason="tool_calls" if tool_calls else "stop")
+        if tool_calls:
+            resp["choices"][0]["message"]["tool_calls"] = _to_openai_tool_calls(tool_calls)
+        return JSONResponse(resp)
 
     # -----------------------------------------------------------------------
     # Streaming chat completion (OpenAI SSE)
@@ -439,7 +464,7 @@ def create_app(mq: OffloadMQClient) -> FastAPI:
             if tool_calls:
                 yield make_chat_chunk(model, "", chunk_id,
                                       finish_reason="tool_calls",
-                                      tool_calls=tool_calls)
+                                      tool_calls=_to_openai_tool_calls(tool_calls))
             else:
                 yield make_chat_chunk(model, "", chunk_id, finish_reason="stop")
             yield "data: [DONE]\n\n"

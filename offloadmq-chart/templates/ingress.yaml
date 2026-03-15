@@ -35,5 +35,14 @@ spec:
                 port:
                   number: {{ $.Values.service.port }}
           {{- end }}
+          {{- if $.Values.frontend.enabled }}
+          - path: /ui
+            pathType: Prefix
+            backend:
+              service:
+                name: offloadmq
+                port:
+                  number: {{ $.Values.frontend.port }}
+          {{- end }}
     {{- end }}
 {{- end }}

@@ -47,3 +47,18 @@ secrets:
   CLIENT_API_KEYS: "client_secret_key_123"
   AGENT_API_KEYS: "ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e"
   MGMT_TOKEN: "this-is-for-testing-management-tokens"
+
+frontend:
+  enabled: true
+  image:
+    repository: grekodocker/offloadmq-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 8080
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
