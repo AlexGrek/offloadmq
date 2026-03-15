@@ -48,10 +48,6 @@ template:
 
 # Build, push, and install/upgrade in one go
 deploy: build push
-	@if [ ! -f $(SECRETS_FILE) ]; then \
-		echo "ERROR: Secrets file '$(SECRETS_FILE)' not found!"; \
-		exit 1; \
-	fi
 	@if helm status $(RELEASE) -n $(NAMESPACE) >/dev/null 2>&1; then \
 		echo "Upgrading $(RELEASE) to $(IMAGE):$(TAG) ..."; \
 		$(MAKE) upgrade; \

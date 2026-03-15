@@ -5,7 +5,8 @@ metadata:
 spec:
   clusterIP: None # Required for stable network identity in StatefulSet
   ports:
-    - protocol: TCP
+    - name: api
+      protocol: TCP
       port: {{ .Values.service.port }}
       targetPort: {{ .Values.service.port }}
     {{- if .Values.frontend.enabled }}
