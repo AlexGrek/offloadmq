@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: grekodocker/offloadmq-frontend
+  repository: grekodocker/offloadmq-management-frontend
   tag: latest
   pullPolicy: Always
 

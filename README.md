@@ -144,7 +144,7 @@ Key `values.yaml` options (override with `--set` or a custom values file):
 | `image.tag` | `latest` | Image tag |
 | `ingress.hosts[0].host` | `offloadmq.alexgr.space` | Public hostname |
 | `frontend.enabled` | `true` | Deploy management UI sidecar |
-| `frontend.image.repository` | `grekodocker/offloadmq-frontend` | Frontend image |
+| `frontend.image.repository` | `grekodocker/offloadmq-management-frontend` | Frontend image |
 | `frontend.image.tag` | `latest` | Frontend image tag |
 | `persistence.size` | `1Gi` | PVC size for Sled DB |
 
