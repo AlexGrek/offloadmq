@@ -45,7 +45,7 @@ make test-logs       # tail logs
 
 ### 1. Generate secrets
 
-Creates `.secrets.yaml` with a randomly generated Kubernetes Secret manifest:
+Creates `.secrets.yaml` with randomly generated values in Helm values format. The secret is created once on first install and never overwritten by subsequent upgrades — keys persist across redeploys.
 
 ```bash
 make secrets
