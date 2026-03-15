@@ -16,6 +16,10 @@ pynvml>=11.4.0
 typer[all]
 colorlog
 
+# Windows tray icon (only needed for Windows .exe build)
+pystray>=0.19.0
+Pillow>=10.0.0
+
 # Note: pynvml is for NVIDIA GPU detection
 # GPUtil provides a more general GPU interface
 # Both are optional - the script will work without them but won't detect GPU info
