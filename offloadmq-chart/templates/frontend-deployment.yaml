@@ -1,0 +1,33 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: offloadmq-frontend
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      app: offloadmq-frontend
+  template:
+    metadata:
+      labels:
+        app: offloadmq-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.frontend.port }}
+          env:
+            - name: PORT
+              value: {{ .Values.frontend.port | quote }}
+            - name: BASE_PATH
+              value: "/ui"
+            - name: API_TARGET
+              value: {{ .Values.frontend.backendUrl | quote }}
+            - name: MGMT_TARGET
+              value: {{ .Values.frontend.backendUrl | quote }}
+          resources:
+{{ toYaml .Values.frontend.resources | indent 12 }}
+{{- end }}

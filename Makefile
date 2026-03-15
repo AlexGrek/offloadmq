@@ -6,11 +6,12 @@ REGISTRY ?= grekodocker
 # Detect Git version if TAG is not provided
 TAG ?= $(shell git describe --tags --always --dirty)
 IMAGE ?= ${REGISTRY}/offloadmq
+FRONTEND_IMAGE ?= ${REGISTRY}/offloadmq-management-frontend
 SECRETS_FILE ?= .secrets.yaml
 
 CONTAINER_RUNTIME := docker
 
-.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client
+.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend
 
 # Build container image
 build:
@@ -70,6 +71,8 @@ install:
 		--namespace $(NAMESPACE) --create-namespace \
 		--set image.repository=$(IMAGE) \
 		--set image.tag=$(TAG) \
+		--set frontend.image.repository=$(FRONTEND_IMAGE) \
+		--set frontend.image.tag=$(TAG) \
 		-f $(SECRETS_FILE)
 
 # Upgrade Helm release
@@ -78,6 +81,8 @@ upgrade:
 		--namespace $(NAMESPACE) \
 		--set image.repository=$(IMAGE) \
 		--set image.tag=$(TAG) \
+		--set frontend.image.repository=$(FRONTEND_IMAGE) \
+		--set frontend.image.tag=$(TAG) \
 		-f $(SECRETS_FILE)
 
 # Uninstall release
@@ -94,10 +99,12 @@ template:
 		--namespace $(NAMESPACE) \
 		--set image.repository=$(IMAGE) \
 		--set image.tag=$(TAG) \
+		--set frontend.image.repository=$(FRONTEND_IMAGE) \
+		--set frontend.image.tag=$(TAG) \
 		-f $(SECRETS_FILE)
 
 # Build, push, and install/upgrade in one go
-deploy: build push
+deploy: build push build-frontend push-frontend
 	@if [ ! -f $(SECRETS_FILE) ]; then \
 		echo "ERROR: Secrets file '$(SECRETS_FILE)' not found!"; \
 		exit 1; \
@@ -111,7 +118,7 @@ deploy: build push
 	fi
 
 # Build multiplatform, and install/upgrade in one go
-deploy-multiplatform: build-multiplatform
+deploy-multiplatform: build-multiplatform build-frontend push-frontend
 	@if [ ! -f $(SECRETS_FILE) ]; then \
 		echo "ERROR: Secrets file '$(SECRETS_FILE)' not found!"; \
 		exit 1; \
@@ -123,6 +130,16 @@ deploy-multiplatform: build-multiplatform
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
 		$(MAKE) install; \
 	fi
+
+# Build management frontend image
+build-frontend:
+	@echo "Building frontend with $(CONTAINER_RUNTIME)..."
+	$(CONTAINER_RUNTIME) build -t $(FRONTEND_IMAGE):$(TAG) management-frontend/
+
+# Push management frontend image
+push-frontend:
+	@echo "Pushing frontend with $(CONTAINER_RUNTIME)..."
+	$(CONTAINER_RUNTIME) push $(FRONTEND_IMAGE):$(TAG)
 
 # Build the offload-agent standalone binary
 build-client:

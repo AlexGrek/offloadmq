@@ -40,7 +40,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: offloadmq
+                name: offloadmq-frontend
                 port:
                   number: {{ $.Values.frontend.port }}
           {{- end }}

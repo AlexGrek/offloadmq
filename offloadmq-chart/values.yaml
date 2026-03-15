@@ -50,11 +50,14 @@ secrets:
 
 frontend:
   enabled: true
+  replicaCount: 1
   image:
-    repository: grekodocker/offloadmq-frontend
+    repository: grekodocker/offloadmq-management-frontend
     tag: latest
     pullPolicy: IfNotPresent
   port: 8080
+  # URL of the offloadmq API service as seen from inside the cluster
+  backendUrl: "http://offloadmq:3069"
   resources:
     requests:
       cpu: 50m

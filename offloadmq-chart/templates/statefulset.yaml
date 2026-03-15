@@ -49,24 +49,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
-        {{- if .Values.frontend.enabled }}
-        - name: frontend
-          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
-          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
-          ports:
-            - containerPort: {{ .Values.frontend.port }}
-          env:
-            - name: PORT
-              value: {{ .Values.frontend.port | quote }}
-            - name: BASE_PATH
-              value: "/ui"
-            - name: API_TARGET
-              value: "http://localhost:{{ .Values.service.port }}"
-            - name: MGMT_TARGET
-              value: "http://localhost:{{ .Values.service.port }}"
-          resources:
-{{ toYaml .Values.frontend.resources | indent 12 }}
-        {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: data
