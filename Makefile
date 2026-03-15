@@ -36,30 +36,19 @@ build-multiplatform:
 push:
 	@true # build already pushes via buildx
 
-# Generate .secrets.yaml file with random secrets
+# Generate .secrets.yaml file with random secrets (helm values format)
 secrets:
 	@echo "Generating $(SECRETS_FILE)..."
 	@if [ -f $(SECRETS_FILE) ]; then \
 		echo "WARNING: $(SECRETS_FILE) already exists. Remove it first or use 'make secrets-force'"; \
 		exit 1; \
 	fi
-	@AGENT_KEY=$$(openssl rand -base64 24 | tr -d '\n' | base64 | tr -d '\n'); \
-	CLIENT_KEY=$$(openssl rand -base64 24 | tr -d '\n' | base64 | tr -d '\n'); \
-	JWT_SECRET=$$(openssl rand -base64 48 | tr -d '\n' | base64 | tr -d '\n'); \
-	MGMT_TOKEN=$$(openssl rand -base64 48 | tr -d '\n' | base64 | tr -d '\n'); \
-	cat > $(SECRETS_FILE) <<EOF ;\
-apiVersion: v1\n\
-kind: Secret\n\
-metadata:\n\
-  name: offloadmq-secrets\n\
-  namespace: $(NAMESPACE)\n\
-data:\n\
-  AGENT_API_KEYS: $$AGENT_KEY\n\
-  CLIENT_API_KEYS: $$CLIENT_KEY\n\
-  JWT_SECRET: $$JWT_SECRET\n\
-  MGMT_TOKEN: $$MGMT_TOKEN\n\
-type: Opaque\n\
-EOF
+	@AGENT_KEY=$$(openssl rand -hex 32); \
+	CLIENT_KEY=$$(openssl rand -hex 32); \
+	JWT_SECRET=$$(openssl rand -hex 48); \
+	MGMT_TOKEN=$$(openssl rand -hex 48); \
+	printf 'secrets:\n  AGENT_API_KEYS: "%s"\n  CLIENT_API_KEYS: "%s"\n  JWT_SECRET: "%s"\n  MGMT_TOKEN: "%s"\n' \
+		"$$AGENT_KEY" "$$CLIENT_KEY" "$$JWT_SECRET" "$$MGMT_TOKEN" > $(SECRETS_FILE)
 	@echo "✓ Generated $(SECRETS_FILE) with random secrets"
 
 # Force regenerate secrets (overwrites existing file)
