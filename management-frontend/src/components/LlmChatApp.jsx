@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2, Send } from 'lucide-react';
+import { Trash2, Send, ImagePlus, X } from 'lucide-react';
+
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 const LlmChatApp = ({ apiKey }) => {
-  const [messages, setMessages] = useState([]); // { role: 'user' | 'assistant', content }
+  const [messages, setMessages] = useState([]); // { role, content, images?, imageMimes? }
   const [input, setInput] = useState('');
   const [model, setModel] = useState('dolphin-mistral');
   const [systemMessage, setSystemMessage] = useState('You are a helpful AI assistant.');
@@ -12,8 +14,10 @@ const LlmChatApp = ({ apiKey }) => {
   const [pollingStatus, setPollingStatus] = useState('');
   const [currentTask, setCurrentTask] = useState(null);
   const [streamingLog, setStreamingLog] = useState('');
+  const [pendingImages, setPendingImages] = useState([]); // [{ name, mime, b64, previewUrl }]
   const chatEndRef = useRef(null);
   const pollIntervalRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -35,6 +39,16 @@ const LlmChatApp = ({ apiKey }) => {
     };
     fetchCapabilities();
   }, [apiKey]);
+
+  // Revoke all pending preview object URLs on unmount
+  useEffect(() => {
+    return () => {
+      setPendingImages(prev => {
+        prev.forEach(img => URL.revokeObjectURL(img.previewUrl));
+        return [];
+      });
+    };
+  }, []);
 
   useEffect(() => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -95,22 +109,67 @@ const LlmChatApp = ({ apiKey }) => {
     }
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+  const handleImageFiles = (files) => {
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) return;
+      if (file.size > MAX_IMAGE_BYTES) {
+        setError(`"${file.name}" exceeds 10 MB limit and was skipped.`);
+        return;
+      }
+      const previewUrl = URL.createObjectURL(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        // Strip "data:<mime>;base64," prefix — Ollama expects raw base64
+        const b64 = e.target.result.split(',')[1];
+        setPendingImages(prev => [...prev, { name: file.name, mime: file.type, b64, previewUrl }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
 
-    const userMessage = { role: 'user', content: input.trim() };
+  const handleRemoveImage = (idx) => {
+    setPendingImages(prev => {
+      URL.revokeObjectURL(prev[idx].previewUrl);
+      return prev.filter((_, i) => i !== idx);
+    });
+  };
+
+  const handleSend = async () => {
+    if ((!input.trim() && pendingImages.length === 0) || isLoading) return;
+
+    const userMessage = {
+      role: 'user',
+      content: input.trim(),
+      ...(pendingImages.length > 0 && {
+        images: pendingImages.map(p => p.b64),
+        imageMimes: pendingImages.map(p => p.mime), // UI-only display hint, stripped before sending
+      }),
+    };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput('');
+    // Revoke object URLs now that b64 is committed to message history
+    pendingImages.forEach(img => URL.revokeObjectURL(img.previewUrl));
+    setPendingImages([]);
     setIsLoading(true);
     setError(null);
+
+    // Build Ollama-compatible messages: strip UI-only imageMimes before sending
+    const ollamaMessages = [
+      { role: 'system', content: systemMessage },
+      ...newMessages.map(({ role, content, images }) => ({
+        role,
+        content,
+        ...(images && { images }),
+      })),
+    ];
 
     const payload = {
       capability: `llm.${model}`,
       urgent: false,
       payload: {
         model,
-        messages: [{ role: 'system', content: systemMessage }, ...newMessages],
+        messages: ollamaMessages,
         stream: true,
       },
       apiKey,
@@ -146,6 +205,10 @@ const LlmChatApp = ({ apiKey }) => {
     setIsLoading(false);
     setPollingStatus('');
     setStreamingLog('');
+    setPendingImages(prev => {
+      prev.forEach(img => URL.revokeObjectURL(img.previewUrl));
+      return [];
+    });
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
   };
 
@@ -199,7 +262,19 @@ const LlmChatApp = ({ apiKey }) => {
             key={i}
             style={{ ...styles.bubble, ...(msg.role === 'user' ? styles.userBubble : styles.assistantBubble) }}
           >
-            <div style={styles.bubbleText}>{msg.content}</div>
+            {msg.images && msg.images.length > 0 && (
+              <div style={styles.bubbleImages}>
+                {msg.images.map((b64, j) => (
+                  <img
+                    key={j}
+                    src={`data:${msg.imageMimes?.[j] ?? 'image/png'};base64,${b64}`}
+                    alt="attached"
+                    style={styles.bubbleImg}
+                  />
+                ))}
+              </div>
+            )}
+            {msg.content && <div style={styles.bubbleText}>{msg.content}</div>}
           </div>
         ))}
         {isLoading && (
@@ -214,28 +289,58 @@ const LlmChatApp = ({ apiKey }) => {
         <div ref={chatEndRef} />
       </div>
 
-      <div style={styles.inputRow}>
-        <textarea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
-          style={styles.textarea}
-          rows={2}
-          disabled={isLoading}
-        />
-        <button
-          onClick={handleSend}
-          disabled={isLoading || !input.trim()}
-          style={{ ...styles.sendBtn, opacity: isLoading || !input.trim() ? 0.5 : 1 }}
-        >
-          <Send size={18} />
-        </button>
+      <div style={styles.inputArea}>
+        {pendingImages.length > 0 && (
+          <div style={styles.pendingImages}>
+            {pendingImages.map((img, i) => (
+              <div key={i} style={styles.pendingThumb}>
+                <img src={img.previewUrl} alt={img.name} style={styles.thumbImg} />
+                <button onClick={() => handleRemoveImage(i)} style={styles.thumbRemove} title="Remove">
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={styles.inputRow}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={e => { handleImageFiles(e.target.files); e.target.value = ''; }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isLoading}
+            style={{ ...styles.iconBtn, opacity: isLoading ? 0.5 : 1 }}
+            title="Attach image"
+          >
+            <ImagePlus size={18} />
+          </button>
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
+            style={styles.textarea}
+            rows={2}
+            disabled={isLoading}
+          />
+          <button
+            onClick={handleSend}
+            disabled={isLoading || (!input.trim() && pendingImages.length === 0)}
+            style={{ ...styles.sendBtn, opacity: isLoading || (!input.trim() && pendingImages.length === 0) ? 0.5 : 1 }}
+          >
+            <Send size={18} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -370,12 +475,72 @@ const styles = {
     borderRadius: '6px',
     border: '1px solid rgba(239, 68, 68, 0.3)',
   },
+  inputArea: {
+    paddingTop: '8px',
+    borderTop: '1px solid var(--border)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
   inputRow: {
     display: 'flex',
     gap: '8px',
-    paddingTop: '8px',
-    borderTop: '1px solid var(--border)',
     alignItems: 'flex-end',
+  },
+  pendingImages: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+  },
+  pendingThumb: {
+    position: 'relative',
+    display: 'inline-flex',
+  },
+  thumbImg: {
+    width: '56px',
+    height: '56px',
+    objectFit: 'cover',
+    borderRadius: '6px',
+    border: '1px solid var(--border)',
+  },
+  thumbRemove: {
+    position: 'absolute',
+    top: '-5px',
+    right: '-5px',
+    width: '16px',
+    height: '16px',
+    borderRadius: '50%',
+    border: 'none',
+    background: 'var(--danger, #ef4444)',
+    color: '#fff',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+  },
+  bubbleImages: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '4px',
+    marginBottom: '6px',
+  },
+  bubbleImg: {
+    maxWidth: '180px',
+    maxHeight: '180px',
+    borderRadius: '6px',
+    objectFit: 'cover',
+  },
+  iconBtn: {
+    padding: '8px',
+    background: 'none',
+    border: '1px solid var(--border)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    color: 'var(--muted)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   textarea: {
     flex: 1,
