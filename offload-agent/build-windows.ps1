@@ -54,6 +54,7 @@ try {
         --name "offload-agent" `
         --add-data "app;app" `
         --add-data "webui.py;." `
+        --hidden-import "pystray._win32" `
         "offload-agent-win.pyw"
 
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
