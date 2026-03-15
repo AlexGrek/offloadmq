@@ -5,3 +5,4 @@
 offload-agent.spec
 **/__pycache__
 **/*.pyc
+/venv-win
