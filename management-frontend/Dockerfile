@@ -9,7 +9,9 @@ RUN npm install
 # Copy app source
 COPY . .
 
-# Build Vite SPA
+# Build Vite SPA with base path for /ui deployment
+ARG VITE_BASE_PATH=/ui/
+ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 RUN npm run build
 
 # Runtime stage
