@@ -155,6 +155,8 @@ make webui      # start web UI
 
 ### Build the binary yourself
 
+#### Linux / macOS
+
 ```bash
 make build          # build dist/offload-agent
 make rebuild        # clean + build
@@ -166,6 +168,21 @@ From the repo root:
 make build-client   # same as above
 make rebuild-client # clean + build
 ```
+
+#### Windows
+
+A PowerShell build script produces a standalone `.exe` that runs the web UI
+without a console window and opens the browser automatically on launch.
+
+Prerequisites: Python 3.10+ on PATH.
+
+```powershell
+cd offload-agent
+.\build-windows.ps1
+```
+
+The output is `dist\offload-agent.exe`. Double-click it to start — the web UI
+opens in your default browser at `http://127.0.0.1:8080`.
 
 ---
 
