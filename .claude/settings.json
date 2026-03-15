@@ -34,7 +34,9 @@
       "Bash(ls -la /proc)",
       "Bash(lsof -p 91753)",
       "Bash(ps -p 81849 -o pid,ppid,command)",
-      "Bash(osascript -e 'quit app \"\"Ollama\"\"')"
+      "Bash(osascript -e 'quit app \"\"Ollama\"\"')",
+      "Bash(cargo fetch:*)",
+      "Bash(cargo search:*)"
     ]
   }
 }
