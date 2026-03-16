@@ -29,7 +29,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 import uvicorn
 
-from app.config import load_config, save_config
+from app.config import load_config, save_config, config_exists
 
 # ── Agent-thread state (module-level, protected by _lock) ─────────────────────
 _serve_thread: Optional[threading.Thread] = None
@@ -220,6 +220,8 @@ button{padding:.45rem 1.1rem;border-radius:5px;font-size:.85rem;font-weight:500;
 .btn-r{background:#ef4444;color:#fff}
 .btn-s{padding:.3rem .7rem;font-size:.8rem}
 button:hover{opacity:.85}
+.btn-ghost{background:transparent;border:1px solid #334155;color:#64748b}
+.btn-ghost:hover{border-color:#6366f1;color:#e2e8f0;opacity:1}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:.4rem;vertical-align:middle}
 .dot.running{background:#22c55e;box-shadow:0 0 6px #22c55e}
 .dot.stopped{background:#475569}
@@ -386,6 +388,26 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
     dot_cls = "running" if st["running"] else "stopped"
     st_text = "Running" if st["running"] else "Stopped"
     autostart_checked = "checked" if cfg.get("autostart") else ""
+    cfg_exists = (
+        config_exists()
+        and bool(cfg.get("server", "").strip())
+        and bool(cfg.get("apiKey", "").strip())
+    )
+    if cfg_exists:
+        autostart_html = (
+            f'<form method="post" action="/config/autostart">'
+            f'<label class="cap">'
+            f'<input type="checkbox" name="autostart" value="1" {autostart_checked}'
+            f' onchange="this.form.submit()"> Autostart on launch'
+            f'</label></form>'
+        )
+    else:
+        autostart_html = (
+            '<label class="cap" style="opacity:.5;cursor:not-allowed">'
+            '<input type="checkbox" disabled> Autostart on launch'
+            '<span style="font-size:.75rem;color:#f59e0b;margin-left:.4rem">— config not found</span>'
+            '</label>'
+        )
 
     boxes = "".join(
         f'<label class="cap"><input type="checkbox" name="caps" value="{c}"'
@@ -439,12 +461,7 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
       </form>
     </div>
     <div class="row" style="margin-top:.75rem">
-      <form method="post" action="/config/autostart">
-        <label class="cap">
-          <input type="checkbox" name="autostart" value="1" {autostart_checked}
-            onchange="this.form.submit()"> Autostart on launch
-        </label>
-      </form>
+      {autostart_html}
     </div>
   </div>
 
@@ -456,7 +473,10 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
       <input type="text" name="server" value="{server_val}" placeholder="http://localhost:3069">
       <lbl>API Key</lbl>
       <input type="text" name="apiKey" value="{api_key_val}" placeholder="ak_live_...">
-      <button class="btn-p" type="submit">Save</button>
+      <div class="row" style="margin-top:.75rem">
+        <button class="btn-p" type="submit">Save</button>
+        <a href="/config/reload" class="btn-ghost btn-s" style="text-decoration:none;display:inline-flex;align-items:center">&#8635; Load from disk</a>
+      </div>
     </form>
   </div>
 
@@ -591,6 +611,12 @@ async def save_capabilities(
 
     cfg["capabilities"] = sorted(set(checked))
     save_config(cfg)
+    return RedirectResponse("/", status_code=303)
+
+
+@app.get("/config/reload")
+async def reload_config():
+    """Re-read config from disk and refresh the UI (also re-checks config existence)."""
     return RedirectResponse("/", status_code=303)
 
 

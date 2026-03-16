@@ -10,6 +10,10 @@ from pydantic import BaseModel, Field
 
 CONFIG_FILE = ".offload-agent.json"
 
+def config_exists() -> bool:
+    return Path(CONFIG_FILE).exists()
+
+
 def load_config() -> Dict[str, Any]:
     p = Path(CONFIG_FILE)
     if p.exists():
