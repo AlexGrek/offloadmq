@@ -71,6 +71,10 @@ const apiProxy = createProxyMiddleware({
 app.use('/management', managementProxy);
 app.use('/api', apiProxy);
 
+app.get('/version', (req, res) => {
+  res.json({ version: process.env.APP_VERSION || 'unknown' });
+});
+
 // TEST ENDPOINTS - to verify server is working
 app.get('/test', (req, res) => {
   res.json({ message: 'Server is working', timestamp: new Date().toISOString() });

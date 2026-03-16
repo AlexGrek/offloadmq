@@ -44,6 +44,8 @@ spec:
                 secretKeyRef:
                   name: offloadmq-secrets
                   key: MGMT_TOKEN
+            - name: APP_VERSION
+              value: {{ .Values.appVersion | quote }}
           resources:
 {{ toYaml .Values.resources | indent 12 }}
           volumeMounts:

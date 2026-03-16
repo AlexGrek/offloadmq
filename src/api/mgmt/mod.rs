@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, env, sync::Arc};
 
 use axum::{
     Json,
@@ -41,6 +41,11 @@ pub async fn remove_agent(
 ) -> Result<impl IntoResponse, AppError> {
     state.storage.delete_agent(&agent_id)?;
     Ok(Json(json!("Agent deleted")))
+}
+
+pub async fn version() -> impl IntoResponse {
+    let v = env::var("APP_VERSION").unwrap_or_else(|_| "unknown".to_string());
+    Json(json!({ "version": v }))
 }
 
 pub async fn capabilities_online(

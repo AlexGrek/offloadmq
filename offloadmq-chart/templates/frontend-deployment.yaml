@@ -28,6 +28,8 @@ spec:
               value: {{ .Values.frontend.backendUrl | quote }}
             - name: MGMT_TARGET
               value: {{ .Values.frontend.backendUrl | quote }}
+            - name: APP_VERSION
+              value: {{ .Values.appVersion | quote }}
           resources:
 {{ toYaml .Values.frontend.resources | indent 12 }}
 {{- end }}

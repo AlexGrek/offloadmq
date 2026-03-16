@@ -25,6 +25,8 @@ ingress:
       hosts:
         - offloadmq.alexgr.space
 
+appVersion: ""
+
 env:
   SERVER_ADDRESS: "0.0.0.0:3069"
   DATABASE_ROOT_PATH: "/data/db"

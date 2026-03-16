@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useCallback, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
 import { Brackets, HardDriveDownload, KeySquare, ListChecks, Menu, Moon, Settings2, SquarePlay, Sun } from "lucide-react";
 import AgentsPage from "./components/AgentsPage";
-import { TOKEN_KEY } from "./utils";
+import { TOKEN_KEY, apiFetch } from "./utils";
 import ApiKeysPage from "./components/ApiKeysPage";
 import SettingsPage from "./components/SettingsPage";
 import TasksPage from "./components/TasksPage";
@@ -24,7 +24,14 @@ export default function App() {
   const [route, setRoute] = useState("agents");
   const [navOpen, setNavOpen] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem("offloadmq-theme") === "dark");
+  const [frontendVersion, setFrontendVersion] = useState(null);
+  const [serverVersion, setServerVersion] = useState(null);
   const tokenMissing = !(localStorage.getItem(TOKEN_KEY) || "");
+
+  useEffect(() => {
+    fetch('/version').then(r => r.json()).then(d => setFrontendVersion(d.version)).catch(() => {});
+    apiFetch('/management/version').then(d => setServerVersion(d.version)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
@@ -59,6 +66,15 @@ export default function App() {
         <button className="icon" onClick={() => setNavOpen(s => !s)} aria-label="Toggle menu"><Menu /></button>
         <div className="brand">Offload MQ Management Console</div>
         <div className="spacer" />
+        {(frontendVersion || serverVersion) && (() => {
+          const mismatch = frontendVersion && serverVersion && frontendVersion !== serverVersion;
+          const color = mismatch ? 'var(--danger)' : 'var(--muted)';
+          return (
+            <span style={{ fontSize: '11px', color, marginRight: '8px', fontFamily: 'monospace' }} title={mismatch ? 'Version mismatch between frontend and server' : undefined}>
+              ui:{frontendVersion ?? '…'} srv:{serverVersion ?? '…'}
+            </span>
+          );
+        })()}
         <button className="theme-toggle" onClick={() => setDark(d => !d)} aria-label="Toggle theme">
           {dark ? <Sun size={18} /> : <Moon size={18} />}
         </button>

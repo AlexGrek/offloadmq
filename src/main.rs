@@ -80,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest(
             "/management",
             Router::new()
+                .route("/version", get(api::mgmt::version))
                 .route(
                     "/capabilities/list/online",
                     get(api::mgmt::capabilities_online),

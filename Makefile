@@ -4,7 +4,7 @@ NAMESPACE := offloadmq
 RELEASE := offloadmq
 REGISTRY ?= grekodocker
 # Detect Git version if TAG is not provided
-TAG ?= $(shell git describe --tags --always --dirty)
+TAG ?= $(shell git rev-list --count HEAD)
 IMAGE ?= ${REGISTRY}/offloadmq
 FRONTEND_IMAGE ?= ${REGISTRY}/offloadmq-management-frontend
 SECRETS_FILE ?= .secrets.yaml
@@ -64,6 +64,7 @@ install:
 		--set image.tag=$(TAG) \
 		--set frontend.image.repository=$(FRONTEND_IMAGE) \
 		--set frontend.image.tag=$(TAG) \
+		--set appVersion=$(TAG) \
 		-f $(SECRETS_FILE)
 
 # Upgrade Helm release
@@ -74,6 +75,7 @@ upgrade:
 		--set image.tag=$(TAG) \
 		--set frontend.image.repository=$(FRONTEND_IMAGE) \
 		--set frontend.image.tag=$(TAG) \
+		--set appVersion=$(TAG) \
 		-f $(SECRETS_FILE)
 
 # Uninstall release
@@ -92,6 +94,7 @@ template:
 		--set image.tag=$(TAG) \
 		--set frontend.image.repository=$(FRONTEND_IMAGE) \
 		--set frontend.image.tag=$(TAG) \
+		--set appVersion=$(TAG) \
 		-f $(SECRETS_FILE)
 
 # Build, push, and install/upgrade in one go
