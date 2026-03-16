@@ -63,23 +63,33 @@ make template            # Preview helm manifests
 
 ## Architecture
 
-### Three API Surfaces
+### Four API Surfaces
 
 All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nested routes:
 
-1. **Client API** (`/api/*`) - API key auth via `X-API-Key` header
+1. **Client API** (`/api/*`) - client API key in JSON body as `api_key` field
    - `POST /api/task/submit` - Submit task to queue
    - `POST /api/task/submit_blocking` - Submit urgent task and wait for result
    - `POST /api/task/poll/{cap}/{id}` - Poll task status
 
-2. **Agent API** (`/private/agent/*`) - JWT auth via `Authorization: Bearer` header
+2. **Storage API** (`/api/storage/*`) - same client API key, passed via `X-API-Key` header
+   (header is used because GET / DELETE / multipart endpoints have no JSON body)
+   - `GET  /api/storage/limits` - bucket limits for this key (max count, size, TTL)
+   - `POST /api/storage/bucket/create` - create a bucket → `{bucket_uid}`
+   - `POST /api/storage/bucket/{bucket_uid}/upload` - upload file (`multipart/form-data`, field `file`)
+   - `GET  /api/storage/bucket/{bucket_uid}/stat` - file list + remaining space (no hashes)
+   - `GET  /api/storage/bucket/{bucket_uid}/file/{file_uid}/hash` - SHA-256 digest (no download)
+   - `DELETE /api/storage/bucket/{bucket_uid}/file/{file_uid}` - delete single file
+   - `DELETE /api/storage/bucket/{bucket_uid}` - delete bucket and all its files
+
+3. **Agent API** (`/private/agent/*`) - JWT auth via `Authorization: Bearer` header
    - `GET /private/agent/task/poll_urgent` - Poll urgent tasks
    - `GET /private/agent/task/poll` - Poll non-urgent tasks
    - `POST /private/agent/take/{cap}/{id}` - Claim a task
    - `POST /private/agent/task/resolve/{cap}/{id}` - Report task completion
    - `POST /private/agent/task/progress/{cap}/{id}` - Report progress
 
-3. **Management API** (`/management/*`) - Token auth via `X-Mgmt-Token` header
+4. **Management API** (`/management/*`) - Token auth via `Authorization: Bearer` header
    - Agent and task listing, API key management
 
 ### Key Data Flow
@@ -153,6 +163,33 @@ For urgent tasks, resolution triggers the watch channel to unblock the waiting c
 - Agent storage: [src/db/agent.rs](src/db/agent.rs)
 - Task storage: [src/db/persistent_task_storage.rs](src/db/persistent_task_storage.rs)
 - Urgent queue: [src/mq/urgent.rs](src/mq/urgent.rs)
+- Bucket metadata: [src/db/bucket_storage.rs](src/db/bucket_storage.rs)
+- File store (opendal): [src/storage/mod.rs](src/storage/mod.rs)
+
+### File Bucket System
+
+Clients can create temporary buckets to stage files alongside task submissions.
+
+**Design constraints (per API key):**
+- Max buckets: 10 (configurable via `STORAGE_MAX_BUCKETS_PER_KEY`)
+- Max size per bucket: 1 GiB (configurable via `STORAGE_BUCKET_SIZE_BYTES`)
+- Bucket TTL: 24 hours (configurable via `STORAGE_BUCKET_TTL_MINUTES`)
+- No file download endpoint — this is intentional to prevent use as a file exchange service
+- SHA-256 digest is computed at upload time and stored in bucket metadata
+
+**Bucket metadata** (`BucketMeta` / `FileMeta` in [src/db/bucket_storage.rs](src/db/bucket_storage.rs)):
+- Stored in a separate Sled DB under `{DATABASE_ROOT_PATH}/buckets/`
+- Each bucket is scoped to one client API key (ownership enforced on every request)
+- Two Sled trees: `buckets` (uid → BucketMeta) and `owner_idx` (api_key|uid → uid)
+
+**File storage backend** ([src/storage/mod.rs](src/storage/mod.rs)):
+- Configured via `STORAGE_BACKEND` env var: `local` (default), `webdav`, or `s3`
+- Backed by [Apache OpenDAL](https://opendal.apache.org/) — same interface regardless of backend
+- Files stored at path `{bucket_uid}/{file_uid}` within the configured root
+
+**Cleanup worker** (spawned in [src/main.rs](src/main.rs)):
+- Runs on startup and every 3 hours
+- Deletes files from the storage backend, then removes bucket metadata from Sled
 
 ### Core Types
 
@@ -169,6 +206,16 @@ Server reads from `.env` file:
 - `AGENT_API_KEYS` - Comma-separated agent registration keys
 - `CLIENT_API_KEYS` - Comma-separated client API keys
 - `MGMT_TOKEN` - Management endpoint auth token
+
+### Storage Configuration
+
+- `STORAGE_BACKEND` - `local` (default), `webdav`, or `s3`
+- `STORAGE_LOCAL_ROOT` - Root dir for local backend (default: `{DATABASE_ROOT_PATH}/file_storage`)
+- `STORAGE_MAX_BUCKETS_PER_KEY` - Max buckets per client API key (default: `10`)
+- `STORAGE_BUCKET_SIZE_BYTES` - Max bytes per bucket (default: `1073741824` = 1 GiB)
+- `STORAGE_BUCKET_TTL_MINUTES` - Bucket lifetime in minutes (default: `1440` = 24 h)
+- WebDAV: `STORAGE_WEBDAV_ENDPOINT`, `STORAGE_WEBDAV_USERNAME`, `STORAGE_WEBDAV_PASSWORD`
+- S3: `STORAGE_S3_BUCKET`, `STORAGE_S3_REGION`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY`, `STORAGE_S3_ENDPOINT`
 
 ## Tech Stack
 

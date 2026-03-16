@@ -9,3 +9,4 @@ pub mod error;
 pub mod api;
 pub mod utils;
 pub mod preferences;
+pub mod storage;

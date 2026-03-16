@@ -144,6 +144,16 @@ Executors in `app/exec/` are selected by capability prefix. Adding a new executo
 
 ## Python Conventions for This Codebase
 
+### Code Quality First
+
+**Readability and decomposition outrank everything else.** This is a client-side daemon, not a hot path — performance is irrelevant. Optimise for the next person reading the code, not the CPU.
+
+- **One function, one job.** If a function does two things, split it. If it needs a comment to explain a block, that block is a function.
+- **Flat over nested.** Return early, guard-clause at the top, avoid deeply nested conditionals.
+- **Small files.** If a module grows beyond ~150 lines, look for a natural split. `webui.py` is legacy — don't model new code on its size.
+- **No clever code.** A straightforward loop beats a compressed one-liner. Comprehensions are fine; chained comprehensions with conditions are not.
+- **No premature abstractions.** Don't create a class, base class, or helper util until you have two or more real uses for it.
+
 ### Style
 
 - Python 3.10+ — use `X | Y` union syntax, `match`, structural pattern matching where it fits

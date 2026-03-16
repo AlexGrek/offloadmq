@@ -1,27 +1,38 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use crate::{db::{
-    agent::CachedAgentStorage, apikeys::ApiKeysStorage, persistent_task_storage::TaskStorage
-}, models::Agent};
+use crate::{
+    config::StorageConfig,
+    db::{
+        agent::CachedAgentStorage,
+        apikeys::ApiKeysStorage,
+        bucket_storage::BucketStorage,
+        persistent_task_storage::TaskStorage,
+    },
+    models::Agent,
+    storage::FileStore,
+};
 
-// Composite storage for both agents and tasks
+// Composite storage for agents, tasks, keys, and file buckets
 #[derive(Clone)]
 pub struct AppStorage {
     pub agents: Arc<CachedAgentStorage>,
     pub tasks: Arc<TaskStorage>,
-    pub client_keys: Arc<ApiKeysStorage>
+    pub client_keys: Arc<ApiKeysStorage>,
+    pub buckets: Arc<BucketStorage>,
+    pub file_store: Arc<FileStore>,
 }
 
 impl AppStorage {
     /// Create a new AppStorage with default TTL of 120 seconds
-    /// Takes a base path and creates "/agents" and "/tasks" subdirectories
-    pub fn new(base_path: &str) -> anyhow::Result<Self> {
-        Self::with_ttl(base_path, Duration::from_secs(120))
+    pub fn new(base_path: &str, storage_config: &StorageConfig) -> anyhow::Result<Self> {
+        Self::with_ttl(base_path, Duration::from_secs(120), storage_config)
     }
 
-    /// Create a new AppStorage with custom TTL for agent cache
-    /// Token cache TTL will be the same as agent cache TTL
-    pub fn with_ttl(base_path: &str, cache_ttl: Duration) -> anyhow::Result<Self> {
+    pub fn with_ttl(
+        base_path: &str,
+        cache_ttl: Duration,
+        storage_config: &StorageConfig,
+    ) -> anyhow::Result<Self> {
         let mut agents_path = PathBuf::from(base_path);
         agents_path.push("agents");
 
@@ -31,35 +42,30 @@ impl AppStorage {
         let mut client_keys_path = PathBuf::from(base_path);
         client_keys_path.push("client_api_keys");
 
-        // Create directories if they don't exist
-        if let Some(parent) = agents_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                sled::Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create agents directory: {}", e),
-                ))
-            })?;
-        }
+        let mut buckets_path = PathBuf::from(base_path);
+        buckets_path.push("buckets");
 
-        if let Some(parent) = tasks_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                sled::Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create tasks directory: {}", e),
-                ))
-            })?;
-        }
+        // Create base directory
+        std::fs::create_dir_all(base_path)?;
 
         let agents = Arc::new(CachedAgentStorage::new(
             agents_path.to_str().unwrap(),
             cache_ttl,
-            cache_ttl, // Same TTL for token cache
+            cache_ttl,
         )?);
 
         let tasks = Arc::new(TaskStorage::open(tasks_path.to_str().unwrap())?);
         let client_keys = Arc::new(ApiKeysStorage::open(client_keys_path.to_str().unwrap())?);
+        let buckets = Arc::new(BucketStorage::open(buckets_path.to_str().unwrap())?);
+        let file_store = Arc::new(FileStore::new(storage_config)?);
 
-        Ok(Self { agents, tasks, client_keys })
+        Ok(Self {
+            agents,
+            tasks,
+            client_keys,
+            buckets,
+            file_store,
+        })
     }
 
     /// Get cache statistics for agents
@@ -71,14 +77,13 @@ impl AppStorage {
 
     /// Cleanup expired entries from caches
     pub fn cleanup_expired(&self) {
-        self.agents.agent_cache.write().unwrap().iter(); // Triggers internal cleanup
-        self.agents.token_cache.write().unwrap().iter(); // Triggers internal cleanup
+        self.agents.agent_cache.write().unwrap().iter();
+        self.agents.token_cache.write().unwrap().iter();
     }
 }
 
 // Convenience methods that delegate to the underlying storages
 impl AppStorage {
-    // Agent methods
     pub fn create_agent(&self, agent: &mut Agent) -> sled::Result<()> {
         self.agents.create_agent(agent)
     }

@@ -3,7 +3,10 @@ use std::sync::Arc;
 use axum::{Json, Router, extract::State, middleware::from_fn_with_state, routing::*};
 use log::info;
 use offloadmq::{
-    api::agent::{auth_agent, register_agent, update_agent_info, websocket_handler}, db::app_storage::AppStorage, preferences::init_config, state::AppState
+    api::agent::{auth_agent, register_agent, update_agent_info, websocket_handler},
+    db::app_storage::AppStorage,
+    preferences::init_config,
+    state::AppState,
 };
 use offloadmq::{middleware::auth::Auth, *};
 use serde_json::{Value, json};
@@ -15,9 +18,6 @@ use tower_http::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize tracing
-    // tracing_subscriber::init();
-
     init_config(true, false);
 
     let config = config::AppConfig::from_env()?;
@@ -30,13 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  Agent API keys: {:?}", config.agent_api_keys);
     info!("  Client API keys: {:?}", config.client_api_keys);
     info!("  Management token: {}", config.management_token);
+    info!("  Storage backend: {}", config.storage.backend);
 
-    // Initialize storage with config path and default 120s TTL
-    let app_storage =
-        AppStorage::new(&config.database_root_path).expect("Failed to initialize storage");
+    let app_storage = AppStorage::new(&config.database_root_path, &config.storage)
+        .expect("Failed to initialize storage");
 
     let auth = Auth::new(config.jwt_secret.as_bytes());
-    // Create app state
     let app_state = AppState::new(app_storage, config.clone(), auth);
     let shared_state = Arc::new(app_state);
     shared_state
@@ -124,11 +123,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     middleware::apikey_auth_middleware_user,
                 )),
         )
+        // Storage API — uses X-API-Key header auth (supports multipart + GET + DELETE)
+        .nest(
+            "/api/storage",
+            Router::new()
+                .route("/limits", get(api::client::storage::get_limits))
+                .route("/bucket/create", post(api::client::storage::create_bucket))
+                .route(
+                    "/bucket/{bucket_uid}/upload",
+                    post(api::client::storage::upload_file),
+                )
+                .route(
+                    "/bucket/{bucket_uid}/stat",
+                    get(api::client::storage::bucket_stat),
+                )
+                .route(
+                    "/bucket/{bucket_uid}/file/{file_uid}/hash",
+                    get(api::client::storage::file_hash),
+                )
+                .route(
+                    "/bucket/{bucket_uid}/file/{file_uid}",
+                    delete(api::client::storage::delete_file),
+                )
+                .route(
+                    "/bucket/{bucket_uid}",
+                    delete(api::client::storage::delete_bucket),
+                )
+                .layer(from_fn_with_state(
+                    shared_state.clone(),
+                    middleware::apikey_header_auth_middleware_storage,
+                )),
+        )
         .with_state(shared_state.clone())
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
-                .allow_origin(Any) // or Origin::exact("http://localhost:3000".parse().unwrap())
+                .allow_origin(Any)
                 .allow_methods(Any)
                 .allow_headers(Any),
         );
@@ -138,13 +168,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(&bind_address).await?;
     info!("Server starting on http://{}", bind_address);
 
-    tokio::spawn(async move {
-        let mut interval = time::interval(time::Duration::from_secs(120));
-        loop {
-            interval.tick().await;
-            shared_state.storage.agents.log_online_agents();
-        }
-    });
+    // Background: log online agents every 120 s
+    {
+        let state = shared_state.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(time::Duration::from_secs(120));
+            loop {
+                interval.tick().await;
+                state.storage.agents.log_online_agents();
+            }
+        });
+    }
+
+    // Background: purge expired buckets on startup and then every 3 hours
+    {
+        let state = shared_state.clone();
+        tokio::spawn(async move {
+            let interval_secs = 3 * 60 * 60; // 3 hours
+            let mut interval = time::interval(time::Duration::from_secs(interval_secs));
+            loop {
+                interval.tick().await;
+                let ttl = state.config.storage.bucket_ttl_minutes;
+                let expired = state.storage.buckets.list_expired_buckets(ttl);
+                if expired.is_empty() {
+                    continue;
+                }
+                info!("Storage cleanup: purging {} expired bucket(s)", expired.len());
+                for bucket in expired {
+                    if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
+                        log::warn!("Failed to delete bucket files {}: {}", bucket.uid, e);
+                    }
+                    if let Err(e) = state
+                        .storage
+                        .buckets
+                        .delete_bucket(&bucket.uid, &bucket.api_key)
+                    {
+                        log::warn!("Failed to delete bucket metadata {}: {}", bucket.uid, e);
+                    }
+                }
+            }
+        });
+    }
 
     axum::serve(listener, app).await?;
 
@@ -163,7 +227,6 @@ async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {
 }
 
 async fn get_stats(State(state): State<Arc<AppState>>) -> Json<Value> {
-    // Trigger cleanup and get fresh stats
     state.storage.cleanup_expired();
     let stats = state.storage.get_agent_cache_stats();
 

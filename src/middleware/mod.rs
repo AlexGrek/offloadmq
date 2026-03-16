@@ -13,6 +13,24 @@ pub mod auth;
 
 use crate::{error::AppError, models::Agent, state::AppState};
 
+/// Carries the validated client API key extracted from the `X-API-Key` header.
+/// This is the same key used for all other client API endpoints — no separate
+/// key type exists.  Inserted by [`apikey_header_auth_middleware_storage`].
+#[derive(Clone)]
+pub struct StorageApiKey(pub String);
+
+impl<S: Send + Sync + 'static> FromRequestParts<S> for StorageApiKey {
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<StorageApiKey>()
+            .cloned()
+            .ok_or_else(|| AppError::Authorization("Missing X-API-Key header".to_string()))
+    }
+}
+
 // Custom extractor to get the authenticated user email from extensions
 pub struct AuthenticatedAgentId(pub String);
 
@@ -168,5 +186,39 @@ pub async fn apikey_auth_middleware_user(
     }
     let new_body = Body::from(body_bytes);
     let req = Request::from_parts(parts, new_body);
+    Ok(next.run(req).await)
+}
+
+/// Auth middleware for the Storage API surface.
+/// Reads the client API key from the `X-API-Key` header and validates it
+/// against the same key store used by all other client API endpoints.
+/// GET / DELETE / multipart requests can't carry a JSON body, so the header
+/// is the natural transport here — the key value is identical to what you'd
+/// pass as `api_key` in a JSON body on other `/api/*` routes.
+pub async fn apikey_header_auth_middleware_storage(
+    State(app_state): State<Arc<AppState>>,
+    mut req: Request<Body>,
+    next: Next,
+) -> Result<Response, AppError> {
+    let api_key = req
+        .headers()
+        .get("X-API-Key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            AppError::Authorization(
+                "Missing X-API-Key header (use your regular client API key)".to_string(),
+            )
+        })?;
+
+    if !app_state
+        .storage
+        .client_keys
+        .is_key_real_not_revoked(&api_key)
+    {
+        return Err(AppError::Authorization("Invalid client API key".to_string()));
+    }
+
+    req.extensions_mut().insert(StorageApiKey(api_key));
     Ok(next.run(req).await)
 }
