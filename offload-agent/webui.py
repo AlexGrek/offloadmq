@@ -325,6 +325,62 @@ def _win_startup_set(enable: bool) -> None:
         _log(f"[startup] ERROR: {exc}")
 
 
+# ── macOS LaunchAgent (launchd) ───────────────────────────────────────────────
+_MAC_LAUNCHD_LABEL = "com.offloadmq.agent"
+_MAC_LAUNCHD_PLIST = os.path.expanduser(
+    f"~/Library/LaunchAgents/{_MAC_LAUNCHD_LABEL}.plist"
+)
+
+
+def _mac_launchd_available() -> bool:
+    """Return True if we can manage macOS LaunchAgent (frozen .app on macOS)."""
+    return sys.platform == "darwin" and getattr(sys, "frozen", False)
+
+
+def _mac_launchd_enabled() -> bool:
+    """Check whether the LaunchAgent plist exists."""
+    if not _mac_launchd_available():
+        return False
+    return os.path.isfile(_MAC_LAUNCHD_PLIST)
+
+
+def _mac_launchd_set(enable: bool) -> None:
+    """Install or remove the LaunchAgent plist and load/unload it with launchctl."""
+    if not _mac_launchd_available():
+        return
+    import subprocess
+    if enable:
+        plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{_MAC_LAUNCHD_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{sys.executable}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>
+"""
+        os.makedirs(os.path.dirname(_MAC_LAUNCHD_PLIST), exist_ok=True)
+        with open(_MAC_LAUNCHD_PLIST, "w") as f:
+            f.write(plist)
+        subprocess.run(["launchctl", "load", _MAC_LAUNCHD_PLIST], capture_output=True)
+        _log(f"[startup] Enabled macOS LaunchAgent: {_MAC_LAUNCHD_PLIST}")
+    else:
+        subprocess.run(["launchctl", "unload", _MAC_LAUNCHD_PLIST], capture_output=True)
+        try:
+            os.remove(_MAC_LAUNCHD_PLIST)
+            _log("[startup] Disabled macOS LaunchAgent")
+        except FileNotFoundError:
+            pass
+
+
 def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
     st = get_status()
     dot_cls = "running" if st["running"] else "stopped"
@@ -350,6 +406,11 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
     win_startup_avail = _win_startup_available()
     win_startup_on = _win_startup_enabled() if win_startup_avail else False
     win_startup_checked = "checked" if win_startup_on else ""
+
+    # macOS LaunchAgent toggle
+    mac_startup_avail = _mac_launchd_available()
+    mac_startup_on = _mac_launchd_enabled() if mac_startup_avail else False
+    mac_startup_checked = "checked" if mac_startup_on else ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -419,6 +480,16 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
       <label class="cap">
         <input type="checkbox" name="win_startup" value="1" ''' + win_startup_checked + '''
           onchange="this.form.submit()"> Start with Windows
+      </label>
+    </form>
+    <hr>
+    '''}
+    {"" if not mac_startup_avail else '''
+    <div class="si" style="margin-bottom:.6rem">Launch Offload Agent when you log in to macOS.</div>
+    <form method="post" action="/config/mac-startup">
+      <label class="cap">
+        <input type="checkbox" name="mac_startup" value="1" ''' + mac_startup_checked + '''
+          onchange="this.form.submit()"> Start with macOS
       </label>
     </form>
     <hr>
@@ -538,6 +609,19 @@ async def save_win_startup(request: Request):
     enable = bool(form.get("win_startup"))
     _win_startup_set(enable)
     # When enabling startup, also enable autostart so the agent runs automatically
+    if enable:
+        cfg = load_config()
+        cfg["autostart"] = True
+        save_config(cfg)
+        _log("[startup] Also enabled 'Autostart on launch' so the agent starts automatically")
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/config/mac-startup")
+async def save_mac_startup(request: Request):
+    form = await request.form()
+    enable = bool(form.get("mac_startup"))
+    _mac_launchd_set(enable)
     if enable:
         cfg = load_config()
         cfg["autostart"] = True

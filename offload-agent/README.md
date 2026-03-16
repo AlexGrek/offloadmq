@@ -84,6 +84,14 @@ The webui runs register + serve internally (no subprocess) when you click **Star
 
 The **Autostart on launch** checkbox in the UI writes `autostart` to config. The systemd service always passes `--agent-autostart`, so the checkbox controls whether the agent actually starts on boot.
 
+#### Per-platform autostart summary
+
+| Platform | Mechanism | How to enable | What runs at login |
+|---|---|---|---|
+| **Linux** | systemd service (`/etc/systemd/system/`) | `sudo offload-agent install systemd` or the **Install systemd service** button | `offload-agent webui --agent-autostart` (agent starts if `autostart=true` in config) |
+| **macOS** | LaunchAgent plist (`~/Library/LaunchAgents/`) | `offload-agent install launchd` or the **Start with macOS** toggle in the UI | The `.app` bundle executable |
+| **Windows** | Registry `HKCU\…\Run` | **Start with Windows** toggle in the UI (frozen `.exe` only) | `offload-agent.exe` |
+
 ### `install bin` — install the binary system-wide
 
 Copies the running binary to a target directory and sets `rwxr-xr-x` permissions.
@@ -114,6 +122,31 @@ Refuses to run on non-Linux platforms or if the binary is not found at `--bin-pa
 
 You can also install the service directly from the **webui** using the **Service** card. The button is grayed out with a reason if the platform is not Linux or the binary is not installed.
 
+### `install launchd` — create a macOS LaunchAgent (macOS only)
+
+Writes `~/Library/LaunchAgents/com.offloadmq.agent.plist` and loads it with `launchctl`. The agent app will launch automatically at every login.
+
+When running from the built `.app` bundle this works without arguments:
+
+```bash
+"dist/Offload Agent.app/Contents/MacOS/Offload Agent" install launchd
+```
+
+When running from source, pass `--app-path` explicitly:
+
+```bash
+offload-agent install launchd --app-path /path/to/offload-agent
+```
+
+To remove the LaunchAgent:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.offloadmq.agent.plist
+rm ~/Library/LaunchAgents/com.offloadmq.agent.plist
+```
+
+The **Start with macOS** checkbox in the web UI **Service** card does the same — it is shown only when running inside the frozen `.app` bundle.
+
 ---
 
 ## Installation
@@ -126,6 +159,7 @@ Download the pre-built binary from the [Releases](../../releases) page and run:
 chmod +x offload-agent
 sudo ./offload-agent install bin          # copies to /usr/local/bin
 sudo offload-agent install systemd        # Linux: creates systemd service
+offload-agent install launchd             # macOS: creates LaunchAgent
 ```
 
 ### From source
@@ -155,7 +189,7 @@ make webui      # start web UI
 
 ### Build the binary yourself
 
-#### Linux / macOS
+#### Linux (CLI binary)
 
 ```bash
 make build          # build dist/offload-agent
@@ -169,7 +203,28 @@ make build-client   # same as above
 make rebuild-client # clean + build
 ```
 
-#### Windows
+#### macOS (.app bundle with tray icon)
+
+A shell build script produces a self-contained `Offload Agent.app` with a menu-bar tray icon.
+
+Prerequisites: Python 3.10+ on PATH.
+
+```bash
+cd offload-agent
+./build-mac.sh
+```
+
+The output is `dist/Offload Agent.app`. Double-click it (or drag to `/Applications`) — the web UI opens in your default browser at `http://127.0.0.1:8080` and a tray icon appears in the menu bar.
+
+To enable autostart at login, use the **Start with macOS** toggle in the web UI's **Service** card, or run from the terminal:
+
+```bash
+"dist/Offload Agent.app/Contents/MacOS/Offload Agent" install launchd
+```
+
+The app uses `LSUIElement = true` in its `Info.plist`, so it does not appear in the Dock — only in the menu bar.
+
+#### Windows (.exe with tray icon)
 
 A PowerShell build script produces a standalone `.exe` that runs the web UI
 without a console window and opens the browser automatically on launch.

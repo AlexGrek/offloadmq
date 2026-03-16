@@ -7,6 +7,7 @@ Usage:
   offload-agent cli <command> [options]
   offload-agent install bin [--dest DIR]
   offload-agent install systemd [--bin-path PATH] [--user USER] [--host HOST] [--port PORT]
+  offload-agent install launchd [--app-path PATH]
   offload-agent --help
 """
 
@@ -107,6 +108,59 @@ WantedBy=multi-user.target
     print(f"\nDone. Check status with:  systemctl status {service_name}")
 
 
+def _cmd_install_launchd(argv: list[str]) -> None:
+    import argparse, os, subprocess
+
+    parser = argparse.ArgumentParser(prog="offload-agent install launchd")
+    parser.add_argument(
+        "--app-path",
+        default=None,
+        help="Path to Offload Agent.app (default: auto-detected from running executable)",
+    )
+    args = parser.parse_args(argv)
+
+    if sys.platform != "darwin":
+        print(f"Error: launchd installation is only supported on macOS (current platform: {sys.platform}).")
+        sys.exit(1)
+
+    if args.app_path:
+        exe_path = args.app_path
+    elif getattr(sys, "frozen", False):
+        # Running inside the .app bundle — sys.executable is the binary inside MacOS/
+        exe_path = sys.executable
+    else:
+        print("Error: --app-path required when not running from a frozen .app bundle.")
+        sys.exit(1)
+
+    label = "com.offloadmq.agent"
+    plist_path = os.path.expanduser(f"~/Library/LaunchAgents/{label}.plist")
+    plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>
+"""
+    os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+    with open(plist_path, "w") as f:
+        f.write(plist)
+    print(f"Wrote: {plist_path}")
+
+    subprocess.run(["launchctl", "load", plist_path])
+    print(f"\nDone. The agent will launch at login.")
+    print(f"To remove: launchctl unload {plist_path} && rm {plist_path}")
+
+
 # ── dispatcher ─────────────────────────────────────────────────────────────────
 
 def main():
@@ -160,8 +214,10 @@ def main():
             _cmd_install_bin(sys.argv[3:])
         elif sub == "systemd":
             _cmd_install_systemd(sys.argv[3:])
+        elif sub == "launchd":
+            _cmd_install_launchd(sys.argv[3:])
         else:
-            print(f"Usage: offload-agent install {{bin|systemd}} [options]")
+            print(f"Usage: offload-agent install {{bin|systemd|launchd}} [options]")
             sys.exit(1)
 
     else:

@@ -36,7 +36,8 @@
       "Bash(ps -p 81849 -o pid,ppid,command)",
       "Bash(osascript -e 'quit app \"\"Ollama\"\"')",
       "Bash(cargo fetch:*)",
-      "Bash(cargo search:*)"
+      "Bash(cargo search:*)",
+      "Bash(find /Users/vedmedik/dev/offloadmq/offload-agent -not -path */venv/* -not -path */build/* -not -path */dist/* -not -path */output/* -not -path */__pycache__/* -type f)"
     ]
   }
 }
