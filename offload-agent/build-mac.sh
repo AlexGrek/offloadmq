@@ -40,9 +40,33 @@ echo "Building Offload Agent.app ..."
     --onefile \
     --windowed \
     --name "Offload Agent" \
+    --paths "." \
     --add-data "app:app" \
     --add-data "webui.py:." \
     --hidden-import "pystray._darwin" \
+    --hidden-import "webui" \
+    --hidden-import "app" \
+    --hidden-import "app.config" \
+    --hidden-import "app.ollama" \
+    --hidden-import "app.core" \
+    --hidden-import "app.httphelpers" \
+    --hidden-import "app.capabilities" \
+    --hidden-import "app.systeminfo" \
+    --hidden-import "app.models" \
+    --hidden-import "app.url_utils" \
+    --hidden-import "app.websocket_client" \
+    --hidden-import "app.cli" \
+    --hidden-import "app.exec" \
+    --hidden-import "app.exec.debug" \
+    --hidden-import "app.exec.helpers" \
+    --hidden-import "app.exec.llm" \
+    --hidden-import "app.exec.shell" \
+    --hidden-import "app.exec.shellcmd" \
+    --hidden-import "app.exec.tts" \
+    --hidden-import "app.data" \
+    --hidden-import "app.data.fs_utils" \
+    --hidden-import "app.data.updn" \
+    --collect-submodules "app" \
     --osx-bundle-identifier "com.offloadmq.agent" \
     --info-plist '{"LSUIElement": true}' \
     "offload-agent-mac.py"

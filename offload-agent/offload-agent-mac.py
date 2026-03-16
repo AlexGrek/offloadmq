@@ -24,9 +24,17 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
 # ── Bootstrap ──────────────────────────────────────────────────────────────────
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-os.chdir(SCRIPT_DIR)
-sys.path.insert(0, SCRIPT_DIR)
+# When frozen by PyInstaller --onefile, code/data live in a temp dir (_MEIPASS)
+# but config files must be next to the executable so they persist across runs.
+if getattr(sys, "frozen", False):
+    _MEIPASS = sys._MEIPASS
+    EXE_DIR = os.path.dirname(sys.executable)
+    sys.path.insert(0, _MEIPASS)
+    os.chdir(EXE_DIR)
+else:
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(SCRIPT_DIR)
+    sys.path.insert(0, SCRIPT_DIR)
 
 HOST = "127.0.0.1"
 PORT = 8080

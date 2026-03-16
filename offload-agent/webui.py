@@ -21,9 +21,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # ── Bootstrap: run from offload-agent directory ───────────────────────────────
-SCRIPT_DIR = Path(__file__).parent.resolve()
-os.chdir(SCRIPT_DIR)
-sys.path.insert(0, str(SCRIPT_DIR))
+# When frozen (PyInstaller), the entrypoint already set cwd to the exe directory
+# for config files and added _MEIPASS to sys.path for imports. Don't override.
+if getattr(sys, "frozen", False):
+    SCRIPT_DIR = Path(sys._MEIPASS)
+    sys.path.insert(0, str(SCRIPT_DIR))
+else:
+    SCRIPT_DIR = Path(__file__).parent.resolve()
+    os.chdir(SCRIPT_DIR)
+    sys.path.insert(0, str(SCRIPT_DIR))
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -494,7 +500,7 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
   <!-- Service / startup -->
   <div class="card">
     <h2>Service</h2>
-    {"" if not win_startup_avail else '''
+    {"" if not win_startup_avail else ('''
     <div class="si" style="margin-bottom:.6rem">Launch Offload Agent when you log in to Windows.</div>
     <form method="post" action="/config/win-startup">
       <label class="cap">
@@ -503,8 +509,15 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
       </label>
     </form>
     <hr>
-    '''}
-    {"" if not mac_startup_avail else '''
+    ''' if cfg_exists else '''
+    <div class="si" style="margin-bottom:.6rem">Launch Offload Agent when you log in to Windows.</div>
+    <label class="cap" style="opacity:.5;cursor:not-allowed">
+      <input type="checkbox" disabled> Start with Windows
+      <span style="font-size:.75rem;color:#f59e0b;margin-left:.4rem">— configure server &amp; API key first</span>
+    </label>
+    <hr>
+    ''')}
+    {"" if not mac_startup_avail else ('''
     <div class="si" style="margin-bottom:.6rem">Launch Offload Agent when you log in to macOS.</div>
     <form method="post" action="/config/mac-startup">
       <label class="cap">
@@ -513,7 +526,14 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
       </label>
     </form>
     <hr>
-    '''}
+    ''' if cfg_exists else '''
+    <div class="si" style="margin-bottom:.6rem">Launch Offload Agent when you log in to macOS.</div>
+    <label class="cap" style="opacity:.5;cursor:not-allowed">
+      <input type="checkbox" disabled> Start with macOS
+      <span style="font-size:.75rem;color:#f59e0b;margin-left:.4rem">— configure server &amp; API key first</span>
+    </label>
+    <hr>
+    ''')}
     <div class="si" style="margin-bottom:.6rem">Install as a systemd service that autostarts with the system.</div>
     <div class="row">{systemd_html}</div>
   </div>
@@ -631,6 +651,10 @@ async def save_autostart(request: Request):
 
 @app.post("/config/win-startup")
 async def save_win_startup(request: Request):
+    cfg = load_config()
+    if not cfg.get("server", "").strip() or not cfg.get("apiKey", "").strip():
+        _log("[startup] ERROR: configure server & API key before enabling startup")
+        return RedirectResponse("/", status_code=303)
     form = await request.form()
     enable = bool(form.get("win_startup"))
     _win_startup_set(enable)
@@ -645,6 +669,10 @@ async def save_win_startup(request: Request):
 
 @app.post("/config/mac-startup")
 async def save_mac_startup(request: Request):
+    cfg = load_config()
+    if not cfg.get("server", "").strip() or not cfg.get("apiKey", "").strip():
+        _log("[startup] ERROR: configure server & API key before enabling startup")
+        return RedirectResponse("/", status_code=303)
     form = await request.form()
     enable = bool(form.get("mac_startup"))
     _mac_launchd_set(enable)
