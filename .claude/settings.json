@@ -38,6 +38,9 @@
       "Bash(cargo fetch:*)",
       "Bash(cargo search:*)",
       "Bash(find /Users/vedmedik/dev/offloadmq/offload-agent -not -path */venv/* -not -path */build/* -not -path */dist/* -not -path */output/* -not -path */__pycache__/* -type f)"
+    ],
+    "additionalDirectories": [
+      "/Users/vedmedik/dev/offloadmq/.claude/skills"
     ]
   }
 }
