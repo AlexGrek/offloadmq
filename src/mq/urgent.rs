@@ -8,6 +8,7 @@ use crate::{
     error::AppError,
     models::{AssignedTask, UnassignedTask},
     schema::{TaskId, TaskStatus},
+    utils::base_capability,
 };
 
 pub struct TaskState {
@@ -54,7 +55,10 @@ impl UrgentTaskStore {
             .read()
             .await
             .iter()
-            .find(|item| item.1.assigned_task.is_none() && caps.contains(&item.1.task.id.cap))
+            .find(|item| {
+                item.1.assigned_task.is_none()
+                    && caps.iter().any(|c| base_capability(c) == item.1.task.id.cap.as_str())
+            })
             .map(|(_id, item)| item.task.clone())
     }
 

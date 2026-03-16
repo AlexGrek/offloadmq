@@ -26,3 +26,26 @@ export async function apiFetch(path, options = {}) {
 }
 
 export const TOKEN_KEY = "offload-mq-mgmt-token";
+
+/** Strip the [attr1;attr2] suffix from a capability string.
+ *  "llm.qwen2.5vl:7b[vision;size:5Gb]" → "llm.qwen2.5vl:7b"
+ */
+export function stripCapabilityAttrs(cap) {
+  const idx = cap.indexOf('[');
+  return idx === -1 ? cap : cap.slice(0, idx);
+}
+
+/** Parse the bracketed attributes from a capability string.
+ *  "llm.qwen2.5vl:7b[vision;size:5Gb;tools]" → ["vision", "size:5Gb", "tools"]
+ */
+export function parseCapabilityAttrs(cap) {
+  const start = cap.indexOf('[');
+  const end = cap.lastIndexOf(']');
+  if (start === -1 || end <= start) return [];
+  return cap.slice(start + 1, end).split(';').filter(Boolean);
+}
+
+/** Fetch the extended online capability list from the management API. */
+export async function fetchOnlineCapabilities() {
+  return apiFetch('/management/capabilities/list/online_ext');
+}

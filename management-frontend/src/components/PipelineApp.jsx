@@ -1,5 +1,6 @@
 import { Trash2 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
+import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Main pipeline application component
 const PipelineApp = ({ apiKey }) => {
@@ -44,20 +45,10 @@ const PipelineApp = ({ apiKey }) => {
     // Effect to fetch available capabilities
     useEffect(() => {
         const fetchCapabilities = async () => {
-            const payload = { apiKey };
             try {
-                const res = await fetch('/api/capabilities/online', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                });
-                const data = await res.json();
-                if (data.error) {
-                    setError(data.error.message);
-                } else if (Array.isArray(data)) {
-                    setCapabilities(data.filter((cap) => cap.startsWith("shell")));
-                } else {
-                    setError('Unexpected capabilities response format.');
+                const data = await fetchOnlineCapabilities();
+                if (Array.isArray(data)) {
+                    setCapabilities(data.filter((cap) => stripCapabilityAttrs(cap).startsWith("shell")));
                 }
             } catch (err) {
                 setError(`An error occurred while fetching capabilities: ${err.message}`);
@@ -65,7 +56,7 @@ const PipelineApp = ({ apiKey }) => {
         };
 
         fetchCapabilities();
-    }, [apiKey]);
+    }, []);
 
     // Effect to handle polling when a new task is submitted
     useEffect(() => {

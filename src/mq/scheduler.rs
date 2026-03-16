@@ -8,6 +8,7 @@ use crate::{
     models::{Agent, AssignedTask, UnassignedTask},
     mq::urgent::UrgentTaskStore,
     schema::{TaskId, TaskResultReport, TaskResultStatus, TaskStatus, TaskUpdate},
+    utils::base_capability,
 };
 
 pub async fn find_urgent_tasks_with_capabilities(
@@ -138,7 +139,7 @@ pub async fn has_potential_agents_for(
     agents: &CachedAgentStorage,
 ) -> bool {
     for agent in agents.list_all_agents() {
-        if agent.capabilities.contains(cap) && agent.is_online() {
+        if agent.capabilities.iter().any(|c| base_capability(c) == cap.as_str()) && agent.is_online() {
             return true;
         }
     }
@@ -151,7 +152,7 @@ pub async fn all_online_agents_for(
 ) -> Vec<Agent> {
     let mut collection = vec![];
     for agent in agents.list_all_agents() {
-        if agent.capabilities.contains(cap) && agent.is_online() {
+        if agent.capabilities.iter().any(|c| base_capability(c) == cap.as_str()) && agent.is_online() {
             collection.push(agent);
         }
     }

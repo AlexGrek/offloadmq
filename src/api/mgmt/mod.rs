@@ -13,6 +13,7 @@ use crate::{
     models::{Agent, ClientApiKey},
     schema::{self},
     state::AppState,
+    utils::base_capability,
 };
 
 pub async fn list_agents(
@@ -52,8 +53,27 @@ pub async fn capabilities_online(
         .list_all_agents()
         .into_iter()
         .filter(Agent::is_online)
-        .map(|agent| agent.capabilities)
-        .for_each(|cap_list| capabilities.extend(cap_list));
+        .flat_map(|agent| agent.capabilities)
+        .for_each(|cap| {
+            capabilities.insert(base_capability(&cap).to_string());
+        });
+    Ok(Json(capabilities))
+}
+
+pub async fn capabilities_online_ext(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let mut capabilities: HashSet<String> = HashSet::new();
+    state
+        .storage
+        .agents
+        .list_all_agents()
+        .into_iter()
+        .filter(Agent::is_online)
+        .flat_map(|agent| agent.capabilities)
+        .for_each(|cap| {
+            capabilities.insert(cap);
+        });
     Ok(Json(capabilities))
 }
 

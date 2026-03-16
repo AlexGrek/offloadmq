@@ -7,6 +7,7 @@ use crate::{
     error::AppError,
     models::{AssignedTask, UnassignedTask},
     schema::{TaskId, TaskStatus},
+    utils::base_capability,
 };
 
 pub struct TaskStorage {
@@ -138,7 +139,7 @@ impl TaskStorage {
     pub fn list_unassigned_with_caps(&self, caps: &Vec<String>) -> Result<Vec<UnassignedTask>> {
         Ok(caps
             .iter()
-            .filter_map(|x| self.list_unassigned_for_capability(x).ok())
+            .filter_map(|x| self.list_unassigned_for_capability(base_capability(x)).ok())
             .flatten()
             .collect())
     }

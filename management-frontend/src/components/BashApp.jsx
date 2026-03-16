@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Main bash application component
 const BashApp = ({ apiKey }) => {
@@ -15,40 +16,18 @@ const BashApp = ({ apiKey }) => {
 
     useEffect(() => {
         const updCaps = async () => {
-            setIsLoading(true);
-            const payload = { apiKey }; // Use the apiKey passed via props
             try {
-                setRequest(JSON.stringify(payload, null, 2));
-                // Send the request to the specified endpoint
-                const res = await fetch('/api/capabilities/online', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(payload),
-                });
-
-                // Parse the JSON response
-                const data = await res.json();
-
-                // Handle the response body structure
-                if (data.error) {
-                    setError(data.error.message);
-                } else if (data) {
-                    // Filter for shell capabilities
-                    setCapabilities(data.filter((cap) => cap.startsWith("shell")));
-                } else {
-                    setError('Unexpected response format.');
+                const data = await fetchOnlineCapabilities();
+                if (Array.isArray(data)) {
+                    setCapabilities(data.filter((cap) => stripCapabilityAttrs(cap).startsWith("shell")));
                 }
             } catch (err) {
                 setError(`An error occurred: ${err.message}`);
-            } finally {
-                setIsLoading(false);
             }
-        }
+        };
 
         updCaps();
-    }, [apiKey]);
+    }, []);
 
     // Function to escape single quotes in the command
     const escapeCommand = (cmd) => {

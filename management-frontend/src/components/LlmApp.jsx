@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 
 // Main application component
 const LlmApp = ({ apiKey }) => {
@@ -17,41 +18,18 @@ const LlmApp = ({ apiKey }) => {
 
   useEffect(() => {
     const updCaps = async () => {
-      setIsLoading(true);
-      const payload = { apiKey }; // Use the apiKey passed via props
       try {
-        setRequest(JSON.stringify(payload, null, 2));
-        // Send the request to the specified endpoint
-        const res = await fetch('/api/capabilities/online', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
-
-        // Parse the JSON response
-        const data = await res.json();
-
-        // Handle the response body structure
-        if (data.error) {
-          setError(data.error.message);
-        } else if (data) {
-          // Directly set the message content as the response
-          setCapabilities(data.filter((cap) => cap.startsWith("llm.")))
-        } else {
-          setError('Unexpected response format.');
+        const data = await fetchOnlineCapabilities();
+        if (Array.isArray(data)) {
+          setCapabilities(data.filter((cap) => stripCapabilityAttrs(cap).startsWith("llm.")));
         }
       } catch (err) {
-        setError(`An error occurred: ${err.message}`);
-      } finally {
-        setIsLoading(false);
+        setError(`Failed to fetch capabilities: ${err.message}`);
       }
-
-    }
+    };
 
     updCaps();
-  }, [apiKey])
+  }, [])
 
   // Function to handle the API request
   const handleSubmit = async (e) => {
@@ -62,7 +40,7 @@ const LlmApp = ({ apiKey }) => {
 
     // Construct the dynamic payload based on user input
     const payload = {
-      capability: `llm.${model}`,
+      capability: stripCapabilityAttrs(`llm.${model}`),
       urgent: true,
       payload: {
         model: model,
@@ -123,10 +101,20 @@ const LlmApp = ({ apiKey }) => {
             onChange={(e) => setModel(e.target.value)}
             style={styles.input}
           />
-          <p style={{ lineHeight: 'normal' }}>{capabilities.map(cap => {
-            let strip = cap.replaceAll("llm.", "");
-            return <a key={cap} style={{ marginRight: '8pt', display: 'inline', fontSize: 'x-small' }} href="#" onClick={() => setModel(strip)}>{strip}</a>
-          })}
+          <p style={{ lineHeight: 'normal', display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+            {capabilities.map(cap => {
+              const baseCap = stripCapabilityAttrs(cap);
+              const modelName = baseCap.replace(/^llm\./, '');
+              const attrs = parseCapabilityAttrs(cap);
+              return (
+                <span key={cap} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexWrap: 'wrap' }}>
+                  <a style={{ fontSize: 'x-small' }} href="#" onClick={(e) => { e.preventDefault(); setModel(modelName); }}>{modelName}</a>
+                  {attrs.map(attr => (
+                    <span key={attr} style={{ fontSize: '9px', background: 'var(--glass)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 4px', color: 'var(--muted)' }}>{attr}</span>
+                  ))}
+                </span>
+              );
+            })}
           </p>
         </div>
 

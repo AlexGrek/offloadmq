@@ -90,13 +90,33 @@ All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nes
    - `POST /private/agent/task/progress/{cap}/{id}` - Report progress
 
 4. **Management API** (`/management/*`) - Token auth via `Authorization: Bearer` header
+   - `GET /management/capabilities/list/online` - List base capabilities of online agents (stripped)
+   - `GET /management/capabilities/list/online_ext` - List raw capabilities with extended attributes
    - Agent and task listing, API key management
+
+### Extended Capability Attributes
+
+Agents can register capabilities with extended metadata using bracket notation:
+- **Base capability**: `"llm.qwen3:8b"`
+- **Extended capability**: `"llm.qwen3:8b[vision;tools;8b]"`
+
+Attributes are semicolon-separated strings inside brackets. Examples:
+- `"llm.mistral[7b;quantized;fp16]"` — model size, quantization, precision
+- `"vision[gpu;cuda12.1]"` — GPU support with CUDA version
+- `"database[postgresql;replication]"` — database type and features
+
+**Capability Matching:**
+- Clients always submit tasks with **base capabilities only** (no brackets)
+- Agent registration accepts **raw capabilities** (with or without brackets)
+- Scheduler strips brackets when matching: `"llm.qwen3:8b[...]"` matches task requiring `"llm.qwen3:8b"`
+- Client APIs (`/api/capabilities/online`, management `/capabilities/list/online`) return only base capabilities
+- Management endpoint `/capabilities/list/online_ext` returns raw capabilities with extended attributes for inspection
 
 ### Key Data Flow
 
-1. Agents register (`POST /agent/register`) and authenticate (`POST /agent/auth`) to get JWT
-2. Clients submit tasks with a required `capability` field
-3. Scheduler matches tasks to online agents by capability, tier, and capacity
+1. Agents register (`POST /agent/register`) with capabilities that may include extended attributes in brackets
+2. Clients submit tasks with base capability only (no brackets)
+3. Scheduler strips extended attributes and matches tasks to agents by base capability, tier, and capacity
 4. Urgent tasks use in-memory store with 60s TTL; regular tasks persist to Sled DB
 
 ### Task Scheduling Logic
@@ -127,7 +147,7 @@ All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nes
 #### Agent Polling & Assignment
 
 **Polling** ([src/api/agent/mod.rs](src/api/agent/mod.rs)):
-- Agents periodically poll for tasks matching their capabilities
+- Agents periodically poll for tasks matching their capabilities (extended attributes are stripped for matching)
 - Non-urgent polling always checks urgent queue first (line 49)
 - Updates agent's `last_contact` timestamp (online if < 120 seconds ago)
 
@@ -196,6 +216,7 @@ Clients can create temporary buckets to stage files alongside task submissions.
 - Models: [src/models.rs](src/models.rs) - Agent, AssignedTask, UnassignedTask
 - API schemas: [src/schema.rs](src/schema.rs) - Request/response DTOs
 - Auth middleware: [src/middleware/](src/middleware/)
+- Utilities: [src/utils.rs](src/utils.rs) - `base_capability()` and `capability_attrs()` for parsing extended capabilities
 
 ## Configuration
 

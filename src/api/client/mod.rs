@@ -18,6 +18,7 @@ use crate::{
     mq::scheduler::submit_urgent_task,
     schema::{ApiKeyRequest, TaskId, TaskSubmissionRequest},
     state::AppState,
+    utils::base_capability,
 };
 
 pub async fn submit_task_blocking(
@@ -134,8 +135,10 @@ pub async fn capabilities_online(
         .list_all_agents()
         .into_iter()
         .filter(Agent::is_online)
-        .map(|agent| agent.capabilities)
-        .for_each(|cap_list| capabilities.extend(cap_list));
+        .flat_map(|agent| agent.capabilities)
+        .for_each(|cap| {
+            capabilities.insert(base_capability(&cap).to_string());
+        });
     capabilities.retain(|el| ApiKeysStorage::has_capability(&key.capabilities, el));
     Ok(Json(capabilities))
 }

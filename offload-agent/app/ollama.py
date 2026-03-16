@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 OLLAMA_API_URL = "http://127.0.0.1:11434/api/chat"
 OLLAMA_ROOT_URL = "http://127.0.0.1:11434/"
+OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
+OLLAMA_SHOW_URL = "http://127.0.0.1:11434/api/show"
 
 
 def is_ollama_server_running() -> bool:
@@ -40,6 +42,75 @@ def start_ollama_server() -> bool:
     except Exception as e:
         logger.error(f"Unexpected error while starting Ollama: {e}")
         return False
+
+
+def _format_size(size_bytes: int) -> str:
+    """Format a byte count as a human-readable size string (e.g. '4Gb', '512Mb')."""
+    gb = size_bytes / (1024 ** 3)
+    if gb >= 1:
+        rounded = round(gb, 1)
+        return f"{rounded:.0f}Gb" if rounded == int(rounded) else f"{rounded}Gb"
+    mb = size_bytes / (1024 ** 2)
+    return f"{round(mb)}Mb"
+
+
+def _get_model_extended_attrs(model_name: str) -> List[str]:
+    """Query /api/show for a model and return its capability attributes (e.g. ['vision', 'tools']).
+
+    Returns an empty list on any error or if the Ollama version does not expose capabilities.
+    """
+    try:
+        r = requests.post(OLLAMA_SHOW_URL, json={"name": model_name}, timeout=5)
+        if r.status_code != 200:
+            return []
+        caps = r.json().get("capabilities", [])
+        return [c for c in caps if c in ("vision", "tools")]
+    except Exception:
+        return []
+
+
+def build_llm_cap_strings() -> List[str]:
+    """Fetch all installed Ollama models and build extended OffloadMQ capability strings.
+
+    Each string has the format:  llm.<model>[<attr1>;<attr2>;...]
+    Example:                     llm.qwen2.5vl:7b[vision;size:5Gb;tools]
+
+    Attributes are omitted when not available (e.g. older Ollama without /api/show capabilities).
+    """
+    try:
+        r = requests.get(OLLAMA_TAGS_URL, timeout=5)
+        if r.status_code != 200:
+            return []
+        models = r.json().get("models", [])
+    except Exception as e:
+        logger.warning(f"[ollama] Failed to fetch model list from {OLLAMA_TAGS_URL}: {e}")
+        return []
+
+    cap_strings: List[str] = []
+    for model in models:
+        full_name = model.get("name", "")
+        if not full_name:
+            continue
+
+        # Strip :latest suffix for cleaner capability strings
+        name = full_name[:-7] if full_name.endswith(":latest") else full_name
+        size_bytes = model.get("size", 0)
+
+        extended = _get_model_extended_attrs(full_name)
+        attrs: List[str] = []
+        if "vision" in extended:
+            attrs.append("vision")
+        if size_bytes > 0:
+            attrs.append(f"size:{_format_size(size_bytes)}")
+        if "tools" in extended:
+            attrs.append("tools")
+
+        cap = f"llm.{name}"
+        if attrs:
+            cap += f"[{';'.join(attrs)}]"
+        cap_strings.append(cap)
+
+    return cap_strings
 
 
 def get_ollama_models() -> List[str]:

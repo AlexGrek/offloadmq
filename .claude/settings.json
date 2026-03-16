@@ -37,7 +37,11 @@
       "Bash(osascript -e 'quit app \"\"Ollama\"\"')",
       "Bash(cargo fetch:*)",
       "Bash(cargo search:*)",
-      "Bash(find /Users/vedmedik/dev/offloadmq/offload-agent -not -path */venv/* -not -path */build/* -not -path */dist/* -not -path */output/* -not -path */__pycache__/* -type f)"
+      "Bash(find /Users/vedmedik/dev/offloadmq/offload-agent -not -path */venv/* -not -path */build/* -not -path */dist/* -not -path */output/* -not -path */__pycache__/* -type f)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(find /Users/vedmedik/dev/offloadmq/management-frontend/src -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\))",
+      "Bash(xargs ls:*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills"

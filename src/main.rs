@@ -84,6 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/capabilities/list/online",
                     get(api::mgmt::capabilities_online),
                 )
+                .route(
+                    "/capabilities/list/online_ext",
+                    get(api::mgmt::capabilities_online_ext),
+                )
                 .route("/tasks/list", get(api::mgmt::list_tasks))
                 .route("/tasks/reset", post(api::mgmt::reset_tasks))
                 .route("/agents/list", get(api::mgmt::list_agents))

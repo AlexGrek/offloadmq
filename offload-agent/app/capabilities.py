@@ -107,10 +107,13 @@ def check_kokoro() -> CapResult:
 
 
 def check_ollama() -> CapResult:
-    """Check Ollama availability and return one llm.* cap per installed model."""
-    import subprocess
+    """Check Ollama availability and return one extended llm.* cap per installed model.
+
+    Each capability string encodes detected model attributes (vision, size, tools):
+        llm.qwen2.5vl:7b[vision;size:5Gb;tools]
+    """
     import requests
-    from .ollama import OLLAMA_ROOT_URL
+    from .ollama import OLLAMA_ROOT_URL, build_llm_cap_strings
 
     if not shutil.which("ollama"):
         return CapResult([], False, "llm.*", "ollama binary not found in PATH")
@@ -129,20 +132,7 @@ def check_ollama() -> CapResult:
         )
 
     try:
-        res = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True, timeout=10
-        )
-        lines = res.stdout.strip().splitlines()
-        models: List[str] = []
-        for line in lines[1:]:
-            parts = line.split()
-            if not parts:
-                continue
-            name = parts[0]
-            if name.endswith(":latest"):
-                name = name[:-7]
-            models.append(f"llm.{name}")
-
+        models = build_llm_cap_strings()
         if models:
             short_names = ", ".join(m[len("llm."):] for m in models)
             return CapResult(
@@ -153,8 +143,6 @@ def check_ollama() -> CapResult:
             [], False, "llm.*",
             "Ollama is running but no models are installed — run 'ollama pull <model>' to add one",
         )
-    except subprocess.TimeoutExpired:
-        return CapResult([], False, "llm.*", "'ollama list' timed out")
     except Exception as e:
         return CapResult([], False, "llm.*", f"Failed to list Ollama models: {e}")
 

@@ -18,7 +18,7 @@ def execute_llm_query(
     the response every 2 seconds before returning the full result.
     """
     try:
-        model_name = capability.removeprefix("llm.")
+        model_name = capability.removeprefix("llm.").split("[")[0]
 
         # Wrap string prompts in the correct chat API format
         if isinstance(payload, str):

@@ -91,3 +91,28 @@ pub fn get_last_six_chars(s: &str) -> String {
         s[len - 6..].to_string()
     }
 }
+
+/// Strip extended attribute notation from capability string.
+/// "llm.qwen3:8b[vision;tools]" → "llm.qwen3:8b"
+/// "llm.qwen3:8b" → "llm.qwen3:8b"
+pub fn base_capability(cap: &str) -> &str {
+    if let Some(pos) = cap.find('[') {
+        &cap[..pos]
+    } else {
+        cap
+    }
+}
+
+/// Parse extended attributes from a capability string.
+/// "llm.qwen3:8b[vision;tools;8b]" → vec!["vision", "tools", "8b"]
+/// "llm.qwen3:8b" → vec![]
+pub fn capability_attrs(cap: &str) -> Vec<&str> {
+    if let (Some(start), Some(end)) = (cap.find('['), cap.rfind(']')) {
+        cap[start + 1..end]
+            .split(';')
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        vec![]
+    }
+}

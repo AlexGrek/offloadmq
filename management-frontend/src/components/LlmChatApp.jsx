@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Send, ImagePlus, X } from 'lucide-react';
+import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -26,19 +27,14 @@ const LlmChatApp = ({ apiKey }) => {
   useEffect(() => {
     const fetchCapabilities = async () => {
       try {
-        const res = await fetch('/api/capabilities/online', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey }),
-        });
-        const data = await res.json();
+        const data = await fetchOnlineCapabilities();
         if (Array.isArray(data)) {
-          setCapabilities(data.filter(cap => cap.startsWith('llm.')));
+          setCapabilities(data.filter(cap => stripCapabilityAttrs(cap).startsWith('llm.')));
         }
       } catch { /* ignore */ }
     };
     fetchCapabilities();
-  }, [apiKey]);
+  }, []);
 
   // Revoke all pending preview object URLs on unmount
   useEffect(() => {
@@ -165,7 +161,7 @@ const LlmChatApp = ({ apiKey }) => {
     ];
 
     const payload = {
-      capability: `llm.${model}`,
+      capability: stripCapabilityAttrs(`llm.${model}`),
       urgent: false,
       payload: {
         model,
@@ -229,16 +225,21 @@ const LlmChatApp = ({ apiKey }) => {
         </div>
         <div style={styles.capRow}>
           {capabilities.map(cap => {
-            const strip = cap.replace('llm.', '');
+            const modelName = stripCapabilityAttrs(cap).replace(/^llm\./, '');
+            const attrs = parseCapabilityAttrs(cap);
             return (
-              <a
-                key={cap}
-                style={styles.capLink}
-                href="#"
-                onClick={e => { e.preventDefault(); setModel(strip); }}
-              >
-                {strip}
-              </a>
+              <span key={cap} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <a
+                  style={styles.capLink}
+                  href="#"
+                  onClick={e => { e.preventDefault(); setModel(modelName); }}
+                >
+                  {modelName}
+                </a>
+                {attrs.map(attr => (
+                  <span key={attr} style={{ fontSize: '9px', background: 'var(--glass)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 4px', color: 'var(--muted)' }}>{attr}</span>
+                ))}
+              </span>
             );
           })}
         </div>

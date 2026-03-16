@@ -1,5 +1,6 @@
 import { Trash2 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
+import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 
 // Main pipeline application component
 const StreamingLLMApp = ({ apiKey }) => {
@@ -45,20 +46,10 @@ const StreamingLLMApp = ({ apiKey }) => {
     // Effect to fetch available capabilities
     useEffect(() => {
         const fetchCapabilities = async () => {
-            const payload = { apiKey };
             try {
-                const res = await fetch('/api/capabilities/online', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                });
-                const data = await res.json();
-                if (data.error) {
-                    setError(data.error.message);
-                } else if (Array.isArray(data)) {
-                    setCapabilities(data.filter((cap) => cap.startsWith("llm.")));
-                } else {
-                    setError('Unexpected capabilities response format.');
+                const data = await fetchOnlineCapabilities();
+                if (Array.isArray(data)) {
+                    setCapabilities(data.filter((cap) => stripCapabilityAttrs(cap).startsWith("llm.")));
                 }
             } catch (err) {
                 setError(`An error occurred while fetching capabilities: ${err.message}`);
@@ -66,7 +57,7 @@ const StreamingLLMApp = ({ apiKey }) => {
         };
 
         fetchCapabilities();
-    }, [apiKey]);
+    }, []);
 
     // Effect to handle polling when a new task is submitted
     useEffect(() => {
@@ -146,7 +137,7 @@ const StreamingLLMApp = ({ apiKey }) => {
             localStorage.setItem('pipelineAppHistory', JSON.stringify(newHistory));
         }
 
-        const modelllm = `llm.${model}`
+        const modelllm = stripCapabilityAttrs(`llm.${model}`)
 
         const ollamaPayload = {
             "model": model,
@@ -221,10 +212,19 @@ const StreamingLLMApp = ({ apiKey }) => {
                         onChange={(e) => setModel(e.target.value)}
                         style={styles.input}
                     />
-                    <p style={{ lineHeight: 'normal' }}>{capabilities.map(cap => {
-                        let strip = cap.replaceAll("llm.", "");
-                        return <a key={cap} style={{ marginRight: '8pt', display: 'inline', fontSize: 'x-small' }} href="#" onClick={() => setModel(strip)}>{strip}</a>
-                    })}
+                    <p style={{ lineHeight: 'normal', display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+                        {capabilities.map(cap => {
+                            const modelName = stripCapabilityAttrs(cap).replace(/^llm\./, '');
+                            const attrs = parseCapabilityAttrs(cap);
+                            return (
+                                <span key={cap} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <a style={{ fontSize: 'x-small' }} href="#" onClick={(e) => { e.preventDefault(); setModel(modelName); }}>{modelName}</a>
+                                    {attrs.map(attr => (
+                                        <span key={attr} style={{ fontSize: '9px', background: 'var(--glass)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 4px', color: 'var(--muted)' }}>{attr}</span>
+                                    ))}
+                                </span>
+                            );
+                        })}
                     </p>
                 </div>
 
