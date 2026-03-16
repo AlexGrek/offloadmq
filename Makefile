@@ -11,7 +11,7 @@ SECRETS_FILE ?= .secrets.yaml
 
 CONTAINER_RUNTIME := docker
 
-.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend
+.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all
 
 # Build container image (linux/amd64 only, pushed directly via buildx)
 build:
@@ -140,6 +140,30 @@ build-client:
 
 rebuild-client:
 	cd offload-agent && make rebuild
+
+# Clean all build artifacts across the whole repo
+clean-all:
+	@echo "Cleaning Rust artifacts..."
+	cargo clean
+	@echo "Cleaning offload-agent artifacts..."
+	cd offload-agent && make clean
+	@echo "Cleaning management-frontend dist..."
+	rm -rf management-frontend/dist
+	@echo "All clean."
+
+# Clean everywhere, rebuild both images, push, and upgrade helm chart
+rebuild-all: clean-all build build-frontend
+	@if [ ! -f $(SECRETS_FILE) ]; then \
+		echo "ERROR: Secrets file '$(SECRETS_FILE)' not found!"; \
+		exit 1; \
+	fi
+	@if helm status $(RELEASE) -n $(NAMESPACE) >/dev/null 2>&1; then \
+		echo "Upgrading $(RELEASE) to $(IMAGE):$(TAG) ..."; \
+		$(MAKE) upgrade; \
+	else \
+		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
+		$(MAKE) install; \
+	fi
 
 dev-mq:
 	cargo run

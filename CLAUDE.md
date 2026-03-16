@@ -59,6 +59,8 @@ make build               # Build container image
 make push                # Push to registry
 make deploy              # Build, push, and helm install/upgrade
 make template            # Preview helm manifests
+make clean-all           # Clean all build artifacts (cargo, offload-agent, frontend dist)
+make rebuild-all         # Clean everything, rebuild both images, push, and helm install/upgrade
 ```
 
 ## Architecture
