@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(taskkill //IM offload-agent.exe //F)"
+    ]
+  }
+}
