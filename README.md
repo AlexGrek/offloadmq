@@ -1,32 +1,45 @@
-# OffloadMQ
+# 🚀 OffloadMQ
 
 A distributed task queue system for offloading computational tasks to remote agent nodes. Follows a client-server-agent architecture: clients submit tasks, the server orchestrates distribution, and agents execute them.
 
-## Architecture
+## ⚡ Quick Install
 
-- **Server** — Rust/Axum HTTP server with a persistent Sled DB and in-memory urgent queue
-- **Agent** — Python worker that registers with the server and executes tasks
-- **Frontend** — React management UI (served at `/ui` when deployed)
+Get the latest offload-agent client from GitHub releases:
 
-## Local Development
+```bash
+# Download the latest release
+curl -fsSL "$(curl -s https://api.github.com/repos/AlexGrek/offloadmq/releases/latest | grep browser_download_url | cut -d'"' -f4)" -o offload-agent
+chmod +x offload-agent
+./offload-agent --help
+```
 
-### Server
+Or visit [Releases](https://github.com/AlexGrek/offloadmq/releases) to download manually.
+
+## 🏗️ Architecture
+
+- **🖥️ Server** — Rust/Axum HTTP server with a persistent Sled DB and in-memory urgent queue
+- **⚙️ Agent** — Python worker that registers with the server and executes tasks
+- **🎨 Frontend** — React management UI (served at `/ui` when deployed)
+
+## 💻 Local Development
+
+### 🖥️ Server
 ```bash
 make dev-mq          # cargo run
 cargo test           # unit tests
 ```
 
-### Agent
+### ⚙️ Agent
 ```bash
 make dev-agent       # register and start serving (requires running server)
 ```
 
-### Frontend
+### 🎨 Frontend
 ```bash
 make dev-frontend    # npm run dev (Vite dev server at http://localhost:5173)
 ```
 
-### Integration tests
+### 🧪 Integration Tests
 ```bash
 make test-full       # start server + agent, run tests, stop everything
 make test-start      # start server + agent in background
@@ -35,15 +48,15 @@ make test-stop       # stop server + agent
 make test-logs       # tail logs
 ```
 
-## Kubernetes Deployment
+## ☸️ Kubernetes Deployment
 
-### Prerequisites
+### 📋 Prerequisites
 
 - `kubectl` configured against your cluster
 - `helm` 3.x
 - `docker` (or another container runtime)
 
-### 1. Generate secrets
+### 1️⃣ Generate secrets
 
 Creates `.secrets.yaml` with randomly generated values in Helm values format. The secret is created once on first install and never overwritten by subsequent upgrades — keys persist across redeploys.
 
@@ -58,7 +71,7 @@ To regenerate (overwrites existing file):
 make secrets-force
 ```
 
-### 2. Build and push the image
+### 2️⃣ Build and push the image
 
 ```bash
 make build push
@@ -75,7 +88,7 @@ For multi-platform builds (pushes directly to the registry):
 make build-multiplatform TAG=1.2.3
 ```
 
-### 3. Install
+### 3️⃣ Install
 
 ```bash
 make install
@@ -89,7 +102,7 @@ helm install offloadmq offloadmq-chart \
   -f .secrets.yaml
 ```
 
-### 4. Upgrade
+### 4️⃣ Upgrade
 
 After rebuilding and pushing a new image:
 
@@ -108,7 +121,7 @@ Multi-platform variant:
 make deploy-multiplatform
 ```
 
-### 5. Other helm commands
+### 5️⃣ Other helm commands
 
 | Command | Description |
 |---|---|
@@ -116,7 +129,7 @@ make deploy-multiplatform
 | `make status` | Show helm release status |
 | `make uninstall` | Remove the release (data PVC is retained) |
 
-### Management UI
+### 🎛️ Management UI
 
 The management frontend is deployed as a sidecar in the same pod, enabled by default. It is available at:
 
@@ -134,7 +147,7 @@ helm upgrade offloadmq offloadmq-chart \
   -f .secrets.yaml
 ```
 
-### Configuration
+### ⚙️ Configuration
 
 Key `values.yaml` options (override with `--set` or a custom values file):
 
@@ -148,7 +161,7 @@ Key `values.yaml` options (override with `--set` or a custom values file):
 | `frontend.image.tag` | `latest` | Frontend image tag |
 | `persistence.size` | `1Gi` | PVC size for Sled DB |
 
-Secrets (managed via `.secrets.yaml`, not `values.yaml`):
+🔐 Secrets (managed via `.secrets.yaml`, not `values.yaml`):
 
 | Key | Description |
 |---|---|
