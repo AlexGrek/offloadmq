@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use axum::{
     Json,
+    body::Body,
     extract::{Path, Query, State, WebSocketUpgrade, ws::{Message, WebSocket}},
-    response::IntoResponse,
+    http::header,
+    response::{IntoResponse, Response},
 };
 use chrono::Utc;
 use futures::{SinkExt, StreamExt};
@@ -120,6 +122,52 @@ pub async fn auth_agent(
     }
     let (token, expires_in) = state.auth.create_token(&agent.uid)?;
     Ok(Json(schema::AgentLoginResponse { token, expires_in }))
+}
+
+/// GET /private/agent/bucket/{bucket_uid}/file/{file_uid}
+///
+/// Allows an authenticated agent to download a file from a storage bucket.
+/// Any valid agent JWT can access any bucket; the unguessable UUIDs act as
+/// capability tokens and agents only learn them from task `file_bucket` fields.
+pub async fn download_bucket_file(
+    AuthenticatedAgent(_agent): AuthenticatedAgent,
+    State(app_state): State<Arc<AppState>>,
+    Path((bucket_uid, file_uid)): Path<(String, String)>,
+) -> Result<Response, AppError> {
+    let bucket = app_state
+        .storage
+        .buckets
+        .get_bucket(&bucket_uid)?
+        .ok_or_else(|| AppError::NotFound(format!("Bucket {} not found", bucket_uid)))?;
+
+    let file_meta = bucket
+        .files
+        .iter()
+        .find(|f| f.uid == file_uid)
+        .ok_or_else(|| {
+            AppError::NotFound(format!("File {} not found in bucket {}", file_uid, bucket_uid))
+        })?
+        .clone();
+
+    let data = app_state
+        .storage
+        .file_store
+        .get(&bucket_uid, &file_uid)
+        .await
+        .map_err(AppError::Internal)?;
+
+    let disposition = format!(
+        "attachment; filename=\"{}\"",
+        file_meta.original_name.replace('"', "\\\"")
+    );
+    let response = Response::builder()
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CONTENT_DISPOSITION, disposition)
+        .header(header::CONTENT_LENGTH, data.len())
+        .body(Body::from(data))
+        .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+
+    Ok(response)
 }
 
 fn validate_api_key(keys: &Vec<String>, key: &str) -> Result<(), AppError> {

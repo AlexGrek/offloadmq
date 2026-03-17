@@ -55,6 +55,7 @@ pub async fn list_all_buckets(
             "created_at":  bucket.created_at,
             "file_count":  bucket.files.len(),
             "used_bytes":  bucket.used_bytes,
+            "tasks":       bucket.tasks,
         });
         obj["buckets"].as_array_mut().unwrap().push(bucket_summary);
     }

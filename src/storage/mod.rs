@@ -72,6 +72,11 @@ impl FileStore {
         Ok(())
     }
 
+    pub async fn get(&self, bucket_id: &str, file_id: &str) -> anyhow::Result<Vec<u8>> {
+        let data = self.op.read(&Self::path(bucket_id, file_id)).await?;
+        Ok(data.to_vec())
+    }
+
     pub async fn delete_file(&self, bucket_id: &str, file_id: &str) -> anyhow::Result<()> {
         self.op.delete(&Self::path(bucket_id, file_id)).await?;
         Ok(())

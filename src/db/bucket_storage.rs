@@ -20,6 +20,9 @@ pub struct BucketMeta {
     pub created_at: DateTime<Utc>,
     pub files: Vec<FileMeta>,
     pub used_bytes: u64,
+    /// IDs of tasks that reference this bucket (recorded at submission time).
+    #[serde(default)]
+    pub tasks: Vec<String>,
 }
 
 pub struct BucketStorage {
@@ -52,6 +55,7 @@ impl BucketStorage {
             created_at: Utc::now(),
             files: vec![],
             used_bytes: 0,
+            tasks: vec![],
         };
         self.save_bucket(&meta)?;
         let idx_key = format!("{}|{}", api_key, uid);
@@ -81,6 +85,17 @@ impl BucketStorage {
         self.owner_idx.remove(idx_key.as_bytes())?;
         self.buckets.flush()?;
         self.owner_idx.flush()?;
+        Ok(())
+    }
+
+    /// Append `task_id` to the bucket's task list (idempotent; no-op if already present).
+    pub fn add_task(&self, bucket_uid: &str, task_id: &str) -> anyhow::Result<()> {
+        if let Some(mut meta) = self.get_bucket(bucket_uid)? {
+            if !meta.tasks.iter().any(|t| t == task_id) {
+                meta.tasks.push(task_id.to_string());
+                self.save_bucket(&meta)?;
+            }
+        }
         Ok(())
     }
 

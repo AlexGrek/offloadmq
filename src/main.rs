@@ -72,6 +72,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/task/progress/{cap}/{id}",
                     post(api::agent::post_task_progress_update),
                 )
+                .route(
+                    "/bucket/{bucket_uid}/file/{file_uid}",
+                    get(api::agent::download_bucket_file),
+                )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,

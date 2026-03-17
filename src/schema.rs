@@ -170,6 +170,11 @@ pub struct GpuInfo {
 #[serde(rename_all = "camelCase")]
 pub struct FileReference {
     path: String,
+    /// Bucket UID to fetch this file from. Required when the task references
+    /// more than one bucket; may be omitted when exactly one bucket is present
+    /// (the single bucket is used implicitly) or when no buckets are used.
+    #[serde(default)]
+    pub bucket: Option<String>,
     #[serde(default)]
     git_clone: Option<String>,
     #[serde(default)]
@@ -214,6 +219,8 @@ pub struct TaskSubmissionRequest {
     pub payload: Value,
     #[serde(default)]
     pub fetch_files:  Vec<FileReference>,
+    #[serde(default)]
+    pub file_bucket:  Vec<String>,
     #[serde(default)]
     pub artifacts:  Vec<FileReference>,
     pub api_key: String,

@@ -21,6 +21,39 @@ use crate::{
     utils::base_capability,
 };
 
+/// Record `task_id` in every bucket listed in `file_bucket`.
+/// Failures are logged as warnings rather than surfaced to the caller —
+/// the task has already been accepted and bucket tracking is best-effort.
+fn record_task_in_buckets(state: &AppState, task_id: &str, file_bucket: &[String]) {
+    for bucket_uid in file_bucket {
+        if let Err(e) = state.storage.buckets.add_task(bucket_uid, task_id) {
+            log::warn!(
+                "Failed to record task {} in bucket {}: {}",
+                task_id, bucket_uid, e
+            );
+        }
+    }
+}
+
+/// Verify that every bucket UID in `req.file_bucket` exists and is owned by
+/// the submitting API key. Returns an error on the first violation.
+fn validate_file_buckets(state: &AppState, req: &TaskSubmissionRequest) -> Result<(), AppError> {
+    for bucket_uid in &req.file_bucket {
+        let bucket = state
+            .storage
+            .buckets
+            .get_bucket(bucket_uid)?
+            .ok_or_else(|| AppError::NotFound(format!("Bucket {} not found", bucket_uid)))?;
+        if bucket.api_key != req.api_key {
+            return Err(AppError::Authorization(format!(
+                "Bucket {} is not owned by the provided API key",
+                bucket_uid
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub async fn submit_task_blocking(
     State(app_state): State<Arc<AppState>>,
     Json(req): Json<TaskSubmissionRequest>,
@@ -34,12 +67,15 @@ pub async fn submit_task_blocking(
             "Only urgent tasks can be submitted to this endpoint".to_string(),
         ));
     }
+    validate_file_buckets(&app_state, &req)?;
+    let file_bucket = req.file_bucket.clone();
     let task = UnassignedTask {
         id: TaskId::new_with_cap(req.capability.clone()),
         data: req,
         created_at: Utc::now(),
     };
     info!("New urgent task: {:?}", task);
+    record_task_in_buckets(&app_state, &task.id.to_string(), &file_bucket);
     let data = submit_urgent_task(&app_state.urgent, &app_state.storage.agents, task)
         .await?
         .into_response();
@@ -54,13 +90,16 @@ pub async fn submit_task(
         .storage
         .client_keys
         .verify_key(&req.api_key, &req.capability)?;
+    validate_file_buckets(&app_state, &req)?;
     let urgent = req.urgent;
+    let file_bucket = req.file_bucket.clone();
     let task = UnassignedTask {
         id: TaskId::new_with_cap(req.capability.clone()),
         data: req,
         created_at: Utc::now(),
     };
     info!("New unassigned task: {:?}", task);
+    record_task_in_buckets(&app_state, &task.id.to_string(), &file_bucket);
     if urgent {
         let data = submit_urgent_task(&app_state.urgent, &app_state.storage.agents, task)
             .await?
