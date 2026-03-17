@@ -123,11 +123,11 @@ make deploy-multiplatform
 
 ### 5️⃣ Other helm commands
 
-| Command | Description |
-|---|---|
-| `make template` | Render manifests to stdout without applying |
-| `make status` | Show helm release status |
-| `make uninstall` | Remove the release (data PVC is retained) |
+| Command          | Description                                 |
+| ---------------- | ------------------------------------------- |
+| `make template`  | Render manifests to stdout without applying |
+| `make status`    | Show helm release status                    |
+| `make uninstall` | Remove the release (data PVC is retained)   |
 
 ### 🎛️ Management UI
 
@@ -151,21 +151,21 @@ helm upgrade offloadmq offloadmq-chart \
 
 Key `values.yaml` options (override with `--set` or a custom values file):
 
-| Key | Default | Description |
-|---|---|---|
-| `image.repository` | `grekodocker/offloadmq` | Server image |
-| `image.tag` | `latest` | Image tag |
-| `ingress.hosts[0].host` | `offloadmq.alexgr.space` | Public hostname |
-| `frontend.enabled` | `true` | Deploy management UI sidecar |
-| `frontend.image.repository` | `grekodocker/offloadmq-management-frontend` | Frontend image |
-| `frontend.image.tag` | `latest` | Frontend image tag |
-| `persistence.size` | `1Gi` | PVC size for Sled DB |
+| Key                         | Default                                     | Description                  |
+| --------------------------- | ------------------------------------------- | ---------------------------- |
+| `image.repository`          | `grekodocker/offloadmq`                     | Server image                 |
+| `image.tag`                 | `latest`                                    | Image tag                    |
+| `ingress.hosts[0].host`     | `offloadmq.alexgr.space`                    | Public hostname              |
+| `frontend.enabled`          | `true`                                      | Deploy management UI sidecar |
+| `frontend.image.repository` | `grekodocker/offloadmq-management-frontend` | Frontend image               |
+| `frontend.image.tag`        | `latest`                                    | Frontend image tag           |
+| `persistence.size`          | `1Gi`                                       | PVC size for Sled DB         |
 
 🔐 Secrets (managed via `.secrets.yaml`, not `values.yaml`):
 
-| Key | Description |
-|---|---|
-| `JWT_SECRET` | Signs agent JWT tokens |
-| `CLIENT_API_KEYS` | Comma-separated client API keys (`X-API-Key` header) |
-| `AGENT_API_KEYS` | Comma-separated agent registration keys |
-| `MGMT_TOKEN` | Management endpoint auth token (`X-Mgmt-Token` header) |
+| Key               | Description                                            |
+| ----------------- | ------------------------------------------------------ |
+| `JWT_SECRET`      | Signs agent JWT tokens                                 |
+| `CLIENT_API_KEYS` | Comma-separated client API keys (`X-API-Key` header)   |
+| `AGENT_API_KEYS`  | Comma-separated agent registration keys                |
+| `MGMT_TOKEN`      | Management endpoint auth token (`X-Mgmt-Token` header) |

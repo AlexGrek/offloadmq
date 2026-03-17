@@ -77,33 +77,18 @@ See [docs/releasing.md](docs/releasing.md) for the release process, including:
 
 All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nested routes:
 
-1. **Client API** (`/api/*`) - client API key in JSON body as `api_key` field
-   - `POST /api/task/submit` - Submit task to queue
-   - `POST /api/task/submit_blocking` - Submit urgent task and wait for result
-   - `POST /api/task/poll/{cap}/{id}` - Poll task status
+1. **Client API** (`/api/*`) — Task submission & polling
+   See [docs/tasks-api.md#client-api](docs/tasks-api.md#client-api)
 
-2. **Storage API** (`/api/storage/*`) - same client API key, passed via `X-API-Key` header
-   (header is used because GET / DELETE / multipart endpoints have no JSON body)
-   - `GET  /api/storage/limits` - bucket limits for this key (max count, size, TTL)
-   - `GET  /api/storage/buckets` - list all buckets owned by this key → `{buckets: [{bucket_uid, created_at, file_count, used_bytes, remaining_bytes, tasks}]}`
-   - `POST /api/storage/bucket/create` - create a bucket → `{bucket_uid}`
-   - `POST /api/storage/bucket/{bucket_uid}/upload` - upload file (`multipart/form-data`, field `file`)
-   - `GET  /api/storage/bucket/{bucket_uid}/stat` - file list + remaining space (no hashes)
-   - `GET  /api/storage/bucket/{bucket_uid}/file/{file_uid}/hash` - SHA-256 digest (no download)
-   - `DELETE /api/storage/bucket/{bucket_uid}/file/{file_uid}` - delete single file
-   - `DELETE /api/storage/bucket/{bucket_uid}` - delete bucket and all its files
+2. **Storage API** (`/api/storage/*`) — File bucket management
+   See [docs/client-storage-api.md](docs/client-storage-api.md)
 
-3. **Agent API** (`/private/agent/*`) - JWT auth via `Authorization: Bearer` header
-   - `GET /private/agent/task/poll_urgent` - Poll urgent tasks
-   - `GET /private/agent/task/poll` - Poll non-urgent tasks
-   - `POST /private/agent/take/{cap}/{id}` - Claim a task
-   - `POST /private/agent/task/resolve/{cap}/{id}` - Report task completion
-   - `POST /private/agent/task/progress/{cap}/{id}` - Report progress
+3. **Agent API** (`/private/agent/*`) — Agent registration & task execution
+   See [docs/tasks-api.md#agent-api](docs/tasks-api.md#agent-api)
 
-4. **Management API** (`/management/*`) - Token auth via `Authorization: Bearer` header
-   - `GET /management/capabilities/list/online` - List base capabilities of online agents (stripped)
-   - `GET /management/capabilities/list/online_ext` - List raw capabilities with extended attributes
-   - Agent and task listing, API key management
+4. **Management API** (`/management/*`) — Monitoring & administration
+   - Tasks/agents/keys: [docs/management-api.md](docs/management-api.md)
+   - Storage: [docs/management-storage-api.md](docs/management-storage-api.md)
 
 ### Extended Capability Attributes
 
