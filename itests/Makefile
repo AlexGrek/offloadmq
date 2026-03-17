@@ -8,6 +8,7 @@ ROOT_DIR := $(shell cd .. && pwd)
 AGENT_DIR := $(ROOT_DIR)/offload-agent
 SERVER_PID_FILE := /tmp/offloadmq-server.pid
 AGENT_PID_FILE := /tmp/offloadmq-agent.pid
+AGENT_API_KEY := ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
 
 ifeq ($(OS),Windows_NT)
 	PYTHON := $(VENV)/Scripts/python
@@ -65,8 +66,8 @@ start-agent: start-server
 		echo "Agent already running (PID $$(cat $(AGENT_PID_FILE)))"; \
 	else \
 		cd $(AGENT_DIR) && . venv/bin/activate && \
-		python offload-client.py register --caps shell.bash --caps debug.echo > /tmp/offloadmq-agent.log 2>&1 && \
-		python offload-client.py serve >> /tmp/offloadmq-agent.log 2>&1 & echo $$! > $(AGENT_PID_FILE); \
+		python offload-agent.py cli register --server http://localhost:3069 --key $(AGENT_API_KEY) > /tmp/offloadmq-agent.log 2>&1 && \
+		python offload-agent.py cli serve >> /tmp/offloadmq-agent.log 2>&1 & echo $$! > $(AGENT_PID_FILE); \
 		sleep 3; \
 		if kill -0 $$(cat $(AGENT_PID_FILE)) 2>/dev/null; then \
 			echo "Agent is ready (PID $$(cat $(AGENT_PID_FILE)))"; \
