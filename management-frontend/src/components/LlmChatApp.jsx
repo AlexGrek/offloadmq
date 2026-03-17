@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Send, ImagePlus, X } from 'lucide-react';
-import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
+import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 import ModelSelector from './ModelSelector';
-import AttributeTag from './AttributeTag';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -220,26 +219,6 @@ const LlmChatApp = ({ apiKey }) => {
             <Trash2 size={16} />
           </button>
         </div>
-        <div style={styles.capRow}>
-          {capabilities.map(cap => {
-            const modelName = stripCapabilityAttrs(cap).replace(/^llm\./, '');
-            const attrs = parseCapabilityAttrs(cap);
-            return (
-              <span key={cap} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                <a
-                  style={styles.capLink}
-                  href="#"
-                  onClick={e => { e.preventDefault(); setModel(modelName); }}
-                >
-                  {modelName}
-                </a>
-                {attrs.map(attr => (
-                  <AttributeTag key={attr} attr={attr} inline={true} />
-                ))}
-              </span>
-            );
-          })}
-        </div>
         <div style={styles.systemRow}>
           <label style={styles.label}>System:</label>
           <textarea
@@ -370,34 +349,11 @@ const styles = {
     alignItems: 'center',
     gap: '8px',
   },
-  capRow: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '4px',
-  },
-  capLink: {
-    fontSize: '11px',
-    color: 'var(--muted)',
-    textDecoration: 'none',
-    padding: '1px 6px',
-    border: '1px solid var(--border)',
-    borderRadius: '10px',
-  },
   label: {
     fontSize: '13px',
     fontWeight: '600',
     color: 'var(--text)',
     whiteSpace: 'nowrap',
-  },
-  modelInput: {
-    flex: 1,
-    padding: '5px 10px',
-    fontSize: '13px',
-    border: '1px solid var(--border)',
-    borderRadius: '6px',
-    outline: 'none',
-    background: 'var(--input-bg)',
-    color: 'var(--text)',
   },
   systemInput: {
     flex: 1,

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { stripCapabilityAttrs } from '../utils';
+import { stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
+import AttributeTag from './AttributeTag';
 
 const ModelSelector = ({ model, setModel, capabilities = [] }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -18,6 +19,9 @@ const ModelSelector = ({ model, setModel, capabilities = [] }) => {
     }
   }, [dropdownOpen]);
 
+  const selectedCap = capabilities.find(cap => stripCapabilityAttrs(cap).replace(/^llm\./, '') === model);
+  const selectedAttrs = selectedCap ? parseCapabilityAttrs(selectedCap) : [];
+
   return (
     <div style={styles.dropdownWrapper} ref={dropdownRef}>
       <button
@@ -27,13 +31,21 @@ const ModelSelector = ({ model, setModel, capabilities = [] }) => {
         }}
         onClick={() => setDropdownOpen(!dropdownOpen)}
       >
-        {model}
+        <span style={styles.triggerContent}>
+          <span>{model}</span>
+          {selectedAttrs.length > 0 && (
+            <span style={styles.triggerAttrs}>
+              {selectedAttrs.map(attr => <AttributeTag key={attr} attr={attr} inline={true} />)}
+            </span>
+          )}
+        </span>
       </button>
       {dropdownOpen && (
         <div style={styles.dropdownMenu}>
           {capabilities.length > 0 ? (
             capabilities.map(cap => {
               const modelName = stripCapabilityAttrs(cap).replace(/^llm\./, '');
+              const attrs = parseCapabilityAttrs(cap);
               const isSelected = model === modelName;
               return (
                 <div
@@ -44,17 +56,24 @@ const ModelSelector = ({ model, setModel, capabilities = [] }) => {
                     color: isSelected ? '#fff' : 'var(--text)',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isSelected) e.target.style.backgroundColor = 'var(--chip-bg)';
+                    if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--chip-bg)';
                   }}
                   onMouseLeave={(e) => {
-                    if (!isSelected) e.target.style.backgroundColor = 'transparent';
+                    if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                   onClick={() => {
                     setModel(modelName);
                     setDropdownOpen(false);
                   }}
                 >
-                  {modelName}
+                  <span style={styles.itemContent}>
+                    <span>{modelName}</span>
+                    {attrs.length > 0 && (
+                      <span style={styles.itemAttrs}>
+                        {attrs.map(attr => <AttributeTag key={attr} attr={attr} inline={true} />)}
+                      </span>
+                    )}
+                  </span>
                 </div>
               );
             })
@@ -106,6 +125,27 @@ const styles = {
     cursor: 'pointer',
     transition: 'all 0.15s ease',
     borderBottom: '1px solid rgba(0, 0, 0, 0.05)',
+  },
+  triggerContent: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  triggerAttrs: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '3px',
+  },
+  itemContent: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    pointerEvents: 'none',
+  },
+  itemAttrs: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '3px',
   },
 };
 
