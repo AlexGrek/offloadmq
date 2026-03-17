@@ -104,6 +104,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/client_api_keys/revoke/{id}",
                     post(api::mgmt::revoke_client_api_key),
                 )
+                .route(
+                    "/storage/buckets",
+                    get(api::mgmt::storage::list_all_buckets)
+                        .delete(api::mgmt::storage::purge_all_buckets),
+                )
+                .route(
+                    "/storage/quotas",
+                    get(api::mgmt::storage::get_quotas),
+                )
+                .route(
+                    "/storage/bucket/{bucket_uid}",
+                    delete(api::mgmt::storage::delete_bucket),
+                )
+                .route(
+                    "/storage/key/{api_key}/buckets",
+                    delete(api::mgmt::storage::delete_key_buckets),
+                )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::token_auth_middleware_mgmt,
