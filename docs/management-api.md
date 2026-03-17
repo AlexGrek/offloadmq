@@ -396,16 +396,16 @@ Returns all client API keys and their permissions.
   {
     "key": "my-client-key",
     "capabilities": ["llm.mistral", "vision"],
-    "is_predefined": true,
+    "isPredefined": true,
     "created": "2026-03-17T10:00:00Z",
-    "is_revoked": false
+    "isRevoked": false
   },
   {
     "key": "api-key-abc-123",
     "capabilities": ["database.postgresql"],
-    "is_predefined": false,
+    "isPredefined": false,
     "created": "2026-03-18T09:00:00Z",
-    "is_revoked": true
+    "isRevoked": true
   }
 ]
 ```
@@ -414,9 +414,9 @@ Returns all client API keys and their permissions.
 |-------|-------------|
 | `key` | The API key string (clients use this in requests) |
 | `capabilities` | List of capabilities this key is authorized to submit tasks for |
-| `is_predefined` | True if created via `CLIENT_API_KEYS` env var, false if created via management API |
+| `isPredefined` | True if created via `CLIENT_API_KEYS` env var, false if created via management API |
 | `created` | ISO 8601 timestamp when the key was created |
-| `is_revoked` | True if key has been revoked and is no longer usable |
+| `isRevoked` | True if key has been revoked and is no longer usable |
 
 ---
 
@@ -450,9 +450,9 @@ Create a new client API key or update an existing one's capabilities.
 {
   "key": "new-client-key-456",
   "capabilities": ["llm.mistral", "llm.qwen", "vision"],
-  "is_predefined": false,
+  "isPredefined": false,
   "created": "2026-03-18T14:30:00Z",
-  "is_revoked": false
+  "isRevoked": false
 }
 ```
 
@@ -493,9 +493,9 @@ Mark a client API key as revoked. Clients using this key will receive `401 Unaut
 {
   "key": "my-client-key",
   "capabilities": ["llm.mistral", "vision"],
-  "is_predefined": true,
+  "isPredefined": true,
   "created": "2026-03-17T10:00:00Z",
-  "is_revoked": true
+  "isRevoked": true
 }
 ```
 

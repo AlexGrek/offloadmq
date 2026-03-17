@@ -5,6 +5,8 @@ File bucket API for staging files alongside task submissions. Clients can create
 **Base path:** `/api/storage`
 **Authentication:** `X-API-Key: <your-client-api-key>` header
 
+All endpoints require the `X-API-Key` header. Requests without valid authentication return `401 Unauthorized` or `403 Forbidden`.
+
 ---
 
 ## Overview
@@ -28,15 +30,21 @@ GET /api/storage/limits
 
 Returns quota limits for your API key.
 
-**Response**
+**Response** (200 OK)
 
 ```json
 {
-  "max_buckets": 10,
+  "max_buckets_per_key": 10,
   "bucket_size_bytes": 1073741824,
   "bucket_ttl_minutes": 1440
 }
 ```
+
+| Field | Description |
+|-------|-------------|
+| `max_buckets_per_key` | Maximum number of buckets you can create |
+| `bucket_size_bytes` | Maximum size in bytes per bucket (1 GiB = 1073741824) |
+| `bucket_ttl_minutes` | Bucket lifetime in minutes before automatic deletion (1440 = 24 hours) |
 
 ---
 
@@ -143,16 +151,16 @@ Uploads a file to an existing bucket. The SHA-256 digest is computed and stored 
 ```json
 {
   "file_uid": "a1b2c3d4-e5f6-47g8-h9i0-j1k2l3m4n5o6",
-  "size_bytes": 4096,
-  "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  "size": 4096,
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
 ```
 
-| Field       | Description                                    |
-|-------------|------------------------------------------------|
-| `file_uid`  | Unique identifier for the uploaded file (UUID) |
-| `size_bytes`| Size of the uploaded file in bytes              |
-| `hash`      | SHA-256 digest of the file                      |
+| Field      | Description                                    |
+|------------|------------------------------------------------|
+| `file_uid` | Unique identifier for the uploaded file (UUID) |
+| `size`     | Size of the uploaded file in bytes              |
+| `sha256`   | SHA-256 digest of the file (hex string)         |
 
 **Error responses**
 
