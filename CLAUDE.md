@@ -63,6 +63,14 @@ make clean-all           # Clean all build artifacts (cargo, offload-agent, fron
 make rebuild-all         # Clean everything, rebuild both images, push, and helm install/upgrade
 ```
 
+### Releasing
+
+See [docs/releasing.md](docs/releasing.md) for the release process, including:
+- Creating `release*` tagged releases
+- Automated CI/CD workflow for building and publishing agent binaries
+- GitHub release artifact management
+- Tag naming conventions
+
 ## Architecture
 
 ### Four API Surfaces

@@ -3,7 +3,7 @@ name: Build Agent
 on:
   push:
     branches: ["master", "release"]
-    tags: ["v*"]
+    tags: ["release*"]
   pull_request:
     branches: ["master"]
 

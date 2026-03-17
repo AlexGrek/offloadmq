@@ -44,7 +44,9 @@
       "Bash(xargs ls:*)",
       "Bash(grep -n '\"\"clean\"\"' /Users/vedmedik/dev/offloadmq/management-frontend/package.json)",
       "Bash(ls /Users/vedmedik/dev/offloadmq/*.md)",
-      "Bash(rustup check:*)"
+      "Bash(rustup check:*)",
+      "Bash(git tag:*)",
+      "Bash(git push:*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills"
