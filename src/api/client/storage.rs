@@ -33,6 +33,30 @@ use crate::{
     state::AppState,
 };
 
+// ── GET /api/storage/buckets ─────────────────────────────────────────────────
+
+pub async fn list_buckets(
+    State(state): State<Arc<AppState>>,
+    StorageApiKey(api_key): StorageApiKey,
+) -> impl IntoResponse {
+    let buckets = state.storage.buckets.list_buckets_for_key(&api_key);
+    let capacity = state.config.storage.bucket_size_bytes;
+    let list: Vec<_> = buckets
+        .iter()
+        .map(|b| {
+            json!({
+                "bucket_uid":      b.uid,
+                "created_at":      b.created_at,
+                "file_count":      b.files.len(),
+                "used_bytes":      b.used_bytes,
+                "remaining_bytes": capacity.saturating_sub(b.used_bytes),
+                "tasks":           b.tasks,
+            })
+        })
+        .collect();
+    Json(json!({ "buckets": list }))
+}
+
 // ── GET /api/storage/limits ──────────────────────────────────────────────────
 
 pub async fn get_limits(

@@ -2,6 +2,41 @@ import React, { useState, useEffect, useRef } from 'react';
 import { stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 import AttributeTag from './AttributeTag';
 
+/** Returns model size in billions, or null if not detectable. */
+function parseModelSizeB(cap) {
+  const attrs = parseCapabilityAttrs(cap);
+  for (const attr of attrs) {
+    // explicit "size:5Gb" / "size:1.5b"
+    const sizeAttr = attr.match(/^size:(\d+(?:\.\d+)?)\s*([gmk])?b?$/i);
+    if (sizeAttr) {
+      const val = parseFloat(sizeAttr[1]);
+      const unit = (sizeAttr[2] || 'g').toLowerCase();
+      if (unit === 'g') return val;
+      if (unit === 'm') return val / 1000;
+      if (unit === 'k') return val / 1_000_000;
+    }
+    // plain size attr like "7b" or "1.5b"
+    const plain = attr.match(/^(\d+(?:\.\d+)?)b$/i);
+    if (plain) return parseFloat(plain[1]);
+  }
+  // fall back to model name: "qwen3:8b", "mistral-7b", etc.
+  const base = stripCapabilityAttrs(cap);
+  const nameSize = base.match(/[:\-](\d+(?:\.\d+)?)b(?:\b|$)/i);
+  if (nameSize) return parseFloat(nameSize[1]);
+  return null;
+}
+
+function sortBySize(caps) {
+  return [...caps].sort((a, b) => {
+    const sa = parseModelSizeB(a);
+    const sb = parseModelSizeB(b);
+    if (sa === null && sb === null) return 0;
+    if (sa === null) return 1;
+    if (sb === null) return -1;
+    return sa - sb;
+  });
+}
+
 const ModelSelector = ({ model, setModel, capabilities = [] }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -43,7 +78,7 @@ const ModelSelector = ({ model, setModel, capabilities = [] }) => {
       {dropdownOpen && (
         <div style={styles.dropdownMenu}>
           {capabilities.length > 0 ? (
-            capabilities.map(cap => {
+            sortBySize(capabilities).map(cap => {
               const modelName = stripCapabilityAttrs(cap).replace(/^llm\./, '');
               const attrs = parseCapabilityAttrs(cap);
               const isSelected = model === modelName;

@@ -154,6 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/storage",
             Router::new()
                 .route("/limits", get(api::client::storage::get_limits))
+                .route("/buckets", get(api::client::storage::list_buckets))
                 .route("/bucket/create", post(api::client::storage::create_bucket))
                 .route(
                     "/bucket/{bucket_uid}/upload",

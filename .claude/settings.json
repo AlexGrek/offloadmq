@@ -43,7 +43,8 @@
       "Bash(find /Users/vedmedik/dev/offloadmq/management-frontend/src -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\))",
       "Bash(xargs ls:*)",
       "Bash(grep -n '\"\"clean\"\"' /Users/vedmedik/dev/offloadmq/management-frontend/package.json)",
-      "Bash(ls /Users/vedmedik/dev/offloadmq/*.md)"
+      "Bash(ls /Users/vedmedik/dev/offloadmq/*.md)",
+      "Bash(rustup check:*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills"

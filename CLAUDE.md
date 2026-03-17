@@ -77,6 +77,7 @@ All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nes
 2. **Storage API** (`/api/storage/*`) - same client API key, passed via `X-API-Key` header
    (header is used because GET / DELETE / multipart endpoints have no JSON body)
    - `GET  /api/storage/limits` - bucket limits for this key (max count, size, TTL)
+   - `GET  /api/storage/buckets` - list all buckets owned by this key → `{buckets: [{bucket_uid, created_at, file_count, used_bytes, remaining_bytes, tasks}]}`
    - `POST /api/storage/bucket/create` - create a bucket → `{bucket_uid}`
    - `POST /api/storage/bucket/{bucket_uid}/upload` - upload file (`multipart/form-data`, field `file`)
    - `GET  /api/storage/bucket/{bucket_uid}/stat` - file list + remaining space (no hashes)

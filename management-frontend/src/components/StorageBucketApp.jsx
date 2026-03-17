@@ -25,25 +25,6 @@ async function clientFetch(path, apiKey, options = {}) {
     return null;
 }
 
-const STORAGE_KEY = 'offloadmq-storage-buckets';
-
-function loadBuckets(apiKey) {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return [];
-        const all = JSON.parse(raw);
-        return all[apiKey] || [];
-    } catch { return []; }
-}
-
-function saveBuckets(apiKey, buckets) {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        const all = raw ? JSON.parse(raw) : {};
-        all[apiKey] = buckets;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-    } catch { /* ignore */ }
-}
 
 // ---- sub-components ---------------------------------------------------------
 
@@ -146,9 +127,15 @@ function BucketPanel({ bucketUid, apiKey, onRemoved }) {
                 apiKey
             );
             setStat(res);
-        } catch (e) { setErr(e.message); }
+        } catch (e) {
+            if (e.message.startsWith('404')) {
+                onRemoved(bucketUid);
+            } else {
+                setErr(e.message);
+            }
+        }
         finally { setLoading(false); }
-    }, [bucketUid, apiKey]);
+    }, [bucketUid, apiKey, onRemoved]);
 
     useEffect(() => { loadStat(); }, [loadStat]);
 
@@ -257,15 +244,21 @@ const StorageBucketApp = ({ apiKey: propApiKey }) => {
     const [limits, setLimits] = useState(null);
     const [limitsErr, setLimitsErr] = useState(null);
     const [bucketUids, setBucketUids] = useState([]);
+    const [loadingBuckets, setLoadingBuckets] = useState(false);
     const [creating, setCreating] = useState(false);
     const [createErr, setCreateErr] = useState(null);
 
     // Keep local apiKey in sync if prop changes
     useEffect(() => { if (propApiKey) setApiKey(propApiKey); }, [propApiKey]);
 
-    // Load persisted bucket UIDs when apiKey changes
-    useEffect(() => {
-        if (apiKey) setBucketUids(loadBuckets(apiKey));
+    const fetchBuckets = useCallback(async () => {
+        if (!apiKey) { setBucketUids([]); return; }
+        setLoadingBuckets(true);
+        try {
+            const res = await clientFetch('/api/storage/buckets', apiKey);
+            setBucketUids((res?.buckets || []).map(b => b.bucket_uid));
+        } catch { setBucketUids([]); }
+        finally { setLoadingBuckets(false); }
     }, [apiKey]);
 
     const fetchLimits = useCallback(async () => {
@@ -277,29 +270,21 @@ const StorageBucketApp = ({ apiKey: propApiKey }) => {
         } catch (e) { setLimitsErr(e.message); }
     }, [apiKey]);
 
-    useEffect(() => { fetchLimits(); }, [fetchLimits]);
+    useEffect(() => { fetchLimits(); fetchBuckets(); }, [fetchLimits, fetchBuckets]);
 
     const createBucket = async () => {
         if (!apiKey) return;
         setCreating(true); setCreateErr(null);
         try {
-            const res = await clientFetch('/api/storage/bucket/create', apiKey, { method: 'POST' });
-            const uid = res?.bucket_uid;
-            if (!uid) throw new Error('No bucket_uid in response');
-            const updated = [uid, ...bucketUids];
-            setBucketUids(updated);
-            saveBuckets(apiKey, updated);
+            await clientFetch('/api/storage/bucket/create', apiKey, { method: 'POST' });
+            await fetchBuckets();
         } catch (e) { setCreateErr(e.message); }
         finally { setCreating(false); }
     };
 
-    const removeBucket = useCallback((uid) => {
-        setBucketUids(prev => {
-            const updated = prev.filter(id => id !== uid);
-            saveBuckets(apiKey, updated);
-            return updated;
-        });
-    }, [apiKey]);
+    const removeBucket = useCallback(() => {
+        fetchBuckets();
+    }, [fetchBuckets]);
 
     return (
         <div style={s.root}>
@@ -326,16 +311,21 @@ const StorageBucketApp = ({ apiKey: propApiKey }) => {
             {limitsErr && <div style={s.errBox}>{limitsErr}</div>}
             <LimitsPanel limits={limits} />
 
-            {/* Create bucket */}
+            {/* Create bucket + refresh */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <button style={s.createBtn} disabled={creating || !apiKey} onClick={createBucket}>
                     <FolderPlus size={16} />
                     {creating ? 'Creating…' : 'Create new bucket'}
                 </button>
+                <button style={s.iconBtn} title="Refresh bucket list" disabled={loadingBuckets || !apiKey} onClick={fetchBuckets}>
+                    <RefreshCw size={14} style={{ animation: loadingBuckets ? 'spin 1s linear infinite' : 'none' }} />
+                </button>
                 {createErr && <span style={{ color: '#ef4444', fontSize: '0.82rem' }}>{createErr}</span>}
             </div>
 
-            {bucketUids.length === 0 ? (
+            {loadingBuckets ? (
+                <div style={s.muted}>Loading buckets…</div>
+            ) : bucketUids.length === 0 ? (
                 <div style={s.muted}>No buckets yet. Create one above.</div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
