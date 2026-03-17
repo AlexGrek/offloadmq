@@ -81,8 +81,9 @@ function QuotasPanel({ quotas }) {
 }
 
 function BucketCard({ bucket, apiKey, onDeleted }) {
-    const { bucket_uid, created_at, file_count, used_bytes } = bucket;
+    const { bucket_uid, created_at, file_count, used_bytes, tasks } = bucket;
     const shortUid = bucket_uid.length > 18 ? bucket_uid.slice(0, 8) + "…" + bucket_uid.slice(-6) : bucket_uid;
+    const [showTasks, setShowTasks] = useState(false);
 
     const handleDelete = async () => {
         await apiFetch(`/management/storage/bucket/${encodeURIComponent(bucket_uid)}`, { method: "DELETE" });
@@ -90,18 +91,38 @@ function BucketCard({ bucket, apiKey, onDeleted }) {
     };
 
     return (
-        <div className="card" style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                    <code style={{ fontSize: "0.82rem" }}>{shortUid}</code>
-                    <Chip>{file_count} file{file_count !== 1 ? "s" : ""}</Chip>
-                    <Chip>{fmtBytes(used_bytes)}</Chip>
+        <div className="card" style={{ padding: "10px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <code style={{ fontSize: "0.82rem" }}>{shortUid}</code>
+                        <Chip>{file_count} file{file_count !== 1 ? "s" : ""}</Chip>
+                        <Chip>{fmtBytes(used_bytes)}</Chip>
+                        {tasks?.length > 0 && (
+                            <button
+                                onClick={() => setShowTasks(s => !s)}
+                                style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                            >
+                                <Chip style={{ background: "color-mix(in srgb, var(--primary) 15%, transparent)", color: "var(--primary)", cursor: "pointer" }}>
+                                    {tasks.length} task{tasks.length !== 1 ? "s" : ""} {showTasks ? "▲" : "▼"}
+                                </Chip>
+                            </button>
+                        )}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "3px" }}>
+                        Created {fmtDate(created_at)}
+                    </div>
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "3px" }}>
-                    Created {fmtDate(created_at)}
-                </div>
+                <ExpandableDeleteButton onDelete={handleDelete} itemName={shortUid} />
             </div>
-            <ExpandableDeleteButton onDelete={handleDelete} itemName={shortUid} />
+            {showTasks && tasks?.length > 0 && (
+                <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "3px" }}>
+                    <div style={{ fontSize: "0.70rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "var(--muted)", marginBottom: "2px" }}>Tasks</div>
+                    {tasks.map(taskId => (
+                        <code key={taskId} style={{ fontSize: "0.75rem", background: "var(--code-bg)", padding: "3px 8px", borderRadius: "6px", wordBreak: "break-all" }}>{taskId}</code>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
