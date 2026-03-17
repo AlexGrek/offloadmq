@@ -227,6 +227,7 @@ body {
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--glass);
+  color: var(--text);
   cursor: pointer;
   box-shadow: var(--shadow)
 }
@@ -387,6 +388,38 @@ body {
   flex-wrap: wrap
 }
 
+.capability-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  align-items: flex-start
+}
+
+.capability-attrs {
+  display: flex;
+  gap: .25rem;
+  flex-wrap: wrap;
+  margin-left: .2rem
+}
+
+.attr-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 .35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  background: rgba(37, 99, 235, 0.06);
+  font-size: .7rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace
+}
+
+[data-theme="dark"] .attr-tag {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.1)
+}
+
 .pad {
   padding: 0 .9rem .9rem
 }
@@ -506,6 +539,15 @@ body {
 @media (max-width: 700px) {
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .btn span {
+    display: none;
+  }
+
+  .btn {
+    padding: .4rem;
+    gap: 0;
   }
 }
 

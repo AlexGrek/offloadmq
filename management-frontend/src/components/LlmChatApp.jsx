@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Send, ImagePlus, X } from 'lucide-react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
+import ModelSelector from './ModelSelector';
+import AttributeTag from './AttributeTag';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -213,12 +215,7 @@ const LlmChatApp = ({ apiKey }) => {
       <div style={styles.header}>
         <div style={styles.modelRow}>
           <label style={styles.label}>Model:</label>
-          <input
-            type="text"
-            value={model}
-            onChange={e => setModel(e.target.value)}
-            style={styles.modelInput}
-          />
+          <ModelSelector model={model} setModel={setModel} capabilities={capabilities} />
           <button onClick={handleClear} style={styles.clearBtn} title="Clear conversation">
             <Trash2 size={16} />
           </button>
@@ -237,7 +234,7 @@ const LlmChatApp = ({ apiKey }) => {
                   {modelName}
                 </a>
                 {attrs.map(attr => (
-                  <span key={attr} style={{ fontSize: '9px', background: 'var(--glass)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 4px', color: 'var(--muted)' }}>{attr}</span>
+                  <AttributeTag key={attr} attr={attr} inline={true} />
                 ))}
               </span>
             );

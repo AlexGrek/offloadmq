@@ -19,9 +19,9 @@ import webbrowser
 # Uvicorn and other libs expect writable streams with .isatty(), so redirect
 # to os.devnull before any imports that touch logging.
 if sys.stdout is None:
-    sys.stdout = open(os.devnull, "w")
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
 if sys.stderr is None:
-    sys.stderr = open(os.devnull, "w")
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 # ── Bootstrap ──────────────────────────────────────────────────────────────────
 # When frozen by PyInstaller --onefile, code/data live in a temp dir (_MEIPASS)

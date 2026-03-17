@@ -1,6 +1,7 @@
 import { Trash2 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
+import ModelSelector from './ModelSelector';
 
 // Main pipeline application component
 const StreamingLLMApp = ({ apiKey }) => {
@@ -204,28 +205,8 @@ const StreamingLLMApp = ({ apiKey }) => {
         <div style={styles.content}>
             <div style={styles.form}>
                 <div style={styles.formGroup}>
-                    <label htmlFor="model" style={styles.label}>Model:</label>
-                    <input
-                        id="model"
-                        type="text"
-                        value={model}
-                        onChange={(e) => setModel(e.target.value)}
-                        style={styles.input}
-                    />
-                    <p style={{ lineHeight: 'normal', display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
-                        {capabilities.map(cap => {
-                            const modelName = stripCapabilityAttrs(cap).replace(/^llm\./, '');
-                            const attrs = parseCapabilityAttrs(cap);
-                            return (
-                                <span key={cap} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                    <a style={{ fontSize: 'x-small' }} href="#" onClick={(e) => { e.preventDefault(); setModel(modelName); }}>{modelName}</a>
-                                    {attrs.map(attr => (
-                                        <span key={attr} style={{ fontSize: '9px', background: 'var(--glass)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 4px', color: 'var(--muted)' }}>{attr}</span>
-                                    ))}
-                                </span>
-                            );
-                        })}
-                    </p>
+                    <label style={styles.label}>Model:</label>
+                    <ModelSelector model={model} setModel={setModel} capabilities={capabilities} />
                 </div>
 
                 <div style={styles.formGroup}>

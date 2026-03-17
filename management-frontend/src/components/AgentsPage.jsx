@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useCallback, useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
-import { apiFetch, fmtDate } from "../utils";
+import { apiFetch, fmtDate, stripCapabilityAttrs, parseCapabilityAttrs } from "../utils";
 import { RefreshCw } from "lucide-react";
 import Banner from "./Banner";
 import Chip from "./Chip";
 import ExpandableDeleteButton from "./ExpandableDeleteButton";
+import AttributeTag from "./AttributeTag";
 
 function AgentsPage() {
     const [agents, setAgents] = useState([]);
@@ -120,7 +121,24 @@ function AgentsPage() {
                                                 </div>
                                                 <div>
                                                     <div className="section-title">Capabilities</div>
-                                                    <div className="chips-wrap">{(a.capabilities || []).map((c, i) => (<Chip key={i}>{c}</Chip>))}</div>
+                                                    <div className="chips-wrap">
+                                                        {(a.capabilities || []).map((c, i) => {
+                                                            const base = stripCapabilityAttrs(c);
+                                                            const attrs = parseCapabilityAttrs(c);
+                                                            return (
+                                                                <div key={i} className="capability-wrapper">
+                                                                    <Chip>{base}</Chip>
+                                                                    {attrs.length > 0 && (
+                                                                        <div className="capability-attrs">
+                                                                            {attrs.map((attr, j) => (
+                                                                                <AttributeTag key={j} attr={attr} />
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </motion.div>

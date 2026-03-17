@@ -20,6 +20,13 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# ── Ensure UTF-8 output on Windows (cp1252 can't encode emojis in LLM output) ─
+if sys.platform == "win32":
+    for _stream in ("stdout", "stderr"):
+        _s = getattr(sys, _stream, None)
+        if _s is not None and hasattr(_s, "reconfigure"):
+            _s.reconfigure(errors="replace")
+
 # ── Bootstrap: run from offload-agent directory ───────────────────────────────
 # When frozen (PyInstaller), the entrypoint already set cwd to the exe directory
 # for config files and added _MEIPASS to sys.path for imports. Don't override.
@@ -61,6 +68,7 @@ class _BufHandler(logging.Handler):
 # ── System scan cache ──────────────────────────────────────────────────────────
 _scan: Dict[str, Any] = {"caps": [], "sysinfo": {}, "scanning": False}
 _scan_lock = threading.Lock()
+_scan_done = threading.Event()  # set once the first scan completes
 
 
 def _run_scan() -> None:
@@ -91,6 +99,7 @@ def _run_scan() -> None:
         _scan["caps"] = caps
         _scan["sysinfo"] = info
         _scan["scanning"] = False
+    _scan_done.set()
     _log(f"[scan] Done — {len(caps)} capability(s) available: {', '.join(caps) if caps else 'none'}")
 
 
@@ -169,6 +178,9 @@ def start_agent() -> str:
     cfg = load_config()
     server = cfg.get("server", "").strip()
     api_key = cfg.get("apiKey", "").strip()
+    # Wait for the capability scan to finish so we don't register with 0 caps
+    if not _scan_done.wait(timeout=120):
+        _log("[webui] WARNING: capability scan timed out after 120s, continuing with whatever was found")
     # Fall back to all detected caps if the user hasn't made a selection yet
     with _scan_lock:
         detected = list(_scan["caps"])

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
+import ModelSelector from './ModelSelector';
 
 // Main application component
 const LlmApp = ({ apiKey }) => {
@@ -93,29 +94,8 @@ const LlmApp = ({ apiKey }) => {
     <div style={styles.content}>
       <form onSubmit={handleSubmit} style={styles.form}>
         <div style={styles.formGroup}>
-          <label htmlFor="model" style={styles.label}>Model:</label>
-          <input
-            id="model"
-            type="text"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            style={styles.input}
-          />
-          <p style={{ lineHeight: 'normal', display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
-            {capabilities.map(cap => {
-              const baseCap = stripCapabilityAttrs(cap);
-              const modelName = baseCap.replace(/^llm\./, '');
-              const attrs = parseCapabilityAttrs(cap);
-              return (
-                <span key={cap} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexWrap: 'wrap' }}>
-                  <a style={{ fontSize: 'x-small' }} href="#" onClick={(e) => { e.preventDefault(); setModel(modelName); }}>{modelName}</a>
-                  {attrs.map(attr => (
-                    <span key={attr} style={{ fontSize: '9px', background: 'var(--glass)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 4px', color: 'var(--muted)' }}>{attr}</span>
-                  ))}
-                </span>
-              );
-            })}
-          </p>
+          <label style={styles.label}>Model:</label>
+          <ModelSelector model={model} setModel={setModel} capabilities={capabilities} />
         </div>
 
         <div style={styles.formGroup}>
