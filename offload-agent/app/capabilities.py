@@ -56,35 +56,35 @@ def check_bash() -> CapResult:
 def check_docker() -> CapResult:
     """Check docker availability.
 
-    No executor is registered yet — this check is informational only and is
-    intentionally excluded from _CHECKS. Add it to _CHECKS once a docker
-    executor is implemented.
+    Detects if docker binary is available and daemon is running by executing 'docker ps'.
+    If both are available, returns all three docker capability variants.
     """
     import subprocess
 
     path = shutil.which("docker")
     if not path:
-        return CapResult([], False, "docker.*", "docker not found in PATH")
+        return CapResult([], False, "docker.any, docker.python-slim, docker.node", "docker not found in PATH")
     try:
         r = subprocess.run(
-            ["docker", "info"], capture_output=True, timeout=5
+            ["docker", "ps"], capture_output=True, timeout=5
         )
         if r.returncode == 0:
             return CapResult(
-                [], True, "docker.*",
-                f"docker found at {path} and daemon is running (no executor registered yet)",
+                ["docker.any", "docker.python-slim", "docker.node"], True,
+                "docker.any, docker.python-slim, docker.node",
+                f"docker found at {path} and daemon is running",
             )
         return CapResult(
-            [], False, "docker.*",
+            [], False, "docker.any, docker.python-slim, docker.node",
             f"docker found at {path} but daemon is not running (exit {r.returncode})",
         )
     except subprocess.TimeoutExpired:
         return CapResult(
-            [], False, "docker.*",
-            f"docker found at {path} but 'docker info' timed out",
+            [], False, "docker.any, docker.python-slim, docker.node",
+            f"docker found at {path} but 'docker ps' timed out",
         )
     except Exception as e:
-        return CapResult([], False, "docker.*", f"docker check failed: {e}")
+        return CapResult([], False, "docker.any, docker.python-slim, docker.node", f"docker check failed: {e}")
 
 
 def check_kokoro() -> CapResult:
@@ -150,10 +150,10 @@ def check_ollama() -> CapResult:
 # ---------------------------------------------------------------------------
 # Ordered list of active checks
 # ---------------------------------------------------------------------------
-# Add check_docker here once a docker executor is implemented.
 _CHECKS: List[Callable[[], CapResult]] = [
     check_debug,
     check_bash,
+    check_docker,
     check_kokoro,
     check_ollama,
 ]

@@ -274,10 +274,15 @@ Saved to `.offload-agent.json` in the working directory:
 | Capability      | Description                     |
 |-----------------|---------------------------------|
 | `debug.echo`    | Echo task payload back           |
-| `shell.bash`    | Execute bash scripts             |
+| `shell.bash`    | Execute bash scripts with streaming output |
 | `shellcmd.bash` | Execute single shell commands    |
+| `docker.any`    | Run any Docker image             |
+| `docker.python-slim` | Run `python:*-slim*` images only |
+| `docker.node`   | Run `node:*` images only         |
 | `tts.kokoro`    | Text-to-speech via Kokoro        |
 | `llm.*`         | LLM inference (auto-detected via Ollama) |
+
+See [docs/agent-capabilities.md](../../docs/agent-capabilities.md) for detailed capability documentation, payload schemas, and usage examples.
 
 ---
 

@@ -14,6 +14,7 @@ from .exec.tts import *
 from .exec.debug import *
 from .exec.shell import *
 from .exec.shellcmd import *
+from .exec.docker import *
 from .data.updn import process_data_download
 from .data.fs_utils import *
 
@@ -104,6 +105,9 @@ def route_executor(cap: str):
     """Pick function based on capability string."""
     if cap.startswith("llm."):
         return execute_llm_query
+
+    if cap.startswith("docker."):
+        return execute_docker_run
 
     return {
         "debug.echo": execute_debug_echo,
