@@ -1,11 +1,18 @@
-import React, { useEffect, useMemo, useCallback, useState } from "react";
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useCallback, useState } from "react";
 import { apiFetch } from "../utils";
 import { RefreshCw } from "lucide-react";
 import Banner from "./Banner";
-import Chip from "./Chip";
 import ExpandableDeleteButton from "./ExpandableDeleteButton";
 import TaskDataRenderer from "./TaskDataRenderer";
+
+function filterUnassigned(data) {
+    if (!data) return data;
+    const result = {};
+    for (const [cat, val] of Object.entries(data)) {
+        result[cat] = { assigned: [], unassigned: val?.unassigned || [] };
+    }
+    return result;
+}
 
 function TasksPage() {
     const [data, setData] = useState([]);
@@ -57,7 +64,7 @@ function TasksPage() {
             {loading ? (
                 <div className="loader" aria-busy="true">Loading…</div>
             ) : (
-                <pre>{JSON.stringify(data, null, 4)}</pre>
+                <TaskDataRenderer data={newOnly ? filterUnassigned(data) : data} />
             )}
         </div>
     );
