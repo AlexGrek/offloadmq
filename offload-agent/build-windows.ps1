@@ -45,6 +45,19 @@ try {
     & $PipExe install --quiet pyinstaller
     if ($LASTEXITCODE -ne 0) { throw "pip install pyinstaller failed" }
 
+    $Npm = Get-Command npm -ErrorAction SilentlyContinue
+    if (-not $Npm) { throw "npm is required to build frontend/dist (install Node.js)" }
+    Write-Host "Building web UI (frontend/dist) ..."
+    Push-Location (Join-Path $ScriptDir "frontend")
+    try {
+        npm ci
+        if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+        npm run build
+        if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+    } finally {
+        Pop-Location
+    }
+
     # ── 3. Build ───────────────────────────────────────────────────────────
     Write-Host "Building offload-agent.exe ..."
     & $PyExe -m PyInstaller `
@@ -55,6 +68,7 @@ try {
         --paths "." `
         --add-data "app;app" `
         --add-data "webui.py;." `
+        --add-data "frontend\dist;frontend/dist" `
         --hidden-import "pystray._win32" `
         --hidden-import "webui" `
         --hidden-import "app" `

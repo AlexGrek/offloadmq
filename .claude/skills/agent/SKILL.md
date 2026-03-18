@@ -16,7 +16,9 @@ The offload-agent is a **standalone Python daemon** that polls a remote OffloadM
 | `offload-agent.py` | CLI dispatcher — routes to `webui`, `cli`, `install` subcommands |
 | `offload-agent-mac.py` | macOS `.app` entry — runs webui in daemon thread + pystray tray icon on main thread |
 | `offload-agent-win.pyw` | Windows `.exe` wrapper (no console window) |
-| `webui.py` | FastAPI dashboard — config UI, agent control, live logs |
+| `webui.py` | FastAPI backend — serves React SPA from `frontend/dist`, JSON APIs |
+| `webui_backup.py` | Legacy single-file HTML dashboard (reference) |
+| `frontend/` | Vite + React + Tailwind SPA for the web dashboard |
 
 `SCRIPT_DIR = Path(__file__).parent.resolve(); os.chdir(SCRIPT_DIR)` is set at startup — all relative paths (config file, venv) are anchored to the agent directory.
 
@@ -77,9 +79,9 @@ def save_config(cfg: Dict[str, Any]) -> None:
 
 A config is **considered unconfigured** (treated same as missing) if `server` or `apiKey` are absent or blank — even if the file exists.
 
-### WebUI (FastAPI)
+### WebUI (FastAPI + React)
 
-`webui.py` is a **single-file FastAPI app** — HTML, CSS, and JS are embedded as string constants (`_CSS`, `_JS`). No template engine, no static files.
+`webui.py` serves the built SPA from `frontend/dist` at `/` and exposes `/api/state`, `/agent/status`, `/agent/logs`, and form POST endpoints (JSON response when `Accept: application/json`). Run `cd frontend && npm ci && npm run build` before `make webui` or PyInstaller; `make build` does this automatically.
 
 **Module-level shared state** (protected by locks):
 ```python

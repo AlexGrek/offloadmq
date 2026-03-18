@@ -33,6 +33,14 @@ echo "Installing dependencies ..."
 echo "Installing PyInstaller ..."
 "$PIP" install --quiet pyinstaller
 
+# ── 2b. Web UI (Vite) ───────────────────────────────────────────────────────
+if ! command -v npm >/dev/null 2>&1; then
+    echo "ERROR: npm is required to build frontend/dist (install Node.js)." >&2
+    exit 1
+fi
+echo "Building web UI (frontend/dist) ..."
+( cd "$SCRIPT_DIR/frontend" && npm ci && npm run build )
+
 # ── 3. Build .app bundle ────────────────────────────────────────────────────
 echo "Building Offload Agent.app ..."
 "$PYTHON" -m PyInstaller \
@@ -43,6 +51,7 @@ echo "Building Offload Agent.app ..."
     --paths "." \
     --add-data "app:app" \
     --add-data "webui.py:." \
+    --add-data "frontend/dist:frontend/dist" \
     --hidden-import "pystray._darwin" \
     --hidden-import "webui" \
     --hidden-import "app" \

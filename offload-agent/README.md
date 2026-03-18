@@ -49,16 +49,21 @@ offload-agent cli serve --help
 
 ### `webui` — web dashboard
 
-Starts a FastAPI web UI on port 8080 (default). From the UI you can:
+The UI is a **React** single-page app (Vite, JSX, Tailwind) under `frontend/`. The Python process serves `frontend/dist` at `/` and exposes JSON/form APIs (`/api/state`, `/agent/*`, etc.). The previous server-rendered version is kept as `webui_backup.py` for reference.
+
+From the UI you can:
 
 - Configure server URL and API key
 - View detected system info (OS, RAM, GPU) and Ollama models — rescanned on demand
-- Select capabilities
+- Select capabilities and manage ImgGen / ComfyUI workflows
 - Toggle **Autostart on launch** — agent starts automatically when the webui starts (only when `--agent-autostart` is also passed)
 - Start / stop the agent and watch live logs
 - Install as a systemd service (Linux only, binary must be installed first)
+- Windows / macOS login startup toggles when running a frozen app
 
-Requires web dependencies: `fastapi`, `uvicorn[standard]`, `python-multipart`.
+Requires: **Node.js + npm** (to build `frontend/dist`), web Python deps `fastapi`, `uvicorn[standard]`, `python-multipart`.
+
+**Development:** run the API on port 8080 (`python offload-agent.py webui --port 8080`) and in another terminal `cd frontend && npm run dev` (Vite proxies API routes to 8080).
 
 ```bash
 offload-agent webui
@@ -191,8 +196,10 @@ make webui      # start web UI
 
 #### Linux (CLI binary)
 
+Requires **Node.js** (npm runs `frontend` production build before PyInstaller).
+
 ```bash
-make build          # build dist/offload-agent
+make build          # npm ci + vite build + PyInstaller -> dist/offload-agent
 make rebuild        # clean + build
 ```
 
@@ -207,7 +214,7 @@ make rebuild-client # clean + build
 
 A shell build script produces a self-contained `Offload Agent.app` with a menu-bar tray icon.
 
-Prerequisites: Python 3.10+ on PATH.
+Prerequisites: Python 3.10+ and **Node.js** (npm) on PATH.
 
 ```bash
 cd offload-agent
@@ -229,7 +236,7 @@ The app uses `LSUIElement = true` in its `Info.plist`, so it does not appear in 
 A PowerShell build script produces a standalone `.exe` that runs the web UI
 without a console window and opens the browser automatically on launch.
 
-Prerequisites: Python 3.10+ on PATH.
+Prerequisites: Python 3.10+ and **Node.js** (npm) on PATH.
 
 ```powershell
 cd offload-agent

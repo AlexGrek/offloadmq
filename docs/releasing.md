@@ -46,7 +46,7 @@ The GitHub Actions workflow (`.github/workflows/build-client.yml`) is configured
 
 When a `release*` tag is pushed:
 
-1. **Linux build**: Python offload-agent is compiled to a single-file executable using PyInstaller
+1. **Linux build**: The agent web UI is built with npm (`offload-agent/frontend`), then Python offload-agent is compiled to a single-file executable using PyInstaller (bundles `frontend/dist`)
 2. **Artifact upload**: The executable is uploaded as a GitHub Release artifact and attached to the release page
 3. **Release management**: Use GitHub's web interface to edit release notes and publish
 

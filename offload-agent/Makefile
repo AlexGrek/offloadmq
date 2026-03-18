@@ -5,6 +5,10 @@ venv:
 	python3 -m venv venv
 	bash -c "source venv/bin/activate && pip3 install -r requirements.txt"
 
+# Production web UI bundle (required for packaged agent and make webui)
+frontend-build:
+	cd frontend && npm ci && npm run build
+
 register: venv
 	bash -c "source venv/bin/activate && python offload-agent.py cli register --server $(SERVER) --key $(KEY)"
 
@@ -17,26 +21,27 @@ sysinfo: venv
 ollama: venv
 	bash -c "source venv/bin/activate && python offload-agent.py cli ollama"
 
-# The build target creates the standalone binary using PyInstaller
-build: venv
+# Standalone binary: rebuilds frontend then PyInstaller
+build: venv frontend-build
 	@echo "Installing PyInstaller..."
 	bash -c "source venv/bin/activate && pip install pyinstaller --quiet"
 	@echo "Building binary with PyInstaller..."
-	bash -c "source venv/bin/activate && python -m PyInstaller --onefile --name offload-agent --add-data 'app:app' --add-data 'webui.py:.' offload-agent.py"
+	bash -c "source venv/bin/activate && python -m PyInstaller --onefile --name offload-agent \
+		--add-data 'app:app' \
+		--add-data 'webui.py:.' \
+		--add-data 'frontend/dist:frontend/dist' \
+		offload-agent.py"
 	@echo ""
 	@echo "Build complete. The binary is located in the 'dist' directory."
 
-# rebuild: clean up previous artifacts then build fresh
 rebuild: clean build
 
-# The clean target removes all generated build files and the binary
 clean:
 	@echo "Cleaning up build artifacts..."
 	rm -rf build/ dist/ offload-agent.spec
 	@echo "Cleanup complete."
 
-
-webui: venv
+webui: venv frontend-build
 	bash -c "source venv/bin/activate && python offload-agent.py webui"
 
-.PHONY: sysinfo register ollama build rebuild clean webui
+.PHONY: sysinfo register ollama build rebuild clean webui frontend-build

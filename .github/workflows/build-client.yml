@@ -14,6 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: offload-agent/frontend/package-lock.json
+
+      - name: Build web UI
+        working-directory: offload-agent/frontend
+        run: npm ci && npm run build
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -34,6 +45,7 @@ jobs:
             --name offload-agent \
             --add-data "app:app" \
             --add-data "webui.py:." \
+            --add-data "frontend/dist:frontend/dist" \
             offload-agent.py
 
       - name: Upload artifact
