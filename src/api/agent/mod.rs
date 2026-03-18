@@ -192,9 +192,16 @@ pub async fn download_bucket_file(
         .await
         .map_err(AppError::Internal)?;
 
+    // Use only the base filename in Content-Disposition (RFC 6266 — path
+    // separators don't belong in the filename parameter).  Agents use the
+    // original_name from the bucket stat response to reconstruct the full path.
+    let base_name = file_meta.original_name
+        .rsplit('/')
+        .next()
+        .unwrap_or(&file_meta.original_name);
     let disposition = format!(
         "attachment; filename=\"{}\"",
-        file_meta.original_name.replace('"', "\\\"")
+        base_name.replace('"', "\\\"")
     );
     let response = Response::builder()
         .header(header::CONTENT_TYPE, "application/octet-stream")

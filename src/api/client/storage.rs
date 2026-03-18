@@ -120,8 +120,8 @@ pub async fn upload_file(
 
         let original_name = field
             .file_name()
-            .unwrap_or("unnamed")
-            .to_string();
+            .map(sanitize_upload_path)
+            .unwrap_or_else(|| "unnamed".to_string());
 
         // Read all bytes (Content-Length is advisory only; we recheck below).
         let data = field
@@ -291,6 +291,41 @@ pub async fn delete_bucket(
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/// Sanitize a filename/path supplied by the client in a multipart upload.
+///
+/// Rules:
+/// - **Absolute system paths** (`/foo/bar`, `C:\foo\bar`) → keep only the base
+///   filename, discarding the directory prefix that belongs to the client's OS.
+/// - **Relative paths** (`data/images/photo.jpg`) → preserve the subdirectory
+///   structure so agents can reconstruct it in their working directory.
+/// - `..` and `.` components are stripped for path-traversal safety.
+/// - `\` is normalised to `/` so agents always receive forward-slash paths.
+fn sanitize_upload_path(name: &str) -> String {
+    // Detect absolute system paths:
+    //   Unix:    starts with '/' or '\'
+    //   Windows: drive letter pattern  X:\ or X:/
+    let is_absolute = name.starts_with('/')
+        || name.starts_with('\\')
+        || matches!(name.as_bytes(), [_, b':', b'/' | b'\\', ..]);
+
+    if is_absolute {
+        // Strip the system path prefix; keep only the final filename component.
+        name.rsplit(['/', '\\']).next().unwrap_or("unnamed").to_string()
+    } else {
+        // Relative path — normalise separators and remove unsafe components.
+        let normalized = name.replace('\\', "/");
+        let components: Vec<&str> = normalized
+            .split('/')
+            .filter(|c| !c.is_empty() && *c != "." && *c != "..")
+            .collect();
+        if components.is_empty() {
+            "unnamed".to_string()
+        } else {
+            components.join("/")
+        }
+    }
+}
 
 fn require_own_bucket(
     state: &AppState,

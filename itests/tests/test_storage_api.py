@@ -144,6 +144,8 @@ class TestFileUpload:
 
         data = response.json()
         assert "file_uid" in data
+        assert "original_name" in data
+        assert data["original_name"] == "test.txt"
         assert "sha256" in data
         assert data["size"] == 11  # "Hello World" is 11 bytes
 
@@ -168,6 +170,7 @@ class TestFileUpload:
         assert "files" in data
         assert len(data["files"]) == 1
         assert data["files"][0]["file_uid"] == file_uid
+        assert data["files"][0]["original_name"] == "test.txt"
         assert data["files"][0]["size"] == 11
 
     def test_upload_multiple_files(self):
@@ -210,6 +213,76 @@ class TestFileUpload:
 
         data = response.json()
         assert data["size"] == 1024 * 1024
+
+    def test_upload_preserves_filename(self):
+        """Test that original_name is stored and returned correctly."""
+        bucket_uid = self._create_bucket()
+        headers = {"X-API-Key": API_KEY}
+        url = f"{SERVER_URL}/api/storage/bucket/{bucket_uid}/upload"
+
+        files = {"file": ("myreport.pdf", b"PDF content here")}
+        response = requests.post(url, headers=headers, files=files, timeout=10)
+        assert response.status_code == 201
+
+        data = response.json()
+        assert data["original_name"] == "myreport.pdf"
+
+        # Confirm stat also reflects the correct name
+        stat_url = f"{SERVER_URL}/api/storage/bucket/{bucket_uid}/stat"
+        stat = requests.get(stat_url, headers=headers, timeout=10).json()
+        assert stat["files"][0]["original_name"] == "myreport.pdf"
+
+    def test_upload_preserves_relative_subdirectory_path(self):
+        """Relative paths like 'data/images/photo.jpg' are stored intact so agents
+        can recreate the directory structure in their working directory."""
+        bucket_uid = self._create_bucket()
+        headers = {"X-API-Key": API_KEY}
+        url = f"{SERVER_URL}/api/storage/bucket/{bucket_uid}/upload"
+
+        files = {"file": ("data/images/photo.jpg", b"fake image bytes")}
+        response = requests.post(url, headers=headers, files=files, timeout=10)
+        assert response.status_code == 201
+        assert response.json()["original_name"] == "data/images/photo.jpg"
+
+        # Confirm stat echoes the same path
+        stat = requests.get(
+            f"{SERVER_URL}/api/storage/bucket/{bucket_uid}/stat",
+            headers=headers, timeout=10
+        ).json()
+        assert stat["files"][0]["original_name"] == "data/images/photo.jpg"
+
+    def test_upload_strips_absolute_path_prefix_from_filename(self):
+        """Absolute system paths sent by some clients are stripped to the base filename."""
+        bucket_uid = self._create_bucket()
+        headers = {"X-API-Key": API_KEY}
+        url = f"{SERVER_URL}/api/storage/bucket/{bucket_uid}/upload"
+
+        # Simulate a Windows client sending a full absolute path
+        files = {"file": (r"C:\Users\alice\documents\report.docx", b"doc content")}
+        response = requests.post(url, headers=headers, files=files, timeout=10)
+        assert response.status_code == 201
+        assert response.json()["original_name"] == "report.docx"
+
+        # Simulate a Unix client sending a full absolute path
+        bucket_uid2 = self._create_bucket()
+        url2 = f"{SERVER_URL}/api/storage/bucket/{bucket_uid2}/upload"
+        files2 = {"file": ("/home/alice/data/archive.tar.gz", b"tar content")}
+        response2 = requests.post(url2, headers=headers, files=files2, timeout=10)
+        assert response2.status_code == 201
+        assert response2.json()["original_name"] == "archive.tar.gz"
+
+    def test_upload_sanitizes_dotdot_in_path(self):
+        """Path traversal components ('..') are stripped for security."""
+        bucket_uid = self._create_bucket()
+        headers = {"X-API-Key": API_KEY}
+        url = f"{SERVER_URL}/api/storage/bucket/{bucket_uid}/upload"
+
+        files = {"file": ("inputs/../../etc/passwd", b"not really")}
+        response = requests.post(url, headers=headers, files=files, timeout=10)
+        assert response.status_code == 201
+        # '..'' components are removed; only safe segments remain
+        assert ".." not in response.json()["original_name"]
+        assert response.json()["original_name"] == "inputs/etc/passwd"
 
     def test_upload_exceeds_bucket_size(self):
         """Test that uploads exceeding bucket size are rejected."""
