@@ -63,13 +63,17 @@ class TaskProgressReport(BaseModel):
     task_id: TaskId = Field(..., alias="id")
     stage: Optional[str]
     log_update: Optional[str]
+    status: Optional[str] = None
 
     class Config:
         validate_by_name = True
 
     def to_wire(self) -> Dict[str, Any]:
-        return {
-            "id": self.task_id.to_wire(),
-            "stage": str(self.stage),
-            "logUpdate": str(self.log_update),
-        }
+        wire: Dict[str, Any] = {"id": self.task_id.to_wire()}
+        if self.stage is not None:
+            wire["stage"] = self.stage
+        if self.log_update is not None:
+            wire["logUpdate"] = self.log_update
+        if self.status is not None:
+            wire["status"] = self.status
+        return wire

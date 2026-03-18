@@ -35,8 +35,25 @@ def report_result(http: HttpClient, report: TaskResultReport) -> bool:
         typer.echo(f"Failed to report task result: {e}")
         return False
     
+def report_starting(http: HttpClient, task_id: TaskId) -> bool:
+    """Signal to the server that the agent has started working on the task."""
+    q = task_id.quoted()
+    report = TaskProgressReport(id=task_id, stage="starting", log_update=None, status="Starting")
+    try:
+        resp = http.post(
+            "private", "agent", "task", "progress", q.cap, q.id,
+            json_body=report.to_wire(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return True
+    except requests.RequestException as e:
+        typer.echo(f"Failed to report starting status: {e}")
+        return False
+
+
 def report_progress(http: HttpClient, log: Optional[str], stage: Optional[str], task_id: TaskId) -> bool:
-    # POST /private/agent/task/resolve/{cap}/{id}
+    # POST /private/agent/task/progress/{cap}/{id}
     print("Sending partial logs: ", log)
     q = task_id.quoted()
     report = TaskProgressReport(id=task_id, stage=stage, log_update=log)

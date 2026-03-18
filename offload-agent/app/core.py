@@ -17,6 +17,7 @@ from .exec.shellcmd import *
 from .exec.docker import *
 from .data.updn import process_data_download
 from .data.fs_utils import *
+from .exec.helpers import report_starting
 
 
 # -----------------------------------------
@@ -185,6 +186,7 @@ def handle_task(http: HttpClient, task: dict):
         return
 
     data_path = pick_directory(task_id)
+    report_starting(http, task_id)
 
     # Download files from buckets
     if file_buckets:

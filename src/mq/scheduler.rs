@@ -93,7 +93,7 @@ pub async fn update_urgent_task<'a>(
     task_id: TaskId,
 ) -> Result<bool, AppError> {
     store
-        .update_task(&task_id, report.log_update, report.stage)
+        .update_task(&task_id, report.log_update, report.stage, report.status)
         .await
 }
 
@@ -129,6 +129,12 @@ pub async fn update_non_urgent_task<'a>(
     got.append_log(report.log_update);
     if report.stage.is_some() {
         got.stage = report.stage
+    }
+    if let Some(new_status) = report.status {
+        match new_status {
+            TaskStatus::Starting | TaskStatus::Running => got.change_status(new_status),
+            _ => return Err(AppError::BadRequest(format!("Status {:?} cannot be set via progress update", new_status))),
+        }
     }
     store.update_assigned(&got)?;
     Ok(())

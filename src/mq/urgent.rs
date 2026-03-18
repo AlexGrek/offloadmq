@@ -144,6 +144,7 @@ impl UrgentTaskStore {
         task_id: &TaskId,
         log: Option<String>,
         stage: Option<String>,
+        status: Option<TaskStatus>,
     ) -> Result<bool, AppError> {
         let mut tasks = self.tasks.write().await;
         if let Some(entry) = tasks.get_mut(task_id) {
@@ -153,6 +154,12 @@ impl UrgentTaskStore {
             task.append_log(log);
             if let Some(stage_text) = stage {
                 task.change_stage(&stage_text);
+            }
+            if let Some(new_status) = status {
+                match new_status {
+                    TaskStatus::Starting | TaskStatus::Running => task.change_status(new_status),
+                    _ => return Err(AppError::BadRequest(format!("Status {:?} cannot be set via progress update", new_status))),
+                }
             }
             return Ok(true);
         }

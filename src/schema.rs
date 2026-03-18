@@ -319,4 +319,7 @@ pub struct TaskUpdate {
     /// object if it failed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_update: Option<String>,
+    /// Optional status transition (e.g. Starting, Running).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<TaskStatus>,
 }
