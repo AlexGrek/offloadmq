@@ -91,6 +91,9 @@ pub struct AgentRegistrationRequest {
     /// Information about the agent's host system.
     pub system_info: SystemInfo,
     pub api_key: String,
+    /// Optional application version string (e.g. commit count).
+    #[serde(default)]
+    pub app_version: Option<String>,
 }
 
 /// Body of the request for an agent to update itself.
@@ -105,6 +108,9 @@ pub struct AgentUpdateRequest {
     pub capacity: u32,
     /// Information about the agent's host system.
     pub system_info: SystemInfo,
+    /// Optional application version string (e.g. commit count).
+    #[serde(default)]
+    pub app_version: Option<String>,
 }
 
 /// Body of management request to create API key

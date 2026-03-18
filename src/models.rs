@@ -148,6 +148,8 @@ pub struct Agent {
     pub tier: u8,
     pub capacity: u32,
     pub system_info: SystemInfo,
+    #[serde(default)]
+    pub app_version: Option<String>,
 }
 
 impl Agent {
@@ -178,6 +180,7 @@ impl From<AgentRegistrationRequest> for Agent {
             tier: request.tier,
             capacity: request.capacity,
             system_info: request.system_info,
+            app_version: request.app_version,
         }
     }
 }

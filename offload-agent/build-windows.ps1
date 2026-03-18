@@ -58,6 +58,12 @@ try {
         Pop-Location
     }
 
+    # ── 2c. Inject app version ─────────────────────────────────────────────
+    $GitCount = & git -C $ScriptDir rev-list --count HEAD 2>$null
+    $AppVersion = if ($GitCount -and $LASTEXITCODE -eq 0) { $GitCount.Trim() } else { "dev" }
+    Set-Content -Path (Join-Path $ScriptDir "app\_version.py") -Value "APP_VERSION = '$AppVersion'"
+    Write-Host "Injected version: $AppVersion"
+
     # ── 3. Build ───────────────────────────────────────────────────────────
     Write-Host "Building offload-agent.exe ..."
     & $PyExe -m PyInstaller `
