@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 import ImgGenModelSelector from './ImgGenModelSelector';
+import ErrorBoundary from './ErrorBoundary';
 import { Upload, X } from 'lucide-react';
 
 const Img2ImgApp = ({ apiKey, addDevEntry }) => {
@@ -27,10 +28,23 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
       try {
         const data = await fetchOnlineCapabilities();
         if (Array.isArray(data)) {
-          setCapabilities(data.filter((cap) => stripCapabilityAttrs(cap).startsWith("imggen.")));
+          const imggenCaps = data.filter((cap) => {
+            try {
+              return typeof cap === 'string' && stripCapabilityAttrs(cap).startsWith("imggen.");
+            } catch (e) {
+              console.warn('Error filtering capability:', cap, e);
+              return false;
+            }
+          });
+          setCapabilities(imggenCaps);
+        } else {
+          console.warn('Expected array of capabilities, got:', data);
+          setCapabilities([]);
         }
       } catch (err) {
+        console.error('Failed to fetch capabilities:', err);
         setError(`Failed to fetch capabilities: ${err.message}`);
+        setCapabilities([]);
       }
     };
 
@@ -205,7 +219,8 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
   };
 
   return (
-    <div style={styles.content}>
+    <ErrorBoundary>
+      <div style={styles.content}>
       <form onSubmit={handleSubmit} style={styles.form}>
         <div style={styles.formGroup}>
           <label style={styles.label}>Workflow:</label>
@@ -337,6 +352,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         )}
       </div>
     </div>
+    </ErrorBoundary>
   );
 };
 

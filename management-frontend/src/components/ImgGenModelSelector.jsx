@@ -4,6 +4,7 @@ import AttributeTag from './AttributeTag';
 
 const ImgGenModelSelector = ({ model, setModel, capabilities = [] }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [error, setError] = useState(null);
   const dropdownRef = useRef(null);
 
   // Close dropdown on outside click
@@ -19,10 +20,43 @@ const ImgGenModelSelector = ({ model, setModel, capabilities = [] }) => {
     }
   }, [dropdownOpen]);
 
-  const isEmpty = capabilities.length === 0;
+  // Defensive checks for capabilities array
+  let validCapabilities = [];
+  try {
+    if (Array.isArray(capabilities)) {
+      validCapabilities = capabilities.filter(cap => {
+        if (typeof cap !== 'string') return false;
+        if (!cap.startsWith('imggen.')) return false;
+        return true;
+      });
+    }
+  } catch (e) {
+    console.error('Error processing capabilities:', e);
+    setError(e.message);
+  }
+
+  const isEmpty = validCapabilities.length === 0;
+
   // For imggen, the model is the workflow name (e.g., "wan-2.1-outpaint")
-  const selectedCap = capabilities.find(cap => stripCapabilityAttrs(cap).replace(/^imggen\./, '') === model);
-  const selectedAttrs = selectedCap ? parseCapabilityAttrs(selectedCap) : [];
+  let selectedAttrs = [];
+  try {
+    const selectedCap = validCapabilities.find(cap => {
+      try {
+        const base = stripCapabilityAttrs(cap);
+        const workflow = base.replace(/^imggen\./, '');
+        return workflow === model;
+      } catch (e) {
+        console.warn('Error processing capability:', cap, e);
+        return false;
+      }
+    });
+    if (selectedCap) {
+      selectedAttrs = parseCapabilityAttrs(selectedCap) || [];
+    }
+  } catch (e) {
+    console.error('Error getting selected attributes:', e);
+    setError(e.message);
+  }
 
   return (
     <div style={styles.dropdownWrapper} ref={dropdownRef}>
@@ -52,41 +86,58 @@ const ImgGenModelSelector = ({ model, setModel, capabilities = [] }) => {
       </button>
       {dropdownOpen && (
         <div style={styles.dropdownMenu}>
-          {!isEmpty ? (
-            capabilities.map(cap => {
-              const workflowName = stripCapabilityAttrs(cap).replace(/^imggen\./, '');
-              const attrs = parseCapabilityAttrs(cap);
-              const isSelected = model === workflowName;
-              return (
-                <div
-                  key={cap}
-                  style={{
-                    ...styles.dropdownItem,
-                    backgroundColor: isSelected ? 'var(--primary)' : 'transparent',
-                    color: isSelected ? '#fff' : 'var(--text)',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--chip-bg)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                  onClick={() => {
-                    setModel(workflowName);
-                    setDropdownOpen(false);
-                  }}
-                >
-                  <span style={styles.itemContent}>
-                    <span>{workflowName}</span>
-                    {attrs.length > 0 && (
-                      <span style={styles.itemAttrs}>
-                        {attrs.map(attr => <AttributeTag key={attr} attr={attr} inline={true} />)}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              );
-            })
+          {error ? (
+            <div style={{ ...styles.dropdownItem, ...styles.emptyDropdown }}>
+              <div style={styles.errorIcon}>!</div>
+              <div style={styles.emptyTitle}>Error loading workflows</div>
+              <div style={styles.emptyHint}>{error}</div>
+            </div>
+          ) : !isEmpty ? (
+            validCapabilities.map(cap => {
+              try {
+                const base = stripCapabilityAttrs(cap);
+                const workflowName = base.replace(/^imggen\./, '');
+                const attrs = parseCapabilityAttrs(cap) || [];
+                const isSelected = model === workflowName;
+                return (
+                  <div
+                    key={cap}
+                    style={{
+                      ...styles.dropdownItem,
+                      backgroundColor: isSelected ? 'var(--primary)' : 'transparent',
+                      color: isSelected ? '#fff' : 'var(--text)',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--chip-bg)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                    onClick={() => {
+                      try {
+                        setModel(workflowName);
+                        setDropdownOpen(false);
+                      } catch (e) {
+                        console.error('Error setting model:', e);
+                        setError(e.message);
+                      }
+                    }}
+                  >
+                    <span style={styles.itemContent}>
+                      <span>{workflowName}</span>
+                      {attrs.length > 0 && (
+                        <span style={styles.itemAttrs}>
+                          {attrs.map(attr => <AttributeTag key={attr} attr={attr} inline={true} />)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              } catch (e) {
+                console.warn('Error rendering capability item:', cap, e);
+                return null;
+              }
+            }).filter(Boolean)
           ) : (
             <div style={{ ...styles.dropdownItem, ...styles.emptyDropdown }}>
               <div style={styles.emptyIcon}>?</div>
@@ -199,6 +250,18 @@ const styles = {
     justifyContent: 'center',
     fontSize: '16px',
     color: 'var(--muted)',
+    marginBottom: '4px',
+  },
+  errorIcon: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    border: '2px dashed var(--danger)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '16px',
+    color: 'var(--danger)',
     marginBottom: '4px',
   },
   emptyTitle: {
