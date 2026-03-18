@@ -208,12 +208,14 @@ def route_executor(cap: str):
     if cap.startswith("docker."):
         return execute_docker_run
 
+    if cap.startswith("imggen."):
+        return execute_imggen_comfyui
+
     return {
         "debug.echo": execute_debug_echo,
         "shell.bash": execute_shell_bash,
         "shellcmd.bash": execute_shellcmd_bash,
         "tts.kokoro": execute_kokoro_tts,
-        "imggen.comfyui": execute_imggen_comfyui,
     }.get(cap)
 
 
