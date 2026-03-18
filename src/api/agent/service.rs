@@ -70,6 +70,7 @@ pub fn do_update_agent_info(
     agent.last_contact = Some(Utc::now());
     agent.system_info = req.system_info;
     agent.tier = req.tier;
+    agent.app_version = req.app_version;
     let uid = agent.uid.clone();
     let key = agent.personal_login_token.clone();
     state.storage.agents.update_agent(agent)?;

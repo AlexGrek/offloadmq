@@ -81,6 +81,7 @@ function AgentsPage() {
                                             <Chip>Tier {a.tier}</Chip>
                                             <Chip>Capacity {a.capacity}</Chip>
                                             <Chip>{(a.capabilities || []).length} caps</Chip>
+                                            {a.appVersion && <Chip>v{a.appVersion}</Chip>}
                                             <Chip>{a.lastContact ? "Seen " + new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(Math.round((new Date(a.lastContact) - Date.now()) / 60000), "minute") : "Never"}</Chip>
                                         </div>
                                     </div>
@@ -97,6 +98,7 @@ function AgentsPage() {
                                                     <div className="kv"><span>UID:</span><code>{a.uid}</code></div>
                                                     <div className="kv"><span>Registered:</span><b>{fmtDate(a.registeredAt)}</b></div>
                                                     <div className="kv"><span>Last contact:</span><b>{fmtDate(a.lastContact)}</b></div>
+                                                    {a.appVersion && <div className="kv"><span>Version:</span><b>{a.appVersion}</b></div>}
                                                     <div className="kv"><span>Personal token:</span><code>{a.personalLoginToken}</code></div>
                                                 </div>
                                                 <div>

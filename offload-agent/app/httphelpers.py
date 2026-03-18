@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from app.ollama import *
 from app.systeminfo import *
 from app.url_utils import *
+from app._version import APP_VERSION
 
 
 class HttpClient:
@@ -31,6 +32,7 @@ def register_agent(
         "capacity": capacity,
         "systemInfo": system_info,
         "apiKey": api_key,
+        "appVersion": APP_VERSION,
     }
     url = server.rstrip("/") + "/agent/register"
     print(registration_data)

@@ -93,7 +93,8 @@
       "Bash(venv/bin/pytest tests/test_storage_api.py -v)",
       "Bash(curl -s -H \"Authorization: Bearer 17be89ccf98d649404e562861a60811abba7cc14d710a037308af414d149c5896c353e8f37e4cc8d277c5b0999780cb3\" \"https://offloadmq.alexgr.space/management/agents/list\")",
       "Bash(curl -s -H \"Authorization: Bearer 17be89ccf98d649404e562861a60811abba7cc14d710a037308af414d149c5896c353e8f37e4cc8d277c5b0999780cb3\" \"https://offloadmq.alexgr.space/management/capabilities/list/online_ext\")",
-      "Bash(curl -s -H 'Authorization: Bearer this-is-for-testing-management-tokens' http://localhost:3069/management/agents/list)"
+      "Bash(curl -s -H 'Authorization: Bearer this-is-for-testing-management-tokens' http://localhost:3069/management/agents/list)",
+      "Bash(git commit:*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
