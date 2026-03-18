@@ -212,6 +212,7 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
 
   return (
     <div style={styles.root}>
+      <style>{`@keyframes llm-breathe { 0%,100%{opacity:1} 50%{opacity:0.45} }`}</style>
       <div style={styles.header}>
         <div style={styles.modelRow}>
           <label style={styles.label}>Model:</label>
@@ -258,7 +259,7 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
         {isLoading && (
           <div style={{ ...styles.bubble, ...styles.assistantBubble }}>
             {streamingLog
-              ? <div style={styles.bubbleText}>{streamingLog}</div>
+              ? <div style={{ ...styles.bubbleText, animation: 'llm-breathe 1.8s ease-in-out infinite' }}>{streamingLog}</div>
               : <div style={styles.typing}>{pollingStatus || 'Thinking…'}</div>
             }
           </div>
