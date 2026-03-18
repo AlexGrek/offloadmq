@@ -65,7 +65,7 @@ class TestAgentManagement:
         # Should contain the test agent
         if data:
             agent = data[0]
-            assert "agent_id" in agent
+            assert "uid" in agent
             assert "capabilities" in agent
 
     def test_list_online_agents(self):
@@ -106,7 +106,7 @@ class TestAgentManagement:
         agents = list_response.json()
 
         if len(agents) > 0:
-            agent_id = agents[0]["agent_id"]
+            agent_id = agents[0]["uid"]
 
             # Remove it
             remove_url = f"{SERVER_URL}/management/agents/delete/{agent_id}"

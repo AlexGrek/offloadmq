@@ -52,18 +52,71 @@ logger = setup_logger()
 # Helper Functions
 # -----------------------------------------
 
+class AuthError(Exception):
+    """Raised when the server rejects the agent's JWT (403)."""
+    pass
+
+
 def poll_task(http: HttpClient) -> dict | None:
     """Poll server for a new task, return task_info or None."""
     try:
         resp = http.get("private", "agent", "task", "poll", timeout=60)
+        if resp.status_code == 403:
+            raise AuthError("403 Forbidden — JWT rejected or agent deregistered")
         resp.raise_for_status()
         return resp.json()
+    except AuthError:
+        raise
     except requests.Timeout:
         logger.warning("Polling timed out, retrying...")
     except Exception as e:
         logger.error(f"Polling error: {e}. Backing off for 15s...")
         time.sleep(15)
     return None
+
+
+def _reauth_or_reregister(server_url: str) -> str | None:
+    """Attempt to recover a valid JWT after a 403.
+
+    Tries re-authentication first (JWT expired but agent still exists).
+    Falls back to re-registration if the agent record was deleted.
+    Returns a fresh JWT string, or None if all attempts fail.
+    """
+    cfg = load_config()
+    agent_id = cfg.get("agentId")
+    key = cfg.get("key")
+    api_key = cfg.get("apiKey")
+
+    if agent_id and key:
+        try:
+            auth = authenticate_agent(server_url, agent_id, key)
+            jwt = auth["token"]
+            cfg["jwtToken"] = jwt
+            save_config(cfg)
+            logger.info("Re-authentication successful.")
+            return jwt
+        except Exception as e:
+            logger.warning(f"Re-authentication failed: {e}. Attempting re-registration...")
+
+    if not api_key:
+        logger.error("No API key in config — cannot re-register.")
+        return None
+
+    try:
+        caps = cfg.get("capabilities") or ["debug.echo", "shell.bash", "shellcmd.bash", "tts.kokoro"]
+        tier = cfg.get("tier", 5)
+        capacity = cfg.get("capacity", 1)
+        reg = register_agent(server_url, caps, tier, capacity, api_key)
+        cfg.update({"agentId": reg["agentId"], "key": reg["key"]})
+        auth = authenticate_agent(server_url, reg["agentId"], reg["key"])
+        jwt = auth["token"]
+        cfg["jwtToken"] = jwt
+        save_config(cfg)
+        logger.info("Re-registration successful.")
+        return jwt
+    except Exception as e:
+        logger.error(f"Re-registration failed: {e}")
+        return None
 
 
 def take_task(http: HttpClient, raw_id: str, raw_cap: str) -> dict | None:
@@ -216,6 +269,7 @@ def handle_task(http: HttpClient, task: dict):
 
 def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | None = None) -> None:
     http = HttpClient(server_url, jwt_token)
+    auth_failures = 0
 
     while not (stop_event and stop_event.is_set()):
         try:
@@ -224,6 +278,7 @@ def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | N
                 time.sleep(5)
                 continue
 
+            auth_failures = 0
             raw_id = task_info["id"]["id"]
             raw_cap = task_info["id"]["cap"]
 
@@ -233,6 +288,19 @@ def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | N
                 continue
 
             handle_task(http, task)
+
+        except AuthError:
+            auth_failures += 1
+            if auth_failures > 3:
+                logger.critical("Auth recovery failed 3 times — giving up. Restart the agent.")
+                return
+            logger.warning(f"Auth rejected (attempt {auth_failures}/3) — attempting recovery...")
+            new_jwt = _reauth_or_reregister(server_url)
+            if new_jwt:
+                http = HttpClient(server_url, new_jwt)
+            else:
+                logger.error("Could not recover auth. Backing off for 30s...")
+                time.sleep(30)
 
         except Exception as e:
             logger.critical(f"Unexpected exception in main loop: {e}")
