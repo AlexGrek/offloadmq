@@ -53,6 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Health check and stats
         .route("/health", get(health_check))
         .route("/stats", get(get_stats))
+        .route("/version", get(api::mgmt::version))
         .nest(
             "/private/agent",
             Router::new()
