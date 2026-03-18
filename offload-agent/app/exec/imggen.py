@@ -39,7 +39,17 @@ def _comfyui_url() -> str:
 _POLL_INTERVAL_SEC = 2
 _MAX_POLL_ATTEMPTS = 150  # ~5 minutes at 2s intervals
 
-_WORKFLOWS_DIR = Path(__file__).parent.parent.parent / "workflows"
+def _get_workflows_dir() -> Path:
+    """Find the workflows directory, checking CWD first then fallback to app location."""
+    # Check current working directory first (for packaged/deployed agents)
+    cwd_workflows = Path.cwd() / "workflows"
+    if cwd_workflows.is_dir():
+        return cwd_workflows
+    # Fallback to app structure (for development)
+    app_workflows = Path(__file__).parent.parent.parent / "workflows"
+    return app_workflows
+
+_WORKFLOWS_DIR = _get_workflows_dir()
 
 
 # ---------------------------------------------------------------------------

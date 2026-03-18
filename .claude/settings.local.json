@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(taskkill //IM offload-agent.exe //F)"
+      "Bash(taskkill //IM offload-agent.exe //F)",
+      "Bash(xargs grep:*)"
     ]
   }
 }
