@@ -42,7 +42,7 @@ Tasks flow through a client-server-agent pipeline:
 ## Client API
 
 Base path: `/api/*`
-Authentication: `api_key` field in JSON body
+Authentication: `apiKey` field in JSON body
 
 ### Submit Task (Non-Blocking)
 
@@ -57,7 +57,7 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 
 ```json
 {
-  "api_key": "your-client-api-key",
+  "apiKey": "your-client-api-key",
   "capability": "llm.mistral",
   "payload": {
     "prompt": "What is 2+2?",
@@ -73,7 +73,7 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `api_key` | string | Yes | Your client API key |
+| `apiKey` | string | Yes | Your client API key |
 | `capability` | string | Yes | Base capability required (e.g., `"llm.mistral"`, `"vision"`) — extended attributes are stripped on matching |
 | `payload` | object | Yes | Task-specific data (any valid JSON) — passed to agent as-is |
 | `urgent` | boolean | No (default: false) | If true, stored in-memory with 60s TTL; if false, persisted to DB |
@@ -120,7 +120,7 @@ Regular task response:
 
 | Status | Reason |
 |--------|--------|
-| `400` | Invalid capability, missing api_key, or malformed payload |
+| `400` | Invalid capability, missing apiKey, or malformed payload |
 | `401` | API key not found or lacks capability |
 | `403` | Bucket not found or not owned by API key |
 | `500` | Server error queuing task |
@@ -217,7 +217,7 @@ Checks the status of a task by ID. Works for both urgent and regular tasks.
 
 ```json
 {
-  "api_key": "your-client-api-key"
+  "apiKey": "your-client-api-key"
 }
 ```
 
@@ -320,7 +320,7 @@ Failed task:
 
 **Notes**
 
-- Task ownership is enforced: clients can only poll tasks they submitted (api_key matches)
+- Task ownership is enforced: clients can only poll tasks they submitted (apiKey matches)
 - Polling is non-blocking and can be called repeatedly
 - Log accumulates as agent sends progress updates
 - Completed/failed tasks are archived after 7 days (configurable)
@@ -349,7 +349,7 @@ Register a new agent with the system. Returns agent ID and login credentials.
   "capabilities": ["llm.mistral", "vision[gpu;cuda12.1]"],
   "tier": 5,
   "capacity": 4,
-  "api_key": "agent-registration-key",
+  "apiKey": "agent-registration-key",
   "system_info": {
     "os": "Linux",
     "client": "offload-agent/0.1.0",
@@ -370,7 +370,7 @@ Register a new agent with the system. Returns agent ID and login credentials.
 | `capabilities` | string[] | List of capabilities with optional extended attributes in brackets (e.g., `"llm.qwen3:8b[vision;tools;8b]"`) |
 | `tier` | integer (0-255) | Performance tier. Higher = better. Used for task scheduling priority. |
 | `capacity` | integer | Max concurrent tasks this agent can handle |
-| `api_key` | string | Agent registration key (from server config) |
+| `apiKey` | string | Agent registration key (from server config) |
 | `system_info` | object | System details (OS, memory, GPU, etc.) |
 | `system_info.gpu` | object | Optional GPU info if available |
 
@@ -881,7 +881,7 @@ API_KEY = "my-client-key"
 
 # 1. Submit a regular task
 task_payload = {
-    "api_key": API_KEY,
+    "apiKey": API_KEY,
     "capability": "llm.mistral",
     "payload": {
         "prompt": "What is the capital of France?",
@@ -899,7 +899,7 @@ print(f"Submitted task: {task_id}")
 
 # 2. Poll task status until complete
 while True:
-    poll_payload = {"api_key": API_KEY}
+    poll_payload = {"apiKey": API_KEY}
     response = requests.post(
         f"{BASE_URL}/api/task/poll/{task_id['cap']}/{task_id['id']}",
         json=poll_payload
@@ -925,7 +925,7 @@ API_KEY = "my-client-key"
 
 # Submit and wait synchronously (60s timeout built-in)
 task_payload = {
-    "api_key": API_KEY,
+    "apiKey": API_KEY,
     "capability": "llm.mistral",
     "payload": {
         "prompt": "2+2=?",
@@ -957,7 +957,7 @@ BASE_URL = "http://localhost:3069"
 
 # 1. Register agent
 register_payload = {
-    "api_key": "agent-registration-key",
+    "apiKey": "agent-registration-key",
     "capabilities": ["llm.mistral", "vision"],
     "tier": 5,
     "capacity": 4,
@@ -1059,7 +1059,7 @@ while True:
 curl -X POST http://localhost:3069/api/task/submit \
   -H "Content-Type: application/json" \
   -d '{
-    "api_key": "my-client-key",
+    "apiKey": "my-client-key",
     "capability": "llm.mistral",
     "payload": {"prompt": "2+2=?"},
     "urgent": false
@@ -1075,7 +1075,7 @@ TASK_ID="01ARZ3NDE4V2XTGZUVY7"
 
 curl -X POST "http://localhost:3069/api/task/poll/$TASK_CAP/$TASK_ID" \
   -H "Content-Type: application/json" \
-  -d '{"api_key": "my-client-key"}'
+  -d '{"apiKey": "my-client-key"}'
 ```
 
 ---

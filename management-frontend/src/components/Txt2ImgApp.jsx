@@ -53,7 +53,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
     setError(null);
 
     const payload = {
-      api_key: apiKey,
+      apiKey: apiKey,
       capability: `imggen.${model}`,
       payload: {
         workflow: workflow,
@@ -116,7 +116,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
         const res = await fetch(`/api/task/poll/${cap}/${id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ api_key: apiKey }),
+          body: JSON.stringify({ apiKey: apiKey }),
         });
 
         const data = await res.json();

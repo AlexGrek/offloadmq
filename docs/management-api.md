@@ -287,7 +287,7 @@ Returns all tasks (urgent and regular, assigned and unassigned) in the system.
           "id": "01ARZ3NDE4V2XTGZUVY7"
         },
         "data": {
-          "api_key": "client-key",
+          "apiKey": "client-key",
           "capability": "llm.mistral",
           "payload": {...},
           "urgent": true,

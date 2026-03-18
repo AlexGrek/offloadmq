@@ -69,7 +69,7 @@ Submitted as the `payload` field of `POST /api/task/submit` or `/api/task/submit
 
 ```json
 {
-  "api_key":    "your-client-api-key",
+  "apiKey":     "your-client-api-key",
   "capability": "imggen.wan-2.1-outpaint",
   "payload": {
     "workflow":    "img2img",
@@ -230,7 +230,7 @@ KEY   = "client_secret_key_123"
 
 # 1. Submit
 resp = requests.post(f"{BASE}/api/task/submit", json={
-    "api_key":    KEY,
+    "apiKey":     KEY,
     "capability": "imggen.wan-2.1-outpaint",
     "payload": {
         "workflow": "txt2img",
@@ -246,7 +246,7 @@ task_id = resp.json()["id"]
 while True:
     r = requests.post(
         f"{BASE}/api/task/poll/{task_id['cap']}/{task_id['id']}",
-        json={"api_key": KEY},
+        json={"apiKey": KEY},
     )
     data = r.json()
     if data["status"] == "completed":
@@ -269,7 +269,7 @@ KEY  = "client_secret_key_123"
 
 # 1. Create a bucket and upload input image
 bucket = requests.post(f"{BASE}/api/storage/bucket/create",
-    json={"api_key": KEY}).json()
+    json={"apiKey": KEY}).json()
 bucket_uid = bucket["uid"]
 
 with open("source.jpg", "rb") as f:
@@ -281,7 +281,7 @@ with open("source.jpg", "rb") as f:
 
 # 2. Submit task referencing the bucket
 resp = requests.post(f"{BASE}/api/task/submit", json={
-    "api_key":     KEY,
+    "apiKey":      KEY,
     "capability":  "imggen.wan-2.1-outpaint",
     "file_bucket": [bucket_uid],
     "payload": {
@@ -298,7 +298,7 @@ print(resp.json())
 
 ```python
 requests.post(f"{BASE}/api/task/submit", json={
-    "api_key":     KEY,
+    "apiKey":      KEY,
     "capability":  "imggen.wan-2.1-outpaint",
     "file_bucket": [bucket_uid],
     "payload": {
@@ -314,7 +314,7 @@ requests.post(f"{BASE}/api/task/submit", json={
 
 ```python
 requests.post(f"{BASE}/api/task/submit", json={
-    "api_key":     KEY,
+    "apiKey":      KEY,
     "capability":  "imggen.svd",
     "file_bucket": [bucket_uid],
     "payload": {

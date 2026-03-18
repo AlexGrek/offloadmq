@@ -57,7 +57,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
       const res = await fetch('/api/storage/bucket/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: apiKey }),
+        body: JSON.stringify({ apiKey: apiKey }),
       });
 
       const data = await res.json();
@@ -134,7 +134,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
     }
 
     const payload = {
-      api_key: apiKey,
+      apiKey: apiKey,
       capability: `imggen.${model}`,
       file_bucket: bucketUid ? [bucketUid] : [],
       payload: {
@@ -197,7 +197,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         const res = await fetch(`/api/task/poll/${cap}/${id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ api_key: apiKey }),
+          body: JSON.stringify({ apiKey: apiKey }),
         });
 
         const data = await res.json();
