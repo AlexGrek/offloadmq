@@ -78,7 +78,7 @@ class TestAgentManagement:
         assert isinstance(data, list)
         # All agents in response should be online
         for agent in data:
-            assert agent.get("online") is True or "last_contact" in agent
+            assert "lastContact" in agent
 
     def test_capabilities_online(self):
         """Test getting available capabilities from online agents."""
@@ -116,7 +116,7 @@ class TestAgentManagement:
             # Verify it's gone
             list_response_2 = requests.get(list_url, headers=self._headers(), timeout=10)
             agents_2 = list_response_2.json()
-            agent_ids = [a["agent_id"] for a in agents_2]
+            agent_ids = [a["uid"] for a in agents_2]
             assert agent_id not in agent_ids
 
 

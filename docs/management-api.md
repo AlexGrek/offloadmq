@@ -133,23 +133,23 @@ Returns all registered agents (online and offline).
 [
   {
     "uid": "01ARZ3NDE4V2XTGZUVY7",
-    "uid_short": "ZUV7",
-    "personal_login_token": "abc-123-def-456",
-    "registered_at": "2026-03-17T10:00:00Z",
-    "last_contact": "2026-03-18T14:30:22Z",
+    "uidShort": "ZUV7",
+    "personalLoginToken": "abc-123-def-456",
+    "registeredAt": "2026-03-17T10:00:00Z",
+    "lastContact": "2026-03-18T14:30:22Z",
     "capabilities": ["llm.mistral", "vision[gpu;cuda12.1]"],
     "tier": 5,
     "capacity": 4,
-    "system_info": {
+    "systemInfo": {
       "os": "Linux",
       "client": "offload-agent/0.1.0",
       "runtime": "Python 3.11",
-      "cpu_arch": "aarch64",
-      "total_memory_mb": 32768,
+      "cpuArch": "aarch64",
+      "totalMemoryMb": 32768,
       "gpu": {
         "vendor": "NVIDIA",
         "model": "RTX 4090",
-        "vram_mb": 24576
+        "vramMb": 24576
       }
     }
   }
@@ -159,14 +159,14 @@ Returns all registered agents (online and offline).
 | Field | Description |
 |-------|-------------|
 | `uid` | Unique agent identifier (time-sortable UUID) |
-| `uid_short` | Last 6 chars of UID (used in logs) |
-| `personal_login_token` | Secret token for agent login (reveals personal key here — guard carefully) |
-| `registered_at` | ISO 8601 timestamp when agent registered |
-| `last_contact` | Last time agent polled for tasks (null if never contacted) |
+| `uidShort` | Last 6 chars of UID (used in logs) |
+| `personalLoginToken` | Secret token for agent login (reveals personal key here — guard carefully) |
+| `registeredAt` | ISO 8601 timestamp when agent registered |
+| `lastContact` | Last time agent polled for tasks (null if never contacted) |
 | `capabilities` | List of capabilities with optional extended attributes in brackets |
 | `tier` | Performance tier (0-255, higher is better) |
 | `capacity` | Max concurrent tasks this agent can handle |
-| `system_info` | Agent's reported system details (OS, memory, GPU, etc.) |
+| `systemInfo` | Agent's reported system details (OS, memory, GPU, etc.) |
 
 ---
 
@@ -187,8 +187,8 @@ Same structure as `/agents/list`, but filtered to online agents only.
 [
   {
     "uid": "01ARZ3NDE4V2XTGZUVY7",
-    "uid_short": "ZUV7",
-    "last_contact": "2026-03-18T14:30:22Z",
+    "uidShort": "ZUV7",
+    "lastContact": "2026-03-18T14:30:22Z",
     ...
   }
 ]
@@ -196,9 +196,9 @@ Same structure as `/agents/list`, but filtered to online agents only.
 
 **Notes**
 
-- Online threshold: `last_contact` is within 120 seconds of now
+- Online threshold: `lastContact` is within 120 seconds of now
 - Useful for determining which agents can immediately accept work
-- Agents with `last_contact: null` are never considered online
+- Agents with `lastContact: null` are never considered online
 
 ---
 
@@ -294,12 +294,12 @@ Returns all tasks (urgent and regular, assigned and unassigned) in the system.
           "file_bucket": []
         },
         "created_at": "2026-03-18T14:30:00Z",
-        "assigned_task": {
+        "assignedTask": {
           "id": {...},
           "data": {...},
-          "agent_id": "agent-id",
-          "created_at": "2026-03-18T14:30:00Z",
-          "assigned_at": "2026-03-18T14:30:05Z",
+          "agentId": "agent-id",
+          "createdAt": "2026-03-18T14:30:00Z",
+          "assignedAt": "2026-03-18T14:30:05Z",
           "status": "assigned",
           "history": [...],
           "result": null,
@@ -337,7 +337,7 @@ Returns all tasks (urgent and regular, assigned and unassigned) in the system.
 
 | Field | Description |
 |-------|-------------|
-| `agent_id` | The agent currently executing the task |
+| `agentId` | The agent currently executing the task |
 | `status` | Task status (queued, assigned, starting, running, completed, failed, etc.) |
 | `history` | Array of state transitions with timestamps |
 | `result` | Task output (populated on success/failure) |
@@ -539,7 +539,7 @@ online_agents = response.json()
 print(f"Online agents: {len(online_agents)}")
 
 for agent in online_agents:
-    print(f"  - {agent['uid_short']}: {agent['capabilities']}")
+    print(f"  - {agent['uidShort']}: {agent['capabilities']}")
 
 # Get capabilities
 response = requests.get(f"{BASE_URL}/management/capabilities/list/online", headers=headers)
@@ -574,7 +574,7 @@ print(f"Created key: {new_key['key']}")
 response = requests.get(f"{BASE_URL}/management/client_api_keys/list", headers=headers)
 all_keys = response.json()
 for key in all_keys:
-    status = "REVOKED" if key['is_revoked'] else "ACTIVE"
+    status = "REVOKED" if key['isRevoked'] else "ACTIVE"
     print(f"{key['key']}: {status}, capabilities: {key['capabilities']}")
 
 # Revoke a key
@@ -605,7 +605,7 @@ print(f"Regular unassigned: {len(tasks['regular']['unassigned'])}")
 
 # Check for stuck tasks (assigned but not progressing)
 for task in tasks['regular']['assigned']:
-    agent_id = task['agent_id']
+    agent_id = task['agentId']
     status = task['status']
     print(f"Task {task['id']['id']}: assigned to {agent_id}, status: {status}")
 ```
