@@ -66,6 +66,31 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
         if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
     }, [handleFile]);
 
+    const showResult = useCallback((data) => {
+        if (data.output) {
+            const msg = data.output?.message;
+            if (msg?.content) {
+                setResult(msg.content);
+                status('Analysis complete', 'ok');
+            } else {
+                setResult(JSON.stringify(data.output, null, 2));
+                status('Task completed', 'ok');
+            }
+        } else if (data.status) {
+            const s = data.status;
+            const taskStatus = typeof s === 'string' ? s : Object.keys(s)[0];
+            if (taskStatus === 'failed') {
+                const failMsg = typeof s === 'object' && s.failure ? s.failure[0] : 'Task failed';
+                setResult(failMsg);
+                status('Task failed', 'err');
+            } else {
+                setResult(JSON.stringify(data, null, 2));
+                status('Completed', 'ok');
+            }
+        }
+        if (data.log) setLogText(data.log);
+    }, [status]);
+
     const pollTask = useCallback(async (cap, id) => {
         const encodedCap = encodeURIComponent(cap);
         const encodedId = encodeURIComponent(id);
@@ -198,31 +223,6 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
             setRunning(false);
         }
     }, [selectedFile, apiKey, capability, prompt, mode, status, pollTask, addDevEntry, showResult]);
-
-    const showResult = useCallback((data) => {
-        if (data.output) {
-            const msg = data.output?.message;
-            if (msg?.content) {
-                setResult(msg.content);
-                status('Analysis complete', 'ok');
-            } else {
-                setResult(JSON.stringify(data.output, null, 2));
-                status('Task completed', 'ok');
-            }
-        } else if (data.status) {
-            const s = data.status;
-            const taskStatus = typeof s === 'string' ? s : Object.keys(s)[0];
-            if (taskStatus === 'failed') {
-                const failMsg = typeof s === 'object' && s.failure ? s.failure[0] : 'Task failed';
-                setResult(failMsg);
-                status('Task failed', 'err');
-            } else {
-                setResult(JSON.stringify(data, null, 2));
-                status('Completed', 'ok');
-            }
-        }
-        if (data.log) setLogText(data.log);
-    }, [status]);
 
     return (
         <div style={s.root}>
