@@ -26,7 +26,7 @@ async function clientFetch(path, apiKey, options = {}, addDevEntry = null) {
 
 const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
-    const [capability, setCapability] = useState('llm.gemma3:4b');
+    const [capability, setCapability] = useState('gemma3:4b');
     const [prompt, setPrompt] = useState('Analyze this PDF document. Summarize the key points and provide any insights.');
     const [mode, setMode] = useState('blocking');
     const [selectedFile, setSelectedFile] = useState(null);
@@ -173,7 +173,7 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
                     body: JSON.stringify({
-                        capability,
+                        capability: `llm.${capability}`,
                         urgent: true,
                         restartable: false,
                         payload: taskPayload,
@@ -190,7 +190,7 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
                     body: JSON.stringify({
-                        capability,
+                        capability: `llm.${capability}`,
                         urgent: false,
                         restartable: false,
                         payload: taskPayload,
