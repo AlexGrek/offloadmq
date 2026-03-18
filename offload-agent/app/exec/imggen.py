@@ -229,49 +229,93 @@ def _download_file(filename: str, subfolder: str, file_type: str) -> tuple[bytes
     return r.content, r.headers.get("Content-Type", "application/octet-stream")
 
 
-def _collect_images(history_entry: dict) -> list[dict]:
+def _upload_output_file(http: HttpClient, bucket_uid: str, filename: str, content: bytes, content_type: str) -> str:
+    """Upload an output file to the server bucket. Returns the file_uid assigned by the server."""
+    from urllib.parse import quote
+    q_bucket = quote(bucket_uid, safe="")
+    url = f"{http.base}/private/agent/bucket/{q_bucket}/upload"
+    resp = requests.post(
+        url,
+        headers=http.headers,
+        files={"file": (filename, content, content_type)},
+        timeout=300,
+    )
+    resp.raise_for_status()
+    return resp.json()["file_uid"]
+
+
+def _collect_images(history_entry: dict, http: HttpClient | None = None, bucket_uid: str | None = None) -> list[dict]:
     images = []
     for node_output in history_entry.get("outputs", {}).values():
         for img in node_output.get("images", []):
+            filename = img.get("filename", "")
             content, ct = _download_file(
-                img.get("filename", ""),
+                filename,
                 img.get("subfolder", ""),
                 img.get("type", "output"),
             )
-            images.append({
-                "filename":     img.get("filename", ""),
-                "content_type": ct,
-                "data_base64":  base64.b64encode(content).decode("utf-8"),
-            })
+            if http and bucket_uid:
+                file_uid = _upload_output_file(http, bucket_uid, filename, content, ct)
+                images.append({
+                    "filename":    filename,
+                    "content_type": ct,
+                    "file_uid":    file_uid,
+                    "bucket_uid":  bucket_uid,
+                })
+            else:
+                images.append({
+                    "filename":     filename,
+                    "content_type": ct,
+                    "data_base64":  base64.b64encode(content).decode("utf-8"),
+                })
     return images
 
 
-def _collect_video(history_entry: dict) -> dict | None:
+def _collect_video(history_entry: dict, http: HttpClient | None = None, bucket_uid: str | None = None) -> dict | None:
     for node_output in history_entry.get("outputs", {}).values():
         for vid in node_output.get("videos", []) or node_output.get("gifs", []):
+            filename = vid.get("filename", "")
             content, ct = _download_file(
-                vid.get("filename", ""),
+                filename,
                 vid.get("subfolder", ""),
                 vid.get("type", "output"),
             )
-            return {
-                "filename":     vid.get("filename", ""),
-                "content_type": ct,
-                "data_base64":  base64.b64encode(content).decode("utf-8"),
-            }
+            if http and bucket_uid:
+                file_uid = _upload_output_file(http, bucket_uid, filename, content, ct)
+                return {
+                    "filename":    filename,
+                    "content_type": ct,
+                    "file_uid":    file_uid,
+                    "bucket_uid":  bucket_uid,
+                }
+            else:
+                return {
+                    "filename":     filename,
+                    "content_type": ct,
+                    "data_base64":  base64.b64encode(content).decode("utf-8"),
+                }
     return None
 
 
 _VIDEO_TASK_TYPES = {"txt2video", "img2video"}
 
 
-def _build_output(history_entry: dict, task_type: str, prompt_id: str, seed: int | None) -> dict:
+def _build_output(
+    history_entry: dict,
+    task_type: str,
+    prompt_id: str,
+    seed: int | None,
+    http: HttpClient | None = None,
+    bucket_uid: str | None = None,
+) -> dict:
     base = {"workflow": task_type, "prompt_id": prompt_id}
     if seed is not None:
         base["seed"] = seed
+    if bucket_uid:
+        base["output_bucket"] = bucket_uid
 
     if task_type in _VIDEO_TASK_TYPES:
-        video = _collect_video(history_entry)
+        video = _collect_video(history_entry, http=http, bucket_uid=bucket_uid)
         if not video:
             raise ValueError("ComfyUI completed but returned no video output")
         frame_count = 0
@@ -279,7 +323,7 @@ def _build_output(history_entry: dict, task_type: str, prompt_id: str, seed: int
             frame_count = len(node_output.get("images", [])) or frame_count
         return {**base, "frame_count": frame_count, "video": video}
 
-    images = _collect_images(history_entry)
+    images = _collect_images(history_entry, http=http, bucket_uid=bucket_uid)
     if not images:
         raise ValueError("ComfyUI completed but returned no output images")
     return {**base, "image_count": len(images), "images": images}
@@ -295,6 +339,7 @@ def execute_imggen_comfyui(
     capability: str,
     payload: dict,
     data_path: Path,
+    output_bucket: str | None = None,
 ) -> bool:
     """Execute an imggen task via ComfyUI.
 
@@ -327,7 +372,11 @@ def execute_imggen_comfyui(
         report_progress(http, "Generation complete — collecting output", "collecting", task_id)
 
         seed = inject_values.get("seed") or payload.get("seed")
-        output = _build_output(history_entry, task_type, prompt_id, seed)
+        output = _build_output(
+            history_entry, task_type, prompt_id, seed,
+            http=http if output_bucket else None,
+            bucket_uid=output_bucket,
+        )
 
         report = make_success_report(task_id, capability, output)
 

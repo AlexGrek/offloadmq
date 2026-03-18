@@ -81,6 +81,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/bucket/{bucket_uid}/file/{file_uid}",
                     get(api::agent::download_bucket_file),
                 )
+                .route(
+                    "/bucket/{bucket_uid}/upload",
+                    post(api::agent::upload_to_bucket),
+                )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,
@@ -175,7 +179,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .route(
                     "/bucket/{bucket_uid}/file/{file_uid}",
-                    delete(api::client::storage::delete_file),
+                    get(api::client::storage::download_file)
+                        .delete(api::client::storage::delete_file),
                 )
                 .route(
                     "/bucket/{bucket_uid}",

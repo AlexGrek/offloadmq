@@ -18,9 +18,10 @@ use std::sync::Arc;
 
 use axum::{
     Json,
+    body::Body,
     extract::{Multipart, Path, Query, State},
-    http::StatusCode,
-    response::IntoResponse,
+    http::{StatusCode, header},
+    response::{IntoResponse, Response},
 };
 use log::info;
 use serde::Deserialize;
@@ -33,6 +34,7 @@ use crate::{
     middleware::StorageApiKey,
     state::AppState,
 };
+use anyhow;
 
 #[derive(Debug, Deserialize, Default)]
 pub struct CreateBucketParams {
@@ -229,6 +231,47 @@ pub async fn bucket_stat(
         "files":           files,
         "rm_after_task":   bucket.rm_after_task,
     })))
+}
+
+// ── GET /api/storage/bucket/{bucket_uid}/file/{file_uid} ─────────────────────
+
+pub async fn download_file(
+    State(state): State<Arc<AppState>>,
+    StorageApiKey(api_key): StorageApiKey,
+    Path((bucket_uid, file_uid)): Path<(String, String)>,
+) -> Result<Response, AppError> {
+    let bucket = require_own_bucket(&state, &bucket_uid, &api_key)?;
+    let file_meta = bucket
+        .files
+        .iter()
+        .find(|f| f.uid == file_uid)
+        .ok_or_else(|| AppError::NotFound(format!("File {} not found", file_uid)))?
+        .clone();
+
+    let data = state
+        .storage
+        .file_store
+        .get(&bucket_uid, &file_uid)
+        .await
+        .map_err(AppError::Internal)?;
+
+    let base_name = file_meta.original_name
+        .rsplit('/')
+        .next()
+        .unwrap_or(&file_meta.original_name);
+    let disposition = format!(
+        "attachment; filename=\"{}\"",
+        base_name.replace('"', "\\\"")
+    );
+
+    let response = Response::builder()
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CONTENT_DISPOSITION, disposition)
+        .header(header::CONTENT_LENGTH, data.len())
+        .body(Body::from(data))
+        .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+
+    Ok(response)
 }
 
 // ── GET /api/storage/bucket/{bucket_uid}/file/{file_uid}/hash ────────────────

@@ -82,6 +82,26 @@ Submitted as the `payload` field of `POST /api/task/submit` or `/api/task/submit
 
 The agent downloads all bucket files before execution. `input_image` and `face_swap` values are matched against downloaded filenames.
 
+### Output bucket
+
+Create a separate empty bucket and pass it as `output_bucket` to have the agent upload result files directly to server storage instead of embedding them as base64:
+
+```json
+{
+  "apiKey":        "your-client-api-key",
+  "capability":    "imggen.wan-2.1-outpaint",
+  "output_bucket": "empty-bucket-uid-for-results",
+  "payload": {
+    "workflow": "txt2img",
+    "prompt":   "a cat sitting on the moon"
+  }
+}
+```
+
+When `output_bucket` is set, the agent uploads each generated file and includes `file_uid` / `bucket_uid` in the output instead of `data_base64`. Download results via `GET /api/storage/bucket/{bucket_uid}/file/{file_uid}`.
+
+If `output_bucket` is omitted, the agent falls back to embedding files as base64 in the task output (suitable for small images, not recommended for video).
+
 ### Forward compatibility
 
 Clients may include fields not listed here; agents must silently ignore unknown fields. This allows clients to be written against a newer contract than the agent implements.
@@ -92,7 +112,33 @@ Clients may include fields not listed here; agents must silently ignore unknown 
 
 Returned in the `output` field of task status polls.
 
-### Image output (txt2img, img2img, upscale, inpaint, outpaint, face_swap)
+The output format depends on whether `output_bucket` was provided at submission time.
+
+### Image output — with output_bucket (recommended)
+
+When `output_bucket` is set, each image entry contains server file references instead of base64 data. Download files via `GET /api/storage/bucket/{bucket_uid}/file/{file_uid}`.
+
+```json
+{
+  "workflow":      "txt2img",
+  "image_count":   1,
+  "output_bucket": "550e8400-e29b-41d4-a716-446655440000",
+  "images": [
+    {
+      "filename":     "ComfyUI_00001_.png",
+      "content_type": "image/png",
+      "file_uid":     "a1b2c3d4-e5f6-47g8-h9i0-j1k2l3m4n5o6",
+      "bucket_uid":   "550e8400-e29b-41d4-a716-446655440000"
+    }
+  ],
+  "prompt_id": "6f3a21bc-...",
+  "seed":      1234567890
+}
+```
+
+### Image output — without output_bucket (base64 fallback)
+
+When no `output_bucket` is set, images are embedded as base64 in the task output JSON. Not recommended for video or multiple large images.
 
 ```json
 {
@@ -110,7 +156,25 @@ Returned in the `output` field of task status polls.
 }
 ```
 
-### Video output (txt2video, img2video)
+### Video output — with output_bucket
+
+```json
+{
+  "workflow":      "txt2video",
+  "frame_count":   48,
+  "output_bucket": "550e8400-e29b-41d4-a716-446655440000",
+  "video": {
+    "filename":     "ComfyUI_00001_.mp4",
+    "content_type": "video/mp4",
+    "file_uid":     "b2c3d4e5-f6a7-58h9-i0j1-k2l3m4n5o6p7",
+    "bucket_uid":   "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "prompt_id": "6f3a21bc-...",
+  "seed":      1234567890
+}
+```
+
+### Video output — without output_bucket (base64 fallback)
 
 ```json
 {
@@ -220,18 +284,25 @@ Fields absent from the payload are left at the workflow template's default value
 
 ## Examples
 
-### txt2img (non-blocking)
+### txt2img with output_bucket
 
 ```python
 import requests, time
 
 BASE  = "http://localhost:3069"
 KEY   = "client_secret_key_123"
+hdrs  = {"X-API-Key": KEY}
 
-# 1. Submit
+# 1. Create output bucket
+out_bucket = requests.post(f"{BASE}/api/storage/bucket/create", headers=hdrs).json()
+out_bucket_uid = out_bucket["bucket_uid"]
+
+# 2. Submit task
 resp = requests.post(f"{BASE}/api/task/submit", json={
-    "apiKey":     KEY,
-    "capability": "imggen.wan-2.1-outpaint",
+    "apiKey":        KEY,
+    "capability":    "imggen.wan-2.1-outpaint",
+    "urgent":        False,
+    "output_bucket": out_bucket_uid,
     "payload": {
         "workflow": "txt2img",
         "prompt":   "a wolf howling at the moon, oil painting",
@@ -242,7 +313,7 @@ resp = requests.post(f"{BASE}/api/task/submit", json={
 })
 task_id = resp.json()["id"]
 
-# 2. Poll until done
+# 3. Poll until done
 while True:
     r = requests.post(
         f"{BASE}/api/task/poll/{task_id['cap']}/{task_id['id']}",
@@ -250,8 +321,14 @@ while True:
     )
     data = r.json()
     if data["status"] == "completed":
-        images = data["output"]["images"]
-        print(f"Got {len(images)} image(s), first: {images[0]['filename']}")
+        for img in data["output"]["images"]:
+            r = requests.get(
+                f"{BASE}/api/storage/bucket/{img['bucket_uid']}/file/{img['file_uid']}",
+                headers=hdrs,
+            )
+            with open(img["filename"], "wb") as f:
+                f.write(r.content)
+            print(f"Saved {img['filename']} ({len(r.content)} bytes)")
         break
     if data["status"] == "failed":
         print("Failed:", data["output"])
@@ -259,31 +336,34 @@ while True:
     time.sleep(2)
 ```
 
-### img2img with bucket file
+### img2img with input bucket and output bucket
 
 ```python
 import requests
 
 BASE = "http://localhost:3069"
 KEY  = "client_secret_key_123"
+hdrs = {"X-API-Key": KEY}
 
-# 1. Create a bucket and upload input image
-bucket = requests.post(f"{BASE}/api/storage/bucket/create",
-    json={"apiKey": KEY}).json()
-bucket_uid = bucket["uid"]
-
+# 1. Create input bucket and upload source image
+in_bucket_uid = requests.post(f"{BASE}/api/storage/bucket/create", headers=hdrs).json()["bucket_uid"]
 with open("source.jpg", "rb") as f:
     requests.post(
-        f"{BASE}/api/storage/bucket/{bucket_uid}/upload",
-        headers={"X-API-Key": KEY},
+        f"{BASE}/api/storage/bucket/{in_bucket_uid}/upload",
+        headers=hdrs,
         files={"file": ("source.jpg", f, "image/jpeg")},
     )
 
-# 2. Submit task referencing the bucket
+# 2. Create output bucket for results
+out_bucket_uid = requests.post(f"{BASE}/api/storage/bucket/create", headers=hdrs).json()["bucket_uid"]
+
+# 3. Submit task
 resp = requests.post(f"{BASE}/api/task/submit", json={
-    "apiKey":      KEY,
-    "capability":  "imggen.wan-2.1-outpaint",
-    "file_bucket": [bucket_uid],
+    "apiKey":        KEY,
+    "capability":    "imggen.wan-2.1-outpaint",
+    "urgent":        False,
+    "file_bucket":   [in_bucket_uid],
+    "output_bucket": out_bucket_uid,
     "payload": {
         "workflow":    "img2img",
         "prompt":      "turn this into an oil painting",

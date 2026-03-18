@@ -23,6 +23,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
   const [statusText, setStatusText] = useState('');
   const [capabilities, setCapabilities] = useState([]);
   const fileInputRef = useRef(null);
+  const outputBucketRef = useRef(null);
 
   useEffect(() => {
     const updCaps = async () => {
@@ -129,6 +130,29 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
     setError(null);
     setStatusText('Submitting...');
 
+    // Create output bucket if not done yet
+    let outBucketUid = outputBucketRef.current;
+    if (!outBucketUid) {
+      try {
+        setStatusText('Creating output bucket...');
+        const bucketRes = await fetch('/api/storage/bucket/create', {
+          method: 'POST',
+          headers: { 'X-API-Key': apiKey },
+        });
+        const bucketData = await bucketRes.json();
+        if (!bucketData.bucket_uid) throw new Error('Failed to create output bucket');
+        outBucketUid = bucketData.bucket_uid;
+        outputBucketRef.current = outBucketUid;
+        addDevEntry?.({ label: 'Create output bucket', method: 'POST', url: '/api/storage/bucket/create', request: {}, response: bucketData });
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
+        setError(`Failed to create output bucket: ${errorMsg}`);
+        setIsLoading(false);
+        return;
+      }
+      setStatusText('Submitting...');
+    }
+
     if (!uploadedFile) {
       setError('Please upload an image first');
       setIsLoading(false);
@@ -140,6 +164,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
       capability: `imggen.${model}`,
       urgent: false,
       file_bucket: bucketUid ? [bucketUid] : [],
+      output_bucket: outBucketUid,
       payload: {
         workflow: workflow,
         prompt: prompt,
@@ -361,16 +386,27 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
           <div>
             <p style={styles.responseLabel}>Generated Images:</p>
             <div style={styles.imageGrid}>
-              {response.images.map((img, idx) => (
-                <div key={idx}>
-                  <img
-                    src={`data:${img.content_type};base64,${img.data_base64}`}
-                    alt={`Generated ${idx + 1}`}
-                    style={styles.image}
-                  />
-                  <p style={styles.imageName}>{img.filename}</p>
-                </div>
-              ))}
+              {response.images.map((img, idx) => {
+                const src = img.file_uid
+                  ? `/api/storage/bucket/${img.bucket_uid}/file/${img.file_uid}`
+                  : `data:${img.content_type};base64,${img.data_base64}`;
+                const downloadHref = img.file_uid ? src : `data:${img.content_type};base64,${img.data_base64}`;
+                return (
+                  <div key={idx}>
+                    <img
+                      src={src}
+                      alt={`Generated ${idx + 1}`}
+                      style={styles.image}
+                    />
+                    <div style={styles.imageFooter}>
+                      <p style={styles.imageName}>{img.filename}</p>
+                      <a href={downloadHref} download={img.filename} style={styles.downloadLink}>
+                        Download
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             {response.seed != null && (
               <p style={styles.seedInfo}>Seed: {response.seed}</p>
@@ -501,11 +537,24 @@ const styles = {
     borderRadius: '8px',
     border: '1px solid var(--border)',
   },
+  imageFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: '6px',
+  },
   imageName: {
     fontSize: '12px',
     color: 'var(--muted)',
-    margin: '6px 0 0 0',
+    margin: '0',
     wordBreak: 'break-all',
+  },
+  downloadLink: {
+    fontSize: '12px',
+    color: 'var(--primary)',
+    textDecoration: 'none',
+    flexShrink: 0,
+    marginLeft: '8px',
   },
   seedInfo: {
     fontSize: '12px',

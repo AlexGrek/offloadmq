@@ -230,9 +230,10 @@ def handle_task(http: HttpClient, task: dict):
     payload = task_data.get("payload")
     fetch_files = task_data.get("fetchFiles") or []
     file_buckets = task_data.get("fileBucket") or []
+    output_bucket = task_data.get("outputBucket")
 
     logger.info(f"Received task: {task_id.to_wire()} with capability '{capability}'")
-    logger.info(f"Required files: {fetch_files}, buckets: {file_buckets}")
+    logger.info(f"Required files: {fetch_files}, buckets: {file_buckets}, output_bucket: {output_bucket}")
 
     executor = route_executor(capability)
     if not executor:
@@ -258,7 +259,10 @@ def handle_task(http: HttpClient, task: dict):
 
     # Execute task
     try:
-        executor(http, task_id, capability, payload, data_path)
+        if capability.startswith("imggen."):
+            executor(http, task_id, capability, payload, data_path, output_bucket=output_bucket)
+        else:
+            executor(http, task_id, capability, payload, data_path)
     except Exception as e:
         logger.error(f"Executor failed: {e}")
         report = make_failure_report(task_id, capability, str(e))

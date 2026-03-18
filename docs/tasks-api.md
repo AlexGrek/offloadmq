@@ -35,7 +35,8 @@ Tasks flow through a client-server-agent pipeline:
 | **Task ID** | Composed of capability (queue) and a time-sortable unique ID: `TaskId { cap: "llm.mistral", id: "01ARZ3NDE..." }` |
 | **Urgent** | Tasks with `urgent: true` are stored in-memory with 60s TTL and return immediate blocking (for `/submit_blocking`). Regular tasks persist to Sled DB with 24h+ lifetime. |
 | **Tier** | Agent performance tier (0-255). Higher-tier agents get priority for non-urgent tasks. Lower-tier agents still receive tasks when no higher-tier agents are online. |
-| **File Buckets** | Optional list of storage bucket UIDs where the agent can download input files. Only agents receive the bucket UIDs; clients never get direct access. |
+| **Input Buckets** (`file_bucket`) | Optional list of storage bucket UIDs where the agent can download input files. Agents learn these UIDs from the task data; the unguessable UUIDs act as capability tokens. |
+| **Output Bucket** (`output_bucket`) | Optional single bucket UID where the agent should upload output files (e.g., generated images). The client creates this bucket before submitting the task and downloads results from it afterwards via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
 
 ---
 
@@ -79,6 +80,7 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 | `urgent` | boolean | No (default: false) | If true, stored in-memory with 60s TTL; if false, persisted to DB |
 | `restartable` | boolean | No (default: false) | If true, task can be retried on another agent if it fails |
 | `file_bucket` | string[] | No | List of bucket UIDs containing input files. Agents can download from these buckets. |
+| `output_bucket` | string | No | UID of a bucket the agent should upload output files into. The client must create this bucket beforehand and own it. When provided, the agent uploads output files (e.g., images, video) directly to the bucket instead of embedding them as base64 in the task output. The client can then download them via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
 | `fetch_files` | object[] | No | Advanced: HTTP fetch rules (see Advanced below) |
 | `artifacts` | object[] | No | Advanced: Output artifact definitions (see Advanced below) |
 
@@ -519,7 +521,8 @@ null
 |-------|-------------|
 | `id` | Task identifier (cap + id) |
 | `data` | Full task submission request from client |
-| `data.file_bucket` | List of bucket UIDs you can download input files from via `/private/agent/bucket/{bucket_uid}/file/{file_uid}` |
+| `data.file_bucket` | List of bucket UIDs you can download input files from via `GET /private/agent/bucket/{bucket_uid}/file/{file_uid}` |
+| `data.output_bucket` | Optional bucket UID where you should upload output files via `POST /private/agent/bucket/{bucket_uid}/upload` |
 | `data.payload` | The client's task payload |
 | `created_at` | When the task was submitted |
 
@@ -752,6 +755,55 @@ Same as `/task/resolve`
 - Stage information is shown in client status polls
 - Useful for providing visibility into long-running tasks
 - Can be called many times; no limit on frequency
+
+---
+
+### Upload Output File to Bucket
+
+```
+POST /private/agent/bucket/{bucket_uid}/upload
+Authorization: Bearer <JWT>
+Content-Type: multipart/form-data
+```
+
+Upload an output file (e.g., generated image or video) to the task's output bucket. Only meaningful when the task provides an `output_bucket` UID in its `data` field.
+
+**Path parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `bucket_uid` | string | The output bucket UID from `task.data.output_bucket` |
+
+**Form fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | file | Yes | The output file to store |
+
+**Response** (201 Created)
+
+```json
+{
+  "file_uid": "a1b2c3d4-e5f6-47g8-h9i0-j1k2l3m4n5o6",
+  "original_name": "ComfyUI_00001_.png",
+  "size": 1234567,
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}
+```
+
+**Error responses**
+
+| Status | Reason |
+|--------|--------|
+| `400` | No `file` field in multipart body, or file exceeds bucket remaining space |
+| `404` | Bucket not found |
+| `500` | Server error storing file |
+
+**Notes**
+
+- Any authenticated agent can write to any bucket; unguessable UUIDs act as capability tokens — agents only learn the output bucket UID from task data
+- Once uploaded, include the `file_uid` and `bucket_uid` in the task's resolve output so the client knows how to download results
+- The bucket is owned by the client and subject to the same size limits and TTL as input buckets (default 1 GiB per bucket, 24h TTL)
 
 ---
 
