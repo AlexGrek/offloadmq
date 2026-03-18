@@ -252,10 +252,51 @@ pub async fn post_task_resolution(
     info!("Agent {} reporting task {task_id}", agent.uid_short);
     debug!("Report: {:?}", &report);
 
+    // Capture the bucket list before the task is resolved/removed from the store.
+    let file_buckets: Vec<String> = app_state
+        .urgent
+        .get_assigned_task(&task_id)
+        .await
+        .map(|t| t.data.file_bucket)
+        .or_else(|| {
+            app_state
+                .storage
+                .tasks
+                .get_assigned(&task_id)
+                .ok()
+                .flatten()
+                .map(|t| t.data.file_bucket)
+        })
+        .unwrap_or_default();
+
     let found = report_urgent_task(&app_state.urgent, report.clone(), task_id).await?;
     if !found {
         report_non_urgent_task(&app_state.storage.tasks, report).await?;
     }
+
+    // Delete any buckets flagged with rm_after_task now that the task is terminal.
+    for bucket_uid in &file_buckets {
+        let bucket = match app_state.storage.buckets.get_bucket(bucket_uid) {
+            Ok(Some(b)) => b,
+            _ => continue,
+        };
+        if !bucket.rm_after_task {
+            continue;
+        }
+        app_state
+            .storage
+            .file_store
+            .delete_bucket(bucket_uid)
+            .await
+            .map_err(|e| AppError::Internal(e))?;
+        app_state
+            .storage
+            .buckets
+            .delete_bucket(bucket_uid, &bucket.api_key)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+        info!("Deleted rm_after_task bucket {} after task completion", bucket_uid);
+    }
+
     Ok(Json(json!({"message": "task report confirmed"})))
 }
 

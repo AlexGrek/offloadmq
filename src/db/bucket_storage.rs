@@ -23,6 +23,12 @@ pub struct BucketMeta {
     /// IDs of tasks that reference this bucket (recorded at submission time).
     #[serde(default)]
     pub tasks: Vec<String>,
+    /// When true the bucket is deleted automatically as soon as the task that
+    /// references it reaches a terminal state (Completed or Failed).  Any
+    /// subsequent task submission that tries to reference an already-used
+    /// rm_after_task bucket is rejected.
+    #[serde(default)]
+    pub rm_after_task: bool,
 }
 
 pub struct BucketStorage {
@@ -47,7 +53,7 @@ impl BucketStorage {
 
     // ── bucket CRUD ──────────────────────────────────────────────────────────
 
-    pub fn create_bucket(&self, api_key: &str) -> anyhow::Result<BucketMeta> {
+    pub fn create_bucket(&self, api_key: &str, rm_after_task: bool) -> anyhow::Result<BucketMeta> {
         let uid = uuid::Uuid::new_v4().to_string();
         let meta = BucketMeta {
             uid: uid.clone(),
@@ -56,6 +62,7 @@ impl BucketStorage {
             files: vec![],
             used_bytes: 0,
             tasks: vec![],
+            rm_after_task,
         };
         self.save_bucket(&meta)?;
         let idx_key = format!("{}|{}", api_key, uid);

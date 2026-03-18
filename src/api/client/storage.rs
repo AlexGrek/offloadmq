@@ -18,11 +18,12 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{Multipart, Path, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
 use log::info;
+use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -32,6 +33,14 @@ use crate::{
     middleware::StorageApiKey,
     state::AppState,
 };
+
+#[derive(Debug, Deserialize, Default)]
+pub struct CreateBucketParams {
+    /// When true the bucket is deleted once its associated task finishes
+    /// (success or failure).  Only one task may reference the bucket.
+    #[serde(default)]
+    pub rm_after_task: bool,
+}
 
 // ── GET /api/storage/buckets ─────────────────────────────────────────────────
 
@@ -51,6 +60,7 @@ pub async fn list_buckets(
                 "used_bytes":      b.used_bytes,
                 "remaining_bytes": capacity.saturating_sub(b.used_bytes),
                 "tasks":           b.tasks,
+                "rm_after_task":   b.rm_after_task,
             })
         })
         .collect();
@@ -76,6 +86,7 @@ pub async fn get_limits(
 pub async fn create_bucket(
     State(state): State<Arc<AppState>>,
     StorageApiKey(api_key): StorageApiKey,
+    Query(params): Query<CreateBucketParams>,
 ) -> Result<impl IntoResponse, AppError> {
     let cfg = &state.config.storage;
     let current = state.storage.buckets.count_buckets_for_key(&api_key);
@@ -85,11 +96,15 @@ pub async fn create_bucket(
             current, cfg.max_buckets_per_key
         )));
     }
-    let bucket = state.storage.buckets.create_bucket(&api_key)?;
+    let bucket = state.storage.buckets.create_bucket(&api_key, params.rm_after_task)?;
     info!("Created bucket {} for key ...{}", bucket.uid, &api_key[api_key.len().saturating_sub(6)..]);
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "bucket_uid": bucket.uid, "created_at": bucket.created_at })),
+        Json(json!({
+            "bucket_uid":     bucket.uid,
+            "created_at":     bucket.created_at,
+            "rm_after_task":  bucket.rm_after_task,
+        })),
     ))
 }
 
@@ -212,6 +227,7 @@ pub async fn bucket_stat(
         "remaining_bytes": capacity - bucket.used_bytes,
         "file_count":      files.len(),
         "files":           files,
+        "rm_after_task":   bucket.rm_after_task,
     })))
 }
 

@@ -419,6 +419,64 @@ class TestBucketDeletion:
         assert response.status_code == 404
 
 
+class TestRmAfterTask:
+    """Tests for the rm_after_task flag on buckets."""
+
+    def _create_bucket(self, rm_after_task=False):
+        headers = {"X-API-Key": API_KEY}
+        url = f"{SERVER_URL}/api/storage/bucket/create"
+        params = {"rm_after_task": "true"} if rm_after_task else {}
+        resp = requests.post(url, headers=headers, params=params, timeout=10)
+        assert resp.status_code == 201
+        return resp.json()
+
+    def test_create_bucket_without_flag_defaults_false(self):
+        data = self._create_bucket(rm_after_task=False)
+        assert data["rm_after_task"] is False
+
+    def test_create_bucket_with_rm_after_task_flag(self):
+        data = self._create_bucket(rm_after_task=True)
+        assert data["rm_after_task"] is True
+
+    def test_rm_after_task_reflected_in_stat(self):
+        bucket_uid = self._create_bucket(rm_after_task=True)["bucket_uid"]
+        headers = {"X-API-Key": API_KEY}
+        stat = requests.get(
+            f"{SERVER_URL}/api/storage/bucket/{bucket_uid}/stat",
+            headers=headers, timeout=10
+        ).json()
+        assert stat["rm_after_task"] is True
+
+    def test_rm_after_task_reflected_in_list(self):
+        bucket_uid = self._create_bucket(rm_after_task=True)["bucket_uid"]
+        headers = {"X-API-Key": API_KEY}
+        data = requests.get(f"{SERVER_URL}/api/storage/buckets", headers=headers, timeout=10).json()
+        bucket = next(b for b in data["buckets"] if b["bucket_uid"] == bucket_uid)
+        assert bucket["rm_after_task"] is True
+
+    def test_second_task_on_rm_after_task_bucket_is_denied(self):
+        """Once a task is recorded against an rm_after_task bucket, any further
+        task submission referencing that bucket must be rejected with 409."""
+        bucket_uid = self._create_bucket(rm_after_task=True)["bucket_uid"]
+        headers = {"X-API-Key": API_KEY}
+
+        payload = {
+            "capability": "debug.echo",
+            "urgent": False,
+            "payload": {"msg": "hello"},
+            "apiKey": API_KEY,
+            "fileBucket": [bucket_uid],
+        }
+
+        # First submission — records the task in the bucket
+        r1 = requests.post(f"{SERVER_URL}/api/task/submit", json=payload, headers=headers, timeout=10)
+        assert r1.status_code == 200, f"First submission failed: {r1.text}"
+
+        # Second submission — must be rejected because the bucket already has a task
+        r2 = requests.post(f"{SERVER_URL}/api/task/submit", json=payload, headers=headers, timeout=10)
+        assert r2.status_code == 409, f"Expected 409, got {r2.status_code}: {r2.text}"
+
+
 class TestStorageAuthorization:
     """Test that storage operations respect API key ownership."""
 

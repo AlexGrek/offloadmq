@@ -50,6 +50,13 @@ fn validate_file_buckets(state: &AppState, req: &TaskSubmissionRequest) -> Resul
                 bucket_uid
             )));
         }
+        if bucket.rm_after_task && !bucket.tasks.is_empty() {
+            return Err(AppError::Conflict(format!(
+                "Bucket {} has rm_after_task set and has already been used by task {}",
+                bucket_uid,
+                bucket.tasks[0],
+            )));
+        }
     }
     Ok(())
 }
