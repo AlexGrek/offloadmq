@@ -100,10 +100,11 @@ def _load_workflow_template(workflow_name: str, task_type: str) -> tuple[dict, d
 
     # Belt-and-suspenders: ensure resolved paths are still inside _WORKFLOWS_DIR
     workflows_root = _WORKFLOWS_DIR.resolve()
-    if not str(graph_path).startswith(str(workflows_root) + "/"):
+    try:
+        graph_path.relative_to(workflows_root)
+        params_path.relative_to(workflows_root)
+    except ValueError:
         raise ValueError(f"Resolved workflow path escapes workflows directory: {graph_path}")
-    if not str(params_path).startswith(str(workflows_root) + "/"):
-        raise ValueError(f"Resolved params path escapes workflows directory: {params_path}")
 
     if not graph_path.exists():
         raise FileNotFoundError(
