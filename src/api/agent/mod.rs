@@ -124,6 +124,42 @@ pub async fn auth_agent(
     Ok(Json(schema::AgentLoginResponse { token, expires_in }))
 }
 
+/// GET /private/agent/bucket/{bucket_uid}/stat
+///
+/// Returns the list of files in a bucket so the agent can discover file UIDs
+/// for downloading.  Same security model as `download_bucket_file`: any valid
+/// agent JWT can access any bucket; unguessable UUIDs act as capability tokens.
+pub async fn bucket_stat(
+    AuthenticatedAgent(_agent): AuthenticatedAgent,
+    State(app_state): State<Arc<AppState>>,
+    Path(bucket_uid): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let bucket = app_state
+        .storage
+        .buckets
+        .get_bucket(&bucket_uid)?
+        .ok_or_else(|| AppError::NotFound(format!("Bucket {} not found", bucket_uid)))?;
+
+    let files: Vec<_> = bucket
+        .files
+        .iter()
+        .map(|f| {
+            json!({
+                "file_uid":      f.uid,
+                "original_name": f.original_name,
+                "size":          f.size,
+                "sha256":        f.sha256,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "bucket_uid": bucket.uid,
+        "file_count": files.len(),
+        "files":      files,
+    })))
+}
+
 /// GET /private/agent/bucket/{bucket_uid}/file/{file_uid}
 ///
 /// Allows an authenticated agent to download a file from a storage bucket.

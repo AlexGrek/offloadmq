@@ -101,6 +101,50 @@ def download_required_files(http, task_id: TaskId, capability: str, fetch_files:
     return True
 
 
+def download_bucket_files(http: HttpClient, task_id: TaskId, capability: str, file_buckets: list, data_path: Path) -> bool:
+    """Download all files from the listed storage buckets. Returns True on success."""
+    for bucket_uid in file_buckets:
+        try:
+            # Stat the bucket to discover files
+            resp = http.get("private", "agent", "bucket", bucket_uid, "stat", timeout=60)
+            resp.raise_for_status()
+            bucket_info = resp.json()
+
+            files = bucket_info.get("files", [])
+            logger.info(f"Bucket {bucket_uid}: {len(files)} file(s) to download")
+
+            for file_info in files:
+                file_uid = file_info["file_uid"]
+                original_name = file_info.get("original_name", file_uid)
+                save_path = data_path / original_name
+
+                if save_path.exists():
+                    logger.info(f"File already exists, skipping: {save_path}")
+                    continue
+
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Download the file
+                dl_resp = http.get(
+                    "private", "agent", "bucket", bucket_uid, "file", file_uid,
+                    timeout=300,
+                )
+                dl_resp.raise_for_status()
+
+                with open(save_path, "wb") as f:
+                    f.write(dl_resp.content)
+
+                logger.info(f"Downloaded {original_name} ({len(dl_resp.content)} bytes) to {save_path}")
+
+        except Exception as e:
+            logger.error(f"Failed to download from bucket {bucket_uid}: {e}")
+            report = make_failure_report(task_id, capability, str(e))
+            report_result(http, report)
+            return False
+
+    return True
+
+
 def route_executor(cap: str):
     """Pick function based on capability string."""
     if cap.startswith("llm."):
@@ -124,11 +168,13 @@ def handle_task(http: HttpClient, task: dict):
         cap=str(task.get("id", {}).get("cap", "")),
     )
     capability = task_id.cap
-    payload = (task.get("data") or {}).get("payload")
-    fetch_files = (task.get("data") or {}).get("fetchFiles") or []
+    task_data = task.get("data") or {}
+    payload = task_data.get("payload")
+    fetch_files = task_data.get("fetchFiles") or []
+    file_buckets = task_data.get("fileBucket") or []
 
     logger.info(f"Received task: {task_id.to_wire()} with capability '{capability}'")
-    logger.info(f"Required files: {fetch_files}")
+    logger.info(f"Required files: {fetch_files}, buckets: {file_buckets}")
 
     executor = route_executor(capability)
     if not executor:
@@ -140,7 +186,13 @@ def handle_task(http: HttpClient, task: dict):
 
     data_path = pick_directory(task_id)
 
-    # Download files — errors are handled and logged inside
+    # Download files from buckets
+    if file_buckets:
+        if not download_bucket_files(http, task_id, capability, file_buckets, data_path):
+            logger.error("Bucket file download failed; skipping task.")
+            return
+
+    # Download files from fetch_files references
     if not download_required_files(http, task_id, capability, fetch_files, data_path):
         logger.error("File download failed; skipping task.")
         return

@@ -1,11 +1,33 @@
+import base64
 import logging
 from ..models import *
 from ..httphelpers import *
+from ..data.text_extract import extract_texts_from_directory
 from .helpers import *
 
 from pathlib import Path
 
 logger = logging.getLogger("agent")
+
+# Image extensions that Ollama vision models accept directly via the `images` field.
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+
+
+def _collect_image_attachments(data_path: Path) -> list[str]:
+    """Scan the data directory for image files and return base64-encoded strings
+    suitable for the Ollama ``images`` field."""
+    attachments = []
+    if not data_path.exists():
+        return attachments
+
+    for f in sorted(data_path.iterdir()):
+        if f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS:
+            raw = f.read_bytes()
+            b64 = base64.b64encode(raw).decode("ascii")
+            logger.info(f"Attaching image {f.name} ({len(raw)} bytes)")
+            attachments.append(b64)
+
+    return attachments
 
 
 def execute_llm_query(
@@ -52,6 +74,35 @@ def execute_llm_query(
         converted_payload = {**payload}
         if converted_messages:
             converted_payload["messages"] = converted_messages
+
+        # Attach downloaded files from the task data directory
+        # 1) Text-extractable files (PDF, txt, etc.) → inject into prompt
+        extracted_texts = extract_texts_from_directory(data)
+        if extracted_texts:
+            text_block = "\n\n".join(
+                f"--- File: {name} ---\n{text}" for name, text in extracted_texts
+            )
+            msgs = converted_payload.get("messages", [])
+            for msg in reversed(msgs):
+                if msg.get("role") == "user":
+                    msg["content"] = msg.get("content", "") + "\n\n" + text_block
+                    break
+            else:
+                msgs.append({"role": "user", "content": text_block})
+            converted_payload["messages"] = msgs
+
+        # 2) Image files → base64 into Ollama images field
+        image_attachments = _collect_image_attachments(data)
+        if image_attachments:
+            msgs = converted_payload.get("messages", [])
+            for msg in reversed(msgs):
+                if msg.get("role") == "user":
+                    existing = msg.get("images", [])
+                    msg["images"] = existing + image_attachments
+                    break
+            else:
+                msgs.append({"role": "user", "content": "", "images": image_attachments})
+            converted_payload["messages"] = msgs
 
         # Construct payload for Ollama chat/generate API
         api_payload = {**converted_payload, "model": model_name}

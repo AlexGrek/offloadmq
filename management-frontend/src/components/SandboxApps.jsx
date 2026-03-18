@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, Construction, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X } from 'lucide-react';
+import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X } from 'lucide-react';
 
 // Define the content for each app as a functional component.
 // In a real-world application, these would be in separate files and imported.
@@ -58,6 +58,7 @@ const PipelineApp = React.lazy(() => import('./PipelineApp'))
 const StreamingLLMApp = React.lazy(() => import('./StreamingLLMApp'))
 const LlmChatApp = React.lazy(() => import('./LlmChatApp'))
 const StorageBucketApp = React.lazy(() => import('./StorageBucketApp'))
+const PdfAnalyzerApp = React.lazy(() => import('./PdfAnalyzerApp'))
 
 const apps = [
   { id: 'bash', name: 'Bash', logo: Construction, app: BashApp },
@@ -66,6 +67,7 @@ const apps = [
   { id: 'streamingllm', name: 'Streaming LLM', logo: Speech, app: StreamingLLMApp },
   { id: 'llmchat', name: 'LLM Chat', logo: MessagesSquare, app: LlmChatApp },
   { id: 'storage', name: 'Storage', logo: FolderOpen, app: StorageBucketApp },
+  { id: 'pdf', name: 'PDF Analyzer', logo: FileText, app: PdfAnalyzerApp },
 ];
 
 const SandboxApps = () => {

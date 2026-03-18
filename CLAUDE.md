@@ -224,6 +224,16 @@ Server reads from `.env` file:
 - `CLIENT_API_KEYS` - Comma-separated client API keys
 - `MGMT_TOKEN` - Management endpoint auth token
 
+### Local Dev API Keys (from `.env`)
+
+These are the hardcoded keys used for local development and testing. Use them directly — do not grep `.env` for them.
+
+| Purpose | Key |
+|---------|-----|
+| Client API key | `client_secret_key_123` |
+| Agent API key | `ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e` |
+| Management token | `this-is-for-testing-management-tokens` |
+
 ### Storage Configuration
 
 - `STORAGE_BACKEND` - `local` (default), `webdav`, or `s3`

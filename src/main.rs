@@ -73,6 +73,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     post(api::agent::post_task_progress_update),
                 )
                 .route(
+                    "/bucket/{bucket_uid}/stat",
+                    get(api::agent::bucket_stat),
+                )
+                .route(
                     "/bucket/{bucket_uid}/file/{file_uid}",
                     get(api::agent::download_bucket_file),
                 )
