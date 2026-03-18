@@ -333,8 +333,10 @@ def _win_startup_set(enable: bool) -> None:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
             if enable:
                 exe_path = sys.executable
-                winreg.SetValueEx(key, _WIN_REG_NAME, 0, winreg.REG_SZ, f'"{exe_path}"')
-                _log(f"[startup] Enabled Windows startup: {exe_path}")
+                # Delay 60 seconds to allow Ollama to fully load
+                delayed_cmd = f'powershell.exe -NoProfile -Command "Start-Sleep -Seconds 60; & \'{exe_path}\'"'
+                winreg.SetValueEx(key, _WIN_REG_NAME, 0, winreg.REG_SZ, delayed_cmd)
+                _log(f"[startup] Enabled Windows startup with 60s delay: {exe_path}")
             else:
                 try:
                     winreg.DeleteValue(key, _WIN_REG_NAME)
