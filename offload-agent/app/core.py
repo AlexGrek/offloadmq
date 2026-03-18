@@ -15,6 +15,7 @@ from .exec.debug import *
 from .exec.shell import *
 from .exec.shellcmd import *
 from .exec.docker import *
+from .exec.imggen import execute_imggen_comfyui
 from .data.updn import process_data_download
 from .data.fs_utils import *
 from .exec.helpers import report_starting
@@ -159,6 +160,7 @@ def route_executor(cap: str):
         "shell.bash": execute_shell_bash,
         "shellcmd.bash": execute_shellcmd_bash,
         "tts.kokoro": execute_kokoro_tts,
+        "imggen.comfyui": execute_imggen_comfyui,
     }.get(cap)
 
 

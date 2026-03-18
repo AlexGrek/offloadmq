@@ -106,6 +106,79 @@ def check_kokoro() -> CapResult:
         )
 
 
+def check_comfyui() -> CapResult:
+    """Check ComfyUI availability and enumerate imggen capabilities from the workflows directory.
+
+    Each subdirectory of workflows/ is a workflow name; .json files inside it (excluding
+    *.params.json) identify supported task types.  Produces one extended capability string
+    per workflow, e.g. imggen.wan-2.1-outpaint[txt2img;img2img;upscale].
+    """
+    import requests
+    from .exec.imggen import _comfyui_url, _WORKFLOWS_DIR
+
+    url = _comfyui_url()
+    try:
+        r = requests.get(f"{url}/system_stats", timeout=3)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        return CapResult(
+            [], False,
+            "imggen.*",
+            f"ComfyUI API not reachable at {url}: {type(e).__name__}",
+        )
+
+    caps = _discover_workflow_caps(_WORKFLOWS_DIR)
+    if not caps:
+        return CapResult(
+            [], False,
+            "imggen.*",
+            f"ComfyUI reachable at {url} but no workflow templates found in {_WORKFLOWS_DIR}",
+        )
+
+    label = ", ".join(caps)
+    return CapResult(
+        caps, True,
+        "imggen.*",
+        f"ComfyUI reachable at {url} — {len(caps)} workflow(s): {label}",
+    )
+
+
+def _discover_workflow_caps(workflows_dir) -> list[str]:
+    """Scan workflows_dir and return one extended capability string per workflow.
+
+    Skips entries that are not directories or whose names contain path-unsafe characters
+    (same rules as _safe_path_component in imggen.py).
+    """
+    import re
+    from pathlib import Path
+
+    safe_re = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
+    workflows_dir = Path(workflows_dir)
+    caps = []
+
+    if not workflows_dir.is_dir():
+        return caps
+
+    for entry in sorted(workflows_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        if not safe_re.match(entry.name):
+            continue
+
+        task_types = sorted(
+            p.stem
+            for p in entry.glob("*.json")
+            if not p.name.endswith(".params.json") and safe_re.match(p.stem)
+        )
+        if not task_types:
+            continue
+
+        attrs = ";".join(task_types)
+        caps.append(f"imggen.{entry.name}[{attrs}]")
+
+    return caps
+
+
 def check_ollama() -> CapResult:
     """Check Ollama availability and return one extended llm.* cap per installed model.
 
@@ -155,6 +228,7 @@ _CHECKS: List[Callable[[], CapResult]] = [
     check_bash,
     check_docker,
     check_kokoro,
+    check_comfyui,
     check_ollama,
 ]
 

@@ -12,8 +12,11 @@ Usage:
 
 import argparse
 import atexit
+import json
 import logging
 import os
+import re
+import shutil
 import sys
 import threading
 from collections import deque
@@ -38,7 +41,7 @@ else:
     os.chdir(SCRIPT_DIR)
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 import uvicorn
 
@@ -250,6 +253,13 @@ button:hover{opacity:.85}
 hr{border:none;border-top:1px solid #334155;margin:.75rem 0}
 .si{font-size:.8rem;color:#94a3b8;line-height:1.8}
 .scanning{font-size:.8rem;color:#64748b;font-style:italic}
+select{width:100%;background:#0f172a;border:1px solid #334155;border-radius:4px;padding:.45rem .7rem;color:#e2e8f0;font-size:.85rem}
+select:focus{outline:none;border-color:#6366f1}
+input[type=file]{width:100%;font-size:.8rem;color:#94a3b8;background:#0f172a;border:1px solid #334155;border-radius:4px;padding:.35rem .5rem;margin-bottom:.4rem}
+.wf-row{display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #1e293b;font-size:.85rem}
+.wf-name{font-weight:500;min-width:180px;color:#e2e8f0;word-break:break-all}
+.wf-types{flex:1;color:#64748b;font-size:.8rem}
+code{font-family:monospace;font-size:.8rem;color:#94a3b8}
 """
 
 _JS = """
@@ -403,7 +413,127 @@ def _mac_launchd_set(enable: bool) -> None:
             pass
 
 
+# ── ImgGen workflow management ─────────────────────────────────────────────────
+_WF_SAFE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
+
+_STANDARD_TASK_TYPES = [
+    "txt2img", "img2img", "inpaint", "outpaint",
+    "upscale", "face_swap", "txt2video", "img2video",
+]
+
+
+def _workflows_dir() -> Path:
+    from app.exec.imggen import _WORKFLOWS_DIR
+    return Path(str(_WORKFLOWS_DIR))
+
+
+def _list_workflows() -> List[Dict[str, Any]]:
+    """Return [{name, task_types}] for every valid workflow directory."""
+    wdir = _workflows_dir()
+    if not wdir.is_dir():
+        return []
+    result = []
+    for entry in sorted(wdir.iterdir()):
+        if not entry.is_dir() or not _WF_SAFE_RE.match(entry.name):
+            continue
+        task_types = sorted(
+            p.stem for p in entry.glob("*.json")
+            if not p.name.endswith(".params.json") and _WF_SAFE_RE.match(p.stem)
+        )
+        result.append({"name": entry.name, "task_types": task_types})
+    return result
+
+
+def _default_params(task_type: str) -> Dict[str, Any]:
+    """Generate a sensible starter params.json for the given task type."""
+    params: Dict[str, Any] = {
+        "prompt":   [["6", "text"]],
+        "negative": [["7", "text"]],
+        "width":    [["5", "width"]],
+        "height":   [["5", "height"]],
+        "seed":     [["3", "seed"]],
+    }
+    if task_type in ("img2img", "inpaint", "outpaint", "face_swap", "upscale"):
+        params["input_image"] = [["10", "image"]]
+    if task_type == "face_swap":
+        params["face_swap"] = [["11", "image"]]
+    if task_type == "upscale":
+        params["upscale"] = [["14", "upscale_factor"]]
+    if task_type in ("txt2video", "img2video"):
+        params["length"] = [["8", "frame_count"]]
+        if task_type == "img2video":
+            params["input_image"] = [["10", "image"]]
+    return params
+
+
+def _render_workflows_html(comfyui_url: str) -> str:
+    workflows = _list_workflows()
+    wdir = _workflows_dir()
+
+    if workflows:
+        rows = ""
+        for wf in workflows:
+            types_str = ", ".join(wf["task_types"]) if wf["task_types"] else "<em style='color:#475569'>no task files yet</em>"
+            rows += f"""
+        <div class="wf-row">
+          <span class="wf-name">{wf['name']}</span>
+          <span class="wf-types">{types_str}</span>
+          <form method="post" action="/workflows/delete" style="margin:0">
+            <input type="hidden" name="workflow_name" value="{wf['name']}">
+            <button class="btn-r btn-s" type="submit"
+              onclick="return confirm('Delete workflow {wf[\'name\']} and all its files?')">Delete</button>
+          </form>
+        </div>"""
+        wf_list_html = f'<div style="margin-bottom:.75rem">{rows}</div>'
+    else:
+        wf_list_html = f'<div class="si" style="margin-bottom:.75rem;color:#475569">No workflows found in <code>{wdir}</code></div>'
+
+    task_options = "\n".join(
+        f'<option value="{t}">{t}</option>' for t in _STANDARD_TASK_TYPES
+    )
+
+    return f"""
+  <div class="card full">
+    <h2>ImgGen / ComfyUI</h2>
+    <form method="post" action="/config/comfyui-url">
+      <lbl>ComfyUI URL</lbl>
+      <div class="row" style="margin-top:0">
+        <input type="text" name="comfyui_url" value="{comfyui_url}" placeholder="http://127.0.0.1:8188" style="margin:0">
+        <button class="btn-p btn-s" type="submit">Save</button>
+      </div>
+    </form>
+    <hr>
+    <h2 style="margin-top:.75rem;margin-bottom:.5rem">Workflows</h2>
+    {wf_list_html}
+    <hr>
+    <h2 style="margin-top:.75rem;margin-bottom:.5rem">Add Workflow</h2>
+    <form method="post" action="/workflows/add" enctype="multipart/form-data">
+      <div class="row" style="margin-top:0;align-items:flex-end;flex-wrap:wrap;gap:.5rem">
+        <div style="flex:2;min-width:150px">
+          <lbl>Workflow name (must match ComfyUI workflow name exactly)</lbl>
+          <input type="text" name="workflow_name" placeholder="wan-2.1-outpaint" style="margin:0">
+        </div>
+        <div style="flex:1;min-width:120px">
+          <lbl>Task type</lbl>
+          <select name="task_type" style="margin:0">{task_options}</select>
+        </div>
+      </div>
+      <div style="margin-top:.5rem">
+        <lbl>ComfyUI workflow JSON (exported via Save → API Format in ComfyUI)</lbl>
+        <input type="file" name="workflow_file" accept=".json">
+      </div>
+      <div class="row" style="margin-top:.5rem;align-items:center">
+        <button class="btn-p btn-s" type="submit">Add</button>
+        <span class="si" style="margin-left:.25rem">A starter <code>params.json</code> mapping will be generated automatically.</span>
+      </div>
+    </form>
+  </div>"""
+
+
 def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
+    comfyui_url = cfg.get("comfyui_url", "")
+    workflows_html = _render_workflows_html(comfyui_url)
+
     st = get_status()
     dot_cls = "running" if st["running"] else "stopped"
     st_text = "Running" if st["running"] else "Stopped"
@@ -567,6 +697,8 @@ def _render_page(cfg: Dict, all_caps: List[str], selected: List[str]) -> str:
       </div>
     </form>
   </div>
+
+  {workflows_html}
 
   <!-- Log -->
   <div class="card full">
@@ -779,6 +911,93 @@ async def route_logs():
     with _log_lock:
         lines = list(_log_buf)
     return JSONResponse({"lines": lines})
+
+
+@app.post("/config/comfyui-url")
+async def save_comfyui_url(comfyui_url: str = Form("")):
+    cfg = load_config()
+    cfg["comfyui_url"] = comfyui_url.strip()
+    save_config(cfg)
+    _log(f"[imggen] ComfyUI URL saved: {comfyui_url.strip() or '(cleared)'}")
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/workflows/add")
+async def route_add_workflow(
+    workflow_name: str = Form(""),
+    task_type: str = Form(""),
+    workflow_file: UploadFile = File(None),
+):
+    workflow_name = workflow_name.strip()
+    task_type = task_type.strip()
+
+    if not workflow_name or not _WF_SAFE_RE.match(workflow_name):
+        _log("[imggen] ERROR: invalid workflow name — use only letters, digits, hyphens, dots")
+        return RedirectResponse("/", status_code=303)
+    if not task_type or not _WF_SAFE_RE.match(task_type):
+        _log(f"[imggen] ERROR: invalid task type '{task_type}'")
+        return RedirectResponse("/", status_code=303)
+
+    wf_dir = (_workflows_dir() / workflow_name).resolve()
+    # Guard against path traversal
+    if not str(wf_dir).startswith(str(_workflows_dir().resolve())):
+        _log("[imggen] ERROR: path traversal detected in workflow name")
+        return RedirectResponse("/", status_code=303)
+
+    wf_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write the uploaded workflow JSON (or an empty placeholder)
+    json_path = wf_dir / f"{task_type}.json"
+    if workflow_file and workflow_file.filename:
+        raw = await workflow_file.read()
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            _log(f"[imggen] ERROR: uploaded file is not valid JSON — {exc}")
+            return RedirectResponse("/", status_code=303)
+        with open(json_path, "w") as f:
+            json.dump(parsed, f, indent=2)
+        _log(f"[imggen] Saved workflow JSON: {json_path}")
+    else:
+        if not json_path.exists():
+            with open(json_path, "w") as f:
+                json.dump({}, f)
+            _log(f"[imggen] Created empty workflow placeholder: {json_path} — replace with ComfyUI API-format export")
+
+    # Write starter params.json if one doesn't already exist
+    params_path = wf_dir / f"{task_type}.params.json"
+    if not params_path.exists():
+        with open(params_path, "w") as f:
+            json.dump(_default_params(task_type), f, indent=2)
+        _log(f"[imggen] Generated starter params mapping: {params_path}")
+
+    _log(f"[imggen] Workflow '{workflow_name}/{task_type}' added — rescan to register capability")
+    _start_scan()
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/workflows/delete")
+async def route_delete_workflow(workflow_name: str = Form("")):
+    workflow_name = workflow_name.strip()
+
+    if not workflow_name or not _WF_SAFE_RE.match(workflow_name):
+        _log("[imggen] ERROR: invalid workflow name in delete request")
+        return RedirectResponse("/", status_code=303)
+
+    wf_dir = (_workflows_dir() / workflow_name).resolve()
+    # Guard against path traversal
+    if not str(wf_dir).startswith(str(_workflows_dir().resolve())):
+        _log("[imggen] ERROR: path traversal detected in delete request")
+        return RedirectResponse("/", status_code=303)
+
+    if wf_dir.is_dir():
+        shutil.rmtree(wf_dir)
+        _log(f"[imggen] Deleted workflow '{workflow_name}'")
+        _start_scan()
+    else:
+        _log(f"[imggen] Workflow '{workflow_name}' not found — nothing deleted")
+
+    return RedirectResponse("/", status_code=303)
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
