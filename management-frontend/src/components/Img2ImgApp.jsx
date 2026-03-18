@@ -42,8 +42,9 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
           setCapabilities([]);
         }
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
         console.error('Failed to fetch capabilities:', err);
-        setError(`Failed to fetch capabilities: ${err.message}`);
+        setError(`Failed to fetch capabilities: ${errorMsg}`);
         setCapabilities([]);
       }
     };
@@ -69,7 +70,8 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         throw new Error('Failed to create bucket');
       }
     } catch (err) {
-      setError(`Failed to create bucket: ${err.message}`);
+      const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
+      setError(`Failed to create bucket: ${errorMsg}`);
       return null;
     }
   };
@@ -105,7 +107,8 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         throw new Error('Upload failed');
       }
     } catch (err) {
-      setError(`Upload error: ${err.message}`);
+      const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
+      setError(`Upload error: ${errorMsg}`);
     }
 
     setUploadProgress(0);
@@ -163,7 +166,8 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
       addDevEntry?.({ label: 'Submit img2img task', method: 'POST', url: '/api/task/submit', request: payload, response: data });
 
       if (data.error) {
-        setError(data.error);
+        const errorMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+        setError(errorMsg);
       } else if (data.id) {
         setResponse(data);
         pollTask(data.id.cap, data.id.id);
@@ -171,8 +175,9 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         setError('Unexpected response format.');
       }
     } catch (err) {
-      addDevEntry?.({ label: 'Submit img2img task', method: 'POST', url: '/api/task/submit', request: payload, response: { error: err.message } });
-      setError(`An error occurred: ${err.message}`);
+      const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
+      addDevEntry?.({ label: 'Submit img2img task', method: 'POST', url: '/api/task/submit', request: payload, response: { error: errorMsg } });
+      setError(`An error occurred: ${errorMsg}`);
       setIsLoading(false);
     }
   };
@@ -202,15 +207,19 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
           setResponse(data.output);
           setIsLoading(false);
         } else if (data.status === 'failed') {
-          setError(data.output?.error || 'Task failed');
+          const errorMsg = data.output?.error
+            ? (typeof data.output.error === 'string' ? data.output.error : JSON.stringify(data.output.error))
+            : 'Task failed';
+          setError(errorMsg);
           setIsLoading(false);
         } else {
           attempts++;
           setTimeout(poll, 5000);
         }
       } catch (err) {
-        addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { api_key: apiKey }, response: { error: err.message } });
-        setError(`Polling error: ${err.message}`);
+        const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
+        addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { api_key: apiKey }, response: { error: errorMsg } });
+        setError(`Polling error: ${errorMsg}`);
         setIsLoading(false);
       }
     };
