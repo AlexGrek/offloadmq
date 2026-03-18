@@ -323,3 +323,29 @@ pub struct TaskUpdate {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<TaskStatus>,
 }
+
+/// Metadata for a single file within a bucket, returned by `bucket_stat`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStatEntry {
+    pub file_uid: String,
+    pub original_name: String,
+    pub size: u64,
+    pub sha256: String,
+}
+
+/// Response body for the agent bucket-stat endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BucketStatResponse {
+    pub bucket_uid: String,
+    pub file_count: usize,
+    pub files: Vec<FileStatEntry>,
+}
+
+/// Raw file data returned by the agent download-bucket-file operation.
+/// Not serialised to JSON; transported as raw bytes over any transport.
+pub struct DownloadedFile {
+    pub data: Vec<u8>,
+    pub original_name: String,
+}
