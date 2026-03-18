@@ -56,6 +56,7 @@ const ImgGenModelSelector = ({ model, setModel, capabilities = [] }) => {
   return (
     <div style={styles.dropdownWrapper} ref={dropdownRef}>
       <button
+        type="button"
         style={{
           ...styles.dropdownTrigger,
           borderColor: dropdownOpen ? 'var(--primary)' : 'var(--border)',

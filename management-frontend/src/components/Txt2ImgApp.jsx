@@ -15,6 +15,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
   const [response, setResponse] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [statusText, setStatusText] = useState('');
   const [capabilities, setCapabilities] = useState([]);
 
   useEffect(() => {
@@ -51,10 +52,12 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
     setIsLoading(true);
     setResponse(null);
     setError(null);
+    setStatusText('Submitting...');
 
     const payload = {
       apiKey: apiKey,
       capability: `imggen.${model}`,
+      urgent: false,
       payload: {
         workflow: workflow,
         prompt: prompt,
@@ -101,6 +104,19 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
     }
   };
 
+  const statusLabel = (status, stage) => {
+    const base = {
+      pending: 'Pending...',
+      queued: 'Queued, waiting for agent...',
+      assigned: 'Assigned to agent...',
+      starting: 'Agent starting task...',
+      running: 'Running...',
+      failedRetryPending: 'Failed, retrying...',
+      failedRetryDelayed: 'Failed, waiting to retry...',
+    }[typeof status === 'string' ? status : ''] ?? `Status: ${JSON.stringify(status)}`;
+    return stage ? `${base} [${stage}]` : base;
+  };
+
   const pollTask = async (cap, id) => {
     const maxAttempts = 120; // 10 minutes with 5-second intervals
     let attempts = 0;
@@ -120,25 +136,26 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
         });
 
         const data = await res.json();
-        addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { api_key: apiKey }, response: data });
+        addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { apiKey: apiKey }, response: data });
 
         if (data.status === 'completed') {
+          setStatusText('');
           setResponse(data.output);
           setIsLoading(false);
-        } else if (data.status === 'failed') {
+        } else if (data.status === 'failed' || data.status === 'canceled') {
           const errorMsg = data.output?.error
             ? (typeof data.output.error === 'string' ? data.output.error : JSON.stringify(data.output.error))
-            : 'Task failed';
+            : (data.status === 'canceled' ? 'Task was canceled' : 'Task failed');
           setError(errorMsg);
           setIsLoading(false);
         } else {
-          // Continue polling
+          setStatusText(statusLabel(data.status, data.stage));
           attempts++;
           setTimeout(poll, 5000);
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
-        addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { api_key: apiKey }, response: { error: errorMsg } });
+        addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { apiKey: apiKey }, response: { error: errorMsg } });
         setError(`Polling error: ${errorMsg}`);
         setIsLoading(false);
       }
@@ -227,7 +244,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
       </form>
 
       <div style={styles.responseContainer}>
-        {isLoading && <p style={styles.loading}>Generating image...</p>}
+        {isLoading && <p style={styles.loading}>{statusText || 'Generating image...'}</p>}
         {error && <pre style={styles.error}>{error}</pre>}
         {response && response.images && (
           <div>
