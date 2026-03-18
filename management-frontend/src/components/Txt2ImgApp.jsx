@@ -1,0 +1,336 @@
+import React, { useState, useEffect } from 'react';
+import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
+import ImgGenModelSelector from './ImgGenModelSelector';
+
+const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
+  const [workflow, setWorkflow] = useState('txt2img');
+  const [model, setModel] = useState('wan-2.1-outpaint');
+  const [prompt, setPrompt] = useState('a cat sitting on the moon, cinematic lighting');
+  const [negativePrompt, setNegativePrompt] = useState('blurry, deformed, low quality');
+  const [width, setWidth] = useState(1024);
+  const [height, setHeight] = useState(1024);
+  const [seed, setSeed] = useState('');
+
+  const [response, setResponse] = useState(null);
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [capabilities, setCapabilities] = useState([]);
+
+  useEffect(() => {
+    const updCaps = async () => {
+      try {
+        const data = await fetchOnlineCapabilities();
+        if (Array.isArray(data)) {
+          setCapabilities(data.filter((cap) => stripCapabilityAttrs(cap).startsWith("imggen.")));
+        }
+      } catch (err) {
+        setError(`Failed to fetch capabilities: ${err.message}`);
+      }
+    };
+
+    updCaps();
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setResponse(null);
+    setError(null);
+
+    const payload = {
+      api_key: apiKey,
+      capability: `imggen.${model}`,
+      payload: {
+        workflow: workflow,
+        prompt: prompt,
+        secondary_prompts: {
+          negative: negativePrompt,
+        },
+        resolution: {
+          width: parseInt(width),
+          height: parseInt(height),
+        },
+      },
+    };
+
+    // Add seed only if provided and not empty
+    if (seed && seed !== '') {
+      payload.payload.seed = parseInt(seed) || -1;
+    }
+
+    try {
+      const res = await fetch('/api/task/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      addDevEntry?.({ label: 'Submit txt2img task', method: 'POST', url: '/api/task/submit', request: payload, response: data });
+
+      if (data.error) {
+        setError(data.error);
+      } else if (data.id) {
+        setResponse(data);
+        // Start polling for result
+        pollTask(data.id.cap, data.id.id);
+      } else {
+        setError('Unexpected response format.');
+      }
+    } catch (err) {
+      addDevEntry?.({ label: 'Submit txt2img task', method: 'POST', url: '/api/task/submit', request: payload, response: { error: err.message } });
+      setError(`An error occurred: ${err.message}`);
+      setIsLoading(false);
+    }
+  };
+
+  const pollTask = async (cap, id) => {
+    const maxAttempts = 120; // 10 minutes with 5-second intervals
+    let attempts = 0;
+
+    const poll = async () => {
+      if (attempts >= maxAttempts) {
+        setError('Task polling timeout');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/task/poll/${cap}/${id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_key: apiKey }),
+        });
+
+        const data = await res.json();
+        addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { api_key: apiKey }, response: data });
+
+        if (data.status === 'completed') {
+          setResponse(data.output);
+          setIsLoading(false);
+        } else if (data.status === 'failed') {
+          setError(data.output?.error || 'Task failed');
+          setIsLoading(false);
+        } else {
+          // Continue polling
+          attempts++;
+          setTimeout(poll, 5000);
+        }
+      } catch (err) {
+        addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { api_key: apiKey }, response: { error: err.message } });
+        setError(`Polling error: ${err.message}`);
+        setIsLoading(false);
+      }
+    };
+
+    poll();
+  };
+
+  const filteredModels = capabilities
+    .map(cap => stripCapabilityAttrs(cap).replace('imggen.', ''))
+    .filter(Boolean);
+
+  return (
+    <div style={styles.content}>
+      <form onSubmit={handleSubmit} style={styles.form}>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Workflow:</label>
+          <ImgGenModelSelector
+            model={model}
+            setModel={setModel}
+            capabilities={capabilities}
+          />
+        </div>
+
+        <div style={styles.formGroup}>
+          <label htmlFor="prompt" style={styles.label}>Prompt:</label>
+          <textarea
+            id="prompt"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            style={styles.textarea}
+            rows="4"
+          />
+        </div>
+
+        <div style={styles.formGroup}>
+          <label htmlFor="negative" style={styles.label}>Negative Prompt:</label>
+          <textarea
+            id="negative"
+            value={negativePrompt}
+            onChange={(e) => setNegativePrompt(e.target.value)}
+            style={styles.textarea}
+            rows="2"
+          />
+        </div>
+
+        <div style={styles.row}>
+          <div style={styles.formGroup}>
+            <label htmlFor="width" style={styles.label}>Width:</label>
+            <input
+              id="width"
+              type="number"
+              value={width}
+              onChange={(e) => setWidth(e.target.value)}
+              style={styles.input}
+            />
+          </div>
+          <div style={styles.formGroup}>
+            <label htmlFor="height" style={styles.label}>Height:</label>
+            <input
+              id="height"
+              type="number"
+              value={height}
+              onChange={(e) => setHeight(e.target.value)}
+              style={styles.input}
+            />
+          </div>
+        </div>
+
+        <div style={styles.formGroup}>
+          <label htmlFor="seed" style={styles.label}>Seed (optional):</label>
+          <input
+            id="seed"
+            type="number"
+            value={seed}
+            onChange={(e) => setSeed(e.target.value)}
+            placeholder="Leave empty for random"
+            style={styles.input}
+          />
+        </div>
+
+        <button type="submit" style={styles.button} disabled={isLoading}>
+          {isLoading ? 'Generating...' : 'Generate Image'}
+        </button>
+      </form>
+
+      <div style={styles.responseContainer}>
+        {isLoading && <p style={styles.loading}>Generating image...</p>}
+        {error && <pre style={styles.error}>{error}</pre>}
+        {response && response.images && (
+          <div>
+            <p style={styles.responseLabel}>Generated Images:</p>
+            <div style={styles.imageGrid}>
+              {response.images.map((img, idx) => (
+                <div key={idx}>
+                  <img
+                    src={`data:${img.content_type};base64,${img.data_base64}`}
+                    alt={`Generated ${idx + 1}`}
+                    style={styles.image}
+                  />
+                  <p style={styles.imageName}>{img.filename}</p>
+                </div>
+              ))}
+            </div>
+            {response.seed != null && (
+              <p style={styles.seedInfo}>Seed: {response.seed}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const styles = {
+  content: {
+    padding: '4px',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  formGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  row: {
+    display: 'flex',
+    gap: '16px',
+  },
+  label: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: 'var(--text)',
+    marginBottom: '6px',
+  },
+  input: {
+    padding: '8px 12px',
+    fontSize: '14px',
+    border: '1px solid var(--border)',
+    borderRadius: '6px',
+    outline: 'none',
+    background: 'var(--input-bg)',
+    color: 'var(--text)',
+  },
+  textarea: {
+    padding: '8px 12px',
+    fontSize: '14px',
+    border: '1px solid var(--border)',
+    borderRadius: '6px',
+    resize: 'vertical',
+    outline: 'none',
+    background: 'var(--input-bg)',
+    color: 'var(--text)',
+  },
+  button: {
+    padding: '10px 16px',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#FFF',
+    backgroundColor: '#007AFF',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    alignSelf: 'flex-start',
+  },
+  responseContainer: {
+    marginTop: '24px',
+    padding: '16px',
+    background: 'var(--glass)',
+    border: '1px solid var(--border)',
+    borderRadius: '8px',
+  },
+  responseLabel: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: 'var(--text)',
+    margin: '0 0 12px 0',
+  },
+  loading: {
+    color: 'var(--muted)',
+    fontStyle: 'italic',
+  },
+  imageGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(256px, 1fr))',
+    gap: '12px',
+    marginBottom: '12px',
+  },
+  image: {
+    width: '100%',
+    borderRadius: '8px',
+    border: '1px solid var(--border)',
+  },
+  imageName: {
+    fontSize: '12px',
+    color: 'var(--muted)',
+    margin: '6px 0 0 0',
+    wordBreak: 'break-all',
+  },
+  seedInfo: {
+    fontSize: '12px',
+    color: 'var(--muted)',
+    margin: '8px 0 0 0',
+  },
+  error: {
+    whiteSpace: 'pre-wrap',
+    wordWrap: 'break-word',
+    fontSize: '12px',
+    color: 'var(--danger)',
+    margin: '0',
+  },
+};
+
+export default Txt2ImgApp;
