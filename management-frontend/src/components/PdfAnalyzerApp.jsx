@@ -1,22 +1,30 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Upload, FileText, Loader } from 'lucide-react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 import ModelSelector from './ModelSelector';
 
-async function clientFetch(path, apiKey, options = {}) {
-    const headers = new Headers(options.headers || {});
+async function clientFetch(path, apiKey, options = {}, addDevEntry = null) {
+    const { _label, ...fetchOptions } = options;
+    const headers = new Headers(fetchOptions.headers || {});
     headers.set('X-API-Key', apiKey);
-    const res = await fetch(path, { ...options, headers });
+    let reqBody = null;
+    if (fetchOptions.body && typeof fetchOptions.body === 'string') {
+        try { reqBody = JSON.parse(fetchOptions.body); } catch { reqBody = fetchOptions.body; }
+    }
+    const res = await fetch(path, { ...fetchOptions, headers });
     if (!res.ok) {
         const text = await res.text().catch(() => '');
+        addDevEntry?.({ label: _label, method: fetchOptions.method || 'GET', url: path, request: reqBody, response: { error: `${res.status} ${res.statusText}${text ? ` – ${text}` : ''}` } });
         throw new Error(`${res.status} ${res.statusText}${text ? ` – ${text}` : ''}`);
     }
     const ct = res.headers.get('content-type') || '';
-    if (ct.includes('application/json')) return res.json();
-    return null;
+    let respBody = null;
+    if (ct.includes('application/json')) respBody = await res.json();
+    addDevEntry?.({ label: _label, method: fetchOptions.method || 'GET', url: path, request: reqBody, response: respBody });
+    return respBody;
 }
 
-const PdfAnalyzerApp = ({ apiKey: propApiKey }) => {
+const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
     const [capability, setCapability] = useState('llm.gemma3:4b');
     const [prompt, setPrompt] = useState('Analyze this PDF document. Summarize the key points and provide any insights.');
@@ -61,13 +69,15 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey }) => {
     const pollTask = useCallback(async (cap, id) => {
         const encodedCap = encodeURIComponent(cap);
         const encodedId = encodeURIComponent(id);
+        const pollUrl = `/api/task/poll/${encodedCap}/${encodedId}`;
+        const pollBody = { apiKey };
         for (let i = 0; i < 120; i++) {
             await new Promise(r => setTimeout(r, 3000));
             try {
-                const resp = await fetch(`/api/task/poll/${encodedCap}/${encodedId}`, {
+                const resp = await fetch(pollUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ apiKey }),
+                    body: JSON.stringify(pollBody),
                 });
                 if (!resp.ok) continue;
                 const data = await resp.json();
@@ -78,14 +88,16 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey }) => {
                 status(`Status: ${taskStatus}${data.stage ? ` (${data.stage})` : ''}`);
 
                 if (taskStatus === 'completed' || taskStatus === 'failed') {
+                    addDevEntry?.({ key: `poll-${id}`, label: 'Poll task (final)', method: 'POST', url: pollUrl, request: pollBody, response: data });
                     return data;
                 }
+                addDevEntry?.({ key: `poll-${id}`, label: 'Poll task', method: 'POST', url: pollUrl, request: pollBody, response: data });
             } catch {
                 // retry
             }
         }
         throw new Error('Polling timed out');
-    }, [apiKey, status]);
+    }, [apiKey, status, addDevEntry]);
 
     const handleAnalyze = useCallback(async () => {
         if (!selectedFile) return;
@@ -100,7 +112,7 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey }) => {
         try {
             // 1. Create bucket
             status('Creating file bucket...');
-            const bucketResp = await clientFetch('/api/storage/bucket/create', apiKey, { method: 'POST' });
+            const bucketResp = await clientFetch('/api/storage/bucket/create', apiKey, { method: 'POST', _label: 'Create bucket' }, addDevEntry);
             bucketUid = bucketResp.bucket_uid;
             status(`Bucket created: ${bucketUid.slice(0, 8)}...`);
 
@@ -110,11 +122,17 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey }) => {
             formData.append('file', selectedFile);
             const uploadHeaders = new Headers();
             uploadHeaders.set('X-API-Key', apiKey);
-            const uploadResp = await fetch(`/api/storage/bucket/${bucketUid}/upload`, {
+            const uploadUrl = `/api/storage/bucket/${bucketUid}/upload`;
+            const uploadResp = await fetch(uploadUrl, {
                 method: 'POST', headers: uploadHeaders, body: formData,
             });
-            if (!uploadResp.ok) throw new Error(`Upload failed: ${await uploadResp.text()}`);
+            if (!uploadResp.ok) {
+                const errText = await uploadResp.text();
+                addDevEntry?.({ label: 'Upload file', method: 'POST', url: uploadUrl, request: { fileName: selectedFile.name, size: selectedFile.size }, response: { error: errText } });
+                throw new Error(`Upload failed: ${errText}`);
+            }
             const uploadResult = await uploadResp.json();
+            addDevEntry?.({ label: 'Upload file', method: 'POST', url: uploadUrl, request: { fileName: selectedFile.name, size: selectedFile.size }, response: uploadResult });
             status(`Uploaded: ${uploadResult.original_name} (${uploadResult.size} bytes)`);
 
             // 3. Submit task
@@ -139,7 +157,8 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey }) => {
                         artifacts: [],
                         apiKey,
                     }),
-                });
+                    _label: 'Submit task (blocking)',
+                }, addDevEntry);
             } else {
                 status('Submitting async task...');
                 const submitResp = await clientFetch('/api/task/submit', apiKey, {
@@ -155,7 +174,8 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey }) => {
                         artifacts: [],
                         apiKey,
                     }),
-                });
+                    _label: 'Submit task',
+                }, addDevEntry);
                 const { task } = submitResp;
                 status(`Task submitted: ${task.id}. Polling...`);
                 taskResult = await pollTask(task.cap, task.id);
@@ -165,19 +185,19 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey }) => {
             showResult(taskResult);
 
             // 4. Clean up bucket
-            await clientFetch(`/api/storage/bucket/${bucketUid}`, apiKey, { method: 'DELETE' }).catch(() => {});
+            await clientFetch(`/api/storage/bucket/${bucketUid}`, apiKey, { method: 'DELETE', _label: 'Delete bucket' }, addDevEntry).catch(() => {});
             bucketUid = null;
 
         } catch (err) {
             status(err.message, 'err');
             // Clean up bucket on error
             if (bucketUid) {
-                await clientFetch(`/api/storage/bucket/${bucketUid}`, apiKey, { method: 'DELETE' }).catch(() => {});
+                await clientFetch(`/api/storage/bucket/${bucketUid}`, apiKey, { method: 'DELETE', _label: 'Delete bucket' }, addDevEntry).catch(() => {});
             }
         } finally {
             setRunning(false);
         }
-    }, [selectedFile, apiKey, capability, prompt, mode, status, pollTask]);
+    }, [selectedFile, apiKey, capability, prompt, mode, status, pollTask, addDevEntry, showResult]);
 
     const showResult = useCallback((data) => {
         if (data.output) {
@@ -231,8 +251,8 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey }) => {
                         <label style={s.label}>LLM Capability</label>
                         <ModelSelector
                             capabilities={capabilities}
-                            value={capability}
-                            onChange={setCapability}
+                            model={capability}
+                            setModel={setCapability}
                         />
                     </div>
                     <div style={{ flex: 1 }}>

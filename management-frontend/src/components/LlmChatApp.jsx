@@ -5,7 +5,7 @@ import ModelSelector from './ModelSelector';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 
-const LlmChatApp = ({ apiKey }) => {
+const LlmChatApp = ({ apiKey, addDevEntry }) => {
   const [messages, setMessages] = useState([]); // { role, content, images?, imageMimes? }
   const [input, setInput] = useState('');
   const [model, setModel] = useState('dolphin-mistral');
@@ -52,16 +52,16 @@ const LlmChatApp = ({ apiKey }) => {
     if (!currentTask) return;
 
     const poll = async () => {
+      const pollUrl = `/api/task/poll/${encodeURIComponent(currentTask.capability)}/${currentTask.id}`;
+      const pollBody = { apiKey };
       try {
-        const res = await fetch(
-          `/api/task/poll/${encodeURIComponent(currentTask.capability)}/${currentTask.id}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ apiKey }),
-          }
-        );
+        const res = await fetch(pollUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(pollBody),
+        });
         const data = await res.json();
+        addDevEntry?.({ key: `poll-${currentTask.id}`, label: 'Poll task', method: 'POST', url: pollUrl, request: pollBody, response: data });
 
         if (data.log) {
           setStreamingLog(data.log);
@@ -93,7 +93,7 @@ const LlmChatApp = ({ apiKey }) => {
     poll();
     pollIntervalRef.current = setInterval(poll, 2000);
     return () => clearInterval(pollIntervalRef.current);
-  }, [currentTask, apiKey]);
+  }, [currentTask, apiKey, addDevEntry]);
 
   const extractContent = (output) => {
     try {
@@ -179,6 +179,7 @@ const LlmChatApp = ({ apiKey }) => {
         body: JSON.stringify(payload),
       });
       const data = await res.json();
+      addDevEntry?.({ label: 'Submit chat task', method: 'POST', url: '/api/task/submit', request: payload, response: data });
 
       if (data.id?.id && data.id?.cap) {
         setCurrentTask({ id: data.id.id, capability: data.id.cap });

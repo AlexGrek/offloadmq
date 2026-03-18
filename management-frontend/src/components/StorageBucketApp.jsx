@@ -12,17 +12,25 @@ function fmtBytes(n) {
     return `${val % 1 === 0 ? val : val.toFixed(1)} ${units[i]}`;
 }
 
-async function clientFetch(path, apiKey, options = {}) {
-    const headers = new Headers(options.headers || {});
+async function clientFetch(path, apiKey, options = {}, addDevEntry = null) {
+    const { _label, ...fetchOptions } = options;
+    const headers = new Headers(fetchOptions.headers || {});
     headers.set('X-API-Key', apiKey);
-    const res = await fetch(path, { ...options, headers });
+    let reqBody = null;
+    if (fetchOptions.body && typeof fetchOptions.body === 'string') {
+        try { reqBody = JSON.parse(fetchOptions.body); } catch { reqBody = fetchOptions.body; }
+    }
+    const res = await fetch(path, { ...fetchOptions, headers });
     if (!res.ok) {
         const text = await res.text().catch(() => '');
+        addDevEntry?.({ label: _label, method: fetchOptions.method || 'GET', url: path, request: reqBody, response: { error: `${res.status} ${res.statusText}${text ? ` – ${text}` : ''}` } });
         throw new Error(`${res.status} ${res.statusText}${text ? ` – ${text}` : ''}`);
     }
     const ct = res.headers.get('content-type') || '';
-    if (ct.includes('application/json')) return res.json();
-    return null;
+    let respBody = null;
+    if (ct.includes('application/json')) respBody = await res.json();
+    addDevEntry?.({ label: _label, method: fetchOptions.method || 'GET', url: path, request: reqBody, response: respBody });
+    return respBody;
 }
 
 
@@ -50,7 +58,7 @@ function LimitsPanel({ limits }) {
     );
 }
 
-function FileRow({ file, bucketUid, apiKey, onDeleted }) {
+function FileRow({ file, bucketUid, apiKey, onDeleted, addDevEntry }) {
     const [hash, setHash] = useState(null);
     const [loadingHash, setLoadingHash] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -59,10 +67,8 @@ function FileRow({ file, bucketUid, apiKey, onDeleted }) {
     const fetchHash = async () => {
         setLoadingHash(true); setErr(null);
         try {
-            const res = await clientFetch(
-                `/api/storage/bucket/${encodeURIComponent(bucketUid)}/file/${encodeURIComponent(file.file_uid)}/hash`,
-                apiKey
-            );
+            const url = `/api/storage/bucket/${encodeURIComponent(bucketUid)}/file/${encodeURIComponent(file.file_uid)}/hash`;
+            const res = await clientFetch(url, apiKey, { _label: 'File hash' }, addDevEntry);
             setHash(res?.hash ?? JSON.stringify(res));
         } catch (e) { setErr(e.message); }
         finally { setLoadingHash(false); }
@@ -71,11 +77,8 @@ function FileRow({ file, bucketUid, apiKey, onDeleted }) {
     const handleDelete = async () => {
         setDeleting(true); setErr(null);
         try {
-            await clientFetch(
-                `/api/storage/bucket/${encodeURIComponent(bucketUid)}/file/${encodeURIComponent(file.file_uid)}`,
-                apiKey,
-                { method: 'DELETE' }
-            );
+            const url = `/api/storage/bucket/${encodeURIComponent(bucketUid)}/file/${encodeURIComponent(file.file_uid)}`;
+            await clientFetch(url, apiKey, { method: 'DELETE', _label: 'Delete file' }, addDevEntry);
             onDeleted();
         } catch (e) { setErr(e.message); setDeleting(false); }
     };
@@ -108,7 +111,7 @@ function FileRow({ file, bucketUid, apiKey, onDeleted }) {
     );
 }
 
-function BucketPanel({ bucketUid, apiKey, onRemoved }) {
+function BucketPanel({ bucketUid, apiKey, onRemoved, addDevEntry }) {
     const [open, setOpen] = useState(true);
     const [stat, setStat] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -124,7 +127,9 @@ function BucketPanel({ bucketUid, apiKey, onRemoved }) {
         try {
             const res = await clientFetch(
                 `/api/storage/bucket/${encodeURIComponent(bucketUid)}/stat`,
-                apiKey
+                apiKey,
+                { _label: 'Bucket stat' },
+                addDevEntry
             );
             setStat(res);
         } catch (e) {
@@ -135,7 +140,7 @@ function BucketPanel({ bucketUid, apiKey, onRemoved }) {
             }
         }
         finally { setLoading(false); }
-    }, [bucketUid, apiKey, onRemoved]);
+    }, [bucketUid, apiKey, onRemoved, addDevEntry]);
 
     useEffect(() => { loadStat(); }, [loadStat]);
 
@@ -148,13 +153,17 @@ function BucketPanel({ bucketUid, apiKey, onRemoved }) {
             form.append('file', file);
             const headers = new Headers();
             headers.set('X-API-Key', apiKey);
-            const res = await fetch(`/api/storage/bucket/${encodeURIComponent(bucketUid)}/upload`, {
+            const uploadUrl = `/api/storage/bucket/${encodeURIComponent(bucketUid)}/upload`;
+            const res = await fetch(uploadUrl, {
                 method: 'POST', headers, body: form,
             });
             if (!res.ok) {
                 const text = await res.text().catch(() => '');
+                addDevEntry?.({ label: 'Upload file', method: 'POST', url: uploadUrl, request: { fileName: file.name, size: file.size }, response: { error: text } });
                 throw new Error(`${res.status} ${res.statusText}${text ? ` – ${text}` : ''}`);
             }
+            const uploadData = await res.json().catch(() => null);
+            addDevEntry?.({ label: 'Upload file', method: 'POST', url: uploadUrl, request: { fileName: file.name, size: file.size }, response: uploadData });
             await loadStat();
         } catch (e) { setErr(e.message); }
         finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
@@ -167,7 +176,8 @@ function BucketPanel({ bucketUid, apiKey, onRemoved }) {
             await clientFetch(
                 `/api/storage/bucket/${encodeURIComponent(bucketUid)}`,
                 apiKey,
-                { method: 'DELETE' }
+                { method: 'DELETE', _label: 'Delete bucket' },
+                addDevEntry
             );
             onRemoved(bucketUid);
         } catch (e) { setErr(e.message); setDeleting(false); }
@@ -225,6 +235,7 @@ function BucketPanel({ bucketUid, apiKey, onRemoved }) {
                                     bucketUid={bucketUid}
                                     apiKey={apiKey}
                                     onDeleted={loadStat}
+                                    addDevEntry={addDevEntry}
                                 />
                             ))
                         ) : (
@@ -239,7 +250,7 @@ function BucketPanel({ bucketUid, apiKey, onRemoved }) {
 
 // ---- main app ---------------------------------------------------------------
 
-const StorageBucketApp = ({ apiKey: propApiKey }) => {
+const StorageBucketApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
     const [limits, setLimits] = useState(null);
     const [limitsErr, setLimitsErr] = useState(null);
@@ -255,20 +266,20 @@ const StorageBucketApp = ({ apiKey: propApiKey }) => {
         if (!apiKey) { setBucketUids([]); return; }
         setLoadingBuckets(true);
         try {
-            const res = await clientFetch('/api/storage/buckets', apiKey);
+            const res = await clientFetch('/api/storage/buckets', apiKey, { _label: 'List buckets' }, addDevEntry);
             setBucketUids((res?.buckets || []).map(b => b.bucket_uid));
         } catch { setBucketUids([]); }
         finally { setLoadingBuckets(false); }
-    }, [apiKey]);
+    }, [apiKey, addDevEntry]);
 
     const fetchLimits = useCallback(async () => {
         if (!apiKey) return;
         setLimitsErr(null);
         try {
-            const res = await clientFetch('/api/storage/limits', apiKey);
+            const res = await clientFetch('/api/storage/limits', apiKey, { _label: 'Storage limits' }, addDevEntry);
             setLimits(res);
         } catch (e) { setLimitsErr(e.message); }
-    }, [apiKey]);
+    }, [apiKey, addDevEntry]);
 
     useEffect(() => { fetchLimits(); fetchBuckets(); }, [fetchLimits, fetchBuckets]);
 
@@ -276,7 +287,7 @@ const StorageBucketApp = ({ apiKey: propApiKey }) => {
         if (!apiKey) return;
         setCreating(true); setCreateErr(null);
         try {
-            await clientFetch('/api/storage/bucket/create', apiKey, { method: 'POST' });
+            await clientFetch('/api/storage/bucket/create', apiKey, { method: 'POST', _label: 'Create bucket' }, addDevEntry);
             await fetchBuckets();
         } catch (e) { setCreateErr(e.message); }
         finally { setCreating(false); }
@@ -331,7 +342,7 @@ const StorageBucketApp = ({ apiKey: propApiKey }) => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div style={s.sectionTitle}>Buckets ({bucketUids.length})</div>
                     {bucketUids.map(uid => (
-                        <BucketPanel key={uid} bucketUid={uid} apiKey={apiKey} onRemoved={removeBucket} />
+                        <BucketPanel key={uid} bucketUid={uid} apiKey={apiKey} onRemoved={removeBucket} addDevEntry={addDevEntry} />
                     ))}
                 </div>
             )}

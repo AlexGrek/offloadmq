@@ -86,7 +86,10 @@
       "Bash(ls /Users/vedmedik/dev/offloadmq/offload-agent/*/bin/python)",
       "Bash(venv/bin/pip install:*)",
       "Bash(venv/bin/python3 -c \":*)",
-      "Bash(venv/bin/python3 ../sandbox/pdf-analyzer/test_e2e.py)"
+      "Bash(venv/bin/python3 ../sandbox/pdf-analyzer/test_e2e.py)",
+      "Bash(npx eslint:*)",
+      "Bash(git stash:*)",
+      "Bash(npx --prefix management-frontend eslint management-frontend/src/components/BashApp.jsx management-frontend/src/components/LlmApp.jsx management-frontend/src/components/PipelineApp.jsx management-frontend/src/components/SandboxApps.jsx management-frontend/src/components/StreamingLLMApp.jsx)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

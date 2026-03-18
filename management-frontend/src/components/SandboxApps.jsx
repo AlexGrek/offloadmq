@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+const DevPanel = React.lazy(() => import('./DevPanel'));
 import { motion, AnimatePresence } from 'framer-motion';
 import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X } from 'lucide-react';
 
@@ -73,6 +74,8 @@ const apps = [
 const SandboxApps = () => {
   const [selectedId, setSelectedId] = useState(null);
   const [apiKey, setApiKey] = useState('client_secret_key_123');
+  const [activeTab, setActiveTab] = useState('app');
+  const [devLog, setDevLog] = useState([]);
   const selectedApp = apps.find((app) => app.id === selectedId);
 
   // Sync prop and local state
@@ -80,6 +83,26 @@ const SandboxApps = () => {
     let item = localStorage.getItem('offroadmq-api-key');
     if (item) setApiKey(item);
   }, []);
+
+  const addDevEntry = useCallback((entry) => {
+    setDevLog(prev => {
+      const withTs = { ...entry, ts: new Date().toLocaleTimeString() };
+      if (entry.key != null) {
+        const idx = prev.findIndex(e => e.key === entry.key);
+        if (idx !== -1) {
+          const updated = [...prev];
+          updated[idx] = withTs;
+          return updated;
+        }
+      }
+      return [withTs, ...prev].slice(0, 100);
+    });
+  }, []);
+
+  useEffect(() => {
+    setDevLog([]);
+    setActiveTab('app');
+  }, [selectedId]);
 
   // Function to save API key to local storage
   const handleSaveApiKey = () => {
@@ -306,16 +329,30 @@ const SandboxApps = () => {
               exit={{ opacity: 0, transition: { duration: 0.2 } }}
             >
               <div className="modal-header">
-                <button
-                  className="close-button"
-                  onClick={() => setSelectedId(null)}
-                >
-                  {/* The X icon for the close button */}
+                <div style={{ display: 'flex', gap: '4px', flex: 1 }}>
+                  <button
+                    style={{ padding: '4px 14px', fontSize: '13px', fontWeight: 500, borderRadius: '6px', border: '1px solid transparent', cursor: 'pointer', background: activeTab === 'app' ? '#f3f4f6' : 'none', borderColor: activeTab === 'app' ? '#d1d5db' : 'transparent', color: activeTab === 'app' ? '#1f2937' : '#6b7280' }}
+                    onClick={() => setActiveTab('app')}
+                  >App</button>
+                  <button
+                    style={{ padding: '4px 14px', fontSize: '13px', fontWeight: 500, borderRadius: '6px', border: '1px solid transparent', cursor: 'pointer', background: activeTab === 'dev' ? '#f3f4f6' : 'none', borderColor: activeTab === 'dev' ? '#d1d5db' : 'transparent', color: activeTab === 'dev' ? '#1f2937' : '#6b7280', position: 'relative' }}
+                    onClick={() => setActiveTab('dev')}
+                  >
+                    Dev
+                    {devLog.length > 0 && <span style={{ marginLeft: '5px', fontSize: '10px', background: '#3b82f6', color: '#fff', borderRadius: '999px', padding: '1px 5px', fontWeight: 700 }}>{devLog.length}</span>}
+                  </button>
+                </div>
+                <button className="close-button" onClick={() => setSelectedId(null)}>
                   <X size={8} color="#fff" />
                 </button>
               </div>
               <div className="modal-body">
-                <selectedApp.app apiKey={apiKey} />
+                <React.Suspense fallback={<div>Loading...</div>}>
+                  {activeTab === 'app'
+                    ? <selectedApp.app apiKey={apiKey} addDevEntry={addDevEntry} />
+                    : <DevPanel entries={devLog} />
+                  }
+                </React.Suspense>
               </div>
             </motion.div>
           </motion.div>

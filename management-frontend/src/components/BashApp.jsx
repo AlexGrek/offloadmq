@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Main bash application component
-const BashApp = ({ apiKey }) => {
+const BashApp = ({ apiKey, addDevEntry }) => {
     // State for input field and API response
     const [command, setCommand] = useState('ls -la');
 
@@ -10,8 +10,6 @@ const BashApp = ({ apiKey }) => {
     const [response, setResponse] = useState(null);
     const [error, setError] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [isDebug, setIsDebug] = useState(false);
-    const [request, setRequest] = useState(null);
     const [capabilities, setCapabilities] = useState([]);
 
     useEffect(() => {
@@ -53,7 +51,6 @@ const BashApp = ({ apiKey }) => {
         };
 
         try {
-            setRequest(JSON.stringify(payload, null, 2));
             // Send the request to the specified endpoint
             const res = await fetch('/api/task/submit_blocking', {
                 method: 'POST',
@@ -65,6 +62,7 @@ const BashApp = ({ apiKey }) => {
 
             // Parse the JSON response
             const data = await res.json();
+            addDevEntry?.({ label: 'Execute bash (blocking)', method: 'POST', url: '/api/task/submit_blocking', request: payload, response: data });
 
             // Handle the response body structure
             if (data.error) {
@@ -76,6 +74,7 @@ const BashApp = ({ apiKey }) => {
                 setError('Unexpected response format.');
             }
         } catch (err) {
+            addDevEntry?.({ label: 'Execute bash (blocking)', method: 'POST', url: '/api/task/submit_blocking', request: payload, response: { error: err.message } });
             setError(`An error occurred: ${err.message}`);
         } finally {
             setIsLoading(false);
@@ -178,13 +177,6 @@ const BashApp = ({ apiKey }) => {
                 )}
             </div>
 
-            {!isDebug && <button style={styles.debugButton} onClick={() => setIsDebug(true)}>Enable debug mode</button>}
-            {isDebug && (
-                <div style={styles.responseContainer}>
-                    <h4 style={styles.debugLabel}>Request Payload:</h4>
-                    {request && <pre style={styles.response}>{request}</pre>}
-                </div>
-            )}
         </div>
     );
 };

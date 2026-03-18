@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Main pipeline application component
-const PipelineApp = ({ apiKey }) => {
+const PipelineApp = ({ apiKey, addDevEntry }) => {
     // State for input field, history, and task IDs
     const [command, setCommand] = useState('echo "Hello from a non-blocking task"');
     const [history, setHistory] = useState([]);
@@ -16,9 +16,6 @@ const PipelineApp = ({ apiKey }) => {
     const [pollingStatus, setPollingStatus] = useState('');
     const [currentTask, setCurrentTask] = useState(null); // {id, capability}
 
-    // State for debugging
-    const [isDebug, setIsDebug] = useState(false);
-    const [request, setRequest] = useState(null);
     const [capabilities, setCapabilities] = useState([]);
     const [log, setLog] = useState('');
 
@@ -71,17 +68,19 @@ const PipelineApp = ({ apiKey }) => {
 
         const poll = async () => {
             setPollingStatus(`Polling for result of task ${currentTask.capability}/${currentTask.id}...`);
+            const pollUrl = `/api/task/poll/${encodeURIComponent(currentTask.capability)}/${currentTask.id}`;
+            const pollPayload = { apiKey: apiKey };
             try {
                 // **CHANGED**: Send a POST request with the API key in the body for polling.
-                const payload = { apiKey: apiKey };
-                const res = await fetch(`/api/task/poll/${encodeURIComponent(currentTask.capability)}/${currentTask.id}`, {
+                const res = await fetch(pollUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify(payload),
+                    body: JSON.stringify(pollPayload),
                 });
                 const data = await res.json();
+                addDevEntry?.({ key: `poll-${currentTask.id}`, label: 'Poll task', method: 'POST', url: pollUrl, request: pollPayload, response: data });
 
                 // Check for a final result or an error to stop polling
                 if (data.output) {
@@ -102,6 +101,7 @@ const PipelineApp = ({ apiKey }) => {
                 // If neither result nor error, we are still pending, so the interval continues.
 
             } catch (err) {
+                addDevEntry?.({ key: `poll-${currentTask.id}`, label: 'Poll task', method: 'POST', url: pollUrl, request: pollPayload, response: { error: err.message } });
                 setIsLoading(false);
                 setError(`Polling failed: ${err.message}`);
                 setPollingStatus('');
@@ -119,7 +119,7 @@ const PipelineApp = ({ apiKey }) => {
                 clearInterval(pollIntervalRef.current);
             }
         };
-    }, [currentTask, apiKey]);
+    }, [currentTask, apiKey, addDevEntry]);
 
 
     // Function to escape single quotes in the command
@@ -153,7 +153,6 @@ const PipelineApp = ({ apiKey }) => {
         };
 
         try {
-            setRequest(JSON.stringify(payload, null, 2));
             const res = await fetch('/api/task/submit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -161,6 +160,7 @@ const PipelineApp = ({ apiKey }) => {
             });
 
             const data = await res.json();
+            addDevEntry?.({ label: 'Submit task', method: 'POST', url: '/api/task/submit', request: payload, response: data });
 
             if (data.error) {
                 setError(data.error.message);
@@ -288,13 +288,6 @@ const PipelineApp = ({ apiKey }) => {
             )}
 
 
-            {!isDebug && <button style={styles.debugButton} onClick={() => setIsDebug(true)}>Enable debug mode</button>}
-            {isDebug && (
-                <div style={styles.responseContainer}>
-                    <h4 style={styles.debugLabel}>Request Payload:</h4>
-                    {request && <pre style={styles.response}>{request}</pre>}
-                </div>
-            )}
         </div>
     );
 };

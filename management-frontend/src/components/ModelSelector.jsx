@@ -54,6 +54,7 @@ const ModelSelector = ({ model, setModel, capabilities = [] }) => {
     }
   }, [dropdownOpen]);
 
+  const isEmpty = capabilities.length === 0;
   const selectedCap = capabilities.find(cap => stripCapabilityAttrs(cap).replace(/^llm\./, '') === model);
   const selectedAttrs = selectedCap ? parseCapabilityAttrs(selectedCap) : [];
 
@@ -63,21 +64,29 @@ const ModelSelector = ({ model, setModel, capabilities = [] }) => {
         style={{
           ...styles.dropdownTrigger,
           borderColor: dropdownOpen ? 'var(--primary)' : 'var(--border)',
+          ...(isEmpty ? styles.dropdownTriggerEmpty : {}),
         }}
         onClick={() => setDropdownOpen(!dropdownOpen)}
       >
-        <span style={styles.triggerContent}>
-          <span>{model}</span>
-          {selectedAttrs.length > 0 && (
-            <span style={styles.triggerAttrs}>
-              {selectedAttrs.map(attr => <AttributeTag key={attr} attr={attr} inline={true} />)}
-            </span>
-          )}
-        </span>
+        {isEmpty ? (
+          <span style={styles.emptyTrigger}>
+            <span style={styles.emptyDot} />
+            <span>No agents online</span>
+          </span>
+        ) : (
+          <span style={styles.triggerContent}>
+            <span>{model}</span>
+            {selectedAttrs.length > 0 && (
+              <span style={styles.triggerAttrs}>
+                {selectedAttrs.map(attr => <AttributeTag key={attr} attr={attr} inline={true} />)}
+              </span>
+            )}
+          </span>
+        )}
       </button>
       {dropdownOpen && (
         <div style={styles.dropdownMenu}>
-          {capabilities.length > 0 ? (
+          {!isEmpty ? (
             sortBySize(capabilities).map(cap => {
               const modelName = stripCapabilityAttrs(cap).replace(/^llm\./, '');
               const attrs = parseCapabilityAttrs(cap);
@@ -113,7 +122,11 @@ const ModelSelector = ({ model, setModel, capabilities = [] }) => {
               );
             })
           ) : (
-            <div style={styles.dropdownItem}>No models available</div>
+            <div style={{ ...styles.dropdownItem, ...styles.emptyDropdown }}>
+              <div style={styles.emptyIcon}>?</div>
+              <div style={styles.emptyTitle}>No models available</div>
+              <div style={styles.emptyHint}>Start an agent with LLM capabilities to see models here</div>
+            </div>
           )}
         </div>
       )}
@@ -181,6 +194,56 @@ const styles = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '3px',
+  },
+  dropdownTriggerEmpty: {
+    borderStyle: 'dashed',
+    opacity: 0.7,
+  },
+  emptyTrigger: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: 'var(--muted)',
+    fontStyle: 'italic',
+    fontSize: '12px',
+  },
+  emptyDot: {
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+    backgroundColor: 'var(--muted)',
+    flexShrink: 0,
+  },
+  emptyDropdown: {
+    cursor: 'default',
+    textAlign: 'center',
+    padding: '16px 12px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  emptyIcon: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    border: '2px dashed var(--border)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '16px',
+    color: 'var(--muted)',
+    marginBottom: '4px',
+  },
+  emptyTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text)',
+  },
+  emptyHint: {
+    fontSize: '11px',
+    color: 'var(--muted)',
+    lineHeight: 1.4,
   },
 };
 

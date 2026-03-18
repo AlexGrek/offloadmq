@@ -3,7 +3,7 @@ import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } f
 import ModelSelector from './ModelSelector';
 
 // Main application component
-const LlmApp = ({ apiKey }) => {
+const LlmApp = ({ apiKey, addDevEntry }) => {
   // State for input fields and API response
   const [model, setModel] = useState('dolphin-mistral');
   const [systemMessage, setSystemMessage] = useState("You are a witty, concise writing assistant that rewrites user text into microfiction (≤200 words) in the voice of a 1970s travel guide. Keep sentences short, sprinkle one ironic aside, and always end with a tiny surprise.");
@@ -13,8 +13,6 @@ const LlmApp = ({ apiKey }) => {
   const [response, setResponse] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isDebug, setIsDebug] = useState(false);
-  const [request, setRequest] = useState(null);
   const [capabilities, setCapabilities] = useState([]);
 
   useEffect(() => {
@@ -61,7 +59,6 @@ const LlmApp = ({ apiKey }) => {
     };
 
     try {
-      setRequest(JSON.stringify(payload, null, 2));
       // Send the request to the specified endpoint
       const res = await fetch('/api/task/submit_blocking', {
         method: 'POST',
@@ -73,6 +70,7 @@ const LlmApp = ({ apiKey }) => {
 
       // Parse the JSON response
       const data = await res.json();
+      addDevEntry?.({ label: 'Submit task (blocking)', method: 'POST', url: '/api/task/submit_blocking', request: payload, response: data });
 
       // Handle the response body structure
       if (data.error) {
@@ -84,6 +82,7 @@ const LlmApp = ({ apiKey }) => {
         setError('Unexpected response format.');
       }
     } catch (err) {
+      addDevEntry?.({ label: 'Submit task (blocking)', method: 'POST', url: '/api/task/submit_blocking', request: payload, response: { error: err.message } });
       setError(`An error occurred: ${err.message}`);
     } finally {
       setIsLoading(false);
@@ -131,10 +130,6 @@ const LlmApp = ({ apiKey }) => {
         {error && <pre style={styles.error}>{error}</pre>}
         {response && <p style={styles.response}>{response}</p>}
       </div>
-      {!isDebug && <button onClick={() => setIsDebug(true)}>Enable debug mode</button>}
-      {isDebug && <div style={styles.responseContainer}>
-        {request && <p style={styles.response}>{request}</p>}
-      </div>}
     </div>
   );
 };
