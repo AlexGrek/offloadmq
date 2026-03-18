@@ -39,7 +39,7 @@ impl UnassignedTask {
     pub fn into_status_report(self) -> TaskStatusResponse {
         TaskStatusResponse {
             id: self.id,
-            status: TaskStatus::Pending,
+            status: TaskStatus::Queued,
             stage: None,
             output: None,
             log: None,

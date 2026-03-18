@@ -118,7 +118,7 @@ pub async fn submit_task(
         return Ok(Json(json!({
             "id": task.id,
             "capability": task.id.cap,
-            "status": "pending",
+            "status": "queued",
             "message": "Added to tasks queue"
         }))
         .into_response());
