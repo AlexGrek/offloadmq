@@ -311,8 +311,8 @@ _STANDARD_TASK_TYPES = [
 
 
 def _workflows_dir() -> Path:
-    from app.exec.imggen import _WORKFLOWS_DIR
-    return Path(str(_WORKFLOWS_DIR))
+    from app.exec.imggen import _get_workflows_dir
+    return _get_workflows_dir()
 
 
 def _list_workflows() -> List[Dict[str, Any]]:
