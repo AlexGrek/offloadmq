@@ -37,6 +37,9 @@ build: venv frontend-build
 	@echo ""
 	@echo "Build complete. The binary is located in the 'dist' directory."
 
+typecheck: venv
+	bash -c "source venv/bin/activate && python -m mypy"
+
 rebuild: clean build
 
 clean:
@@ -47,4 +50,4 @@ clean:
 webui: venv frontend-build
 	bash -c "source venv/bin/activate && python offload-agent.py webui"
 
-.PHONY: sysinfo register ollama build rebuild clean webui frontend-build
+.PHONY: sysinfo register ollama build rebuild clean webui frontend-build typecheck

@@ -37,6 +37,10 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Type check
+        working-directory: offload-agent
+        run: python -m mypy
+
       - name: Build single-file executable
         working-directory: offload-agent
         run: |

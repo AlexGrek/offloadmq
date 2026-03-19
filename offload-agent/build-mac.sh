@@ -41,7 +41,11 @@ fi
 echo "Building web UI (frontend/dist) ..."
 ( cd "$SCRIPT_DIR/frontend" && npm ci && npm run build )
 
-# ── 2c. Inject app version ──────────────────────────────────────────────────
+# ── 2c. Type-check ──────────────────────────────────────────────────────────
+echo "Running mypy type check ..."
+"$PYTHON" -m mypy
+
+# ── 2d. Inject app version ──────────────────────────────────────────────────
 APP_VERSION=$(git -C "$SCRIPT_DIR" rev-list --count HEAD 2>/dev/null || echo "dev")
 echo "APP_VERSION = '$APP_VERSION'" > "$SCRIPT_DIR/app/_version.py"
 echo "Injected version: $APP_VERSION"
