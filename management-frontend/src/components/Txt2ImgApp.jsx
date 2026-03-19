@@ -5,7 +5,7 @@ import ErrorBoundary from './ErrorBoundary';
 
 const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
   const [workflow, setWorkflow] = useState('txt2img');
-  const [model, setModel] = useState('wan-2.1-outpaint');
+  const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('a cat sitting on the moon, cinematic lighting');
   const [negativePrompt, setNegativePrompt] = useState('blurry, deformed, low quality');
   const [width, setWidth] = useState(1024);
@@ -33,6 +33,9 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
             }
           });
           setCapabilities(imggenCaps);
+          if (imggenCaps.length > 0) {
+            setModel(prev => prev || stripCapabilityAttrs(imggenCaps[0]).replace(/^imggen\./, ''));
+          }
         } else {
           console.warn('Expected array of capabilities, got:', data);
           setCapabilities([]);

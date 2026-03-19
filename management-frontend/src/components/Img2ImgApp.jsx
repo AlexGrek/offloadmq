@@ -6,7 +6,7 @@ import { Upload, X } from 'lucide-react';
 
 const Img2ImgApp = ({ apiKey, addDevEntry }) => {
   const [workflow, setWorkflow] = useState('img2img');
-  const [model, setModel] = useState('wan-2.1-outpaint');
+  const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('turn this into an oil painting');
   const [negativePrompt, setNegativePrompt] = useState('blurry, deformed');
   const [width, setWidth] = useState(768);
@@ -39,6 +39,9 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
             }
           });
           setCapabilities(imggenCaps);
+          if (imggenCaps.length > 0) {
+            setModel(prev => prev || stripCapabilityAttrs(imggenCaps[0]).replace(/^imggen\./, ''));
+          }
         } else {
           console.warn('Expected array of capabilities, got:', data);
           setCapabilities([]);

@@ -5,7 +5,7 @@ import ModelSelector from './ModelSelector';
 // Main application component
 const LlmApp = ({ apiKey, addDevEntry }) => {
   // State for input fields and API response
-  const [model, setModel] = useState('dolphin-mistral');
+  const [model, setModel] = useState('');
   const [systemMessage, setSystemMessage] = useState("You are a witty, concise writing assistant that rewrites user text into microfiction (≤200 words) in the voice of a 1970s travel guide. Keep sentences short, sprinkle one ironic aside, and always end with a tiny surprise.");
   const [userMessage, setUserMessage] = useState("Write a 150-word kinky microfiction about a lost metro token that changes hands across Kyiv during a hot summer day. Include one vivid sensory detail, a brief character beat for two different holders, and finish with a twist that reframes the token's importance.");
 
@@ -20,7 +20,11 @@ const LlmApp = ({ apiKey, addDevEntry }) => {
       try {
         const data = await fetchOnlineCapabilities();
         if (Array.isArray(data)) {
-          setCapabilities(data.filter((cap) => stripCapabilityAttrs(cap).startsWith("llm.")));
+          const llmCaps = data.filter((cap) => stripCapabilityAttrs(cap).startsWith("llm."));
+          setCapabilities(llmCaps);
+          if (llmCaps.length > 0) {
+            setModel(prev => prev || stripCapabilityAttrs(llmCaps[0]).replace(/^llm\./, ''));
+          }
         }
       } catch (err) {
         setError(`Failed to fetch capabilities: ${err.message}`);

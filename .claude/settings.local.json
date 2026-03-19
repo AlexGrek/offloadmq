@@ -20,7 +20,8 @@
       "Bash(grep -n \"_comfyui_url\\\\|_WORKFLOWS_DIR\" /c/Users/AlexG/Documents/dev/offloadmq/offload-agent/app/exec/imggen/*.py)",
       "Bash(rm -rf build/ dist/ *.spec __pycache__ app/__pycache__)",
       "Bash(find . -type d -name __pycache__ -exec rm -rf {} +)",
-      "Bash(taskkill /F /IM offload-agent.exe)"
+      "Bash(taskkill /F /IM offload-agent.exe)",
+      "Bash(find c:/Users/AlexG/Documents/dev/offloadmq/management-frontend/src -type f -name *.jsx -o -name *.tsx)"
     ]
   }
 }

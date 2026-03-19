@@ -8,7 +8,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 const LlmChatApp = ({ apiKey, addDevEntry }) => {
   const [messages, setMessages] = useState([]); // { role, content, images?, imageMimes? }
   const [input, setInput] = useState('');
-  const [model, setModel] = useState('dolphin-mistral');
+  const [model, setModel] = useState('');
   const [systemMessage, setSystemMessage] = useState('You are a helpful AI assistant.');
   const [capabilities, setCapabilities] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -30,7 +30,11 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
       try {
         const data = await fetchOnlineCapabilities();
         if (Array.isArray(data)) {
-          setCapabilities(data.filter(cap => stripCapabilityAttrs(cap).startsWith('llm.')));
+          const llmCaps = data.filter(cap => stripCapabilityAttrs(cap).startsWith('llm.'));
+          setCapabilities(llmCaps);
+          if (llmCaps.length > 0) {
+            setModel(prev => prev || stripCapabilityAttrs(llmCaps[0]).replace(/^llm\./, ''));
+          }
         }
       } catch { /* ignore */ }
     };

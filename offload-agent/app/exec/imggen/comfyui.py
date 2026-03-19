@@ -54,7 +54,23 @@ def wait_for_completion(prompt_id: str) -> dict:
         r.raise_for_status()
         history = r.json()
         if prompt_id in history:
-            return history[prompt_id]
+            entry = history[prompt_id]
+            status = entry.get("status", {})
+            if status.get("status_str") == "error":
+                # Extract the execution_error message if present
+                messages = status.get("messages", [])
+                error_detail = next(
+                    (m[1] for m in messages if isinstance(m, (list, tuple)) and m[0] == "execution_error"),
+                    None,
+                )
+                if error_detail:
+                    node_type = error_detail.get("node_type", "unknown node")
+                    exception_message = error_detail.get("exception_message", "unknown error")
+                    raise RuntimeError(
+                        f"ComfyUI execution failed in {node_type}: {exception_message}"
+                    )
+                raise RuntimeError("ComfyUI execution failed (no error details returned)")
+            return entry
         time.sleep(_POLL_INTERVAL_SEC)
     raise TimeoutError(f"ComfyUI job {prompt_id} did not complete within the allotted time")
 

@@ -9,7 +9,7 @@ const StreamingLLMApp = ({ apiKey, addDevEntry }) => {
     const [command, setCommand] = useState("What is the capital of Ukraine? Describe it with 8 sentences and do not mention it's name.");
     const [history, setHistory] = useState([]);
     const [taskIds, setTaskIds] = useState([]);
-    const [model, setModel] = useState('dolphin-mistral');
+    const [model, setModel] = useState('');
 
     // State for displaying the response, loading status, errors, and current task being polled
     const [response, setResponse] = useState(null);
@@ -47,7 +47,11 @@ const StreamingLLMApp = ({ apiKey, addDevEntry }) => {
             try {
                 const data = await fetchOnlineCapabilities();
                 if (Array.isArray(data)) {
-                    setCapabilities(data.filter((cap) => stripCapabilityAttrs(cap).startsWith("llm.")));
+                    const llmCaps = data.filter((cap) => stripCapabilityAttrs(cap).startsWith("llm."));
+                    setCapabilities(llmCaps);
+                    if (llmCaps.length > 0) {
+                        setModel(prev => prev || stripCapabilityAttrs(llmCaps[0]).replace(/^llm\./, ''));
+                    }
                 }
             } catch (err) {
                 setError(`An error occurred while fetching capabilities: ${err.message}`);
