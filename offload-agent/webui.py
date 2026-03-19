@@ -331,24 +331,152 @@ def _list_workflows() -> List[Dict[str, Any]]:
     return result
 
 
+def _guess_params(workflow: Dict[str, Any], task_type: str) -> Dict[str, Any]:
+    """Auto-detect param→node mappings by analysing the workflow graph.
+
+    Traces the ComfyUI node graph from known anchor node types (KSampler,
+    CLIPTextEncode, EmptyLatentImage, …) to fill in as many mappings as
+    possible without any manual labelling.  Falls back to empty dict for
+    anything it cannot determine — the caller should merge with stubs for
+    any missing keys.
+    """
+    _SAMPLER_TYPES = {"KSampler", "KSamplerAdvanced", "KSamplerSelect"}
+    _LATENT_TYPES = {
+        "EmptyLatentImage", "EmptySD3LatentImage",
+        "EmptyHunyuanLatentVideo", "EmptyMochiLatentVideo",
+        "EmptyLTXVLatentVideo", "EmptyFluxLatentImage",
+    }
+    _TEXT_ENCODE_TYPES = {"CLIPTextEncode", "CLIPTextEncodeFlux", "CLIPTextEncodeSD3"}
+    _LOAD_IMAGE_TYPES = {"LoadImage", "ETN_LoadImageBase64", "LoadImageMask"}
+    _ZERO_COND_TYPES = {"ConditioningZeroOut", "ConditioningSetTimestepRange"}
+
+    # Index nodes by class_type
+    by_class: Dict[str, List[str]] = {}
+    for nid, node in workflow.items():
+        by_class.setdefault(node.get("class_type", ""), []).append(nid)
+
+    def resolve(ref: Any) -> Optional[str]:
+        """Follow a [node_id, slot] reference and return the node_id string."""
+        if isinstance(ref, list) and len(ref) >= 1:
+            return str(ref[0])
+        return None
+
+    def trace_to_class(ref: Any, target_classes: set, visited: Optional[set] = None) -> Optional[str]:
+        """Walk graph edges until we find a node whose class_type is in target_classes."""
+        if visited is None:
+            visited = set()
+        nid = resolve(ref)
+        if not nid or nid in visited or nid not in workflow:
+            return None
+        visited.add(nid)
+        node = workflow[nid]
+        if node.get("class_type", "") in target_classes:
+            return nid
+        for val in node.get("inputs", {}).values():
+            if isinstance(val, list):
+                result = trace_to_class(val, target_classes, visited)
+                if result:
+                    return result
+        return None
+
+    params: Dict[str, Any] = {}
+
+    # ── Sampler → seed ────────────────────────────────────────────────────
+    sampler_id: Optional[str] = None
+    for ct in _SAMPLER_TYPES:
+        if ct in by_class:
+            sampler_id = by_class[ct][0]
+            break
+    if sampler_id:
+        params["seed"] = [[sampler_id, "seed"]]
+
+    # ── Latent image node → width / height ────────────────────────────────
+    for ct in _LATENT_TYPES:
+        if ct in by_class:
+            lid = by_class[ct][0]
+            node_inputs = workflow[lid].get("inputs", {})
+            if "width" in node_inputs:
+                params["width"] = [[lid, "width"]]
+            if "height" in node_inputs:
+                params["height"] = [[lid, "height"]]
+            break
+
+    # ── Trace positive / negative CLIPTextEncode from sampler ────────────
+    if sampler_id:
+        sinputs = workflow[sampler_id].get("inputs", {})
+        pos_ref = sinputs.get("positive")
+        neg_ref = sinputs.get("negative")
+
+        pos_id = trace_to_class(pos_ref, _TEXT_ENCODE_TYPES)
+        # Negative path may go through ConditioningZeroOut/etc — still try
+        neg_id = trace_to_class(neg_ref, _TEXT_ENCODE_TYPES)
+
+        # If negative resolves to the same node as positive it's a shared
+        # encoder (Flux-style zero-out); don't emit a separate "negative"
+        if pos_id:
+            params["prompt"] = [[pos_id, "text"]]
+        if neg_id and neg_id != pos_id:
+            params["negative"] = [[neg_id, "text"]]
+
+    # Fallback: if no sampler found, use first CLIPTextEncode as prompt
+    if "prompt" not in params:
+        for ct in _TEXT_ENCODE_TYPES:
+            if ct in by_class:
+                params["prompt"] = [[by_class[ct][0], "text"]]
+                break
+
+    # ── Input image (img2img / inpaint / face_swap / upscale) ─────────────
+    if task_type in ("img2img", "inpaint", "outpaint", "face_swap", "upscale", "img2video"):
+        load_nodes = []
+        for ct in _LOAD_IMAGE_TYPES:
+            load_nodes.extend(by_class.get(ct, []))
+        if load_nodes:
+            params["input_image"] = [[load_nodes[0], "image"]]
+        if task_type == "face_swap" and len(load_nodes) > 1:
+            params["face_swap"] = [[load_nodes[1], "image"]]
+
+    # ── Upscale factor ────────────────────────────────────────────────────
+    if task_type == "upscale":
+        for nid, node in workflow.items():
+            for key in ("upscale_factor", "scale_by", "scale"):
+                if key in node.get("inputs", {}):
+                    params["upscale"] = [[nid, key]]
+                    break
+            if "upscale" in params:
+                break
+
+    # ── Video frame count ─────────────────────────────────────────────────
+    if task_type in ("txt2video", "img2video"):
+        for nid, node in workflow.items():
+            for key in ("frame_count", "frames", "length", "video_frames"):
+                if key in node.get("inputs", {}):
+                    params["length"] = [[nid, key]]
+                    break
+            if "length" in params:
+                break
+
+    return params
+
+
 def _default_params(task_type: str) -> Dict[str, Any]:
+    """Stub fallback used only for keys that graph analysis could not resolve."""
     params: Dict[str, Any] = {
-        "prompt": [["6", "text"]],
-        "negative": [["7", "text"]],
-        "width": [["5", "width"]],
-        "height": [["5", "height"]],
-        "seed": [["3", "seed"]],
+        "prompt": [["FIXME_prompt_node", "text"]],
+        "negative": [["FIXME_negative_node", "text"]],
+        "width": [["FIXME_latent_node", "width"]],
+        "height": [["FIXME_latent_node", "height"]],
+        "seed": [["FIXME_sampler_node", "seed"]],
     }
     if task_type in ("img2img", "inpaint", "outpaint", "face_swap", "upscale"):
-        params["input_image"] = [["10", "image"]]
+        params["input_image"] = [["FIXME_load_image_node", "image"]]
     if task_type == "face_swap":
-        params["face_swap"] = [["11", "image"]]
+        params["face_swap"] = [["FIXME_face_image_node", "image"]]
     if task_type == "upscale":
-        params["upscale"] = [["14", "upscale_factor"]]
+        params["upscale"] = [["FIXME_upscale_node", "upscale_factor"]]
     if task_type in ("txt2video", "img2video"):
-        params["length"] = [["8", "frame_count"]]
+        params["length"] = [["FIXME_latent_node", "frame_count"]]
         if task_type == "img2video":
-            params["input_image"] = [["10", "image"]]
+            params["input_image"] = [["FIXME_load_image_node", "image"]]
     return params
 
 
@@ -657,9 +785,24 @@ async def route_add_workflow(
 
     params_path = wf_dir / f"{task_type}.params.json"
     if not params_path.exists():
+        # Try to auto-detect mappings from the uploaded workflow graph
+        guessed: Dict[str, Any] = {}
+        try:
+            with open(json_path) as f:
+                wf_graph = json.load(f)
+            if isinstance(wf_graph, dict) and wf_graph:
+                guessed = _guess_params(wf_graph, task_type)
+        except Exception as e:
+            _log(f"[imggen] Warning: could not auto-detect params ({e}), using stubs")
+        # Fill any keys that graph analysis missed with FIXME stubs
+        stubs = _default_params(task_type)
+        merged = {**stubs, **guessed}
         with open(params_path, "w") as f:
-            json.dump(_default_params(task_type), f, indent=2)
-        _log(f"[imggen] Generated starter params mapping: {params_path}")
+            json.dump(merged, f, indent=2)
+        detected = sorted(guessed.keys())
+        stub_keys = sorted(k for k in merged if k not in guessed)
+        _log(f"[imggen] Generated params mapping: {params_path} -- "
+             f"auto-detected: {detected or 'none'}, stubs: {stub_keys or 'none'}")
 
     _log(f"[imggen] Workflow '{workflow_name}/{task_type}' added -- rescan to register capability")
     _start_scan()

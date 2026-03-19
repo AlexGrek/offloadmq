@@ -21,7 +21,22 @@
       "Bash(rm -rf build/ dist/ *.spec __pycache__ app/__pycache__)",
       "Bash(find . -type d -name __pycache__ -exec rm -rf {} +)",
       "Bash(taskkill /F /IM offload-agent.exe)",
-      "Bash(find c:/Users/AlexG/Documents/dev/offloadmq/management-frontend/src -type f -name *.jsx -o -name *.tsx)"
+      "Bash(find c:/Users/AlexG/Documents/dev/offloadmq/management-frontend/src -type f -name *.jsx -o -name *.tsx)",
+      "Bash(find c:/Users/AlexG/Documents/dev/offloadmq/offload-agent/app/__pycache__ -name \"capabilities*.pyc\" -delete)",
+      "Bash(curl -s \"https://offloadmq.alexgr.space/management/capabilities/list/online_ext\" -H \"Authorization: Bearer 17be89ccf98d649404e562861a60811abba7cc14d710a037308af414d149c5896c353e8f37e4cc8d277c5b0999780cb3\")",
+      "Bash(curl -s https://offloadmq.alexgr.space/management/capabilities/list/online_ext -H 'Authorization: Bearer 17be89ccf98d649404e562861a60811abba7cc14d710a037308af414d149c5896c353e8f37e4cc8d277c5b0999780cb3')",
+      "Read(//c/Users/AlexG/Documents/dev/offloadmq/$USERPROFILE/.offload-agent/**)",
+      "Read(//c/Users/AlexG/.offload-agent/workflows/**)",
+      "Bash(python3 -c \":*)",
+      "Bash(node -e \":*)",
+      "Bash(curl -s \"http://127.0.0.1:8188/history/1c4c34c9-024d-4e98-8677-e2e9cb6ca315\")",
+      "Bash(curl -s http://127.0.0.1:8188/history/1c4c34c9-024d-4e98-8677-e2e9cb6ca315)",
+      "Bash(curl -s \"http://127.0.0.1:8188/system_stats\")",
+      "Bash(curl -s \"http://127.0.0.1:8188/queue\")",
+      "Bash(curl -s \"http://127.0.0.1:8188/history?max_items=3\")",
+      "Bash(curl -s \"http://127.0.0.1:8188/history/4cb51081-e52c-4368-9b3d-275d216d82b8\")",
+      "Bash(find \"c:/Users/AlexG/Documents/dev/offloadmq/offload-agent/app/exec/imggen/__pycache__\" -name \"workflow*.pyc\" -delete)",
+      "Bash(curl -s \"http://127.0.0.1:8188/history/d4f3743b-f1ec-4b8c-b6b2-a4f3370caa2f\")"
     ]
   }
 }

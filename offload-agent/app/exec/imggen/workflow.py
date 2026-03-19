@@ -7,6 +7,7 @@ and building the injected graph ready for ComfyUI submission.
 import copy
 import json
 import os
+import random
 import re
 from pathlib import Path
 
@@ -100,6 +101,9 @@ def load_workflow_template(workflow_name: str, task_type: str) -> tuple[dict, di
     return graph, param_map
 
 
+_KEEP_SENTINEL = "$keep"
+
+
 def inject_params(graph: dict, param_map: dict, values: dict) -> dict:
     """Apply payload values into the workflow graph according to param_map.
 
@@ -108,12 +112,24 @@ def inject_params(graph: dict, param_map: dict, values: dict) -> dict:
 
     Each entry is a list of [node_id, input_name] targets to write the value to.
     Fields absent from values are left at the template's default.
+
+    Special cases:
+    - targets = null in params.json  → field is always kept at workflow default,
+      even if the client provides a value.
+    - client sends value = null or "$keep" → skip injection for that field,
+      preserving whatever the workflow template has.
     """
     graph = copy.deepcopy(graph)
     for field, targets in param_map.items():
+        # null targets in params.json = permanently locked to workflow default
+        if targets is None:
+            continue
         if field not in values:
             continue
         value = values[field]
+        # Client explicitly asked to keep workflow default
+        if value is None or value == _KEEP_SENTINEL:
+            continue
         for node_id, input_name in targets:
             if node_id in graph:
                 graph[node_id]["inputs"][input_name] = value
@@ -132,7 +148,8 @@ def build_injection_values(payload: dict, task_type: str, data_path: Path) -> di
         values["prompt"] = prompt
 
     for key, val in (payload.get("secondary_prompts") or {}).items():
-        values[key] = val  # e.g. "negative" → negative prompt text
+        # null / "$keep" passed through so inject_params can honour them
+        values[key] = val
 
     if resolution := payload.get("resolution"):
         if w := resolution.get("width"):
@@ -140,8 +157,11 @@ def build_injection_values(payload: dict, task_type: str, data_path: Path) -> di
         if h := resolution.get("height"):
             values["height"] = int(h)
 
-    if seed := payload.get("seed"):
-        values["seed"] = int(seed)
+    # Always inject a seed so the workflow graph is never identical to a previous
+    # run.  ComfyUI returns empty outputs for fully-cached executions, which
+    # causes "no output images".  A random seed breaks the cache when the
+    # caller did not supply one.
+    values["seed"] = int(payload["seed"]) if payload.get("seed") else random.randint(0, 2**32 - 1)
 
     if length := payload.get("length"):
         values["length"] = int(length)
