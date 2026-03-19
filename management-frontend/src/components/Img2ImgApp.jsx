@@ -24,6 +24,11 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
   const [capabilities, setCapabilities] = useState([]);
   const fileInputRef = useRef(null);
   const outputBucketRef = useRef(null);
+  const blobUrlsRef = useRef([]);
+
+  useEffect(() => {
+    return () => { blobUrlsRef.current.forEach(URL.revokeObjectURL); };
+  }, []);
 
   useEffect(() => {
     const updCaps = async () => {
@@ -268,8 +273,26 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { apiKey: apiKey }, response: data });
 
         if (data.status === 'completed') {
+          setStatusText('Fetching images...');
+          const output = data.output;
+          if (output?.images) {
+            blobUrlsRef.current.forEach(URL.revokeObjectURL);
+            blobUrlsRef.current = [];
+            output.images = await Promise.all(output.images.map(async (img) => {
+              if (!img.file_uid) return img;
+              try {
+                const r = await fetch(`/api/storage/bucket/${img.bucket_uid}/file/${img.file_uid}`, {
+                  headers: { 'X-API-Key': apiKey },
+                });
+                const blob = await r.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                blobUrlsRef.current.push(blobUrl);
+                return { ...img, blobUrl };
+              } catch { return img; }
+            }));
+          }
           setStatusText('');
-          setResponse(data.output);
+          setResponse(output);
           setIsLoading(false);
           outputBucketRef.current = null;
           resetInputBucket();
@@ -419,10 +442,9 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
             <p style={styles.responseLabel}>Generated Images:</p>
             <div style={styles.imageGrid}>
               {response.images.map((img, idx) => {
-                const src = img.file_uid
-                  ? `/api/storage/bucket/${img.bucket_uid}/file/${img.file_uid}`
-                  : `data:${img.content_type};base64,${img.data_base64}`;
-                const downloadHref = img.file_uid ? src : `data:${img.content_type};base64,${img.data_base64}`;
+                const src = img.blobUrl
+                  ?? (img.data_base64 ? `data:${img.content_type};base64,${img.data_base64}` : null);
+                const downloadHref = src;
                 return (
                   <div key={idx}>
                     <img
