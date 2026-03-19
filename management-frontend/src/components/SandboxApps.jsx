@@ -352,10 +352,12 @@ const SandboxApps = () => {
               </div>
               <div className="modal-body">
                 <React.Suspense fallback={<div>Loading...</div>}>
-                  {activeTab === 'app'
-                    ? <selectedApp.app apiKey={apiKey} addDevEntry={addDevEntry} />
-                    : <DevPanel entries={devLog} />
-                  }
+                  <div style={{ display: activeTab === 'app' ? 'contents' : 'none' }}>
+                    <selectedApp.app apiKey={apiKey} addDevEntry={addDevEntry} />
+                  </div>
+                  <div style={{ display: activeTab === 'dev' ? 'contents' : 'none' }}>
+                    <DevPanel entries={devLog} />
+                  </div>
                 </React.Suspense>
               </div>
             </motion.div>
