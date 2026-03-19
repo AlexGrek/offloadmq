@@ -1,0 +1,9 @@
+---
+- name: Install offload-agent binary
+  import_tasks: install.yml
+
+- name: Register agent with server
+  import_tasks: register.yml
+
+- name: Configure systemd service
+  import_tasks: service.yml

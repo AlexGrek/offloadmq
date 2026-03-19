@@ -1,0 +1,80 @@
+---
+- name: Ensure workdir exists
+  file:
+    path: "{{ offload_agent_workdir }}"
+    state: directory
+    owner: "{{ offload_agent_user }}"
+
+- name: Check for existing agent config
+  stat:
+    path: "{{ offload_agent_workdir }}/.offload-agent.json"
+  register: _oa_config_stat
+
+- name: Read existing config
+  slurp:
+    src: "{{ offload_agent_workdir }}/.offload-agent.json"
+  register: _oa_config_raw
+  when: _oa_config_stat.stat.exists
+
+- name: Parse existing config
+  set_fact:
+    _oa_existing: "{{ _oa_config_raw.content | b64decode | from_json }}"
+  when: _oa_config_stat.stat.exists
+
+- name: Determine if registration is needed
+  set_fact:
+    _oa_needs_register: >-
+      {{
+        offload_agent_force_register
+        or not _oa_config_stat.stat.exists
+        or (_oa_existing.server | default('')) != offload_agent_server
+        or (_oa_existing.apiKey | default('')) != offload_agent_api_key
+        or (_oa_existing.capabilities | default([]) | sort) != (offload_agent_capabilities | sort)
+      }}
+
+- name: Register agent with server
+  uri:
+    url: "{{ offload_agent_server | regex_replace('/$', '') }}/agent/register"
+    method: POST
+    body_format: json
+    body:
+      capabilities: "{{ offload_agent_capabilities }}"
+      tier: "{{ offload_agent_tier }}"
+      capacity: "{{ offload_agent_capacity }}"
+      apiKey: "{{ offload_agent_api_key }}"
+      appVersion: "ansible-managed"
+    status_code: 200
+  register: _oa_reg
+  when: _oa_needs_register
+
+- name: Authenticate agent
+  uri:
+    url: "{{ offload_agent_server | regex_replace('/$', '') }}/agent/auth"
+    method: POST
+    body_format: json
+    body:
+      agentId: "{{ _oa_reg.json.agentId }}"
+      key: "{{ _oa_reg.json.key }}"
+    status_code: 200
+  register: _oa_auth
+  when: _oa_needs_register
+
+- name: Write agent config
+  copy:
+    content: |
+      {{ _oa_config | to_nice_json }}
+    dest: "{{ offload_agent_workdir }}/.offload-agent.json"
+    owner: "{{ offload_agent_user }}"
+    mode: "0600"
+  vars:
+    _oa_config:
+      server: "{{ offload_agent_server }}"
+      apiKey: "{{ offload_agent_api_key }}"
+      agentId: "{{ _oa_reg.json.agentId }}"
+      key: "{{ _oa_reg.json.key }}"
+      jwtToken: "{{ _oa_auth.json.token }}"
+      tokenExpiresIn: "{{ _oa_auth.json.expiresIn | default(0) | int }}"
+      capabilities: "{{ offload_agent_capabilities }}"
+      autostart: false
+  when: _oa_needs_register
+  notify: restart offload-agent

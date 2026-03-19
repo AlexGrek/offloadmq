@@ -1,0 +1,20 @@
+---
+- name: Install systemd service
+  template:
+    src: offload-agent.service.j2
+    dest: /etc/systemd/system/offload-agent.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart offload-agent
+
+- name: Enable / disable service
+  systemd:
+    name: offload-agent
+    enabled: "{{ offload_agent_service_enabled }}"
+    daemon_reload: true
+
+- name: Set service state
+  systemd:
+    name: offload-agent
+    state: "{{ offload_agent_service_state }}"

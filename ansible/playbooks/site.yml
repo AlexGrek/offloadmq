@@ -1,0 +1,7 @@
+---
+- name: Deploy offload-agent fleet
+  hosts: all
+  become: true
+
+  roles:
+    - offload_agent

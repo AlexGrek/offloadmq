@@ -1,0 +1,37 @@
+all:
+  vars:
+    offload_agent_server: https://offloadmq.alexgr.space
+    offload_agent_api_key: "YOUR_AGENT_API_KEY_HERE"
+
+  children:
+    # GPU nodes — high tier, LLM + vision capabilities
+    gpu_agents:
+      hosts:
+        gpu-node-01:
+          ansible_host: 10.0.1.10
+          offload_agent_tier: 10
+          offload_agent_capabilities:
+            - debug.echo
+            - shell.bash
+            - shellcmd.bash
+            - "llm.qwen3:8b[vision;tools;8b]"
+        gpu-node-02:
+          ansible_host: 10.0.1.11
+          offload_agent_tier: 10
+          offload_agent_capacity: 2
+          offload_agent_capabilities:
+            - debug.echo
+            - shell.bash
+            - shellcmd.bash
+            - "llm.qwen3:8b[vision;tools;8b]"
+            - "llm.mistral[7b]"
+
+    # CPU-only worker nodes — lower tier, basic capabilities
+    cpu_agents:
+      hosts:
+        worker-[01:05]:
+          offload_agent_tier: 3
+          offload_agent_capabilities:
+            - debug.echo
+            - shell.bash
+            - shellcmd.bash

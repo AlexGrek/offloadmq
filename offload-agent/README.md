@@ -210,6 +210,31 @@ make build-client   # same as above
 make rebuild-client # clean + build
 ```
 
+#### Linux: build + install as a headless systemd service
+
+If you want the agent to run permanently on a Linux node without any web UI, use the `install-systemd` make target. It builds the binary from source, installs it to `/usr/local/bin`, registers the agent with the server, and creates a systemd service that runs `cli serve` (no web UI, no open port).
+
+```bash
+make install-systemd \
+  SERVER=https://your-offloadmq-server \
+  KEY=<agent_api_key>
+```
+
+If the binary is already installed and you only need to re-register or set up the service:
+
+```bash
+make register-systemd \
+  SERVER=https://your-offloadmq-server \
+  KEY=<agent_api_key>
+```
+
+Check the service after installation:
+
+```bash
+systemctl status offload-agent
+journalctl -u offload-agent -f
+```
+
 #### macOS (.app bundle with tray icon)
 
 A shell build script produces a self-contained `Offload Agent.app` with a menu-bar tray icon.

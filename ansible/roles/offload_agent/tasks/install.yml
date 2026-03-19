@@ -1,0 +1,28 @@
+---
+- name: Download agent binary from release
+  get_url:
+    url: "{{ offload_agent_release_url }}"
+    dest: "{{ offload_agent_bin_path }}"
+    mode: "0755"
+    force: false
+  when: offload_agent_install_method == "release"
+
+- name: Copy agent binary from controller
+  copy:
+    src: "{{ offload_agent_local_binary }}"
+    dest: "{{ offload_agent_bin_path }}"
+    mode: "0755"
+  when: offload_agent_install_method == "local"
+
+- name: Verify binary is executable
+  command: "{{ offload_agent_bin_path }} --help"
+  changed_when: false
+  failed_when: false
+  register: binary_check
+
+- name: Fail if binary is not working
+  fail:
+    msg: >-
+      offload-agent binary at {{ offload_agent_bin_path }} is not executable.
+      Check architecture (must be Linux ELF for this host).
+  when: binary_check.rc != 0

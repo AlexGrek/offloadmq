@@ -97,7 +97,8 @@
       "Bash(git commit:*)",
       "Bash(source venv/bin/activate)",
       "Bash(python3 -c \"from app.exec.imggen import execute_imggen_comfyui; print\\(''OK''\\)\")",
-      "Bash(python -m mypy)"
+      "Bash(python -m mypy)",
+      "mcp__claude_ai_Mermaid_Chart__validate_and_render_mermaid_diagram"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

@@ -1,0 +1,15 @@
+[Unit]
+Description=Offload Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ offload_agent_user }}
+WorkingDirectory={{ offload_agent_workdir }}
+ExecStart={{ offload_agent_bin_path }} cli serve{{ ' --ws' if offload_agent_use_websocket else '' }}
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,34 @@
+# ── Server connection ─────────────────────────────────────────────────────────
+offload_agent_server: "https://offloadmq.example.com"
+offload_agent_api_key: ""          # agent registration API key (required)
+
+# ── Agent identity ────────────────────────────────────────────────────────────
+offload_agent_tier: 5              # performance tier (0-255)
+offload_agent_capacity: 1          # concurrent task slots
+offload_agent_capabilities:        # list of capabilities to register
+  - debug.echo
+  - shell.bash
+  - shellcmd.bash
+
+# ── Installation ──────────────────────────────────────────────────────────────
+# "release" — download from GitHub releases  (set offload_agent_release_url)
+# "local"   — copy a binary from the Ansible controller (set offload_agent_local_binary)
+offload_agent_install_method: release
+
+# Used when install_method == "release"
+offload_agent_release_url: "https://github.com/AlexGrek/offloadmq/releases/latest/download/offload-agent-linux-amd64"
+
+# Used when install_method == "local"
+offload_agent_local_binary: ""     # path on the controller, e.g. ./dist/offload-agent
+
+offload_agent_bin_path: /usr/local/bin/offload-agent
+
+# ── Runtime ───────────────────────────────────────────────────────────────────
+offload_agent_user: "{{ ansible_user_id }}"
+offload_agent_workdir: "/home/{{ offload_agent_user }}"
+offload_agent_use_websocket: false  # true → cli serve --ws
+
+# ── Control ───────────────────────────────────────────────────────────────────
+offload_agent_force_register: false # set to true to re-register even if config exists
+offload_agent_service_state: started # started | stopped | restarted
+offload_agent_service_enabled: true
