@@ -24,7 +24,26 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Push-Location $ScriptDir
 
+# ── Kill existing offload-agent processes ───────────────────────────────────
+function Kill-ExistingAgent {
+    $ExistingProcesses = Get-Process -Name "offload-agent" -ErrorAction SilentlyContinue
+    if ($ExistingProcesses) {
+        Write-Host "Stopping existing offload-agent process(es)..."
+        foreach ($Process in $ExistingProcesses) {
+            Write-Host "  - Stopping PID $($Process.Id)..."
+            $Process.CloseMainWindow() | Out-Null
+            $Process.WaitForExit(3000) # Wait 3 seconds for graceful shutdown
+            if (-not $Process.HasExited) {
+                Write-Host "    Force killing PID $($Process.Id)..."
+                Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Write-Host "All offload-agent processes stopped."
+    }
+}
+
 try {
+    Kill-ExistingAgent
     # ── 1. Create / reuse venv ─────────────────────────────────────────────
     $VenvDir = Join-Path $ScriptDir "venv-win"
     $PipExe  = Join-Path $VenvDir "Scripts\pip.exe"
