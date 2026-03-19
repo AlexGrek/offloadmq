@@ -65,12 +65,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "pip install pyinstaller failed" }
 
     # ── 2b. Type checking with mypy ────────────────────────────────────────────
-    Write-Host "Installing mypy for type checking ..."
-    & $PipExe install --quiet mypy
-    if ($LASTEXITCODE -ne 0) { throw "pip install mypy failed" }
+    Write-Host "Installing mypy and type stubs ..."
+    & $PipExe install --quiet mypy types-requests
+    if ($LASTEXITCODE -ne 0) { throw "pip install mypy/types-requests failed" }
 
     Write-Host "Running mypy type checks ..."
-    & $PyExe -m mypy app/ --ignore-missing-imports --warn-unused-ignores
+    & $PyExe -m mypy app/ --warn-unused-ignores
     if ($LASTEXITCODE -ne 0) { throw "mypy type check failed" }
 
     $Npm = Get-Command npm -ErrorAction SilentlyContinue
