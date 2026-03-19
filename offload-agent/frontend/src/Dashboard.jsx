@@ -49,12 +49,12 @@ export function Dashboard() {
   const [server, setServer] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [comfyuiUrl, setComfyuiUrl] = useState('')
-  const [customCap, setCustomCap] = useState('')
   const [selectedCaps, setSelectedCaps] = useState(new Set())
   const [wfName, setWfName] = useState('')
   const [wfTaskType, setWfTaskType] = useState('txt2img')
   const wfFileRef = useRef(null)
   const [activeTab, setActiveTab] = useState('status')
+  const [rescanning, setRescanning] = useState(false)
 
   const loadState = useCallback(async () => {
     try {
@@ -121,14 +121,39 @@ export function Dashboard() {
     })
   }
 
-  async function saveCaps(action) {
+  async function rescanAndRestart() {
+    const prevCaps = (state?.all_caps || []).slice().sort().join(',')
+    const wasRunning = running
+    setRescanning(true)
+    try {
+      await postForm('/scan', new FormData())
+      let newState = null
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 1000))
+        const r = await fetch('/api/state')
+        newState = await r.json()
+        if (!newState.scanning) break
+      }
+      if (newState) setState(newState)
+      const newCaps = (newState?.all_caps || []).slice().sort().join(',')
+      if (newCaps !== prevCaps && wasRunning) {
+        await postForm('/agent/stop', new FormData())
+        await postForm('/agent/start', new FormData())
+      }
+      await loadState()
+    } catch (e) {
+      setErr(String(e.message || e))
+    } finally {
+      setRescanning(false)
+    }
+  }
+
+  async function saveCaps() {
     run(async () => {
       const fd = new FormData()
       selectedCaps.forEach((c) => fd.append('caps', c))
-      fd.append('action', action)
-      if (action === 'add') fd.append('custom_cap', customCap.trim())
+      fd.append('action', 'save')
       await postForm('/capabilities', fd)
-      setCustomCap('')
       loadState()
     })
   }
@@ -391,30 +416,23 @@ export function Dashboard() {
               </label>
             ))}
           </div>
-          <hr className="border-slate-700 my-3" />
-          <div className="flex flex-wrap gap-2">
-            <input
-              type="text"
-              value={customCap}
-              onChange={(e) => setCustomCap(e.target.value)}
-              placeholder="Add capability"
-              className="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
-            />
+          <div className="flex flex-wrap gap-2 mt-3">
             <button
               type="button"
-              onClick={() => saveCaps('add')}
-              className="px-3 py-2 rounded-md bg-indigo-500 text-white text-xs font-medium hover:opacity-85"
+              onClick={() => saveCaps()}
+              className="px-4 py-2 rounded-md bg-indigo-500 text-white text-sm font-medium hover:opacity-85"
             >
-              Add
+              Save selection
+            </button>
+            <button
+              type="button"
+              onClick={rescanAndRestart}
+              disabled={rescanning}
+              className="px-4 py-2 rounded-md border border-slate-600 text-slate-300 text-sm font-medium hover:border-indigo-500 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {rescanning ? 'Rescanning…' : 'Rescan'}
             </button>
           </div>
-          <button
-            type="button"
-            onClick={() => saveCaps('save')}
-            className="mt-3 px-4 py-2 rounded-md bg-indigo-500 text-white text-sm font-medium hover:opacity-85"
-          >
-            Save selection
-          </button>
         </div>
       </div>
 
