@@ -64,6 +64,15 @@ try {
     & $PipExe install --quiet pyinstaller
     if ($LASTEXITCODE -ne 0) { throw "pip install pyinstaller failed" }
 
+    # ── 2b. Type checking with mypy ────────────────────────────────────────────
+    Write-Host "Installing mypy for type checking ..."
+    & $PipExe install --quiet mypy
+    if ($LASTEXITCODE -ne 0) { throw "pip install mypy failed" }
+
+    Write-Host "Running mypy type checks ..."
+    & $PyExe -m mypy app/ --ignore-missing-imports --warn-unused-ignores
+    if ($LASTEXITCODE -ne 0) { throw "mypy type check failed" }
+
     $Npm = Get-Command npm -ErrorAction SilentlyContinue
     if (-not $Npm) { throw "npm is required to build frontend/dist (install Node.js)" }
     Write-Host "Building web UI (frontend/dist) ..."
