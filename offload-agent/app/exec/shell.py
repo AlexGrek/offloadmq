@@ -46,8 +46,8 @@ def execute_shell_bash(
             cwd=str(data)
         )
 
-        q_stdout = queue.Queue()
-        q_stderr = queue.Queue()
+        q_stdout: queue.Queue[str] = queue.Queue()
+        q_stderr: queue.Queue[str] = queue.Queue()
         t_stdout = threading.Thread(
             target=enqueue_output, args=(process.stdout, q_stdout)
         )
@@ -94,7 +94,7 @@ def execute_shell_bash(
         # Check the return code for success or failure
         return_code = process.returncode
         if return_code == 0:
-            output = {"stdout": full_stdout_log, "stderr": full_stderr_log}
+            output: dict[str, str | int] = {"stdout": full_stdout_log, "stderr": full_stderr_log}
             report = make_success_report(task_id, capability, output)
         else:
             output = {

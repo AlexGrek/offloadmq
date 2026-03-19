@@ -1,5 +1,6 @@
 import base64
 import logging
+from typing import Any
 from ..models import *
 from ..httphelpers import *
 from ..data.text_extract import extract_texts_from_directory
@@ -16,7 +17,7 @@ _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", 
 def _collect_image_attachments(data_path: Path) -> list[str]:
     """Scan the data directory for image files and return base64-encoded strings
     suitable for the Ollama ``images`` field."""
-    attachments = []
+    attachments: list[str] = []
     if not data_path.exists():
         return attachments
 
@@ -117,7 +118,7 @@ def execute_llm_query(
             full_response_text = ""
             buffer = ""
             last_print_time = time.time()
-            final_data = {}
+            final_data: dict[str, Any] = {}
             tool_calls = None
 
             # Make the request with streaming enabled
@@ -130,8 +131,8 @@ def execute_llm_query(
             for line in r.iter_lines(decode_unicode=True):
                 if line.strip():
                     try:
-                        data = json.loads(line)
-                        msg = data.get("message", {})
+                        json_response: dict[str, Any] = json.loads(line)
+                        msg = json_response.get("message", {})
 
                         # Accumulate text content
                         if "content" in msg:
@@ -153,8 +154,8 @@ def execute_llm_query(
                             last_print_time = current_time
 
                         # Capture the final 'done' response for metadata
-                        if data.get("done"):
-                            final_data = data
+                        if json_response.get("done"):
+                            final_data = json_response
                             if buffer:
                                 report_progress(
                                     http, log=buffer, stage="running", task_id=task_id
@@ -193,13 +194,13 @@ def execute_llm_query(
             report = make_success_report(task_id, capability, r.json())
 
     except requests.RequestException as e:
+        response_text = "No response from server"
+        resp = getattr(e, "response", None)
+        if resp and hasattr(resp, "text"):
+            response_text = resp.text
         extra = {
             "error": f"Ollama API request failed: {e}",
-            "response_text": (
-                getattr(e, "response", None).text
-                if getattr(e, "response", None)
-                else "No response from server"
-            ),
+            "response_text": response_text,
         }
         report = make_failure_report(
             task_id, capability, str(extra), extra_output=extra

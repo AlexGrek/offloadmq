@@ -73,9 +73,9 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
                     data = data[0] if data else {}
                 name = data.get("Name")
                 ram = data.get("AdapterRAM")
-                vram_mb = int(ram) // (1024 * 1024) if isinstance(ram, (int, float)) else None
+                vram_size: int | None = int(ram) // (1024 * 1024) if isinstance(ram, (int, float)) else None
                 vendor = "NVIDIA" if name and "NVIDIA" in name.upper() else ("AMD" if name and "AMD" in name.upper() else ("INTEL" if name and "INTEL" in name.upper() else "Unknown"))
-                return {"vendor": vendor.title() if isinstance(vendor, str) else vendor, "model": name, "vramMb": vram_mb}
+                return {"vendor": vendor.title() if isinstance(vendor, str) else vendor, "model": name, "vramMb": vram_size}
             except Exception:
                 pass
 

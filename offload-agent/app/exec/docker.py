@@ -122,8 +122,8 @@ def execute_docker_run(
         timer.start()
 
         # Reader threads for streaming output
-        q_stdout = queue.Queue()
-        q_stderr = queue.Queue()
+        q_stdout: queue.Queue[str] = queue.Queue()
+        q_stderr: queue.Queue[str] = queue.Queue()
         t_stdout = threading.Thread(target=enqueue_output, args=(process.stdout, q_stdout))
         t_stderr = threading.Thread(target=enqueue_output, args=(process.stderr, q_stderr))
 

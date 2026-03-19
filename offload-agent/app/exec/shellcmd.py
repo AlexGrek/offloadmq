@@ -36,7 +36,7 @@ def execute_shellcmd_bash(
             check=True,
             cwd=str(data),
         )
-        output = {"stdout": result.stdout, "stderr": result.stderr}
+        output: dict[str, str | int] = {"stdout": result.stdout, "stderr": result.stderr}
         report = make_success_report(task_id, capability, output)
     except subprocess.CalledProcessError as e:
         output = {"stdout": e.stdout, "stderr": e.stderr, "return_code": e.returncode}

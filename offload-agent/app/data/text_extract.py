@@ -87,7 +87,7 @@ def extract_texts_from_directory(data_path: Path) -> list[tuple[str, str]]:
     Returns a list of ``(filename, extracted_text)`` pairs, sorted by
     filename.  Files that yield no text are silently skipped.
     """
-    results = []
+    results: list[tuple[str, str]] = []
     if not data_path.exists():
         return results
 

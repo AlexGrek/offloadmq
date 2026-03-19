@@ -114,9 +114,10 @@ def check_comfyui() -> CapResult:
     per workflow, e.g. imggen.wan-2.1-outpaint[txt2img;img2img;upscale].
     """
     import requests
-    from .exec.imggen import _comfyui_url, _WORKFLOWS_DIR
+    from .exec.imggen.comfyui import comfyui_url
+    from .exec.imggen.workflow import _find_workflows_dir
 
-    url = _comfyui_url()
+    url = comfyui_url()
     try:
         r = requests.get(f"{url}/system_stats", timeout=3)
         r.raise_for_status()
@@ -127,12 +128,13 @@ def check_comfyui() -> CapResult:
             f"ComfyUI API not reachable at {url}: {type(e).__name__}",
         )
 
-    caps = _discover_workflow_caps(_WORKFLOWS_DIR)
+    workflows_dir = _find_workflows_dir()
+    caps = _discover_workflow_caps(workflows_dir)
     if not caps:
         return CapResult(
             [], False,
             "imggen.*",
-            f"ComfyUI reachable at {url} but no workflow templates found in {_WORKFLOWS_DIR}",
+            f"ComfyUI reachable at {url} but no workflow templates found in {workflows_dir}",
         )
 
     label = ", ".join(caps)
@@ -154,7 +156,7 @@ def _discover_workflow_caps(workflows_dir) -> list[str]:
 
     safe_re = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
     workflows_dir = Path(workflows_dir)
-    caps = []
+    caps: list[str] = []
 
     if not workflows_dir.is_dir():
         return caps

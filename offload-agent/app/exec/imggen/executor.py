@@ -58,13 +58,13 @@ def execute_imggen_comfyui(
         report = make_success_report(task_id, capability, output)
 
     except requests.RequestException as e:
+        response_text = "No response from server"
+        resp = getattr(e, "response", None)
+        if resp and hasattr(resp, "text"):
+            response_text = resp.text
         extra = {
             "error": f"ComfyUI API request failed: {e}",
-            "response_text": (
-                getattr(e, "response", None).text
-                if getattr(e, "response", None)
-                else "No response from server"
-            ),
+            "response_text": response_text,
         }
         report = make_failure_report(task_id, capability, str(e), extra_output=extra)
     except Exception as e:

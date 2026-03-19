@@ -72,7 +72,7 @@ def build_output(
     bucket_uid: str,
 ) -> dict:
     """Collect all outputs from a completed ComfyUI job and return a result dict."""
-    base = {"workflow": task_type, "prompt_id": prompt_id, "output_bucket": bucket_uid}
+    base: dict[str, str | int] = {"workflow": task_type, "prompt_id": prompt_id, "output_bucket": bucket_uid}
     if seed is not None:
         base["seed"] = seed
 
