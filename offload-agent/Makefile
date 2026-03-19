@@ -1,6 +1,9 @@
 SERVER ?= http://localhost:3069
 KEY ?= ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
 
+# Version injected at build time (can be overridden)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+
 venv:
 	python3 -m venv venv
 	bash -c "source venv/bin/activate && pip3 install -r requirements.txt"
@@ -25,8 +28,8 @@ ollama: venv
 build: venv frontend-build
 	@echo "Installing PyInstaller..."
 	bash -c "source venv/bin/activate && pip install pyinstaller --quiet"
-	@echo "Building binary with PyInstaller..."
-	bash -c "source venv/bin/activate && python -m PyInstaller --onefile --name offload-agent \
+	@echo "Building binary with PyInstaller (version: $(VERSION))..."
+	bash -c "source venv/bin/activate && OFFLOAD_AGENT_VERSION='$(VERSION)' python -m PyInstaller --onefile --name offload-agent \
 		--add-data 'app:app' \
 		--add-data 'webui.py:.' \
 		--add-data 'frontend/dist:frontend/dist' \
