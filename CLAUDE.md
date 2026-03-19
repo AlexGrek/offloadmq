@@ -187,7 +187,7 @@ For urgent tasks, resolution triggers the watch channel to unblock the waiting c
 Clients can create temporary buckets to stage files alongside task submissions.
 
 **Design constraints (per API key):**
-- Max buckets: 10 (configurable via `STORAGE_MAX_BUCKETS_PER_KEY`)
+- Max buckets: 256 (configurable via `STORAGE_MAX_BUCKETS_PER_KEY`)
 - Max size per bucket: 1 GiB (configurable via `STORAGE_BUCKET_SIZE_BYTES`)
 - Bucket TTL: 24 hours (configurable via `STORAGE_BUCKET_TTL_MINUTES`)
 - No file download endpoint — this is intentional to prevent use as a file exchange service
@@ -238,7 +238,7 @@ These are the hardcoded keys used for local development and testing. Use them di
 
 - `STORAGE_BACKEND` - `local` (default), `webdav`, or `s3`
 - `STORAGE_LOCAL_ROOT` - Root dir for local backend (default: `{DATABASE_ROOT_PATH}/file_storage`)
-- `STORAGE_MAX_BUCKETS_PER_KEY` - Max buckets per client API key (default: `10`)
+- `STORAGE_MAX_BUCKETS_PER_KEY` - Max buckets per client API key (default: `256`)
 - `STORAGE_BUCKET_SIZE_BYTES` - Max bytes per bucket (default: `1073741824` = 1 GiB)
 - `STORAGE_BUCKET_TTL_MINUTES` - Bucket lifetime in minutes (default: `1440` = 24 h)
 - WebDAV: `STORAGE_WEBDAV_ENDPOINT`, `STORAGE_WEBDAV_USERNAME`, `STORAGE_WEBDAV_PASSWORD`

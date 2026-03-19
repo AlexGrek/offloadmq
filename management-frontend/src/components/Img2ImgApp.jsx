@@ -23,6 +23,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
   const [statusText, setStatusText] = useState('');
   const [capabilities, setCapabilities] = useState([]);
   const fileInputRef = useRef(null);
+  const outputBucketRef = useRef(null);
 
   useEffect(() => {
     const updCaps = async () => {
@@ -55,18 +56,17 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
 
   const createBucket = async () => {
     try {
-      const res = await fetch('/api/storage/bucket/create', {
+      const res = await fetch('/api/storage/bucket/create?rm_after_task=true', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: apiKey }),
+        headers: { 'X-API-Key': apiKey },
       });
 
       const data = await res.json();
-      addDevEntry?.({ label: 'Create bucket', method: 'POST', url: '/api/storage/bucket/create', request: { api_key: apiKey }, response: data });
+      addDevEntry?.({ label: 'Create input bucket (rm_after_task)', method: 'POST', url: '/api/storage/bucket/create?rm_after_task=true', request: {}, response: data });
 
-      if (data.uid) {
-        setBucketUid(data.uid);
-        return data.uid;
+      if (data.bucket_uid) {
+        setBucketUid(data.bucket_uid);
+        return data.bucket_uid;
       } else {
         throw new Error('Failed to create bucket');
       }
@@ -74,6 +74,18 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
       const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
       setError(`Failed to create bucket: ${errorMsg}`);
       return null;
+    }
+  };
+
+  const deleteBucket = async (uid) => {
+    if (!uid) return;
+    try {
+      await fetch(`/api/storage/bucket/${uid}`, {
+        method: 'DELETE',
+        headers: { 'X-API-Key': apiKey },
+      });
+    } catch (e) {
+      console.warn('Failed to delete bucket', uid, e);
     }
   };
 
@@ -129,6 +141,29 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
     setError(null);
     setStatusText('Submitting...');
 
+    // Create output bucket if not done yet
+    let outBucketUid = outputBucketRef.current;
+    if (!outBucketUid) {
+      try {
+        setStatusText('Creating output bucket...');
+        const bucketRes = await fetch('/api/storage/bucket/create', {
+          method: 'POST',
+          headers: { 'X-API-Key': apiKey },
+        });
+        const bucketData = await bucketRes.json();
+        if (!bucketData.bucket_uid) throw new Error('Failed to create output bucket');
+        outBucketUid = bucketData.bucket_uid;
+        outputBucketRef.current = outBucketUid;
+        addDevEntry?.({ label: 'Create output bucket', method: 'POST', url: '/api/storage/bucket/create', request: {}, response: bucketData });
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
+        setError(`Failed to create output bucket: ${errorMsg}`);
+        setIsLoading(false);
+        return;
+      }
+      setStatusText('Submitting...');
+    }
+
     if (!uploadedFile) {
       setError('Please upload an image first');
       setIsLoading(false);
@@ -140,6 +175,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
       capability: `imggen.${model}`,
       urgent: false,
       file_bucket: bucketUid ? [bucketUid] : [],
+      output_bucket: outBucketUid,
       payload: {
         workflow: workflow,
         prompt: prompt,
@@ -173,7 +209,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         setError(errorMsg);
       } else if (data.id) {
         setResponse(data);
-        pollTask(data.id.cap, data.id.id);
+        pollTask(data.id.cap, data.id.id, outBucketUid);
       } else {
         setError('Unexpected response format.');
       }
@@ -198,7 +234,13 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
     return stage ? `${base} [${stage}]` : base;
   };
 
-  const pollTask = async (cap, id) => {
+  const resetInputBucket = () => {
+    setBucketUid(null);
+    setUploadedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const pollTask = async (cap, id, outBucketUid) => {
     const maxAttempts = 120;
     let attempts = 0;
 
@@ -206,6 +248,9 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
       if (attempts >= maxAttempts) {
         setError('Task polling timeout');
         setIsLoading(false);
+        outputBucketRef.current = null;
+        resetInputBucket();
+        deleteBucket(outBucketUid);
         return;
       }
 
@@ -223,12 +268,18 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
           setStatusText('');
           setResponse(data.output);
           setIsLoading(false);
+          outputBucketRef.current = null;
+          resetInputBucket();
+          deleteBucket(outBucketUid);
         } else if (data.status === 'failed' || data.status === 'canceled') {
           const errorMsg = data.output?.error
             ? (typeof data.output.error === 'string' ? data.output.error : JSON.stringify(data.output.error))
             : (data.status === 'canceled' ? 'Task was canceled' : 'Task failed');
           setError(errorMsg);
           setIsLoading(false);
+          outputBucketRef.current = null;
+          resetInputBucket();
+          deleteBucket(outBucketUid);
         } else {
           setStatusText(statusLabel(data.status, data.stage));
           attempts++;
@@ -239,6 +290,9 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { apiKey: apiKey }, response: { error: errorMsg } });
         setError(`Polling error: ${errorMsg}`);
         setIsLoading(false);
+        outputBucketRef.current = null;
+        resetInputBucket();
+        deleteBucket(outBucketUid);
       }
     };
 
@@ -361,16 +415,27 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
           <div>
             <p style={styles.responseLabel}>Generated Images:</p>
             <div style={styles.imageGrid}>
-              {response.images.map((img, idx) => (
-                <div key={idx}>
-                  <img
-                    src={`data:${img.content_type};base64,${img.data_base64}`}
-                    alt={`Generated ${idx + 1}`}
-                    style={styles.image}
-                  />
-                  <p style={styles.imageName}>{img.filename}</p>
-                </div>
-              ))}
+              {response.images.map((img, idx) => {
+                const src = img.file_uid
+                  ? `/api/storage/bucket/${img.bucket_uid}/file/${img.file_uid}`
+                  : `data:${img.content_type};base64,${img.data_base64}`;
+                const downloadHref = img.file_uid ? src : `data:${img.content_type};base64,${img.data_base64}`;
+                return (
+                  <div key={idx}>
+                    <img
+                      src={src}
+                      alt={`Generated ${idx + 1}`}
+                      style={styles.image}
+                    />
+                    <div style={styles.imageFooter}>
+                      <p style={styles.imageName}>{img.filename}</p>
+                      <a href={downloadHref} download={img.filename} style={styles.downloadLink}>
+                        Download
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             {response.seed != null && (
               <p style={styles.seedInfo}>Seed: {response.seed}</p>
@@ -501,11 +566,24 @@ const styles = {
     borderRadius: '8px',
     border: '1px solid var(--border)',
   },
+  imageFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: '6px',
+  },
   imageName: {
     fontSize: '12px',
     color: 'var(--muted)',
-    margin: '6px 0 0 0',
+    margin: '0',
     wordBreak: 'break-all',
+  },
+  downloadLink: {
+    fontSize: '12px',
+    color: 'var(--primary)',
+    textDecoration: 'none',
+    flexShrink: 0,
+    marginLeft: '8px',
   },
   seedInfo: {
     fontSize: '12px',

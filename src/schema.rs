@@ -227,6 +227,10 @@ pub struct TaskSubmissionRequest {
     pub fetch_files:  Vec<FileReference>,
     #[serde(default)]
     pub file_bucket:  Vec<String>,
+    /// Optional bucket UID where the agent should upload output files.
+    /// The client must create this bucket before submitting the task and own it.
+    #[serde(default)]
+    pub output_bucket: Option<String>,
     #[serde(default)]
     pub artifacts:  Vec<FileReference>,
     pub api_key: String,

@@ -11,12 +11,16 @@ All endpoints require the `X-API-Key` header. Requests without valid authenticat
 
 ## Overview
 
-Clients can create up to 10 buckets (configurable) to stage files. Each bucket has:
+Clients can create up to 256 buckets (configurable) to stage files. Each bucket has:
 - **Max size:** 1 GiB per bucket (configurable via `STORAGE_BUCKET_SIZE_BYTES`)
 - **TTL:** 24 hours (configurable via `STORAGE_BUCKET_TTL_MINUTES`)
 - **Backend:** Local filesystem, WebDAV, or S3 (configurable via `STORAGE_BACKEND`)
 
-Files are **not downloadable** — the API provides SHA-256 digests and metadata only. This is intentional to prevent use as a general file exchange service.
+Buckets serve two purposes:
+
+**Input buckets** (`file_bucket` in task submission) — upload files before submitting a task; the agent downloads them before execution.
+
+**Output buckets** (`output_bucket` in task submission) — create an empty bucket, pass its UID with the task, and the agent uploads result files (images, video) into it after generation. Download the results with `GET /api/storage/bucket/{uid}/file/{file_uid}` once the task completes.
 
 ---
 
@@ -34,7 +38,7 @@ Returns quota limits for your API key.
 
 ```json
 {
-  "max_buckets_per_key": 10,
+  "max_buckets_per_key": 256,
   "bucket_size_bytes": 1073741824,
   "bucket_ttl_minutes": 1440
 }
@@ -120,7 +124,7 @@ Creates a new bucket. Returns a unique `bucket_uid` for subsequent file operatio
 
 | Status | Reason                              |
 |--------|-------------------------------------|
-| `400`  | Bucket limit reached (max 10)       |
+| `400`  | Bucket limit reached (max 256)      |
 | `500`  | Server error creating bucket        |
 
 ---
@@ -218,6 +222,41 @@ Lists all files in a bucket along with remaining space.
 | Status | Reason                              |
 |--------|-------------------------------------|
 | `404`  | Bucket not found (wrong UID or expired) |
+
+---
+
+### Download a File
+
+```
+GET /api/storage/bucket/{bucket_uid}/file/{file_uid}
+X-API-Key: <your-client-api-key>
+```
+
+Downloads a file from a bucket. Intended for retrieving task output files that the agent uploaded to an `output_bucket`.
+
+**Path parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `bucket_uid` | string | Bucket UID |
+| `file_uid` | string | File UID (from task output or bucket stat) |
+
+**Response** (200 OK)
+
+Binary file data:
+```
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename="ComfyUI_00001_.png"
+Content-Length: 1234567
+```
+
+**Error responses**
+
+| Status | Reason |
+|--------|--------|
+| `403` | Bucket not owned by your API key |
+| `404` | Bucket or file not found |
+| `500` | Server error reading file |
 
 ---
 
@@ -401,7 +440,8 @@ curl -s -X DELETE "$BASE/api/storage/bucket/$BUCKET" \
 ## Notes
 
 - **Ownership enforcement** — every request validates that the bucket belongs to your API key
-- **TTL expiration** — buckets are automatically deleted 24 hours after creation (configurable)
-- **No downloads** — use the hash to verify files before submitting tasks, but files cannot be downloaded via the API
+- **TTL expiration** — buckets are automatically deleted 24 hours after creation (configurable); ensure you download output files before expiry
+- **Output file download** — files uploaded by agents into an `output_bucket` are downloadable via `GET /api/storage/bucket/{uid}/file/{file_uid}`
+- **File UIDs for output** — after polling a completed imggen task, the `output.images[].file_uid` and `output.images[].bucket_uid` fields give you the coordinates to download each result file
 - **Storage backends** — files are stored in the configured location (local filesystem, WebDAV, or S3) transparently
 - **Cleanup** — a background worker runs every 3 hours to delete expired buckets and their associated files

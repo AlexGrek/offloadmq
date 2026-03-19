@@ -58,6 +58,19 @@ fn validate_file_buckets(state: &AppState, req: &TaskSubmissionRequest) -> Resul
             )));
         }
     }
+    if let Some(output_uid) = &req.output_bucket {
+        let bucket = state
+            .storage
+            .buckets
+            .get_bucket(output_uid)?
+            .ok_or_else(|| AppError::NotFound(format!("Output bucket {} not found", output_uid)))?;
+        if bucket.api_key != req.api_key {
+            return Err(AppError::Authorization(format!(
+                "Output bucket {} is not owned by the provided API key",
+                output_uid
+            )));
+        }
+    }
     Ok(())
 }
 

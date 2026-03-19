@@ -376,7 +376,7 @@ List tasks:
 
 ### Limits & Quotas
 
-- **Max buckets per key:** 10 (default, configurable)
+- **Max buckets per key:** 256 (default, configurable)
 - **Max bucket size:** 1 GiB (default, configurable)
 - **Bucket TTL:** 24 hours (default, configurable)
 - **Exceeding limits returns 409 Conflict**

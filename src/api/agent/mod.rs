@@ -5,8 +5,8 @@ use std::sync::Arc;
 use axum::{
     Json,
     body::Body,
-    extract::{Path, Query, State, WebSocketUpgrade, ws::{Message, WebSocket}},
-    http::header,
+    extract::{Multipart, Path, Query, State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
@@ -108,6 +108,93 @@ pub async fn download_bucket_file(
         .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
 
     Ok(response)
+}
+
+/// POST /private/agent/bucket/{bucket_uid}/upload
+///
+/// Allows an authenticated agent to upload a file into an existing bucket.
+/// Used to store task output files. Any valid agent JWT can upload to any
+/// bucket; agents only know bucket UIDs from their task's `output_bucket` field.
+pub async fn upload_to_bucket(
+    AuthenticatedAgent(_agent): AuthenticatedAgent,
+    State(app_state): State<Arc<AppState>>,
+    Path(bucket_uid): Path<String>,
+    mut multipart: Multipart,
+) -> Result<Response, AppError> {
+    use sha2::{Digest, Sha256};
+
+    let mut bucket = app_state
+        .storage
+        .buckets
+        .get_bucket(&bucket_uid)?
+        .ok_or_else(|| AppError::NotFound(format!("Bucket {} not found", bucket_uid)))?;
+
+    let remaining = app_state.config.storage.bucket_size_bytes - bucket.used_bytes;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?
+    {
+        if field.name() != Some("file") {
+            continue;
+        }
+
+        let original_name = field
+            .file_name()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "output".to_string());
+
+        let data = field
+            .bytes()
+            .await
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+        let size = data.len() as u64;
+        if size > remaining {
+            return Err(AppError::BadRequest(format!(
+                "File too large: {} bytes, only {} bytes remaining in bucket",
+                size, remaining
+            )));
+        }
+
+        let file_uid = uuid::Uuid::new_v4().to_string();
+        let sha256: String = Sha256::digest(&data)
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+
+        app_state
+            .storage
+            .file_store
+            .put(&bucket_uid, &file_uid, data.to_vec())
+            .await
+            .map_err(AppError::Internal)?;
+
+        let file_meta = crate::db::bucket_storage::FileMeta {
+            uid: file_uid.clone(),
+            original_name: original_name.clone(),
+            size,
+            sha256: sha256.clone(),
+            uploaded_at: chrono::Utc::now(),
+        };
+        bucket.files.push(file_meta);
+        bucket.used_bytes += size;
+        app_state.storage.buckets.save_bucket(&bucket)?;
+
+        let response = Response::builder()
+            .status(StatusCode::CREATED)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(format!(
+                r#"{{"file_uid":"{file_uid}","original_name":"{original_name}","size":{size},"sha256":"{sha256}"}}"#
+            )))
+            .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+        return Ok(response);
+    }
+
+    Err(AppError::BadRequest(
+        "No 'file' field found in multipart body".to_string(),
+    ))
 }
 
 pub async fn try_take_task_handler(
