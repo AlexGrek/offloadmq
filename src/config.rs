@@ -18,7 +18,7 @@ pub struct StorageConfig {
     pub s3_access_key_id: Option<String>,
     pub s3_secret_access_key: Option<String>,
     pub s3_endpoint: Option<String>,
-    /// Max number of buckets per API key (env: STORAGE_MAX_BUCKETS_PER_KEY, default: 10)
+    /// Max number of buckets per API key (env: STORAGE_MAX_BUCKETS_PER_KEY, default: 256)
     pub max_buckets_per_key: usize,
     /// Max bytes per bucket (env: STORAGE_BUCKET_SIZE_BYTES, default: 1073741824 = 1 GiB)
     pub bucket_size_bytes: u64,
@@ -34,7 +34,7 @@ impl StorageConfig {
         let max_buckets_per_key = env::var("STORAGE_MAX_BUCKETS_PER_KEY")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(10usize);
+            .unwrap_or(256usize);
         let bucket_size_bytes = env::var("STORAGE_BUCKET_SIZE_BYTES")
             .ok()
             .and_then(|v| v.parse().ok())

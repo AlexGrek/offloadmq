@@ -11,7 +11,7 @@ All endpoints require the `X-API-Key` header. Requests without valid authenticat
 
 ## Overview
 
-Clients can create up to 10 buckets (configurable) to stage files. Each bucket has:
+Clients can create up to 256 buckets (configurable) to stage files. Each bucket has:
 - **Max size:** 1 GiB per bucket (configurable via `STORAGE_BUCKET_SIZE_BYTES`)
 - **TTL:** 24 hours (configurable via `STORAGE_BUCKET_TTL_MINUTES`)
 - **Backend:** Local filesystem, WebDAV, or S3 (configurable via `STORAGE_BACKEND`)
@@ -38,7 +38,7 @@ Returns quota limits for your API key.
 
 ```json
 {
-  "max_buckets_per_key": 10,
+  "max_buckets_per_key": 256,
   "bucket_size_bytes": 1073741824,
   "bucket_ttl_minutes": 1440
 }
@@ -124,7 +124,7 @@ Creates a new bucket. Returns a unique `bucket_uid` for subsequent file operatio
 
 | Status | Reason                              |
 |--------|-------------------------------------|
-| `400`  | Bucket limit reached (max 10)       |
+| `400`  | Bucket limit reached (max 256)      |
 | `500`  | Server error creating bucket        |
 
 ---

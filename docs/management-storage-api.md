@@ -67,7 +67,7 @@ Returns the system-wide quota limits alongside per-key usage statistics. Optiona
 ```json
 {
   "limits": {
-    "max_buckets_per_key": 10,
+    "max_buckets_per_key": 256,
     "bucket_size_bytes": 1073741824,
     "bucket_ttl_minutes": 1440
   },
