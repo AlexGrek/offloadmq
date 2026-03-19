@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(taskkill //IM offload-agent.exe //F)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(git rm:*)"
     ]
   }
 }
