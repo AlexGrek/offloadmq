@@ -5,7 +5,12 @@ from typing import Optional, Dict, Any, List, Tuple
 from app.ollama import *
 from app.systeminfo import *
 from app.url_utils import *
-from app._version import APP_VERSION
+
+# Version is injected at build time; provide fallback for local dev
+try:
+    from app._version import APP_VERSION
+except ModuleNotFoundError:
+    APP_VERSION = "dev"
 
 
 class HttpClient:
