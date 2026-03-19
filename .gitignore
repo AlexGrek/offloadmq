@@ -5,4 +5,4 @@
 .secrets.yaml
 /.vite
 **/__pycache__
-**/*.pyc
+**/*.pycoffload-agent/app/_version.py
