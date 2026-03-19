@@ -40,6 +40,28 @@ build: venv frontend-build
 typecheck: venv
 	bash -c "source venv/bin/activate && python -m mypy"
 
+# Install binary + register + set up headless systemd service (no webui)
+# Usage: make install-systemd SERVER=https://offloadmq.alexgr.space KEY=<agent_key>
+install-systemd: build
+	sudo ./dist/offload-agent install bin
+	cd ~ && offload-agent cli register --server $(SERVER) --key $(KEY)
+	$(MAKE) _write-systemd-service
+
+# Register only (binary already installed), then set up headless systemd service
+# Usage: make register-systemd SERVER=https://offloadmq.alexgr.space KEY=<agent_key>
+register-systemd:
+	cd ~ && offload-agent cli register --server $(SERVER) --key $(KEY)
+	$(MAKE) _write-systemd-service
+
+_write-systemd-service:
+	@printf '[Unit]\nDescription=Offload Agent\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser=%s\nWorkingDirectory=%s\nExecStart=/usr/local/bin/offload-agent cli serve\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=multi-user.target\n' \
+		"$(shell whoami)" "$(HOME)" \
+		| sudo tee /etc/systemd/system/offload-agent.service > /dev/null
+	sudo systemctl daemon-reload
+	sudo systemctl enable offload-agent
+	sudo systemctl restart offload-agent
+	@echo "Done. Check: systemctl status offload-agent"
+
 rebuild: clean build
 
 clean:
@@ -50,4 +72,4 @@ clean:
 webui: venv frontend-build
 	bash -c "source venv/bin/activate && python offload-agent.py webui"
 
-.PHONY: sysinfo register ollama build rebuild clean webui frontend-build typecheck
+.PHONY: sysinfo register ollama build rebuild clean webui frontend-build typecheck install-systemd register-systemd _write-systemd-service
