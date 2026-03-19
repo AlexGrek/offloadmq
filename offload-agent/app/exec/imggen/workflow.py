@@ -148,7 +148,8 @@ def build_injection_values(payload: dict, task_type: str, data_path: Path) -> di
         values["prompt"] = prompt
 
     for key, val in (payload.get("secondary_prompts") or {}).items():
-        values[key] = val  # e.g. "negative" → negative prompt text
+        # null / "$keep" passed through so inject_params can honour them
+        values[key] = val
 
     if resolution := payload.get("resolution"):
         if w := resolution.get("width"):

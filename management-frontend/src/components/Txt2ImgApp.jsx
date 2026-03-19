@@ -7,7 +7,8 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
   const [workflow, setWorkflow] = useState('txt2img');
   const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('a cat sitting on the moon, cinematic lighting');
-  const [negativePrompt, setNegativePrompt] = useState('blurry, deformed, low quality');
+  const [negativePrompt, setNegativePrompt] = useState('');
+  const [overrideNegative, setOverrideNegative] = useState(false);
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(1024);
   const [seed, setSeed] = useState('');
@@ -99,9 +100,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
       payload: {
         workflow: workflow,
         prompt: prompt,
-        secondary_prompts: {
-          negative: negativePrompt,
-        },
+        ...(overrideNegative && { secondary_prompts: { negative: negativePrompt } }),
         resolution: {
           width: parseInt(width),
           height: parseInt(height),
@@ -239,14 +238,28 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
         </div>
 
         <div style={styles.formGroup}>
-          <label htmlFor="negative" style={styles.label}>Negative Prompt:</label>
-          <textarea
-            id="negative"
-            value={negativePrompt}
-            onChange={(e) => setNegativePrompt(e.target.value)}
-            style={styles.textarea}
-            rows="2"
-          />
+          <div style={styles.labelRow}>
+            <label htmlFor="negative" style={styles.label}>Negative Prompt:</label>
+            <button
+              type="button"
+              onClick={() => setOverrideNegative(v => !v)}
+              style={styles.toggleBtn}
+            >
+              {overrideNegative ? 'use model default' : 'override'}
+            </button>
+          </div>
+          {overrideNegative ? (
+            <textarea
+              id="negative"
+              value={negativePrompt}
+              onChange={(e) => setNegativePrompt(e.target.value)}
+              style={styles.textarea}
+              rows="2"
+              placeholder="e.g. blurry, deformed, low quality"
+            />
+          ) : (
+            <span style={styles.defaultHint}>Using workflow default</span>
+          )}
         </div>
 
         <div style={styles.row}>
@@ -357,6 +370,25 @@ const styles = {
     fontWeight: '600',
     color: 'var(--text)',
     marginBottom: '6px',
+  },
+  labelRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '6px',
+  },
+  toggleBtn: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '12px',
+    color: 'var(--primary)',
+    padding: '0',
+  },
+  defaultHint: {
+    fontSize: '13px',
+    color: 'var(--muted)',
+    fontStyle: 'italic',
   },
   input: {
     padding: '8px 12px',
