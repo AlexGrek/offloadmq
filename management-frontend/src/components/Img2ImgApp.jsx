@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 import ImgGenModelSelector from './ImgGenModelSelector';
 import ErrorBoundary from './ErrorBoundary';
+import ImageLightbox from './ImageLightbox';
 import { Upload, X } from 'lucide-react';
 
 const Img2ImgApp = ({ apiKey, addDevEntry }) => {
@@ -23,6 +24,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [capabilities, setCapabilities] = useState([]);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   const fileInputRef = useRef(null);
   const outputBucketRef = useRef(null);
   const blobUrlsRef = useRef([]);
@@ -464,6 +466,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
                       src={src}
                       alt={`Generated ${idx + 1}`}
                       style={styles.image}
+                      onClick={() => setLightboxSrc(src)}
                     />
                     <div style={styles.imageFooter}>
                       <p style={styles.imageName}>{img.filename}</p>
@@ -482,6 +485,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         )}
       </div>
     </div>
+    <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </ErrorBoundary>
   );
 };
@@ -622,6 +626,7 @@ const styles = {
     width: '100%',
     borderRadius: '8px',
     border: '1px solid var(--border)',
+    cursor: 'zoom-in',
   },
   imageFooter: {
     display: 'flex',
