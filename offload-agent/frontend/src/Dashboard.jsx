@@ -12,6 +12,34 @@ async function postForm(url, formData) {
   return r.json()
 }
 
+const TABS = [
+  { id: 'status', label: 'Status' },
+  { id: 'connection', label: 'Connection' },
+  { id: 'capabilities', label: 'Capabilities' },
+  { id: 'system', label: 'System' },
+  { id: 'comfyui', label: 'ComfyUI' },
+]
+
+function TabBar({ active, onChange }) {
+  return (
+    <div className="flex border-b border-slate-700 mb-6">
+      {TABS.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => onChange(t.id)}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            active === t.id
+              ? 'text-indigo-400 border-b-2 border-indigo-400 -mb-px'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function Dashboard() {
   const [state, setState] = useState(null)
   const [err, setErr] = useState(null)
@@ -26,6 +54,7 @@ export function Dashboard() {
   const [wfName, setWfName] = useState('')
   const [wfTaskType, setWfTaskType] = useState('txt2img')
   const wfFileRef = useRef(null)
+  const [activeTab, setActiveTab] = useState('status')
 
   const loadState = useCallback(async () => {
     try {
@@ -43,7 +72,6 @@ export function Dashboard() {
     }
   }, [])
 
-  // Runs an async action, capturing any error into the banner.
   function run(fn) {
     fn().catch((e) => setErr(String(e.message || e)))
   }
@@ -188,9 +216,7 @@ export function Dashboard() {
   }
 
   if (!state) {
-    return (
-      <div className="p-8 text-slate-500">Loading...</div>
-    )
+    return <div className="p-8 text-slate-500">Loading...</div>
   }
 
   const si = state.sysinfo || {}
@@ -215,76 +241,94 @@ export function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div className="bg-slate-800 rounded-lg p-5">
-          <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
-            Agent
-          </h2>
-          <div className="text-sm mb-3">
-            <span
-              className={`inline-block w-2 h-2 rounded-full mr-1.5 align-middle ${
-                running ? 'bg-green-500 shadow-[0_0_6px_#22c55e]' : 'bg-slate-600'
-              }`}
-            />
-            {running ? 'Running' : 'Stopped'}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                run(async () => {
-                  await postForm('/agent/start', new FormData())
-                  loadState()
-                })
-              }}
-            >
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-md bg-green-600 text-white text-sm font-medium hover:opacity-85"
+      <TabBar active={activeTab} onChange={setActiveTab} />
+
+      {/* Status tab */}
+      <div style={{ display: activeTab === 'status' ? 'block' : 'none' }}>
+        <div className="grid grid-cols-1 gap-5">
+          <div className="bg-slate-800 rounded-lg p-5">
+            <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Agent
+            </h2>
+            <div className="text-sm mb-3">
+              <span
+                className={`inline-block w-2 h-2 rounded-full mr-1.5 align-middle ${
+                  running ? 'bg-green-500 shadow-[0_0_6px_#22c55e]' : 'bg-slate-600'
+                }`}
+              />
+              {running ? 'Running' : 'Stopped'}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  run(async () => {
+                    await postForm('/agent/start', new FormData())
+                    loadState()
+                  })
+                }}
               >
-                Start
-              </button>
-            </form>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                run(async () => {
-                  await postForm('/agent/stop', new FormData())
-                  loadState()
-                })
-              }}
-            >
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-md bg-red-500 text-white text-sm font-medium hover:opacity-85"
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-md bg-green-600 text-white text-sm font-medium hover:opacity-85"
+                >
+                  Start
+                </button>
+              </form>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  run(async () => {
+                    await postForm('/agent/stop', new FormData())
+                    loadState()
+                  })
+                }}
               >
-                Stop
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-md bg-red-500 text-white text-sm font-medium hover:opacity-85"
+                >
+                  Stop
+                </button>
+              </form>
+            </div>
+            <div className="mt-3">
+              {cfgExists ? (
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!state.autostart}
+                    onChange={(e) => setAutostart(e.target.checked)}
+                    className="w-[15px] h-[15px] accent-indigo-500"
+                  />
+                  Autostart on launch
+                </label>
+              ) : (
+                <label className="flex items-center gap-2 text-sm opacity-50 cursor-not-allowed">
+                  <input type="checkbox" disabled className="w-[15px] h-[15px]" />
+                  Autostart on launch
+                  <span className="text-xs text-amber-500 ml-1">config not found</span>
+                </label>
+              )}
+            </div>
           </div>
-          <div className="mt-3">
-            {cfgExists ? (
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={!!state.autostart}
-                  onChange={(e) => setAutostart(e.target.checked)}
-                  className="w-[15px] h-[15px] accent-indigo-500"
-                />
-                Autostart on launch
-              </label>
-            ) : (
-              <label className="flex items-center gap-2 text-sm opacity-50 cursor-not-allowed">
-                <input type="checkbox" disabled className="w-[15px] h-[15px]" />
-                Autostart on launch
-                <span className="text-xs text-amber-500 ml-1">
-                  config not found
-                </span>
-              </label>
-            )}
+
+          <div className="bg-slate-800 rounded-lg p-5">
+            <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Log
+            </h2>
+            <div
+              ref={logRef}
+              className="bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs h-60 overflow-y-auto whitespace-pre-wrap text-slate-400"
+            >
+              {logLines.length ? logLines.join('\n') : '-'}
+            </div>
           </div>
         </div>
+      </div>
 
+      {/* Connection tab */}
+      <div style={{ display: activeTab === 'connection' ? 'block' : 'none' }}>
         <div className="bg-slate-800 rounded-lg p-5">
           <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
             Connection
@@ -323,136 +367,11 @@ export function Dashboard() {
             </div>
           </form>
         </div>
+      </div>
 
+      {/* Capabilities tab */}
+      <div style={{ display: activeTab === 'capabilities' ? 'block' : 'none' }}>
         <div className="bg-slate-800 rounded-lg p-5">
-          <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
-            System
-          </h2>
-          {state.scanning ? (
-            <p className="text-sm text-slate-500 italic">Scanning...</p>
-          ) : Object.keys(si).length === 0 ? (
-            <p className="text-sm text-slate-500 italic">No scan data yet</p>
-          ) : (
-            <div className="text-sm text-slate-400 leading-relaxed">
-              <div>
-                {si.os} / {si.cpuArch}
-              </div>
-              <div>RAM: {si.totalMemoryMb}MB</div>
-              <div>GPU: {gpuStr}</div>
-            </div>
-          )}
-          <form
-            className="mt-3"
-            onSubmit={(e) => {
-              e.preventDefault()
-              run(async () => {
-                await postForm('/scan', new FormData())
-                loadState()
-              })
-            }}
-          >
-            <button
-              type="submit"
-              className="px-3 py-1.5 rounded-md bg-indigo-500 text-white text-xs font-medium hover:opacity-85"
-            >
-              Rescan
-            </button>
-          </form>
-        </div>
-
-        <div className="bg-slate-800 rounded-lg p-5">
-          <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
-            Service
-          </h2>
-          {state.win_startup_available && (
-            <>
-              <p className="text-sm text-slate-400 mb-2">
-                Launch Offload Agent when you log in to Windows.
-              </p>
-              {cfgExists ? (
-                <label className="flex items-center gap-2 text-sm cursor-pointer mb-4">
-                  <input
-                    type="checkbox"
-                    checked={!!state.win_startup_enabled}
-                    onChange={(e) => setWinStartup(e.target.checked)}
-                    className="w-[15px] h-[15px] accent-indigo-500"
-                  />
-                  Start with Windows
-                </label>
-              ) : (
-                <label className="flex items-center gap-2 text-sm opacity-50 mb-4">
-                  <input type="checkbox" disabled className="w-[15px] h-[15px]" />
-                  Start with Windows
-                  <span className="text-xs text-amber-500">
-                    configure server and API key first
-                  </span>
-                </label>
-              )}
-              <hr className="border-slate-700 my-3" />
-            </>
-          )}
-          {state.mac_startup_available && (
-            <>
-              <p className="text-sm text-slate-400 mb-2">
-                Launch Offload Agent when you log in to macOS.
-              </p>
-              {cfgExists ? (
-                <label className="flex items-center gap-2 text-sm cursor-pointer mb-4">
-                  <input
-                    type="checkbox"
-                    checked={!!state.mac_startup_enabled}
-                    onChange={(e) => setMacStartup(e.target.checked)}
-                    className="w-[15px] h-[15px] accent-indigo-500"
-                  />
-                  Start with macOS
-                </label>
-              ) : (
-                <label className="flex items-center gap-2 text-sm opacity-50 mb-4">
-                  <input type="checkbox" disabled className="w-[15px] h-[15px]" />
-                  Start with macOS
-                  <span className="text-xs text-amber-500">
-                    configure server and API key first
-                  </span>
-                </label>
-              )}
-              <hr className="border-slate-700 my-3" />
-            </>
-          )}
-          <p className="text-sm text-slate-400 mb-2">
-            Install as a systemd service that autostarts with the system.
-          </p>
-          {state.systemd?.ok ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                run(async () => {
-                  await postForm('/install/systemd', new FormData())
-                  loadState()
-                })
-              }}
-            >
-              <button
-                type="submit"
-                className="px-3 py-1.5 rounded-md bg-indigo-500 text-white text-xs font-medium hover:opacity-85"
-              >
-                Install systemd service
-              </button>
-            </form>
-          ) : (
-            <>
-              <button
-                type="button"
-                disabled
-                className="px-3 py-1.5 rounded-md bg-indigo-500 text-white text-xs opacity-40 cursor-not-allowed"
-              >
-                Install systemd service
-              </button>
-              <p className="text-xs text-slate-500 mt-2">{state.systemd?.reason}</p>
-            </>
-          )}
-        </div>
-
-        <div className="bg-slate-800 rounded-lg p-5 md:col-span-2">
           <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
             Capabilities
           </h2>
@@ -497,8 +416,144 @@ export function Dashboard() {
             Save selection
           </button>
         </div>
+      </div>
 
-        <div className="bg-slate-800 rounded-lg p-5 md:col-span-2">
+      {/* System tab */}
+      <div style={{ display: activeTab === 'system' ? 'block' : 'none' }}>
+        <div className="grid grid-cols-1 gap-5">
+          <div className="bg-slate-800 rounded-lg p-5">
+            <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              System
+            </h2>
+            {state.scanning ? (
+              <p className="text-sm text-slate-500 italic">Scanning...</p>
+            ) : Object.keys(si).length === 0 ? (
+              <p className="text-sm text-slate-500 italic">No scan data yet</p>
+            ) : (
+              <div className="text-sm text-slate-400 leading-relaxed">
+                <div>
+                  {si.os} / {si.cpuArch}
+                </div>
+                <div>RAM: {si.totalMemoryMb}MB</div>
+                <div>GPU: {gpuStr}</div>
+              </div>
+            )}
+            <form
+              className="mt-3"
+              onSubmit={(e) => {
+                e.preventDefault()
+                run(async () => {
+                  await postForm('/scan', new FormData())
+                  loadState()
+                })
+              }}
+            >
+              <button
+                type="submit"
+                className="px-3 py-1.5 rounded-md bg-indigo-500 text-white text-xs font-medium hover:opacity-85"
+              >
+                Rescan
+              </button>
+            </form>
+          </div>
+
+          <div className="bg-slate-800 rounded-lg p-5">
+            <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Service
+            </h2>
+            {state.win_startup_available && (
+              <>
+                <p className="text-sm text-slate-400 mb-2">
+                  Launch Offload Agent when you log in to Windows.
+                </p>
+                {cfgExists ? (
+                  <label className="flex items-center gap-2 text-sm cursor-pointer mb-4">
+                    <input
+                      type="checkbox"
+                      checked={!!state.win_startup_enabled}
+                      onChange={(e) => setWinStartup(e.target.checked)}
+                      className="w-[15px] h-[15px] accent-indigo-500"
+                    />
+                    Start with Windows
+                  </label>
+                ) : (
+                  <label className="flex items-center gap-2 text-sm opacity-50 mb-4">
+                    <input type="checkbox" disabled className="w-[15px] h-[15px]" />
+                    Start with Windows
+                    <span className="text-xs text-amber-500">
+                      configure server and API key first
+                    </span>
+                  </label>
+                )}
+                <hr className="border-slate-700 my-3" />
+              </>
+            )}
+            {state.mac_startup_available && (
+              <>
+                <p className="text-sm text-slate-400 mb-2">
+                  Launch Offload Agent when you log in to macOS.
+                </p>
+                {cfgExists ? (
+                  <label className="flex items-center gap-2 text-sm cursor-pointer mb-4">
+                    <input
+                      type="checkbox"
+                      checked={!!state.mac_startup_enabled}
+                      onChange={(e) => setMacStartup(e.target.checked)}
+                      className="w-[15px] h-[15px] accent-indigo-500"
+                    />
+                    Start with macOS
+                  </label>
+                ) : (
+                  <label className="flex items-center gap-2 text-sm opacity-50 mb-4">
+                    <input type="checkbox" disabled className="w-[15px] h-[15px]" />
+                    Start with macOS
+                    <span className="text-xs text-amber-500">
+                      configure server and API key first
+                    </span>
+                  </label>
+                )}
+                <hr className="border-slate-700 my-3" />
+              </>
+            )}
+            <p className="text-sm text-slate-400 mb-2">
+              Install as a systemd service that autostarts with the system.
+            </p>
+            {state.systemd?.ok ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  run(async () => {
+                    await postForm('/install/systemd', new FormData())
+                    loadState()
+                  })
+                }}
+              >
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 rounded-md bg-indigo-500 text-white text-xs font-medium hover:opacity-85"
+                >
+                  Install systemd service
+                </button>
+              </form>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled
+                  className="px-3 py-1.5 rounded-md bg-indigo-500 text-white text-xs opacity-40 cursor-not-allowed"
+                >
+                  Install systemd service
+                </button>
+                <p className="text-xs text-slate-500 mt-2">{state.systemd?.reason}</p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ComfyUI tab */}
+      <div style={{ display: activeTab === 'comfyui' ? 'block' : 'none' }}>
+        <div className="bg-slate-800 rounded-lg p-5">
           <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
             ImgGen / ComfyUI
           </h2>
@@ -526,7 +581,8 @@ export function Dashboard() {
           </h3>
           {(state.workflows || []).length === 0 ? (
             <p className="text-sm text-slate-500 mb-4">
-              No workflows found in <code className="text-slate-400">{state.workflows_dir}</code>
+              No workflows found in{' '}
+              <code className="text-slate-400">{state.workflows_dir}</code>
             </p>
           ) : (
             <div className="mb-4 space-y-0">
@@ -604,23 +660,12 @@ export function Dashboard() {
                 Add
               </button>
               <span className="text-xs text-slate-500">
-                A starter <code className="text-slate-400">params.json</code> mapping
-                will be generated automatically.
+                A starter{' '}
+                <code className="text-slate-400">params.json</code> mapping will be
+                generated automatically.
               </span>
             </div>
           </form>
-        </div>
-
-        <div className="bg-slate-800 rounded-lg p-5 md:col-span-2">
-          <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
-            Log
-          </h2>
-          <div
-            ref={logRef}
-            className="bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs h-60 overflow-y-auto whitespace-pre-wrap text-slate-400"
-          >
-            {logLines.length ? logLines.join('\n') : '-'}
-          </div>
         </div>
       </div>
     </div>
