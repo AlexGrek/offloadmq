@@ -17,7 +17,10 @@
       "Bash(curl -v http://localhost:8080/api/state)",
       "Bash(python -c \":*)",
       "Bash(python -m mypy app/ --ignore-missing-imports --warn-unused-ignores)",
-      "Bash(grep -n \"_comfyui_url\\\\|_WORKFLOWS_DIR\" /c/Users/AlexG/Documents/dev/offloadmq/offload-agent/app/exec/imggen/*.py)"
+      "Bash(grep -n \"_comfyui_url\\\\|_WORKFLOWS_DIR\" /c/Users/AlexG/Documents/dev/offloadmq/offload-agent/app/exec/imggen/*.py)",
+      "Bash(rm -rf build/ dist/ *.spec __pycache__ app/__pycache__)",
+      "Bash(find . -type d -name __pycache__ -exec rm -rf {} +)",
+      "Bash(taskkill /F /IM offload-agent.exe)"
     ]
   }
 }

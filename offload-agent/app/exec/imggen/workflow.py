@@ -46,8 +46,16 @@ def _find_workflows_dir() -> Path:
     if cwd_workflows.is_dir():
         return cwd_workflows
 
-    # app/exec/imggen/workflow.py → go up 4 levels to reach the agent root
-    return Path(__file__).parent.parent.parent.parent / "workflows"
+    # Development fallback: relative to source tree
+    dev_workflows = Path(__file__).parent.parent.parent.parent / "workflows"
+    if dev_workflows.is_dir():
+        return dev_workflows
+
+    # No workflows directory found anywhere — create the persistent home
+    # directory so packaged (PyInstaller) builds don't fall back to the
+    # ephemeral _MEIPASS temp directory.
+    home_workflows.mkdir(parents=True, exist_ok=True)
+    return home_workflows
 
 
 WORKFLOWS_DIR = _find_workflows_dir()
