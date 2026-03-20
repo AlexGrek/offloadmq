@@ -55,13 +55,14 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
   const [currentTask, setCurrentTask] = useState(null);
   const [log, setLog] = useState('');
 
-  // Fetch all extended online capabilities
+  // Fetch only custom extended capabilities (those with field:type attrs in brackets)
   useEffect(() => {
     const load = async () => {
       try {
         const data = await fetchOnlineCapabilities();
         if (Array.isArray(data)) {
-          setCapabilities(data.filter(c => typeof c === 'string'));
+          const custom = data.filter(c => typeof c === 'string' && stripCapabilityAttrs(c).startsWith('custom.'));
+          setCapabilities(custom);
         }
       } catch (err) {
         setError(`Failed to fetch capabilities: ${err.message}`);
@@ -195,7 +196,7 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
             onChange={(e) => setSelectedCap(e.target.value)}
             style={ss.input}
           >
-            <option value="">— select a capability —</option>
+            <option value="">— select a custom capability —</option>
             {capabilities.map(cap => (
               <option key={cap} value={cap}>{cap}</option>
             ))}
