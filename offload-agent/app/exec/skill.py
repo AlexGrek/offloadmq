@@ -23,6 +23,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any, IO
 
 import requests
 
@@ -39,7 +40,7 @@ from .helpers import (
 logger = logging.getLogger(__name__)
 
 
-def _normalise_payload(payload) -> dict:
+def _normalise_payload(payload: Any) -> dict[str, Any]:
     """Normalise a payload to a dict."""
     if payload is None:
         return {}
@@ -57,7 +58,7 @@ def _normalise_payload(payload) -> dict:
 # Shell executor
 # ---------------------------------------------------------------------------
 
-def _enqueue_output(stream, q):
+def _enqueue_output(stream: IO[str], q: queue.Queue[str]) -> None:
     """Read lines from a stream and put them on a queue."""
     for line in iter(stream.readline, ""):
         q.put(line)
@@ -69,7 +70,7 @@ def _execute_shell(
     task_id: TaskId,
     capability: str,
     skill: Skill,
-    payload: dict,
+    payload: dict[str, Any],
     data_path: Path,
 ) -> bool:
     """Execute a shell-type skill."""
@@ -84,8 +85,8 @@ def _execute_shell(
 
     # Write script to temp file (not from payload — trusted content)
     script_content = skill.script
-    if not script_content.startswith("#!"):
-        script_content = "#!/bin/bash\nset -euo pipefail\n" + script_content
+    if not script_content or not script_content.startswith("#!"):
+        script_content = f"#!/bin/bash\nset -euo pipefail\n{script_content or ''}"
 
     script_fd = None
     script_path = None
@@ -209,7 +210,7 @@ def _execute_llm(
     task_id: TaskId,
     capability: str,
     skill: Skill,
-    payload: dict,
+    payload: dict[str, Any],
     data_path: Path,
 ) -> bool:
     """Execute an LLM-type skill by rendering the prompt template and calling Ollama."""
@@ -230,11 +231,11 @@ def _execute_llm(
         return report_result(http, report)
 
     # Build Ollama chat API payload
-    messages = [{"role": "user", "content": rendered_prompt}]
+    messages: list[dict[str, str]] = [{"role": "user", "content": rendered_prompt}]
     if skill.system:
         messages.insert(0, {"role": "system", "content": skill.system})
 
-    api_payload: dict = {
+    api_payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "stream": True,
@@ -253,7 +254,7 @@ def _execute_llm(
         full_response = ""
         buffer = ""
         last_flush = time.time()
-        final_data: dict = {}
+        final_data: dict[str, Any] = {}
 
         r = requests.post(OLLAMA_API_URL, json=api_payload, stream=True, timeout=skill.timeout)
         r.raise_for_status()
@@ -285,7 +286,7 @@ def _execute_llm(
                     report_progress(http, log=buffer, stage="running", task_id=task_id)
                     buffer = ""
 
-        output = {
+        output: dict[str, Any] = {
             "response": full_response,
             "model": model,
             "skill": skill.name,
@@ -330,7 +331,7 @@ def execute_skill(
     http: HttpClient,
     task_id: TaskId,
     capability: str,
-    payload,
+    payload: Any,
     data_path: Path,
 ) -> bool:
     """Execute a custom skill — dispatches to type-specific executor."""

@@ -1,5 +1,10 @@
-import typer
 import logging
+from datetime import timedelta
+from typing import Any, Optional
+
+import requests
+import typer
+
 from ..models import *
 from ..httphelpers import *
 
@@ -83,7 +88,7 @@ def report_progress(http: HttpClient, log: Optional[str], stage: Optional[str], 
 
 
 def make_success_report(
-    task_id: TaskId, capability: str, output: dict, duration_sec: float = 12.5
+    task_id: TaskId, capability: str, output: dict[str, Any], duration_sec: float = 12.5
 ) -> TaskResultReport:
     return TaskResultReport(
         id=task_id,
@@ -98,7 +103,7 @@ def make_failure_report(
     capability: str,
     message: str,
     duration_sec: float = 5.0,
-    extra_output: Optional[dict] = None,
+    extra_output: Optional[dict[str, Any]] = None,
 ) -> TaskResultReport:
     return TaskResultReport(
         id=task_id,

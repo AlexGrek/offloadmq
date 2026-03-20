@@ -18,11 +18,11 @@ class HttpClient:
         self.base = server_base.rstrip("/")
         self.headers = {"Authorization": f"Bearer {jwt}"} if jwt else {}
 
-    def get(self, *segments: str, timeout: int = 60):
+    def get(self, *segments: str, timeout: int = 60) -> requests.Response:
         url = build_url(self.base, *segments)
         return requests.get(url, headers=self.headers, timeout=timeout)
 
-    def post(self, *segments: str, json_body: Dict[str, Any], timeout: int = 60):
+    def post(self, *segments: str, json_body: Dict[str, Any], timeout: int = 60) -> requests.Response:
         url = build_url(self.base, *segments)
         return requests.post(url, headers=self.headers, json=json_body, timeout=timeout)
 
@@ -44,14 +44,14 @@ def register_agent(
     resp = requests.post(url, json=registration_data, timeout=30)
     print(resp.content)
     resp.raise_for_status()
-    return resp.json()
+    return resp.json()  # type: ignore[no-any-return]
 
 
 def authenticate_agent(server: str, agent_id: str, key: str) -> Dict[str, Any]:
     url = server.rstrip("/") + "/agent/auth"
     resp = requests.post(url, json={"agentId": agent_id, "key": key}, timeout=30)
     resp.raise_for_status()
-    return resp.json()
+    return resp.json()  # type: ignore[no-any-return]
 
 
 def test_ping(server: str, jwt_token: str) -> bool:

@@ -44,7 +44,7 @@ class TaskId(BaseModel):
 class TaskResultReport(BaseModel):
     task_id: TaskId = Field(..., alias="id")
     status: TaskResultStatus
-    output: Optional[dict]
+    output: Optional[dict[str, Any]]
     capability: str
 
     class Config:

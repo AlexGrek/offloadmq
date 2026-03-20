@@ -19,9 +19,12 @@ cargo test               # Run Rust unit tests
 ```bash
 cd offload-agent
 make venv                # Create virtualenv and install dependencies
+python -m mypy app/ --strict  # Type check (MANDATORY before commit)
 make serve               # Register agent and start serving (requires running server)
 make register            # Register agent only
 ```
+
+**Type Safety:** All Python code in `offload-agent/app/` must pass `mypy --strict` type checking. This is mandatory before committing changes.
 
 ### React Management Frontend
 ```bash

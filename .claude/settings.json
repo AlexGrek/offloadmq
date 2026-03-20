@@ -107,7 +107,18 @@
       "Bash(python -c \"from app.capabilities import check_skills; r = check_skills\\(\\); print\\(f''check_skills: ok={r.ok}, caps={r.caps}, reason={r.reason}''\\)\")",
       "Bash(python -m app.cli skills list)",
       "Bash(/Users/vedmedik/.offload-agent/skills/summarize.yaml:*)",
-      "Bash(python -c \"from webui import _list_skills, _build_api_state; print\\(''webui imports OK''\\)\")"
+      "Bash(python -c \"from webui import _list_skills, _build_api_state; print\\(''webui imports OK''\\)\")",
+      "Bash(python -m mypy app/ --strict)",
+      "Bash(ls -la venv/bin/python*)",
+      "Bash(mypy app/ --strict)",
+      "Read(//Users/vedmodik/dev/offloadmq/offload-agent/app/exec/**)",
+      "Bash(mypy app/skills.py app/exec/skill.py --strict)",
+      "Bash(python -m mypy app/skills.py app/exec/skill.py --strict)",
+      "Bash(python -m mypy app/skills.py --strict --no-error-summary)",
+      "Bash(make -n build)",
+      "Bash(make build:*)",
+      "Bash(dist/offload-agent --help)",
+      "Bash(dist/offload-agent cli:*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
