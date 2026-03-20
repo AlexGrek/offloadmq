@@ -1,14 +1,14 @@
-"""Custom skill definitions stored as YAML files.
+"""Custom capability definitions stored as YAML files.
 
-Each skill YAML defines a predefined task with typed parameters. The ``type``
+Each YAML file defines a custom capability with typed parameters. The ``type``
 field selects the execution backend:
 
-  shell  — runs a bash script; parameters are injected as SKILL_* env vars
+  shell  — runs a bash script; parameters are injected as CUSTOM_* env vars
   llm    — renders a prompt template and sends it to Ollama
 
-Shell skills (type: shell)
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-Parameters are passed as environment variables with a SKILL_ prefix, preventing
+Shell custom caps (type: shell)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Parameters are passed as environment variables with a CUSTOM_ prefix, preventing
 shell injection — the script is trusted (authored by agent operator), only
 parameter VALUES come from untrusted task submitters.
 
@@ -18,7 +18,7 @@ parameter VALUES come from untrusted task submitters.
     script: |
       #!/bin/bash
       set -euo pipefail
-      echo "Deploying $SKILL_BRANCH"
+      echo "Deploying $CUSTOM_BRANCH"
     params:
       - name: branch
         type: string
@@ -27,8 +27,8 @@ parameter VALUES come from untrusted task submitters.
     env:
       DEPLOY_KEY: /path/to/key
 
-LLM skills (type: llm)
-~~~~~~~~~~~~~~~~~~~~~~
+LLM custom caps (type: llm)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Parameters are substituted into a prompt template using {{param}} syntax.
 The rendered prompt is sent to a local Ollama model.
 
@@ -62,7 +62,7 @@ _SAFE_NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
 _PARAM_NAME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]*$')
 
 _VALID_TYPES = {"string", "int", "integer", "float", "number", "double", "bool", "boolean", "text", "json", "object"}
-VALID_SKILL_TYPES = {"shell", "llm"}
+VALID_EXEC_TYPES = {"shell", "llm"}
 
 # Type hint aliases → canonical form used in capability attribute strings
 _TYPE_CANONICAL = {
@@ -80,8 +80,8 @@ _TYPE_CANONICAL = {
 }
 
 
-class SkillParam:
-    """A single parameter defined in a skill YAML."""
+class CustomParam:
+    """A single parameter defined in a custom capability YAML."""
 
     __slots__ = ("name", "type", "default", "description")
 
@@ -101,7 +101,7 @@ class SkillParam:
 
     def env_name(self) -> str:
         """Environment variable name for this parameter."""
-        return f"SKILL_{self.name.upper()}"
+        return f"CUSTOM_{self.name.upper()}"
 
     def capability_attr(self) -> str:
         """Attribute string for the capability extended notation."""
@@ -138,11 +138,11 @@ class SkillParam:
         return value
 
 
-class Skill:
-    """A loaded skill definition."""
+class CustomCap:
+    """A loaded custom capability definition."""
 
     __slots__ = (
-        "name", "description", "skill_type", "script", "params", "timeout", "env", "path",
+        "name", "description", "exec_type", "script", "params", "timeout", "env", "path",
         # LLM-specific fields
         "model", "prompt", "system", "temperature", "max_tokens",
     )
@@ -151,9 +151,9 @@ class Skill:
         self,
         name: str,
         description: str,
-        skill_type: str = "shell",
+        exec_type: str = "shell",
         script: Optional[str] = None,
-        params: Optional[List[SkillParam]] = None,
+        params: Optional[List[CustomParam]] = None,
         timeout: int = 120,
         env: Optional[Dict[str, str]] = None,
         path: Optional[Path] = None,
@@ -166,7 +166,7 @@ class Skill:
     ):
         self.name = name
         self.description = description
-        self.skill_type = skill_type
+        self.exec_type = exec_type
         self.script = script
         self.params = params or []
         self.timeout = timeout
@@ -179,8 +179,8 @@ class Skill:
         self.max_tokens = max_tokens
 
     def capability_string(self) -> str:
-        """Build the extended capability string, e.g. skill.deploy-app[branch;env;dry_run:bool]."""
-        base = f"skill.{self.name}"
+        """Build the extended capability string, e.g. custom.deploy-app[branch;env;dry_run:bool]."""
+        base = f"custom.{self.name}"
         if not self.params:
             return base
         attrs = ";".join(p.capability_attr() for p in self.params)
@@ -206,18 +206,18 @@ class Skill:
     def build_env(self, payload: Dict[str, Any]) -> Dict[str, str]:
         """Build the environment dict for shell script execution.
 
-        Merges OS environ + static skill env + SKILL_* parameter values.
+        Merges OS environ + static cap env + CUSTOM_* parameter values.
         Returns a complete env dict suitable for subprocess.
 
         Raises ValueError if a required parameter (no default) is missing.
         """
         env = dict(os.environ)
-        # Static env vars from skill definition
+        # Static env vars from capability definition
         env.update(self.env)
 
         resolved = self._resolve_params(payload)
         for name, value in resolved.items():
-            env[f"SKILL_{name.upper()}"] = value
+            env[f"CUSTOM_{name.upper()}"] = value
 
         return env
 
@@ -230,7 +230,7 @@ class Skill:
         Raises ValueError if a required parameter is missing.
         """
         if not self.prompt:
-            raise ValueError("LLM skill has no 'prompt' template")
+            raise ValueError("LLM custom cap has no 'prompt' template")
 
         resolved = self._resolve_params(payload)
         result = self.prompt
@@ -242,7 +242,7 @@ class Skill:
         """Serialize for API/UI consumption."""
         d: Dict[str, Any] = {
             "name": self.name,
-            "type": self.skill_type,
+            "type": self.exec_type,
             "description": self.description,
             "params": [
                 {
@@ -256,11 +256,11 @@ class Skill:
             "timeout": self.timeout,
             "capability": self.capability_string(),
         }
-        if self.skill_type == "shell":
+        if self.exec_type == "shell":
             d["script"] = self.script
             if self.env:
                 d["env"] = self.env
-        elif self.skill_type == "llm":
+        elif self.exec_type == "llm":
             d["prompt"] = self.prompt
             if self.model:
                 d["model"] = self.model
@@ -274,73 +274,73 @@ class Skill:
 
 
 # ---------------------------------------------------------------------------
-# Skill discovery and loading
+# Discovery and loading
 # ---------------------------------------------------------------------------
 
-def _find_skills_dir() -> Path:
-    """Locate the skills directory, persisting across PyInstaller rebuilds.
+def _find_custom_caps_dir() -> Path:
+    """Locate the custom capabilities directory, persisting across PyInstaller rebuilds.
 
     Priority:
-    1. Environment variable OFFLOAD_SKILLS_DIR
-    2. ~/.offload-agent/skills (persistent for packaged agents)
+    1. Environment variable OFFLOAD_CUSTOM_CAPS_DIR
+    2. ~/.offload-agent/skills (persistent default; directory name kept for backward compatibility)
     3. CWD/skills (explicit local setup)
     """
-    if env_dir := os.getenv("OFFLOAD_SKILLS_DIR"):
+    if env_dir := os.getenv("OFFLOAD_CUSTOM_CAPS_DIR"):
         env_path = Path(env_dir)
         if env_path.is_dir():
             return env_path
 
-    home_skills = Path.home() / ".offload-agent" / "skills"
-    if home_skills.is_dir():
-        return home_skills
+    home_dir = Path.home() / ".offload-agent" / "skills"
+    if home_dir.is_dir():
+        return home_dir
 
-    cwd_skills = Path.cwd() / "skills"
-    if cwd_skills.is_dir():
-        return cwd_skills
+    cwd_dir = Path.cwd() / "skills"
+    if cwd_dir.is_dir():
+        return cwd_dir
 
     # Create the persistent home directory
-    home_skills.mkdir(parents=True, exist_ok=True)
-    return home_skills
+    home_dir.mkdir(parents=True, exist_ok=True)
+    return home_dir
 
 
-def load_skill(path: Path) -> Skill:
-    """Load a single skill from a YAML file.
+def load_custom_cap(path: Path) -> CustomCap:
+    """Load a single custom capability from a YAML file.
 
     Raises ValueError on validation errors, FileNotFoundError if missing.
     """
     import yaml
 
     if not path.is_file():
-        raise FileNotFoundError(f"Skill file not found: {path}")
+        raise FileNotFoundError(f"Custom cap file not found: {path}")
 
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        raise ValueError(f"Skill file must be a YAML mapping: {path}")
+        raise ValueError(f"Custom cap file must be a YAML mapping: {path}")
 
     name = raw.get("name")
     if not name or not _SAFE_NAME_RE.match(str(name)):
         raise ValueError(
-            f"Skill 'name' is required and must match [A-Za-z0-9._-]: {path}"
+            f"Custom cap 'name' is required and must match [A-Za-z0-9._-]: {path}"
         )
 
     description = raw.get("description", "")
-    skill_type = str(raw.get("type", "shell")).lower()
-    if skill_type not in VALID_SKILL_TYPES:
+    exec_type = str(raw.get("type", "shell")).lower()
+    if exec_type not in VALID_EXEC_TYPES:
         raise ValueError(
-            f"Skill 'type' must be one of {sorted(VALID_SKILL_TYPES)}, got '{skill_type}': {path}"
+            f"Custom cap 'type' must be one of {sorted(VALID_EXEC_TYPES)}, got '{exec_type}': {path}"
         )
 
     timeout = int(raw.get("timeout", 120))
     if timeout < 1 or timeout > 86400:
-        raise ValueError(f"Skill 'timeout' must be 1-86400 seconds: {path}")
+        raise ValueError(f"Custom cap 'timeout' must be 1-86400 seconds: {path}")
 
-    params: List[SkillParam] = []
+    params: List[CustomParam] = []
     raw_params = raw.get("params")
     if raw_params and isinstance(raw_params, list):
         for p in raw_params:
             if not isinstance(p, dict):
                 raise ValueError(f"Each param must be a mapping: {path}")
-            params.append(SkillParam(
+            params.append(CustomParam(
                 name=p["name"],
                 type_=p.get("type", "string"),
                 default=str(p["default"]) if "default" in p and p["default"] is not None else None,
@@ -356,31 +356,31 @@ def load_skill(path: Path) -> Skill:
     temperature = None
     max_tokens = None
 
-    if skill_type == "shell":
+    if exec_type == "shell":
         script = raw.get("script")
         if not script or not isinstance(script, str):
-            raise ValueError(f"Shell skill 'script' is required and must be a string: {path}")
+            raise ValueError(f"Shell custom cap 'script' is required and must be a string: {path}")
         raw_env = raw.get("env")
         if raw_env and isinstance(raw_env, dict):
             static_env = {str(k): str(v) for k, v in raw_env.items()}
 
-    elif skill_type == "llm":
+    elif exec_type == "llm":
         prompt = raw.get("prompt")
         if not prompt or not isinstance(prompt, str):
-            raise ValueError(f"LLM skill 'prompt' is required and must be a string: {path}")
+            raise ValueError(f"LLM custom cap 'prompt' is required and must be a string: {path}")
         model = raw.get("model")
         if not model:
-            raise ValueError(f"LLM skill 'model' is required: {path}")
+            raise ValueError(f"LLM custom cap 'model' is required: {path}")
         system = raw.get("system")
         if raw.get("temperature") is not None:
             temperature = float(raw["temperature"])
         if raw.get("max_tokens") is not None:
             max_tokens = int(raw["max_tokens"])
 
-    return Skill(
+    return CustomCap(
         name=str(name),
         description=str(description),
-        skill_type=skill_type,
+        exec_type=exec_type,
         script=script,
         params=params,
         timeout=timeout,
@@ -394,63 +394,63 @@ def load_skill(path: Path) -> Skill:
     )
 
 
-def discover_skills() -> List[Skill]:
-    """Scan the skills directory and return all valid skill definitions."""
-    skills_dir = _find_skills_dir()
-    if not skills_dir.is_dir():
+def discover_custom_caps() -> List[CustomCap]:
+    """Scan the custom caps directory and return all valid definitions."""
+    caps_dir = _find_custom_caps_dir()
+    if not caps_dir.is_dir():
         return []
 
-    skills: List[Skill] = []
-    for entry in sorted(skills_dir.iterdir()):
+    caps: List[CustomCap] = []
+    for entry in sorted(caps_dir.iterdir()):
         if entry.suffix not in (".yaml", ".yml"):
             continue
         if not entry.is_file():
             continue
         try:
-            skill = load_skill(entry)
-            skills.append(skill)
+            cap = load_custom_cap(entry)
+            caps.append(cap)
         except Exception as e:
-            logger.warning(f"Skipping invalid skill {entry.name}: {e}")
+            logger.warning(f"Skipping invalid custom cap {entry.name}: {e}")
 
-    return skills
-
-
-def discover_skill_caps() -> List[str]:
-    """Return capability strings for all discovered skills."""
-    return [s.capability_string() for s in discover_skills()]
+    return caps
 
 
-def get_skill_by_capability(capability: str) -> Optional[Skill]:
-    """Find and load the skill matching a base capability like 'skill.deploy-app'.
+def list_custom_cap_strings() -> List[str]:
+    """Return capability strings for all discovered custom caps."""
+    return [c.capability_string() for c in discover_custom_caps()]
+
+
+def get_custom_cap(capability: str) -> Optional[CustomCap]:
+    """Find and load the custom cap matching a base capability like 'custom.deploy-app'.
 
     The capability should already have extended attributes stripped.
     """
-    if not capability.startswith("skill."):
+    if not capability.startswith("custom."):
         return None
 
-    skill_name = capability[len("skill."):]
-    if not skill_name or not _SAFE_NAME_RE.match(skill_name):
+    cap_name = capability[len("custom."):]
+    if not cap_name or not _SAFE_NAME_RE.match(cap_name):
         return None
 
-    skills_dir = _find_skills_dir()
+    caps_dir = _find_custom_caps_dir()
     for suffix in (".yaml", ".yml"):
-        path = skills_dir / f"{skill_name}{suffix}"
+        path = caps_dir / f"{cap_name}{suffix}"
         if path.is_file():
             try:
-                skill = load_skill(path)
-                if skill.name == skill_name:
-                    return skill
+                cap = load_custom_cap(path)
+                if cap.name == cap_name:
+                    return cap
             except Exception as e:
-                logger.error(f"Failed to load skill '{skill_name}': {e}")
+                logger.error(f"Failed to load custom cap '{cap_name}': {e}")
                 return None
 
     return None
 
 
-def validate_skill_yaml(content: str) -> Skill:
-    """Parse and validate skill YAML content (for UI preview/validation).
+def validate_custom_cap_yaml(content: str) -> CustomCap:
+    """Parse and validate custom cap YAML content (for UI preview/validation).
 
-    Returns the Skill object or raises ValueError.
+    Returns the CustomCap object or raises ValueError.
     """
     import yaml
     import tempfile
@@ -459,54 +459,54 @@ def validate_skill_yaml(content: str) -> Skill:
     if not isinstance(raw, dict):
         raise ValueError("YAML content must be a mapping")
 
-    # Write to temp file to reuse load_skill validation
+    # Write to temp file to reuse load_custom_cap validation
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(content)
         tmp_path = Path(f.name)
 
     try:
-        return load_skill(tmp_path)
+        return load_custom_cap(tmp_path)
     finally:
         tmp_path.unlink(missing_ok=True)
 
 
-def save_skill_yaml(skill_dict: Dict[str, Any]) -> Path:
-    """Save a skill definition dict as YAML to the skills directory.
+def save_custom_cap_yaml(cap_dict: Dict[str, Any]) -> Path:
+    """Save a custom cap definition dict as YAML to the caps directory.
 
     Returns the path to the saved file.
-    Raises ValueError if the skill definition is invalid.
+    Raises ValueError if the definition is invalid.
     """
     import yaml
 
-    name = skill_dict.get("name")
+    name = cap_dict.get("name")
     if not name or not _SAFE_NAME_RE.match(str(name)):
-        raise ValueError("Skill 'name' is required and must match [A-Za-z0-9._-]")
+        raise ValueError("Custom cap 'name' is required and must match [A-Za-z0-9._-]")
 
-    skills_dir = _find_skills_dir()
-    skills_dir.mkdir(parents=True, exist_ok=True)
+    caps_dir = _find_custom_caps_dir()
+    caps_dir.mkdir(parents=True, exist_ok=True)
 
-    path = skills_dir / f"{name}.yaml"
+    path = caps_dir / f"{name}.yaml"
 
     # Validate before writing by loading from dict
-    content = yaml.dump(skill_dict, default_flow_style=False, sort_keys=False)
+    content = yaml.dump(cap_dict, default_flow_style=False, sort_keys=False)
 
     # Round-trip validation
-    validate_skill_yaml(content)
+    validate_custom_cap_yaml(content)
 
     path.write_text(content, encoding="utf-8")
     return path
 
 
-def delete_skill(name: str) -> bool:
-    """Delete a skill YAML file. Returns True if file was found and deleted."""
+def delete_custom_cap(name: str) -> bool:
+    """Delete a custom cap YAML file. Returns True if file was found and deleted."""
     if not _SAFE_NAME_RE.match(name):
         return False
 
-    skills_dir = _find_skills_dir()
+    caps_dir = _find_custom_caps_dir()
     for suffix in (".yaml", ".yml"):
-        path = skills_dir / f"{name}{suffix}"
+        path = caps_dir / f"{name}{suffix}"
         # Prevent path traversal
-        if not str(path.resolve()).startswith(str(skills_dir.resolve())):
+        if not str(path.resolve()).startswith(str(caps_dir.resolve())):
             return False
         if path.is_file():
             path.unlink()

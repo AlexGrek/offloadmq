@@ -16,7 +16,7 @@ from .exec.shell import *
 from .exec.shellcmd import *
 from .exec.docker import *
 from .exec.imggen import execute_imggen_comfyui
-from .exec.skill import execute_skill
+from .exec.custom import execute_custom_cap
 from .data.updn import process_data_download
 from .data.fs_utils import *
 from .exec.helpers import report_starting
@@ -212,8 +212,8 @@ def route_executor(cap: str):
     if cap.startswith("imggen."):
         return execute_imggen_comfyui
 
-    if cap.startswith("skill."):
-        return execute_skill
+    if cap.startswith("custom."):
+        return execute_custom_cap
 
     return {
         "debug.echo": execute_debug_echo,

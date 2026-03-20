@@ -10,8 +10,8 @@ from .websocket_client import serve_websocket
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Offload Agent CLI")
-skills_app = typer.Typer(help="Manage custom skills")
-app.add_typer(skills_app, name="skills")
+custom_app = typer.Typer(help="Manage custom capabilities")
+app.add_typer(custom_app, name="custom")
 
 
 @app.command("sysinfo", help="Display system information")
@@ -154,34 +154,34 @@ def cli_serve(
         serve_tasks(server, jwt)
 
 
-@skills_app.command("list", help="List all discovered skills")
-def cli_skills_list():
-    from .skills import discover_skills, _find_skills_dir
+@custom_app.command("list", help="List all discovered custom capabilities")
+def cli_custom_list():
+    from .custom_caps import discover_custom_caps, _find_custom_caps_dir
 
-    skills_dir = _find_skills_dir()
-    typer.echo(f"Skills directory: {skills_dir}\n")
+    caps_dir = _find_custom_caps_dir()
+    typer.echo(f"Custom caps directory: {caps_dir}\n")
 
-    skills = discover_skills()
-    if not skills:
-        typer.echo("No skills found. Create .yaml files in the skills directory.")
+    caps = discover_custom_caps()
+    if not caps:
+        typer.echo("No custom caps found. Create .yaml files in the caps directory.")
         return
 
-    for s in skills:
-        typer.echo(f"  {s.capability_string()}")
-        typer.echo(f"    Description: {s.description}")
-        if s.params:
-            typer.echo(f"    Params: {', '.join(p.name for p in s.params)}")
-        typer.echo(f"    Timeout: {s.timeout}s")
-        if s.path:
-            typer.echo(f"    File: {s.path}")
+    for c in caps:
+        typer.echo(f"  {c.capability_string()}")
+        typer.echo(f"    Description: {c.description}")
+        if c.params:
+            typer.echo(f"    Params: {', '.join(p.name for p in c.params)}")
+        typer.echo(f"    Timeout: {c.timeout}s")
+        if c.path:
+            typer.echo(f"    File: {c.path}")
         typer.echo()
 
 
-@skills_app.command("import", help="Import a skill YAML file into the skills directory")
-def cli_skills_import(
-    file: Path = typer.Argument(..., help="Path to skill YAML file to import"),
+@custom_app.command("import", help="Import a custom capability YAML file")
+def cli_custom_import(
+    file: Path = typer.Argument(..., help="Path to custom capability YAML file to import"),
 ):
-    from .skills import load_skill, _find_skills_dir
+    from .custom_caps import load_custom_cap, _find_custom_caps_dir
     import shutil
 
     if not file.is_file():
@@ -190,74 +190,74 @@ def cli_skills_import(
 
     # Validate first
     try:
-        skill = load_skill(file)
+        cap = load_custom_cap(file)
     except Exception as e:
-        typer.echo(f"Error: Invalid skill file: {e}")
+        typer.echo(f"Error: Invalid custom cap file: {e}")
         raise typer.Exit(code=1)
 
-    skills_dir = _find_skills_dir()
-    skills_dir.mkdir(parents=True, exist_ok=True)
+    caps_dir = _find_custom_caps_dir()
+    caps_dir.mkdir(parents=True, exist_ok=True)
 
-    dest = skills_dir / f"{skill.name}.yaml"
+    dest = caps_dir / f"{cap.name}.yaml"
     if dest.exists():
-        overwrite = typer.confirm(f"Skill '{skill.name}' already exists. Overwrite?")
+        overwrite = typer.confirm(f"Custom cap '{cap.name}' already exists. Overwrite?")
         if not overwrite:
             typer.echo("Cancelled.")
             raise typer.Exit(code=0)
 
     shutil.copy2(file, dest)
-    typer.echo(f"Imported skill '{skill.name}' to {dest}")
-    typer.echo(f"Capability: {skill.capability_string()}")
+    typer.echo(f"Imported custom cap '{cap.name}' to {dest}")
+    typer.echo(f"Capability: {cap.capability_string()}")
 
 
-@skills_app.command("validate", help="Validate a skill YAML file without importing")
-def cli_skills_validate(
-    file: Path = typer.Argument(..., help="Path to skill YAML file to validate"),
+@custom_app.command("validate", help="Validate a custom capability YAML file without importing")
+def cli_custom_validate(
+    file: Path = typer.Argument(..., help="Path to custom capability YAML file to validate"),
 ):
-    from .skills import load_skill
+    from .custom_caps import load_custom_cap
 
     if not file.is_file():
         typer.echo(f"Error: File not found: {file}")
         raise typer.Exit(code=1)
 
     try:
-        skill = load_skill(file)
+        cap = load_custom_cap(file)
     except Exception as e:
         typer.echo(f"INVALID: {e}")
         raise typer.Exit(code=1)
 
-    typer.echo(f"VALID: {skill.name}")
-    typer.echo(f"  Type: {skill.skill_type}")
-    typer.echo(f"  Capability: {skill.capability_string()}")
-    typer.echo(f"  Description: {skill.description}")
-    if skill.params:
-        for p in skill.params:
+    typer.echo(f"VALID: {cap.name}")
+    typer.echo(f"  Type: {cap.exec_type}")
+    typer.echo(f"  Capability: {cap.capability_string()}")
+    typer.echo(f"  Description: {cap.description}")
+    if cap.params:
+        for p in cap.params:
             default_str = f" (default: {p.default})" if p.default is not None else " (required)"
             typer.echo(f"  Param: {p.name} [{p.type}]{default_str}")
-    typer.echo(f"  Timeout: {skill.timeout}s")
-    if skill.skill_type == "shell" and skill.script:
-        typer.echo(f"  Script: {len(skill.script)} chars")
-    elif skill.skill_type == "llm":
-        typer.echo(f"  Model: {skill.model}")
-        if skill.system:
-            typer.echo(f"  System: {skill.system[:60]}{'...' if len(skill.system) > 60 else ''}")
-        if skill.prompt:
-            typer.echo(f"  Prompt: {len(skill.prompt)} chars")
+    typer.echo(f"  Timeout: {cap.timeout}s")
+    if cap.exec_type == "shell" and cap.script:
+        typer.echo(f"  Script: {len(cap.script)} chars")
+    elif cap.exec_type == "llm":
+        typer.echo(f"  Model: {cap.model}")
+        if cap.system:
+            typer.echo(f"  System: {cap.system[:60]}{'...' if len(cap.system) > 60 else ''}")
+        if cap.prompt:
+            typer.echo(f"  Prompt: {len(cap.prompt)} chars")
 
 
-@skills_app.command("export", help="Export a skill to YAML on stdout")
-def cli_skills_export(
-    name: str = typer.Argument(..., help="Skill name to export"),
+@custom_app.command("export", help="Export a custom capability to YAML on stdout")
+def cli_custom_export(
+    name: str = typer.Argument(..., help="Custom cap name to export"),
 ):
-    from .skills import get_skill_by_capability
+    from .custom_caps import get_custom_cap
 
-    skill = get_skill_by_capability(f"skill.{name}")
-    if not skill:
-        typer.echo(f"Error: Skill '{name}' not found")
+    cap = get_custom_cap(f"custom.{name}")
+    if not cap:
+        typer.echo(f"Error: Custom cap '{name}' not found")
         raise typer.Exit(code=1)
 
-    if skill.path and skill.path.is_file():
-        typer.echo(skill.path.read_text(encoding="utf-8"))
+    if cap.path and cap.path.is_file():
+        typer.echo(cap.path.read_text(encoding="utf-8"))
     else:
-        typer.echo(f"Error: Skill file not found on disk")
+        typer.echo(f"Error: Custom cap file not found on disk")
         raise typer.Exit(code=1)

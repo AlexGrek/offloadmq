@@ -181,23 +181,23 @@ def _discover_workflow_caps(workflows_dir) -> list[str]:
     return caps
 
 
-def check_skills() -> CapResult:
-    """Check for custom skill definitions in the skills directory."""
-    from .skills import discover_skill_caps, _find_skills_dir
+def check_custom_caps() -> CapResult:
+    """Check for custom capability definitions in the caps directory."""
+    from .custom_caps import list_custom_cap_strings, _find_custom_caps_dir
 
-    skills_dir = _find_skills_dir()
-    caps = discover_skill_caps()
+    caps_dir = _find_custom_caps_dir()
+    caps = list_custom_cap_strings()
     if caps:
         label = ", ".join(caps)
         return CapResult(
             caps, True,
-            "skill.*",
-            f"{len(caps)} skill(s) in {skills_dir}: {label}",
+            "custom.*",
+            f"{len(caps)} custom cap(s) in {caps_dir}: {label}",
         )
     return CapResult(
         [], False,
-        "skill.*",
-        f"No skill YAML files found in {skills_dir}",
+        "custom.*",
+        f"No custom capability YAML files found in {caps_dir}",
     )
 
 
@@ -251,7 +251,7 @@ _CHECKS: List[Callable[[], CapResult]] = [
     check_docker,
     check_kokoro,
     check_comfyui,
-    check_skills,
+    check_custom_caps,
     check_ollama,
 ]
 

@@ -1,11 +1,11 @@
-"""Executor for custom skill capabilities.
+"""Executor for custom capabilities.
 
-Dispatches based on skill type:
+Dispatches based on execution type:
 
-  shell — runs a bash script; parameters as SKILL_* env vars (injection-safe)
+  shell — runs a bash script; parameters as CUSTOM_* env vars (injection-safe)
   llm   — renders a prompt template and sends it to Ollama
 
-Security model (shell skills):
+Security model (shell custom caps):
   - The script is TRUSTED (authored by agent operator, stored on disk)
   - Parameter VALUES are UNTRUSTED (come from task submitters)
   - Values are injected via environment variables, NOT string interpolation
@@ -29,7 +29,7 @@ import requests
 
 from ..models import TaskId
 from ..httphelpers import HttpClient
-from ..skills import Skill, get_skill_by_capability
+from ..custom_caps import CustomCap, get_custom_cap
 from .helpers import (
     make_failure_report,
     make_success_report,
@@ -69,14 +69,14 @@ def _execute_shell(
     http: HttpClient,
     task_id: TaskId,
     capability: str,
-    skill: Skill,
+    cap: CustomCap,
     payload: dict[str, Any],
     data_path: Path,
 ) -> bool:
-    """Execute a shell-type skill."""
-    # Build environment with SKILL_* variables
+    """Execute a shell-type custom cap."""
+    # Build environment with CUSTOM_* variables
     try:
-        env = skill.build_env(payload)
+        env = cap.build_env(payload)
     except ValueError as e:
         msg = f"Parameter validation failed: {e}"
         logger.error(msg)
@@ -84,20 +84,20 @@ def _execute_shell(
         return report_result(http, report)
 
     # Write script to temp file (not from payload — trusted content)
-    script_content = skill.script
+    script_content = cap.script
     if not script_content or not script_content.startswith("#!"):
         script_content = f"#!/bin/bash\nset -euo pipefail\n{script_content or ''}"
 
     script_fd = None
     script_path = None
     try:
-        script_fd, script_path = tempfile.mkstemp(suffix=".sh", prefix="skill_")
+        script_fd, script_path = tempfile.mkstemp(suffix=".sh", prefix="custom_")
         os.write(script_fd, script_content.encode("utf-8"))
         os.close(script_fd)
         script_fd = None
         os.chmod(script_path, 0o700)
 
-        report_progress(http, log=f"Running skill: {skill.name}\n", stage="running", task_id=task_id)
+        report_progress(http, log=f"Running custom cap: {cap.name}\n", stage="running", task_id=task_id)
 
         # Execute the script
         process = subprocess.Popen(
@@ -126,8 +126,8 @@ def _execute_shell(
         while process.poll() is None or not q_stdout.empty() or not q_stderr.empty():
             # Check timeout
             elapsed = time.monotonic() - start_time
-            if elapsed > skill.timeout and process.poll() is None:
-                logger.warning(f"Skill '{skill.name}' timed out after {skill.timeout}s, killing...")
+            if elapsed > cap.timeout and process.poll() is None:
+                logger.warning(f"Custom cap '{cap.name}' timed out after {cap.timeout}s, killing...")
                 try:
                     if os.name != "nt":
                         os.killpg(os.getpgid(process.pid), signal.SIGTERM)  # type: ignore[attr-defined]
@@ -174,7 +174,7 @@ def _execute_shell(
             output = {"stdout": full_stdout, "stderr": full_stderr, "timed_out": True}
             report = make_failure_report(
                 task_id, capability,
-                f"Skill '{skill.name}' timed out after {skill.timeout}s",
+                f"Custom cap '{cap.name}' timed out after {cap.timeout}s",
                 extra_output=output,
             )
         elif process.returncode == 0:
@@ -184,12 +184,12 @@ def _execute_shell(
             output = {"stdout": full_stdout, "stderr": full_stderr, "return_code": process.returncode}
             report = make_failure_report(
                 task_id, capability,
-                full_stderr or f"Skill '{skill.name}' failed with return code {process.returncode}",
+                full_stderr or f"Custom cap '{cap.name}' failed with return code {process.returncode}",
                 extra_output=output,
             )
 
     except Exception as e:
-        logger.error(f"Shell skill execution error: {e}")
+        logger.error(f"Shell custom cap execution error: {e}")
         report = make_failure_report(task_id, capability, str(e), extra_output={"error": str(e)})
 
     finally:
@@ -215,46 +215,46 @@ def _execute_llm(
     http: HttpClient,
     task_id: TaskId,
     capability: str,
-    skill: Skill,
+    cap: CustomCap,
     payload: dict[str, Any],
     data_path: Path,
 ) -> bool:
-    """Execute an LLM-type skill by rendering the prompt template and calling Ollama."""
+    """Execute an LLM-type custom cap by rendering the prompt template and calling Ollama."""
     from ..ollama import OLLAMA_API_URL
 
     # Render prompt template with parameter values
     try:
-        rendered_prompt = skill.render_prompt(payload)
+        rendered_prompt = cap.render_prompt(payload)
     except ValueError as e:
         msg = f"Parameter validation failed: {e}"
         logger.error(msg)
         report = make_failure_report(task_id, capability, msg)
         return report_result(http, report)
 
-    model = skill.model
+    model = cap.model
     if not model:
-        report = make_failure_report(task_id, capability, "LLM skill has no 'model' configured")
+        report = make_failure_report(task_id, capability, "LLM custom cap has no 'model' configured")
         return report_result(http, report)
 
     # Build Ollama chat API payload
     messages: list[dict[str, str]] = [{"role": "user", "content": rendered_prompt}]
-    if skill.system:
-        messages.insert(0, {"role": "system", "content": skill.system})
+    if cap.system:
+        messages.insert(0, {"role": "system", "content": cap.system})
 
     api_payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "stream": True,
     }
-    if skill.temperature is not None:
+    if cap.temperature is not None:
         api_payload["options"] = api_payload.get("options", {})
-        api_payload["options"]["temperature"] = skill.temperature
-    if skill.max_tokens is not None:
+        api_payload["options"]["temperature"] = cap.temperature
+    if cap.max_tokens is not None:
         api_payload["options"] = api_payload.get("options", {})
-        api_payload["options"]["num_predict"] = skill.max_tokens
+        api_payload["options"]["num_predict"] = cap.max_tokens
 
-    report_progress(http, log=f"Running LLM skill: {skill.name} (model: {model})\n", stage="running", task_id=task_id)
-    logger.info(f"LLM skill '{skill.name}': sending to {OLLAMA_API_URL} with model={model}")
+    report_progress(http, log=f"Running LLM custom cap: {cap.name} (model: {model})\n", stage="running", task_id=task_id)
+    logger.info(f"LLM custom cap '{cap.name}': sending to {OLLAMA_API_URL} with model={model}")
 
     try:
         full_response = ""
@@ -262,7 +262,7 @@ def _execute_llm(
         last_flush = time.time()
         final_data: dict[str, Any] = {}
 
-        r = requests.post(OLLAMA_API_URL, json=api_payload, stream=True, timeout=skill.timeout)
+        r = requests.post(OLLAMA_API_URL, json=api_payload, stream=True, timeout=cap.timeout)
         r.raise_for_status()
 
         for line in r.iter_lines(decode_unicode=True):
@@ -295,7 +295,7 @@ def _execute_llm(
         output: dict[str, Any] = {
             "response": full_response,
             "model": model,
-            "skill": skill.name,
+            "name": cap.name,
         }
         if final_data.get("total_duration"):
             output["duration_ms"] = final_data["total_duration"] // 1_000_000
@@ -310,7 +310,7 @@ def _execute_llm(
     except requests.Timeout:
         report = make_failure_report(
             task_id, capability,
-            f"LLM skill '{skill.name}' timed out after {skill.timeout}s",
+            f"LLM custom cap '{cap.name}' timed out after {cap.timeout}s",
         )
     except requests.RequestException as e:
         resp_text = ""
@@ -323,7 +323,7 @@ def _execute_llm(
             extra_output={"error": str(e), "response_text": resp_text},
         )
     except Exception as e:
-        logger.error(f"LLM skill execution error: {e}")
+        logger.error(f"LLM custom cap execution error: {e}")
         report = make_failure_report(task_id, capability, str(e), extra_output={"error": str(e)})
 
     return report_result(http, report)
@@ -333,32 +333,32 @@ def _execute_llm(
 # Main dispatcher
 # ---------------------------------------------------------------------------
 
-def execute_skill(
+def execute_custom_cap(
     http: HttpClient,
     task_id: TaskId,
     capability: str,
     payload: Any,
     data_path: Path,
 ) -> bool:
-    """Execute a custom skill — dispatches to type-specific executor."""
-    logger.info(f"Executing skill for task {task_id.to_wire()} capability='{capability}'")
+    """Execute a custom capability — dispatches to type-specific executor."""
+    logger.info(f"Executing custom cap for task {task_id.to_wire()} capability='{capability}'")
 
-    # Load the skill definition
-    skill = get_skill_by_capability(capability)
-    if not skill:
-        msg = f"Skill not found for capability: {capability}"
+    # Load the custom cap definition
+    cap = get_custom_cap(capability)
+    if not cap:
+        msg = f"Custom cap not found for capability: {capability}"
         logger.error(msg)
         report = make_failure_report(task_id, capability, msg)
         return report_result(http, report)
 
     payload = _normalise_payload(payload)
 
-    if skill.skill_type == "shell":
-        return _execute_shell(http, task_id, capability, skill, payload, data_path)
-    elif skill.skill_type == "llm":
-        return _execute_llm(http, task_id, capability, skill, payload, data_path)
+    if cap.exec_type == "shell":
+        return _execute_shell(http, task_id, capability, cap, payload, data_path)
+    elif cap.exec_type == "llm":
+        return _execute_llm(http, task_id, capability, cap, payload, data_path)
     else:
-        msg = f"Unknown skill type '{skill.skill_type}' for skill '{skill.name}'"
+        msg = f"Unknown exec type '{cap.exec_type}' for custom cap '{cap.name}'"
         logger.error(msg)
         report = make_failure_report(task_id, capability, msg)
         return report_result(http, report)

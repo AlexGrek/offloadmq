@@ -302,7 +302,7 @@ def _mac_launchd_set(enable: bool) -> None:
             pass
 
 
-_SKILL_SAFE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
+_CUSTOM_SAFE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
 _WF_SAFE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
 
 _STANDARD_TASK_TYPES = [
@@ -311,17 +311,17 @@ _STANDARD_TASK_TYPES = [
 ]
 
 
-def _skills_dir() -> Path:
-    from app.skills import _find_skills_dir
-    return _find_skills_dir()
+def _custom_caps_dir() -> Path:
+    from app.custom_caps import _find_custom_caps_dir
+    return _find_custom_caps_dir()
 
 
-def _list_skills() -> List[Dict[str, Any]]:
-    from app.skills import discover_skills
+def _list_custom_caps() -> List[Dict[str, Any]]:
+    from app.custom_caps import discover_custom_caps
     try:
-        return [s.to_dict() for s in discover_skills()]
+        return [c.to_dict() for c in discover_custom_caps()]
     except Exception as exc:
-        _log(f"[skills] Error listing skills: {exc}")
+        _log(f"[custom] Error listing custom caps: {exc}")
         return []
 
 
@@ -555,8 +555,8 @@ def _build_api_state() -> Dict[str, Any]:
         "workflows": _list_workflows(),
         "workflows_dir": str(_workflows_dir()),
         "task_types": list(_STANDARD_TASK_TYPES),
-        "skills": _list_skills(),
-        "skills_dir": str(_skills_dir()),
+        "custom_caps": _list_custom_caps(),
+        "custom_caps_dir": str(_custom_caps_dir()),
         "running": get_status().get("running", False),
     }
 
@@ -750,39 +750,39 @@ async def route_logs():
     return JSONResponse({"lines": lines})
 
 
-@app.get("/skills/list")
-async def route_list_skills():
-    return JSONResponse({"skills": _list_skills(), "skills_dir": str(_skills_dir())})
+@app.get("/custom/list")
+async def route_list_custom_caps():
+    return JSONResponse({"custom_caps": _list_custom_caps(), "custom_caps_dir": str(_custom_caps_dir())})
 
 
-@app.get("/skills/get/{skill_name}")
-async def route_get_skill(skill_name: str):
-    from app.skills import _find_skills_dir, load_skill
+@app.get("/custom/get/{cap_name}")
+async def route_get_custom_cap(cap_name: str):
+    from app.custom_caps import _find_custom_caps_dir, load_custom_cap
 
-    if not _SKILL_SAFE_RE.match(skill_name):
-        return JSONResponse({"error": "Invalid skill name"}, status_code=400)
+    if not _CUSTOM_SAFE_RE.match(cap_name):
+        return JSONResponse({"error": "Invalid custom cap name"}, status_code=400)
 
-    skills_dir = _find_skills_dir()
+    caps_dir = _find_custom_caps_dir()
     for suffix in (".yaml", ".yml"):
-        path = skills_dir / f"{skill_name}{suffix}"
+        path = caps_dir / f"{cap_name}{suffix}"
         if path.is_file():
             try:
-                skill = load_skill(path)
+                cap = load_custom_cap(path)
                 return JSONResponse({
-                    "skill": skill.to_dict(),
+                    "cap": cap.to_dict(),
                     "raw": path.read_text(encoding="utf-8"),
                 })
             except Exception as exc:
                 return JSONResponse({"error": str(exc)}, status_code=400)
 
-    return JSONResponse({"error": f"Skill '{skill_name}' not found"}, status_code=404)
+    return JSONResponse({"error": f"Custom cap '{cap_name}' not found"}, status_code=404)
 
 
-@app.post("/skills/save")
-async def route_save_skill(request: Request):
-    """Save a skill from JSON body or raw YAML."""
+@app.post("/custom/save")
+async def route_save_custom_cap(request: Request):
+    """Save a custom cap from JSON body or raw YAML."""
     import yaml
-    from app.skills import _find_skills_dir, validate_skill_yaml, _SAFE_NAME_RE
+    from app.custom_caps import _find_custom_caps_dir, validate_custom_cap_yaml, _SAFE_NAME_RE
 
     content_type = request.headers.get("content-type", "")
 
@@ -791,88 +791,88 @@ async def route_save_skill(request: Request):
         raw_yaml = data.get("yaml")
         if not raw_yaml:
             # Build YAML from structured data
-            skill_dict = {
+            cap_dict = {
                 "name": data.get("name", ""),
                 "description": data.get("description", ""),
                 "script": data.get("script", ""),
             }
             if data.get("params"):
-                skill_dict["params"] = data["params"]
+                cap_dict["params"] = data["params"]
             if data.get("timeout"):
-                skill_dict["timeout"] = int(data["timeout"])
+                cap_dict["timeout"] = int(data["timeout"])
             if data.get("env"):
-                skill_dict["env"] = data["env"]
-            raw_yaml = yaml.dump(skill_dict, default_flow_style=False, sort_keys=False)
+                cap_dict["env"] = data["env"]
+            raw_yaml = yaml.dump(cap_dict, default_flow_style=False, sort_keys=False)
     else:
         form = await request.form()
         raw_yaml = form.get("yaml", "")
 
     if not raw_yaml:
-        _log("[skills] ERROR: no YAML content provided")
+        _log("[custom] ERROR: no YAML content provided")
         return JSONResponse({"error": "No YAML content provided"}, status_code=400)
 
     try:
-        skill = validate_skill_yaml(raw_yaml)
+        cap = validate_custom_cap_yaml(raw_yaml)
     except Exception as exc:
-        _log(f"[skills] ERROR: validation failed: {exc}")
+        _log(f"[custom] ERROR: validation failed: {exc}")
         return JSONResponse({"error": str(exc)}, status_code=400)
 
-    skills_dir = _find_skills_dir()
-    skills_dir.mkdir(parents=True, exist_ok=True)
-    path = skills_dir / f"{skill.name}.yaml"
+    caps_dir = _find_custom_caps_dir()
+    caps_dir.mkdir(parents=True, exist_ok=True)
+    path = caps_dir / f"{cap.name}.yaml"
 
     # Prevent path traversal
-    if not str(path.resolve()).startswith(str(skills_dir.resolve())):
+    if not str(path.resolve()).startswith(str(caps_dir.resolve())):
         return JSONResponse({"error": "Path traversal detected"}, status_code=400)
 
     path.write_text(raw_yaml, encoding="utf-8")
-    _log(f"[skills] Saved skill '{skill.name}' to {path}")
+    _log(f"[custom] Saved custom cap '{cap.name}' to {path}")
     _start_scan()
-    return JSONResponse({"ok": True, "skill": skill.to_dict()})
+    return JSONResponse({"ok": True, "cap": cap.to_dict()})
 
 
-@app.post("/skills/upload")
-async def route_upload_skill(
+@app.post("/custom/upload")
+async def route_upload_custom_cap(
     request: Request,
-    skill_file: UploadFile = File(None),
+    cap_file: UploadFile = File(None),
 ):
-    """Upload a skill YAML file."""
-    from app.skills import _find_skills_dir, validate_skill_yaml
+    """Upload a custom capability YAML file."""
+    from app.custom_caps import _find_custom_caps_dir, validate_custom_cap_yaml
 
-    if not skill_file or not skill_file.filename:
-        _log("[skills] ERROR: no file uploaded")
+    if not cap_file or not cap_file.filename:
+        _log("[custom] ERROR: no file uploaded")
         return _done(request)
 
-    raw = await skill_file.read()
+    raw = await cap_file.read()
     try:
         content = raw.decode("utf-8")
     except UnicodeDecodeError:
-        _log("[skills] ERROR: uploaded file is not valid UTF-8")
+        _log("[custom] ERROR: uploaded file is not valid UTF-8")
         return _done(request)
 
     try:
-        skill = validate_skill_yaml(content)
+        cap = validate_custom_cap_yaml(content)
     except Exception as exc:
-        _log(f"[skills] ERROR: validation failed: {exc}")
+        _log(f"[custom] ERROR: validation failed: {exc}")
         return _done(request)
 
-    skills_dir = _find_skills_dir()
-    skills_dir.mkdir(parents=True, exist_ok=True)
-    path = skills_dir / f"{skill.name}.yaml"
+    caps_dir = _find_custom_caps_dir()
+    caps_dir.mkdir(parents=True, exist_ok=True)
+    path = caps_dir / f"{cap.name}.yaml"
 
-    if not str(path.resolve()).startswith(str(skills_dir.resolve())):
-        _log("[skills] ERROR: path traversal detected")
+    if not str(path.resolve()).startswith(str(caps_dir.resolve())):
+        _log("[custom] ERROR: path traversal detected")
         return _done(request)
 
     path.write_text(content, encoding="utf-8")
-    _log(f"[skills] Uploaded skill '{skill.name}' to {path}")
+    _log(f"[custom] Uploaded custom cap '{cap.name}' to {path}")
     _start_scan()
     return _done(request)
 
 
-@app.post("/skills/delete")
-async def route_delete_skill(request: Request):
-    from app.skills import delete_skill
+@app.post("/custom/delete")
+async def route_delete_custom_cap(request: Request):
+    from app.custom_caps import delete_custom_cap
 
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
@@ -880,18 +880,18 @@ async def route_delete_skill(request: Request):
         name = data.get("name", "")
     else:
         form = await request.form()
-        name = form.get("skill_name", "")
+        name = form.get("name", "")
 
     name = str(name).strip()
-    if not name or not _SKILL_SAFE_RE.match(name):
-        _log("[skills] ERROR: invalid skill name in delete request")
+    if not name or not _CUSTOM_SAFE_RE.match(name):
+        _log("[custom] ERROR: invalid custom cap name in delete request")
         return _done(request)
 
-    if delete_skill(name):
-        _log(f"[skills] Deleted skill '{name}'")
+    if delete_custom_cap(name):
+        _log(f"[custom] Deleted custom cap '{name}'")
         _start_scan()
     else:
-        _log(f"[skills] Skill '{name}' not found -- nothing deleted")
+        _log(f"[custom] Custom cap '{name}' not found -- nothing deleted")
 
     return _done(request)
 
