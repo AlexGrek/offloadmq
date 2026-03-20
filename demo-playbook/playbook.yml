@@ -1,0 +1,7 @@
+---
+- name: Provision OffloadMQ Agent — Demo
+  hosts: demo_agents
+  become: true
+
+  roles:
+    - role: ../ansible/roles/offload_agent

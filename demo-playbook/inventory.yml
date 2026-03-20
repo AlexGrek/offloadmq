@@ -1,0 +1,20 @@
+---
+all:
+  vars:
+    # Update these with your OffloadMQ server and API key
+    offload_agent_server: https://localhost:3069
+    offload_agent_api_key: "ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e"
+
+  children:
+    demo_agents:
+      hosts:
+        demo-agent-01:
+          ansible_host: 192.168.69.192
+          ansible_user: root
+          # Optional: override per-host settings
+          # offload_agent_tier: 5
+          # offload_agent_capacity: 1
+          # offload_agent_capabilities:
+          #   - debug.echo
+          #   - shell.bash
+          #   - shellcmd.bash
