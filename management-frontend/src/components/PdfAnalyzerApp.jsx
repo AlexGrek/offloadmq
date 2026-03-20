@@ -51,7 +51,14 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
             const s = data.status;
             const taskStatus = typeof s === 'string' ? s : Object.keys(s)[0];
             if (taskStatus === 'failed') {
-                const failMsg = typeof s === 'object' && s.failure ? s.failure[0] : 'Task failed';
+                let failMsg = 'Task failed';
+                if (typeof s === 'object') {
+                    if (s.failed && Array.isArray(s.failed) && s.failed.length > 0) {
+                        failMsg = s.failed[0]; // Failure(String, f64) serializes as ["message", time]
+                    } else if (s.failed && typeof s.failed === 'string') {
+                        failMsg = s.failed;
+                    }
+                }
                 setResult(failMsg);
                 status('Task failed', 'err');
             } else {
@@ -172,9 +179,10 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                     }),
                     _label: 'Submit task',
                 }, addDevEntry);
-                const { task } = submitResp;
-                status(`Task submitted: ${task.id}. Polling...`);
-                taskResult = await pollTask(task.cap, task.id);
+                const taskId = submitResp.id;
+                const taskCap = submitResp.capability;
+                status(`Task submitted: ${taskId}. Polling...`);
+                taskResult = await pollTask(taskCap, taskId);
             }
 
             // Show result
