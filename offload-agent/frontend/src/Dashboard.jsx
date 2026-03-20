@@ -17,7 +17,7 @@ const TABS = [
   { id: 'status', label: 'Status' },
   { id: 'connection', label: 'Connection' },
   { id: 'capabilities', label: 'Capabilities' },
-  { id: 'skills', label: 'Skills' },
+  { id: 'custom', label: 'Custom' },
   { id: 'system', label: 'System' },
   { id: 'comfyui', label: 'ComfyUI' },
 ]
@@ -57,12 +57,11 @@ export function Dashboard() {
   const wfFileRef = useRef(null)
   const [activeTab, setActiveTab] = useState('status')
   const [rescanning, setRescanning] = useState(false)
-  const [skillYaml, setSkillYaml] = useState('')
-  const [skillName, setSkillName] = useState('')
-  const [skillEditorTab, setSkillEditorTab] = useState('yaml') // 'yaml' | 'script'
+  const [capYaml, setCapYaml] = useState('')
+  const [capEditorTab, setCapEditorTab] = useState('yaml') // 'yaml' | 'script'
   const [scriptContent, setScriptContent] = useState('')
-  const skillFileRef = useRef(null)
-  const skillEditorRef = useRef(null)
+  const capFileRef = useRef(null)
+  const capEditorRef = useRef(null)
 
   const loadState = useCallback(async () => {
     try {
@@ -235,37 +234,36 @@ export function Dashboard() {
     })
   }
 
-  async function saveSkill(e) {
+  async function saveCustomCap(e) {
     e.preventDefault()
     run(async () => {
       const fd = new FormData()
-      fd.append('yaml', skillYaml)
-      await postForm('/skills/save', fd)
-      setSkillYaml('')
-      setSkillName('')
+      fd.append('yaml', capYaml)
+      await postForm('/custom/save', fd)
+      setCapYaml('')
       setScriptContent('')
-      setSkillEditorTab('yaml')
+      setCapEditorTab('yaml')
       loadState()
     })
   }
 
-  async function uploadSkill(e) {
+  async function uploadCustomCap(e) {
     e.preventDefault()
     run(async () => {
       const fd = new FormData()
-      const f = skillFileRef.current?.files?.[0]
-      if (f) fd.append('skill_file', f)
-      await postForm('/skills/upload', fd)
-      if (skillFileRef.current) skillFileRef.current.value = ''
+      const f = capFileRef.current?.files?.[0]
+      if (f) fd.append('cap_file', f)
+      await postForm('/custom/upload', fd)
+      if (capFileRef.current) capFileRef.current.value = ''
       loadState()
     })
   }
 
-  function deleteSkill(name) {
-    if (!window.confirm(`Delete skill ${name}?`)) return
+  function deleteCustomCap(name) {
+    if (!window.confirm(`Delete custom cap ${name}?`)) return
     run(async () => {
       const body = JSON.stringify({ name })
-      const r = await fetch('/skills/delete', {
+      const r = await fetch('/custom/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
@@ -311,48 +309,48 @@ export function Dashboard() {
   }
 
   function switchEditorTab(tab) {
-    if (tab === 'script' && skillEditorTab === 'yaml') {
-      setScriptContent(extractScript(skillYaml))
-    } else if (tab === 'yaml' && skillEditorTab === 'script') {
-      setSkillYaml((prev) => injectScript(prev, scriptContent))
+    if (tab === 'script' && capEditorTab === 'yaml') {
+      setScriptContent(extractScript(capYaml))
+    } else if (tab === 'yaml' && capEditorTab === 'script') {
+      setCapYaml((prev) => injectScript(prev, scriptContent))
     }
-    setSkillEditorTab(tab)
+    setCapEditorTab(tab)
   }
 
   function handleScriptChange(val) {
     setScriptContent(val)
-    setSkillYaml((prev) => injectScript(prev, val))
+    setCapYaml((prev) => injectScript(prev, val))
   }
 
-  async function editSkill(name) {
+  async function editCustomCap(name) {
     run(async () => {
-      const r = await fetch(`/skills/get/${encodeURIComponent(name)}`, {
+      const r = await fetch(`/custom/get/${encodeURIComponent(name)}`, {
         headers: { Accept: 'application/json' },
       })
       if (!r.ok) throw new Error(r.statusText)
       const d = await r.json()
-      setSkillYaml(d.yaml || '')
-      setSkillEditorTab('yaml')
-      setActiveTab('skills')
-      setTimeout(() => skillEditorRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+      setCapYaml(d.raw || '')
+      setCapEditorTab('yaml')
+      setActiveTab('custom')
+      setTimeout(() => capEditorRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
     })
   }
 
-  function isShellSkill(yaml) {
+  function isShellType(yaml) {
     return /^type:\s*shell/m.test(yaml)
   }
 
-  // --- Skill templates ---
+  // --- Custom cap templates ---
 
-  function loadSkillTemplate(type) {
+  function loadCapTemplate(type) {
     if (type === 'shell') {
-      setSkillYaml(`name: my-skill
+      setCapYaml(`name: my-cap
 type: shell
-description: Shell script skill
+description: Shell script custom cap
 script: |
   #!/bin/bash
   set -euo pipefail
-  echo "Hello from \${SKILL_NAME}"
+  echo "Hello from \${CUSTOM_NAME}"
 params:
   - name: name
     type: string
@@ -360,9 +358,9 @@ params:
 timeout: 120
 `)
     } else if (type === 'llm') {
-      setSkillYaml(`name: my-llm-skill
+      setCapYaml(`name: my-llm-cap
 type: llm
-description: LLM prompt skill
+description: LLM prompt custom cap
 model: mistral:7b
 prompt: |
   Answer the following question in {{style}} style:
@@ -589,34 +587,34 @@ params:
         </div>
       </div>
 
-      {/* Skills tab */}
-      <div style={{ display: activeTab === 'skills' ? 'block' : 'none' }}>
+      {/* Custom tab */}
+      <div style={{ display: activeTab === 'custom' ? 'block' : 'none' }}>
         <div className="grid grid-cols-1 gap-5">
-          {/* Skill Editor */}
-          <div className="bg-slate-800 rounded-lg p-5" ref={skillEditorRef}>
+          {/* Custom Cap Editor */}
+          <div className="bg-slate-800 rounded-lg p-5" ref={capEditorRef}>
             <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
-              Skill Editor
+              Custom Cap Editor
             </h2>
-            <form onSubmit={saveSkill} className="space-y-3 mb-4">
+            <form onSubmit={saveCustomCap} className="space-y-3 mb-4">
               {/* Editor mode tabs */}
               <div className="flex gap-1 border-b border-slate-700 mb-1">
                 <button
                   type="button"
                   onClick={() => switchEditorTab('yaml')}
                   className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
-                    skillEditorTab === 'yaml'
+                    capEditorTab === 'yaml'
                       ? 'text-indigo-400 border-b-2 border-indigo-400 -mb-px bg-slate-900/40'
                       : 'text-slate-500 hover:text-slate-300'
                   }`}
                 >
                   YAML
                 </button>
-                {isShellSkill(skillYaml) && (
+                {isShellType(capYaml) && (
                   <button
                     type="button"
                     onClick={() => switchEditorTab('script')}
                     className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
-                      skillEditorTab === 'script'
+                      capEditorTab === 'script'
                         ? 'text-indigo-400 border-b-2 border-indigo-400 -mb-px bg-slate-900/40'
                         : 'text-slate-500 hover:text-slate-300'
                     }`}
@@ -626,16 +624,16 @@ params:
                 )}
               </div>
 
-              {skillEditorTab === 'yaml' ? (
+              {capEditorTab === 'yaml' ? (
                 <div>
-                  {!skillYaml.trim() && (
+                  {!capYaml.trim() && (
                     <div className="absolute pointer-events-none text-slate-600 font-mono text-xs p-3 leading-5">
-                      name: my-skill{'\n'}type: shell{'\n'}description: ...
+                      name: my-cap{'\n'}type: shell{'\n'}description: ...
                     </div>
                   )}
                   <CodeEditor
-                    value={skillYaml}
-                    onChange={setSkillYaml}
+                    value={capYaml}
+                    onChange={setCapYaml}
                     language="yaml"
                     height="280px"
                   />
@@ -657,32 +655,32 @@ params:
               <div className="flex flex-wrap gap-2">
                 <button
                   type="submit"
-                  disabled={!skillYaml.trim()}
+                  disabled={!capYaml.trim()}
                   className="px-4 py-2 rounded-md bg-indigo-500 text-white text-sm font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Save skill
+                  Save
                 </button>
                 <button
                   type="button"
-                  onClick={() => loadSkillTemplate('shell')}
+                  onClick={() => loadCapTemplate('shell')}
                   className="px-3 py-2 rounded-md border border-slate-600 text-slate-300 text-xs hover:border-indigo-500 hover:text-white"
                 >
                   Shell template
                 </button>
                 <button
                   type="button"
-                  onClick={() => loadSkillTemplate('llm')}
+                  onClick={() => loadCapTemplate('llm')}
                   className="px-3 py-2 rounded-md border border-slate-600 text-slate-300 text-xs hover:border-indigo-500 hover:text-white"
                 >
                   LLM template
                 </button>
-                {skillYaml.trim() && (
+                {capYaml.trim() && (
                   <button
                     type="button"
                     onClick={() => {
-                      setSkillYaml('')
+                      setCapYaml('')
                       setScriptContent('')
-                      setSkillEditorTab('yaml')
+                      setCapEditorTab('yaml')
                     }}
                     className="px-3 py-2 rounded-md border border-slate-600 text-slate-500 text-xs hover:border-red-600 hover:text-red-400"
                   >
@@ -694,12 +692,12 @@ params:
 
             <div className="border-t border-slate-600 pt-4 mt-4">
               <label className="block text-xs font-medium text-slate-400 mb-2">
-                Or upload skill file
+                Or upload YAML file
               </label>
-              <form onSubmit={uploadSkill} className="flex gap-2">
+              <form onSubmit={uploadCustomCap} className="flex gap-2">
                 <input
                   type="file"
-                  ref={skillFileRef}
+                  ref={capFileRef}
                   accept=".yaml,.yml"
                   className="flex-1 px-3 py-2 rounded-md bg-slate-900 text-slate-200 text-xs border border-slate-600 file:rounded file:border-0 file:bg-indigo-500 file:text-white file:text-xs file:font-medium file:px-2 file:py-1 file:mr-2"
                 />
@@ -713,46 +711,46 @@ params:
             </div>
           </div>
 
-          {/* Skills list */}
+          {/* Custom caps list */}
           <div className="bg-slate-800 rounded-lg p-5">
             <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
-              Installed skills
+              Installed custom caps
             </h2>
-            {(state.skills || []).length === 0 ? (
-              <p className="text-sm text-slate-500 italic">No skills installed</p>
+            {(state.custom_caps || []).length === 0 ? (
+              <p className="text-sm text-slate-500 italic">No custom caps installed</p>
             ) : (
               <div className="space-y-2">
-                {state.skills.map((s) => (
-                  <div key={s.name} className="bg-slate-700 rounded p-3 text-sm">
+                {state.custom_caps.map((c) => (
+                  <div key={c.name} className="bg-slate-700 rounded p-3 text-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
                         <p className="font-semibold text-slate-200">
-                          {s.name}
+                          {c.name}
                           <span className="text-xs font-normal text-slate-500 ml-2 lowercase">
-                            {s.type}
+                            {c.type}
                           </span>
                         </p>
-                        <p className="text-slate-400 text-xs mt-1">{s.description}</p>
+                        <p className="text-slate-400 text-xs mt-1">{c.description}</p>
                         <p className="text-slate-500 text-xs mt-2">
-                          <code>{s.capability}</code>
+                          <code>{c.capability}</code>
                         </p>
-                        {s.params && s.params.length > 0 && (
+                        {c.params && c.params.length > 0 && (
                           <p className="text-slate-500 text-xs mt-1">
-                            Params: {s.params.map((p) => p.name).join(', ')}
+                            Params: {c.params.map((p) => p.name).join(', ')}
                           </p>
                         )}
                       </div>
                       <div className="flex gap-1 shrink-0">
                         <button
                           type="button"
-                          onClick={() => editSkill(s.name)}
+                          onClick={() => editCustomCap(c.name)}
                           className="px-2 py-1 rounded bg-slate-600 text-slate-200 text-xs hover:bg-indigo-700"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
-                          onClick={() => deleteSkill(s.name)}
+                          onClick={() => deleteCustomCap(c.name)}
                           className="px-2 py-1 rounded bg-red-900 text-red-200 text-xs hover:bg-red-800"
                         >
                           Delete
