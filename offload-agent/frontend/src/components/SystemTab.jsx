@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const JSON_ACCEPT = { Accept: 'application/json' }
 
@@ -14,6 +14,11 @@ async function postForm(url, formData) {
 
 export function SystemTab({ state, loadState, run }) {
   const [isScanning, setIsScanning] = useState(false)
+  const [webuiPort, setWebuiPort] = useState('')
+
+  useEffect(() => {
+    setWebuiPort(String(state?.webuiPort || 8080))
+  }, [state])
 
   const cfgExists = state?.cfg_exists
   const si = state?.sysinfo || {}
@@ -40,8 +45,43 @@ export function SystemTab({ state, loadState, run }) {
     })
   }
 
+  function savePort(e) {
+    e.preventDefault()
+    run(async () => {
+      const fd = new FormData()
+      fd.append('port', webuiPort)
+      await postForm('/config/webui-port', fd)
+      loadState()
+    })
+  }
+
   return (
     <div className="grid grid-cols-1 gap-5">
+      <div className="bg-slate-800 rounded-lg p-5">
+        <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+          Web UI Port
+        </h2>
+        <p className="text-xs text-slate-500 mb-3">
+          Port the Web UI listens on. Restart the agent app to apply changes.
+        </p>
+        <form onSubmit={savePort} className="flex items-center gap-2">
+          <input
+            type="number"
+            min="1"
+            max="65535"
+            value={webuiPort}
+            onChange={(e) => setWebuiPort(e.target.value)}
+            className="w-28 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 rounded-md bg-indigo-500 text-white text-sm font-medium hover:opacity-85"
+          >
+            Save
+          </button>
+        </form>
+      </div>
+
       <div className="bg-slate-800 rounded-lg p-5">
         <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
           System

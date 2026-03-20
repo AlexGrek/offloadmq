@@ -5,6 +5,7 @@ import { CapabilitiesTab } from './components/CapabilitiesTab'
 import { CustomTab } from './components/CustomTab'
 import { SystemTab } from './components/SystemTab'
 import { ComfyUITab } from './components/ComfyUITab'
+import { ConfigTab } from './components/ConfigTab'
 
 const TABS = [
   { id: 'status', label: 'Status' },
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'custom', label: 'Custom' },
   { id: 'system', label: 'System' },
   { id: 'comfyui', label: 'ComfyUI' },
+  { id: 'config', label: 'Config' },
 ]
 
 function TabBar({ active, onChange }) {
@@ -129,6 +131,11 @@ export function Dashboard() {
       <div style={{ display: activeTab === 'comfyui' ? 'block' : 'none' }}>
         <ComfyUITab state={state} loadState={loadState} run={run} />
       </div>
+
+      {/* Config tab */}
+      {activeTab === 'config' && (
+        <ConfigTab loadState={loadState} run={run} />
+      )}
     </div>
   )
 }

@@ -181,9 +181,13 @@ def main():
             print("Install them with: pip install fastapi uvicorn[standard] python-multipart")
             sys.exit(1)
 
+        from app.config import load_config
+        _cfg = load_config()
+        _default_port = _cfg.get("webuiPort", 8080)
+
         parser = argparse.ArgumentParser(prog="offload-agent webui")
         parser.add_argument("--host", default="0.0.0.0")
-        parser.add_argument("--port", type=int, default=8080)
+        parser.add_argument("--port", type=int, default=_default_port)
         parser.add_argument("--agent-autostart", action="store_true",
                             help="Honor the autostart config setting (always passed by the systemd service)")
         parser.add_argument("--agent-autostart-enable", action="store_true",

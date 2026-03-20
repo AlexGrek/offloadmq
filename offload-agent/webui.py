@@ -11,7 +11,7 @@ Usage:
 
 import argparse
 import atexit
-import json
+import json as json_module
 import logging
 import os
 import re
@@ -545,6 +545,7 @@ def _build_api_state() -> Dict[str, Any]:
         "selected_caps": selected,
         "cfg_exists": ce,
         "comfyui_url": cfg.get("comfyui_url", ""),
+        "webuiPort": cfg.get("webuiPort", 8080),
         "scanning": scanning,
         "sysinfo": sysinfo,
         "systemd": sd,
@@ -591,6 +592,43 @@ async def save_connection(request: Request, server: str = Form(""), apiKey: str 
         cfg["apiKey"] = apiKey.strip()
     save_config(cfg)
     return _done(request)
+
+
+@app.post("/config/webui-port")
+async def save_webui_port(request: Request, port: str = Form("")):
+    port_str = port.strip()
+    if port_str:
+        try:
+            port_int = int(port_str)
+            if not (1 <= port_int <= 65535):
+                raise ValueError("out of range")
+        except ValueError:
+            return JSONResponse({"ok": False, "error": "invalid port"}, status_code=400)
+        cfg = load_config()
+        cfg["webuiPort"] = port_int
+        save_config(cfg)
+        _log(f"[webui] Web UI port set to {port_int} — restart to apply")
+    return _done(request)
+
+
+@app.get("/config/raw")
+async def get_raw_config():
+    cfg = load_config()
+    return JSONResponse({"json": json_module.dumps(cfg, indent=2)})
+
+
+@app.post("/config/raw")
+async def save_raw_config(request: Request):
+    body = await request.body()
+    try:
+        new_cfg = json_module.loads(body)
+        if not isinstance(new_cfg, dict):
+            raise ValueError("config must be a JSON object")
+    except (json_module.JSONDecodeError, ValueError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    save_config(new_cfg)
+    _log("[webui] Config saved via raw JSON editor")
+    return JSONResponse({"ok": True})
 
 
 @app.post("/capabilities")
@@ -676,6 +714,7 @@ async def route_install_systemd(request: Request):
         return _done(request)
 
     bin_path = sd["bin_path"]
+    webui_port = load_config().get("webuiPort", 8080)
     service_name = "offload-agent"
     service_path = f"/etc/systemd/system/{service_name}.service"
     unit = f"""\
@@ -688,7 +727,7 @@ Wants=network-online.target
 Type=simple
 User={getpass.getuser()}
 ExecStartPre=/bin/sleep 30
-ExecStart={bin_path} webui --host 0.0.0.0 --port 8080 --agent-autostart
+ExecStart={bin_path} webui --host 0.0.0.0 --port {webui_port} --agent-autostart
 Restart=on-failure
 RestartSec=10
 
@@ -933,17 +972,17 @@ async def route_add_workflow(
     if workflow_file and workflow_file.filename:
         raw = await workflow_file.read()
         try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
+            parsed = json_module.loads(raw)
+        except json_module.JSONDecodeError as exc:
             _log(f"[imggen] ERROR: uploaded file is not valid JSON -- {exc}")
             return _done(request)
         with open(json_path, "w") as f:
-            json.dump(parsed, f, indent=2)
+            json_module.dump(parsed, f, indent=2)
         _log(f"[imggen] Saved workflow JSON: {json_path}")
     else:
         if not json_path.exists():
             with open(json_path, "w") as f:
-                json.dump({}, f)
+                json_module.dump({}, f)
             _log(f"[imggen] Created empty workflow placeholder: {json_path} -- replace with ComfyUI API-format export")
 
     params_path = wf_dir / f"{task_type}.params.json"
@@ -952,7 +991,7 @@ async def route_add_workflow(
         guessed: Dict[str, Any] = {}
         try:
             with open(json_path) as f:
-                wf_graph = json.load(f)
+                wf_graph = json_module.load(f)
             if isinstance(wf_graph, dict) and wf_graph:
                 guessed = _guess_params(wf_graph, task_type)
         except Exception as e:
@@ -961,7 +1000,7 @@ async def route_add_workflow(
         stubs = _default_params(task_type)
         merged = {**stubs, **guessed}
         with open(params_path, "w") as f:
-            json.dump(merged, f, indent=2)
+            json_module.dump(merged, f, indent=2)
         detected = sorted(guessed.keys())
         stub_keys = sorted(k for k in merged if k not in guessed)
         _log(f"[imggen] Generated params mapping: {params_path} -- "

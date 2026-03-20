@@ -1,5 +1,6 @@
 import CodeMirror from '@uiw/react-codemirror'
 import { yaml } from '@codemirror/lang-yaml'
+import { json } from '@codemirror/lang-json'
 import { StreamLanguage } from '@codemirror/language'
 import { shell } from '@codemirror/legacy-modes/mode/shell'
 import { oneDark } from '@codemirror/theme-one-dark'
@@ -15,10 +16,10 @@ const SETUP = {
 }
 
 /**
- * language: 'yaml' | 'shell'
+ * language: 'yaml' | 'shell' | 'json'
  */
 export function CodeEditor({ value, onChange, language = 'yaml', height = '280px' }) {
-  const extensions = language === 'yaml' ? [yaml()] : [SHELL_EXT]
+  const extensions = language === 'yaml' ? [yaml()] : language === 'json' ? [json()] : [SHELL_EXT]
   return (
     <CodeMirror
       value={value}
