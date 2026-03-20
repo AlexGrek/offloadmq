@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use chrono::Utc;
 use log::{debug, info};
 use rand::seq::IndexedRandom;
 
 use crate::{
     error::AppError,
-    models::{Agent, AssignedTask, UnassignedTask},
+    models::{Agent, AssignedTask, CommunicationMethod, UnassignedTask},
     mq::scheduler::{
         find_assignable_non_urgent_tasks_with_capabilities_for_tier,
         find_urgent_tasks_with_capabilities, report_non_urgent_task, report_urgent_task,
@@ -25,7 +24,7 @@ pub async fn poll_urgent(
     agent: Agent,
     state: &Arc<AppState>,
 ) -> Result<Option<UnassignedTask>, AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
     let caps = &agent.capabilities;
     Ok(find_urgent_tasks_with_capabilities(&state.urgent, caps).await)
 }
@@ -34,7 +33,7 @@ pub async fn poll_non_urgent(
     agent: Agent,
     state: &Arc<AppState>,
 ) -> Result<Option<UnassignedTask>, AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
     let caps = &agent.capabilities;
     debug!(
         "Searching for tasks for agent {:?} with tier {:?}",
@@ -67,13 +66,12 @@ pub fn do_update_agent_info(
 ) -> Result<AgentRegistrationResponse, AppError> {
     agent.capabilities = req.capabilities;
     agent.capacity = req.capacity;
-    agent.last_contact = Some(Utc::now());
     agent.system_info = req.system_info;
     agent.tier = req.tier;
     agent.app_version = req.app_version;
     let uid = agent.uid.clone();
     let key = agent.personal_login_token.clone();
-    state.storage.agents.update_agent(agent)?;
+    state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
     Ok(AgentRegistrationResponse {
         agent_id: uid,
         message: "Updated".to_string(),
@@ -187,7 +185,7 @@ pub async fn resolve_task(
     report: TaskResultReport,
     state: &Arc<AppState>,
 ) -> Result<(), AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
     info!("Agent {} reporting task {task_id}", agent.uid_short);
     debug!("Report: {:?}", &report);
 
@@ -246,7 +244,7 @@ pub async fn update_task_progress(
     update: TaskUpdate,
     state: &Arc<AppState>,
 ) -> Result<(), AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
     info!(
         "Agent {} updating task {task_id} with log: {:?}",
         agent.uid_short,

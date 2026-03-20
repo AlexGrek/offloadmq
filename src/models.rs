@@ -136,6 +136,14 @@ impl AssignedTask {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum CommunicationMethod {
+    #[default]
+    Http,
+    WebSocket,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Agent {
@@ -144,6 +152,8 @@ pub struct Agent {
     pub personal_login_token: String,
     pub registered_at: DateTime<Utc>,
     pub last_contact: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_comm_method: CommunicationMethod,
     pub capabilities: Vec<String>,
     pub tier: u8,
     pub capacity: u32,
@@ -176,6 +186,7 @@ impl From<AgentRegistrationRequest> for Agent {
             registered_at: now, // Current timestamp
             personal_login_token: Uuid::new_v4().into(),
             last_contact: None,
+            last_comm_method: CommunicationMethod::Http,
             capabilities: request.capabilities,
             tier: request.tier,
             capacity: request.capacity,

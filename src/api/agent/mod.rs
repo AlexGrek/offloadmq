@@ -18,6 +18,7 @@ use serde_json::json;
 use crate::{
     error::AppError,
     middleware::AuthenticatedAgent,
+    models::CommunicationMethod,
     schema::{self, TaskId},
     state::AppState,
 };
@@ -254,7 +255,11 @@ pub async fn websocket_handler(
         .get_agent(&claims.sub)
         .ok_or_else(|| AppError::Authorization("Agent not found".to_string()))?;
     info!("Agent {} connected via WebSocket", agent.uid_short);
-    Ok(ws.on_upgrade(move |socket| handle_agent_websocket(socket, agent.uid_short)))
+    let uid_short = agent.uid_short.clone();
+    if let Err(e) = app_state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::WebSocket) {
+        warn!("Failed to update agent last contact on WebSocket connect: {}", e);
+    }
+    Ok(ws.on_upgrade(move |socket| handle_agent_websocket(socket, uid_short)))
 }
 
 async fn handle_agent_websocket(socket: WebSocket, agent_id: String) {
