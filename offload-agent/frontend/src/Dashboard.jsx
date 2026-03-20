@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CodeEditor } from './CodeEditor'
 
 const JSON_ACCEPT = { Accept: 'application/json' }
 
@@ -58,7 +59,10 @@ export function Dashboard() {
   const [rescanning, setRescanning] = useState(false)
   const [skillYaml, setSkillYaml] = useState('')
   const [skillName, setSkillName] = useState('')
+  const [skillEditorTab, setSkillEditorTab] = useState('yaml') // 'yaml' | 'script'
+  const [scriptContent, setScriptContent] = useState('')
   const skillFileRef = useRef(null)
+  const skillEditorRef = useRef(null)
 
   const loadState = useCallback(async () => {
     try {
@@ -239,6 +243,8 @@ export function Dashboard() {
       await postForm('/skills/save', fd)
       setSkillYaml('')
       setSkillName('')
+      setScriptContent('')
+      setSkillEditorTab('yaml')
       loadState()
     })
   }
@@ -268,6 +274,75 @@ export function Dashboard() {
       loadState()
     })
   }
+
+  // --- Script extraction / injection helpers ---
+
+  function extractScript(yaml) {
+    // Match "script: |" block scalar and extract its content
+    const m = yaml.match(/^script:\s*\|[-+]?\s*\n((?:(?:[ \t]+[^\n]*)?\n)*)/m)
+    if (!m) return ''
+    const lines = m[1].split('\n')
+    const indents = lines
+      .filter((l) => l.trim().length > 0)
+      .map((l) => l.match(/^(\s*)/)[1].length)
+    const indent = indents.length ? Math.min(...indents) : 2
+    return lines
+      .map((l) => (l.length >= indent ? l.slice(indent) : l))
+      .join('\n')
+      .replace(/\n+$/, '')
+  }
+
+  function injectScript(yaml, script) {
+    const indented = script
+      .split('\n')
+      .map((l) => '  ' + l)
+      .join('\n')
+    const replacement = `script: |\n${indented}\n`
+    if (/^script:\s*\|/m.test(yaml)) {
+      return yaml.replace(
+        /^script:\s*\|[-+]?\s*\n((?:(?:[ \t]+[^\n]*)?\n)*)/m,
+        replacement,
+      )
+    }
+    if (/^script:/m.test(yaml)) {
+      return yaml.replace(/^script:.*$/m, replacement.trimEnd())
+    }
+    return yaml.trimEnd() + '\n' + replacement
+  }
+
+  function switchEditorTab(tab) {
+    if (tab === 'script' && skillEditorTab === 'yaml') {
+      setScriptContent(extractScript(skillYaml))
+    } else if (tab === 'yaml' && skillEditorTab === 'script') {
+      setSkillYaml((prev) => injectScript(prev, scriptContent))
+    }
+    setSkillEditorTab(tab)
+  }
+
+  function handleScriptChange(val) {
+    setScriptContent(val)
+    setSkillYaml((prev) => injectScript(prev, val))
+  }
+
+  async function editSkill(name) {
+    run(async () => {
+      const r = await fetch(`/skills/get/${encodeURIComponent(name)}`, {
+        headers: { Accept: 'application/json' },
+      })
+      if (!r.ok) throw new Error(r.statusText)
+      const d = await r.json()
+      setSkillYaml(d.yaml || '')
+      setSkillEditorTab('yaml')
+      setActiveTab('skills')
+      setTimeout(() => skillEditorRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+    })
+  }
+
+  function isShellSkill(yaml) {
+    return /^type:\s*shell/m.test(yaml)
+  }
+
+  // --- Skill templates ---
 
   function loadSkillTemplate(type) {
     if (type === 'shell') {
@@ -518,22 +593,67 @@ params:
       <div style={{ display: activeTab === 'skills' ? 'block' : 'none' }}>
         <div className="grid grid-cols-1 gap-5">
           {/* Skill Editor */}
-          <div className="bg-slate-800 rounded-lg p-5">
+          <div className="bg-slate-800 rounded-lg p-5" ref={skillEditorRef}>
             <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
               Skill Editor
             </h2>
             <form onSubmit={saveSkill} className="space-y-3 mb-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-2">
-                  New skill (YAML)
-                </label>
-                <textarea
-                  value={skillYaml}
-                  onChange={(e) => setSkillYaml(e.target.value)}
-                  placeholder="name: my-skill&#10;type: shell&#10;description: ..."
-                  className="w-full h-64 p-3 rounded-md bg-slate-900 text-slate-200 font-mono text-xs border border-slate-600 focus:outline-none focus:border-indigo-500"
-                />
+              {/* Editor mode tabs */}
+              <div className="flex gap-1 border-b border-slate-700 mb-1">
+                <button
+                  type="button"
+                  onClick={() => switchEditorTab('yaml')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
+                    skillEditorTab === 'yaml'
+                      ? 'text-indigo-400 border-b-2 border-indigo-400 -mb-px bg-slate-900/40'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  YAML
+                </button>
+                {isShellSkill(skillYaml) && (
+                  <button
+                    type="button"
+                    onClick={() => switchEditorTab('script')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
+                      skillEditorTab === 'script'
+                        ? 'text-indigo-400 border-b-2 border-indigo-400 -mb-px bg-slate-900/40'
+                        : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    Script
+                  </button>
+                )}
               </div>
+
+              {skillEditorTab === 'yaml' ? (
+                <div>
+                  {!skillYaml.trim() && (
+                    <div className="absolute pointer-events-none text-slate-600 font-mono text-xs p-3 leading-5">
+                      name: my-skill{'\n'}type: shell{'\n'}description: ...
+                    </div>
+                  )}
+                  <CodeEditor
+                    value={skillYaml}
+                    onChange={setSkillYaml}
+                    language="yaml"
+                    height="280px"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">
+                    Bash script — changes sync back to YAML automatically
+                  </p>
+                  <CodeEditor
+                    value={scriptContent}
+                    onChange={handleScriptChange}
+                    language="shell"
+                    height="280px"
+                  />
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2">
                 <button
                   type="submit"
@@ -556,6 +676,19 @@ params:
                 >
                   LLM template
                 </button>
+                {skillYaml.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSkillYaml('')
+                      setScriptContent('')
+                      setSkillEditorTab('yaml')
+                    }}
+                    className="px-3 py-2 rounded-md border border-slate-600 text-slate-500 text-xs hover:border-red-600 hover:text-red-400"
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
             </form>
 
@@ -609,13 +742,22 @@ params:
                           </p>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => deleteSkill(s.name)}
-                        className="px-2 py-1 rounded bg-red-900 text-red-200 text-xs hover:bg-red-800 shrink-0"
-                      >
-                        Delete
-                      </button>
+                      <div className="flex gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => editSkill(s.name)}
+                          className="px-2 py-1 rounded bg-slate-600 text-slate-200 text-xs hover:bg-indigo-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteSkill(s.name)}
+                          className="px-2 py-1 rounded bg-red-900 text-red-200 text-xs hover:bg-red-800"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
