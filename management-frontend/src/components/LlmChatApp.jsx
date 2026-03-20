@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Send, ImagePlus, X } from 'lucide-react';
-import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
+import { stripCapabilityAttrs } from '../utils';
+import { useCapabilities } from '../hooks/useCapabilities';
+import { useTaskPolling } from '../hooks/useTaskPolling';
 import ModelSelector from './ModelSelector';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -10,7 +12,6 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
   const [input, setInput] = useState('');
   const [model, setModel] = useState('');
   const [systemMessage, setSystemMessage] = useState('You are a helpful AI assistant.');
-  const [capabilities, setCapabilities] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pollingStatus, setPollingStatus] = useState('');
@@ -18,28 +19,13 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
   const [streamingLog, setStreamingLog] = useState('');
   const [pendingImages, setPendingImages] = useState([]); // [{ name, mime, b64, previewUrl }]
   const chatEndRef = useRef(null);
-  const pollIntervalRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const [capabilities] = useCapabilities('llm.', { setModel });
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
-
-  useEffect(() => {
-    const fetchCapabilities = async () => {
-      try {
-        const data = await fetchOnlineCapabilities();
-        if (Array.isArray(data)) {
-          const llmCaps = data.filter(cap => stripCapabilityAttrs(cap).startsWith('llm.'));
-          setCapabilities(llmCaps);
-          if (llmCaps.length > 0) {
-            setModel(prev => prev || stripCapabilityAttrs(llmCaps[0]).replace(/^llm\./, ''));
-          }
-        }
-      } catch { /* ignore */ }
-    };
-    fetchCapabilities();
-  }, []);
 
   // Revoke all pending preview object URLs on unmount
   useEffect(() => {
@@ -50,54 +36,6 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
       });
     };
   }, []);
-
-  useEffect(() => {
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    if (!currentTask) return;
-
-    const poll = async () => {
-      const pollUrl = `/api/task/poll/${encodeURIComponent(currentTask.capability)}/${currentTask.id}`;
-      const pollBody = { apiKey };
-      try {
-        const res = await fetch(pollUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(pollBody),
-        });
-        const data = await res.json();
-        addDevEntry?.({ key: `poll-${currentTask.id}`, label: 'Poll task', method: 'POST', url: pollUrl, request: pollBody, response: data });
-
-        if (data.log) {
-          setStreamingLog(data.log);
-        }
-        if (data.output) {
-          const content = extractContent(data.output);
-          setMessages(prev => [...prev, { role: 'assistant', content }]);
-          setStreamingLog('');
-          setIsLoading(false);
-          setPollingStatus('');
-          setCurrentTask(null);
-        } else if (data.error) {
-          setError(String(data.error.message || data.error));
-          setStreamingLog('');
-          setIsLoading(false);
-          setPollingStatus('');
-          setCurrentTask(null);
-        } else {
-          setPollingStatus('Status: ' + data.status);
-        }
-      } catch (err) {
-        setError(`Polling failed: ${err.message}`);
-        setIsLoading(false);
-        setPollingStatus('');
-        setCurrentTask(null);
-      }
-    };
-
-    poll();
-    pollIntervalRef.current = setInterval(poll, 2000);
-    return () => clearInterval(pollIntervalRef.current);
-  }, [currentTask, apiKey, addDevEntry]);
 
   const extractContent = (output) => {
     try {
@@ -110,6 +48,29 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
     }
   };
 
+  useTaskPolling({
+    currentTask,
+    apiKey,
+    addDevEntry,
+    onResult: (data) => {
+      const content = extractContent(data.output);
+      setMessages(prev => [...prev, { role: 'assistant', content }]);
+      setStreamingLog('');
+      setIsLoading(false);
+      setPollingStatus('');
+      setCurrentTask(null);
+    },
+    onError: (msg) => {
+      setError(msg);
+      setStreamingLog('');
+      setIsLoading(false);
+      setPollingStatus('');
+      setCurrentTask(null);
+    },
+    onLog: setStreamingLog,
+    onStatus: (status) => setPollingStatus('Status: ' + status),
+  });
+
   const handleImageFiles = (files) => {
     Array.from(files).forEach(file => {
       if (!file.type.startsWith('image/')) return;
@@ -120,7 +81,6 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
       const previewUrl = URL.createObjectURL(file);
       const reader = new FileReader();
       reader.onload = (e) => {
-        // Strip "data:<mime>;base64," prefix — Ollama expects raw base64
         const b64 = e.target.result.split(',')[1];
         setPendingImages(prev => [...prev, { name: file.name, mime: file.type, b64, previewUrl }]);
       };
@@ -143,19 +103,17 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
       content: input.trim(),
       ...(pendingImages.length > 0 && {
         images: pendingImages.map(p => p.b64),
-        imageMimes: pendingImages.map(p => p.mime), // UI-only display hint, stripped before sending
+        imageMimes: pendingImages.map(p => p.mime),
       }),
     };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput('');
-    // Revoke object URLs now that b64 is committed to message history
     pendingImages.forEach(img => URL.revokeObjectURL(img.previewUrl));
     setPendingImages([]);
     setIsLoading(true);
     setError(null);
 
-    // Build Ollama-compatible messages: strip UI-only imageMimes before sending
     const ollamaMessages = [
       { role: 'system', content: systemMessage },
       ...newMessages.map(({ role, content, images }) => ({
@@ -168,11 +126,7 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
     const payload = {
       capability: stripCapabilityAttrs(`llm.${model}`),
       urgent: false,
-      payload: {
-        model,
-        messages: ollamaMessages,
-        stream: true,
-      },
+      payload: { model, messages: ollamaMessages, stream: true },
       apiKey,
     };
 
@@ -211,7 +165,6 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
       prev.forEach(img => URL.revokeObjectURL(img.previewUrl));
       return [];
     });
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
   };
 
   return (
@@ -329,6 +282,7 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
   );
 };
 
+// LlmChatApp has a unique chat layout, so most styles remain local
 const styles = {
   root: {
     display: 'flex',

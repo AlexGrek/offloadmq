@@ -1,8 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
+import React, { useState, useRef } from 'react';
+import { sandboxStyles as ss } from '../sandboxStyles';
+import { useCapabilities } from '../hooks/useCapabilities';
+import { useBlobUrls } from '../hooks/useBlobUrls';
+import { statusLabel, deleteBucket, fetchImageBlobs } from '../sandboxUtils';
 import ImgGenModelSelector from './ImgGenModelSelector';
 import ErrorBoundary from './ErrorBoundary';
 import ImageLightbox from './ImageLightbox';
+import ImageGallery from './ImageGallery';
 
 const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
   const [workflow, setWorkflow] = useState('txt2img');
@@ -18,58 +22,11 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
-  const [capabilities, setCapabilities] = useState([]);
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const outputBucketRef = useRef(null);
-  const blobUrlsRef = useRef([]);
+  const { revokeAll, track } = useBlobUrls();
 
-  useEffect(() => {
-    return () => { blobUrlsRef.current.forEach(URL.revokeObjectURL); };
-  }, []);
-
-  useEffect(() => {
-    const updCaps = async () => {
-      try {
-        const data = await fetchOnlineCapabilities();
-        if (Array.isArray(data)) {
-          const imggenCaps = data.filter((cap) => {
-            try {
-              return typeof cap === 'string' && stripCapabilityAttrs(cap).startsWith("imggen.");
-            } catch (e) {
-              console.warn('Error filtering capability:', cap, e);
-              return false;
-            }
-          });
-          setCapabilities(imggenCaps);
-          if (imggenCaps.length > 0) {
-            setModel(prev => prev || stripCapabilityAttrs(imggenCaps[0]).replace(/^imggen\./, ''));
-          }
-        } else {
-          console.warn('Expected array of capabilities, got:', data);
-          setCapabilities([]);
-        }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
-        console.error('Failed to fetch capabilities:', err);
-        setError(`Failed to fetch capabilities: ${errorMsg}`);
-        setCapabilities([]);
-      }
-    };
-
-    updCaps();
-  }, []);
-
-  const deleteBucket = async (uid) => {
-    if (!uid) return;
-    try {
-      await fetch(`/api/storage/bucket/${uid}`, {
-        method: 'DELETE',
-        headers: { 'X-API-Key': apiKey },
-      });
-    } catch (e) {
-      console.warn('Failed to delete bucket', uid, e);
-    }
-  };
+  const [capabilities] = useCapabilities('imggen.', { setModel, setError });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -78,7 +35,6 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
     setError(null);
     setStatusText('Creating output bucket...');
 
-    // Create a fresh output bucket for each task
     let bucketUid = null;
     try {
       const bucketRes = await fetch('/api/storage/bucket/create', {
@@ -108,14 +64,10 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
         workflow: workflow,
         prompt: prompt,
         ...(overrideNegative && { secondary_prompts: { negative: negativePrompt } }),
-        resolution: {
-          width: parseInt(width),
-          height: parseInt(height),
-        },
+        resolution: { width: parseInt(width), height: parseInt(height) },
       },
     };
 
-    // Add seed only if provided and not empty
     if (seed && seed !== '') {
       payload.payload.seed = parseInt(seed) || -1;
     }
@@ -135,7 +87,6 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
         setError(errorMsg);
       } else if (data.id) {
         setResponse(data);
-        // Start polling for result
         pollTask(data.id.cap, data.id.id, bucketUid);
       } else {
         setError('Unexpected response format.');
@@ -148,21 +99,8 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
     }
   };
 
-  const statusLabel = (status, stage) => {
-    const base = {
-      pending: 'Pending...',
-      queued: 'Queued, waiting for agent...',
-      assigned: 'Assigned to agent...',
-      starting: 'Agent starting task...',
-      running: 'Running...',
-      failedRetryPending: 'Failed, retrying...',
-      failedRetryDelayed: 'Failed, waiting to retry...',
-    }[typeof status === 'string' ? status : ''] ?? `Status: ${JSON.stringify(status)}`;
-    return stage ? `${base} [${stage}]` : base;
-  };
-
   const pollTask = async (cap, id, outBucketUid) => {
-    const maxAttempts = 120; // 10 minutes with 5-second intervals
+    const maxAttempts = 120;
     let attempts = 0;
 
     const poll = async () => {
@@ -170,7 +108,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
         setError('Task polling timeout');
         setIsLoading(false);
         outputBucketRef.current = null;
-        deleteBucket(outBucketUid);
+        deleteBucket(outBucketUid, apiKey);
         return;
       }
 
@@ -188,26 +126,14 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
           setStatusText('Fetching images...');
           const output = data.output;
           if (output?.images) {
-            blobUrlsRef.current.forEach(URL.revokeObjectURL);
-            blobUrlsRef.current = [];
-            output.images = await Promise.all(output.images.map(async (img) => {
-              if (!img.file_uid) return img;
-              try {
-                const r = await fetch(`/api/storage/bucket/${img.bucket_uid}/file/${img.file_uid}`, {
-                  headers: { 'X-API-Key': apiKey },
-                });
-                const blob = await r.blob();
-                const blobUrl = URL.createObjectURL(blob);
-                blobUrlsRef.current.push(blobUrl);
-                return { ...img, blobUrl };
-              } catch { return img; }
-            }));
+            revokeAll();
+            output.images = await fetchImageBlobs(output.images, apiKey, track);
           }
           setStatusText('');
           setResponse(output);
           setIsLoading(false);
           outputBucketRef.current = null;
-          deleteBucket(outBucketUid);
+          deleteBucket(outBucketUid, apiKey);
         } else if (data.status === 'failed' || data.status === 'canceled') {
           const errorMsg = data.output?.error
             ? (typeof data.output.error === 'string' ? data.output.error : JSON.stringify(data.output.error))
@@ -215,7 +141,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
           setError(errorMsg);
           setIsLoading(false);
           outputBucketRef.current = null;
-          deleteBucket(outBucketUid);
+          deleteBucket(outBucketUid, apiKey);
         } else {
           setStatusText(statusLabel(data.status, data.stage));
           attempts++;
@@ -227,49 +153,37 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
         setError(`Polling error: ${errorMsg}`);
         setIsLoading(false);
         outputBucketRef.current = null;
-        deleteBucket(outBucketUid);
+        deleteBucket(outBucketUid, apiKey);
       }
     };
 
     poll();
   };
 
-  const filteredModels = capabilities
-    .map(cap => stripCapabilityAttrs(cap).replace('imggen.', ''))
-    .filter(Boolean);
-
   return (
     <ErrorBoundary>
-      <div style={styles.content}>
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <div style={styles.formGroup}>
-          <label style={styles.label}>Workflow:</label>
-          <ImgGenModelSelector
-            model={model}
-            setModel={setModel}
-            capabilities={capabilities}
-          />
+      <div style={ss.content}>
+      <form onSubmit={handleSubmit} style={ss.form}>
+        <div style={ss.formGroup}>
+          <label style={ss.label}>Workflow:</label>
+          <ImgGenModelSelector model={model} setModel={setModel} capabilities={capabilities} />
         </div>
 
-        <div style={styles.formGroup}>
-          <label htmlFor="prompt" style={styles.label}>Prompt:</label>
+        <div style={ss.formGroup}>
+          <label htmlFor="prompt" style={ss.label}>Prompt:</label>
           <textarea
             id="prompt"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            style={styles.textarea}
+            style={ss.textarea}
             rows="4"
           />
         </div>
 
-        <div style={styles.formGroup}>
-          <div style={styles.labelRow}>
-            <label htmlFor="negative" style={styles.label}>Negative Prompt:</label>
-            <button
-              type="button"
-              onClick={() => setOverrideNegative(v => !v)}
-              style={styles.toggleBtn}
-            >
+        <div style={ss.formGroup}>
+          <div style={ss.labelRow}>
+            <label htmlFor="negative" style={ss.label}>Negative Prompt:</label>
+            <button type="button" onClick={() => setOverrideNegative(v => !v)} style={ss.toggleBtn}>
               {overrideNegative ? 'use model default' : 'override'}
             </button>
           </div>
@@ -278,90 +192,45 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
               id="negative"
               value={negativePrompt}
               onChange={(e) => setNegativePrompt(e.target.value)}
-              style={styles.textarea}
+              style={ss.textarea}
               rows="2"
               placeholder="e.g. blurry, deformed, low quality"
             />
           ) : (
-            <span style={styles.defaultHint}>Using workflow default</span>
+            <span style={ss.defaultHint}>Using workflow default</span>
           )}
         </div>
 
-        <div style={styles.row}>
-          <div style={styles.formGroup}>
-            <label htmlFor="width" style={styles.label}>Width:</label>
-            <input
-              id="width"
-              type="number"
-              value={width}
-              onChange={(e) => setWidth(e.target.value)}
-              style={styles.input}
-            />
+        <div style={ss.row}>
+          <div style={ss.formGroup}>
+            <label htmlFor="width" style={ss.label}>Width:</label>
+            <input id="width" type="number" value={width} onChange={(e) => setWidth(e.target.value)} style={ss.input} />
           </div>
-          <div style={styles.formGroup}>
-            <label htmlFor="height" style={styles.label}>Height:</label>
-            <input
-              id="height"
-              type="number"
-              value={height}
-              onChange={(e) => setHeight(e.target.value)}
-              style={styles.input}
-            />
+          <div style={ss.formGroup}>
+            <label htmlFor="height" style={ss.label}>Height:</label>
+            <input id="height" type="number" value={height} onChange={(e) => setHeight(e.target.value)} style={ss.input} />
           </div>
         </div>
 
-        <div style={styles.formGroup}>
-          <label htmlFor="seed" style={styles.label}>Seed (optional):</label>
-          <input
-            id="seed"
-            type="number"
-            value={seed}
-            onChange={(e) => setSeed(e.target.value)}
-            placeholder="Leave empty for random"
-            style={styles.input}
-          />
+        <div style={ss.formGroup}>
+          <label htmlFor="seed" style={ss.label}>Seed (optional):</label>
+          <input id="seed" type="number" value={seed} onChange={(e) => setSeed(e.target.value)} placeholder="Leave empty for random" style={ss.input} />
         </div>
 
-        <button type="submit" style={styles.button} disabled={isLoading}>
+        <button type="submit" style={ss.button} disabled={isLoading}>
           {isLoading ? 'Generating...' : 'Generate Image'}
         </button>
       </form>
 
-      <div style={styles.responseContainer}>
-        {isLoading && <p style={styles.loading}>{statusText || 'Generating image...'}</p>}
-        {error && <pre style={styles.error}>{error}</pre>}
+      <div style={ss.responseContainer}>
+        {isLoading && <p style={ss.loading}>{statusText || 'Generating image...'}</p>}
+        {error && <pre style={ss.error}>{error}</pre>}
         {response && response.images && (
           <div>
-            <p style={styles.responseLabel}>Generated Images:</p>
-            <div style={styles.imageGrid}>
-              {response.images.map((img, idx) => {
-                const src = img.blobUrl
-                  ?? (img.data_base64 ? `data:${img.content_type};base64,${img.data_base64}` : null);
-                const downloadHref = src;
-                return (
-                  <div key={idx}>
-                    <img
-                      src={src}
-                      alt={`Generated ${idx + 1}`}
-                      style={styles.image}
-                      onClick={() => setLightboxSrc(src)}
-                    />
-                    <div style={styles.imageFooter}>
-                      <p style={styles.imageName}>{img.filename}</p>
-                      <a
-                        href={downloadHref}
-                        download={img.filename}
-                        style={styles.downloadLink}
-                      >
-                        Download
-                      </a>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <p style={ss.responseLabel}>Generated Images:</p>
+            <ImageGallery images={response.images} onImageClick={setLightboxSrc} />
             {response.seed != null && (
-              <p style={styles.seedInfo}>Seed: {response.seed}</p>
+              <p style={ss.seedInfo}>Seed: {response.seed}</p>
             )}
           </div>
         )}
@@ -370,140 +239,6 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
     <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </ErrorBoundary>
   );
-};
-
-const styles = {
-  content: {
-    padding: '4px',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  row: {
-    display: 'flex',
-    gap: '16px',
-  },
-  label: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: 'var(--text)',
-    marginBottom: '6px',
-  },
-  labelRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: '6px',
-  },
-  toggleBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '12px',
-    color: 'var(--primary)',
-    padding: '0',
-  },
-  defaultHint: {
-    fontSize: '13px',
-    color: 'var(--muted)',
-    fontStyle: 'italic',
-  },
-  input: {
-    padding: '8px 12px',
-    fontSize: '14px',
-    border: '1px solid var(--border)',
-    borderRadius: '6px',
-    outline: 'none',
-    background: 'var(--input-bg)',
-    color: 'var(--text)',
-  },
-  textarea: {
-    padding: '8px 12px',
-    fontSize: '14px',
-    border: '1px solid var(--border)',
-    borderRadius: '6px',
-    resize: 'vertical',
-    outline: 'none',
-    background: 'var(--input-bg)',
-    color: 'var(--text)',
-  },
-  button: {
-    padding: '10px 16px',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#FFF',
-    backgroundColor: '#007AFF',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    alignSelf: 'flex-start',
-  },
-  responseContainer: {
-    marginTop: '24px',
-    padding: '16px',
-    background: 'var(--glass)',
-    border: '1px solid var(--border)',
-    borderRadius: '8px',
-  },
-  responseLabel: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: 'var(--text)',
-    margin: '0 0 12px 0',
-  },
-  loading: {
-    color: 'var(--muted)',
-    fontStyle: 'italic',
-  },
-  imageGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(256px, 1fr))',
-    gap: '12px',
-    marginBottom: '12px',
-  },
-  image: {
-    width: '100%',
-    borderRadius: '8px',
-    border: '1px solid var(--border)',
-    cursor: 'zoom-in',
-  },
-  imageFooter: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: '6px',
-  },
-  imageName: {
-    fontSize: '12px',
-    color: 'var(--muted)',
-    margin: '0',
-    wordBreak: 'break-all',
-  },
-  downloadLink: {
-    fontSize: '12px',
-    color: 'var(--primary)',
-    textDecoration: 'none',
-    flexShrink: 0,
-    marginLeft: '8px',
-  },
-  seedInfo: {
-    fontSize: '12px',
-    color: 'var(--muted)',
-    margin: '8px 0 0 0',
-  },
-  error: {
-    whiteSpace: 'pre-wrap',
-    wordWrap: 'break-word',
-    fontSize: '12px',
-    color: 'var(--danger)',
-    margin: '0',
-  },
 };
 
 export default Txt2ImgApp;

@@ -1,37 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { FolderPlus, Upload, Hash, Trash2, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
-
-// ---- helpers ----------------------------------------------------------------
-
-function fmtBytes(n) {
-    if (n == null) return '—';
-    if (n === 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.min(Math.floor(Math.log2(n) / 10), units.length - 1);
-    const val = n / Math.pow(1024, i);
-    return `${val % 1 === 0 ? val : val.toFixed(1)} ${units[i]}`;
-}
-
-async function clientFetch(path, apiKey, options = {}, addDevEntry = null) {
-    const { _label, ...fetchOptions } = options;
-    const headers = new Headers(fetchOptions.headers || {});
-    headers.set('X-API-Key', apiKey);
-    let reqBody = null;
-    if (fetchOptions.body && typeof fetchOptions.body === 'string') {
-        try { reqBody = JSON.parse(fetchOptions.body); } catch { reqBody = fetchOptions.body; }
-    }
-    const res = await fetch(path, { ...fetchOptions, headers });
-    if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        addDevEntry?.({ label: _label, method: fetchOptions.method || 'GET', url: path, request: reqBody, response: { error: `${res.status} ${res.statusText}${text ? ` – ${text}` : ''}` } });
-        throw new Error(`${res.status} ${res.statusText}${text ? ` – ${text}` : ''}`);
-    }
-    const ct = res.headers.get('content-type') || '';
-    let respBody = null;
-    if (ct.includes('application/json')) respBody = await res.json();
-    addDevEntry?.({ label: _label, method: fetchOptions.method || 'GET', url: path, request: reqBody, response: respBody });
-    return respBody;
-}
+import { clientFetch, fmtBytes } from '../sandboxUtils';
 
 
 // ---- sub-components ---------------------------------------------------------

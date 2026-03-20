@@ -1,28 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Upload, FileText, Loader } from 'lucide-react';
-import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
+import { clientFetch } from '../sandboxUtils';
+import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
-
-async function clientFetch(path, apiKey, options = {}, addDevEntry = null) {
-    const { _label, ...fetchOptions } = options;
-    const headers = new Headers(fetchOptions.headers || {});
-    headers.set('X-API-Key', apiKey);
-    let reqBody = null;
-    if (fetchOptions.body && typeof fetchOptions.body === 'string') {
-        try { reqBody = JSON.parse(fetchOptions.body); } catch { reqBody = fetchOptions.body; }
-    }
-    const res = await fetch(path, { ...fetchOptions, headers });
-    if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        addDevEntry?.({ label: _label, method: fetchOptions.method || 'GET', url: path, request: reqBody, response: { error: `${res.status} ${res.statusText}${text ? ` – ${text}` : ''}` } });
-        throw new Error(`${res.status} ${res.statusText}${text ? ` – ${text}` : ''}`);
-    }
-    const ct = res.headers.get('content-type') || '';
-    let respBody = null;
-    if (ct.includes('application/json')) respBody = await res.json();
-    addDevEntry?.({ label: _label, method: fetchOptions.method || 'GET', url: path, request: reqBody, response: respBody });
-    return respBody;
-}
 
 const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
@@ -36,20 +16,11 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [statusType, setStatusType] = useState('info');
     const [result, setResult] = useState(null);
     const [logText, setLogText] = useState('');
-    const [capabilities, setCapabilities] = useState([]);
     const fileInputRef = useRef(null);
 
-    useEffect(() => { if (propApiKey) setApiKey(propApiKey); }, [propApiKey]);
+    const [capabilities] = useCapabilities('llm.');
 
-    useEffect(() => {
-        fetchOnlineCapabilities()
-            .then(data => {
-                if (Array.isArray(data)) {
-                    setCapabilities(data.filter(c => stripCapabilityAttrs(c).startsWith('llm.')));
-                }
-            })
-            .catch(() => {});
-    }, []);
+    useEffect(() => { if (propApiKey) setApiKey(propApiKey); }, [propApiKey]);
 
     const status = useCallback((msg, type = 'info') => {
         setStatusMsg(msg);

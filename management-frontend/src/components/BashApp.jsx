@@ -1,74 +1,47 @@
-import React, { useState, useEffect } from 'react';
-import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
+import React, { useState } from 'react';
+import { sandboxStyles as ss } from '../sandboxStyles';
+import { useCapabilities } from '../hooks/useCapabilities';
+import TerminalOutput from './TerminalOutput';
 
-// Main bash application component
 const BashApp = ({ apiKey, addDevEntry }) => {
-    // State for input field and API response
     const [command, setCommand] = useState('ls -la');
 
-    // State for displaying the response, loading status, and errors
     const [response, setResponse] = useState(null);
     const [error, setError] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [capabilities, setCapabilities] = useState([]);
 
-    useEffect(() => {
-        const updCaps = async () => {
-            try {
-                const data = await fetchOnlineCapabilities();
-                if (Array.isArray(data)) {
-                    setCapabilities(data.filter((cap) => stripCapabilityAttrs(cap).startsWith("shell")));
-                }
-            } catch (err) {
-                setError(`An error occurred: ${err.message}`);
-            }
-        };
+    const [capabilities] = useCapabilities('shell', { setError });
 
-        updCaps();
-    }, []);
+    const escapeCommand = (cmd) => cmd.replace(/'/g, "'\"'\"'");
 
-    // Function to escape single quotes in the command
-    const escapeCommand = (cmd) => {
-        return cmd.replace(/'/g, "'\"'\"'");
-    };
-
-    // Function to handle the API request
     const handleSubmit = async () => {
         setIsLoading(true);
         setResponse(null);
         setError(null);
 
-        // Escape the command and construct the bash -c payload
         const escapedCommand = escapeCommand(command);
         const bashCommand = `bash -c '${escapedCommand}'`;
 
-        // Construct the dynamic payload
         const payload = {
             capability: "shell.bash",
-            urgent: true, // Always true and cannot be changed
+            urgent: true,
             payload: bashCommand,
-            apiKey: apiKey, // Use the apiKey passed via props
+            apiKey: apiKey,
         };
 
         try {
-            // Send the request to the specified endpoint
             const res = await fetch('/api/task/submit_blocking', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
 
-            // Parse the JSON response
             const data = await res.json();
             addDevEntry?.({ label: 'Execute bash (blocking)', method: 'POST', url: '/api/task/submit_blocking', request: payload, response: data });
 
-            // Handle the response body structure
             if (data.error) {
                 setError(data.error.message);
             } else if (data.result) {
-                // Set the result as the response
                 setResponse(data.result);
             } else {
                 setError('Unexpected response format.');
@@ -82,17 +55,17 @@ const BashApp = ({ apiKey, addDevEntry }) => {
     };
 
     return (
-        <div style={styles.content}>
-            <div style={styles.form}>
-                <div style={styles.formGroup}>
-                    <label htmlFor="command" style={styles.label}>Bash Command:</label>
+        <div style={ss.content}>
+            <div style={ss.form}>
+                <div style={ss.formGroup}>
+                    <label htmlFor="command" style={ss.label}>Bash Command:</label>
                     <input
                         id="command"
                         type="text"
                         value={command}
                         onChange={(e) => setCommand(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSubmit()}
-                        style={styles.input}
+                        style={ss.monoInput}
                         placeholder="Enter bash command..."
                     />
                     {capabilities.length > 0 && (
@@ -106,112 +79,28 @@ const BashApp = ({ apiKey, addDevEntry }) => {
                     )}
                 </div>
 
-                <div style={styles.formGroup}>
+                <div style={ss.formGroup}>
                     <label style={styles.checkboxContainer}>
-                        <input
-                            type="checkbox"
-                            checked={true}
-                            disabled={true}
-                            style={styles.checkbox}
-                        />
+                        <input type="checkbox" checked={true} disabled={true} style={styles.checkbox} />
                         <span style={styles.checkboxLabel}>Urgent (always enabled)</span>
                     </label>
                 </div>
 
-                <button type="button" style={styles.button} disabled={isLoading} onClick={handleSubmit}>
+                <button type="button" style={ss.greenButton} disabled={isLoading} onClick={handleSubmit}>
                     {isLoading ? 'Executing...' : 'Execute Command'}
                 </button>
             </div>
 
-            {/* Response/Error display area */}
-            <div style={styles.responseContainer}>
-                {isLoading && <p style={styles.loading}>Executing command...</p>}
-                {error && <pre style={styles.error}>{error}</pre>}
-                {response && (
-                    <div style={styles.terminal}>
-                        {(() => {
-                            try {
-                                // Try to parse as JSON
-                                const parsed = typeof response === 'string' ? JSON.parse(response) : response;
-
-                                if (parsed && typeof parsed === 'object' && ('stderr' in parsed || 'stdout' in parsed)) {
-                                    return (
-                                        <>
-                                            {parsed.stderr && (
-                                                <div style={styles.stderr}>
-                                                    <div style={styles.streamLabel}>stderr:</div>
-                                                    <pre style={{ ...styles.streamContent, color: '#FF6B6B' }}>{parsed.stderr}</pre>
-                                                </div>
-                                            )}
-                                            {parsed.stdout && (
-                                                <div style={styles.stdout}>
-                                                    <div style={styles.streamLabel}>stdout:</div>
-                                                    <pre style={styles.streamContent}>{parsed.stdout}</pre>
-                                                </div>
-                                            )}
-                                            {!parsed.stderr && !parsed.stdout && (
-                                                <pre style={styles.streamContent}>
-                                                    {JSON.stringify(parsed, null, 2)}
-                                                </pre>
-                                            )}
-                                        </>
-                                    );
-                                } else {
-                                    // Not the expected format, show as JSON
-                                    return (
-                                        <pre style={styles.streamContent}>
-                                            {JSON.stringify(parsed, null, 2)}
-                                        </pre>
-                                    );
-                                }
-                            } catch (e) {
-                                // Not valid JSON, show as raw text
-                                return (
-                                    <pre style={styles.streamContent}>
-                                        {typeof response === 'string' ? response : JSON.stringify(response, null, 2)}
-                                    </pre>
-                                );
-                            }
-                        })()}
-                    </div>
-                )}
+            <div style={ss.responseContainer}>
+                {isLoading && <p style={ss.loading}>Executing command...</p>}
+                {error && <pre style={ss.error}>{error}</pre>}
+                <TerminalOutput response={response} />
             </div>
-
         </div>
     );
 };
 
-// Embedded CSS styles
 const styles = {
-    content: {
-        padding: '4px',
-    },
-    form: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px',
-    },
-    formGroup: {
-        display: 'flex',
-        flexDirection: 'column',
-    },
-    label: {
-        fontSize: '14px',
-        fontWeight: '600',
-        color: 'var(--text)',
-        marginBottom: '6px',
-    },
-    input: {
-        padding: '8px 12px',
-        fontSize: '14px',
-        border: '1px solid var(--border)',
-        borderRadius: '6px',
-        transition: 'border-color 0.2s',
-        outline: 'none',
-        fontFamily: 'monospace',
-        background: 'var(--input-bg)',
-        color: 'var(--text)',
-    },
     checkboxContainer: {
         display: 'flex',
         alignItems: 'center',
@@ -225,105 +114,6 @@ const styles = {
         fontSize: '14px',
         color: '#666',
         cursor: 'not-allowed',
-    },
-    button: {
-        padding: '10px 16px',
-        fontSize: '14px',
-        fontWeight: '600',
-        color: '#FFF',
-        backgroundColor: '#28A745',
-        border: 'none',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        transition: 'background-color 0.2s, transform 0.1s',
-        alignSelf: 'flex-start',
-        WebkitAppearance: 'none',
-        MozAppearance: 'none',
-        appearance: 'none',
-    },
-    debugButton: {
-        padding: '6px 12px',
-        fontSize: '12px',
-        fontWeight: '400',
-        color: 'var(--muted)',
-        background: 'var(--glass)',
-        border: '1px solid var(--border)',
-        borderRadius: '4px',
-        cursor: 'pointer',
-        marginTop: '12px',
-    },
-    responseContainer: {
-        marginTop: '24px',
-        padding: '16px',
-        background: 'var(--glass)',
-        border: '1px solid var(--border)',
-        borderRadius: '8px',
-    },
-    debugLabel: {
-        fontSize: '14px',
-        fontWeight: '600',
-        color: 'var(--text)',
-        margin: '0 0 8px 0',
-    },
-    loading: {
-        color: '#888',
-        fontStyle: 'italic',
-    },
-    response: {
-        whiteSpace: 'pre-wrap',
-        wordWrap: 'break-word',
-        fontSize: '12px',
-        color: 'var(--text)',
-        margin: '0',
-        fontFamily: 'monospace',
-        background: 'var(--code-bg)',
-        padding: '8px',
-        border: '1px solid var(--border)',
-        borderRadius: '4px',
-    },
-    terminal: {
-        backgroundColor: '#000000',
-        padding: '12px',
-        borderRadius: '4px',
-        border: '1px solid #333',
-        fontFamily: 'Consolas, Monaco, "Courier New", monospace',
-        fontSize: '13px',
-        lineHeight: '1.4',
-    },
-    stderr: {
-        marginBottom: '8px',
-    },
-    stdout: {
-        marginBottom: '8px',
-    },
-    streamLabel: {
-        color: '#888',
-        fontSize: '11px',
-        marginBottom: '4px',
-        textTransform: 'uppercase',
-        letterSpacing: '0.5px',
-    },
-    streamContent: {
-        margin: '0',
-        padding: '0',
-        whiteSpace: 'pre-wrap',
-        wordWrap: 'break-word',
-        fontFamily: 'inherit',
-        fontSize: 'inherit',
-        lineHeight: 'inherit',
-        color: '#FFFFFF',
-    },
-    error: {
-        whiteSpace: 'pre-wrap',
-        wordWrap: 'break-word',
-        fontSize: '12px',
-        color: '#D9534F',
-        margin: '0',
-        fontFamily: 'monospace',
-        backgroundColor: '#FFF5F5',
-        padding: '8px',
-        border: '1px solid #F5C6CB',
-        borderRadius: '4px',
     },
 };
 
