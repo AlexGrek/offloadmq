@@ -107,8 +107,8 @@ def _execute_shell(
             text=True,
             cwd=str(data_path),
             env=env,
-            # Start in a new process group for clean timeout killing
-            preexec_fn=os.setsid if os.name != "nt" else None,
+            # Start in a new process group for clean timeout killing (Unix only)
+            preexec_fn=getattr(os, "setsid", None) if os.name != "nt" else None,
         )
 
         q_stdout: queue.Queue[str] = queue.Queue()
@@ -129,11 +129,17 @@ def _execute_shell(
             if elapsed > skill.timeout and process.poll() is None:
                 logger.warning(f"Skill '{skill.name}' timed out after {skill.timeout}s, killing...")
                 try:
-                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                    if os.name != "nt":
+                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)  # type: ignore[attr-defined]
+                    else:
+                        process.terminate()
                     process.wait(timeout=5)
                 except Exception:
                     try:
-                        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                        if os.name != "nt":
+                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)  # type: ignore[attr-defined]
+                        else:
+                            process.kill()
                     except Exception:
                         process.kill()
                 timed_out = True

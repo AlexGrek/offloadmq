@@ -36,7 +36,9 @@
       "Bash(curl -s \"http://127.0.0.1:8188/history?max_items=3\")",
       "Bash(curl -s \"http://127.0.0.1:8188/history/4cb51081-e52c-4368-9b3d-275d216d82b8\")",
       "Bash(find \"c:/Users/AlexG/Documents/dev/offloadmq/offload-agent/app/exec/imggen/__pycache__\" -name \"workflow*.pyc\" -delete)",
-      "Bash(curl -s \"http://127.0.0.1:8188/history/d4f3743b-f1ec-4b8c-b6b2-a4f3370caa2f\")"
+      "Bash(curl -s \"http://127.0.0.1:8188/history/d4f3743b-f1ec-4b8c-b6b2-a4f3370caa2f\")",
+      "Bash(rustup target:*)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File build-windows.ps1)"
     ]
   }
 }
