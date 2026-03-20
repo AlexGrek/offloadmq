@@ -98,11 +98,21 @@
       "Bash(source venv/bin/activate)",
       "Bash(python3 -c \"from app.exec.imggen import execute_imggen_comfyui; print\\(''OK''\\)\")",
       "Bash(python -m mypy)",
-      "mcp__claude_ai_Mermaid_Chart__validate_and_render_mermaid_diagram"
+      "mcp__claude_ai_Mermaid_Chart__validate_and_render_mermaid_diagram",
+      "Bash(python -c \"from app.skills import discover_skills, load_skill, Skill, SkillParam, _find_skills_dir; print\\(''skills.py OK''\\); print\\(''Skills dir:'', _find_skills_dir\\(\\)\\)\")",
+      "Bash(python3 -c \"from app.skills import discover_skills, load_skill, Skill, SkillParam, _find_skills_dir; print\\(''skills.py OK''\\); print\\(''Skills dir:'', _find_skills_dir\\(\\)\\)\")",
+      "Bash(python3 -c \"from app.exec.skill import execute_skill; print\\(''exec/skill.py OK''\\)\")",
+      "Bash(source .venv/bin/activate)",
+      "Bash(python -c \"from app.exec.skill import execute_skill; print\\(''exec/skill.py OK''\\)\")",
+      "Bash(python -c \"from app.capabilities import check_skills; r = check_skills\\(\\); print\\(f''check_skills: ok={r.ok}, caps={r.caps}, reason={r.reason}''\\)\")",
+      "Bash(python -m app.cli skills list)",
+      "Bash(/Users/vedmedik/.offload-agent/skills/summarize.yaml:*)",
+      "Bash(python -c \"from webui import _list_skills, _build_api_state; print\\(''webui imports OK''\\)\")"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
-      "/private/tmp/ollama-src"
+      "/private/tmp/ollama-src",
+      "/Users/vedmedik/.offload-agent/skills"
     ]
   }
 }

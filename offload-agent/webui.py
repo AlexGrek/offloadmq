@@ -302,12 +302,27 @@ def _mac_launchd_set(enable: bool) -> None:
             pass
 
 
+_SKILL_SAFE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
 _WF_SAFE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
 
 _STANDARD_TASK_TYPES = [
     "txt2img", "img2img", "inpaint", "outpaint",
     "upscale", "face_swap", "txt2video", "img2video",
 ]
+
+
+def _skills_dir() -> Path:
+    from app.skills import _find_skills_dir
+    return _find_skills_dir()
+
+
+def _list_skills() -> List[Dict[str, Any]]:
+    from app.skills import discover_skills
+    try:
+        return [s.to_dict() for s in discover_skills()]
+    except Exception as exc:
+        _log(f"[skills] Error listing skills: {exc}")
+        return []
 
 
 def _workflows_dir() -> Path:
@@ -540,6 +555,8 @@ def _build_api_state() -> Dict[str, Any]:
         "workflows": _list_workflows(),
         "workflows_dir": str(_workflows_dir()),
         "task_types": list(_STANDARD_TASK_TYPES),
+        "skills": _list_skills(),
+        "skills_dir": str(_skills_dir()),
         "running": get_status().get("running", False),
     }
 
@@ -731,6 +748,152 @@ async def route_logs():
     with _log_lock:
         lines = list(_log_buf)
     return JSONResponse({"lines": lines})
+
+
+@app.get("/skills/list")
+async def route_list_skills():
+    return JSONResponse({"skills": _list_skills(), "skills_dir": str(_skills_dir())})
+
+
+@app.get("/skills/get/{skill_name}")
+async def route_get_skill(skill_name: str):
+    from app.skills import _find_skills_dir, load_skill
+
+    if not _SKILL_SAFE_RE.match(skill_name):
+        return JSONResponse({"error": "Invalid skill name"}, status_code=400)
+
+    skills_dir = _find_skills_dir()
+    for suffix in (".yaml", ".yml"):
+        path = skills_dir / f"{skill_name}{suffix}"
+        if path.is_file():
+            try:
+                skill = load_skill(path)
+                return JSONResponse({
+                    "skill": skill.to_dict(),
+                    "raw": path.read_text(encoding="utf-8"),
+                })
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse({"error": f"Skill '{skill_name}' not found"}, status_code=404)
+
+
+@app.post("/skills/save")
+async def route_save_skill(request: Request):
+    """Save a skill from JSON body or raw YAML."""
+    import yaml
+    from app.skills import _find_skills_dir, validate_skill_yaml, _SAFE_NAME_RE
+
+    content_type = request.headers.get("content-type", "")
+
+    if "application/json" in content_type:
+        data = await request.json()
+        raw_yaml = data.get("yaml")
+        if not raw_yaml:
+            # Build YAML from structured data
+            skill_dict = {
+                "name": data.get("name", ""),
+                "description": data.get("description", ""),
+                "script": data.get("script", ""),
+            }
+            if data.get("params"):
+                skill_dict["params"] = data["params"]
+            if data.get("timeout"):
+                skill_dict["timeout"] = int(data["timeout"])
+            if data.get("env"):
+                skill_dict["env"] = data["env"]
+            raw_yaml = yaml.dump(skill_dict, default_flow_style=False, sort_keys=False)
+    else:
+        form = await request.form()
+        raw_yaml = form.get("yaml", "")
+
+    if not raw_yaml:
+        _log("[skills] ERROR: no YAML content provided")
+        return JSONResponse({"error": "No YAML content provided"}, status_code=400)
+
+    try:
+        skill = validate_skill_yaml(raw_yaml)
+    except Exception as exc:
+        _log(f"[skills] ERROR: validation failed: {exc}")
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    skills_dir = _find_skills_dir()
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    path = skills_dir / f"{skill.name}.yaml"
+
+    # Prevent path traversal
+    if not str(path.resolve()).startswith(str(skills_dir.resolve())):
+        return JSONResponse({"error": "Path traversal detected"}, status_code=400)
+
+    path.write_text(raw_yaml, encoding="utf-8")
+    _log(f"[skills] Saved skill '{skill.name}' to {path}")
+    _start_scan()
+    return JSONResponse({"ok": True, "skill": skill.to_dict()})
+
+
+@app.post("/skills/upload")
+async def route_upload_skill(
+    request: Request,
+    skill_file: UploadFile = File(None),
+):
+    """Upload a skill YAML file."""
+    from app.skills import _find_skills_dir, validate_skill_yaml
+
+    if not skill_file or not skill_file.filename:
+        _log("[skills] ERROR: no file uploaded")
+        return _done(request)
+
+    raw = await skill_file.read()
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        _log("[skills] ERROR: uploaded file is not valid UTF-8")
+        return _done(request)
+
+    try:
+        skill = validate_skill_yaml(content)
+    except Exception as exc:
+        _log(f"[skills] ERROR: validation failed: {exc}")
+        return _done(request)
+
+    skills_dir = _find_skills_dir()
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    path = skills_dir / f"{skill.name}.yaml"
+
+    if not str(path.resolve()).startswith(str(skills_dir.resolve())):
+        _log("[skills] ERROR: path traversal detected")
+        return _done(request)
+
+    path.write_text(content, encoding="utf-8")
+    _log(f"[skills] Uploaded skill '{skill.name}' to {path}")
+    _start_scan()
+    return _done(request)
+
+
+@app.post("/skills/delete")
+async def route_delete_skill(request: Request):
+    from app.skills import delete_skill
+
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        data = await request.json()
+        name = data.get("name", "")
+    else:
+        form = await request.form()
+        name = form.get("skill_name", "")
+
+    name = str(name).strip()
+    if not name or not _SKILL_SAFE_RE.match(name):
+        _log("[skills] ERROR: invalid skill name in delete request")
+        return _done(request)
+
+    if delete_skill(name):
+        _log(f"[skills] Deleted skill '{name}'")
+        _start_scan()
+    else:
+        _log(f"[skills] Skill '{name}' not found -- nothing deleted")
+
+    return _done(request)
 
 
 @app.post("/config/comfyui-url")

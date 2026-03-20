@@ -108,6 +108,8 @@ Attributes are semicolon-separated strings inside brackets. Examples:
 - Client APIs (`/api/capabilities/online`, management `/capabilities/list/online`) return only base capabilities
 - Management endpoint `/capabilities/list/online_ext` returns raw capabilities with extended attributes for inspection
 
+**Custom Capabilities:** Agents can register arbitrary capabilities with extended attributes that declare the payload schema (field names and types). See [docs/custom-capabilities.md](docs/custom-capabilities.md) for the full convention.
+
 ### Key Data Flow
 
 1. Agents register (`POST /agent/register`) with capabilities that may include extended attributes in brackets

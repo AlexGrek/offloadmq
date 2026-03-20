@@ -533,24 +533,31 @@ Some capabilities include extended attributes in brackets to provide additional 
 
 ## Custom Capabilities
 
-Agents can register custom capabilities beyond the built-in ones via the `custom_caps` config field or the web UI.
+Agents can register custom capabilities beyond the built-in ones. Custom capabilities use extended attributes in brackets to declare their payload schema, enabling generic clients to auto-generate input forms.
+
+**Example:**
+```
+custom.weather[city;units;days:int]
+```
+
+This registers a `custom.weather` capability whose payload expects three fields: `city` (string), `units` (string), and `days` (integer).
 
 **In config file** (`.offload-agent.json`):
 ```json
 {
   "server": "http://localhost:3069",
   "apiKey": "ak_live_...",
-  "custom_caps": ["custom.ml.inference", "custom.data.transform"]
+  "custom_caps": ["custom.weather[city;units;days:int]", "data.transform[query:text;format]"]
 }
 ```
 
 **In web UI:**
 - Open the web UI (`offload-agent webui`)
 - On the **Capabilities** card, click **+ Add custom capability**
-- Enter the capability name (e.g., `custom.ml.inference`)
+- Enter the full capability string including `[field;field:type]` attributes
 - Click **Register** to register with the new capabilities
 
-Custom capabilities won't have executors unless you implement them. They serve as markers for future features or external tools.
+Custom capabilities require a matching executor in the agent to handle tasks. Without one, tasks will fail with "Unknown capability". See the full convention — naming, payload schema, response format, and implementation guide — in **[Custom Capabilities Convention](custom-capabilities.md)**.
 
 ---
 

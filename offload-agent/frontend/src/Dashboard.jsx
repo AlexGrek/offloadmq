@@ -16,6 +16,7 @@ const TABS = [
   { id: 'status', label: 'Status' },
   { id: 'connection', label: 'Connection' },
   { id: 'capabilities', label: 'Capabilities' },
+  { id: 'skills', label: 'Skills' },
   { id: 'system', label: 'System' },
   { id: 'comfyui', label: 'ComfyUI' },
 ]
@@ -55,6 +56,9 @@ export function Dashboard() {
   const wfFileRef = useRef(null)
   const [activeTab, setActiveTab] = useState('status')
   const [rescanning, setRescanning] = useState(false)
+  const [skillYaml, setSkillYaml] = useState('')
+  const [skillName, setSkillName] = useState('')
+  const skillFileRef = useRef(null)
 
   const loadState = useCallback(async () => {
     try {
@@ -225,6 +229,80 @@ export function Dashboard() {
       await postForm('/workflows/delete', fd)
       loadState()
     })
+  }
+
+  async function saveSkill(e) {
+    e.preventDefault()
+    run(async () => {
+      const fd = new FormData()
+      fd.append('yaml', skillYaml)
+      await postForm('/skills/save', fd)
+      setSkillYaml('')
+      setSkillName('')
+      loadState()
+    })
+  }
+
+  async function uploadSkill(e) {
+    e.preventDefault()
+    run(async () => {
+      const fd = new FormData()
+      const f = skillFileRef.current?.files?.[0]
+      if (f) fd.append('skill_file', f)
+      await postForm('/skills/upload', fd)
+      if (skillFileRef.current) skillFileRef.current.value = ''
+      loadState()
+    })
+  }
+
+  function deleteSkill(name) {
+    if (!window.confirm(`Delete skill ${name}?`)) return
+    run(async () => {
+      const body = JSON.stringify({ name })
+      const r = await fetch('/skills/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      })
+      if (!r.ok) throw new Error(r.statusText)
+      loadState()
+    })
+  }
+
+  function loadSkillTemplate(type) {
+    if (type === 'shell') {
+      setSkillYaml(`name: my-skill
+type: shell
+description: Shell script skill
+script: |
+  #!/bin/bash
+  set -euo pipefail
+  echo "Hello from \${SKILL_NAME}"
+params:
+  - name: name
+    type: string
+    default: World
+timeout: 120
+`)
+    } else if (type === 'llm') {
+      setSkillYaml(`name: my-llm-skill
+type: llm
+description: LLM prompt skill
+model: mistral:7b
+prompt: |
+  Answer the following question in {{style}} style:
+  {{question}}
+system: You are a helpful assistant.
+temperature: 0.7
+max_tokens: 512
+params:
+  - name: question
+    type: text
+  - name: style
+    type: string
+    default: concise
+`)
+    }
   }
 
   if (err && !state) {
@@ -432,6 +510,117 @@ export function Dashboard() {
             >
               {rescanning ? 'Rescanning…' : 'Rescan'}
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Skills tab */}
+      <div style={{ display: activeTab === 'skills' ? 'block' : 'none' }}>
+        <div className="grid grid-cols-1 gap-5">
+          {/* Skill Editor */}
+          <div className="bg-slate-800 rounded-lg p-5">
+            <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Skill Editor
+            </h2>
+            <form onSubmit={saveSkill} className="space-y-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-2">
+                  New skill (YAML)
+                </label>
+                <textarea
+                  value={skillYaml}
+                  onChange={(e) => setSkillYaml(e.target.value)}
+                  placeholder="name: my-skill&#10;type: shell&#10;description: ..."
+                  className="w-full h-64 p-3 rounded-md bg-slate-900 text-slate-200 font-mono text-xs border border-slate-600 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  disabled={!skillYaml.trim()}
+                  className="px-4 py-2 rounded-md bg-indigo-500 text-white text-sm font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Save skill
+                </button>
+                <button
+                  type="button"
+                  onClick={() => loadSkillTemplate('shell')}
+                  className="px-3 py-2 rounded-md border border-slate-600 text-slate-300 text-xs hover:border-indigo-500 hover:text-white"
+                >
+                  Shell template
+                </button>
+                <button
+                  type="button"
+                  onClick={() => loadSkillTemplate('llm')}
+                  className="px-3 py-2 rounded-md border border-slate-600 text-slate-300 text-xs hover:border-indigo-500 hover:text-white"
+                >
+                  LLM template
+                </button>
+              </div>
+            </form>
+
+            <div className="border-t border-slate-600 pt-4 mt-4">
+              <label className="block text-xs font-medium text-slate-400 mb-2">
+                Or upload skill file
+              </label>
+              <form onSubmit={uploadSkill} className="flex gap-2">
+                <input
+                  type="file"
+                  ref={skillFileRef}
+                  accept=".yaml,.yml"
+                  className="flex-1 px-3 py-2 rounded-md bg-slate-900 text-slate-200 text-xs border border-slate-600 file:rounded file:border-0 file:bg-indigo-500 file:text-white file:text-xs file:font-medium file:px-2 file:py-1 file:mr-2"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-md bg-slate-700 text-white text-sm font-medium hover:bg-slate-600"
+                >
+                  Upload
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* Skills list */}
+          <div className="bg-slate-800 rounded-lg p-5">
+            <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Installed skills
+            </h2>
+            {(state.skills || []).length === 0 ? (
+              <p className="text-sm text-slate-500 italic">No skills installed</p>
+            ) : (
+              <div className="space-y-2">
+                {state.skills.map((s) => (
+                  <div key={s.name} className="bg-slate-700 rounded p-3 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <p className="font-semibold text-slate-200">
+                          {s.name}
+                          <span className="text-xs font-normal text-slate-500 ml-2 lowercase">
+                            {s.type}
+                          </span>
+                        </p>
+                        <p className="text-slate-400 text-xs mt-1">{s.description}</p>
+                        <p className="text-slate-500 text-xs mt-2">
+                          <code>{s.capability}</code>
+                        </p>
+                        {s.params && s.params.length > 0 && (
+                          <p className="text-slate-500 text-xs mt-1">
+                            Params: {s.params.map((p) => p.name).join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deleteSkill(s.name)}
+                        className="px-2 py-1 rounded bg-red-900 text-red-200 text-xs hover:bg-red-800 shrink-0"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

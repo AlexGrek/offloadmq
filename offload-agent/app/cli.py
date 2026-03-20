@@ -1,4 +1,5 @@
 import typer
+from pathlib import Path
 from .ollama import *
 from .config import *
 from .systeminfo import *
@@ -9,6 +10,8 @@ from .websocket_client import serve_websocket
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Offload Agent CLI")
+skills_app = typer.Typer(help="Manage custom skills")
+app.add_typer(skills_app, name="skills")
 
 
 @app.command("sysinfo", help="Display system information")
@@ -149,3 +152,112 @@ def cli_serve(
     else:
         typer.echo("Starting task polling...")
         serve_tasks(server, jwt)
+
+
+@skills_app.command("list", help="List all discovered skills")
+def cli_skills_list():
+    from .skills import discover_skills, _find_skills_dir
+
+    skills_dir = _find_skills_dir()
+    typer.echo(f"Skills directory: {skills_dir}\n")
+
+    skills = discover_skills()
+    if not skills:
+        typer.echo("No skills found. Create .yaml files in the skills directory.")
+        return
+
+    for s in skills:
+        typer.echo(f"  {s.capability_string()}")
+        typer.echo(f"    Description: {s.description}")
+        if s.params:
+            typer.echo(f"    Params: {', '.join(p.name for p in s.params)}")
+        typer.echo(f"    Timeout: {s.timeout}s")
+        if s.path:
+            typer.echo(f"    File: {s.path}")
+        typer.echo()
+
+
+@skills_app.command("import", help="Import a skill YAML file into the skills directory")
+def cli_skills_import(
+    file: Path = typer.Argument(..., help="Path to skill YAML file to import"),
+):
+    from .skills import load_skill, _find_skills_dir
+    import shutil
+
+    if not file.is_file():
+        typer.echo(f"Error: File not found: {file}")
+        raise typer.Exit(code=1)
+
+    # Validate first
+    try:
+        skill = load_skill(file)
+    except Exception as e:
+        typer.echo(f"Error: Invalid skill file: {e}")
+        raise typer.Exit(code=1)
+
+    skills_dir = _find_skills_dir()
+    skills_dir.mkdir(parents=True, exist_ok=True)
+
+    dest = skills_dir / f"{skill.name}.yaml"
+    if dest.exists():
+        overwrite = typer.confirm(f"Skill '{skill.name}' already exists. Overwrite?")
+        if not overwrite:
+            typer.echo("Cancelled.")
+            raise typer.Exit(code=0)
+
+    shutil.copy2(file, dest)
+    typer.echo(f"Imported skill '{skill.name}' to {dest}")
+    typer.echo(f"Capability: {skill.capability_string()}")
+
+
+@skills_app.command("validate", help="Validate a skill YAML file without importing")
+def cli_skills_validate(
+    file: Path = typer.Argument(..., help="Path to skill YAML file to validate"),
+):
+    from .skills import load_skill
+
+    if not file.is_file():
+        typer.echo(f"Error: File not found: {file}")
+        raise typer.Exit(code=1)
+
+    try:
+        skill = load_skill(file)
+    except Exception as e:
+        typer.echo(f"INVALID: {e}")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"VALID: {skill.name}")
+    typer.echo(f"  Type: {skill.skill_type}")
+    typer.echo(f"  Capability: {skill.capability_string()}")
+    typer.echo(f"  Description: {skill.description}")
+    if skill.params:
+        for p in skill.params:
+            default_str = f" (default: {p.default})" if p.default is not None else " (required)"
+            typer.echo(f"  Param: {p.name} [{p.type}]{default_str}")
+    typer.echo(f"  Timeout: {skill.timeout}s")
+    if skill.skill_type == "shell" and skill.script:
+        typer.echo(f"  Script: {len(skill.script)} chars")
+    elif skill.skill_type == "llm":
+        typer.echo(f"  Model: {skill.model}")
+        if skill.system:
+            typer.echo(f"  System: {skill.system[:60]}{'...' if len(skill.system) > 60 else ''}")
+        if skill.prompt:
+            typer.echo(f"  Prompt: {len(skill.prompt)} chars")
+
+
+@skills_app.command("export", help="Export a skill to YAML on stdout")
+def cli_skills_export(
+    name: str = typer.Argument(..., help="Skill name to export"),
+):
+    from .skills import get_skill_by_capability
+
+    skill = get_skill_by_capability(f"skill.{name}")
+    if not skill:
+        typer.echo(f"Error: Skill '{name}' not found")
+        raise typer.Exit(code=1)
+
+    if skill.path and skill.path.is_file():
+        typer.echo(skill.path.read_text(encoding="utf-8"))
+    else:
+        typer.echo(f"Error: Skill file not found on disk")
+        raise typer.Exit(code=1)
