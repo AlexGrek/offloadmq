@@ -2,10 +2,7 @@ name: Build Agent
 
 on:
   push:
-    branches: ["master", "release"]
     tags: ["release*"]
-  pull_request:
-    branches: ["master"]
 
 jobs:
   build-linux:
