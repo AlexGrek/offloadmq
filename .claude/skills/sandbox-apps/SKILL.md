@@ -28,6 +28,7 @@ Sandbox apps are interactive demo/test widgets embedded in the management fronte
 | `PdfAnalyzerApp.jsx` | PDF/image analysis: bucket → upload → task → poll |
 | `Txt2ImgApp.jsx` | Text-to-image generation via output bucket |
 | `Img2ImgApp.jsx` | Image-to-image transformation via input+output buckets |
+| `CustomApp.jsx` | Generic capability runner: auto-detects fields from extended attrs, submits + polls |
 
 ---
 
@@ -36,15 +37,27 @@ Sandbox apps are interactive demo/test widgets embedded in the management fronte
 Apps are registered in the `apps` array inside `SandboxApps.jsx`. To add a new app:
 
 1. Create `management-frontend/src/components/MyApp.jsx`
-2. Import it in `SandboxApps.jsx`
-3. Add an entry to the `apps` array:
+2. Import it as a lazy component in `SandboxApps.jsx`:
+   ```js
+   const MyApp = React.lazy(() => import('./MyApp'))
+   ```
+3. Import a [lucide-react](https://lucide.dev/icons/) icon for the tile
+4. Add an entry to the `apps` array:
+   ```js
+   const apps = [
+     // ...existing entries...
+     { id: 'myapp', name: 'My App', logo: SomeLucideIcon, app: MyApp },
+   ];
+   ```
 
-```js
-const apps = [
-  // ...existing entries...
-  { id: 'myapp', name: 'My App', logo: SomeLucideIcon, app: MyApp },
-];
-```
+### Full checklist for a new app
+
+1. **Create the component file** — export a default functional component that accepts `{ apiKey, addDevEntry }` props
+2. **Use shared styles** — `import { sandboxStyles as ss } from '../sandboxStyles'` for form layout, inputs, buttons, response containers
+3. **Use shared hooks** (see below) — `useCapabilities` for capability discovery, `useTaskPolling` for async task polling
+4. **Use `TerminalOutput`** — `import TerminalOutput from './TerminalOutput'` for rendering task output in a terminal-style box
+5. **Log all API calls** via `addDevEntry` so they appear in the Dev tab
+6. **Register in `SandboxApps.jsx`** — lazy import + `apps` array entry (see above)
 
 ---
 
@@ -58,6 +71,86 @@ const apps = [
 |------|------|-------------|
 | `apiKey` | `string` | Client API key; loaded from `localStorage` key `'offroadmq-api-key'` |
 | `addDevEntry` | `(entry) => void` | Log an API call to the Dev tab |
+
+---
+
+## Shared Hooks
+
+### `useCapabilities(prefix, { setModel?, setError? })`
+
+**File:** `management-frontend/src/hooks/useCapabilities.js`
+
+Fetches extended online capabilities from the management API and filters by prefix. Returns `[capabilities, setCapabilities]`.
+
+```js
+import { useCapabilities } from '../hooks/useCapabilities';
+
+// Filter capabilities starting with "shell"
+const [capabilities] = useCapabilities('shell', { setError });
+
+// Filter LLM capabilities and auto-select first model
+const [capabilities] = useCapabilities('llm.', { setModel, setError });
+```
+
+- Calls `fetchOnlineCapabilities()` (management API `/management/capabilities/list/online_ext`)
+- Returns the **full extended strings** (with `[...]` attributes) — use `stripCapabilityAttrs()` to get base capability
+- If `setModel` is provided, auto-selects the first match with the prefix stripped
+
+### `useTaskPolling({ currentTask, apiKey, addDevEntry, onResult, onError, onLog?, onStatus?, interval? })`
+
+**File:** `management-frontend/src/hooks/useTaskPolling.js`
+
+Sets up interval-based polling for an async (non-urgent) task. Starts polling when `currentTask` is non-null, stops when null.
+
+```js
+import { useTaskPolling } from '../hooks/useTaskPolling';
+
+useTaskPolling({
+  currentTask,              // { id: string, capability: string } | null
+  apiKey,
+  addDevEntry,
+  onResult: (data) => { },  // data.output contains the result
+  onError: (msg) => { },    // error message string
+  onLog: setLog,             // data.log text (live progress)
+  onStatus: (s) => { },     // data.status on each poll
+  interval: 2000,            // polling interval ms (default 2000)
+});
+```
+
+- Polls `POST /api/task/poll/{capability}/{id}` with `{ apiKey }` body
+- Automatically logs each poll to DevPanel via `addDevEntry`
+- Calls `onResult` when `data.output` is present (task completed)
+- Calls `onError` when `data.error` is present
+- Otherwise calls `onStatus` with `data.status` ("pending", "running", etc.)
+
+### `TerminalOutput` component
+
+**File:** `management-frontend/src/components/TerminalOutput.jsx`
+
+Renders output in a dark terminal-style box. Handles JSON with `stdout`/`stderr`, plain JSON, and raw text.
+
+```jsx
+import TerminalOutput from './TerminalOutput';
+
+<TerminalOutput response={response} style={{ maxHeight: '24em', overflowY: 'auto' }} />
+<TerminalOutput response={{ stdout: logText }} />  {/* force stdout rendering */}
+```
+
+## Capability Utilities
+
+**File:** `management-frontend/src/utils.js`
+
+```js
+import { stripCapabilityAttrs, parseCapabilityAttrs, fetchOnlineCapabilities } from '../utils';
+
+stripCapabilityAttrs('llm.qwen:7b[vision;tools]')  // → 'llm.qwen:7b'
+parseCapabilityAttrs('llm.qwen:7b[vision;tools]')  // → ['vision', 'tools']
+fetchOnlineCapabilities()                            // → Promise<string[]> (extended caps)
+```
+
+- `fetchOnlineCapabilities()` hits `/management/capabilities/list/online_ext` (requires mgmt token)
+- Extended attributes use bracket notation: `base.cap[attr1;attr2;key:value]`
+- Clients always submit tasks with **base capability only** (no brackets) — use `stripCapabilityAttrs()`
 
 ---
 
@@ -142,7 +235,7 @@ const data = await res.json();
 // data.result contains the executor's output
 ```
 
-### Non-Urgent with Polling
+### Non-Urgent with Polling (manual)
 
 ```js
 // Submit
@@ -155,13 +248,53 @@ const { id: { id, cap } } = await sub.json();
 
 // Poll every N ms until done
 const poll = await fetch(`/api/task/poll/${cap}/${id}`, {
-  method: 'GET',
+  method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ apiKey }),
 });
 const state = await poll.json();
 // state.status: 'pending' | 'running' | 'completed' | 'failed'
 // state.result: executor output when completed
+```
+
+### Non-Urgent with `useTaskPolling` hook (preferred)
+
+This is the standard pattern for async apps. The hook manages the polling interval, DevPanel logging, and cleanup automatically.
+
+```jsx
+const [currentTask, setCurrentTask] = useState(null);
+const [response, setResponse] = useState(null);
+const [log, setLog] = useState('');
+const [error, setError] = useState(null);
+const [isLoading, setIsLoading] = useState(false);
+const [pollingStatus, setPollingStatus] = useState('');
+
+useTaskPolling({
+  currentTask, apiKey, addDevEntry,
+  onResult: (data) => {
+    setIsLoading(false); setResponse(data.output); setPollingStatus(''); setCurrentTask(null);
+  },
+  onError: (msg) => {
+    setIsLoading(false); setError(msg); setPollingStatus(''); setCurrentTask(null);
+  },
+  onLog: setLog,
+  onStatus: (status) => setPollingStatus('Status: ' + status),
+});
+
+const handleSubmit = async () => {
+  setIsLoading(true); setResponse(null); setError(null); setLog('');
+  const body = { capability: 'my.cap', urgent: false, payload: myPayload, apiKey };
+  const res = await fetch('/api/task/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  addDevEntry?.({ label: 'Submit', method: 'POST', url: '/api/task/submit', request: body, response: data });
+  if (data.id?.id && data.id?.cap) {
+    setCurrentTask({ id: data.id.id, capability: data.id.cap });  // triggers polling
+  }
+};
 ```
 
 ---
