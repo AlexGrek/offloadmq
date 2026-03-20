@@ -10,6 +10,7 @@ import os
 import random
 import re
 from pathlib import Path
+from typing import Any
 
 from .comfyui import upload_image
 
@@ -62,7 +63,7 @@ def _find_workflows_dir() -> Path:
 WORKFLOWS_DIR = _find_workflows_dir()
 
 
-def load_workflow_template(workflow_name: str, task_type: str) -> tuple[dict, dict]:
+def load_workflow_template(workflow_name: str, task_type: str) -> tuple[dict[str, Any], dict[str, Any]]:
     """Load the workflow graph and its parameter mapping for the given task type.
 
     Returns:
@@ -104,7 +105,7 @@ def load_workflow_template(workflow_name: str, task_type: str) -> tuple[dict, di
 _KEEP_SENTINEL = "$keep"
 
 
-def inject_params(graph: dict, param_map: dict, values: dict) -> dict:
+def inject_params(graph: dict[str, Any], param_map: dict[str, Any], values: dict[str, Any]) -> dict[str, Any]:
     """Apply payload values into the workflow graph according to param_map.
 
     param_map format:
@@ -136,13 +137,13 @@ def inject_params(graph: dict, param_map: dict, values: dict) -> dict:
     return graph
 
 
-def build_injection_values(payload: dict, task_type: str, data_path: Path) -> dict:
+def build_injection_values(payload: dict[str, Any], task_type: str, data_path: Path) -> dict[str, Any]:
     """Flatten the normalised payload into a field → value dict ready for injection.
 
     File references (input_image, face_swap) are uploaded to ComfyUI here and
     replaced with the filename ComfyUI assigned them.
     """
-    values: dict = {}
+    values: dict[str, Any] = {}
 
     if prompt := payload.get("prompt"):
         values["prompt"] = prompt

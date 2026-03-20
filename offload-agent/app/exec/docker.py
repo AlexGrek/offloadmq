@@ -4,6 +4,7 @@ import threading
 import queue
 import time
 from pathlib import Path
+from typing import Any, Callable, IO
 
 from ..models import *
 from ..httphelpers import *
@@ -13,14 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 # Image allowlist patterns per capability
-IMAGE_PATTERNS = {
+IMAGE_PATTERNS: dict[str, Callable[[str], bool]] = {
     "docker.python-slim": lambda img: img.startswith("python:") and "-slim" in img,
     "docker.node": lambda img: img.startswith("node:"),
     "docker.any": lambda img: True,
 }
 
 
-def enqueue_output(out, q):
+def enqueue_output(out: IO[str], q: "queue.Queue[str]") -> None:
     """Read lines from a file-like object and enqueue them."""
     for line in iter(out.readline, ""):
         q.put(line)
@@ -28,7 +29,7 @@ def enqueue_output(out, q):
 
 
 def execute_docker_run(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict, data: Path
+    http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
     """Execute a Docker container with streaming output and timeout support.
 
@@ -111,7 +112,7 @@ def execute_docker_run(
         )
 
         # Start timeout timer
-        def on_timeout():
+        def on_timeout() -> None:
             try:
                 subprocess.run(["docker", "kill", container_name], timeout=5, capture_output=True)
             except Exception as e:

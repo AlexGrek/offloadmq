@@ -1,5 +1,7 @@
 import typer
+import requests
 from pathlib import Path
+from typing import Optional, List
 from .ollama import *
 from .config import *
 from .systeminfo import *
@@ -15,12 +17,12 @@ app.add_typer(custom_app, name="custom")
 
 
 @app.command("sysinfo", help="Display system information")
-def cli_sysinfo():
+def cli_sysinfo() -> None:
     print_system_info(collect_system_info())
 
 
 @app.command("ollama", help="Display detected Ollama models")
-def cli_ollama():
+def cli_ollama() -> None:
     caps = get_ollama_models()
     if caps:
         typer.echo("Detected Ollama capabilities:")
@@ -41,7 +43,7 @@ def cli_register(
         ["debug.echo", "shell.bash", "shellcmd.bash", "tts.kokoro"], help="Agent capabilities"
     ),
     capacity: int = typer.Option(1, help="Concurrent task capacity"),
-):
+) -> None:
     cfg = load_config()
     server = server or cfg.get("server")
     api_key = key or cfg.get("apiKey")
@@ -110,7 +112,7 @@ def cli_serve(
     ws: bool = typer.Option(
         False, "--ws", help="Use WebSocket connection instead of polling"
     ),
-):
+) -> None:
     cfg = load_config()
     server = server or cfg.get("server")
     if not server:
@@ -155,7 +157,7 @@ def cli_serve(
 
 
 @custom_app.command("list", help="List all discovered custom capabilities")
-def cli_custom_list():
+def cli_custom_list() -> None:
     from .custom_caps import discover_custom_caps, _find_custom_caps_dir
 
     caps_dir = _find_custom_caps_dir()
@@ -180,7 +182,7 @@ def cli_custom_list():
 @custom_app.command("import", help="Import a custom capability YAML file")
 def cli_custom_import(
     file: Path = typer.Argument(..., help="Path to custom capability YAML file to import"),
-):
+) -> None:
     from .custom_caps import load_custom_cap, _find_custom_caps_dir
     import shutil
 
@@ -213,7 +215,7 @@ def cli_custom_import(
 @custom_app.command("validate", help="Validate a custom capability YAML file without importing")
 def cli_custom_validate(
     file: Path = typer.Argument(..., help="Path to custom capability YAML file to validate"),
-):
+) -> None:
     from .custom_caps import load_custom_cap
 
     if not file.is_file():
@@ -248,7 +250,7 @@ def cli_custom_validate(
 @custom_app.command("export", help="Export a custom capability to YAML on stdout")
 def cli_custom_export(
     name: str = typer.Argument(..., help="Custom cap name to export"),
-):
+) -> None:
     from .custom_caps import get_custom_cap
 
     cap = get_custom_cap(f"custom.{name}")

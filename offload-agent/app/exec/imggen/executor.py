@@ -1,6 +1,7 @@
 """imggen task executor — entry point for ComfyUI-backed image/video generation."""
 
 from pathlib import Path
+from typing import Any
 
 import requests
 
@@ -16,7 +17,7 @@ def execute_imggen_comfyui(
     http: HttpClient,
     task_id: TaskId,
     capability: str,
-    payload: dict,
+    payload: dict[str, Any],
     data_path: Path,
     output_bucket: str | None = None,
 ) -> bool:

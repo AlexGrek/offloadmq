@@ -1,11 +1,12 @@
 import os
 from pathlib import Path
 import platform
+from typing import Any
 from ..models import TaskId
 from .updn import FileReference
 
 
-def pick_directory(task_id: TaskId):
+def pick_directory(task_id: TaskId) -> Path:
     """
     Returns path to a new directory for the given task_id.
     Creates all necessary directories if they don't exist.
@@ -41,7 +42,7 @@ def pick_directory(task_id: TaskId):
     return dir_path
 
 
-def parse_file_reference(raw: dict) -> FileReference:
+def parse_file_reference(raw: dict[str, Any]) -> FileReference:
     """
     Convert a raw camelCase payload dict into a FileReference instance.
     Unknown fields are ignored gracefully.

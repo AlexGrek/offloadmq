@@ -4,6 +4,7 @@ Downloads output files from ComfyUI and uploads them to the agent's
 output bucket on the offload server.
 """
 
+from typing import Any
 from urllib.parse import quote
 
 import requests
@@ -27,10 +28,10 @@ def upload_output_file(
         timeout=300,
     )
     resp.raise_for_status()
-    return resp.json()["file_uid"]
+    return str(resp.json()["file_uid"])
 
 
-def collect_images(history_entry: dict, http: HttpClient, bucket_uid: str) -> list[dict]:
+def collect_images(history_entry: dict[str, Any], http: HttpClient, bucket_uid: str) -> list[dict[str, Any]]:
     """Download all output images from a history entry and upload them to the bucket."""
     images = []
     for node_output in history_entry.get("outputs", {}).values():
@@ -47,7 +48,7 @@ def collect_images(history_entry: dict, http: HttpClient, bucket_uid: str) -> li
     return images
 
 
-def collect_video(history_entry: dict, http: HttpClient, bucket_uid: str) -> dict | None:
+def collect_video(history_entry: dict[str, Any], http: HttpClient, bucket_uid: str) -> dict[str, Any] | None:
     """Download the first output video/gif from a history entry and upload it to the bucket."""
     for node_output in history_entry.get("outputs", {}).values():
         for vid in node_output.get("videos", []) or node_output.get("gifs", []):
@@ -64,13 +65,13 @@ def collect_video(history_entry: dict, http: HttpClient, bucket_uid: str) -> dic
 
 
 def build_output(
-    history_entry: dict,
+    history_entry: dict[str, Any],
     task_type: str,
     prompt_id: str,
     seed: int | None,
     http: HttpClient,
     bucket_uid: str,
-) -> dict:
+) -> dict[str, Any]:
     """Collect all outputs from a completed ComfyUI job and return a result dict."""
     base: dict[str, str | int] = {"workflow": task_type, "prompt_id": prompt_id, "output_bucket": bucket_uid}
     if seed is not None:

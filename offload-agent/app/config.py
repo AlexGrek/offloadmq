@@ -18,7 +18,8 @@ def load_config() -> Dict[str, Any]:
     p = Path(CONFIG_FILE)
     if p.exists():
         try:
-            return json.loads(p.read_text())
+            result: Dict[str, Any] = json.loads(p.read_text())
+            return result
         except (json.JSONDecodeError, OSError) as e:
             typer.echo(f"Warning: Could not load config file: {e}")
     return {}

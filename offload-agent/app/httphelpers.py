@@ -44,14 +44,16 @@ def register_agent(
     resp = requests.post(url, json=registration_data, timeout=30)
     print(resp.content)
     resp.raise_for_status()
-    return resp.json()
+    result: Dict[str, Any] = resp.json()
+    return result
 
 
 def authenticate_agent(server: str, agent_id: str, key: str) -> Dict[str, Any]:
     url = server.rstrip("/") + "/agent/auth"
     resp = requests.post(url, json={"agentId": agent_id, "key": key}, timeout=30)
     resp.raise_for_status()
-    return resp.json()
+    auth_result: Dict[str, Any] = resp.json()
+    return auth_result
 
 
 def test_ping(server: str, jwt_token: str) -> bool:

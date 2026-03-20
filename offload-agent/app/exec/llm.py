@@ -1,5 +1,8 @@
 import base64
+import json
 import logging
+import requests
+import time
 from typing import Any
 from ..models import *
 from ..httphelpers import *
@@ -32,7 +35,7 @@ def _collect_image_attachments(data_path: Path) -> list[str]:
 
 
 def execute_llm_query(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict, data: Path
+    http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
     """Send LLM request to local Ollama REST API (chat or generate style).
 
@@ -167,7 +170,7 @@ def execute_llm_query(
 
             # Construct the final response to match the non-streaming format
             if final_data:
-                final_msg: dict = {"role": "assistant", "content": full_response_text}
+                final_msg: dict[str, Any] = {"role": "assistant", "content": full_response_text}
                 if tool_calls:
                     final_msg["tool_calls"] = tool_calls
                 final_response = {

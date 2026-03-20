@@ -8,6 +8,7 @@ Covers all direct calls to the ComfyUI REST API:
 """
 
 import time
+from typing import Any
 
 import requests
 from pathlib import Path
@@ -33,20 +34,20 @@ def upload_image(local_path: Path) -> str:
             timeout=60,
         )
     r.raise_for_status()
-    return r.json()["name"]
+    return str(r.json()["name"])
 
 
-def queue_prompt(workflow_graph: dict) -> str:
+def queue_prompt(workflow_graph: dict[str, Any]) -> str:
     """Submit a workflow graph to ComfyUI and return the prompt_id."""
     r = requests.post(f"{comfyui_url()}/prompt", json={"prompt": workflow_graph}, timeout=30)
     r.raise_for_status()
-    prompt_id = r.json().get("prompt_id")
+    prompt_id: str = str(r.json().get("prompt_id") or "")
     if not prompt_id:
         raise ValueError(f"ComfyUI did not return a prompt_id: {r.json()}")
     return prompt_id
 
 
-def wait_for_completion(prompt_id: str) -> dict:
+def wait_for_completion(prompt_id: str) -> dict[str, Any]:
     """Poll /history/{prompt_id} until the job finishes. Returns the history entry."""
     url = f"{comfyui_url()}/history/{prompt_id}"
     for _ in range(_MAX_POLL_ATTEMPTS):
@@ -70,7 +71,8 @@ def wait_for_completion(prompt_id: str) -> dict:
                         f"ComfyUI execution failed in {node_type}: {exception_message}"
                     )
                 raise RuntimeError("ComfyUI execution failed (no error details returned)")
-            return entry
+            result: dict[str, Any] = entry
+            return result
         time.sleep(_POLL_INTERVAL_SEC)
     raise TimeoutError(f"ComfyUI job {prompt_id} did not complete within the allotted time")
 

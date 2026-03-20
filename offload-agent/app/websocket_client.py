@@ -5,7 +5,8 @@ import json
 import logging
 import threading
 import time
-from urllib.parse import urlparse, urlencode
+from typing import Any
+from urllib.parse import urlparse
 
 import websocket
 
@@ -39,7 +40,7 @@ class AgentWebSocketClient:
         self.should_run = True
         self._thread: threading.Thread | None = None
 
-    def on_message(self, ws, message: str):
+    def on_message(self, ws: Any, message: str) -> None:
         """Handle incoming WebSocket messages."""
         try:
             data = json.loads(message)
@@ -58,21 +59,21 @@ class AgentWebSocketClient:
         except json.JSONDecodeError:
             logger.warning(f"Received non-JSON message: {message}")
 
-    def on_error(self, ws, error):
+    def on_error(self, ws: Any, error: Any) -> None:
         """Handle WebSocket errors."""
         logger.error(f"WebSocket error: {error}")
 
-    def on_close(self, ws, close_status_code, close_msg):
+    def on_close(self, ws: Any, close_status_code: int | None, close_msg: str | None) -> None:
         """Handle WebSocket connection close."""
         self.connected = False
         logger.info(f"WebSocket connection closed (code={close_status_code}, msg={close_msg})")
 
-    def on_open(self, ws):
+    def on_open(self, ws: Any) -> None:
         """Handle WebSocket connection open."""
         self.connected = True
         logger.info("WebSocket connection established")
 
-    def connect(self):
+    def connect(self) -> None:
         """Establish WebSocket connection."""
         logger.info(f"Connecting to WebSocket: {self.ws_url.split('?')[0]}...")
 
@@ -88,11 +89,12 @@ class AgentWebSocketClient:
         self._thread = threading.Thread(target=self._run_forever, daemon=True)
         self._thread.start()
 
-    def _run_forever(self):
+    def _run_forever(self) -> None:
         """Run the WebSocket connection with auto-reconnect."""
         while self.should_run:
             try:
-                self.ws.run_forever(ping_interval=30, ping_timeout=10)
+                if self.ws is not None:
+                    self.ws.run_forever(ping_interval=30, ping_timeout=10)
             except Exception as e:
                 logger.error(f"WebSocket run error: {e}")
 
@@ -100,7 +102,7 @@ class AgentWebSocketClient:
                 logger.info("Reconnecting in 5 seconds...")
                 time.sleep(5)
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Close the WebSocket connection."""
         self.should_run = False
         if self.ws:
@@ -109,7 +111,7 @@ class AgentWebSocketClient:
             self._thread.join(timeout=5)
         logger.info("WebSocket client disconnected")
 
-    def send(self, data: dict):
+    def send(self, data: dict[str, Any]) -> None:
         """Send a message to the server."""
         if self.ws and self.connected:
             self.ws.send(json.dumps(data))

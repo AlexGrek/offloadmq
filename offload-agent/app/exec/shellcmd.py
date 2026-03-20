@@ -1,4 +1,6 @@
 import logging
+import subprocess
+from typing import Any
 from ..models import *
 from ..httphelpers import *
 from .helpers import *
@@ -9,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def execute_shellcmd_bash(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict, data: Path
+    http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
     logger.info(
         f"Executing shellcmd.bash for task {task_id.dict()} with payload: {payload} in {data}"

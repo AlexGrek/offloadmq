@@ -20,7 +20,7 @@ class FileReference:
         http_login: Optional[str] = None,
         http_password: Optional[str] = None,
         http_auth_header: Optional[str] = None,
-        custom_header: Optional[dict] = None,
+        custom_header: Optional[dict[str, str]] = None,
         custom_auth: Optional[str] = None,
     ):
         self.path = path
@@ -39,7 +39,7 @@ class FileReference:
 # Helper functions
 # ----------------------------
 
-def parse_s3_url(s3_url: str) -> tuple:
+def parse_s3_url(s3_url: str) -> tuple[str, str, str | None]:
     """
     Parse S3 URL into (bucket, key, endpoint).
     Supports both s3:// URLs and HTTP(S) URLs for custom endpoints.
@@ -125,7 +125,7 @@ def download_http_file(
     auth_user: Optional[str] = None,
     auth_password: Optional[str] = None,
     auth_header: Optional[str] = None,
-    custom_headers: Optional[dict] = None,
+    custom_headers: Optional[dict[str, str]] = None,
     custom_auth: Optional[str] = None,
     verify_ssl: bool = True,
 ) -> None:
@@ -170,7 +170,7 @@ def download_http_post_file(
     auth_user: Optional[str] = None,
     auth_password: Optional[str] = None,
     auth_header: Optional[str] = None,
-    custom_headers: Optional[dict] = None,
+    custom_headers: Optional[dict[str, str]] = None,
     custom_auth: Optional[str] = None,
     verify_ssl: bool = True,
 ) -> None:
@@ -214,7 +214,7 @@ def download_http_request(
     auth_user: Optional[str] = None,
     auth_password: Optional[str] = None,
     auth_header: Optional[str] = None,
-    custom_headers: Optional[dict] = None,
+    custom_headers: Optional[dict[str, str]] = None,
     custom_auth: Optional[str] = None,
     verify_ssl: bool = True,
 ) -> None:
@@ -327,7 +327,7 @@ def upload_http_file(
     auth_user: Optional[str] = None,
     auth_password: Optional[str] = None,
     auth_header: Optional[str] = None,
-    custom_headers: Optional[dict] = None,
+    custom_headers: Optional[dict[str, str]] = None,
     custom_auth: Optional[str] = None,
     verify_ssl: bool = True,
 ) -> None:

@@ -2,6 +2,8 @@ import logging
 import threading
 import time
 import requests
+from pathlib import Path
+from typing import Any, Callable
 from colorlog import ColoredFormatter
 
 from .ollama import *
@@ -58,14 +60,15 @@ class AuthError(Exception):
     pass
 
 
-def poll_task(http: HttpClient) -> dict | None:
+def poll_task(http: HttpClient) -> dict[str, Any] | None:
     """Poll server for a new task, return task_info or None."""
     try:
         resp = http.get("private", "agent", "task", "poll", timeout=60)
         if resp.status_code == 403:
             raise AuthError("403 Forbidden — JWT rejected or agent deregistered")
         resp.raise_for_status()
-        return resp.json()
+        task_data: dict[str, Any] = resp.json()
+        return task_data
     except AuthError:
         raise
     except requests.Timeout:
@@ -91,7 +94,7 @@ def _reauth_or_reregister(server_url: str) -> str | None:
     if agent_id and key:
         try:
             auth = authenticate_agent(server_url, agent_id, key)
-            jwt = auth["token"]
+            jwt: str = str(auth["token"])
             cfg["jwtToken"] = jwt
             save_config(cfg)
             logger.info("Re-authentication successful.")
@@ -110,17 +113,17 @@ def _reauth_or_reregister(server_url: str) -> str | None:
         reg = register_agent(server_url, caps, tier, capacity, api_key)
         cfg.update({"agentId": reg["agentId"], "key": reg["key"]})
         auth = authenticate_agent(server_url, reg["agentId"], reg["key"])
-        jwt = auth["token"]
-        cfg["jwtToken"] = jwt
+        new_jwt: str = str(auth["token"])
+        cfg["jwtToken"] = new_jwt
         save_config(cfg)
         logger.info("Re-registration successful.")
-        return jwt
+        return new_jwt
     except Exception as e:
         logger.error(f"Re-registration failed: {e}")
         return None
 
 
-def take_task(http: HttpClient, raw_id: str, raw_cap: str) -> dict | None:
+def take_task(http: HttpClient, raw_id: str, raw_cap: str) -> dict[str, Any] | None:
     """Take a task from the server and return full task object."""
     try:
         q_cap = qpart(raw_cap)
@@ -134,14 +137,15 @@ def take_task(http: HttpClient, raw_id: str, raw_cap: str) -> dict | None:
             timeout=60,
         )
         resp.raise_for_status()
-        return resp.json()
+        taken: dict[str, Any] = resp.json()
+        return taken
 
     except Exception as e:
         logger.error(f"Failed to take task {raw_id}: {e}")
         return None
 
 
-def download_required_files(http, task_id: TaskId, capability: str, fetch_files: list, data_path: Path) -> bool:
+def download_required_files(http: HttpClient, task_id: TaskId, capability: str, fetch_files: list[Any], data_path: Path) -> bool:
     """Download associated file references. Returns True if succeeded."""
     for fileref in fetch_files:
         try:
@@ -157,7 +161,7 @@ def download_required_files(http, task_id: TaskId, capability: str, fetch_files:
     return True
 
 
-def download_bucket_files(http: HttpClient, task_id: TaskId, capability: str, file_buckets: list, data_path: Path) -> bool:
+def download_bucket_files(http: HttpClient, task_id: TaskId, capability: str, file_buckets: list[Any], data_path: Path) -> bool:
     """Download all files from the listed storage buckets. Returns True on success."""
     for bucket_uid in file_buckets:
         try:
@@ -201,7 +205,7 @@ def download_bucket_files(http: HttpClient, task_id: TaskId, capability: str, fi
     return True
 
 
-def route_executor(cap: str):
+def route_executor(cap: str) -> Callable[..., bool] | None:
     """Pick function based on capability string."""
     if cap.startswith("llm."):
         return execute_llm_query
@@ -223,7 +227,7 @@ def route_executor(cap: str):
     }.get(cap)
 
 
-def handle_task(http: HttpClient, task: dict):
+def handle_task(http: HttpClient, task: dict[str, Any]) -> None:
     """Parse and run a single task from the server."""
     task_id = TaskId(
         id=str(task.get("id", {}).get("id", "")),

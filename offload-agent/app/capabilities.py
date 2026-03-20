@@ -8,6 +8,7 @@ all checks and get the final list of capability strings to register.
 import logging
 import shutil
 import sys
+from pathlib import Path
 from typing import Callable, List, NamedTuple
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ def check_comfyui() -> CapResult:
     )
 
 
-def _discover_workflow_caps(workflows_dir) -> list[str]:
+def _discover_workflow_caps(workflows_dir: Path | str) -> list[str]:
     """Scan workflows_dir and return one extended capability string per workflow.
 
     Skips entries that are not directories or whose names contain path-unsafe characters
@@ -256,7 +257,7 @@ _CHECKS: List[Callable[[], CapResult]] = [
 ]
 
 
-def detect_capabilities(log_fn=None) -> List[str]:
+def detect_capabilities(log_fn: Callable[[str], None] | None = None) -> List[str]:
     """Run all capability checks, log results, and return available capability strings.
 
     Args:

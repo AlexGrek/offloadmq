@@ -130,14 +130,14 @@ def _execute_shell(
                 logger.warning(f"Custom cap '{cap.name}' timed out after {cap.timeout}s, killing...")
                 try:
                     if os.name != "nt":
-                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)  # type: ignore[attr-defined]
+                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
                     else:
                         process.terminate()
                     process.wait(timeout=5)
                 except Exception:
                     try:
                         if os.name != "nt":
-                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)  # type: ignore[attr-defined]
+                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                         else:
                             process.kill()
                     except Exception:
