@@ -38,34 +38,35 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     }, [handleFile]);
 
     const showResult = useCallback((data) => {
-        if (data.output) {
-            const msg = data.output?.message;
+        // Urgent tasks return AssignedTask with payload in `result`;
+        // non-urgent poll returns a shaped object with `output`.
+        const payload = data.output ?? data.result;
+        const s = data.status;
+        const taskStatus = (typeof s === 'string' ? s : Object.keys(s)[0]).toLowerCase();
+
+        if (taskStatus === 'failed') {
+            // Best-effort error message extraction
+            const errMsg =
+                payload?.error ||                          // agent failure_report puts error here
+                (Array.isArray(s?.failure) ? s.failure[0] : null) ||   // Failure(String, f64) wire
+                (Array.isArray(s?.failed)  ? s.failed[0]  : null) ||
+                'Task failed';
+            setResult(errMsg);
+            status('Task failed', 'err');
+        } else if (payload) {
+            const msg = payload.message;
             if (msg?.content) {
                 setResult(msg.content);
                 status('Analysis complete', 'ok');
             } else {
-                setResult(JSON.stringify(data.output, null, 2));
+                setResult(JSON.stringify(payload, null, 2));
                 status('Task completed', 'ok');
             }
-        } else if (data.status) {
-            const s = data.status;
-            const taskStatus = typeof s === 'string' ? s : Object.keys(s)[0];
-            if (taskStatus === 'failed') {
-                let failMsg = 'Task failed';
-                if (typeof s === 'object') {
-                    if (s.failed && Array.isArray(s.failed) && s.failed.length > 0) {
-                        failMsg = s.failed[0]; // Failure(String, f64) serializes as ["message", time]
-                    } else if (s.failed && typeof s.failed === 'string') {
-                        failMsg = s.failed;
-                    }
-                }
-                setResult(failMsg);
-                status('Task failed', 'err');
-            } else {
-                setResult(JSON.stringify(data, null, 2));
-                status('Completed', 'ok');
-            }
+        } else {
+            setResult(JSON.stringify(data, null, 2));
+            status('Completed', 'ok');
         }
+
         if (data.log) setLogText(data.log);
     }, [status]);
 
@@ -179,8 +180,8 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                     }),
                     _label: 'Submit task',
                 }, addDevEntry);
-                const taskId = submitResp.id;
-                const taskCap = submitResp.capability;
+                const taskId = submitResp.id.id;
+                const taskCap = submitResp.id.cap;
                 status(`Task submitted: ${taskId}. Polling...`);
                 taskResult = await pollTask(taskCap, taskId);
             }
