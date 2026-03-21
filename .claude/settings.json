@@ -119,12 +119,17 @@
       "Bash(make build:*)",
       "Bash(dist/offload-agent --help)",
       "Bash(dist/offload-agent cli:*)",
-      "Bash(python -m mypy app/exec/llm.py --strict)"
+      "Bash(python -m mypy app/exec/llm.py --strict)",
+      "Bash(python offload-agent.py cli register --server https://offloadmq.alexgr.space --key 607255d44ec303f6329daa41331ecdd73e38f16de248313ad2fafc352a4c8cfe)",
+      "Bash(/Users/vedmedik/dev/offloadmq/offload-agent/venv/bin/python --version)",
+      "Bash(launchctl load:*)",
+      "Bash(launchctl list:*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
       "/private/tmp/ollama-src",
-      "/Users/vedmedik/.offload-agent/skills"
+      "/Users/vedmedik/.offload-agent/skills",
+      "/Users/vedmedik/Library/LaunchAgents"
     ]
   }
 }
