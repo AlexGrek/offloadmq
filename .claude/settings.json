@@ -118,7 +118,8 @@
       "Bash(make -n build)",
       "Bash(make build:*)",
       "Bash(dist/offload-agent --help)",
-      "Bash(dist/offload-agent cli:*)"
+      "Bash(dist/offload-agent cli:*)",
+      "Bash(python -m mypy app/exec/llm.py --strict)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

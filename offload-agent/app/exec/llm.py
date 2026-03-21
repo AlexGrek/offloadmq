@@ -50,6 +50,16 @@ def execute_llm_query(
         if isinstance(payload, str):
             payload = {"messages": [{"role": "user", "content": payload}]}
 
+        # Convert generate-style payload (prompt/system) to chat messages
+        if "messages" not in payload and ("prompt" in payload or "system" in payload):
+            msgs: list[dict[str, Any]] = []
+            if payload.get("system"):
+                msgs.append({"role": "system", "content": payload["system"]})
+            if payload.get("prompt"):
+                msgs.append({"role": "user", "content": payload["prompt"]})
+            payload = {k: v for k, v in payload.items() if k not in ("prompt", "system")}
+            payload["messages"] = msgs
+
         # Convert OpenAI-style messages to Ollama format (handles image_url content parts)
         converted_messages = []
         for msg in payload.get("messages", []):
