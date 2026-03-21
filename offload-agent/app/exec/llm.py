@@ -200,7 +200,7 @@ def execute_llm_query(
         else:
             # Original non-streaming logic
             logger.info("Streaming is not enabled. Waiting for full response...")
-            r = requests.post(OLLAMA_API_URL, json=api_payload, timeout=300)
+            r = requests.post(OLLAMA_API_URL, json={**api_payload, "stream": False}, timeout=300)
             logger.info(f"Ollama response status: {r.status_code}")
             logger.info(f"Ollama response body: {r.text[:2000]}")
             r.raise_for_status()
