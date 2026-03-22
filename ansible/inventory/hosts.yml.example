@@ -35,3 +35,22 @@ all:
             - debug.echo
             - shell.bash
             - shellcmd.bash
+
+    # Example: agents with custom skills deployed from the controller
+    # skill_agents:
+    #   hosts:
+    #     skill-node-01:
+    #       offload_agent_tier: 5
+    #       offload_agent_capabilities:
+    #         - debug.echo
+    #         - shell.bash
+    #       # Deploy specific skill files:
+    #       offload_agent_skills:
+    #         - skills/deploy-app.yaml
+    #         - skills/db-backup.yaml
+    #     skill-node-02:
+    #       offload_agent_tier: 5
+    #       offload_agent_capabilities:
+    #         - debug.echo
+    #       # Deploy all skills from a directory:
+    #       offload_agent_skills_dir: skills/node02/

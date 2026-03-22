@@ -1,0 +1,79 @@
+---
+# Collect skill files from offload_agent_skills_dir (all *.yaml / *.yml in that dir)
+- name: Gather skills from offload_agent_skills_dir
+  set_fact:
+    _oa_dir_skill_files: >-
+      {{
+        lookup('fileglob', offload_agent_skills_dir ~ '/*.yaml', wantlist=True) +
+        lookup('fileglob', offload_agent_skills_dir ~ '/*.yml',  wantlist=True)
+      }}
+  when: offload_agent_skills_dir | length > 0
+
+- name: Combine all skill file paths
+  set_fact:
+    _oa_all_skill_files: "{{ offload_agent_skills + (_oa_dir_skill_files | default([])) }}"
+
+- name: Ensure skills directory exists on remote
+  file:
+    path: "{{ offload_agent_skills_path }}"
+    state: directory
+    owner: "{{ offload_agent_user }}"
+    mode: "0755"
+  when: _oa_all_skill_files | length > 0
+
+- name: Deploy skill YAML files to agent
+  copy:
+    src: "{{ item }}"
+    dest: "{{ offload_agent_skills_path }}/{{ item | basename }}"
+    owner: "{{ offload_agent_user }}"
+    mode: "0644"
+  loop: "{{ _oa_all_skill_files }}"
+  notify: restart offload-agent
+
+# Parse each skill YAML on the controller and build the full capability string
+# (e.g. custom.deploy-app[branch;env:string;dry_run:bool]) so that registration
+# exposes the correct schema.  Users can override individual caps by listing them
+# explicitly in offload_agent_capabilities — those take precedence.
+- name: Build capability strings from skill files
+  set_fact:
+    _oa_skill_caps: >-
+      {%- set caps = [] -%}
+      {%- set type_map = {
+            'string': '', 'int': ':int', 'integer': ':int',
+            'float': ':float', 'number': ':float', 'double': ':float',
+            'bool': ':bool', 'boolean': ':bool',
+            'text': ':text', 'json': ':json', 'object': ':json'
+          } -%}
+      {%- for path in _oa_all_skill_files -%}
+        {%- set y = lookup('file', path) | from_yaml -%}
+        {%- set attrs = [] -%}
+        {%- for p in y.params | default([]) -%}
+          {%- set _ = attrs.append(p.name ~ (type_map[p.type | default('string') | lower] | default(''))) -%}
+        {%- endfor -%}
+        {%- set base = 'custom.' ~ y.name -%}
+        {%- if attrs | length > 0 -%}
+          {%- set _ = caps.append(base ~ '[' ~ (attrs | join(';')) ~ ']') -%}
+        {%- else -%}
+          {%- set _ = caps.append(base) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ caps }}
+  when: _oa_all_skill_files | length > 0
+
+# Merge skill-derived caps into offload_agent_capabilities.
+# If a custom.<name> entry is already present (with or without brackets) it is
+# kept as-is, letting the operator override the schema declaration manually.
+- name: Merge skill capabilities into registration list
+  set_fact:
+    offload_agent_capabilities: >-
+      {%- set existing_bases = offload_agent_capabilities
+            | map('regex_replace', '\[.*\]$', '') | list -%}
+      {%- set to_add = [] -%}
+      {%- for cap in _oa_skill_caps -%}
+        {%- set base = cap | regex_replace('\[.*\]$', '') -%}
+        {%- if base not in existing_bases -%}
+          {%- set _ = to_add.append(cap) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ offload_agent_capabilities + to_add }}
+  when: _oa_skill_caps | default([]) | length > 0

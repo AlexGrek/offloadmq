@@ -2,6 +2,9 @@
 - name: Install offload-agent binary
   import_tasks: install.yml
 
+- name: Deploy custom skills
+  import_tasks: skills.yml
+
 - name: Register agent with server
   import_tasks: register.yml
 

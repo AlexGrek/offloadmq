@@ -28,6 +28,25 @@ offload_agent_user: "{{ ansible_user_id }}"
 offload_agent_workdir: "/home/{{ offload_agent_user }}"
 offload_agent_use_websocket: false  # true → cli serve --ws
 
+# ── Custom Skills (custom capabilities) ───────────────────────────────────────
+# List of skill YAML files on the Ansible controller to deploy to the agent.
+# Each file defines a custom.* capability (shell script or LLM prompt).
+# Capability strings are derived automatically and merged into registration.
+#
+# Example:
+#   offload_agent_skills:
+#     - skills/deploy-app.yaml
+#     - skills/summarize.yaml
+offload_agent_skills: []
+
+# Deploy all *.yaml / *.yml files from this local directory (on the controller).
+# Merged with offload_agent_skills; leave empty to disable.
+offload_agent_skills_dir: ""
+
+# Remote path where skill YAML files are stored.
+# Must match OFFLOAD_CUSTOM_CAPS_DIR or the agent's default (~/.offload-agent/custom/).
+offload_agent_skills_path: "{{ offload_agent_workdir }}/.offload-agent/custom"
+
 # ── Control ───────────────────────────────────────────────────────────────────
 offload_agent_force_register: false # set to true to re-register even if config exists
 offload_agent_service_state: started # started | stopped | restarted

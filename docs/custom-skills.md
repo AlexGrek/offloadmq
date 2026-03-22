@@ -137,10 +137,11 @@ offload-agent skills export skill-name
 
 ### File Storage
 
-Skills stored in `~/.offload-agent/skills/` by default (or `$OFFLOAD_SKILLS_DIR` env var).
+Skills stored in `~/.offload-agent/custom/` by default (or `$OFFLOAD_CUSTOM_CAPS_DIR` env var).
+The legacy path `~/.offload-agent/skills/` is still recognised for backward compatibility.
 
 ```
-~/.offload-agent/skills/
+~/.offload-agent/custom/
   ├── deploy-app.yaml
   ├── summarize.yaml
   └── ...
@@ -322,8 +323,9 @@ timeout: 180
 3. Rescan in web UI: **Capabilities** tab → **Rescan**
 4. Check skills directory:
    ```bash
-   echo $OFFLOAD_SKILLS_DIR  # if set
-   ls -la ~/.offload-agent/skills/
+   echo $OFFLOAD_CUSTOM_CAPS_DIR  # if set
+   ls -la ~/.offload-agent/custom/
+   ls -la ~/.offload-agent/skills/  # legacy location
    ```
 
 ### Shell Skill Timeout

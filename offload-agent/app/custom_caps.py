@@ -282,23 +282,30 @@ def _find_custom_caps_dir() -> Path:
 
     Priority:
     1. Environment variable OFFLOAD_CUSTOM_CAPS_DIR
-    2. ~/.offload-agent/skills (persistent default; directory name kept for backward compatibility)
-    3. CWD/skills (explicit local setup)
+    2. ~/.offload-agent/custom/ (canonical default)
+    3. ~/.offload-agent/skills/ (backward compatibility — old name)
+    4. CWD/custom (explicit local setup)
     """
     if env_dir := os.getenv("OFFLOAD_CUSTOM_CAPS_DIR"):
         env_path = Path(env_dir)
         if env_path.is_dir():
             return env_path
 
-    home_dir = Path.home() / ".offload-agent" / "skills"
+    home_dir = Path.home() / ".offload-agent" / "custom"
     if home_dir.is_dir():
         return home_dir
 
-    cwd_dir = Path.cwd() / "skills"
+    # Backward compatibility: use the old 'skills' directory if it exists
+    legacy_dir = Path.home() / ".offload-agent" / "skills"
+    if legacy_dir.is_dir():
+        logger.debug("Using legacy skills directory %s; consider renaming to %s", legacy_dir, home_dir)
+        return legacy_dir
+
+    cwd_dir = Path.cwd() / "custom"
     if cwd_dir.is_dir():
         return cwd_dir
 
-    # Create the persistent home directory
+    # Create the canonical home directory
     home_dir.mkdir(parents=True, exist_ok=True)
     return home_dir
 
