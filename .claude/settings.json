@@ -140,7 +140,8 @@
       "Bash(kubectl logs:*)",
       "Bash(kubectl rollout:*)",
       "Bash(tee /tmp/deploy.log)",
-      "Bash(find /Users/vedmedik/dev/offloadmq/management-frontend -type f -name *test* -o -name *api*)"
+      "Bash(find /Users/vedmedik/dev/offloadmq/management-frontend -type f -name *test* -o -name *api*)",
+      "Bash(ls /Users/vedmedik/dev/offloadmq/management-frontend/src/components/ErrorBoundary*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

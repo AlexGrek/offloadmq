@@ -1,4 +1,5 @@
 import React, { useEffect, useState, Suspense } from "react";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { BrowserRouter as Router, Routes, Route, NavLink } from "react-router-dom";
 import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
@@ -135,8 +136,10 @@ const tokenMissing = !(localStorage.getItem(TOKEN_KEY) || "");
 // ----- Main App with Router -----
 export default function App() {
   return (
-    <Router basename="/ui">
-      <AppLayout />
-    </Router>
+    <ErrorBoundary>
+      <Router basename="/ui">
+        <AppLayout />
+      </Router>
+    </ErrorBoundary>
   );
 }
