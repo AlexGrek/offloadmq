@@ -80,7 +80,29 @@ pre-pull-images:
 		--set imagePullPolicy.preLoadImages=true \
 		-f $(SECRETS_FILE) \
 		| kubectl apply -f -
-	@echo "✓ Image pull job dispatched (running in background)"
+	@$(MAKE) wait-for-image-pull
+
+# Wait for image pull job to complete (with proper cleanup handling)
+wait-for-image-pull:
+	@job_name="offloadmq-image-pull-$(TAG)"; \
+	timeout=120; \
+	elapsed=0; \
+	while [ $$elapsed -lt $$timeout ]; do \
+		sleep 5; \
+		elapsed=$$((elapsed + 5)); \
+		if kubectl wait --for=condition=Complete job/$$job_name -n $(NAMESPACE) --timeout=5s 2>/dev/null; then \
+			echo "✓ Image pull job completed"; \
+			kubectl delete job $$job_name -n $(NAMESPACE) --ignore-not-found=true 2>/dev/null; \
+			exit 0; \
+		fi; \
+		if ! kubectl get job $$job_name -n $(NAMESPACE) >/dev/null 2>&1; then \
+			echo "✓ Image pull job already completed and cleaned up"; \
+			exit 0; \
+		fi; \
+		echo "Pulling images... ($$elapsed/$${timeout}s)"; \
+	done; \
+	echo "⚠ Image pull timeout ($$timeout exceeded), proceeding anyway"; \
+	exit 0
 
 # Upgrade Helm release
 upgrade:
