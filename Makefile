@@ -83,10 +83,10 @@ pre-pull-images:
 	@echo "Waiting for image pull job to complete..."
 	@$(MAKE) wait-for-image-pull
 
-# Wait for image pull job to complete
+# Wait for image pull job to complete (timeout: some minutes)
 wait-for-image-pull:
 	@job_name="offloadmq-image-pull-$(TAG)"; \
-	timeout=300; \
+	timeout=500; \
 	elapsed=0; \
 	while [ $$elapsed -lt $$timeout ]; do \
 		if kubectl wait --for=condition=complete job/$$job_name -n $(NAMESPACE) --timeout=10s >/dev/null 2>&1; then \
@@ -97,7 +97,7 @@ wait-for-image-pull:
 		elapsed=$$((elapsed + 10)); \
 		echo "Image pull in progress... ($$elapsed/$${timeout}s)"; \
 	done; \
-	echo "✗ Image pull job timeout or failed"; \
+	echo "✗ Image pull job timeout (900s exceeded)"; \
 	kubectl delete job $$job_name -n $(NAMESPACE) --ignore-not-found=true; \
 	exit 1
 
@@ -139,7 +139,7 @@ deploy: build push build-frontend push-frontend
 	fi
 	@if helm status $(RELEASE) -n $(NAMESPACE) >/dev/null 2>&1; then \
 		echo "Upgrading $(RELEASE) to $(IMAGE):$(TAG) ..."; \
-		$(MAKE) pre-pull-images; \
+		$(MAKE) pre-pull-images || exit 1; \
 		$(MAKE) upgrade; \
 	else \
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
@@ -154,7 +154,7 @@ deploy-multiplatform: build-multiplatform build-frontend push-frontend
 	fi
 	@if helm status $(RELEASE) -n $(NAMESPACE) >/dev/null 2>&1; then \
 		echo "Upgrading $(RELEASE) to $(IMAGE):$(TAG) ..."; \
-		$(MAKE) pre-pull-images; \
+		$(MAKE) pre-pull-images || exit 1; \
 		$(MAKE) upgrade; \
 	else \
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
@@ -198,7 +198,7 @@ rebuild-all: clean-all build build-frontend
 	fi
 	@if helm status $(RELEASE) -n $(NAMESPACE) >/dev/null 2>&1; then \
 		echo "Upgrading $(RELEASE) to $(IMAGE):$(TAG) ..."; \
-		$(MAKE) pre-pull-images; \
+		$(MAKE) pre-pull-images || exit 1; \
 		$(MAKE) upgrade; \
 	else \
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
