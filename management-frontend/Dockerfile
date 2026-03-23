@@ -1,13 +1,31 @@
-# Runtime stage (frontend built locally and pre-built artifacts copied)
-FROM node:24-slim
+# Build stage - Build frontend with Node 24
+FROM node:24 AS builder
+WORKDIR /build
+
+# Copy source and dependencies
+COPY package*.json ./
+RUN npm ci --frozen-lockfile
+
+# Copy app source
+COPY . .
+
+# Build Vite SPA with base path for /ui deployment
+ARG VITE_BASE_PATH=/ui/
+ENV VITE_BASE_PATH=${VITE_BASE_PATH}
+RUN npm run build
+
+# Runtime stage - Minimal server container
+FROM node:24-alpine
 WORKDIR /app
 
-# Install production dependencies for the server only
+# Install only production dependencies for server
 COPY server/package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --frozen-lockfile --omit=dev
 
-# Copy pre-built frontend (built locally) and server
-COPY dist ./dist
+# Copy built frontend from builder
+COPY --from=builder /build/dist ./dist
+
+# Copy server
 COPY server/server.js ./
 
 # Set environment variables

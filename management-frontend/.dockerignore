@@ -1,6 +1,3 @@
-# Dev dependencies
-node_modules/
-
 # Git & editor
 .git/
 .gitignore
@@ -9,19 +6,40 @@ node_modules/
 # Local env
 .env
 *.env
-
-# Build artifacts (except dist, which is pre-built locally)
-.vite/
-target/
+.env.local
 
 # IDE
 .vscode/
 .idea/
 
-# Tests & coverage
+# Build artifacts
+.vite/
+target/
 coverage/
 *.lcov
 
 # OS
 .DS_Store
-.env.local
+Thumbs.db
+
+# Build output (will be built in Docker)
+dist/
+
+# Tests
+*.test.js
+*.spec.js
+__tests__/
+
+# Documentation
+*.md
+docs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
