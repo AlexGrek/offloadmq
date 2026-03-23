@@ -137,7 +137,9 @@
       "Bash(make deploy:*)",
       "Bash(kubectl describe:*)",
       "Bash(kubectl get:*)",
-      "Bash(kubectl logs:*)"
+      "Bash(kubectl logs:*)",
+      "Bash(kubectl rollout:*)",
+      "Bash(tee /tmp/deploy.log)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
