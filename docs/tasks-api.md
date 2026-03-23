@@ -7,7 +7,7 @@ Complete documentation for task submission, polling, and execution across both c
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Client API](#client-api) — Submit and monitor tasks
+2. [Client API](#client-api) — Submit, monitor tasks, discover capabilities
 3. [Agent API](#agent-api) — Receive, execute, and report tasks
 4. [Task Lifecycle](#task-lifecycle) — States and transitions
 5. [Status Codes](#status-codes) — Error handling
@@ -328,6 +328,49 @@ Failed task:
 - Log accumulates as agent sends progress updates
 - Completed/failed tasks are archived after 7 days (configurable)
 - Polling a deleted/archived task returns 404
+
+---
+
+### Get Online Capabilities (Client-Filtered)
+
+```
+POST /api/capabilities/online
+Content-Type: application/json
+```
+
+Returns the set of base capabilities currently provided by online agents, **filtered to only those the calling API key is authorized to use**. Useful for clients to discover what they can submit without trial-and-error.
+
+**Request body**
+
+```json
+{
+  "apiKey": "your-client-api-key"
+}
+```
+
+**Response** (200 OK)
+
+```json
+["llm.mistral", "vision"]
+```
+
+The response is a JSON array of base capability strings (extended attributes stripped). Only capabilities that satisfy **both** conditions are included:
+- At least one online agent advertises the capability
+- The API key has that capability in its allowed list
+
+**Error responses**
+
+| Status | Reason |
+|--------|--------|
+| `401` | API key not found or revoked |
+| `500` | Server error |
+
+**Notes**
+
+- Extended attributes are stripped — `"llm.mistral[7b;fp16]"` appears as `"llm.mistral"`
+- Online threshold: agent must have contacted the server within the last 120 seconds
+- Result is a deduplicated set (unordered)
+- Complements the management endpoint `GET /management/capabilities/list/online`, which returns all online capabilities regardless of key permissions
 
 ---
 

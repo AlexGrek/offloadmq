@@ -49,6 +49,17 @@ const ENDPOINTS = [
     bodyExample: JSON.stringify({}, null, 2),
     description: 'Check status of a submitted task by capability and task ID.',
   },
+  {
+    group: 'Client — Tasks',
+    label: 'Get Online Capabilities (filtered)',
+    method: 'POST',
+    path: '/api/capabilities/online',
+    auth: 'body-apikey',
+    pathParams: [],
+    queryParams: [],
+    bodyExample: JSON.stringify({}, null, 2),
+    description: 'Returns online capabilities intersected with what this API key is allowed to use.',
+  },
   // ── Client — Storage ─────────────────────────────────────────────
   {
     group: 'Client — Storage',
@@ -327,6 +338,9 @@ const AUTH_DEFAULTS = {
   'bearer': MGMT_TOKEN,
 };
 
+const getStoredAuth = (authType) =>
+  localStorage.getItem(`omq_auth_${authType}`) ?? AUTH_DEFAULTS[authType];
+
 const AUTH_LABELS = {
   'body-apikey': 'Client API Key (injected into body)',
   'header-apikey': 'Client API Key  →  X-API-Key header',
@@ -375,7 +389,7 @@ const ApiTestingTool = () => {
   const hasBody = ['POST', 'PUT', 'PATCH'].includes(ep.method) && ep.bodyExample !== undefined;
 
   useEffect(() => {
-    setAuthValue(AUTH_DEFAULTS[ep.auth]);
+    setAuthValue(getStoredAuth(ep.auth));
     const pp = {};
     ep.pathParams.forEach(p => { pp[p] = ''; });
     setPathParamValues(pp);
@@ -665,7 +679,10 @@ const ApiTestingTool = () => {
               style={s.input}
               type="text"
               value={authValue}
-              onChange={e => setAuthValue(e.target.value)}
+              onChange={e => {
+                setAuthValue(e.target.value);
+                localStorage.setItem(`omq_auth_${ep.auth}`, e.target.value);
+              }}
               placeholder="Enter auth value"
             />
           </div>
