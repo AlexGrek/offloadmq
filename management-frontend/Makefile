@@ -10,9 +10,9 @@ IMAGE ?= $(REGISTRY)/offloadmq-management-frontend
 
 .PHONY: build push install upgrade uninstall status template deploy
 
-# Build Docker image
+# Build Docker image for amd64 Linux (works on Mac and Linux)
 build:
-	docker build -t $(IMAGE):$(TAG) .
+	docker build --platform linux/amd64 -t $(IMAGE):$(TAG) .
 
 # Push Docker image
 push:
