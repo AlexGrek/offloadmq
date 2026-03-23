@@ -135,7 +135,9 @@
       "Bash(python3 -m mypy app/systeminfo.py --strict)",
       "Bash(bash -c \"source venv/bin/activate && python -m mypy app/systeminfo.py --strict\")",
       "Bash(make deploy:*)",
-      "Bash(kubectl describe:*)"
+      "Bash(kubectl describe:*)",
+      "Bash(kubectl get:*)",
+      "Bash(kubectl logs:*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
