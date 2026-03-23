@@ -3,10 +3,10 @@ use log::debug;
 use serde_json::json;
 
 use crate::{
-    db::{agent::CachedAgentStorage, persistent_task_storage::TaskStorage},
+    db::{agent::CachedAgentStorage, persistent_task_storage::TaskStorage, heuristic_storage::HeuristicStorage},
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
-    mq::urgent::UrgentTaskStore,
+    mq::{urgent::UrgentTaskStore, heuristic::HeuristicRecord},
     schema::{TaskId, TaskResultReport, TaskResultStatus, TaskStatus, TaskUpdate},
     utils::base_capability,
 };
@@ -100,15 +100,19 @@ pub async fn update_urgent_task<'a>(
 pub async fn report_non_urgent_task<'a>(
     store: &TaskStorage,
     report: TaskResultReport,
+    agent: &Agent,
+    heuristic_storage: &HeuristicStorage,
 ) -> Result<(), AppError> {
-    let success = if let TaskResultStatus::Success(_duration) = report.status {
-        true
-    } else {
-        false
+    let (success, execution_time_ms) = match &report.status {
+        TaskResultStatus::Success(duration) => (true, duration * 1000.0),
+        TaskResultStatus::Failure(_, duration) => (false, duration * 1000.0),
+        TaskResultStatus::NotExecuted(_) => (false, 0.0),
     };
+
     let mut got = store
         .get_assigned(&report.id)?
         .ok_or(AppError::NotFound(report.id.to_string()))?;
+
     got.change_status(if success {
         TaskStatus::Completed
     } else {
@@ -116,6 +120,25 @@ pub async fn report_non_urgent_task<'a>(
     });
     got.result = report.output;
     store.update_assigned(&got)?;
+
+    // Log heuristic for non-urgent task completion
+    let buckets_used = got.data.file_bucket.clone();
+    let has_files = !got.data.fetch_files.is_empty() || !buckets_used.is_empty();
+
+    let record = HeuristicRecord::new(
+        &report.id,
+        agent,
+        execution_time_ms,
+        success,
+        buckets_used,
+        has_files,
+    );
+
+    if let Err(e) = heuristic_storage.log_task_completion(&record) {
+        debug!("Failed to log heuristic for task {}: {}", report.id, e);
+        // Don't fail the task resolution if heuristic logging fails
+    }
+
     Ok(())
 }
 

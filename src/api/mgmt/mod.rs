@@ -4,9 +4,10 @@ use std::{collections::HashSet, env, sync::Arc};
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     response::IntoResponse,
 };
+use serde::Deserialize;
 use serde_json::json;
 use tracing::info;
 
@@ -149,4 +150,54 @@ pub async fn reset_agents(
     info!("Agents reset triggered");
     state.storage.agents.clear()?;
     Ok(Json(json!({"result": "Reset successful"})))
+}
+
+#[derive(Deserialize)]
+pub struct ServiceLogsQuery {
+    pub class: String,
+    pub limit: Option<usize>,
+    pub cursor: Option<String>,
+}
+
+pub async fn list_service_messages(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ServiceLogsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let limit = params.limit.unwrap_or(50).min(500);
+    let (items, next_cursor) = state
+        .storage
+        .service_messages
+        .list_by_class(&params.class, limit, params.cursor.as_deref())
+        .map_err(AppError::Internal)?;
+
+    Ok(Json(json!({
+        "class": params.class,
+        "items": items,
+        "next_cursor": next_cursor,
+        "count": items.len(),
+    })))
+}
+
+pub async fn trigger_heuristics_cleanup(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let ttl_days = state.config.heuristics.ttl_days;
+    let max_records = state.config.heuristics.max_records_per_runner_cap;
+
+    let (deleted_by_age, deleted_by_limit) = state
+        .storage
+        .heuristics
+        .cleanup(ttl_days, max_records)
+        .map_err(AppError::Internal)?;
+
+    info!(
+        "Management: heuristics cleanup triggered, deleted {} by age, {} by limit",
+        deleted_by_age, deleted_by_limit
+    );
+    Ok(Json(json!({
+        "deleted_by_age": deleted_by_age,
+        "deleted_by_limit": deleted_by_limit,
+        "ttl_days": ttl_days,
+        "max_records_per_runner_cap": max_records,
+    })))
 }

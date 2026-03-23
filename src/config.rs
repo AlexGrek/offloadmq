@@ -62,6 +62,48 @@ impl StorageConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct HeuristicsConfig {
+    /// Heuristic records older than this many days are cleaned up (env: HEURISTICS_TTL_DAYS, default: 7)
+    pub ttl_days: u32,
+    /// Maximum number of heuristic records to keep per (runner, capability) pair
+    /// (env: HEURISTICS_MAX_RECORDS_PER_RUNNER_CAP, default: 500)
+    pub max_records_per_runner_cap: u32,
+    /// Cleanup job interval in hours, randomized between [min, max]
+    /// Min hours (env: HEURISTICS_CLEANUP_INTERVAL_MIN_HOURS, default: 16)
+    pub cleanup_interval_min_hours: u32,
+    /// Max hours (env: HEURISTICS_CLEANUP_INTERVAL_MAX_HOURS, default: 22)
+    pub cleanup_interval_max_hours: u32,
+}
+
+impl HeuristicsConfig {
+    pub fn from_env() -> Self {
+        let ttl_days = env::var("HEURISTICS_TTL_DAYS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(7u32);
+        let max_records_per_runner_cap = env::var("HEURISTICS_MAX_RECORDS_PER_RUNNER_CAP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(500u32);
+        let cleanup_interval_min_hours = env::var("HEURISTICS_CLEANUP_INTERVAL_MIN_HOURS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(16u32);
+        let cleanup_interval_max_hours = env::var("HEURISTICS_CLEANUP_INTERVAL_MAX_HOURS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(22u32);
+
+        Self {
+            ttl_days,
+            max_records_per_runner_cap,
+            cleanup_interval_min_hours,
+            cleanup_interval_max_hours,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct AppConfig {
     pub jwt_secret: String,
     pub database_root_path: String,
@@ -73,6 +115,7 @@ pub struct AppConfig {
     /// Maximum request body size in bytes for the client API (env: MAX_REQUEST_BODY_BYTES).
     pub max_request_body_bytes: usize,
     pub storage: StorageConfig,
+    pub heuristics: HeuristicsConfig,
 }
 
 
@@ -116,6 +159,7 @@ impl AppConfig {
             .parse::<usize>()?;
 
         let storage = StorageConfig::from_env(&database_root_path);
+        let heuristics = HeuristicsConfig::from_env();
 
         Ok(Self {
             jwt_secret,
@@ -127,6 +171,7 @@ impl AppConfig {
             management_token,
             max_request_body_bytes,
             storage,
+            heuristics,
         })
     }
 }

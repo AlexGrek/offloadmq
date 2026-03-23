@@ -15,7 +15,9 @@ Administrative endpoints for monitoring and managing agents, tasks, and client A
 4. [Agents](#agents)
 5. [Tasks](#tasks)
 6. [Client API Keys](#client-api-keys)
-7. [Examples](#examples)
+7. [Maintenance Jobs](#maintenance-jobs)
+8. [Service Logs](#service-logs)
+9. [Examples](#examples)
 
 ---
 
@@ -513,6 +515,167 @@ Mark a client API key as revoked. Clients using this key will receive `401 Unaut
 - Can be un-revoked by updating the key with `is_revoked: false` (if that feature is added)
 - Existing tasks from this key are not affected (continue executing)
 - Future task submissions with this key will be rejected
+
+---
+
+## Maintenance Jobs
+
+Background cleanup jobs run automatically on a schedule, but can also be triggered on demand via these endpoints. Useful after bulk imports, debugging, or when you need immediate cleanup without waiting for the next scheduled run.
+
+### Trigger Storage Cleanup
+
+```
+POST /management/storage/cleanup/trigger
+Authorization: Bearer <token>
+```
+
+Immediately runs the expired-bucket cleanup job (same logic as the background task that runs every 3 hours).
+
+Scans all buckets, finds those past their TTL (`STORAGE_BUCKET_TTL_MINUTES`, default: 1440 minutes / 24 h), deletes their files from the storage backend, and removes their metadata from the database.
+
+**Response** (200 OK)
+
+```json
+{
+  "deleted_count": 4
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `deleted_count` | Number of expired buckets deleted in this run |
+
+**Notes**
+
+- Safe to call at any time — only deletes buckets that have already passed their TTL
+- Bucket TTL is controlled by `STORAGE_BUCKET_TTL_MINUTES` env var
+- File deletion failures are logged as warnings but do not fail the request
+- A `deleted_count` of `0` means no buckets were expired at the time of the call
+
+---
+
+### Trigger Heuristics Cleanup
+
+```
+POST /management/heuristics/cleanup/trigger
+Authorization: Bearer <token>
+```
+
+Immediately runs the heuristic record cleanup job (same logic as the background task that runs every 16–22 hours).
+
+Performs two cleanup passes:
+1. **By age** — deletes records older than `HEURISTICS_TTL_DAYS` (default: 7 days)
+2. **By limit** — for each `(runner, capability)` pair, keeps only the newest `HEURISTICS_MAX_RECORDS_PER_RUNNER_CAP` records (default: 500)
+
+**Response** (200 OK)
+
+```json
+{
+  "deleted_by_age": 120,
+  "deleted_by_limit": 35,
+  "ttl_days": 7,
+  "max_records_per_runner_cap": 500
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `deleted_by_age` | Records deleted because they exceeded the TTL |
+| `deleted_by_limit` | Records deleted because a (runner, capability) pair exceeded the max count |
+| `ttl_days` | The TTL value used (reflects current server config) |
+| `max_records_per_runner_cap` | The per-pair cap used (reflects current server config) |
+
+**Notes**
+
+- Only affects non-urgent task heuristic records
+- Both thresholds are configurable via env vars: `HEURISTICS_TTL_DAYS`, `HEURISTICS_MAX_RECORDS_PER_RUNNER_CAP`
+- Safe to run at any time; idempotent
+- Both counts being `0` means the database was already within limits
+
+---
+
+## Service Logs
+
+Persistent log of internal system events emitted by background jobs and other server subsystems.
+
+### List Service Messages
+
+```
+GET /management/service_logs?class=<class>&limit=<n>&cursor=<cursor>
+Authorization: Bearer <token>
+```
+
+Returns paginated service messages filtered by `message_class`. The `class` parameter is **required** — requests without it are rejected.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `class` | string | **Yes** | Message class to filter by (e.g. `bg`) |
+| `limit` | integer | No | Max items per page (default: 50, max: 500) |
+| `cursor` | string | No | `record_id` from the previous page's `next_cursor`. Omit for the first page |
+
+**Response** (200 OK)
+
+```json
+{
+  "class": "bg",
+  "count": 2,
+  "items": [
+    {
+      "messageClass": "bg",
+      "messageKind": "heuristics-cleanup-job",
+      "timestamp": "2026-03-23T04:00:00Z",
+      "recordId": "01JVK3ABCDEF...",
+      "messageContent": {
+        "deleted_by_age": 12,
+        "deleted_by_limit": 0,
+        "ttl_days": 7,
+        "max_records_per_runner_cap": 500
+      }
+    },
+    {
+      "messageClass": "bg",
+      "messageKind": "storage-cleanup-job",
+      "timestamp": "2026-03-23T03:00:00Z",
+      "recordId": "01JVK3AAAAAA...",
+      "messageContent": {
+        "expired_found": 3,
+        "deleted": 3,
+        "errors": 0
+      }
+    }
+  ],
+  "next_cursor": "01JVK2ZZZZZZ..."
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `class` | The class that was queried |
+| `count` | Number of items returned in this page |
+| `items` | Array of `ServiceMessage` objects, **newest first** |
+| `items[].messageClass` | Message class |
+| `items[].messageKind` | Message kind (not indexed — used for display only) |
+| `items[].timestamp` | ISO 8601 UTC timestamp when the message was recorded |
+| `items[].recordId` | Time-sortable unique ID for this message |
+| `items[].messageContent` | Free-form JSON payload from the emitting subsystem |
+| `next_cursor` | Pass as `cursor=` in the next request to get the following page. `null` means this is the last page |
+
+**Notes**
+
+- Items are returned newest-first within the class
+- `cursor` is exclusive — the item with that `record_id` is not included in the next page
+- Message kinds are not indexed; filter by kind client-side if needed
+
+---
+
+### Known Message Classes and Kinds
+
+| Class | Kind | Emitted by | Content fields |
+|-------|------|------------|----------------|
+| `bg` | `heuristics-cleanup-job` | Heuristics background cleanup | `deleted_by_age`, `deleted_by_limit`, `ttl_days`, `max_records_per_runner_cap` (or `error` on failure) |
+| `bg` | `storage-cleanup-job` | Bucket expiry background cleanup | `expired_found`, `deleted`, `errors` |
 
 ---
 

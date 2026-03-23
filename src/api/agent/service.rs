@@ -4,6 +4,7 @@ use log::{debug, info};
 use rand::seq::IndexedRandom;
 
 use crate::{
+    db::heuristic_storage::HeuristicStorage,
     error::AppError,
     models::{Agent, AssignedTask, CommunicationMethod, UnassignedTask},
     mq::scheduler::{
@@ -18,6 +19,7 @@ use crate::{
         TaskResultReport, TaskUpdate,
     },
     state::AppState,
+    utils::base_capability,
 };
 
 pub async fn poll_urgent(
@@ -175,7 +177,40 @@ pub async fn take_task(
     if let Some(picked) = try_pick_up_urgent_task(&state.urgent, agent, &task_id).await? {
         Ok(picked)
     } else {
-        try_pick_up_non_urgent_task(&state.storage.tasks, agent, task_id).await
+        let assigned = try_pick_up_non_urgent_task(&state.storage.tasks, agent, task_id.clone()).await?;
+        log_runner_history(agent, &task_id, &state.storage.heuristics);
+        Ok(assigned)
+    }
+}
+
+fn log_runner_history(agent: &Agent, task_id: &TaskId, heuristics: &HeuristicStorage) {
+    let cap = base_capability(&task_id.cap);
+    match heuristics.compute_stats_for(&agent.uid, cap) {
+        Err(e) => debug!("Failed to read heuristics for agent {} cap {}: {}", agent.uid_short, cap, e),
+        Ok(None) => info!(
+            "Agent {} | cap {} | first run — no history yet",
+            agent.uid_short, cap
+        ),
+        Ok(Some(s)) => {
+            let success_part = match (s.success_avg_ms, s.success_min_ms, s.success_max_ms) {
+                (Some(avg), Some(min), Some(max)) =>
+                    format!("ok: avg {:.0}ms  min {:.0}ms  max {:.0}ms", avg, min, max),
+                _ => "ok: none".to_string(),
+            };
+            let fail_part = if s.fail_count > 0 {
+                match (s.fail_avg_ms, s.fail_min_ms, s.fail_max_ms) {
+                    (Some(avg), Some(min), Some(max)) =>
+                        format!("  |  fail ({}): avg {:.0}ms  min {:.0}ms  max {:.0}ms", s.fail_count, avg, min, max),
+                    _ => String::new(),
+                }
+            } else {
+                String::new()
+            };
+            info!(
+                "Agent {} | cap {} | {} runs  {:.1}% success  |  {}{}",
+                agent.uid_short, cap, s.total_runs, s.success_pct, success_part, fail_part
+            );
+        }
     }
 }
 
@@ -207,7 +242,7 @@ pub async fn resolve_task(
 
     let found = report_urgent_task(&state.urgent, report.clone(), task_id).await?;
     if !found {
-        report_non_urgent_task(&state.storage.tasks, report).await?;
+        report_non_urgent_task(&state.storage.tasks, report, &agent, &state.storage.heuristics).await?;
     }
 
     for bucket_uid in &file_buckets {

@@ -9,6 +9,7 @@
 //!   DELETE /management/storage/bucket/{bucket_uid}  – delete a specific bucket
 //!   DELETE /management/storage/key/{api_key}/buckets – delete all buckets of a key
 //!   DELETE /management/storage/buckets              – purge all buckets
+//!   POST   /management/storage/cleanup/trigger      – manually trigger expired-bucket cleanup
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -161,6 +162,28 @@ pub async fn delete_key_buckets(
 
     info!("Management: deleted {} bucket(s) for key ...{}", count, &api_key[api_key.len().saturating_sub(6)..]);
     Ok(Json(json!({ "api_key": api_key, "deleted_count": count })))
+}
+
+// ── POST /management/storage/cleanup/trigger ────────────────────────────────
+
+pub async fn trigger_storage_cleanup(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let ttl = state.config.storage.bucket_ttl_minutes;
+    let expired = state.storage.buckets.list_expired_buckets(ttl);
+    let count = expired.len();
+
+    for bucket in &expired {
+        if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
+            log::warn!("Management: cleanup failed to delete bucket files {}: {}", bucket.uid, e);
+        }
+        if let Err(e) = state.storage.buckets.delete_bucket(&bucket.uid, &bucket.api_key) {
+            log::warn!("Management: cleanup failed to delete bucket metadata {}: {}", bucket.uid, e);
+        }
+    }
+
+    info!("Management: storage cleanup triggered, purged {} expired bucket(s)", count);
+    Ok(Json(json!({ "deleted_count": count })))
 }
 
 // ── DELETE /management/storage/buckets ──────────────────────────────────────

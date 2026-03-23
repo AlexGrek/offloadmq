@@ -134,6 +134,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/storage/key/{api_key}/buckets",
                     delete(api::mgmt::storage::delete_key_buckets),
                 )
+                .route(
+                    "/storage/cleanup/trigger",
+                    post(api::mgmt::storage::trigger_storage_cleanup),
+                )
+                .route(
+                    "/heuristics/cleanup/trigger",
+                    post(api::mgmt::trigger_heuristics_cleanup),
+                )
+                .route(
+                    "/service_logs",
+                    get(api::mgmt::list_service_messages),
+                )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::token_auth_middleware_mgmt,
@@ -231,9 +243,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 info!("Storage cleanup: purging {} expired bucket(s)", expired.len());
-                for bucket in expired {
+                let mut deleted = 0usize;
+                let mut errors = 0usize;
+                for bucket in &expired {
+                    let mut ok = true;
                     if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
                         log::warn!("Failed to delete bucket files {}: {}", bucket.uid, e);
+                        ok = false;
                     }
                     if let Err(e) = state
                         .storage
@@ -241,6 +257,76 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .delete_bucket(&bucket.uid, &bucket.api_key)
                     {
                         log::warn!("Failed to delete bucket metadata {}: {}", bucket.uid, e);
+                        ok = false;
+                    }
+                    if ok { deleted += 1; } else { errors += 1; }
+                }
+                let _ = state.storage.service_messages.push(
+                    "bg",
+                    "storage-cleanup-job",
+                    serde_json::json!({
+                        "expired_found": expired.len(),
+                        "deleted": deleted,
+                        "errors": errors,
+                    }),
+                );
+            }
+        });
+    }
+
+    // Background: clean up old heuristic records on startup and periodically
+    {
+        let state = shared_state.clone();
+        tokio::spawn(async move {
+            let mut first_run = true;
+            loop {
+                // On first run, clean up immediately
+                if !first_run {
+                    // Generate random interval between min and max hours
+                    let min_hours = state.config.heuristics.cleanup_interval_min_hours as u64;
+                    let max_hours = state.config.heuristics.cleanup_interval_max_hours as u64;
+                    let random_hours = if min_hours == max_hours {
+                        min_hours
+                    } else {
+                        use rand::Rng;
+                        let mut rng = rand::rng();
+                        rng.random_range(min_hours..=max_hours)
+                    };
+                    let interval_secs = random_hours * 60 * 60;
+                    let mut interval = time::interval(time::Duration::from_secs(interval_secs));
+                    interval.tick().await;
+                }
+                first_run = false;
+
+                let ttl_days = state.config.heuristics.ttl_days;
+                let max_records = state.config.heuristics.max_records_per_runner_cap;
+
+                match state.storage.heuristics.cleanup(ttl_days, max_records) {
+                    Ok((deleted_by_age, deleted_by_limit)) => {
+                        if deleted_by_age > 0 || deleted_by_limit > 0 {
+                            info!(
+                                "Heuristics cleanup: deleted {} records by age, {} by limit (ttl={}d, max={})",
+                                deleted_by_age, deleted_by_limit, ttl_days, max_records
+                            );
+                        }
+                        let _ = state.storage.service_messages.push(
+                            "bg",
+                            "heuristics-cleanup-job",
+                            serde_json::json!({
+                                "deleted_by_age": deleted_by_age,
+                                "deleted_by_limit": deleted_by_limit,
+                                "ttl_days": ttl_days,
+                                "max_records_per_runner_cap": max_records,
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("Heuristics cleanup failed: {}", e);
+                        let _ = state.storage.service_messages.push(
+                            "bg",
+                            "heuristics-cleanup-job",
+                            serde_json::json!({ "error": e.to_string() }),
+                        );
                     }
                 }
             }
