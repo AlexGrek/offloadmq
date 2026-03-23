@@ -83,24 +83,13 @@ pre-pull-images:
 	@echo "Waiting for image pull job to complete..."
 	@$(MAKE) wait-for-image-pull
 
-# Wait for image pull job to complete (timeout: 5 minutes)
+# Wait for image pull job to complete
 wait-for-image-pull:
 	@job_name="offloadmq-image-pull-$(TAG)"; \
-	timeout=300; \
-	elapsed=0; \
-	while [ $$elapsed -lt $$timeout ]; do \
-		sleep 10; \
-		elapsed=$$((elapsed + 10)); \
-		if kubectl wait --for=condition=Complete job/$$job_name -n $(NAMESPACE) --timeout=10s >/dev/null 2>&1; then \
-			echo "✓ Image pull job completed"; \
-			kubectl delete job $$job_name -n $(NAMESPACE) --ignore-not-found=true; \
-			exit 0; \
-		fi; \
-		echo "Image pull in progress... ($$elapsed/$${timeout}s)"; \
-	done; \
-	echo "✗ Image pull job timeout (300s exceeded)"; \
-	kubectl delete job $$job_name -n $(NAMESPACE) --ignore-not-found=true; \
-	exit 1
+	echo "Checking job: $$job_name"; \
+	kubectl get job $$job_name -n $(NAMESPACE) || exit 1; \
+	kubectl wait --for=condition=Complete job/$$job_name -n $(NAMESPACE) --timeout=10s; \
+	kubectl delete job $$job_name -n $(NAMESPACE) --ignore-not-found=true
 
 # Upgrade Helm release
 upgrade:
