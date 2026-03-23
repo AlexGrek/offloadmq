@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 const DevPanel = React.lazy(() => import('./DevPanel'));
+import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks } from 'lucide-react';
+import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check } from 'lucide-react';
+import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Define the content for each app as a functional component.
 // In a real-world application, these would be in separate files and imported.
@@ -82,6 +84,9 @@ const SandboxApps = () => {
   const [apiKey, setApiKey] = useState('client_secret_key_123');
   const [activeTab, setActiveTab] = useState('app');
   const [devLog, setDevLog] = useState([]);
+  const [capabilities, setCapabilities] = useState([]);
+  const [capsLoading, setCapsLoading] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
   const selectedApp = apps.find((app) => app.id === selectedId);
 
   // Sync prop and local state
@@ -89,6 +94,24 @@ const SandboxApps = () => {
     let item = localStorage.getItem('offroadmq-api-key');
     if (item) setApiKey(item);
   }, []);
+
+  // Fetch online capabilities when no app is selected
+  useEffect(() => {
+    if (selectedId) return;
+    const loadCapabilities = async () => {
+      setCapsLoading(true);
+      try {
+        const caps = await fetchOnlineCapabilities();
+        setCapabilities(Array.isArray(caps) ? caps : []);
+      } catch (err) {
+        console.error('Failed to fetch capabilities:', err);
+        setCapabilities([]);
+      } finally {
+        setCapsLoading(false);
+      }
+    };
+    loadCapabilities();
+  }, [selectedId]);
 
   const addDevEntry = useCallback((entry) => {
     setDevLog(prev => {
@@ -118,6 +141,15 @@ const SandboxApps = () => {
     }
   };
 
+  // Function to copy API key to clipboard
+  const handleCopyApiKey = () => {
+    if (apiKey) {
+      navigator.clipboard.writeText(apiKey);
+      setCopiedKey(true);
+      setTimeout(() => setCopiedKey(false), 2000);
+    }
+  };
+
   const transition = { type: "tween", duration: 0.3, ease: "easeInOut" };
 
   return (
@@ -125,6 +157,52 @@ const SandboxApps = () => {
       {/* CSS for the component */}
       <style>
         {`
+          .capabilities-section {
+            width: 100%;
+            max-width: 800px;
+            margin-bottom: 32px;
+          }
+
+          .capabilities-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+          }
+
+          .capabilities-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+
+          .capability-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 12px;
+            background-color: #f3f4f6;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #4b5563;
+            font-family: monospace;
+            font-weight: 500;
+            white-space: nowrap;
+          }
+
+          .capability-badge:hover {
+            background-color: #e5e7eb;
+            border-color: #d1d5db;
+          }
+
+          .capabilities-empty {
+            font-size: 13px;
+            color: #9ca3af;
+            font-style: italic;
+          }
+
           .app-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -295,8 +373,29 @@ const SandboxApps = () => {
             placeholder="e.g., sk-xxxxxxxxxxxxxxxxxxxxxxxx"
             className="api-input"
           />
+          <button className='btn' onClick={() => handleCopyApiKey()} title="Copy API key" style={{ padding: '6px 8px', opacity: 0.6, cursor: 'pointer', transition: 'opacity 0.2s' }} onMouseEnter={(e) => e.target.style.opacity = '1'} onMouseLeave={(e) => e.target.style.opacity = '0.6'}>{copiedKey ? <Check size={18} color="#22c55e" /> : <Copy size={18} />}</button>
           <button className='btn' onClick={() => handleSaveApiKey()}><SaveAll /></button>
         </div>
+
+        {/* Online capabilities section - show when no app is selected */}
+        {!selectedId && (
+          <motion.div className="capabilities-section" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
+            <div className="capabilities-title">Online Capabilities</div>
+            <div className="capabilities-list">
+              {capsLoading ? (
+                <div className="capabilities-empty">Loading...</div>
+              ) : capabilities.length > 0 ? (
+                capabilities.map((cap, idx) => (
+                  <div key={idx} className="capability-badge" title={cap}>
+                    {stripCapabilityAttrs(cap)}
+                  </div>
+                ))
+              ) : (
+                <div className="capabilities-empty">No capabilities online</div>
+              )}
+            </div>
+          </motion.div>
+        )}
 
         {/* The main app grid container */}
         <motion.div layout className="app-grid">
@@ -355,7 +454,9 @@ const SandboxApps = () => {
               <div className="modal-body">
                 <React.Suspense fallback={<div>Loading...</div>}>
                   <div style={{ display: activeTab === 'app' ? 'contents' : 'none' }}>
-                    <selectedApp.app apiKey={apiKey} addDevEntry={addDevEntry} />
+                    <ErrorBoundary>
+                      <selectedApp.app apiKey={apiKey} addDevEntry={addDevEntry} />
+                    </ErrorBoundary>
                   </div>
                   <div style={{ display: activeTab === 'dev' ? 'contents' : 'none' }}>
                     <DevPanel entries={devLog} />

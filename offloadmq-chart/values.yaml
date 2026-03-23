@@ -65,6 +65,13 @@ env:
   HEURISTICS_CLEANUP_INTERVAL_MIN_HOURS: "16"
   HEURISTICS_CLEANUP_INTERVAL_MAX_HOURS: "22"
 
+  # ── Stale Agents ───────────────────────────────────────────────────────────
+  # Delete agents not contacted for N days
+  STALE_AGENTS_TTL_DAYS: "7"
+  # Cleanup job runs on a randomized interval between min and max hours
+  STALE_AGENTS_CLEANUP_INTERVAL_MIN_HOURS: "16"
+  STALE_AGENTS_CLEANUP_INTERVAL_MAX_HOURS: "22"
+
 persistence:
   enabled: true
   size: 1Gi

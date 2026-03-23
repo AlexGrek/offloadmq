@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
-import { Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Menu, Moon, ScrollText, SquarePlay, Sun, Zap } from "lucide-react";
+import { Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Menu, Moon, ScrollText, SquarePlay, Sun, Zap, Wrench } from "lucide-react";
 import AgentsPage from "./components/AgentsPage";
 import { TOKEN_KEY, apiFetch } from "./utils";
 import ApiKeysPage from "./components/ApiKeysPage";
@@ -13,6 +13,7 @@ import StoragePage from "./components/StoragePage";
 import ServiceLogsPage from "./components/ServiceLogsPage";
 import TokenSettings from "./components/TokenSettings";
 import BackgroundJobTriggersPage from "./components/BackgroundJobTriggersPage";
+import UtilsPage from "./components/UtilsPage";
 
 // ----- App Shell -----
 const routes = [
@@ -23,6 +24,7 @@ const routes = [
   { id: "sandbox", label: "Sandbox", icon: <SquarePlay /> },
   { id: "service-logs", label: "Service Logs", icon: <ScrollText /> },
   { id: "bg-triggers", label: "BG Triggers", icon: <Zap /> },
+  { id: "utils", label: "Utils", icon: <Wrench /> },
   { id: "json", label: "JSON", icon: <Brackets /> },
 ];
 
@@ -62,6 +64,7 @@ export default function App() {
       case "sandbox": return <SandboxApps />;
       case "service-logs": return <ServiceLogsPage />;
       case "bg-triggers": return <BackgroundJobTriggersPage />;
+      case "utils": return <UtilsPage />;
       case "json": return <ApiTestingTool />;
       default: return <AgentsPage />;
     }

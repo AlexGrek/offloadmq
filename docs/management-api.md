@@ -594,6 +594,42 @@ Performs two cleanup passes:
 
 ---
 
+### Trigger Stale Agents Cleanup
+
+```
+POST /management/agents/cleanup/trigger
+Authorization: Bearer <token>
+```
+
+Immediately runs the stale agents cleanup job (same logic as the background task that runs every 16–22 hours).
+
+Removes agents that have not been contacted for longer than `STALE_AGENTS_TTL_DAYS` (default: 7 days). Agents with no `lastContact` timestamp are also considered stale and will be deleted.
+
+**Response** (200 OK)
+
+```json
+{
+  "deleted": 3,
+  "ttl_days": 7
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `deleted` | Number of stale agents deleted in this run |
+| `ttl_days` | The TTL value used (reflects current server config) |
+
+**Notes**
+
+- Safe to call at any time — only deletes agents that have exceeded the inactivity TTL
+- Agent inactivity is measured from `lastContact` timestamp
+- Agents with `lastContact: null` (never contacted) are considered stale
+- Deleted agents cannot re-register with their original credentials
+- TTL is controlled by `STALE_AGENTS_TTL_DAYS` env var
+- Cleanup interval is randomized between `STALE_AGENTS_CLEANUP_INTERVAL_MIN_HOURS` and `STALE_AGENTS_CLEANUP_INTERVAL_MAX_HOURS` env vars
+
+---
+
 ## Service Logs
 
 Persistent log of internal system events emitted by background jobs and other server subsystems.
@@ -676,6 +712,7 @@ Returns paginated service messages filtered by `message_class`. The `class` para
 |-------|------|------------|----------------|
 | `bg` | `heuristics-cleanup-job` | Heuristics background cleanup | `deleted_by_age`, `deleted_by_limit`, `ttl_days`, `max_records_per_runner_cap` (or `error` on failure) |
 | `bg` | `storage-cleanup-job` | Bucket expiry background cleanup | `expired_found`, `deleted`, `errors` |
+| `bg` | `stale-agents-cleanup-job` | Stale agents background cleanup | `deleted`, `ttl_days` (or `error` on failure) |
 
 ---
 

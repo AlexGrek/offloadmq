@@ -204,4 +204,37 @@ impl CachedAgentStorage {
         let token_count = self.token_cache.read().unwrap().len();
         (agent_count, token_count)
     }
+
+    /// Clean up agents that haven't been contacted for more than ttl_days
+    /// Returns the number of deleted agents
+    pub fn cleanup_stale_agents(&self, ttl_days: u32) -> Result<usize, sled::Error> {
+        let mut deleted = 0usize;
+        let now = Utc::now();
+        let ttl_secs = ttl_days as i64 * 24 * 60 * 60;
+
+        let agents_to_delete: Vec<String> = self
+            .list_all_agents()
+            .into_iter()
+            .filter_map(|agent| {
+                if let Some(last_contact) = agent.last_contact {
+                    let age_secs = now.signed_duration_since(last_contact).num_seconds();
+                    if age_secs > ttl_secs {
+                        Some(agent.uid)
+                    } else {
+                        None
+                    }
+                } else {
+                    // Agents with no last_contact are considered stale
+                    Some(agent.uid)
+                }
+            })
+            .collect();
+
+        for agent_id in agents_to_delete {
+            self.delete_agent(&agent_id)?;
+            deleted += 1;
+        }
+
+        Ok(deleted)
+    }
 }

@@ -143,6 +143,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     post(api::mgmt::trigger_heuristics_cleanup),
                 )
                 .route(
+                    "/agents/cleanup/trigger",
+                    post(api::mgmt::trigger_stale_agents_cleanup),
+                )
+                .route(
                     "/service_logs",
                     get(api::mgmt::list_service_messages),
                 )
@@ -324,6 +328,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = state.storage.service_messages.push(
                             "bg",
                             "heuristics-cleanup-job",
+                            serde_json::json!({ "error": e.to_string() }),
+                        );
+                    }
+                }
+            }
+        });
+    }
+
+    // Background: clean up stale agents on startup and periodically
+    {
+        let state = shared_state.clone();
+        tokio::spawn(async move {
+            let mut first_run = true;
+            loop {
+                // On first run, clean up immediately
+                if !first_run {
+                    // Generate random delay between min and max hours
+                    let min_hours = state.config.stale_agents.cleanup_interval_min_hours as u64;
+                    let max_hours = state.config.stale_agents.cleanup_interval_max_hours as u64;
+                    let random_hours = if min_hours == max_hours {
+                        min_hours
+                    } else {
+                        use rand::Rng;
+                        let mut rng = rand::rng();
+                        rng.random_range(min_hours..=max_hours)
+                    };
+                    let sleep_secs = random_hours * 60 * 60;
+                    time::sleep(time::Duration::from_secs(sleep_secs)).await;
+                }
+                first_run = false;
+
+                let ttl_days = state.config.stale_agents.ttl_days;
+
+                match state.storage.agents.cleanup_stale_agents(ttl_days) {
+                    Ok(deleted) => {
+                        if deleted > 0 {
+                            info!(
+                                "Stale agents cleanup: deleted {} agent(s) (ttl={}d)",
+                                deleted, ttl_days
+                            );
+                        }
+                        let _ = state.storage.service_messages.push(
+                            "bg",
+                            "stale-agents-cleanup-job",
+                            serde_json::json!({
+                                "deleted": deleted,
+                                "ttl_days": ttl_days,
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("Stale agents cleanup failed: {}", e);
+                        let _ = state.storage.service_messages.push(
+                            "bg",
+                            "stale-agents-cleanup-job",
                             serde_json::json!({ "error": e.to_string() }),
                         );
                     }

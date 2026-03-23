@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Clock } from 'lucide-react';
+import ColorDot from './ColorDot';
 
 const STATUS_CONFIG = {
   completed:   { label: 'Completed',   color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
@@ -170,14 +171,21 @@ function TaskCard({ task, isAssigned }) {
         </span>
         <span className="row-main">
           <span className="row-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <span className="mono" style={{ fontSize: '0.84rem' }}>{shortId(id?.id)}</span>
+            <span style={{ display: 'flex', alignItems: 'center' }}>
+              <ColorDot seed={id?.id} size={10} />
+              <span className="mono" style={{ fontSize: '0.84rem' }}>{shortId(id?.id)}</span>
+            </span>
             <StatusBadge status={status} />
             {stage && <span className="chip" style={{ fontSize: '0.70rem' }}>{stage}</span>}
           </span>
           <span className="row-sub">
             <span className="chip">{data?.capability || id?.cap}</span>
             {isAssigned && agentId && (
-              <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>→ {shortId(agentId)}</span>
+              <span style={{ display: 'flex', alignItems: 'center', fontSize: '0.75rem', color: 'var(--muted)' }}>
+                →
+                <ColorDot seed={agentId} size={10} title={agentId} />
+                <span className="mono">{shortId(agentId)}</span>
+              </span>
             )}
             <span style={{ fontSize: '0.76rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
               <Clock size={10} />

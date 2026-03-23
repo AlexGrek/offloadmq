@@ -11,6 +11,10 @@ function BackgroundJobTriggersPage() {
   const [heuristicsResult, setHeuristicsResult] = useState(null);
   const [heuristicsError, setHeuristicsError] = useState(null);
 
+  const [staleAgentsLoading, setStaleAgentsLoading] = useState(false);
+  const [staleAgentsResult, setStaleAgentsResult] = useState(null);
+  const [staleAgentsError, setStaleAgentsError] = useState(null);
+
   const triggerStorage = async () => {
     setStorageLoading(true);
     setStorageError(null);
@@ -40,6 +44,22 @@ function BackgroundJobTriggersPage() {
       setHeuristicsError(err.message || "Failed to trigger heuristics cleanup");
     } finally {
       setHeuristicsLoading(false);
+    }
+  };
+
+  const triggerStaleAgents = async () => {
+    setStaleAgentsLoading(true);
+    setStaleAgentsError(null);
+    setStaleAgentsResult(null);
+    try {
+      const result = await apiFetch("/management/agents/cleanup/trigger", {
+        method: "POST",
+      });
+      setStaleAgentsResult(result);
+    } catch (err) {
+      setStaleAgentsError(err.message || "Failed to trigger stale agents cleanup");
+    } finally {
+      setStaleAgentsLoading(false);
     }
   };
 
@@ -164,6 +184,65 @@ function BackgroundJobTriggersPage() {
                 <div className="detail-item">
                   <span className="detail-label">Max records per runner/cap:</span>
                   <span className="detail-value">{heuristicsResult.max_records_per_runner_cap}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Stale Agents Cleanup */}
+      <div className="card">
+        <div className="trigger-header">
+          <div className="trigger-info">
+            <h3>Stale Agents Cleanup</h3>
+            <p className="trigger-description">
+              Immediately run the stale agents cleanup job. Deletes agents that
+              haven't been contacted for longer than the configured TTL.
+            </p>
+            <div className="trigger-details">
+              <span>Runs automatically: every 16–22 hours</span>
+            </div>
+          </div>
+          <button
+            className="btn primary"
+            onClick={triggerStaleAgents}
+            disabled={staleAgentsLoading}
+          >
+            {staleAgentsLoading ? (
+              <>
+                <Loader size={16} className="spin" />
+                <span>Running...</span>
+              </>
+            ) : (
+              <>
+                <Zap size={16} />
+                <span>Trigger Now</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {staleAgentsError && (
+          <div className="result error">
+            <AlertCircle size={16} />
+            <span>{staleAgentsError}</span>
+          </div>
+        )}
+
+        {staleAgentsResult && (
+          <div className="result success">
+            <Check size={16} />
+            <div className="result-content">
+              <span className="result-title">Cleanup completed</span>
+              <div className="result-details">
+                <div className="detail-item">
+                  <span className="detail-label">Agents deleted:</span>
+                  <span className="detail-value">{staleAgentsResult.deleted}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">TTL (days):</span>
+                  <span className="detail-value">{staleAgentsResult.ttl_days}</span>
                 </div>
               </div>
             </div>

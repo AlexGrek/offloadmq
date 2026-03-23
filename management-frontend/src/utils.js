@@ -49,3 +49,40 @@ export function parseCapabilityAttrs(cap) {
 export async function fetchOnlineCapabilities() {
   return apiFetch('/management/capabilities/list/online_ext');
 }
+
+/** Generate a deterministic color from a string ID using HSL.
+ *  Returns {hue, saturation, lightness, hex} for consistent coloring.
+ */
+export function getColorFromId(id) {
+  if (!id) return { hue: 0, saturation: 60, lightness: 50, hex: '#808080' };
+
+  // Simple hash function
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    const char = id.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+
+  // Map hash to hue (0-360)
+  const hue = Math.abs(hash) % 360;
+  const saturation = 65; // Vibrant colors
+  const lightness = 50;
+
+  // Convert HSL to hex for convenience
+  const hex = hslToHex(hue, saturation, lightness);
+
+  return { hue, saturation, lightness, hex };
+}
+
+/** Convert HSL to hex color. */
+function hslToHex(h, s, l) {
+  l /= 100;
+  const a = (s / 100) * Math.min(l, 1 - l);
+  const f = (n) => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}

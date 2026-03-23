@@ -2,11 +2,12 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { KeySquare, RefreshCw, Trash } from "lucide-react";
+import { KeySquare, RefreshCw, Trash, Copy, Check } from "lucide-react";
 import ExpandableDeleteButton from "./ExpandableDeleteButton";
 import { apiFetch, fmtDate } from "../utils";
 import Banner from "./Banner";
 import Chip from "./Chip";
+import ColorDot from "./ColorDot";
 
 function ApiKeysPage() {
   const [items, setItems] = useState([]);
@@ -14,6 +15,7 @@ function ApiKeysPage() {
   const [error, setError] = useState("");
   const [keyVal, setKeyVal] = useState("");
   const [caps, setCaps] = useState("");
+  const [copiedKey, setCopiedKey] = useState(null);
 
   const load = async () => {
     setLoading(true); setError("");
@@ -49,6 +51,12 @@ function ApiKeysPage() {
     } catch (e) { alert(`Failed to revoke: ${e.message}`); }
   };
 
+  const onCopy = (key) => {
+    navigator.clipboard.writeText(key);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
   return (
     <div className="page">
       <div className="page-head">
@@ -78,7 +86,20 @@ function ApiKeysPage() {
             <li key={it.key} className="card">
               <div className="row">
                 <div className="row-main">
-                  <div className="row-title mono" title={it.key}>{it.key}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ColorDot seed={it.key} title={it.key} />
+                    <div className="row-title mono" title={it.key}>{it.key}</div>
+                    <button
+                      className="icon"
+                      onClick={() => onCopy(it.key)}
+                      title="Copy API key"
+                      style={{ padding: '4px', opacity: 0.6, transition: 'opacity 0.2s', cursor: 'pointer' }}
+                      onMouseEnter={(e) => e.target.style.opacity = '1'}
+                      onMouseLeave={(e) => e.target.style.opacity = '0.6'}
+                    >
+                      {copiedKey === it.key ? <Check size={16} color="#22c55e" /> : <Copy size={16} />}
+                    </button>
+                  </div>
                   <div className="row-sub">
                     <Chip>{it.isPredefined ? "predefined" : "custom"}</Chip>
                     <Chip>{it.isRevoked ? "revoked" : "active"}</Chip>

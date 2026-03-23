@@ -6,6 +6,7 @@ import Banner from "./Banner";
 import Chip from "./Chip";
 import ExpandableDeleteButton from "./ExpandableDeleteButton";
 import AttributeTag from "./AttributeTag";
+import ColorDot from "./ColorDot";
 
 function AgentsPage() {
     const [agents, setAgents] = useState([]);
@@ -76,7 +77,10 @@ function AgentsPage() {
                             <li key={a.uid} className="card">
                                 <div className="row" onClick={() => toggle(a.uid)} aria-expanded={isOpen}>
                                     <div className="row-main">
-                                        <div className="row-title">{a.uidShort || a.uid}</div>
+                                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                                          <ColorDot seed={a.uid} />
+                                          <div className="row-title">{a.uidShort || a.uid}</div>
+                                        </div>
                                         <div className="row-sub">
                                             <Chip>Tier {a.tier}</Chip>
                                             <Chip>Capacity {a.capacity}</Chip>

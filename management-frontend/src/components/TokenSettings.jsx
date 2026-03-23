@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Settings2 } from "lucide-react";
+import { Check, Settings2, Copy } from "lucide-react";
 import { TOKEN_KEY } from "../utils";
 
 function TokenSettings() {
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState("");
   const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
   const popoverRef = useRef(null);
 
   useEffect(() => {
@@ -31,6 +32,12 @@ function TokenSettings() {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const onCopy = () => {
+    navigator.clipboard.writeText(token);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="token-settings" ref={popoverRef}>
       <button
@@ -53,11 +60,25 @@ function TokenSettings() {
             <div className="form">
               <div className="form-row">
                 <label>Management Token</label>
-                <input
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="paste your token here"
-                />
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
+                    placeholder="paste your token here"
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="icon"
+                    onClick={onCopy}
+                    title="Copy token"
+                    style={{ padding: '4px', opacity: 0.6, transition: 'opacity 0.2s', cursor: 'pointer', flexShrink: 0 }}
+                    onMouseEnter={(e) => e.target.style.opacity = '1'}
+                    onMouseLeave={(e) => e.target.style.opacity = '0.6'}
+                  >
+                    {copied ? <Check size={16} color="#22c55e" /> : <Copy size={16} />}
+                  </button>
+                </div>
               </div>
               <div className="form-actions">
                 <button className="btn primary" onClick={save}>

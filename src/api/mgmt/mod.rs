@@ -201,3 +201,23 @@ pub async fn trigger_heuristics_cleanup(
         "max_records_per_runner_cap": max_records,
     })))
 }
+
+pub async fn trigger_stale_agents_cleanup(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let ttl_days = state.config.stale_agents.ttl_days;
+
+    let deleted = state
+        .storage
+        .agents
+        .cleanup_stale_agents(ttl_days)?;
+
+    info!(
+        "Management: stale agents cleanup triggered, deleted {} agent(s)",
+        deleted
+    );
+    Ok(Json(json!({
+        "deleted": deleted,
+        "ttl_days": ttl_days,
+    })))
+}

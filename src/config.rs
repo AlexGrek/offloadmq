@@ -75,6 +75,28 @@ pub struct HeuristicsConfig {
     pub cleanup_interval_max_hours: u32,
 }
 
+#[derive(Clone, Debug)]
+pub struct StaleAgentsConfig {
+    /// Agents not contacted for this many days are deleted (env: STALE_AGENTS_TTL_DAYS, default: 7)
+    pub ttl_days: u32,
+    /// Cleanup job interval in hours, randomized between [min, max]
+    /// Min hours (env: STALE_AGENTS_CLEANUP_INTERVAL_MIN_HOURS, default: 16)
+    pub cleanup_interval_min_hours: u32,
+    /// Max hours (env: STALE_AGENTS_CLEANUP_INTERVAL_MAX_HOURS, default: 22)
+    pub cleanup_interval_max_hours: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct RunnersConfig {
+    /// Runners (agents) not contacted for this many days are deleted (env: RUNNERS_TTL_DAYS, default: 7)
+    pub ttl_days: u32,
+    /// Cleanup job interval in hours, randomized between [min, max]
+    /// Min hours (env: RUNNERS_CLEANUP_INTERVAL_MIN_HOURS, default: 16)
+    pub cleanup_interval_min_hours: u32,
+    /// Max hours (env: RUNNERS_CLEANUP_INTERVAL_MAX_HOURS, default: 22)
+    pub cleanup_interval_max_hours: u32,
+}
+
 impl HeuristicsConfig {
     pub fn from_env() -> Self {
         let ttl_days = env::var("HEURISTICS_TTL_DAYS")
@@ -103,6 +125,29 @@ impl HeuristicsConfig {
     }
 }
 
+impl StaleAgentsConfig {
+    pub fn from_env() -> Self {
+        let ttl_days = env::var("STALE_AGENTS_TTL_DAYS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(7u32);
+        let cleanup_interval_min_hours = env::var("STALE_AGENTS_CLEANUP_INTERVAL_MIN_HOURS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(16u32);
+        let cleanup_interval_max_hours = env::var("STALE_AGENTS_CLEANUP_INTERVAL_MAX_HOURS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(22u32);
+
+        Self {
+            ttl_days,
+            cleanup_interval_min_hours,
+            cleanup_interval_max_hours,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct AppConfig {
     pub jwt_secret: String,
@@ -116,6 +161,7 @@ pub struct AppConfig {
     pub max_request_body_bytes: usize,
     pub storage: StorageConfig,
     pub heuristics: HeuristicsConfig,
+    pub stale_agents: StaleAgentsConfig,
 }
 
 
@@ -160,6 +206,7 @@ impl AppConfig {
 
         let storage = StorageConfig::from_env(&database_root_path);
         let heuristics = HeuristicsConfig::from_env();
+        let stale_agents = StaleAgentsConfig::from_env();
 
         Ok(Self {
             jwt_secret,
@@ -172,6 +219,7 @@ impl AppConfig {
             max_request_body_bytes,
             storage,
             heuristics,
+            stale_agents,
         })
     }
 }
