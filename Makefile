@@ -97,7 +97,7 @@ wait-for-image-pull:
 		elapsed=$$((elapsed + 10)); \
 		echo "Image pull in progress... ($$elapsed/$${timeout}s)"; \
 	done; \
-	echo "✗ Image pull job timeout (900s exceeded)"; \
+	echo "✗ Image pull job timeout (500s exceeded)"; \
 	kubectl delete job $$job_name -n $(NAMESPACE) --ignore-not-found=true; \
 	exit 1
 
