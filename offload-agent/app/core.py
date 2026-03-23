@@ -108,7 +108,8 @@ def _reauth_or_reregister(server_url: str) -> str | None:
 
     try:
         caps = cfg.get("capabilities") or ["debug.echo", "shell.bash", "shellcmd.bash", "tts.kokoro"]
-        tier = cfg.get("tier", 5)
+        stored_tier = cfg.get("tier")
+        tier = stored_tier if stored_tier is not None else calculate_tier(collect_system_info())
         capacity = cfg.get("capacity", 1)
         reg = register_agent(server_url, caps, tier, capacity, api_key)
         cfg.update({"agentId": reg["agentId"], "key": reg["key"]})

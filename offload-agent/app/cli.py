@@ -38,7 +38,7 @@ def cli_register(
         None, help="Server URL (required if not in config)"
     ),
     key: Optional[str] = typer.Option(None, help="API key (required if not in config)"),
-    tier: int = typer.Option(5, help="Performance tier (0-255)"),
+    tier: Optional[int] = typer.Option(None, help="Performance tier (0-255). Auto-detected if not specified."),
     caps: List[str] = typer.Option(
         ["debug.echo", "shell.bash", "shellcmd.bash", "tts.kokoro"], help="Agent capabilities"
     ),
@@ -59,6 +59,10 @@ def cli_register(
 
     sysinfo = collect_system_info()
     print_system_info(sysinfo)
+
+    if tier is None:
+        tier = calculate_tier(sysinfo)
+        typer.echo(f"Auto-detected tier: {tier}")
 
     ollama_models = get_ollama_models()
     combined_caps = sorted(set(list(caps) + ollama_models))
