@@ -83,10 +83,10 @@ pre-pull-images:
 	@echo "Waiting for image pull job to complete..."
 	@$(MAKE) wait-for-image-pull
 
-# Wait for image pull job to complete (timeout: some minutes)
+# Wait for image pull job to complete (timeout: 5 minutes)
 wait-for-image-pull:
 	@job_name="offloadmq-image-pull-$(TAG)"; \
-	timeout=60; \
+	timeout=300; \
 	elapsed=0; \
 	while [ $$elapsed -lt $$timeout ]; do \
 		sleep 10; \
@@ -98,7 +98,7 @@ wait-for-image-pull:
 		fi; \
 		echo "Image pull in progress... ($$elapsed/$${timeout}s)"; \
 	done; \
-	echo "✗ Image pull job timeout (60s exceeded)"; \
+	echo "✗ Image pull job timeout (300s exceeded)"; \
 	kubectl delete job $$job_name -n $(NAMESPACE) --ignore-not-found=true; \
 	exit 1
 
