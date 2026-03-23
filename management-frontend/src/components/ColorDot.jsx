@@ -55,7 +55,6 @@ function ColorDot({ seed, size = 12, variant = 'circle', title, style = {} }) {
             borderRadius: '50%',
             backgroundColor: hex,
             boxShadow: `0 0 8px ${hex}, 0 0 16px ${hex}`,
-            animation: 'color-dot-pulse 2s ease-in-out infinite',
           }}
         />
       );
@@ -69,7 +68,6 @@ function ColorDot({ seed, size = 12, variant = 'circle', title, style = {} }) {
             height: `${size}px`,
             backgroundColor: hex,
             boxShadow: `0 0 8px ${hex}, 0 0 16px ${hex}`,
-            animation: 'color-dot-pulse 2s ease-in-out infinite',
           }}
         />
       );
@@ -85,7 +83,6 @@ function ColorDot({ seed, size = 12, variant = 'circle', title, style = {} }) {
             justifyContent: 'center',
             color: hex,
             filter: `drop-shadow(0 0 8px ${hex}) drop-shadow(0 0 16px ${hex}90)`,
-            animation: 'color-dot-pulse 2s ease-in-out infinite',
           }}
         >
           {iconMap[variant]}
@@ -110,14 +107,6 @@ function ColorDot({ seed, size = 12, variant = 'circle', title, style = {} }) {
 
   return (
     <>
-      <style>
-        {`
-          @keyframes color-dot-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
-          }
-        `}
-      </style>
       <div
         style={{
           display: 'inline-flex',
