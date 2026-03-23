@@ -1,0 +1,49 @@
+services:
+
+  offloadmq:
+    image: grekodocker/offloadmq:latest
+    restart: unless-stopped
+    ports:
+      - "3069:3069"
+    environment:
+      SERVER_ADDRESS: 0.0.0.0:3069
+      DATABASE_ROOT_PATH: /data
+      JWT_SECRET: single-node-jwt-secret-change-in-production
+      AGENT_API_KEYS: ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
+      CLIENT_API_KEYS: client_secret_key_123
+      MGMT_TOKEN: single-node-mgmt-token-change-in-production
+    volumes:
+      - offloadmq-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3069/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  agent:
+    build:
+      context: ./offload-agent
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      SERVER: http://offloadmq:3069
+      AGENT_KEY: ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
+      WEBUI_PORT: "8081"
+    depends_on:
+      offloadmq:
+        condition: service_healthy
+
+  frontend:
+    image: grekodocker/offloadmq-management-frontend:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      API_TARGET: http://offloadmq:3069
+      MGMT_TARGET: http://offloadmq:3069
+    depends_on:
+      - offloadmq
+
+volumes:
+  offloadmq-data:

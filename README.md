@@ -15,6 +15,31 @@ chmod +x offload-agent
 
 Or visit [Releases](https://github.com/AlexGrek/offloadmq/releases) to download manually.
 
+## 🐳 Single-Node Setup
+
+Spin up a complete local stack — backend, agent with web UI, and management frontend — in one command. Zero configuration required.
+
+```bash
+docker compose up --build
+```
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| OffloadMQ backend | `http://localhost:3069` | Task queue server |
+| Agent web UI | `http://localhost:8081` | Agent dashboard (auto-registered) |
+| Management UI | `http://localhost:8080/ui` | Fleet management frontend |
+
+**Client API key:** `client_secret_key_123`
+
+```bash
+curl -X POST http://localhost:3069/api/task/submit \
+  -H "Authorization: Bearer client_secret_key_123" \
+  -H "Content-Type: application/json" \
+  -d '{"capability": "debug.echo", "payload": {"message": "hello"}}'
+```
+
+> The default keys are for local use only. Change `JWT_SECRET`, `MGMT_TOKEN`, and all API keys in `docker-compose.yml` before exposing to a network.
+
 ## 🏗️ Architecture
 
 - **🖥️ Server** — Rust/Axum HTTP server with a persistent Sled DB and in-memory urgent queue
