@@ -4,7 +4,7 @@ WORKDIR /build
 
 # Copy source and dependencies
 COPY package*.json ./
-RUN npm ci --frozen-lockfile
+RUN npm install
 
 # Copy app source
 COPY . .
@@ -20,7 +20,7 @@ WORKDIR /app
 
 # Install only production dependencies for server
 COPY server/package*.json ./
-RUN npm ci --frozen-lockfile --omit=dev
+RUN npm install --omit=dev
 
 # Copy built frontend from builder
 COPY --from=builder /build/dist ./dist
