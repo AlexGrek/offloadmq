@@ -133,7 +133,9 @@
       "Bash(python3 -m mypy offload-agent/app/systeminfo.py --strict)",
       "Bash(bash -c \"source venv/bin/activate 2>/dev/null || true && python3 -m mypy app/systeminfo.py --strict\")",
       "Bash(python3 -m mypy app/systeminfo.py --strict)",
-      "Bash(bash -c \"source venv/bin/activate && python -m mypy app/systeminfo.py --strict\")"
+      "Bash(bash -c \"source venv/bin/activate && python -m mypy app/systeminfo.py --strict\")",
+      "Bash(make deploy:*)",
+      "Bash(kubectl describe:*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
