@@ -1,20 +1,4 @@
-# Build stage
-FROM node:24 AS build
-WORKDIR /app
-
-# Install deps
-COPY package*.json ./
-RUN npm install
-
-# Copy app source
-COPY . .
-
-# Build Vite SPA with base path for /ui deployment
-ARG VITE_BASE_PATH=/ui/
-ENV VITE_BASE_PATH=${VITE_BASE_PATH}
-RUN npm run build
-
-# Runtime stage
+# Runtime stage (frontend built locally and pre-built artifacts copied)
 FROM node:24-slim
 WORKDIR /app
 
@@ -22,8 +6,8 @@ WORKDIR /app
 COPY server/package*.json ./
 RUN npm install --omit=dev
 
-# Copy built frontend and server
-COPY --from=build /app/dist ./dist
+# Copy pre-built frontend (built locally) and server
+COPY dist ./dist
 COPY server/server.js ./
 
 # Set environment variables

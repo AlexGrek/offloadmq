@@ -1,8 +1,5 @@
-# Dev dependencies (reinstalled during build)
+# Dev dependencies
 node_modules/
-
-# Previous build output
-dist/
 
 # Git & editor
 .git/
@@ -12,3 +9,19 @@ dist/
 # Local env
 .env
 *.env
+
+# Build artifacts (except dist, which is pre-built locally)
+.vite/
+target/
+
+# IDE
+.vscode/
+.idea/
+
+# Tests & coverage
+coverage/
+*.lcov
+
+# OS
+.DS_Store
+.env.local

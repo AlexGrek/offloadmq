@@ -8,11 +8,16 @@ TAG ?= $(shell git describe --tags --always --dirty)
 REGISTRY ?= grekodocker
 IMAGE ?= $(REGISTRY)/offloadmq-management-frontend
 
-.PHONY: build push install upgrade uninstall status template deploy
+.PHONY: build push install upgrade uninstall status template deploy local-build
 
-# Build Docker image
-build:
+# Build frontend locally and Docker image
+build: local-build
 	docker build -t $(IMAGE):$(TAG) .
+
+# Build frontend locally (npm)
+local-build:
+	npm install
+	npm run build
 
 # Push Docker image
 push:
