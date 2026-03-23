@@ -89,12 +89,13 @@ wait-for-image-pull:
 	timeout=60; \
 	elapsed=0; \
 	while [ $$elapsed -lt $$timeout ]; do \
+		sleep 10; \
+		elapsed=$$((elapsed + 10)); \
 		if kubectl wait --for=condition=Complete job/$$job_name -n $(NAMESPACE) --timeout=10s >/dev/null 2>&1; then \
 			echo "✓ Image pull job completed"; \
 			kubectl delete job $$job_name -n $(NAMESPACE) --ignore-not-found=true; \
 			exit 0; \
 		fi; \
-		elapsed=$$((elapsed + 10)); \
 		echo "Image pull in progress... ($$elapsed/$${timeout}s)"; \
 	done; \
 	echo "✗ Image pull job timeout (60s exceeded)"; \
