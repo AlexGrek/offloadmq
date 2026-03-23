@@ -120,7 +120,8 @@ body {
   border-right: 1px solid var(--border);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.55));
   backdrop-filter: saturate(180%) blur(16px);
-  box-shadow: var(--shadow)
+  box-shadow: var(--shadow);
+  overflow-y: auto;
 }
 
 [data-theme="dark"] .sidebar {
@@ -144,7 +145,8 @@ body {
   font-size: .95rem;
   cursor: pointer;
   text-align: left;
-  color: var(--text)
+  color: var(--text);
+  text-decoration: none;
 }
 
 .nav-item:hover {

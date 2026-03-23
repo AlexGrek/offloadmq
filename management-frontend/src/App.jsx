@@ -113,9 +113,9 @@ function AppLayout() {
         </AnimatePresence>
 
         <main className="content">
-          <AnimatePresence mode="wait">
-            <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
-              <Suspense fallback={<RouteLoader />}>
+          <Suspense fallback={<RouteLoader />}>
+            <AnimatePresence mode="wait">
+              <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
                 <Routes>
                   <Route path="/agents" element={<AgentsPage />} />
                   <Route path="/api-keys" element={<ApiKeysPage />} />
@@ -128,9 +128,9 @@ function AppLayout() {
                   <Route path="/json" element={<ApiTestingTool />} />
                   <Route path="/" element={<AgentsPage />} />
                 </Routes>
-              </Suspense>
-            </motion.div>
-          </AnimatePresence>
+              </motion.div>
+            </AnimatePresence>
+          </Suspense>
         </main>
       </div>
     </div>
@@ -140,7 +140,7 @@ function AppLayout() {
 // ----- Main App with Router -----
 export default function App() {
   return (
-    <Router>
+    <Router basename="/ui">
       <AppLayout />
     </Router>
   );
