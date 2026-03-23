@@ -107,7 +107,9 @@ function AgentsPage() {
                                                     <div className="kv"><span>Client:</span><b>{a.systemInfo?.client}</b></div>
                                                     <div className="kv"><span>Runtime:</span><b>{a.systemInfo?.runtime}</b></div>
                                                     <div className="kv"><span>CPU Arch:</span><b>{a.systemInfo?.cpuArch}</b></div>
+                                                    {a.systemInfo?.cpuModel && <div className="kv"><span>CPU Model:</span><b>{a.systemInfo.cpuModel}</b></div>}
                                                     <div className="kv"><span>Total RAM:</span><b>{a.systemInfo?.totalMemoryMb} MB</b></div>
+                                                    {a.systemInfo?.machineId && <div className="kv"><span>Machine ID:</span><code>{a.systemInfo.machineId}</code></div>}
                                                 </div>
                                                 <div>
                                                     <div className="section-title">GPU</div>

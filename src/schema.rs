@@ -159,8 +159,10 @@ pub struct SystemInfo {
     pub client: String,
     pub runtime: String,
     pub cpu_arch: String,
+    pub cpu_model: Option<String>,
     pub total_memory_mb: u64,
     pub gpu: Option<GpuInfo>,
+    pub machine_id: Option<String>,
 }
 
 /// GPU details, if available on the agent's system.

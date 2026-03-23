@@ -617,3 +617,138 @@ body {
 .theme-toggle:hover {
   background: var(--glass-strong);
 }
+
+/* Token Settings */
+.token-settings {
+  position: relative;
+}
+
+.settings-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 280px;
+  background: var(--glass-strong);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  z-index: 50;
+}
+
+.settings-popover .form {
+  padding: .7rem;
+}
+
+.settings-popover .form-row input {
+  font-size: .85rem;
+}
+
+/* Background Job Triggers */
+.trigger-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: .9rem;
+}
+
+.trigger-info {
+  flex: 1;
+}
+
+.trigger-info h3 {
+  margin: 0 0 .5rem 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.trigger-description {
+  margin: 0 0 .7rem 0;
+  font-size: .9rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.trigger-details {
+  display: flex;
+  gap: 1rem;
+  font-size: .85rem;
+  color: var(--muted);
+}
+
+.result {
+  display: flex;
+  align-items: flex-start;
+  gap: .8rem;
+  margin: 0 .9rem .9rem;
+  padding: .8rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.result.success {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.2);
+  color: #166534;
+}
+
+[data-theme="dark"] .result.success {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.result.error {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #7f1d1d;
+}
+
+[data-theme="dark"] .result.error {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.result-content {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  flex: 1;
+}
+
+.result-title {
+  font-weight: 600;
+  font-size: .95rem;
+}
+
+.result-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: .6rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  gap: .6rem;
+  font-size: .85rem;
+}
+
+.detail-label {
+  color: var(--muted);
+}
+
+.detail-value {
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Loading spinner */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

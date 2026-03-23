@@ -2,16 +2,17 @@ import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
-import { Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Menu, Moon, ScrollText, Settings2, SquarePlay, Sun } from "lucide-react";
+import { Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Menu, Moon, ScrollText, SquarePlay, Sun, Zap } from "lucide-react";
 import AgentsPage from "./components/AgentsPage";
 import { TOKEN_KEY, apiFetch } from "./utils";
 import ApiKeysPage from "./components/ApiKeysPage";
-import SettingsPage from "./components/SettingsPage";
 import TasksPage from "./components/TasksPage";
 import ApiTestingTool from "./components/ApiTestingTool";
 import SandboxApps from "./components/SandboxApps";
 import StoragePage from "./components/StoragePage";
 import ServiceLogsPage from "./components/ServiceLogsPage";
+import TokenSettings from "./components/TokenSettings";
+import BackgroundJobTriggersPage from "./components/BackgroundJobTriggersPage";
 
 // ----- App Shell -----
 const routes = [
@@ -21,6 +22,7 @@ const routes = [
   { id: "storage", label: "Storage", icon: <Database /> },
   { id: "sandbox", label: "Sandbox", icon: <SquarePlay /> },
   { id: "service-logs", label: "Service Logs", icon: <ScrollText /> },
+  { id: "bg-triggers", label: "BG Triggers", icon: <Zap /> },
   { id: "json", label: "JSON", icon: <Brackets /> },
 ];
 
@@ -59,8 +61,8 @@ export default function App() {
       case "storage": return <StoragePage />;
       case "sandbox": return <SandboxApps />;
       case "service-logs": return <ServiceLogsPage />;
+      case "bg-triggers": return <BackgroundJobTriggersPage />;
       case "json": return <ApiTestingTool />;
-      case "settings": return <SettingsPage />;
       default: return <AgentsPage />;
     }
   }, [route]);
@@ -84,6 +86,7 @@ export default function App() {
         <button className="theme-toggle" onClick={() => setDark(d => !d)} aria-label="Toggle theme">
           {dark ? <Sun size={18} /> : <Moon size={18} />}
         </button>
+        <TokenSettings />
         {tokenMissing && <span className="badge warn">No token</span>}
       </header>
 
@@ -99,12 +102,6 @@ export default function App() {
                   </button>
                 ))}
               </nav>
-              <div className="bottom">
-                <button className={`nav-item ${route === "settings" ? "active" : ""}`} onClick={() => { setRoute("settings"); if (window.innerWidth < 900) setNavOpen(false); }}>
-                  <span className="icon-wrap"><Settings2 /></span>
-                  <span>Settings</span>
-                </button>
-              </div>
             </motion.aside>
           )}
         </AnimatePresence>

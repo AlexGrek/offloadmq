@@ -128,7 +128,12 @@
       "Bash(du -sh /Users/vedmedik/dev/offloadmq/*)",
       "Bash(head -10 du -sh /Users/vedmedik/dev/offloadmq/management-frontend/*)",
       "Bash(cargo clean:*)",
-      "Bash(make template:*)"
+      "Bash(make template:*)",
+      "Bash(python -m mypy app/systeminfo.py --strict)",
+      "Bash(python3 -m mypy offload-agent/app/systeminfo.py --strict)",
+      "Bash(bash -c \"source venv/bin/activate 2>/dev/null || true && python3 -m mypy app/systeminfo.py --strict\")",
+      "Bash(python3 -m mypy app/systeminfo.py --strict)",
+      "Bash(bash -c \"source venv/bin/activate && python -m mypy app/systeminfo.py --strict\")"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

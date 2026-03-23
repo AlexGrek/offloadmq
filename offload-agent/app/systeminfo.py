@@ -1,4 +1,5 @@
 import json
+import hashlib
 import platform
 import psutil
 import subprocess
@@ -82,26 +83,103 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
     return None
 
 
+def get_cpu_model() -> Optional[str]:
+    """Best-effort cross-platform CPU model detection.
+
+    Returns: CPU model string or None
+    """
+    system = platform.system()
+
+    # macOS
+    if system == "Darwin":
+        rc, out, _ = _try_run(["sysctl", "-n", "machdep.cpu.brand_string"])
+        if rc == 0 and out:
+            return out
+
+    # Linux
+    elif system == "Linux":
+        try:
+            with open("/proc/cpuinfo", "r") as f:
+                for line in f:
+                    if line.startswith("model name"):
+                        return line.split(":", 1)[1].strip()
+        except Exception:
+            pass
+
+    # Windows
+    elif system == "Windows":
+        rc, out, _ = _try_run([
+            "powershell", "-NoProfile", "-Command",
+            "Get-CimInstance Win32_Processor | Select-Object -First 1 Name | ConvertTo-Json"
+        ])
+        if rc == 0 and out:
+            try:
+                data = json.loads(out)
+                if isinstance(data, dict) and "Name" in data:
+                    name = data.get("Name")
+                    if isinstance(name, str):
+                        return name
+            except Exception:
+                pass
+
+    return None
+
+
+def calculate_machine_id(system_info: Dict[str, Any]) -> str:
+    """Calculate deterministic machine ID by hashing all hardware info.
+
+    Returns: First 8 characters of SHA-256 hash
+    """
+    parts = [
+        system_info.get("os", ""),
+        system_info.get("cpuArch", ""),
+        system_info.get("cpuModel", ""),
+        str(system_info.get("totalMemoryMb", "")),
+    ]
+
+    gpu = system_info.get("gpu")
+    if gpu:
+        parts.extend([
+            gpu.get("vendor", ""),
+            gpu.get("model", ""),
+            str(gpu.get("vramMb", "")),
+        ])
+
+    combined = "|".join(parts)
+    hash_obj = hashlib.sha256(combined.encode())
+    return hash_obj.hexdigest()[:8]
+
+
 def collect_system_info() -> Dict[str, Any]:
     memory_bytes = psutil.virtual_memory().total
     memory_mb = memory_bytes // (1024 * 1024)
-    return {
+    cpu_model = get_cpu_model()
+
+    system_info = {
         "os": platform.system(),
         "cpuArch": platform.machine(),
+        "cpuModel": cpu_model,
         "totalMemoryMb": memory_mb,
         "gpu": get_gpu_info(),
         "client": "offload-agent.py",
         "runtime": "python",
     }
 
+    system_info["machineId"] = calculate_machine_id(system_info)
+    return system_info
+
 
 def print_system_info(sysinfo: Dict[str, Any]) -> None:
     typer.echo("Collecting system information...")
     typer.echo(f"OS: {sysinfo['os']}")
     typer.echo(f"Architecture: {sysinfo['cpuArch']}")
+    if sysinfo.get("cpuModel"):
+        typer.echo(f"CPU Model: {sysinfo['cpuModel']}")
     typer.echo(f"Memory: {sysinfo['totalMemoryMb']} MB")
     if sysinfo.get("gpu"):
         g = sysinfo["gpu"]
         typer.echo(f"GPU: {g.get('vendor')} {g.get('model')} ({g.get('vramMb')} MB VRAM)")
     else:
         typer.echo("GPU: None detected")
+    if sysinfo.get("machineId"):
+        typer.echo(f"Machine ID: {sysinfo['machineId']}")
