@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useState } from "react";
-import { AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch, fmtDate } from "../utils";
 import { RefreshCw, ChevronDown, ChevronRight, HardDrive, Trash2 } from "lucide-react";
 import Banner from "./Banner";

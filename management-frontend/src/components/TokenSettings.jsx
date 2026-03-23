@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Check, Settings2, Copy } from "lucide-react";
 import { TOKEN_KEY } from "../utils";
 
