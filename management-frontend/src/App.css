@@ -134,6 +134,20 @@ body {
   }
 }
 
+.route-container {
+  animation: fadeIn 0.2s ease-out forwards;
+  width: 100%;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 [data-theme="dark"] .sidebar {
   background: linear-gradient(180deg, rgba(20, 22, 30, 0.9), rgba(15, 17, 23, 0.85));
 }

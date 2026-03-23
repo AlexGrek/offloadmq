@@ -1,7 +1,6 @@
 import React, { useEffect, useState, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route, NavLink, useLocation } from "react-router-dom";
-import { motion, AnimatePresence } from 'framer-motion';
-import './App.css'; // framer-motion for route animations only
+import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
 import { Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Loader2, Menu, Moon, ScrollText, SquarePlay, Sun, Zap, Wrench } from "lucide-react";
 import { TOKEN_KEY, apiFetch } from "./utils";
@@ -21,9 +20,9 @@ const UtilsPage = React.lazy(() => import("./components/UtilsPage"));
 function RouteLoader() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px' }}>
-      <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
+      <div style={{ animation: 'spin 1s linear infinite' }}>
         <Loader2 size={32} color="var(--primary)" />
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -112,22 +111,20 @@ function AppLayout() {
 
         <main className="content">
           <Suspense fallback={<RouteLoader />}>
-            <AnimatePresence mode="wait">
-              <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
-                <Routes>
-                  <Route path="/agents" element={<AgentsPage />} />
-                  <Route path="/api-keys" element={<ApiKeysPage />} />
-                  <Route path="/tasks" element={<TasksPage />} />
-                  <Route path="/storage" element={<StoragePage />} />
-                  <Route path="/sandbox" element={<SandboxApps />} />
-                  <Route path="/service-logs" element={<ServiceLogsPage />} />
-                  <Route path="/bg-triggers" element={<BackgroundJobTriggersPage />} />
-                  <Route path="/utils" element={<UtilsPage />} />
-                  <Route path="/json" element={<ApiTestingTool />} />
-                  <Route path="/" element={<AgentsPage />} />
-                </Routes>
-              </motion.div>
-            </AnimatePresence>
+            <div className="route-container">
+              <Routes>
+                <Route path="/agents" element={<AgentsPage />} />
+                <Route path="/api-keys" element={<ApiKeysPage />} />
+                <Route path="/tasks" element={<TasksPage />} />
+                <Route path="/storage" element={<StoragePage />} />
+                <Route path="/sandbox" element={<SandboxApps />} />
+                <Route path="/service-logs" element={<ServiceLogsPage />} />
+                <Route path="/bg-triggers" element={<BackgroundJobTriggersPage />} />
+                <Route path="/utils" element={<UtilsPage />} />
+                <Route path="/json" element={<ApiTestingTool />} />
+                <Route path="/" element={<AgentsPage />} />
+              </Routes>
+            </div>
           </Suspense>
         </main>
       </div>
