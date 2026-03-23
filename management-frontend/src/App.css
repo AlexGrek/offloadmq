@@ -122,6 +122,16 @@ body {
   backdrop-filter: saturate(180%) blur(16px);
   box-shadow: var(--shadow);
   overflow-y: auto;
+  animation: slideInSidebar 0.2s ease-out forwards;
+}
+
+@keyframes slideInSidebar {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 [data-theme="dark"] .sidebar {

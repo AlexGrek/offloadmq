@@ -1,7 +1,7 @@
 import React, { useEffect, useState, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from 'framer-motion';
-import './App.css';
+import './App.css'; // framer-motion for route animations only
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
 import { Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Loader2, Menu, Moon, ScrollText, SquarePlay, Sun, Zap, Wrench } from "lucide-react";
 import { TOKEN_KEY, apiFetch } from "./utils";
@@ -92,25 +92,23 @@ function AppLayout() {
       </header>
 
       <div className="layout">
-        <AnimatePresence initial={false}>
-          {navOpen && (
-            <motion.aside className="sidebar" initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} transition={{ type: "spring", stiffness: 150, damping: 18 }}>
-              <nav>
-                {routes.map(r => (
-                  <NavLink
-                    key={r.path}
-                    to={r.path}
-                    onClick={() => { if (window.innerWidth < 900) setNavOpen(false); }}
-                    className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
-                  >
-                    <span className="icon-wrap">{r.icon}</span>
-                    <span>{r.label}</span>
-                  </NavLink>
-                ))}
-              </nav>
-            </motion.aside>
-          )}
-        </AnimatePresence>
+        {navOpen && (
+          <aside className="sidebar">
+            <nav>
+              {routes.map(r => (
+                <NavLink
+                  key={r.path}
+                  to={r.path}
+                  onClick={() => { if (window.innerWidth < 900) setNavOpen(false); }}
+                  className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
+                >
+                  <span className="icon-wrap">{r.icon}</span>
+                  <span>{r.label}</span>
+                </NavLink>
+              ))}
+            </nav>
+          </aside>
+        )}
 
         <main className="content">
           <Suspense fallback={<RouteLoader />}>
