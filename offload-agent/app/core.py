@@ -175,8 +175,8 @@ def download_bucket_files(http: HttpClient, task_id: TaskId, capability: str, fi
             logger.info(f"Bucket {bucket_uid}: {len(files)} file(s) to download")
 
             for file_info in files:
-                file_uid = file_info["file_uid"]
-                original_name = file_info.get("original_name", file_uid)
+                file_uid = file_info["fileUid"]
+                original_name = file_info.get("originalName", file_uid)
                 save_path = data_path / original_name
 
                 if save_path.exists():

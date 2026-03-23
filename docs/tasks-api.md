@@ -396,16 +396,16 @@ Register a new agent with the system. Returns agent ID and login credentials.
   "tier": 5,
   "capacity": 4,
   "apiKey": "agent-registration-key",
-  "system_info": {
+  "systemInfo": {
     "os": "Linux",
     "client": "offload-agent/0.1.0",
     "runtime": "Python 3.11",
-    "cpu_arch": "aarch64",
-    "total_memory_mb": 32768,
+    "cpuArch": "aarch64",
+    "totalMemoryMb": 32768,
     "gpu": {
       "vendor": "NVIDIA",
       "model": "RTX 4090",
-      "vram_mb": 24576
+      "vramMb": 24576
     }
   }
 }
@@ -417,14 +417,14 @@ Register a new agent with the system. Returns agent ID and login credentials.
 | `tier` | integer (0-255) | Performance tier. Higher = better. Used for task scheduling priority. |
 | `capacity` | integer | Max concurrent tasks this agent can handle |
 | `apiKey` | string | Agent registration key (from server config) |
-| `system_info` | object | System details (OS, memory, GPU, etc.) |
-| `system_info.gpu` | object | Optional GPU info if available |
+| `systemInfo` | object | System details (OS, memory, GPU, etc.) |
+| `systemInfo.gpu` | object | Optional GPU info if available |
 
 **Response** (201 Created)
 
 ```json
 {
-  "agent_id": "agent-abc123def456",
+  "agentId": "agent-abc123def456",
   "key": "my-secret-login-token-12345",
   "message": "Registered"
 }
@@ -432,7 +432,7 @@ Register a new agent with the system. Returns agent ID and login credentials.
 
 **Notes**
 
-- Save the `agent_id` and `key` — you'll need them to authenticate
+- Save the `agentId` and `key` — you'll need them to authenticate
 - Register only once; to update capabilities/tier, use `/private/agent/update`
 
 ---
@@ -450,7 +450,7 @@ Authenticate and receive a JWT token for subsequent requests.
 
 ```json
 {
-  "agent_id": "agent-abc123def456",
+  "agentId": "agent-abc123def456",
   "key": "my-secret-login-token-12345"
 }
 ```
@@ -460,14 +460,14 @@ Authenticate and receive a JWT token for subsequent requests.
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expires_in": 3600
+  "expiresIn": 3600
 }
 ```
 
 | Field | Description |
 |-------|-------------|
 | `token` | JWT token for `Authorization: Bearer` header |
-| `expires_in` | Token validity in seconds |
+| `expiresIn` | Token validity in seconds |
 
 **Notes**
 
@@ -494,16 +494,16 @@ Update agent capabilities, tier, or system info.
   "capabilities": ["llm.mistral", "llm.qwen", "vision[gpu;cuda12.1]"],
   "tier": 6,
   "capacity": 8,
-  "system_info": {
+  "systemInfo": {
     "os": "Linux",
     "client": "offload-agent/0.1.1",
     "runtime": "Python 3.11",
-    "cpu_arch": "aarch64",
-    "total_memory_mb": 32768,
+    "cpuArch": "aarch64",
+    "totalMemoryMb": 32768,
     "gpu": {
       "vendor": "NVIDIA",
       "model": "RTX 4090",
-      "vram_mb": 24576
+      "vramMb": 24576
     }
   }
 }
@@ -513,7 +513,7 @@ Update agent capabilities, tier, or system info.
 
 ```json
 {
-  "agent_id": "agent-abc123def456",
+  "agentId": "agent-abc123def456",
   "key": "my-secret-login-token-12345",
   "message": "Updated"
 }
@@ -540,7 +540,7 @@ With available task:
     "id": "01ARZ3NDE4V2XTGZUVY7"
   },
   "data": {
-    "api_key": "client-key",
+    "apiKey": "client-key",
     "capability": "llm.mistral",
     "payload": {
       "prompt": "What is 2+2?",
@@ -552,7 +552,7 @@ With available task:
     "fetchFiles": [],
     "artifacts": []
   },
-  "created_at": "2026-03-18T10:30:45.123Z"
+  "createdAt": "2026-03-18T10:30:45.123Z"
 }
 ```
 
@@ -568,7 +568,7 @@ null
 | `data.fileBucket` | List of bucket UIDs you can download input files from via `GET /private/agent/bucket/{bucket_uid}/file/{file_uid}` |
 | `data.outputBucket` | Optional bucket UID where you should upload output files via `POST /private/agent/bucket/{bucket_uid}/upload` |
 | `data.payload` | The client's task payload |
-| `created_at` | When the task was submitted |
+| `createdAt` | When the task was submitted |
 
 **Notes**
 
@@ -632,7 +632,7 @@ Claim a task you polled and transition it to "assigned" state.
     "id": "01ARZ3NDE4V2XTGZUVY7"
   },
   "data": {
-    "api_key": "client-key",
+    "apiKey": "client-key",
     "capability": "llm.mistral",
     "payload": {
       "prompt": "What is 2+2?",
@@ -1057,29 +1057,29 @@ register_payload = {
     "capabilities": ["llm.mistral", "vision"],
     "tier": 5,
     "capacity": 4,
-    "system_info": {
+    "systemInfo": {
         "os": "Linux",
         "client": "offload-agent/0.1.0",
         "runtime": "Python 3.11",
-        "cpu_arch": "x86_64",
-        "total_memory_mb": 16384,
+        "cpuArch": "x86_64",
+        "totalMemoryMb": 16384,
         "gpu": {
             "vendor": "NVIDIA",
             "model": "RTX 3080",
-            "vram_mb": 10240
+            "vramMb": 10240
         }
     }
 }
 
 response = requests.post(f"{BASE_URL}/private/agent/register", json=register_payload)
 agent_data = response.json()
-agent_id = agent_data["agent_id"]
+agent_id = agent_data["agentId"]
 agent_key = agent_data["key"]
 print(f"Registered agent: {agent_id}")
 
 # 2. Login to get JWT
 login_payload = {
-    "agent_id": agent_id,
+    "agentId": agent_id,
     "key": agent_key
 }
 
@@ -1087,7 +1087,7 @@ response = requests.post(f"{BASE_URL}/private/agent/login", json=login_payload)
 auth_data = response.json()
 jwt_token = auth_data["token"]
 headers = {"Authorization": f"Bearer {jwt_token}"}
-print(f"Logged in, token expires in {auth_data['expires_in']}s")
+print(f"Logged in, token expires in {auth_data['expiresIn']}s")
 
 # 3. Poll for tasks
 while True:

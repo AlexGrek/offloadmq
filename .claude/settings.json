@@ -146,7 +146,9 @@
       "Bash(launchctl unload:*)",
       "Bash(python -m mypy app/systeminfo.py app/cli.py app/core.py --strict)",
       "Bash(python offload-agent.py cli register)",
-      "WebFetch(domain:linux-hardware.org)"
+      "WebFetch(domain:linux-hardware.org)",
+      "Bash(python -m mypy app/tier.py app/systeminfo.py --strict)",
+      "Bash(python -c \"from app.systeminfo import calculate_tier; from app.core import serve_tasks; from app.cli import app; print\\(''imports OK''\\)\")"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
