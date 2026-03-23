@@ -4,7 +4,6 @@ import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
 import { Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Loader2, Menu, Moon, ScrollText, SquarePlay, Sun, Zap, Wrench } from "lucide-react";
 import { TOKEN_KEY, apiFetch } from "./utils";
-import TokenSettings from "./components/TokenSettings";
 
 const AgentsPage = React.lazy(() => import("./components/AgentsPage"));
 const ApiKeysPage = React.lazy(() => import("./components/ApiKeysPage"));
@@ -15,6 +14,7 @@ const StoragePage = React.lazy(() => import("./components/StoragePage"));
 const ServiceLogsPage = React.lazy(() => import("./components/ServiceLogsPage"));
 const BackgroundJobTriggersPage = React.lazy(() => import("./components/BackgroundJobTriggersPage"));
 const UtilsPage = React.lazy(() => import("./components/UtilsPage"));
+const TokenSettingsPage = React.lazy(() => import("./components/TokenSettingsPage"));
 
 // ----- Route Loader -----
 function RouteLoader() {
@@ -38,6 +38,7 @@ const routes = [
   { path: "/bg-triggers", label: "BG Triggers", icon: <Zap /> },
   { path: "/utils", label: "Utils", icon: <Wrench /> },
   { path: "/json", label: "JSON", icon: <Brackets /> },
+  { path: "/token", label: "Token", icon: <KeySquare /> },
 ];
 
 // ----- Main App Layout -----
@@ -86,7 +87,6 @@ function AppLayout() {
         <button className="theme-toggle" onClick={() => setDark(d => !d)} aria-label="Toggle theme">
           {dark ? <Sun size={18} /> : <Moon size={18} />}
         </button>
-        <TokenSettings />
         {tokenMissing && <span className="badge warn">No token</span>}
       </header>
 
@@ -122,6 +122,7 @@ function AppLayout() {
                 <Route path="/bg-triggers" element={<BackgroundJobTriggersPage />} />
                 <Route path="/utils" element={<UtilsPage />} />
                 <Route path="/json" element={<ApiTestingTool />} />
+                <Route path="/token" element={<TokenSettingsPage />} />
                 <Route path="/" element={<AgentsPage />} />
               </Routes>
             </div>

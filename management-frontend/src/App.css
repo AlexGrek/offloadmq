@@ -657,30 +657,6 @@ body {
   background: var(--glass-strong);
 }
 
-/* Token Settings */
-.token-settings {
-  position: relative;
-}
-
-.settings-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  min-width: 280px;
-  background: var(--glass-strong);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-  z-index: 50;
-}
-
-.settings-popover .form {
-  padding: .7rem;
-}
-
-.settings-popover .form-row input {
-  font-size: .85rem;
-}
 
 /* Background Job Triggers */
 .trigger-header {
