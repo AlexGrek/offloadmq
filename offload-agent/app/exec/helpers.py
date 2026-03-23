@@ -1,4 +1,6 @@
 import logging
+import random
+import time
 from datetime import timedelta
 from typing import Any, Optional
 
@@ -10,36 +12,160 @@ from ..httphelpers import *
 
 logger = logging.getLogger("agent")
 
+# ---------------------------------------------------------------------------
+# Log buffer — accumulates unsent progress logs per task
+# ---------------------------------------------------------------------------
+_pending_logs: dict[str, list[str]] = {}
+_pending_stage: dict[str, Optional[str]] = {}
+
+
+def _buffer_log(task_id: TaskId, log: Optional[str], stage: Optional[str]) -> None:
+    """Append log text and stage to the per-task buffer."""
+    key = task_id.id
+    if log:
+        _pending_logs.setdefault(key, []).append(log)
+    if stage is not None:
+        _pending_stage[key] = stage
+
+
+def _drain_logs(task_id: TaskId) -> tuple[Optional[str], Optional[str]]:
+    """Pop all buffered logs for a task and return (merged_log, last_stage)."""
+    key = task_id.id
+    logs = _pending_logs.pop(key, [])
+    stage = _pending_stage.pop(key, None)
+    combined = "".join(logs) if logs else None
+    return combined, stage
+
+
+# ---------------------------------------------------------------------------
+# Retry infrastructure
+# ---------------------------------------------------------------------------
+
+def _is_retryable(exc: Exception) -> bool:
+    """Return True if the error is transient and worth retrying."""
+    if isinstance(exc, requests.HTTPError):
+        resp = exc.response
+        if resp is not None:
+            code = resp.status_code
+            # 408 Request Timeout and 429 Too Many Requests are retryable
+            if code in (408, 429):
+                return True
+            # Other 4xx are permanent (bad payload, auth, not found, etc.)
+            if 400 <= code < 500:
+                return False
+            # 5xx are transient server errors
+            if code >= 500:
+                return True
+    # Connection errors, timeouts, and anything else are retryable
+    if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+        return True
+    # Other RequestException subclasses — assume transient
+    if isinstance(exc, requests.RequestException):
+        return True
+    return False
+
+
+def _retry_post(
+    http: HttpClient,
+    segments: tuple[str, ...],
+    json_body: dict[str, Any],
+    timeout: int,
+    max_elapsed_sec: float,
+    base_delay: float,
+    max_delay: float,
+) -> requests.Response:
+    """POST with exponential backoff. Raises on permanent or exhausted failure."""
+    start = time.monotonic()
+    delay = base_delay
+    last_exc: Optional[Exception] = None
+
+    while True:
+        try:
+            resp = http.post(*segments, json_body=json_body, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except Exception as exc:
+            last_exc = exc
+            if not _is_retryable(exc):
+                raise
+
+            elapsed = time.monotonic() - start
+            if elapsed >= max_elapsed_sec:
+                logger.warning(
+                    f"Retry budget exhausted ({max_elapsed_sec:.0f}s). Last error: {exc}"
+                )
+                raise
+
+            jittered = delay * random.uniform(0.8, 1.2)
+            remaining = max_elapsed_sec - elapsed
+            sleep_time = min(jittered, remaining)
+            if sleep_time <= 0:
+                raise
+
+            logger.info(f"Transient error, retrying in {sleep_time:.1f}s: {exc}")
+            time.sleep(sleep_time)
+            delay = min(delay * 2, max_delay)
+
+
+def _flush_logs(http: HttpClient, task_id: TaskId) -> bool:
+    """Send all buffered logs with fast retry. Called before report_result."""
+    combined, stage = _drain_logs(task_id)
+    if combined is None and stage is None:
+        return True
+
+    q = task_id.quoted()
+    report = TaskProgressReport(id=task_id, stage=stage, log_update=combined)
+    try:
+        _retry_post(
+            http,
+            ("private", "agent", "task", "progress", q.cap, q.id),
+            json_body=report.to_wire(),
+            timeout=30,
+            max_elapsed_sec=30.0,
+            base_delay=1.0,
+            max_delay=16.0,
+        )
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to flush buffered logs for task {task_id.id}: {e}")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Public API — signatures unchanged
+# ---------------------------------------------------------------------------
 
 def report_result(http: HttpClient, report: TaskResultReport) -> bool:
-    # POST /private/agent/task/resolve/{cap}/{id}
+    """Send final task result to the server with retry (up to 5 minutes)."""
+    # Flush any buffered logs first (best-effort, doesn't block result)
+    _flush_logs(http, report.task_id)
+
     q = report.task_id.quoted()
     wire = report.to_wire()
     logger.info(f"Sending resolve report: {wire}")
     try:
         typer.echo(f"Reporting result for task id={q.id} cap={q.cap}")
-        resp = http.post(
-            "private",
-            "agent",
-            "task",
-            "resolve",
-            q.cap,
-            q.id,
-            json_body=report.to_wire(),
-            timeout=300,
+        resp = _retry_post(
+            http,
+            ("private", "agent", "task", "resolve", q.cap, q.id),
+            json_body=wire,
+            timeout=60,
+            max_elapsed_sec=300.0,
+            base_delay=2.0,
+            max_delay=60.0,
         )
         if resp.content:
             try:
                 typer.echo(resp.content.decode("utf-8", errors="ignore"))
             except Exception:
                 pass
-        resp.raise_for_status()
         typer.echo(f"Task result reported. Status Code: {resp.status_code}")
         return True
     except requests.RequestException as e:
-        typer.echo(f"Failed to report task result: {e}")
+        typer.echo(f"Failed to report task result after retries: {e}")
         return False
-    
+
+
 def report_starting(http: HttpClient, task_id: TaskId) -> bool:
     """Signal to the server that the agent has started working on the task."""
     q = task_id.quoted()
@@ -52,38 +178,33 @@ def report_starting(http: HttpClient, task_id: TaskId) -> bool:
         )
         resp.raise_for_status()
         return True
-    except requests.RequestException as e:
-        typer.echo(f"Failed to report starting status: {e}")
+    except requests.RequestException:
+        _buffer_log(task_id, None, "starting")
         return False
 
 
 def report_progress(http: HttpClient, log: Optional[str], stage: Optional[str], task_id: TaskId) -> bool:
-    # POST /private/agent/task/progress/{cap}/{id}
-    print("Sending partial logs: ", log)
+    """Send progress/logs to server. On failure, buffers for next attempt."""
+    # Merge any previously buffered logs into this call
+    buffered_log, buffered_stage = _drain_logs(task_id)
+    merged_log: Optional[str] = None
+    if buffered_log or log:
+        merged_log = (buffered_log or "") + (log or "")
+    effective_stage = stage if stage is not None else buffered_stage
+
     q = task_id.quoted()
-    report = TaskProgressReport(id=task_id, stage=stage, log_update=log)
+    report = TaskProgressReport(id=task_id, stage=effective_stage, log_update=merged_log)
     try:
-        typer.echo(f"Reporting result for task id={q.id} cap={q.cap}")
         resp = http.post(
-            "private",
-            "agent",
-            "task",
-            "progress",
-            q.cap,
-            q.id,
+            "private", "agent", "task", "progress", q.cap, q.id,
             json_body=report.to_wire(),
-            timeout=300,
+            timeout=10,
         )
-        if resp.content:
-            try:
-                typer.echo(resp.content.decode("utf-8", errors="ignore"))
-            except Exception:
-                pass
         resp.raise_for_status()
-        typer.echo(f"Task result reported. Status Code: {resp.status_code}")
         return True
-    except requests.RequestException as e:
-        typer.echo(f"Failed to report task result: {e}")
+    except requests.RequestException:
+        # Failed — re-buffer everything for next attempt
+        _buffer_log(task_id, merged_log, effective_stage)
         return False
 
 
