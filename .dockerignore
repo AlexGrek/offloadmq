@@ -1,0 +1,30 @@
+# Rust build artifacts — by far the largest directory (~1.4 GB)
+target/
+
+# Other sub-projects not needed to build the server binary
+offload-agent/
+management-frontend/
+itests/
+openai-api-proxy/
+ansible/
+offloadmq-chart/
+demo-playbook/
+sandbox/
+offload-client/
+
+# Dev/local data
+data/
+db/
+.env
+*.env
+.secrets.yaml
+
+# Git & editor
+.git/
+.gitignore
+.claude/
+
+# Docs & misc
+docs/
+*.md
+!README.md

@@ -20,10 +20,12 @@ spec:
           ports:
             - containerPort: {{ .Values.service.port }}
           env:
-            - name: SERVER_ADDRESS
-              value: {{ .Values.env.SERVER_ADDRESS | quote }}
-            - name: DATABASE_ROOT_PATH
-              value: {{ .Values.env.DATABASE_ROOT_PATH | quote }}
+            {{- range $key, $val := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            - name: APP_VERSION
+              value: {{ .Values.appVersion | quote }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -44,8 +46,6 @@ spec:
                 secretKeyRef:
                   name: offloadmq-secrets
                   key: MGMT_TOKEN
-            - name: APP_VERSION
-              value: {{ .Values.appVersion | quote }}
           resources:
 {{ toYaml .Values.resources | indent 12 }}
           volumeMounts:

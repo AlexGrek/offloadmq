@@ -282,7 +282,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             loop {
                 // On first run, clean up immediately
                 if !first_run {
-                    // Generate random interval between min and max hours
+                    // Generate random delay between min and max hours
                     let min_hours = state.config.heuristics.cleanup_interval_min_hours as u64;
                     let max_hours = state.config.heuristics.cleanup_interval_max_hours as u64;
                     let random_hours = if min_hours == max_hours {
@@ -292,9 +292,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let mut rng = rand::rng();
                         rng.random_range(min_hours..=max_hours)
                     };
-                    let interval_secs = random_hours * 60 * 60;
-                    let mut interval = time::interval(time::Duration::from_secs(interval_secs));
-                    interval.tick().await;
+                    let sleep_secs = random_hours * 60 * 60;
+                    time::sleep(time::Duration::from_secs(sleep_secs)).await;
                 }
                 first_run = false;
 

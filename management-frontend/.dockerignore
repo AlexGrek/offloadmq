@@ -1,0 +1,14 @@
+# Dev dependencies (reinstalled during build)
+node_modules/
+
+# Previous build output
+dist/
+
+# Git & editor
+.git/
+.gitignore
+.claude/
+
+# Local env
+.env
+*.env

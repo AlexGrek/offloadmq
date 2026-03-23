@@ -124,7 +124,11 @@
       "Bash(/Users/vedmedik/dev/offloadmq/offload-agent/venv/bin/python --version)",
       "Bash(launchctl load:*)",
       "Bash(launchctl list:*)",
-      "Bash(git -C /Users/vedmedik/dev/offloadmq tag --sort=-creatordate)"
+      "Bash(git -C /Users/vedmedik/dev/offloadmq tag --sort=-creatordate)",
+      "Bash(du -sh /Users/vedmedik/dev/offloadmq/*)",
+      "Bash(head -10 du -sh /Users/vedmedik/dev/offloadmq/management-frontend/*)",
+      "Bash(cargo clean:*)",
+      "Bash(make template:*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

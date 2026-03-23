@@ -27,9 +27,43 @@ ingress:
 
 appVersion: ""
 
+# Plain (non-secret) environment variables passed to the server container.
+# All values must be strings — quote numbers.
 env:
-  SERVER_ADDRESS: "0.0.0.0:3069"
+  # ── Server ────────────────────────────────────────────────────────────────
+  HOST: "0.0.0.0"
+  PORT: "3069"
   DATABASE_ROOT_PATH: "/data/db"
+  # Max request body size for the client API (bytes). Default 5 MB.
+  MAX_REQUEST_BODY_BYTES: "5000000"
+
+  # ── File storage ──────────────────────────────────────────────────────────
+  # Backend: "local" (default), "webdav", or "s3"
+  STORAGE_BACKEND: "local"
+  # Max buckets per client API key
+  STORAGE_MAX_BUCKETS_PER_KEY: "256"
+  # Max bytes per bucket (default 1 GiB)
+  STORAGE_BUCKET_SIZE_BYTES: "1073741824"
+  # Bucket TTL in minutes (default 24 h)
+  STORAGE_BUCKET_TTL_MINUTES: "1440"
+
+  # WebDAV backend (set STORAGE_BACKEND=webdav to activate)
+  # STORAGE_WEBDAV_ENDPOINT: ""
+  # STORAGE_WEBDAV_USERNAME: ""   # consider moving to secrets
+
+  # S3-compatible backend (set STORAGE_BACKEND=s3 to activate)
+  # STORAGE_S3_BUCKET: ""
+  # STORAGE_S3_REGION: ""
+  # STORAGE_S3_ENDPOINT: ""       # for non-AWS endpoints
+
+  # ── Heuristics ────────────────────────────────────────────────────────────
+  # Delete heuristic records older than N days
+  HEURISTICS_TTL_DAYS: "7"
+  # Keep at most N records per (runner, capability) pair
+  HEURISTICS_MAX_RECORDS_PER_RUNNER_CAP: "500"
+  # Cleanup job runs on a randomized interval between min and max hours
+  HEURISTICS_CLEANUP_INTERVAL_MIN_HOURS: "16"
+  HEURISTICS_CLEANUP_INTERVAL_MAX_HOURS: "22"
 
 persistence:
   enabled: true
@@ -44,11 +78,17 @@ resources:
     cpu: 200m
     memory: 256Mi
 
+# Secret values — override via -f .secrets.yaml or --set secrets.*
 secrets:
   JWT_SECRET: "your-super-secret-and-long-jwt-key"
   CLIENT_API_KEYS: "client_secret_key_123"
   AGENT_API_KEYS: "ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e"
   MGMT_TOKEN: "this-is-for-testing-management-tokens"
+  # S3 credentials (only needed when STORAGE_BACKEND=s3)
+  # STORAGE_S3_ACCESS_KEY_ID: ""
+  # STORAGE_S3_SECRET_ACCESS_KEY: ""
+  # WebDAV password (only needed when STORAGE_BACKEND=webdav)
+  # STORAGE_WEBDAV_PASSWORD: ""
 
 frontend:
   enabled: true
