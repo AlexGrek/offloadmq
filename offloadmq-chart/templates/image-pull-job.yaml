@@ -1,0 +1,57 @@
+{{- if .Values.imagePullPolicy.preLoadImages }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: offloadmq-image-pull-{{ .Values.appVersion }}
+  labels:
+    app: offloadmq-image-pull
+spec:
+  parallelism: {{ .Values.imagePullPolicy.jobParallelism }}
+  completions: {{ .Values.imagePullPolicy.jobParallelism }}
+  backoffLimit: {{ .Values.imagePullPolicy.jobBackoffLimit }}
+  template:
+    metadata:
+      labels:
+        app: offloadmq-image-pull
+    spec:
+      restartPolicy: Never
+      # Anti-affinity to spread pulls across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - offloadmq-image-pull
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: image-puller
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args: ["echo 'Image pulled successfully'; sleep 2"]
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+      # Also pull frontend image in a second container
+      - name: frontend-image-puller
+        image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args: ["echo 'Frontend image pulled successfully'; sleep 2"]
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+{{- end }}

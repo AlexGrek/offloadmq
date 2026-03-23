@@ -82,6 +82,7 @@ function AgentsPage() {
                                             <Chip>Capacity {a.capacity}</Chip>
                                             <Chip>{(a.capabilities || []).length} caps</Chip>
                                             {a.appVersion && <Chip>v{a.appVersion}</Chip>}
+                                            {a.lastCommMethod === "WebSocket" && <Chip variant="websocket">WebSocket</Chip>}
                                             <Chip>{a.lastContact ? "Seen " + new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(Math.round((new Date(a.lastContact) - Date.now()) / 60000), "minute") : "Never"}</Chip>
                                         </div>
                                     </div>

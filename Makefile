@@ -11,7 +11,7 @@ SECRETS_FILE ?= .secrets.yaml
 
 CONTAINER_RUNTIME := docker
 
-.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all
+.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all pre-pull-images wait-for-image-pull
 
 # Build container image (linux/amd64 only, pushed directly via buildx)
 build:
@@ -67,6 +67,40 @@ install:
 		--set appVersion=$(TAG) \
 		-f $(SECRETS_FILE)
 
+# Pre-pull container images on cluster nodes to reduce helm upgrade downtime
+pre-pull-images:
+	@echo "Pre-pulling images on cluster nodes..."
+	helm template $(RELEASE) $(CHART_DIR) \
+		--namespace $(NAMESPACE) \
+		--set image.repository=$(IMAGE) \
+		--set image.tag=$(TAG) \
+		--set frontend.image.repository=$(FRONTEND_IMAGE) \
+		--set frontend.image.tag=$(TAG) \
+		--set appVersion=$(TAG) \
+		--set imagePullPolicy.preLoadImages=true \
+		-f $(SECRETS_FILE) \
+		| kubectl apply -f -
+	@echo "Waiting for image pull job to complete..."
+	@$(MAKE) wait-for-image-pull
+
+# Wait for image pull job to complete
+wait-for-image-pull:
+	@job_name="offloadmq-image-pull-$(TAG)"; \
+	timeout=300; \
+	elapsed=0; \
+	while [ $$elapsed -lt $$timeout ]; do \
+		if kubectl wait --for=condition=complete job/$$job_name -n $(NAMESPACE) --timeout=10s >/dev/null 2>&1; then \
+			echo "✓ Image pull job completed"; \
+			kubectl delete job $$job_name -n $(NAMESPACE) --ignore-not-found=true; \
+			exit 0; \
+		fi; \
+		elapsed=$$((elapsed + 10)); \
+		echo "Image pull in progress... ($$elapsed/$${timeout}s)"; \
+	done; \
+	echo "✗ Image pull job timeout or failed"; \
+	kubectl delete job $$job_name -n $(NAMESPACE) --ignore-not-found=true; \
+	exit 1
+
 # Upgrade Helm release
 upgrade:
 	helm upgrade $(RELEASE) $(CHART_DIR) \
@@ -105,6 +139,7 @@ deploy: build push build-frontend push-frontend
 	fi
 	@if helm status $(RELEASE) -n $(NAMESPACE) >/dev/null 2>&1; then \
 		echo "Upgrading $(RELEASE) to $(IMAGE):$(TAG) ..."; \
+		$(MAKE) pre-pull-images; \
 		$(MAKE) upgrade; \
 	else \
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
@@ -119,6 +154,7 @@ deploy-multiplatform: build-multiplatform build-frontend push-frontend
 	fi
 	@if helm status $(RELEASE) -n $(NAMESPACE) >/dev/null 2>&1; then \
 		echo "Upgrading $(RELEASE) to $(IMAGE):$(TAG) ..."; \
+		$(MAKE) pre-pull-images; \
 		$(MAKE) upgrade; \
 	else \
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \
@@ -162,6 +198,7 @@ rebuild-all: clean-all build build-frontend
 	fi
 	@if helm status $(RELEASE) -n $(NAMESPACE) >/dev/null 2>&1; then \
 		echo "Upgrading $(RELEASE) to $(IMAGE):$(TAG) ..."; \
+		$(MAKE) pre-pull-images; \
 		$(MAKE) upgrade; \
 	else \
 		echo "Installing $(RELEASE) as $(IMAGE):$(TAG) ..."; \

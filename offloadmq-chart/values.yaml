@@ -107,3 +107,12 @@ frontend:
     limits:
       cpu: 200m
       memory: 256Mi
+
+# Image pre-pulling configuration
+imagePullPolicy:
+  # Enable pre-pulling of container images before helm upgrade
+  preLoadImages: true
+  # Number of parallel pull jobs (spreads across nodes)
+  jobParallelism: 2
+  # Max number of retries for the job
+  jobBackoffLimit: 3
