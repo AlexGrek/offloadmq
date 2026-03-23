@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useEffect, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { Check, Trash } from "lucide-react";
 import ExpandableDeleteButton from "./ExpandableDeleteButton";
 import { TOKEN_KEY } from "../utils";

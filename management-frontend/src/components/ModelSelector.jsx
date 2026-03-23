@@ -21,7 +21,7 @@ function parseModelSizeB(cap) {
   }
   // fall back to model name: "qwen3:8b", "mistral-7b", etc.
   const base = stripCapabilityAttrs(cap);
-  const nameSize = base.match(/[:\-](\d+(?:\.\d+)?)b(?:\b|$)/i);
+  const nameSize = base.match(/[:-](\d+(?:\.\d+)?)b(?:\b|$)/i);
   if (nameSize) return parseFloat(nameSize[1]);
   return null;
 }

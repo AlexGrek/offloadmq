@@ -30,10 +30,10 @@ const managementProxy = createProxyMiddleware({
   changeOrigin: true,
   logger: console,
   on: {
-    proxyReq: function(proxyReq, req, res) {
+    proxyReq: function(proxyReq, req, _res) {
       console.log(`>>> MGMT PROXY REQ: ${req.method} ${req.url} -> ${MGMT_TARGET}${proxyReq.path}`);
     },
-    proxyRes: function(proxyRes, req, res) {
+    proxyRes: function(proxyRes, req, _res) {
       console.log(`<<< MGMT PROXY RES: ${proxyRes.statusCode} ${req.method} ${req.url}`);
     },
     error: function(err, req, res) {
@@ -51,10 +51,10 @@ const apiProxy = createProxyMiddleware({
   changeOrigin: true,
   logger: console,
   on: {
-    proxyReq: function(proxyReq, req, res) {
+    proxyReq: function(proxyReq, req, _res) {
       console.log(`>>> API PROXY REQ: ${req.method} ${req.url} -> ${API_TARGET}${proxyReq.path}`);
     },
-    proxyRes: function(proxyRes, req, res) {
+    proxyRes: function(proxyRes, req, _res) {
       console.log(`<<< API PROXY RES: ${proxyRes.statusCode} ${req.method} ${req.url}`);
     },
     error: function(err, req, res) {

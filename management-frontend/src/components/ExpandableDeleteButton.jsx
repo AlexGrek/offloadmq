@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { Trash2, AlertTriangle, X } from 'lucide-react';
 
 const ExpandableDeleteButton = ({ onDelete, itemName = "item", className = "", customActionText = "Delete", disabled = false }) => {

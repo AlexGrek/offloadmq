@@ -1,5 +1,5 @@
 import React, { useEffect, useState, Suspense } from "react";
-import { BrowserRouter as Router, Routes, Route, NavLink, useLocation } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, NavLink } from "react-router-dom";
 import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
 import { Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Loader2, Menu, Moon, ScrollText, SquarePlay, Sun, Zap, Wrench } from "lucide-react";
@@ -47,8 +47,7 @@ function AppLayout() {
   const [dark, setDark] = useState(() => localStorage.getItem("offloadmq-theme") === "dark");
   const [frontendVersion, setFrontendVersion] = useState(null);
   const [serverVersion, setServerVersion] = useState(null);
-  const location = useLocation();
-  const tokenMissing = !(localStorage.getItem(TOKEN_KEY) || "");
+const tokenMissing = !(localStorage.getItem(TOKEN_KEY) || "");
 
   useEffect(() => {
     fetch('/version').then(r => r.json()).then(d => setFrontendVersion(d.version)).catch(() => {});

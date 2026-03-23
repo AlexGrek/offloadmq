@@ -1,7 +1,6 @@
 // ----- API Keys Page -----
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useEffect, useState } from "react";
 import { KeySquare, RefreshCw, Trash, Copy, Check } from "lucide-react";
 import ExpandableDeleteButton from "./ExpandableDeleteButton";
 import { apiFetch, fmtDate } from "../utils";
@@ -87,7 +86,7 @@ function ApiKeysPage() {
               <div className="row">
                 <div className="row-main">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ColorDot seed={it.key} title={it.key} />
+                    <ColorDot seed={it.key} title={it.key} variant="circle-dashed"/>
                     <div className="row-title mono" title={it.key}>{it.key}</div>
                     <button
                       className="icon"

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useCallback, useState } from "react";
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useCallback, useState } from "react";
+import { AnimatePresence } from 'framer-motion';
 import { apiFetch, fmtDate, stripCapabilityAttrs, parseCapabilityAttrs } from "../utils";
 import { RefreshCw } from "lucide-react";
 import Banner from "./Banner";

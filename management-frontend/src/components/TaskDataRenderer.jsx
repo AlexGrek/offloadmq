@@ -172,7 +172,7 @@ function TaskCard({ task, isAssigned }) {
         <span className="row-main">
           <span className="row-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center' }}>
-              <ColorDot seed={id?.id} size={10} />
+              <ColorDot seed={id?.id} size={10} variant="flag-triangle-right"/>
               <span className="mono" style={{ fontSize: '0.84rem' }}>{shortId(id?.id)}</span>
             </span>
             <StatusBadge status={status} />

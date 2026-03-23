@@ -9,7 +9,7 @@ import ImageLightbox from './ImageLightbox';
 import ImageGallery from './ImageGallery';
 
 const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
-  const [workflow, setWorkflow] = useState('txt2img');
+  const [workflow] = useState('txt2img');
   const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('a cat sitting on the moon, cinematic lighting');
   const [negativePrompt, setNegativePrompt] = useState('');

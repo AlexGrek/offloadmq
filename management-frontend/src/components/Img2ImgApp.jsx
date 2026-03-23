@@ -10,7 +10,7 @@ import ImageLightbox from './ImageLightbox';
 import ImageGallery from './ImageGallery';
 
 const Img2ImgApp = ({ apiKey, addDevEntry }) => {
-  const [workflow, setWorkflow] = useState('img2img');
+  const [workflow] = useState('img2img');
   const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('turn this into an oil painting');
   const [negativePrompt, setNegativePrompt] = useState('');

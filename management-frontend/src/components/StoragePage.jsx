@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { apiFetch, fmtDate } from "../utils";
 import { RefreshCw, ChevronDown, ChevronRight, HardDrive, Trash2 } from "lucide-react";
 import Banner from "./Banner";
@@ -80,7 +80,7 @@ function QuotasPanel({ quotas }) {
     );
 }
 
-function BucketCard({ bucket, apiKey, onDeleted }) {
+function BucketCard({ bucket, onDeleted }) {
     const { bucket_uid, created_at, file_count, used_bytes, tasks } = bucket;
     const shortUid = bucket_uid.length > 18 ? bucket_uid.slice(0, 8) + "…" + bucket_uid.slice(-6) : bucket_uid;
     const [showTasks, setShowTasks] = useState(false);
