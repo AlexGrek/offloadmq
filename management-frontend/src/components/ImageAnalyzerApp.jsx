@@ -4,6 +4,7 @@ import { clientFetch, deleteBucket } from '../sandboxUtils';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 import ModelSelector from './ModelSelector';
+import SandboxMarkdown from './SandboxMarkdown';
 
 const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
@@ -361,7 +362,9 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
             {result && mode === 'all' && (
                 <div style={s.panel}>
                     <label style={s.label}>Result</label>
-                    <div style={s.resultContent}>{result}</div>
+                    <div style={s.resultContent}>
+                        <SandboxMarkdown tone="light">{result}</SandboxMarkdown>
+                    </div>
                     {logText && (
                         <>
                             <label style={{ ...s.label, marginTop: '10px' }}>Logs</label>
@@ -392,7 +395,9 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                                 <div style={s.logContent}>{item.log}</div>
                             )}
                             {item.result && (
-                                <div style={s.resultContent}>{item.result}</div>
+                                <div style={s.resultContent}>
+                                    <SandboxMarkdown tone="light">{item.result}</SandboxMarkdown>
+                                </div>
                             )}
                             {item.error && (
                                 <div style={{ fontSize: '0.82rem', color: '#ef4444', padding: '6px 8px', background: 'rgba(239,68,68,0.08)', borderRadius: '6px' }}>{item.error}</div>

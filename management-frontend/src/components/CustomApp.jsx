@@ -282,7 +282,7 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
       <div style={ss.responseContainer}>
         {(isLoading || pollingStatus) && <p style={ss.loading}>{pollingStatus || 'Running...'}</p>}
         {error && <pre style={ss.error}>{error}</pre>}
-        <TerminalOutput response={response} style={{ maxHeight: '24em', overflowY: 'auto' }} />
+        <TerminalOutput response={response} style={{ maxHeight: '24em', overflowY: 'auto' }} markdown markdownTone="dark" />
       </div>
 
       {/* Live log area */}

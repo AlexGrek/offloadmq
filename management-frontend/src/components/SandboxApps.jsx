@@ -67,6 +67,8 @@ const Img2ImgApp = React.lazy(() => import('./Img2ImgApp'))
 const CustomApp = React.lazy(() => import('./CustomApp'))
 const ImageAnalyzerApp = React.lazy(() => import('./ImageAnalyzerApp'))
 
+const CAPABILITIES_COLLAPSE_AT = 3;
+
 const apps = [
   { id: 'bash', name: 'Bash', logo: Construction, app: BashApp },
   { id: 'llm', name: 'LLM', logo: BrainCircuit, app: LlmApp },
@@ -88,6 +90,7 @@ const SandboxApps = () => {
   const [devLog, setDevLog] = useState([]);
   const [capabilities, setCapabilities] = useState([]);
   const [capsLoading, setCapsLoading] = useState(false);
+  const [capsExpanded, setCapsExpanded] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const selectedApp = apps.find((app) => app.id === selectedId);
 
@@ -114,6 +117,10 @@ const SandboxApps = () => {
     };
     loadCapabilities();
   }, [selectedId]);
+
+  useEffect(() => {
+    setCapsExpanded(false);
+  }, [capabilities]);
 
   const addDevEntry = useCallback((entry) => {
     setDevLog(prev => {
@@ -203,6 +210,22 @@ const SandboxApps = () => {
             font-size: 13px;
             color: #9ca3af;
             font-style: italic;
+          }
+
+          .capabilities-toggle {
+            margin-top: 8px;
+            padding: 0;
+            font-size: 12px;
+            font-weight: 600;
+            color: #3b82f6;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
+          }
+
+          .capabilities-toggle:hover {
+            text-decoration: underline;
           }
 
           .app-grid {
@@ -387,7 +410,10 @@ const SandboxApps = () => {
               {capsLoading ? (
                 <div className="capabilities-empty">Loading...</div>
               ) : capabilities.length > 0 ? (
-                capabilities.map((cap, idx) => (
+                (capsExpanded || capabilities.length <= CAPABILITIES_COLLAPSE_AT
+                  ? capabilities
+                  : capabilities.slice(0, CAPABILITIES_COLLAPSE_AT)
+                ).map((cap, idx) => (
                   <div key={idx} className="capability-badge" title={cap}>
                     {stripCapabilityAttrs(cap)}
                   </div>
@@ -396,6 +422,17 @@ const SandboxApps = () => {
                 <div className="capabilities-empty">No capabilities online</div>
               )}
             </div>
+            {!capsLoading && capabilities.length > CAPABILITIES_COLLAPSE_AT && (
+              <button
+                type="button"
+                className="capabilities-toggle"
+                onClick={() => setCapsExpanded((v) => !v)}
+              >
+                {capsExpanded
+                  ? 'Show less'
+                  : `Show ${capabilities.length - CAPABILITIES_COLLAPSE_AT} more`}
+              </button>
+            )}
           </motion.div>
         )}
 

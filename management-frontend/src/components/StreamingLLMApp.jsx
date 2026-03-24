@@ -5,6 +5,7 @@ import { useCapabilities } from '../hooks/useCapabilities';
 import { useTaskPolling } from '../hooks/useTaskPolling';
 import ModelSelector from './ModelSelector';
 import TerminalOutput from './TerminalOutput';
+import SandboxMarkdown from './SandboxMarkdown';
 
 const StreamingLLMApp = ({ apiKey, addDevEntry }) => {
     const [command, setCommand] = useState("What is the capital of Ukraine? Describe it with 8 sentences and do not mention it's name.");
@@ -159,14 +160,16 @@ const StreamingLLMApp = ({ apiKey, addDevEntry }) => {
                     response={response}
                     style={{ maxHeight: '24em', overflowY: 'auto', backgroundColor: 'var(--code-bg)' }}
                     contentColor="var(--text)"
+                    markdown
+                    markdownTone="light"
                 />
             </div>
 
-            <div style={ss.form}>
-                <div>
-                    <p>{log}</p>
+            {log ? (
+                <div style={ss.form}>
+                    <SandboxMarkdown tone="light" style={{ fontSize: '14px' }}>{log}</SandboxMarkdown>
                 </div>
-            </div>
+            ) : null}
         </div>
     );
 };

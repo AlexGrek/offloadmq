@@ -162,7 +162,12 @@
       "Bash(DL_API_KEY=\"dlk_V8s6cQ9QduJp17mpTOcLahvJPeh7pIe1\" DL_BASE_URL=\"https://dl.alexgr.space\" bash scripts/release-agent.sh)",
       "Bash(make release-agent:*)",
       "Bash(DL_API_KEY=test123 make release-agent --dry-run)",
-      "Edit(/.claude/skills/deploy-agent/**)"
+      "Edit(/.claude/skills/deploy-agent/**)",
+      "Bash(curl -s https://dl.alexgr.space/rs/offload-agent/latest/darwin-arm64/version)",
+      "Bash(curl -s https://dl.alexgr.space/api/v1/release/offload-agent/latest)",
+      "Bash(curl -s https://dl.alexgr.space/api/v1/release/offload-agent)",
+      "Bash(curl -sI https://dl.alexgr.space/rs/offload-agent/latest/darwin-arm64/offload-agent-darwin-arm64)",
+      "Bash(curl -s https://dl.alexgr.space/api/v1/release/offload-agent/versions)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

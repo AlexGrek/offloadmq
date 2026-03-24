@@ -3,6 +3,7 @@ import { Upload, FileText, Loader } from 'lucide-react';
 import { clientFetch } from '../sandboxUtils';
 import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
+import SandboxMarkdown from './SandboxMarkdown';
 
 const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
@@ -318,7 +319,9 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
             {result && (
                 <div style={s.panel}>
                     <label style={s.label}>Result</label>
-                    <div style={s.resultContent}>{result}</div>
+                    <div style={s.resultContent}>
+                        <SandboxMarkdown tone="light">{result}</SandboxMarkdown>
+                    </div>
                     {logText && (
                         <>
                             <label style={{ ...s.label, marginTop: '12px' }}>Logs</label>

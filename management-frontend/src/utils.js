@@ -86,3 +86,25 @@ function hslToHex(h, s, l) {
   };
   return `#${f(0)}${f(8)}${f(4)}`;
 }
+
+/** Pull assistant-visible text from common LLM / executor JSON shapes (sandbox apps). */
+export function extractSandboxModelText(output) {
+  if (output == null) return null;
+  if (typeof output === 'string') {
+    try {
+      const parsed = JSON.parse(output);
+      return extractSandboxModelText(parsed);
+    } catch {
+      return output;
+    }
+  }
+  if (typeof output === 'object' && !Array.isArray(output)) {
+    if (output.message?.content != null && typeof output.message.content === 'string') {
+      return output.message.content;
+    }
+    const c0 = output.choices?.[0]?.message?.content;
+    if (typeof c0 === 'string') return c0;
+    if (typeof output.stdout === 'string') return output.stdout;
+  }
+  return null;
+}

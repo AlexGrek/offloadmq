@@ -3,6 +3,7 @@ import { stripCapabilityAttrs } from '../utils';
 import { sandboxStyles as ss } from '../sandboxStyles';
 import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
+import SandboxMarkdown from './SandboxMarkdown';
 
 const LlmApp = ({ apiKey, addDevEntry }) => {
   const [model, setModel] = useState('');
@@ -98,7 +99,7 @@ const LlmApp = ({ apiKey, addDevEntry }) => {
       <div style={ss.responseContainer}>
         {isLoading && <p style={ss.loading}>Loading...</p>}
         {error && <pre style={ss.error}>{error}</pre>}
-        {response && <p style={ss.response}>{response}</p>}
+        {response && <SandboxMarkdown tone="light" style={{ fontSize: '14px' }}>{response}</SandboxMarkdown>}
       </div>
     </div>
   );

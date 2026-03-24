@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Send, ImagePlus, X } from 'lucide-react';
-import { stripCapabilityAttrs } from '../utils';
+import { stripCapabilityAttrs, extractSandboxModelText } from '../utils';
+import SandboxMarkdown from './SandboxMarkdown';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { useTaskPolling } from '../hooks/useTaskPolling';
 import ModelSelector from './ModelSelector';
@@ -38,10 +39,10 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
   }, []);
 
   const extractContent = (output) => {
+    const t = extractSandboxModelText(output);
+    if (t != null) return t;
     try {
       const parsed = typeof output === 'string' ? JSON.parse(output) : output;
-      if (parsed?.message?.content) return parsed.message.content;
-      if (parsed?.choices?.[0]?.message?.content) return parsed.choices[0].message.content;
       return JSON.stringify(parsed, null, 2);
     } catch {
       return typeof output === 'string' ? output : JSON.stringify(output);
@@ -210,13 +211,26 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
                 ))}
               </div>
             )}
-            {msg.content && <div style={styles.bubbleText}>{msg.content}</div>}
+            {msg.content && (
+              msg.role === 'assistant' ? (
+                <SandboxMarkdown tone="light" style={{ fontSize: '14px' }}>{msg.content}</SandboxMarkdown>
+              ) : (
+                <div style={styles.bubbleText}>{msg.content}</div>
+              )
+            )}
           </div>
         ))}
         {isLoading && (
           <div style={{ ...styles.bubble, ...styles.assistantBubble }}>
             {streamingLog
-              ? <div style={{ ...styles.bubbleText, animation: 'llm-breathe 1.8s ease-in-out infinite' }}>{streamingLog}</div>
+              ? (
+                <SandboxMarkdown
+                  tone="light"
+                  style={{ fontSize: '14px', animation: 'llm-breathe 1.8s ease-in-out infinite' }}
+                >
+                  {streamingLog}
+                </SandboxMarkdown>
+              )
               : <div style={styles.typing}>{pollingStatus || 'Thinking…'}</div>
             }
           </div>
