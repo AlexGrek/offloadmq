@@ -62,6 +62,12 @@ _write-systemd-service:
 	sudo systemctl restart offload-agent
 	@echo "Done. Check: systemctl status offload-agent"
 
+# Build and upload for the current platform to dl.alexgr.space
+# Version is auto-detected; override with: make release VERSION=v0.3.260
+# Requires: DL_API_KEY env var
+release:
+	../scripts/release-agent.sh $(if $(VERSION),$(VERSION),)
+
 rebuild: clean build
 
 clean:
@@ -72,4 +78,4 @@ clean:
 webui: venv frontend-build
 	bash -c "source venv/bin/activate && python offload-agent.py webui"
 
-.PHONY: sysinfo register ollama build rebuild clean webui frontend-build typecheck install-systemd register-systemd _write-systemd-service
+.PHONY: sysinfo register ollama build rebuild clean webui frontend-build typecheck install-systemd register-systemd _write-systemd-service release

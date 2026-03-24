@@ -26,6 +26,30 @@ make register            # Register agent only
 
 **Type Safety:** All Python code in `offload-agent/app/` must pass `mypy --strict` type checking. This is mandatory before committing changes.
 
+### Releasing the Agent Binary
+
+Build and publish the offload-agent binary to `dl.alexgr.space` from any macOS, Linux, or Windows machine.
+
+**Version is auto-computed** from the latest `release-*` tag + current commit count: e.g. latest tag `release-v0.3.250` with 260 commits → `v0.3.260`. No tag needed before running.
+
+```bash
+# macOS / Linux — from repo root or offload-agent/
+DL_API_KEY=dlk_... make release-agent          # auto-detects version
+DL_API_KEY=dlk_... make release-agent VERSION=v0.3.260   # explicit version
+
+# from offload-agent/ subdirectory
+cd offload-agent
+DL_API_KEY=dlk_... make release
+
+# Windows (PowerShell)
+$env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1            # auto-detects
+$env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1 v0.3.260   # explicit
+```
+
+Scripts: [scripts/release-agent.sh](scripts/release-agent.sh) · [scripts/release-agent.ps1](scripts/release-agent.ps1)
+
+The scripts build the frontend + PyInstaller binary, then upload to bucket `offload-agent` on `dl.alexgr.space`. `DL_BUCKET` and `DL_BASE_URL` env vars can override defaults.
+
 ### React Management Frontend
 ```bash
 cd management-frontend

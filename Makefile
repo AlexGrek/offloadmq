@@ -11,7 +11,7 @@ SECRETS_FILE ?= .secrets.yaml
 
 CONTAINER_RUNTIME := docker
 
-.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all pre-pull-images wait-for-image-pull
+.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all pre-pull-images wait-for-image-pull release-agent
 
 # Build container image (linux/amd64 only, pushed directly via buildx)
 build:
@@ -182,6 +182,13 @@ build-client:
 
 rebuild-client:
 	cd offload-agent && make rebuild
+
+# Build and upload offload-agent for the current platform to dl.alexgr.space
+# Version is auto-detected from latest release-* tag + commit count (e.g. v0.3.260)
+# Override: make release-agent VERSION=v0.3.260
+# Requires: DL_API_KEY env var
+release-agent:
+	./scripts/release-agent.sh $(if $(VERSION),$(VERSION),)
 
 # Clean all build artifacts across the whole repo
 clean-all:
