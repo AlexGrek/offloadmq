@@ -172,7 +172,18 @@ def start_agent() -> str:
         _log("[webui] WARNING: capability scan timed out after 120s, continuing with whatever was found")
     with _scan_lock:
         detected = list(_scan["caps"])
-    caps = cfg.get("capabilities") or detected
+    saved = cfg.get("capabilities")
+    if saved:
+        detected_set = set(detected)
+        caps = [c for c in saved if c in detected_set]
+        if not caps:
+            _log("[webui] WARNING: none of the saved capabilities were detected; registering with all detected capabilities")
+            caps = detected
+        elif len(caps) < len(saved):
+            dropped = sorted(set(saved) - detected_set)
+            _log(f"[webui] Skipping {len(dropped)} undetected capability(s): {', '.join(dropped)}")
+    else:
+        caps = detected
 
     if not server or not api_key:
         _log("[webui] ERROR: save Server URL and API Key before starting")

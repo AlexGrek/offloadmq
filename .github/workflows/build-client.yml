@@ -7,6 +7,7 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    environment: base
     permissions:
       contents: write
 
@@ -71,3 +72,9 @@ jobs:
           files: |
             offload-agent/dist/offload-agent-linux-amd64
             offload-agent/dist/install.sh
+
+      - name: Release to dl.alexgr.space
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          DL_API_KEY: ${{ secrets.RELEASER_API_KEY }}
+        run: bash scripts/release-agent.sh
