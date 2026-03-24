@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 const DevPanel = React.lazy(() => import('./DevPanel'));
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check } from 'lucide-react';
+import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch } from 'lucide-react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Define the content for each app as a functional component.
@@ -65,6 +65,7 @@ const PdfAnalyzerApp = React.lazy(() => import('./PdfAnalyzerApp'))
 const Txt2ImgApp = React.lazy(() => import('./Txt2ImgApp'))
 const Img2ImgApp = React.lazy(() => import('./Img2ImgApp'))
 const CustomApp = React.lazy(() => import('./CustomApp'))
+const ImageAnalyzerApp = React.lazy(() => import('./ImageAnalyzerApp'))
 
 const apps = [
   { id: 'bash', name: 'Bash', logo: Construction, app: BashApp },
@@ -76,6 +77,7 @@ const apps = [
   { id: 'img2img', name: 'Img2Img', logo: Image, app: Img2ImgApp },
   { id: 'storage', name: 'Storage', logo: FolderOpen, app: StorageBucketApp },
   { id: 'pdf', name: 'PDF Analyzer', logo: FileText, app: PdfAnalyzerApp },
+  { id: 'imganalyzer', name: 'Image Analyzer', logo: ScanSearch, app: ImageAnalyzerApp },
   { id: 'custom', name: 'Custom', logo: Blocks, app: CustomApp },
 ];
 
