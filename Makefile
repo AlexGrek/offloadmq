@@ -11,6 +11,9 @@ SECRETS_FILE ?= .secrets.yaml
 
 CONTAINER_RUNTIME := docker
 
+DL_API_KEY  ?=
+DL_BASE_URL ?= https://dl.alexgr.space
+
 .PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all pre-pull-images wait-for-image-pull release-agent
 
 # Build container image (linux/amd64 only, pushed directly via buildx)
@@ -186,9 +189,10 @@ rebuild-client:
 # Build and upload offload-agent for the current platform to dl.alexgr.space
 # Version is auto-detected from latest release-* tag + commit count (e.g. v0.3.260)
 # Override: make release-agent VERSION=v0.3.260
-# Requires: DL_API_KEY env var
+# Requires: DL_API_KEY (set in ~/.zshrc or pass inline: make release-agent DL_API_KEY=dlk_...)
 release-agent:
-	./scripts/release-agent.sh $(if $(VERSION),$(VERSION),)
+	@if [ -z "$(DL_API_KEY)" ]; then echo "error: DL_API_KEY is not set"; exit 1; fi
+	DL_API_KEY=$(DL_API_KEY) DL_BASE_URL=$(DL_BASE_URL) ./scripts/release-agent.sh $(if $(VERSION),$(VERSION),)
 
 # Clean all build artifacts across the whole repo
 clean-all:

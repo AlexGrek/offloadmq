@@ -32,14 +32,18 @@ Build and publish the offload-agent binary to `dl.alexgr.space` from any macOS, 
 
 **Version is auto-computed** from the latest `release-*` tag + current commit count: e.g. latest tag `release-v0.3.250` with 260 commits → `v0.3.260`. No tag needed before running.
 
+`DL_API_KEY` is stored in `~/.zshrc` and inherited automatically — no need to pass it inline for normal usage.
+
 ```bash
-# macOS / Linux — from repo root or offload-agent/
-DL_API_KEY=dlk_... make release-agent          # auto-detects version
-DL_API_KEY=dlk_... make release-agent VERSION=v0.3.260   # explicit version
+# macOS / Linux — from repo root (preferred)
+make release-agent                        # auto-detects version, uses $DL_API_KEY from env
+make release-agent VERSION=v0.3.260       # explicit version
+make release-agent DL_API_KEY=dlk_...     # override key inline
+make release-agent DL_BASE_URL=http://... # override target server (default: https://dl.alexgr.space)
 
 # from offload-agent/ subdirectory
 cd offload-agent
-DL_API_KEY=dlk_... make release
+make release
 
 # Windows (PowerShell)
 $env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1            # auto-detects
@@ -48,7 +52,7 @@ $env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1 v0.3.260   # explicit
 
 Scripts: [scripts/release-agent.sh](scripts/release-agent.sh) · [scripts/release-agent.ps1](scripts/release-agent.ps1)
 
-The scripts build the frontend + PyInstaller binary, then upload to bucket `offload-agent` on `dl.alexgr.space`. `DL_BUCKET` and `DL_BASE_URL` env vars can override defaults.
+The scripts build the frontend + PyInstaller binary, then upload to bucket `offload-agent` on `dl.alexgr.space`. The releaser key requires scopes `release-create` + `release-write:offload-agent`. `DL_BUCKET` and `DL_BASE_URL` env vars can override defaults.
 
 ### React Management Frontend
 ```bash

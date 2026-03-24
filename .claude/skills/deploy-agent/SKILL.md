@@ -23,13 +23,53 @@ description: DevOps context for deploying offload-agent nodes — Ansible fleet 
 
 ## Versioning
 
-Version is derived at build time from the git commit count:
+Version is derived at build time from the latest `release-*` tag + current commit count:
 
 ```bash
-git rev-list --count HEAD   # → e.g. 236
+# latest tag release-v0.3.250 + 260 commits → v0.3.260
+git rev-list --count HEAD   # → e.g. 260
 ```
 
-The Makefile uses `git describe --tags --always --dirty` as `VERSION`; the build scripts inject `git rev-list --count HEAD` into `app/_version.py`. Both are commit-count based — release tags follow `release-v0.2.<count>`.
+Release tags follow `release-v0.2.<count>`. Version is auto-detected by the release scripts — no tag needed before running.
+
+---
+
+## Releasing the Agent Binary
+
+Binaries are published to `dl.alexgr.space` (bucket `offload-agent`). The releaser key is stored in `~/.zshrc` as `DL_API_KEY`.
+
+### From the root Makefile (preferred)
+
+```bash
+make release-agent                        # auto-detects version, uses $DL_API_KEY from env
+make release-agent VERSION=v0.3.260       # explicit version
+make release-agent DL_API_KEY=dlk_...     # override key inline
+make release-agent DL_BASE_URL=http://... # override target server
+```
+
+### From offload-agent/ subdirectory
+
+```bash
+cd offload-agent
+make release          # uses $DL_API_KEY from env
+DL_API_KEY=dlk_... make release VERSION=v0.3.260
+```
+
+### Windows (PowerShell)
+
+```powershell
+$env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1            # auto-detects
+$env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1 v0.3.260   # explicit
+```
+
+**Download URL after release:**
+```
+https://dl.alexgr.space/rs/offload-agent/latest/darwin-arm64/offload-agent-darwin-arm64
+https://dl.alexgr.space/rs/offload-agent/latest/darwin-amd64/offload-agent-darwin-amd64
+https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/offload-agent-linux-amd64
+```
+
+**Required key scopes:** `release-create` + `release-write:offload-agent`
 
 ---
 
