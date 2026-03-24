@@ -80,17 +80,27 @@ echo ""
 
 # ── Build ──────────────────────────────────────────────────────────────────────
 
-echo "→ Building offload-agent..."
-make -C "${AGENT_DIR}" build VERSION="${VERSION}" OFFLOAD_AGENT_VERSION="${VERSION}"
-
 DIST_BINARY="${AGENT_DIR}/dist/offload-agent"
-if [[ ! -f "$DIST_BINARY" ]]; then
-  echo "error: expected binary not found at ${DIST_BINARY}" >&2
-  exit 1
+RENAMED_BINARY="${AGENT_DIR}/dist/${BINARY_NAME}"
+
+if [[ "${SKIP_BUILD:-}" == "1" ]]; then
+  echo "→ Skipping build (SKIP_BUILD=1)..."
+  if [[ ! -f "$DIST_BINARY" && ! -f "$RENAMED_BINARY" ]]; then
+    echo "error: SKIP_BUILD=1 but no binary found at ${DIST_BINARY}" >&2
+    exit 1
+  fi
+else
+  echo "→ Building offload-agent..."
+  make -C "${AGENT_DIR}" build VERSION="${VERSION}" OFFLOAD_AGENT_VERSION="${VERSION}"
+  if [[ ! -f "$DIST_BINARY" ]]; then
+    echo "error: expected binary not found at ${DIST_BINARY}" >&2
+    exit 1
+  fi
 fi
 
-RENAMED_BINARY="${AGENT_DIR}/dist/${BINARY_NAME}"
-cp "$DIST_BINARY" "$RENAMED_BINARY"
+if [[ ! -f "$RENAMED_BINARY" ]]; then
+  cp "$DIST_BINARY" "$RENAMED_BINARY"
+fi
 echo "→ Binary: ${RENAMED_BINARY}"
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
