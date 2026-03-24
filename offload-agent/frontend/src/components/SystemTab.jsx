@@ -12,6 +12,116 @@ async function postForm(url, formData) {
   return r.json()
 }
 
+function UpdatesCard({ currentVersion }) {
+  const [checkState, setCheckState] = useState(null) // null | 'checking' | result object
+  const [dlState, setDlState] = useState(null)       // null | 'downloading' | result object
+
+  async function checkForUpdate() {
+    setCheckState('checking')
+    setDlState(null)
+    try {
+      const r = await fetch('/api/update/check', { headers: JSON_ACCEPT })
+      const d = await r.json()
+      setCheckState(d)
+    } catch (e) {
+      setCheckState({ error: String(e.message || e) })
+    }
+  }
+
+  async function downloadUpdate() {
+    setDlState('downloading')
+    try {
+      const r = await fetch('/api/update/download', { method: 'POST', headers: JSON_ACCEPT })
+      const d = await r.json()
+      setDlState(d)
+    } catch (e) {
+      setDlState({ ok: false, error: String(e.message || e) })
+    }
+  }
+
+  const info = checkState && checkState !== 'checking' ? checkState : null
+  const hasUpdate = info && !info.error && info.has_update
+  const upToDate = info && !info.error && !info.has_update
+
+  return (
+    <div className="bg-slate-800 rounded-lg p-5">
+      <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+        Updates
+      </h2>
+
+      <div className="text-sm text-slate-400 mb-3">
+        Current version:{' '}
+        <span className="text-slate-200 font-mono">{currentVersion || 'unknown'}</span>
+        {info && !info.error && (
+          <span className="ml-3 text-slate-500">
+            Latest: <span className="font-mono text-slate-300">{info.latest}</span>
+          </span>
+        )}
+      </div>
+
+      {/* Status line */}
+      {checkState === 'checking' && (
+        <p className="text-xs text-slate-500 italic mb-3">Checking for updates…</p>
+      )}
+      {info?.error && (
+        <p className="text-xs text-red-400 mb-3">{info.error}</p>
+      )}
+      {upToDate && (
+        <p className="text-xs text-emerald-400 mb-3">You are up to date.</p>
+      )}
+      {hasUpdate && (
+        <div className="mb-3">
+          <p className="text-xs text-amber-400">
+            Update available: <span className="font-mono">{info.latest}</span>
+            {info.date ? <span className="text-slate-500 ml-2">({info.date})</span> : null}
+          </p>
+          {info.notes && (
+            <p className="text-xs text-slate-500 mt-1 italic">{info.notes}</p>
+          )}
+          {info.target_available === false && (
+            <p className="text-xs text-slate-500 mt-1">
+              No build available for this platform yet.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Download result */}
+      {dlState === 'downloading' && (
+        <p className="text-xs text-slate-500 italic mb-3">Downloading… check the agent log for progress.</p>
+      )}
+      {dlState && dlState !== 'downloading' && (
+        <p className={`text-xs mb-3 ${dlState.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+          {dlState.ok ? dlState.message : dlState.error}
+        </p>
+      )}
+
+      {/* Buttons */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={checkState === 'checking'}
+          onClick={checkForUpdate}
+          className="px-3 py-1.5 rounded-md bg-indigo-500 text-white text-xs font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {checkState === 'checking' ? 'Checking…' : 'Check for Updates'}
+        </button>
+
+        {hasUpdate && info.target_available !== false && (
+          <button
+            type="button"
+            disabled={dlState === 'downloading' || (dlState && dlState.ok)}
+            onClick={downloadUpdate}
+            className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {dlState === 'downloading' ? 'Downloading…' : `Download ${info.latest}`}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function SystemTab({ state, loadState, run }) {
   const [isScanning, setIsScanning] = useState(false)
   const [webuiPort, setWebuiPort] = useState('')
@@ -57,6 +167,8 @@ export function SystemTab({ state, loadState, run }) {
 
   return (
     <div className="grid grid-cols-1 gap-5">
+      <UpdatesCard currentVersion={state?.version} />
+
       <div className="bg-slate-800 rounded-lg p-5">
         <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
           Web UI Port

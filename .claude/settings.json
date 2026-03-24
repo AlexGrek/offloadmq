@@ -167,7 +167,9 @@
       "Bash(curl -s https://dl.alexgr.space/api/v1/release/offload-agent/latest)",
       "Bash(curl -s https://dl.alexgr.space/api/v1/release/offload-agent)",
       "Bash(curl -sI https://dl.alexgr.space/rs/offload-agent/latest/darwin-arm64/offload-agent-darwin-arm64)",
-      "Bash(curl -s https://dl.alexgr.space/api/v1/release/offload-agent/versions)"
+      "Bash(curl -s https://dl.alexgr.space/api/v1/release/offload-agent/versions)",
+      "Bash(python -m mypy app/updater.py --strict)",
+      "Bash(curl -s \"https://dl.alexgr.space/api/v1/pub/release/offload-agent/latest\")"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

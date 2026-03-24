@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import atexit
 import json as json_module
 import logging
@@ -42,6 +43,10 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from app.config import load_config, save_config, config_exists
+try:
+    from app._version import APP_VERSION
+except ModuleNotFoundError:
+    APP_VERSION = "dev"
 
 _serve_thread: Optional[threading.Thread] = None
 _stop_event: threading.Event = threading.Event()
@@ -559,6 +564,7 @@ def _build_api_state() -> Dict[str, Any]:
         "custom_caps": _list_custom_caps(),
         "custom_caps_dir": str(_custom_caps_dir()),
         "running": get_status().get("running", False),
+        "version": APP_VERSION,
     }
 
 
@@ -787,6 +793,20 @@ async def route_logs():
     with _log_lock:
         lines = list(_log_buf)
     return JSONResponse({"lines": lines})
+
+
+@app.get("/api/update/check")
+async def route_update_check():
+    from app.updater import check_for_update
+    result = await asyncio.to_thread(check_for_update, APP_VERSION)
+    return JSONResponse(result)
+
+
+@app.post("/api/update/download")
+async def route_update_download():
+    from app.updater import download_update
+    result = await asyncio.to_thread(download_update, _log)
+    return JSONResponse(result)
 
 
 @app.get("/custom/list")
