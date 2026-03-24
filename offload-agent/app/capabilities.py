@@ -9,7 +9,7 @@ import logging
 import shutil
 import sys
 from pathlib import Path
-from typing import Callable, List, NamedTuple
+from typing import Any, Callable, List, NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -92,19 +92,42 @@ def check_kokoro() -> CapResult:
     import requests
     from .exec.tts import KOKORO_API_URL
 
-    # Derive base URL by stripping the /api/... path suffix
     base = KOKORO_API_URL.split("/api/")[0] if "/api/" in KOKORO_API_URL else KOKORO_API_URL
+    models_url = f"{base}/api/v1/models"
+
     try:
-        r = requests.get(base, timeout=3)
+        r = requests.get(models_url, timeout=3)
+        r.raise_for_status()
+    except requests.HTTPError:
         return CapResult(
-            ["tts.kokoro"], True, "tts.kokoro",
-            f"Kokoro API reachable at {base} (HTTP {r.status_code})",
+            [], False, "tts.kokoro",
+            f"Kokoro /api/v1/models returned HTTP {r.status_code} at {base}",
         )
     except requests.RequestException as e:
         return CapResult(
             [], False, "tts.kokoro",
             f"Kokoro API not reachable at {base}: {type(e).__name__}",
         )
+
+    voices = _parse_kokoro_voices(r)
+    if voices:
+        cap = f"tts.kokoro[{';'.join(voices)}]"
+        reason = f"Kokoro reachable at {base}, voices: {', '.join(voices)}"
+    else:
+        cap = "tts.kokoro"
+        reason = f"Kokoro reachable at {base} (no voice list returned)"
+
+    return CapResult([cap], True, "tts.kokoro", reason)
+
+
+def _parse_kokoro_voices(response: "Any") -> list[str]:
+    """Extract voice/model IDs from a /api/v1/models response, return [] on any parse failure."""
+    try:
+        data = response.json()
+        items = data.get("data", []) if isinstance(data, dict) else []
+        return [str(item["id"]) for item in items if isinstance(item, dict) and "id" in item]
+    except Exception:
+        return []
 
 
 def check_comfyui() -> CapResult:
