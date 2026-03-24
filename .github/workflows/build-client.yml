@@ -78,4 +78,4 @@ jobs:
         env:
           DL_API_KEY: ${{ secrets.RELEASER_API_KEY }}
           SKIP_BUILD: "1"
-        run: bash scripts/release-agent.sh ${{ github.ref_name }}
+        run: bash scripts/release-agent.sh "${GITHUB_REF_NAME#release-}"
