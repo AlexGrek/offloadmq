@@ -284,7 +284,7 @@ def handle_task(http: HttpClient, task: dict[str, Any]) -> None:
 
 def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | None = None) -> None:
     http = HttpClient(server_url, jwt_token)
-    auth_failures = 0
+    auth_backoff = 10
 
     while not (stop_event and stop_event.is_set()):
         try:
@@ -293,7 +293,7 @@ def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | N
                 time.sleep(5)
                 continue
 
-            auth_failures = 0
+            auth_backoff = 30
             raw_id = task_info["id"]["id"]
             raw_cap = task_info["id"]["cap"]
 
@@ -305,17 +305,15 @@ def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | N
             handle_task(http, task)
 
         except AuthError:
-            auth_failures += 1
-            if auth_failures > 3:
-                logger.critical("Auth recovery failed 3 times — giving up. Restart the agent.")
-                return
-            logger.warning(f"Auth rejected (attempt {auth_failures}/3) — attempting recovery...")
+            logger.warning(f"Auth rejected — attempting recovery...")
             new_jwt = _reauth_or_reregister(server_url)
             if new_jwt:
                 http = HttpClient(server_url, new_jwt)
+                auth_backoff = 10
             else:
-                logger.error("Could not recover auth. Backing off for 30s...")
-                time.sleep(30)
+                logger.error(f"Could not recover auth. Backing off for {auth_backoff}s...")
+                time.sleep(auth_backoff)
+                auth_backoff = min(auth_backoff * 2, 1200)
 
         except Exception as e:
             logger.critical(f"Unexpected exception in main loop: {e}")

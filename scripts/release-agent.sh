@@ -118,12 +118,12 @@ fi
 # ── Ensure bucket exists ───────────────────────────────────────────────────────
 
 echo "→ Ensuring bucket '${BUCKET}' exists..."
-curl -sS --fail \
+curl -sS \
   -X POST "${BASE_URL}/api/v1/release/create" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d "{\"bucket\":\"${BUCKET}\"}" \
-  -o /dev/null
+  -o /dev/null || true
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
 
