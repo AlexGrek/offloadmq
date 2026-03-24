@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::{Json, Router, extract::State, middleware::from_fn_with_state, routing::*};
+use axum::{Json, Router, extract::{DefaultBodyLimit, State}, middleware::from_fn_with_state, routing::*};
 use log::info;
 use offloadmq::{
     api::agent::{auth_agent, register_agent, update_agent_info, websocket_handler},
@@ -205,6 +205,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::apikey_header_auth_middleware_storage,
+                ))
+                .layer(DefaultBodyLimit::max(
+                    shared_state.config.storage.bucket_size_bytes as usize,
                 )),
         )
         .with_state(shared_state.clone())

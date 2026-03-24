@@ -434,6 +434,18 @@ body {
   align-items: flex-start
 }
 
+.show-more-caps {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: .75rem;
+  color: var(--accent, #3b82f6);
+  cursor: pointer;
+  align-self: center;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .capability-attrs {
   display: flex;
   gap: .25rem;

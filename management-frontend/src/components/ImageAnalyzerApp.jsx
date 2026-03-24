@@ -9,6 +9,7 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
     const [model, setModel] = useState('');
     const [prompt, setPrompt] = useState('Analyze this image. Describe what you see in detail.');
+    const [systemPrompt, setSystemPrompt] = useState('You are a helpful visual analysis assistant. Describe images clearly and thoroughly.');
     const [mode, setMode] = useState('all');
     const [selectedFiles, setSelectedFiles] = useState([]);
     const [previews, setPreviews] = useState([]);
@@ -142,7 +143,10 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
         setItemResults([]);
 
         const capability = `llm.${model}`;
-        const taskPayload = { messages: [{ role: 'user', content: prompt }], stream: false };
+        const messages = [];
+        if (systemPrompt.trim()) messages.push({ role: 'system', content: systemPrompt.trim() });
+        messages.push({ role: 'user', content: prompt });
+        const taskPayload = { messages, stream: false };
 
         if (mode === 'all') {
             let bucketUid = null;
@@ -226,7 +230,7 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
             setStatus('All tasks complete', 'ok');
         }
         setRunning(false);
-    }, [selectedFiles, apiKey, model, prompt, mode, setStatus, pollTask, uploadFile, extractResult, addDevEntry]);
+    }, [selectedFiles, apiKey, model, prompt, systemPrompt, mode, setStatus, pollTask, uploadFile, extractResult, addDevEntry]);
 
     const hasVisionModels = capabilities.length > 0;
 
@@ -268,6 +272,15 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                             <option value="one">One by one (parallel tasks)</option>
                         </select>
                     </div>
+                </div>
+                <div>
+                    <label style={s.label}>System Prompt</label>
+                    <textarea
+                        style={{ ...s.input, minHeight: '48px', resize: 'vertical' }}
+                        value={systemPrompt}
+                        onChange={e => setSystemPrompt(e.target.value)}
+                        placeholder="e.g. You are a professional art critic. Be concise."
+                    />
                 </div>
                 <div>
                     <label style={s.label}>Prompt</label>

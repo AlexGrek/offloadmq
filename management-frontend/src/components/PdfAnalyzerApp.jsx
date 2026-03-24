@@ -7,6 +7,7 @@ import ModelSelector from './ModelSelector';
 const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
     const [capability, setCapability] = useState('gemma3:4b');
+    const [systemPrompt, setSystemPrompt] = useState('You are a helpful document analysis assistant. Be thorough, structured, and concise.');
     const [prompt, setPrompt] = useState('Analyze this PDF document. Summarize the key points and provide any insights.');
     const [mode, setMode] = useState('blocking');
     const [selectedFile, setSelectedFile] = useState(null);
@@ -140,10 +141,10 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
             status(`Uploaded: ${uploadResult.original_name} (${uploadResult.size} bytes)`);
 
             // 3. Submit task
-            const taskPayload = {
-                messages: [{ role: 'user', content: prompt }],
-                stream: false,
-            };
+            const messages = [];
+            if (systemPrompt.trim()) messages.push({ role: 'system', content: systemPrompt.trim() });
+            messages.push({ role: 'user', content: prompt });
+            const taskPayload = { messages, stream: false };
 
             let taskResult;
             if (mode === 'blocking') {
@@ -202,7 +203,7 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
         } finally {
             setRunning(false);
         }
-    }, [selectedFile, apiKey, capability, prompt, mode, status, pollTask, addDevEntry, showResult]);
+    }, [selectedFile, apiKey, capability, prompt, systemPrompt, mode, status, pollTask, addDevEntry, showResult]);
 
     return (
         <div style={s.root}>
@@ -242,6 +243,14 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                             <option value="async">Async (non-urgent)</option>
                         </select>
                     </div>
+                </div>
+                <div>
+                    <label style={s.label}>System Prompt</label>
+                    <textarea
+                        style={{ ...s.input, minHeight: '48px', resize: 'vertical' }}
+                        value={systemPrompt}
+                        onChange={e => setSystemPrompt(e.target.value)}
+                    />
                 </div>
                 <div>
                     <label style={s.label}>Prompt</label>

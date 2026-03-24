@@ -14,6 +14,7 @@ function AgentsPage() {
     const [error, setError] = useState("");
     const [onlineOnly, setOnlineOnly] = useState(true);
     const [expanded, setExpanded] = useState({}); // uid -> bool
+    const [capsExpanded, setCapsExpanded] = useState({}); // uid -> bool
 
     const load = useCallback(async () => {
         setLoading(true); setError("");
@@ -131,22 +132,37 @@ function AgentsPage() {
                                                 <div>
                                                     <div className="section-title">Capabilities</div>
                                                     <div className="chips-wrap">
-                                                        {(a.capabilities || []).map((c, i) => {
-                                                            const base = stripCapabilityAttrs(c);
-                                                            const attrs = parseCapabilityAttrs(c);
-                                                            return (
-                                                                <div key={i} className="capability-wrapper">
-                                                                    <Chip>{base}</Chip>
-                                                                    {attrs.length > 0 && (
-                                                                        <div className="capability-attrs">
-                                                                            {attrs.map((attr, j) => (
-                                                                                <AttributeTag key={j} attr={attr} />
-                                                                            ))}
+                                                        {(() => {
+                                                            const caps = a.capabilities || [];
+                                                            const showAll = !!capsExpanded[a.uid];
+                                                            const visible = showAll ? caps : caps.slice(0, 3);
+                                                            return (<>
+                                                                {visible.map((c, i) => {
+                                                                    const base = stripCapabilityAttrs(c);
+                                                                    const attrs = parseCapabilityAttrs(c);
+                                                                    return (
+                                                                        <div key={i} className="capability-wrapper">
+                                                                            <Chip>{base}</Chip>
+                                                                            {attrs.length > 0 && (
+                                                                                <div className="capability-attrs">
+                                                                                    {attrs.map((attr, j) => (
+                                                                                        <AttributeTag key={j} attr={attr} />
+                                                                                    ))}
+                                                                                </div>
+                                                                            )}
                                                                         </div>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
+                                                                    );
+                                                                })}
+                                                                {caps.length > 3 && (
+                                                                    <button
+                                                                        className="show-more-caps"
+                                                                        onClick={e => { e.stopPropagation(); setCapsExpanded(s => ({ ...s, [a.uid]: !s[a.uid] })); }}
+                                                                    >
+                                                                        {showAll ? `Show less` : `+${caps.length - 3} more`}
+                                                                    </button>
+                                                                )}
+                                                            </>);
+                                                        })()}
                                                     </div>
                                                 </div>
                                             </div>
