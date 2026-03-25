@@ -21,9 +21,7 @@ def enqueue_output(out: IO[str], q: "queue.Queue[str]") -> None:
 def execute_shell_bash(
     http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
-    logger.info(
-        f"Executing shell.bash for task {task_id.dict()} with payload: {payload} in {data}"
-    )
+    logger.info(f"Executing shell.bash for task {task_id.dict()} in {data}")
     if isinstance(payload, str):
         command = payload
     else:

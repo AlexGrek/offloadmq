@@ -41,9 +41,7 @@ def execute_docker_run(
         "timeout": 60  # optional, default 60s
     }
     """
-    logger.info(
-        f"Executing {capability} for task {task_id.dict()} with payload: {payload}"
-    )
+    logger.info(f"Executing {capability} for task {task_id.dict()}")
 
     # Parse payload
     if isinstance(payload, str):

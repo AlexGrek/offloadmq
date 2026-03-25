@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 def execute_shellcmd_bash(
     http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
-    logger.info(
-        f"Executing shellcmd.bash for task {task_id.dict()} with payload: {payload} in {data}"
-    )
+    logger.info(f"Executing shellcmd.bash for task {task_id.dict()} in {data}")
     if isinstance(payload, str):
         command = payload
     else:

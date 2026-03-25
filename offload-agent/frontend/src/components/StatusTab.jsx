@@ -27,16 +27,11 @@ export function StatusTab({ state, loadState, run }) {
         ])
         setRunning(!!sr.running)
         const lines = lr.lines || []
-        const el = logRef.current
-        const atBottom =
-          el && el.scrollTop + el.clientHeight >= el.scrollHeight - 5
         setLogLines(lines)
-        if (atBottom && logRef.current) {
-          requestAnimationFrame(() => {
-            if (logRef.current)
-              logRef.current.scrollTop = logRef.current.scrollHeight
-          })
-        }
+        requestAnimationFrame(() => {
+          if (logRef.current)
+            logRef.current.scrollTop = logRef.current.scrollHeight
+        })
       } catch {
         /* ignore poll errors */
       }

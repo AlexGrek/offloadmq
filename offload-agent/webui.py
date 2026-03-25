@@ -803,10 +803,10 @@ async def route_scan(request: Request):
 
 
 @app.get("/agent/logs")
-async def route_logs():
+async def route_logs(n: int = 100):
     with _log_lock:
         lines = list(_log_buf)
-    return JSONResponse({"lines": lines})
+    return JSONResponse({"lines": lines[-n:] if n > 0 else lines})
 
 
 @app.get("/api/update/check")
