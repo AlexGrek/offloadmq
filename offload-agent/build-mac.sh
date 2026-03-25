@@ -46,7 +46,15 @@ echo "Running mypy type check ..."
 "$PYTHON" -m mypy
 
 # ── 2d. Inject app version ──────────────────────────────────────────────────
-APP_VERSION=$(git -C "$SCRIPT_DIR" rev-list --count HEAD 2>/dev/null || echo "dev")
+_count=$(git -C "$SCRIPT_DIR" rev-list --count HEAD 2>/dev/null || echo "0")
+_tag=$(git -C "$SCRIPT_DIR" describe --tags --match 'release-*' --abbrev=0 2>/dev/null || true)
+if [[ -n "$_tag" ]]; then
+    _ver="${_tag#release-}"
+    _prefix="${_ver%.*}"
+    APP_VERSION="${_prefix}.${_count}"
+else
+    APP_VERSION="v0.1.${_count}"
+fi
 echo "APP_VERSION = '$APP_VERSION'" > "$SCRIPT_DIR/app/_version.py"
 echo "Injected version: $APP_VERSION"
 

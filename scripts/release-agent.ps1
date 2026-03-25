@@ -88,8 +88,10 @@ try {
     & venv\Scripts\pip.exe install -r requirements.txt --quiet
     & venv\Scripts\pip.exe install pyinstaller --quiet
 
+    # Inject version into _version.py so it's bundled correctly
+    Set-Content -Path "app\_version.py" -Value "APP_VERSION = '$Version'"
+
     # Build single-file exe (Windows uses ; as add-data separator)
-    $env:OFFLOAD_AGENT_VERSION = $Version
     & venv\Scripts\python.exe -m PyInstaller `
         --onefile `
         --name offload-agent `

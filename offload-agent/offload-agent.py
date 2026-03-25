@@ -8,6 +8,7 @@ Usage:
   offload-agent install bin [--dest DIR]
   offload-agent install systemd [--bin-path PATH] [--user USER] [--host HOST] [--port PORT]
   offload-agent install launchd [--app-path PATH]
+  offload-agent --version
   offload-agent --help
 """
 
@@ -169,6 +170,14 @@ def main():
         sys.exit(0)
 
     cmd = sys.argv[1]
+
+    if cmd in ("-V", "--version"):
+        try:
+            from app._version import APP_VERSION
+        except ImportError:
+            APP_VERSION = "dev"
+        print(APP_VERSION)
+        sys.exit(0)
 
     if cmd == "webui":
         import argparse, atexit

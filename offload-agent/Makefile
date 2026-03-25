@@ -28,8 +28,9 @@ ollama: venv
 build: venv frontend-build
 	@echo "Installing PyInstaller..."
 	bash -c "source venv/bin/activate && pip install pyinstaller --quiet"
+	@echo "APP_VERSION = '$(VERSION)'" > app/_version.py
 	@echo "Building binary with PyInstaller (version: $(VERSION))..."
-	bash -c "source venv/bin/activate && OFFLOAD_AGENT_VERSION='$(VERSION)' python -m PyInstaller --onefile --name offload-agent \
+	bash -c "source venv/bin/activate && python -m PyInstaller --onefile --name offload-agent \
 		--add-data 'app:app' \
 		--add-data 'webui.py:.' \
 		--add-data 'frontend/dist:frontend/dist' \
