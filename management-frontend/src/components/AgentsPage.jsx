@@ -80,7 +80,7 @@ function AgentsPage() {
                                     <div className="row-main">
                                         <div style={{ display: 'flex', alignItems: 'center' }}>
                                           <ColorDot seed={a.uid} />
-                                          <div className="row-title">{a.uidShort || a.uid}</div>
+                                          <div className="row-title">{a.displayName || a.uidShort || a.uid}</div>
                                         </div>
                                         <div className="row-sub">
                                             <Chip>Tier {a.tier}</Chip>
@@ -101,6 +101,7 @@ function AgentsPage() {
                                         <motion.div className="expand" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: "spring", stiffness: 120, damping: 18 }}>
                                             <div className="grid">
                                                 <div>
+                                                    {a.displayName && <div className="kv"><span>Name:</span><b>{a.displayName}</b></div>}
                                                     <div className="kv"><span>UID:</span><code>{a.uid}</code></div>
                                                     <div className="kv"><span>Registered:</span><b>{fmtDate(a.registeredAt)}</b></div>
                                                     <div className="kv"><span>Last contact:</span><b>{fmtDate(a.lastContact)}</b></div>

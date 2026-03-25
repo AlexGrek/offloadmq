@@ -160,6 +160,8 @@ pub struct Agent {
     pub system_info: SystemInfo,
     #[serde(default)]
     pub app_version: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 impl Agent {
@@ -192,6 +194,7 @@ impl From<AgentRegistrationRequest> for Agent {
             capacity: request.capacity,
             system_info: request.system_info,
             app_version: request.app_version,
+            display_name: request.display_name,
         }
     }
 }

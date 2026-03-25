@@ -28,9 +28,11 @@ class HttpClient:
 
 
 def register_agent(
-    server: str, capabilities: List[str], tier: int, capacity: int, api_key: str
+    server: str, capabilities: List[str], tier: int, capacity: int, api_key: str,
+    display_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     system_info = collect_system_info()
+    resolved_display_name = display_name or compute_default_display_name(system_info)
     registration_data = {
         "capabilities": capabilities,
         "tier": tier,
@@ -38,6 +40,7 @@ def register_agent(
         "systemInfo": system_info,
         "apiKey": api_key,
         "appVersion": APP_VERSION,
+        "displayName": resolved_display_name,
     }
     url = server.rstrip("/") + "/agent/register"
     print(registration_data)

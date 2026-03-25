@@ -169,6 +169,25 @@ def collect_system_info() -> Dict[str, Any]:
     return system_info
 
 
+def compute_default_display_name(sysinfo: Dict[str, Any]) -> str:
+    """Build a human-readable display name from system specs.
+
+    Examples: "Apple M3 Pro 16GB", "Intel Core i9 32GB"
+    Result is always <= 50 characters.
+    """
+    cpu: str = sysinfo.get("cpuModel") or sysinfo.get("cpuArch") or ""
+    # Trim verbose suffixes to keep the name short
+    # e.g. "Apple M3 Pro" stays as-is, "Intel(R) Core(TM) i9-13900K CPU @ 3.00GHz" → "Intel Core i9-13900K"
+    cpu = cpu.replace("(R)", "").replace("(TM)", "").replace(" CPU", "")
+    cpu = " ".join(cpu.split())  # collapse whitespace
+    # Strip trailing clock speed like "@ 3.00GHz"
+    if " @ " in cpu:
+        cpu = cpu[:cpu.index(" @ ")]
+    ram_gb = (sysinfo.get("totalMemoryMb", 0) + 512) // 1024
+    name = f"{cpu} {ram_gb}GB" if cpu else f"{ram_gb}GB"
+    return name[:50]
+
+
 from app.tier import calculate_tier  # re-exported for wildcard importers
 
 

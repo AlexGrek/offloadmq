@@ -111,7 +111,8 @@ def _reauth_or_reregister(server_url: str) -> str | None:
         stored_tier = cfg.get("tier")
         tier = stored_tier if stored_tier is not None else calculate_tier(collect_system_info())
         capacity = cfg.get("capacity", 1)
-        reg = register_agent(server_url, caps, tier, capacity, api_key)
+        display_name: str | None = cfg.get("displayName") or None
+        reg = register_agent(server_url, caps, tier, capacity, api_key, display_name=display_name)
         cfg.update({"agentId": reg["agentId"], "key": reg["key"]})
         auth = authenticate_agent(server_url, reg["agentId"], reg["key"])
         new_jwt: str = str(auth["token"])

@@ -94,6 +94,9 @@ pub struct AgentRegistrationRequest {
     /// Optional application version string (e.g. commit count).
     #[serde(default)]
     pub app_version: Option<String>,
+    /// Optional human-readable display name (max 50 chars).
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 /// Body of the request for an agent to update itself.
@@ -111,6 +114,9 @@ pub struct AgentUpdateRequest {
     /// Optional application version string (e.g. commit count).
     #[serde(default)]
     pub app_version: Option<String>,
+    /// Optional human-readable display name (max 50 chars).
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 /// Body of management request to create API key

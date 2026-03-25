@@ -396,6 +396,7 @@ Register a new agent with the system. Returns agent ID and login credentials.
   "tier": 5,
   "capacity": 4,
   "apiKey": "agent-registration-key",
+  "displayName": "Apple M3 Pro 16GB",
   "systemInfo": {
     "os": "Linux",
     "client": "offload-agent/0.1.0",
@@ -417,6 +418,7 @@ Register a new agent with the system. Returns agent ID and login credentials.
 | `tier` | integer (0-255) | Performance tier. Higher = better. Used for task scheduling priority. |
 | `capacity` | integer | Max concurrent tasks this agent can handle |
 | `apiKey` | string | Agent registration key (from server config) |
+| `displayName` | string (optional) | Human-readable name shown in the management UI (max 50 chars). Auto-computed from system specs if omitted. Returns 400 if longer than 50 characters. |
 | `systemInfo` | object | System details (OS, memory, GPU, etc.) |
 | `systemInfo.gpu` | object | Optional GPU info if available |
 
@@ -494,6 +496,7 @@ Update agent capabilities, tier, or system info.
   "capabilities": ["llm.mistral", "llm.qwen", "vision[gpu;cuda12.1]"],
   "tier": 6,
   "capacity": 8,
+  "displayName": "RTX 4090 Workstation 32GB",
   "systemInfo": {
     "os": "Linux",
     "client": "offload-agent/0.1.1",

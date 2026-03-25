@@ -26,6 +26,12 @@ make register            # Register agent only
 
 **Type Safety:** All Python code in `offload-agent/app/` must pass `mypy --strict` type checking. This is mandatory before committing changes.
 
+**Running mypy:** The virtualenv is at `offload-agent/venv/`. Always run mypy from the `offload-agent/` directory:
+```bash
+cd offload-agent
+venv/bin/python -m mypy app/ --strict
+```
+
 ### Releasing the Agent Binary
 
 Build and publish the offload-agent binary to `dl.alexgr.space` from any macOS, Linux, or Windows machine.

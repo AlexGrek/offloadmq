@@ -70,8 +70,10 @@ def cli_register(
     typer.echo(f"\nRegistering with server: {server}")
     typer.echo(f"Capabilities: {combined_caps}")
 
+    display_name: Optional[str] = cfg.get("displayName") or None
+
     try:
-        reg = register_agent(server, combined_caps, tier, capacity, api_key)
+        reg = register_agent(server, combined_caps, tier, capacity, api_key, display_name=display_name)
     except requests.RequestException as e:
         typer.echo(f"Error registering agent: {e}")
         raise typer.Exit(code=1)

@@ -61,16 +61,29 @@ pub async fn poll_non_urgent(
     }
 }
 
+fn validate_display_name(name: &Option<String>) -> Result<(), AppError> {
+    if let Some(n) = name {
+        if n.chars().count() > 50 {
+            return Err(AppError::BadRequest(
+                "display_name must be 50 characters or fewer".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn do_update_agent_info(
     mut agent: Agent,
     req: AgentUpdateRequest,
     state: &Arc<AppState>,
 ) -> Result<AgentRegistrationResponse, AppError> {
+    validate_display_name(&req.display_name)?;
     agent.capabilities = req.capabilities;
     agent.capacity = req.capacity;
     agent.system_info = req.system_info;
     agent.tier = req.tier;
     agent.app_version = req.app_version;
+    agent.display_name = req.display_name;
     let uid = agent.uid.clone();
     let key = agent.personal_login_token.clone();
     state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
@@ -86,6 +99,7 @@ pub fn do_register_agent(
     state: &Arc<AppState>,
 ) -> Result<AgentRegistrationResponse, AppError> {
     validate_api_key(&state.config.agent_api_keys, &req.api_key)?;
+    validate_display_name(&req.display_name)?;
     let mut agent_object: Agent = req.into();
     state.storage.agents.create_agent(&mut agent_object)?;
     Ok(AgentRegistrationResponse {

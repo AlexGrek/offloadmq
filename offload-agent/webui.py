@@ -113,7 +113,7 @@ def _start_scan() -> None:
 _start_scan()
 
 
-def _do_start(server: str, api_key: str, caps: List[str]) -> None:
+def _do_start(server: str, api_key: str, caps: List[str], display_name: Optional[str] = None) -> None:
     from app.httphelpers import register_agent, authenticate_agent
     from app.core import serve_tasks
 
@@ -125,7 +125,7 @@ def _do_start(server: str, api_key: str, caps: List[str]) -> None:
     try:
         _log("[webui] Registering agent...")
         try:
-            reg = register_agent(server, sorted(set(caps)), tier=5, capacity=1, api_key=api_key)
+            reg = register_agent(server, sorted(set(caps)), tier=5, capacity=1, api_key=api_key, display_name=display_name)
         except Exception as exc:
             _log(f"[webui] ERROR: registration failed: {exc}")
             return
@@ -189,7 +189,8 @@ def start_agent() -> str:
         _log("[webui] ERROR: save Server URL and API Key before starting")
         return "error: missing config"
 
-    _serve_thread = threading.Thread(target=_do_start, args=(server, api_key, caps), daemon=True)
+    display_name: Optional[str] = cfg.get("displayName") or None
+    _serve_thread = threading.Thread(target=_do_start, args=(server, api_key, caps, display_name), daemon=True)
     _serve_thread.start()
     return "starting"
 
@@ -554,6 +555,7 @@ def _build_api_state() -> Dict[str, Any]:
     return {
         "server": cfg.get("server", ""),
         "apiKey": cfg.get("apiKey", ""),
+        "displayName": cfg.get("displayName", ""),
         "autostart": bool(cfg.get("autostart")),
         "capabilities": cfg.get("capabilities"),
         "custom_caps": cfg.get("custom_caps", []),
@@ -601,12 +603,13 @@ async def api_state():
 
 
 @app.post("/config")
-async def save_connection(request: Request, server: str = Form(""), apiKey: str = Form("")):
+async def save_connection(request: Request, server: str = Form(""), apiKey: str = Form(""), displayName: str = Form("")):
     cfg = load_config()
     if server.strip():
         cfg["server"] = server.strip()
     if apiKey.strip():
         cfg["apiKey"] = apiKey.strip()
+    cfg["displayName"] = displayName.strip()[:50]
     save_config(cfg)
     return _done(request)
 
