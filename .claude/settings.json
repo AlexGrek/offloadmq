@@ -168,7 +168,8 @@
       "Bash(kubectl -n dl get pods -o wide)",
       "Bash(kubectl -n dl describe pod -l app=dl)",
       "Bash(go build:*)",
-      "Bash(source ~/.zshrc)"
+      "Bash(source ~/.zshrc)",
+      "Bash(gh workflow:*)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
