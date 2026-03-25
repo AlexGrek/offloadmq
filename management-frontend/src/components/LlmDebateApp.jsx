@@ -1,51 +1,75 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Square, RotateCcw } from 'lucide-react';
+import { Play, Square, RotateCcw, Gavel } from 'lucide-react';
 import { stripCapabilityAttrs, extractSandboxModelText } from '../utils';
 import SandboxMarkdown from './SandboxMarkdown';
 import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
 import { useTaskPolling } from '../hooks/useTaskPolling';
 
+const DEFAULT_REFEREE_SYSTEM = `You are an impartial debate referee. You will be given a transcript of a debate between two participants labeled "Model A" and "Model B". Analyze the quality of their arguments, reasoning, and overall performance. Declare a winner with a brief justification.`;
+const DEFAULT_REFEREE_COMMAND = `The debate has concluded. Review the full transcript above and declare a winner. Be concise: state who won (Model A or Model B, or a draw) and why in 2–3 sentences.`;
+
 const LlmDebateApp = ({ apiKey, addDevEntry }) => {
+  // Debaters
   const [modelA, setModelA] = useState('');
   const [modelB, setModelB] = useState('');
   const [systemA, setSystemA] = useState('You are a helpful AI assistant.');
   const [systemB, setSystemB] = useState('You are a helpful AI assistant.');
   const [initialPrompt, setInitialPrompt] = useState("Hello! Let's have a conversation.");
 
-  const [messages, setMessages] = useState([]); // { side: 'A'|'B', content }
+  // Referee
+  const [refereeEnabled, setRefereeEnabled] = useState(false);
+  const [modelRef, setModelRef] = useState('');
+  const [systemRef, setSystemRef] = useState(DEFAULT_REFEREE_SYSTEM);
+  const [commandRef, setCommandRef] = useState(DEFAULT_REFEREE_COMMAND);
+  const [refereeTurns, setRefereeTurns] = useState(6);
+
+  // Runtime state
+  const [messages, setMessages] = useState([]); // { side: 'A'|'B'|'REF', content }
   const [isRunning, setIsRunning] = useState(false);
+  const [phase, setPhase] = useState('debate'); // 'debate' | 'referee' | 'done'
   const [currentTask, setCurrentTask] = useState(null);
   const [streamingLog, setStreamingLog] = useState('');
   const [pollingStatus, setPollingStatus] = useState('');
   const [error, setError] = useState(null);
-  const [currentTurn, setCurrentTurn] = useState('A');
+  const [currentTurn, setCurrentTurn] = useState('A'); // 'A' | 'B' | 'REF'
 
-  // Refs to avoid stale closures in async callbacks
+  // Refs to avoid stale closures
   const isRunningRef = useRef(false);
   const modelARef = useRef('');
   const modelBRef = useRef('');
   const systemARef = useRef('');
   const systemBRef = useRef('');
+  const modelRefRef = useRef('');
+  const systemRefRef = useRef('');
+  const commandRefRef = useRef('');
+  const refereeTurnsRef = useRef(6);
+  const refereeEnabledRef = useRef(false);
   const messagesRef = useRef([]);
   const currentTurnRef = useRef('A');
+  const phaseRef = useRef('debate');
   const chatEndRef = useRef(null);
 
   useEffect(() => { modelARef.current = modelA; }, [modelA]);
   useEffect(() => { modelBRef.current = modelB; }, [modelB]);
   useEffect(() => { systemARef.current = systemA; }, [systemA]);
   useEffect(() => { systemBRef.current = systemB; }, [systemB]);
+  useEffect(() => { modelRefRef.current = modelRef; }, [modelRef]);
+  useEffect(() => { systemRefRef.current = systemRef; }, [systemRef]);
+  useEffect(() => { commandRefRef.current = commandRef; }, [commandRef]);
+  useEffect(() => { refereeTurnsRef.current = refereeTurns; }, [refereeTurns]);
+  useEffect(() => { refereeEnabledRef.current = refereeEnabled; }, [refereeEnabled]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   const [capabilities] = useCapabilities('llm.', { setModel: setModelA });
 
-  // Auto-set model B to first capability once loaded
   const modelBInitialized = useRef(false);
   useEffect(() => {
     if (capabilities.length > 0 && !modelBInitialized.current) {
       modelBInitialized.current = true;
       const base = stripCapabilityAttrs(capabilities[0]).replace(/^llm\./, '');
       setModelB(base);
+      setModelRef(base);
     }
   }, [capabilities]);
 
@@ -64,7 +88,8 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
     }
   };
 
-  const submitTurn = useCallback(async (side, userContent, msgsSnapshot) => {
+  // Submit a turn for debater A or B
+  const submitDebateTurn = useCallback(async (side, userContent, msgsSnapshot) => {
     if (!isRunningRef.current) return;
 
     const model = side === 'A' ? modelARef.current : modelBRef.current;
@@ -72,6 +97,7 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
 
     const ollamaMessages = [{ role: 'system', content: system }];
     for (const msg of msgsSnapshot) {
+      if (msg.side === 'REF') continue; // exclude referee from debate context
       ollamaMessages.push({
         role: msg.side === side ? 'assistant' : 'user',
         content: msg.content,
@@ -111,6 +137,57 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
     }
   }, [apiKey, addDevEntry]);
 
+  // Submit the referee turn using the full debate transcript
+  const submitRefereeTurn = useCallback(async (msgsSnapshot) => {
+    const model = modelRefRef.current;
+    const system = systemRefRef.current;
+    const command = commandRefRef.current;
+
+    // Build transcript
+    const transcript = msgsSnapshot
+      .filter(m => m.side !== 'REF')
+      .map(m => `Model ${m.side}: ${m.content}`)
+      .join('\n\n');
+
+    const ollamaMessages = [
+      { role: 'system', content: system },
+      { role: 'user', content: `Here is the debate transcript:\n\n${transcript}\n\n${command}` },
+    ];
+
+    const payload = {
+      capability: stripCapabilityAttrs(`llm.${model}`),
+      urgent: false,
+      payload: { model, messages: ollamaMessages, stream: true },
+      apiKey,
+    };
+
+    try {
+      const res = await fetch('/api/task/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      addDevEntry?.({ label: 'Submit referee', method: 'POST', url: '/api/task/submit', request: payload, response: data });
+
+      if (data.id?.id && data.id?.cap) {
+        currentTurnRef.current = 'REF';
+        setCurrentTurn('REF');
+        setCurrentTask({ id: data.id.id, capability: data.id.cap });
+      } else {
+        setError(data.error?.message || 'Unexpected referee submit response');
+        setIsRunning(false);
+        isRunningRef.current = false;
+        phaseRef.current = 'done';
+        setPhase('done');
+      }
+    } catch (err) {
+      setError(`Referee submit failed: ${err.message}`);
+      setIsRunning(false);
+      isRunningRef.current = false;
+    }
+  }, [apiKey, addDevEntry]);
+
   useTaskPolling({
     currentTask,
     apiKey,
@@ -125,9 +202,31 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
       setPollingStatus('');
       setCurrentTask(null);
 
-      if (isRunningRef.current) {
+      if (!isRunningRef.current) return;
+
+      if (side === 'REF') {
+        // Referee has spoken — done
+        setIsRunning(false);
+        isRunningRef.current = false;
+        phaseRef.current = 'done';
+        setPhase('done');
+        return;
+      }
+
+      // Count debate messages (excluding REF)
+      const debateMsgs = newMessages.filter(m => m.side !== 'REF');
+      const shouldCallReferee =
+        refereeEnabledRef.current &&
+        modelRefRef.current &&
+        debateMsgs.length >= refereeTurnsRef.current;
+
+      if (shouldCallReferee) {
+        phaseRef.current = 'referee';
+        setPhase('referee');
+        submitRefereeTurn(newMessages);
+      } else {
         const nextSide = side === 'A' ? 'B' : 'A';
-        submitTurn(nextSide, content, newMessages);
+        submitDebateTurn(nextSide, content, newMessages);
       }
     },
     onError: (msg) => {
@@ -148,9 +247,11 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
     messagesRef.current = [];
     setError(null);
     setStreamingLog('');
+    phaseRef.current = 'debate';
+    setPhase('debate');
     setIsRunning(true);
     isRunningRef.current = true;
-    await submitTurn('A', initialPrompt.trim(), []);
+    await submitDebateTurn('A', initialPrompt.trim(), []);
   };
 
   const handleStop = () => {
@@ -166,17 +267,25 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
     setMessages([]);
     messagesRef.current = [];
     setError(null);
+    phaseRef.current = 'debate';
+    setPhase('debate');
   };
 
-  const sideColor = { A: '#3b82f6', B: '#10b981' };
-  const sideName = (side) => side === 'A' ? (modelA || 'Model A') : (modelB || 'Model B');
-  const canStart = modelA && modelB && initialPrompt.trim();
+  const sideColor = { A: '#3b82f6', B: '#10b981', REF: '#a855f7' };
+  const sideName = (side) => {
+    if (side === 'A') return modelA || 'Model A';
+    if (side === 'B') return modelB || 'Model B';
+    return modelRef || 'Referee';
+  };
+  const canStart = modelA && modelB && initialPrompt.trim() && (!refereeEnabled || modelRef);
+
+  const debateCount = messages.filter(m => m.side !== 'REF').length;
 
   return (
     <div style={styles.root}>
       <style>{`@keyframes debate-breathe { 0%,100%{opacity:1} 50%{opacity:0.45} }`}</style>
 
-      {/* Config panel */}
+      {/* Debater config */}
       <div style={styles.configPanel}>
         {['A', 'B'].map((side) => (
           <div key={side} style={{ ...styles.agentConfig, borderColor: sideColor[side] + '60' }}>
@@ -202,14 +311,71 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
         ))}
       </div>
 
-      {/* Initial prompt — only when idle and no messages yet */}
+      {/* Referee config */}
+      <div style={{ ...styles.agentConfig, borderColor: refereeEnabled ? sideColor.REF + '60' : 'var(--border)', opacity: 1 }}>
+        <div style={styles.agentHeader}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none' }}>
+            <input
+              type="checkbox"
+              checked={refereeEnabled}
+              onChange={e => setRefereeEnabled(e.target.checked)}
+              disabled={isRunning}
+              style={{ accentColor: sideColor.REF, width: '14px', height: '14px' }}
+            />
+            <div style={{ ...styles.sideTag, background: refereeEnabled ? sideColor.REF : '#9ca3af', flexShrink: 0 }}>
+              <Gavel size={11} />
+            </div>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: refereeEnabled ? sideColor.REF : 'var(--muted)' }}>
+              Referee
+            </span>
+          </label>
+          <div style={{ flex: 1, opacity: refereeEnabled ? 1 : 0.4, pointerEvents: refereeEnabled ? 'auto' : 'none' }}>
+            <ModelSelector model={modelRef} setModel={setModelRef} capabilities={capabilities} />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--muted)', opacity: refereeEnabled ? 1 : 0.4, whiteSpace: 'nowrap' }}>
+            after
+            <input
+              type="number"
+              min={2}
+              max={100}
+              value={refereeTurns}
+              onChange={e => setRefereeTurns(Math.max(2, parseInt(e.target.value) || 2))}
+              disabled={isRunning || !refereeEnabled}
+              style={{ ...styles.systemInput, width: '52px', padding: '3px 6px', resize: 'none' }}
+            />
+            turns
+          </label>
+        </div>
+        {refereeEnabled && (
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <textarea
+              value={systemRef}
+              onChange={e => setSystemRef(e.target.value)}
+              placeholder="Referee system prompt"
+              style={{ ...styles.systemInput, flex: 1 }}
+              rows={2}
+              disabled={isRunning}
+            />
+            <textarea
+              value={commandRef}
+              onChange={e => setCommandRef(e.target.value)}
+              placeholder="Command sent to referee after debate ends"
+              style={{ ...styles.systemInput, flex: 1 }}
+              rows={2}
+              disabled={isRunning}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Initial prompt */}
       {!isRunning && messages.length === 0 && (
         <div style={styles.initialRow}>
           <label style={styles.label}>Initial prompt:</label>
           <textarea
             value={initialPrompt}
             onChange={e => setInitialPrompt(e.target.value)}
-            placeholder="First message sent to Model A to kick things off"
+            placeholder="First message sent to Model A"
             style={{ ...styles.systemInput, flex: 1 }}
             rows={2}
           />
@@ -241,7 +407,17 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
         )}
         {isRunning && (
           <span style={styles.statusText}>
-            {pollingStatus ? `${sideName(currentTurn)}: ${pollingStatus}` : `Waiting for ${sideName(currentTurn)}…`}
+            {phase === 'referee'
+              ? `Referee deliberating…${pollingStatus ? ` (${pollingStatus})` : ''}`
+              : pollingStatus
+                ? `${sideName(currentTurn)}: ${pollingStatus}`
+                : `Waiting for ${sideName(currentTurn)}… (turn ${debateCount + 1}${refereeEnabled ? `/${refereeTurns}` : ''})`
+            }
+          </span>
+        )}
+        {phase === 'done' && !isRunning && messages.length > 0 && (
+          <span style={{ fontSize: '12px', color: sideColor.REF, fontWeight: 600 }}>
+            ⚖ Debate concluded
           </span>
         )}
       </div>
@@ -249,35 +425,69 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
       {/* Chat area */}
       <div style={styles.chatArea}>
         {messages.length === 0 && !isRunning && (
-          <div style={styles.emptyState}>Configure both models and click Start</div>
+          <div style={styles.emptyState}>Configure models and click Start</div>
         )}
 
-        {messages.map((msg, i) => (
-          <div key={i} style={{ ...styles.msgWrapper, justifyContent: msg.side === 'A' ? 'flex-start' : 'flex-end' }}>
-            <div style={{ maxWidth: '76%' }}>
-              <div style={{ ...styles.msgLabel, color: sideColor[msg.side] }}>
-                {sideName(msg.side)}
+        {messages.map((msg, i) => {
+          const isRef = msg.side === 'REF';
+          return isRef ? (
+            // Referee verdict — centered full-width card
+            <div key={i} style={styles.refCard}>
+              <div style={styles.refHeader}>
+                <Gavel size={13} color={sideColor.REF} />
+                <span style={{ color: sideColor.REF, fontWeight: 700, fontSize: '12px' }}>
+                  {sideName('REF')} — Verdict
+                </span>
               </div>
-              <div style={{ ...styles.bubble, borderColor: sideColor[msg.side] + '50', background: msg.side === 'A' ? 'var(--chip-bg)' : 'rgba(16,185,129,0.07)' }}>
-                <SandboxMarkdown tone="light" style={{ fontSize: '13px' }}>{msg.content}</SandboxMarkdown>
+              <SandboxMarkdown tone="light" style={{ fontSize: '13px' }}>{msg.content}</SandboxMarkdown>
+            </div>
+          ) : (
+            <div key={i} style={{ ...styles.msgWrapper, justifyContent: msg.side === 'A' ? 'flex-start' : 'flex-end' }}>
+              <div style={{ maxWidth: '76%' }}>
+                <div style={{ ...styles.msgLabel, color: sideColor[msg.side] }}>
+                  {sideName(msg.side)}
+                </div>
+                <div style={{ ...styles.bubble, borderColor: sideColor[msg.side] + '50', background: msg.side === 'A' ? 'var(--chip-bg)' : 'rgba(16,185,129,0.07)' }}>
+                  <SandboxMarkdown tone="light" style={{ fontSize: '13px' }}>{msg.content}</SandboxMarkdown>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
+        {/* In-flight bubble */}
         {isRunning && currentTask && (
-          <div style={{ ...styles.msgWrapper, justifyContent: currentTurn === 'A' ? 'flex-start' : 'flex-end' }}>
-            <div style={{ maxWidth: '76%' }}>
-              <div style={{ ...styles.msgLabel, color: sideColor[currentTurn] }}>
-                {sideName(currentTurn)}
-              </div>
-              <div style={{ ...styles.bubble, borderColor: sideColor[currentTurn] + '50', background: currentTurn === 'A' ? 'var(--chip-bg)' : 'rgba(16,185,129,0.07)' }}>
+          <div style={
+            currentTurn === 'REF'
+              ? { display: 'contents' }
+              : { ...styles.msgWrapper, justifyContent: currentTurn === 'A' ? 'flex-start' : 'flex-end' }
+          }>
+            {currentTurn === 'REF' ? (
+              <div style={{ ...styles.refCard, opacity: 0.8, animation: 'debate-breathe 1.8s ease-in-out infinite' }}>
+                <div style={styles.refHeader}>
+                  <Gavel size={13} color={sideColor.REF} />
+                  <span style={{ color: sideColor.REF, fontWeight: 700, fontSize: '12px' }}>
+                    {sideName('REF')} — deliberating…
+                  </span>
+                </div>
                 {streamingLog
-                  ? <SandboxMarkdown tone="light" style={{ fontSize: '13px', animation: 'debate-breathe 1.8s ease-in-out infinite' }}>{streamingLog}</SandboxMarkdown>
-                  : <span style={styles.thinking}>Thinking…</span>
+                  ? <SandboxMarkdown tone="light" style={{ fontSize: '13px' }}>{streamingLog}</SandboxMarkdown>
+                  : <span style={styles.thinking}>Analyzing transcript…</span>
                 }
               </div>
-            </div>
+            ) : (
+              <div style={{ maxWidth: '76%' }}>
+                <div style={{ ...styles.msgLabel, color: sideColor[currentTurn] }}>
+                  {sideName(currentTurn)}
+                </div>
+                <div style={{ ...styles.bubble, borderColor: sideColor[currentTurn] + '50', background: currentTurn === 'A' ? 'var(--chip-bg)' : 'rgba(16,185,129,0.07)' }}>
+                  {streamingLog
+                    ? <SandboxMarkdown tone="light" style={{ fontSize: '13px', animation: 'debate-breathe 1.8s ease-in-out infinite' }}>{streamingLog}</SandboxMarkdown>
+                    : <span style={styles.thinking}>Thinking…</span>
+                  }
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -292,15 +502,15 @@ const styles = {
   root: {
     display: 'flex',
     flexDirection: 'column',
-    height: '70vh',
-    gap: '10px',
+    height: '72vh',
+    gap: '8px',
     fontFamily: 'system-ui, sans-serif',
     color: 'var(--text)',
   },
   configPanel: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '10px',
+    gap: '8px',
   },
   agentConfig: {
     background: 'var(--glass)',
@@ -418,6 +628,20 @@ const styles = {
     fontSize: '13px',
     lineHeight: 1.5,
     border: '1px solid',
+  },
+  refCard: {
+    background: 'rgba(168,85,247,0.06)',
+    border: '1px solid rgba(168,85,247,0.35)',
+    borderRadius: '10px',
+    padding: '12px 16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  refHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
   },
   thinking: {
     color: 'var(--muted)',
