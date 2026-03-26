@@ -10,16 +10,16 @@
 //! Key format: "capability|runner_id|record_id" enables efficient queries by capability and runner.
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{
     models::Agent,
-    schema::TaskId,
+    schema::{mb_to_gb_rounded, TaskId},
     utils::base_capability,
 };
 
 /// A record capturing execution characteristics for heuristic analysis of **non-urgent tasks only**
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeuristicRecord {
     /// Base capability (without extended attributes)
@@ -32,8 +32,8 @@ pub struct HeuristicRecord {
     pub runner_os: String,
     /// CPU architecture
     pub runner_cpu_arch: String,
-    /// Total memory available on runner (MB)
-    pub runner_total_memory_mb: u64,
+    /// Total system RAM on runner (whole gigabytes)
+    pub runner_total_memory_gb: u64,
     /// Execution time in milliseconds
     pub execution_time_ms: f64,
     /// Whether the task succeeded
@@ -52,6 +52,59 @@ pub struct HeuristicRecord {
     pub record_id: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HeuristicRecordDe {
+    capability: String,
+    runner_id: String,
+    runner_tier: u8,
+    runner_os: String,
+    runner_cpu_arch: String,
+    #[serde(default)]
+    runner_total_memory_gb: Option<u64>,
+    #[serde(default)]
+    runner_total_memory_mb: Option<u64>,
+    execution_time_ms: f64,
+    success: bool,
+    buckets_used: Vec<String>,
+    bucket_count: usize,
+    has_files: bool,
+    notes: String,
+    completed_at: DateTime<Utc>,
+    record_id: String,
+}
+
+impl From<HeuristicRecordDe> for HeuristicRecord {
+    fn from(d: HeuristicRecordDe) -> Self {
+        let runner_total_memory_gb = d
+            .runner_total_memory_gb
+            .or_else(|| d.runner_total_memory_mb.map(mb_to_gb_rounded))
+            .unwrap_or(0);
+        Self {
+            capability: d.capability,
+            runner_id: d.runner_id,
+            runner_tier: d.runner_tier,
+            runner_os: d.runner_os,
+            runner_cpu_arch: d.runner_cpu_arch,
+            runner_total_memory_gb,
+            execution_time_ms: d.execution_time_ms,
+            success: d.success,
+            buckets_used: d.buckets_used,
+            bucket_count: d.bucket_count,
+            has_files: d.has_files,
+            notes: d.notes,
+            completed_at: d.completed_at,
+            record_id: d.record_id,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for HeuristicRecord {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        HeuristicRecordDe::deserialize(deserializer).map(Into::into)
+    }
+}
+
 impl HeuristicRecord {
     /// Create a new heuristic record from non-urgent task execution data
     pub fn new(
@@ -68,7 +121,7 @@ impl HeuristicRecord {
             runner_tier: agent.tier,
             runner_os: agent.system_info.os.clone(),
             runner_cpu_arch: agent.system_info.cpu_arch.clone(),
-            runner_total_memory_mb: agent.system_info.total_memory_mb,
+            runner_total_memory_gb: agent.system_info.total_memory_gb,
             execution_time_ms,
             success,
             buckets_used: buckets_used.clone(),

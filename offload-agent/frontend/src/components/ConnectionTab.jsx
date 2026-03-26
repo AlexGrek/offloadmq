@@ -18,7 +18,7 @@ function computeDefaultName(sysinfo) {
     .replace(/\(R\)/g, '').replace(/\(TM\)/g, '').replace(/ CPU/g, '').trim()
   if (cpu.includes(' @ ')) cpu = cpu.slice(0, cpu.indexOf(' @ '))
   cpu = cpu.replace(/\s+/g, ' ').trim()
-  const ramGb = Math.round((sysinfo.totalMemoryMb || 0) / 1024)
+  const ramGb = sysinfo.totalMemoryGb ?? 0
   const name = cpu ? `${cpu} ${ramGb}GB` : `${ramGb}GB`
   return name.slice(0, 50)
 }

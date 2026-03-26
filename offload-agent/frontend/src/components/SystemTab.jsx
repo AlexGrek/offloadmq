@@ -134,7 +134,7 @@ export function SystemTab({ state, loadState, run }) {
   const si = state?.sysinfo || {}
   const gpu = si.gpu
   const gpuStr = gpu
-    ? `${gpu.vendor} ${gpu.model} (${gpu.vramMb}MB VRAM)`
+    ? `${gpu.vendor} ${gpu.model} (${gpu.vramGb ?? 0}GB VRAM)`
     : 'None'
 
   function setWinStartup(on) {
@@ -207,7 +207,7 @@ export function SystemTab({ state, loadState, run }) {
             <div>
               {si.os} / {si.cpuArch}
             </div>
-            <div>RAM: {si.totalMemoryMb}MB</div>
+            <div>RAM: {si.totalMemoryGb ?? 0}GB</div>
             <div>GPU: {gpuStr}</div>
           </div>
         )}

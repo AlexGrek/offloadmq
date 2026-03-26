@@ -7,7 +7,7 @@
 use std::{collections::HashMap, fmt::Display};
 
 use chrono::Duration;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value; // Using Value for flexible payloads
 
 use crate::{
@@ -157,8 +157,17 @@ pub struct AgentLoginResponse {
     pub expires_in: usize,
 }
 
-/// Basic system information reported by an agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Convert legacy megabyte counts to whole gigabytes (same rounding as the agent).
+pub(crate) fn mb_to_gb_rounded(mb: u64) -> u64 {
+    if mb == 0 {
+        0
+    } else {
+        std::cmp::max(1, (mb.saturating_add(512)) / 1024)
+    }
+}
+
+/// Basic system information reported by an agent (RAM and VRAM in whole gigabytes).
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemInfo {
     pub os: String,
@@ -166,18 +175,93 @@ pub struct SystemInfo {
     pub runtime: String,
     pub cpu_arch: String,
     pub cpu_model: Option<String>,
-    pub total_memory_mb: u64,
+    pub total_memory_gb: u64,
     pub gpu: Option<GpuInfo>,
     pub machine_id: Option<String>,
 }
 
-/// GPU details, if available on the agent's system.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SystemInfoDe {
+    os: String,
+    client: String,
+    runtime: String,
+    cpu_arch: String,
+    cpu_model: Option<String>,
+    #[serde(default)]
+    total_memory_gb: Option<u64>,
+    #[serde(default)]
+    total_memory_mb: Option<u64>,
+    #[serde(default)]
+    gpu: Option<GpuInfoDe>,
+    #[serde(default)]
+    machine_id: Option<String>,
+}
+
+impl From<SystemInfoDe> for SystemInfo {
+    fn from(d: SystemInfoDe) -> Self {
+        let total_memory_gb = d
+            .total_memory_gb
+            .or_else(|| d.total_memory_mb.map(mb_to_gb_rounded))
+            .unwrap_or(0);
+        let gpu = d.gpu.map(GpuInfo::from);
+        Self {
+            os: d.os,
+            client: d.client,
+            runtime: d.runtime,
+            cpu_arch: d.cpu_arch,
+            cpu_model: d.cpu_model,
+            total_memory_gb,
+            gpu,
+            machine_id: d.machine_id,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SystemInfo {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        SystemInfoDe::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// GPU details, if available on the agent's system (VRAM in whole gigabytes).
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GpuInfo {
     pub vendor: String,
     pub model: String,
-    pub vram_mb: u64,
+    pub vram_gb: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GpuInfoDe {
+    vendor: String,
+    model: String,
+    #[serde(default)]
+    vram_gb: Option<u64>,
+    #[serde(default)]
+    vram_mb: Option<u64>,
+}
+
+impl From<GpuInfoDe> for GpuInfo {
+    fn from(d: GpuInfoDe) -> Self {
+        let vram_gb = d
+            .vram_gb
+            .or_else(|| d.vram_mb.map(mb_to_gb_rounded))
+            .unwrap_or(0);
+        Self {
+            vendor: d.vendor,
+            model: d.model,
+            vram_gb,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for GpuInfo {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        GpuInfoDe::deserialize(deserializer).map(Into::into)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

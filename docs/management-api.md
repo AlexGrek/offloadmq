@@ -148,11 +148,11 @@ Returns all registered agents (online and offline).
       "client": "offload-agent/0.1.0",
       "runtime": "Python 3.11",
       "cpuArch": "aarch64",
-      "totalMemoryMb": 32768,
+      "totalMemoryGb": 32,
       "gpu": {
         "vendor": "NVIDIA",
         "model": "RTX 4090",
-        "vramMb": 24576
+        "vramGb": 24
       }
     }
   }
@@ -171,6 +171,8 @@ Returns all registered agents (online and offline).
 | `tier` | Performance tier (0-255, higher is better) |
 | `capacity` | Max concurrent tasks this agent can handle |
 | `systemInfo` | Agent's reported system details (OS, memory, GPU, etc.) |
+| `systemInfo.totalMemoryGb` | Total system RAM as a whole number of gigabytes |
+| `systemInfo.gpu.vramGb` | GPU VRAM as a whole number of gigabytes (0 if unknown) |
 
 ---
 

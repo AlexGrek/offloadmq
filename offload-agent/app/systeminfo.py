@@ -6,8 +6,14 @@ import subprocess
 from typing import Optional, Dict, Any, List, Tuple
 
 from app.ollama import *
+from app.tier import (
+    AMD_HANDHELD_GPU_KEYWORDS as _AMD_HANDHELD_GPU_KEYWORDS,
+    AMD_IGPU_MODEL_KEYWORDS as _AMD_IGPU_MODEL_KEYWORDS,
+    calculate_tier,
+)
 
 import typer
+
 
 def _try_run(cmd: List[str]) -> Tuple[int, str, str]:
     try:
@@ -17,12 +23,23 @@ def _try_run(cmd: List[str]) -> Tuple[int, str, str]:
         return 1, "", str(e)
 
 
+def _mb_to_gb_rounded(mb: int) -> int:
+    """Whole gigabytes from a megabyte total (matches server migration rounding)."""
+    if mb <= 0:
+        return 0
+    return max(1, (mb + 512) // 1024)
+
+
+def _bytes_to_total_memory_gb(memory_bytes: int) -> int:
+    return _mb_to_gb_rounded(memory_bytes // (1024 * 1024))
+
+
 def get_gpu_info() -> Optional[Dict[str, Any]]:
     """Best-effort cross-platform GPU detection.
 
-    Returns: { vendor, model, vramMb } or None
+    Returns: { vendor, model, vramGb } (VRAM is whole gigabytes, 0 if unknown) or None
     """
-    # 1) NVIDIA via nvidia-smi
+    # 1) NVIDIA via nvidia-smi (memory.total is MiB)
     rc, out, _ = _try_run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
     if rc == 0 and out:
         # Pick the first GPU
@@ -31,10 +48,10 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
         if len(parts) >= 2:
             name, mem = parts[0], parts[1]
             try:
-                vram_mb = int(float(mem))
+                vram_mib = int(float(mem))
             except ValueError:
-                vram_mb = 0
-            return {"vendor": "NVIDIA", "model": name, "vramMb": vram_mb}
+                vram_mib = 0
+            return {"vendor": "NVIDIA", "model": name, "vramGb": _mb_to_gb_rounded(vram_mib)}
 
     # 2) macOS via system_profiler
     if platform.system() == "Darwin":
@@ -46,9 +63,7 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
                 if gpus:
                     g = gpus[0]
                     model = g.get("_name") or "GPU"
-                    vram = g.get("spdisplays_vram") or g.get("spdisplays_vram_shared")
-                    # system_profiler doesn't give exact MB easily; leave None when unclear
-                    return {"vendor": "Apple/AMD", "model": model, "vramMb": 0}
+                    return {"vendor": "Apple/AMD", "model": model, "vramGb": 0}
             except Exception:
                 pass
 
@@ -59,7 +74,7 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
             line = out.strip()
             model = line.split(":")[-1].strip() if ":" in line else line
             vendor = "AMD" if "AMD" in model or "Advanced Micro Devices" in model else ("Intel" if "Intel" in model else ("NVIDIA" if "NVIDIA" in model else "Unknown"))
-            return {"vendor": vendor, "model": model, "vramMb": 0}
+            return {"vendor": vendor, "model": model, "vramGb": 0}
 
     # 4) Windows via PowerShell CIM (wmic deprecated)
     if platform.system() == "Windows":
@@ -74,13 +89,90 @@ def get_gpu_info() -> Optional[Dict[str, Any]]:
                     data = data[0] if data else {}
                 name = data.get("Name")
                 ram = data.get("AdapterRAM")
-                vram_size: int | None = int(ram) // (1024 * 1024) if isinstance(ram, (int, float)) else None
+                vram_mb: int | None = int(ram) // (1024 * 1024) if isinstance(ram, (int, float)) else None
                 vendor = "NVIDIA" if name and "NVIDIA" in name.upper() else ("AMD" if name and "AMD" in name.upper() else ("INTEL" if name and "INTEL" in name.upper() else "Unknown"))
-                return {"vendor": vendor.title() if isinstance(vendor, str) else vendor, "model": name, "vramMb": vram_size}
+                vgb = _mb_to_gb_rounded(vram_mb) if vram_mb is not None else 0
+                return {"vendor": vendor.title() if isinstance(vendor, str) else vendor, "model": name, "vramGb": vgb}
             except Exception:
                 pass
 
     return None
+
+
+def _is_integrated_gpu_for_display(
+    gpu: Dict[str, Any], cpu_model: Optional[str]
+) -> bool:
+    """True when the detected GPU should not be labeled as a dedicated GPU."""
+    vu = (gpu.get("vendor") or "").upper()
+    mu = (gpu.get("model") or "").upper()
+    cu = (cpu_model or "").upper()
+    vram = int(gpu.get("vramGb") or 0)
+
+    if "NVIDIA" in vu:
+        return False
+
+    if "INTEL" in vu:
+        return True
+    if "INTEL" in mu and any(
+        k in mu for k in ("UHD", "HD GRAPHICS", "IRIS XE", "IRIS(R) XE")
+    ):
+        return True
+
+    if "APPLE M" in cu:
+        if "APPLE" in vu:
+            return True
+        if any(x in mu for x in ("APPLE M", "M1 ", "M2 ", "M3 ", "M4 ")):
+            return True
+        if any(x in mu for x in ("M1 ", "M2 ", "M3 ", "M4 ", "M1,", "M2,", "M3,", "M4,")):
+            return True
+
+    if "AMD" in vu and vram == 0:
+        if any(kw in mu for kw in _AMD_IGPU_MODEL_KEYWORDS) or any(
+            kw in mu for kw in _AMD_HANDHELD_GPU_KEYWORDS
+        ):
+            return True
+
+    if vram == 0 and (
+        "INTEGRATED" in mu or "UHD" in mu or "IRIS XE" in mu or "GRAPHICS 6" in mu
+    ):
+        return True
+
+    return False
+
+
+def _shorten_gpu_model_for_display(model: str, max_len: int) -> str:
+    """Drop leading vendor fluff so long names fit the display name cap."""
+    words = model.split()
+    priority = ("RTX", "GTX", "RX", "ARC", "QUADRO", "RADEON", "GEFORCE")
+    for token in priority:
+        for i, w in enumerate(words):
+            if w.upper() == token:
+                tail = " ".join(words[i:])
+                return tail[:max_len].rstrip()
+    return model[:max_len].rstrip()
+
+
+def _dedicated_gpu_model_label(gpu: Dict[str, Any]) -> str:
+    raw = (gpu.get("model") or "").strip()
+    raw = raw.replace("(R)", "").replace("(TM)", "").replace(" CPU", "")
+    return " ".join(raw.split())
+
+
+def _trim_base_preserving_ram(base: str, max_len: int) -> str:
+    """Shorten base to max_len without cutting a trailing ' 123GB' RAM suffix in half."""
+    if len(base) <= max_len:
+        return base
+    idx = base.rfind(" ")
+    if idx > 0 and base.endswith("GB"):
+        digits = base[idx + 1 : -2]
+        if digits.isdigit():
+            ram_suffix = base[idx:]
+            cpu_part = base[:idx]
+            if len(ram_suffix) <= max_len:
+                cpu_room = max_len - len(ram_suffix)
+                if cpu_room >= 1:
+                    return (cpu_part[:cpu_room].rstrip() + ram_suffix)[:max_len]
+    return base[:max_len].rstrip()
 
 
 def get_cpu_model() -> Optional[str]:
@@ -134,7 +226,7 @@ def calculate_machine_id(system_info: Dict[str, Any]) -> str:
         system_info.get("os", ""),
         system_info.get("cpuArch", ""),
         system_info.get("cpuModel", ""),
-        str(system_info.get("totalMemoryMb", "")),
+        str(system_info.get("totalMemoryGb", "")),
     ]
 
     gpu = system_info.get("gpu")
@@ -142,7 +234,7 @@ def calculate_machine_id(system_info: Dict[str, Any]) -> str:
         parts.extend([
             gpu.get("vendor", ""),
             gpu.get("model", ""),
-            str(gpu.get("vramMb", "")),
+            str(gpu.get("vramGb", "")),
         ])
 
     combined = "|".join(parts)
@@ -151,15 +243,14 @@ def calculate_machine_id(system_info: Dict[str, Any]) -> str:
 
 
 def collect_system_info() -> Dict[str, Any]:
-    memory_bytes = psutil.virtual_memory().total
-    memory_mb = memory_bytes // (1024 * 1024)
+    memory_bytes = int(psutil.virtual_memory().total)
     cpu_model = get_cpu_model()
 
     system_info = {
         "os": platform.system(),
         "cpuArch": platform.machine(),
         "cpuModel": cpu_model,
-        "totalMemoryMb": memory_mb,
+        "totalMemoryGb": _bytes_to_total_memory_gb(memory_bytes),
         "gpu": get_gpu_info(),
         "client": "offload-agent.py",
         "runtime": "python",
@@ -172,7 +263,8 @@ def collect_system_info() -> Dict[str, Any]:
 def compute_default_display_name(sysinfo: Dict[str, Any]) -> str:
     """Build a human-readable display name from system specs.
 
-    Examples: "Apple M3 Pro 16GB", "Intel Core i9 32GB"
+    Examples: "Apple M3 Pro 16GB", "Intel Core i9-13900 48GB RTX 4090 32GB"
+    Appends " <gpu> <vram>GB" for a discrete GPU (not iGPU); VRAM is always shown (0GB if unknown).
     Result is always <= 50 characters.
     """
     cpu: str = sysinfo.get("cpuModel") or sysinfo.get("cpuArch") or ""
@@ -183,12 +275,42 @@ def compute_default_display_name(sysinfo: Dict[str, Any]) -> str:
     # Strip trailing clock speed like "@ 3.00GHz"
     if " @ " in cpu:
         cpu = cpu[:cpu.index(" @ ")]
-    ram_gb = (sysinfo.get("totalMemoryMb", 0) + 512) // 1024
-    name = f"{cpu} {ram_gb}GB" if cpu else f"{ram_gb}GB"
-    return name[:50]
+    ram_gb = int(sysinfo.get("totalMemoryGb") or 0)
+    base = f"{cpu} {ram_gb}GB" if cpu else f"{ram_gb}GB"
 
+    gpu_raw = sysinfo.get("gpu")
+    if not isinstance(gpu_raw, dict):
+        return base[:50]
+    gpu: Dict[str, Any] = gpu_raw
+    if _is_integrated_gpu_for_display(gpu, sysinfo.get("cpuModel")):
+        return base[:50]
 
-from app.tier import calculate_tier  # re-exported for wildcard importers
+    dgpu = _dedicated_gpu_model_label(gpu)
+    if not dgpu:
+        return base[:50]
+
+    vram_gb = int(gpu.get("vramGb") or 0)
+    vram_suffix = f" {vram_gb}GB"
+
+    def full_name(model: str) -> str:
+        return f"{base} {model}{vram_suffix}"
+
+    if len(full_name(dgpu)) <= 50:
+        return full_name(dgpu)[:50]
+
+    for max_model in (22, 18, 14, 10, 6):
+        short_m = _shorten_gpu_model_for_display(dgpu, max_len=max_model)
+        if short_m and len(full_name(short_m)) <= 50:
+            return full_name(short_m)[:50]
+
+    short_m = _shorten_gpu_model_for_display(dgpu, max_len=6) or "GPU"
+    gpu_tail = f"{short_m}{vram_suffix}"
+    room = 50 - len(gpu_tail) - 1
+    if room >= 6:
+        trimmed = _trim_base_preserving_ram(base, room)
+        return (trimmed + " " + gpu_tail)[:50]
+
+    return (base[: max(1, 50 - len(gpu_tail) - 1)].rstrip() + " " + gpu_tail)[:50]
 
 
 def print_system_info(sysinfo: Dict[str, Any]) -> None:
@@ -197,11 +319,22 @@ def print_system_info(sysinfo: Dict[str, Any]) -> None:
     typer.echo(f"Architecture: {sysinfo['cpuArch']}")
     if sysinfo.get("cpuModel"):
         typer.echo(f"CPU Model: {sysinfo['cpuModel']}")
-    typer.echo(f"Memory: {sysinfo['totalMemoryMb']} MB")
+    typer.echo(f"Memory: {sysinfo['totalMemoryGb']} GB")
     if sysinfo.get("gpu"):
         g = sysinfo["gpu"]
-        typer.echo(f"GPU: {g.get('vendor')} {g.get('model')} ({g.get('vramMb')} MB VRAM)")
+        typer.echo(f"GPU: {g.get('vendor')} {g.get('model')} ({g.get('vramGb', 0)} GB VRAM)")
     else:
         typer.echo("GPU: None detected")
     if sysinfo.get("machineId"):
         typer.echo(f"Machine ID: {sysinfo['machineId']}")
+
+
+__all__ = [
+    "calculate_machine_id",
+    "calculate_tier",
+    "collect_system_info",
+    "compute_default_display_name",
+    "get_cpu_model",
+    "get_gpu_info",
+    "print_system_info",
+]

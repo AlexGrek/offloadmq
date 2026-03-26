@@ -402,11 +402,11 @@ Register a new agent with the system. Returns agent ID and login credentials.
     "client": "offload-agent/0.1.0",
     "runtime": "Python 3.11",
     "cpuArch": "aarch64",
-    "totalMemoryMb": 32768,
+    "totalMemoryGb": 32,
     "gpu": {
       "vendor": "NVIDIA",
       "model": "RTX 4090",
-      "vramMb": 24576
+      "vramGb": 24
     }
   }
 }
@@ -420,7 +420,9 @@ Register a new agent with the system. Returns agent ID and login credentials.
 | `apiKey` | string | Agent registration key (from server config) |
 | `displayName` | string (optional) | Human-readable name shown in the management UI (max 50 chars). Auto-computed from system specs if omitted. Returns 400 if longer than 50 characters. |
 | `systemInfo` | object | System details (OS, memory, GPU, etc.) |
+| `systemInfo.totalMemoryGb` | integer | Total system RAM in whole gigabytes |
 | `systemInfo.gpu` | object | Optional GPU info if available |
+| `systemInfo.gpu.vramGb` | integer | GPU VRAM in whole gigabytes (0 if unknown) |
 
 **Response** (201 Created)
 
@@ -502,11 +504,11 @@ Update agent capabilities, tier, or system info.
     "client": "offload-agent/0.1.1",
     "runtime": "Python 3.11",
     "cpuArch": "aarch64",
-    "totalMemoryMb": 32768,
+    "totalMemoryGb": 32,
     "gpu": {
       "vendor": "NVIDIA",
       "model": "RTX 4090",
-      "vramMb": 24576
+      "vramGb": 24
     }
   }
 }
@@ -1065,11 +1067,11 @@ register_payload = {
         "client": "offload-agent/0.1.0",
         "runtime": "Python 3.11",
         "cpuArch": "x86_64",
-        "totalMemoryMb": 16384,
+        "totalMemoryGb": 16,
         "gpu": {
             "vendor": "NVIDIA",
             "model": "RTX 3080",
-            "vramMb": 10240
+            "vramGb": 10
         }
     }
 }

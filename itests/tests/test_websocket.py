@@ -22,7 +22,7 @@ def register_agent():
             "client": "pytest-test-client",
             "runtime": "python3",
             "cpuArch": "x86_64",
-            "totalMemoryMb": 8192,
+            "totalMemoryGb": 8,
         },
         "apiKey": AGENT_API_KEY,
     }

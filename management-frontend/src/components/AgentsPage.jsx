@@ -115,7 +115,7 @@ function AgentsPage() {
                                                     <div className="kv"><span>Runtime:</span><b>{a.systemInfo?.runtime}</b></div>
                                                     <div className="kv"><span>CPU Arch:</span><b>{a.systemInfo?.cpuArch}</b></div>
                                                     {a.systemInfo?.cpuModel && <div className="kv"><span>CPU Model:</span><b>{a.systemInfo.cpuModel}</b></div>}
-                                                    <div className="kv"><span>Total RAM:</span><b>{a.systemInfo?.totalMemoryMb} MB</b></div>
+                                                    <div className="kv"><span>Total RAM:</span><b>{a.systemInfo?.totalMemoryGb} GB</b></div>
                                                     {a.systemInfo?.machineId && <div className="kv"><span>Machine ID:</span><code>{a.systemInfo.machineId}</code></div>}
                                                 </div>
                                                 <div>
@@ -124,7 +124,7 @@ function AgentsPage() {
                                                         <>
                                                             <div className="kv"><span>Vendor:</span><b>{a.systemInfo.gpu.vendor}</b></div>
                                                             <div className="kv"><span>Model:</span><b>{a.systemInfo.gpu.model}</b></div>
-                                                            <div className="kv"><span>VRAM:</span><b>{a.systemInfo.gpu.vramMb} MB</b></div>
+                                                            <div className="kv"><span>VRAM:</span><b>{a.systemInfo.gpu.vramGb} GB</b></div>
                                                         </>
                                                     ) : (
                                                         <div className="muted">No GPU</div>

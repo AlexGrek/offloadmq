@@ -84,10 +84,10 @@ def _run_scan() -> None:
 
     try:
         info = collect_system_info()
-        _log(f"[scan] {info['os']} {info['cpuArch']}, RAM {info['totalMemoryMb']}MB")
+        _log(f"[scan] {info['os']} {info['cpuArch']}, RAM {info['totalMemoryGb']}GB")
         if info.get("gpu"):
             g = info["gpu"]
-            _log(f"[scan] GPU: {g.get('vendor')} {g.get('model')} ({g.get('vramMb')}MB VRAM)")
+            _log(f"[scan] GPU: {g.get('vendor')} {g.get('model')} ({g.get('vramGb', 0)}GB VRAM)")
         else:
             _log("[scan] GPU: none detected")
     except Exception as exc:

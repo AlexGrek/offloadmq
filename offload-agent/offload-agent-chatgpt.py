@@ -132,6 +132,12 @@ def get_ollama_models() -> List[str]:
         print(f"Warning: Ollama discovery error: {e}")
     return []
 
+def _mb_to_gb_rounded(mb: int) -> int:
+    if mb <= 0:
+        return 0
+    return max(1, (mb + 512) // 1024)
+
+
 def _gpu_info_windows() -> Optional[Dict[str, Any]]:
     try:
         out = subprocess.check_output(["wmic", "path", "win32_videocontroller", "get", "name,adapterram"], text=True)
@@ -148,7 +154,8 @@ def _gpu_info_windows() -> Optional[Dict[str, Any]]:
             except Exception:
                 name = best
                 vram_bytes = 0
-            return {"vendor": "Unknown", "model": name, "vramMb": vram_bytes // (1024 * 1024)}
+            vmb = vram_bytes // (1024 * 1024)
+            return {"vendor": "Unknown", "model": name, "vramGb": _mb_to_gb_rounded(vmb)}
     except Exception:
         pass
     return None
@@ -162,7 +169,7 @@ def _gpu_info_nvidia() -> Optional[Dict[str, Any]]:
         )
         line = out.strip().splitlines()[0]
         name, mem = [p.strip() for p in line.split(",")]
-        return {"vendor": "NVIDIA", "model": name, "vramMb": int(mem)}
+        return {"vendor": "NVIDIA", "model": name, "vramGb": _mb_to_gb_rounded(int(mem))}
     except Exception:
         return None
 
@@ -184,7 +191,7 @@ def _gpu_info_amd() -> Optional[Dict[str, Any]]:
                 except Exception:
                     pass
         if name or vram_mb is not None:
-            return {"vendor": "AMD", "model": name or "AMD GPU", "vramMb": vram_mb or 0}
+            return {"vendor": "AMD", "model": name or "AMD GPU", "vramGb": _mb_to_gb_rounded(vram_mb or 0)}
     except Exception:
         pass
     return None
@@ -212,7 +219,7 @@ def collect_system_info() -> Dict[str, Any]:
     return {
         "os": os_name,
         "cpuArch": cpu_arch,
-        "totalMemoryMb": memory_mb,
+        "totalMemoryGb": _mb_to_gb_rounded(memory_mb),
         "gpu": get_gpu_info(),
         "client": "offload-agent.py",
         "runtime": "python",
@@ -222,10 +229,10 @@ def print_system_info(system_info: Dict[str, Any]) -> None:
     print("Collecting system information...")
     print(f"OS: {system_info['os']}")
     print(f"Architecture: {system_info['cpuArch']}")
-    print(f"Memory: {system_info['totalMemoryMb']} MB")
+    print(f"Memory: {system_info['totalMemoryGb']} GB")
     if system_info["gpu"]:
         gpu = system_info["gpu"]
-        print(f"GPU: {gpu.get('vendor','?')} {gpu.get('model','?')} ({gpu.get('vramMb',0)} MB VRAM)")
+        print(f"GPU: {gpu.get('vendor','?')} {gpu.get('model','?')} ({gpu.get('vramGb',0)} GB VRAM)")
     else:
         print("GPU: None detected")
 
