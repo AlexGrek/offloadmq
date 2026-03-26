@@ -504,7 +504,7 @@ const styles = {
     flexDirection: 'column',
     height: '72vh',
     gap: '8px',
-    fontFamily: 'system-ui, sans-serif',
+    fontFamily: 'var(--font-sans)',
     color: 'var(--text)',
   },
   configPanel: {

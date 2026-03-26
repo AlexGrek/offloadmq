@@ -19,6 +19,7 @@ export const sandboxStyles = {
     gap: '16px',
   },
   label: {
+    fontFamily: 'var(--font-display)',
     fontSize: '14px',
     fontWeight: '600',
     color: 'var(--text)',
@@ -31,6 +32,7 @@ export const sandboxStyles = {
     marginBottom: '6px',
   },
   input: {
+    fontFamily: 'var(--font-sans)',
     padding: '8px 12px',
     fontSize: '14px',
     border: '1px solid var(--border)',
@@ -50,6 +52,7 @@ export const sandboxStyles = {
     color: 'var(--text)',
   },
   textarea: {
+    fontFamily: 'var(--font-sans)',
     padding: '8px 12px',
     fontSize: '14px',
     border: '1px solid var(--border)',
@@ -60,6 +63,7 @@ export const sandboxStyles = {
     color: 'var(--text)',
   },
   button: {
+    fontFamily: 'var(--font-sans)',
     padding: '10px 16px',
     fontSize: '14px',
     fontWeight: '600',
@@ -71,6 +75,7 @@ export const sandboxStyles = {
     alignSelf: 'flex-start',
   },
   greenButton: {
+    fontFamily: 'var(--font-sans)',
     padding: '10px 16px',
     fontSize: '14px',
     fontWeight: '600',
@@ -89,16 +94,19 @@ export const sandboxStyles = {
     borderRadius: '8px',
   },
   responseLabel: {
+    fontFamily: 'var(--font-display)',
     fontSize: '14px',
     fontWeight: '600',
     color: 'var(--text)',
     margin: '0 0 12px 0',
   },
   loading: {
+    fontFamily: 'var(--font-sans)',
     color: 'var(--muted)',
     fontStyle: 'italic',
   },
   response: {
+    fontFamily: 'var(--font-sans)',
     whiteSpace: 'pre-wrap',
     wordWrap: 'break-word',
     fontSize: '12px',
@@ -106,6 +114,7 @@ export const sandboxStyles = {
     margin: '0',
   },
   error: {
+    fontFamily: 'var(--font-sans)',
     whiteSpace: 'pre-wrap',
     wordWrap: 'break-word',
     fontSize: '12px',
@@ -122,6 +131,7 @@ export const sandboxStyles = {
     lineHeight: '1.4',
   },
   toggleBtn: {
+    fontFamily: 'var(--font-sans)',
     background: 'none',
     border: 'none',
     cursor: 'pointer',
@@ -130,6 +140,7 @@ export const sandboxStyles = {
     padding: '0',
   },
   defaultHint: {
+    fontFamily: 'var(--font-sans)',
     fontSize: '13px',
     color: 'var(--muted)',
     fontStyle: 'italic',
@@ -153,12 +164,14 @@ export const sandboxStyles = {
     marginTop: '6px',
   },
   imageName: {
+    fontFamily: 'var(--font-sans)',
     fontSize: '12px',
     color: 'var(--muted)',
     margin: '0',
     wordBreak: 'break-all',
   },
   downloadLink: {
+    fontFamily: 'var(--font-sans)',
     fontSize: '12px',
     color: 'var(--primary)',
     textDecoration: 'none',
@@ -166,6 +179,7 @@ export const sandboxStyles = {
     marginLeft: '8px',
   },
   seedInfo: {
+    fontFamily: 'var(--font-sans)',
     fontSize: '12px',
     color: 'var(--muted)',
     margin: '8px 0 0 0',

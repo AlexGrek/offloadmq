@@ -302,7 +302,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     height: '65vh',
-    fontFamily: 'system-ui, sans-serif',
+    fontFamily: 'var(--font-sans)',
     color: 'var(--text)',
   },
   header: {

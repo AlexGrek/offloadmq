@@ -342,7 +342,7 @@ const s = {
         flexDirection: 'column',
         gap: '16px',
         padding: '4px',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontFamily: 'var(--font-sans)',
         color: 'var(--text)',
     },
     title: { margin: 0, fontSize: '1.4rem', fontWeight: 700 },

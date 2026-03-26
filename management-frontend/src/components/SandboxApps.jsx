@@ -164,7 +164,7 @@ const SandboxApps = () => {
   const transition = { type: "tween", duration: 0.3, ease: "easeInOut" };
 
   return (
-    <div className="flex justify-center items-center min-h-screen p-8 bg-gray-100 font-sans text-gray-900">
+    <div className="flex justify-center items-center min-h-screen p-8 bg-gray-100 font-sans text-gray-900" style={{ fontFamily: 'var(--font-sans)' }}>
       {/* CSS for the component */}
       <style>
         {`
@@ -175,6 +175,7 @@ const SandboxApps = () => {
           }
 
           .capabilities-title {
+            font-family: var(--font-display), sans-serif;
             font-size: 13px;
             font-weight: 600;
             color: #6b7280;
@@ -268,6 +269,7 @@ const SandboxApps = () => {
           }
 
           .app-name {
+            font-family: var(--font-display), sans-serif;
             font-size: 14px;
             font-weight: 500;
             color: #4b5563;
@@ -335,6 +337,7 @@ const SandboxApps = () => {
           }
 
           .modal-title {
+            font-family: var(--font-display), sans-serif;
             font-size: 2rem;
             font-weight: bold;
             color: #1f2937;
@@ -342,6 +345,7 @@ const SandboxApps = () => {
           }
           
           .api-input-container {
+            font-family: var(--font-sans), sans-serif;
             display: flex;
             flex-wrap: nowrap; /* Prevent wrapping */
             align-items: center; /* Center items vertically */
@@ -358,6 +362,7 @@ const SandboxApps = () => {
           }
 
           .api-input {
+            font-family: var(--font-sans), sans-serif;
             width: 100%;
             padding: 8px 12px;
             border-radius: 8px;
@@ -374,6 +379,7 @@ const SandboxApps = () => {
           }
 
           .modal-body {
+            font-family: var(--font-sans), sans-serif;
             color: #6b7280;
             line-height: 1.6;
           }
