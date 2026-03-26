@@ -9,6 +9,7 @@ import Chip from "./Chip";
 import ColorDot from "./ColorDot";
 
 function ApiKeysPage() {
+  const capabilityTemplates = ["llm.*", "debug.echo", "*", "imggen.*", "tts.*", "shell.*", "custom.*", "sandbox.*"];
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -20,7 +21,12 @@ function ApiKeysPage() {
     setLoading(true); setError("");
     try {
       const data = await apiFetch("/management/client_api_keys/list");
-      setItems(Array.isArray(data) ? data : []);
+      const sorted = (Array.isArray(data) ? data : []).slice().sort((a, b) => {
+        const aTs = new Date(a?.created || a?.createdAt || 0).getTime();
+        const bTs = new Date(b?.created || b?.createdAt || 0).getTime();
+        return bTs - aTs;
+      });
+      setItems(sorted);
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -56,6 +62,12 @@ function ApiKeysPage() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  const addCapabilityTemplate = (template) => {
+    const current = caps.split(",").map((s) => s.trim()).filter(Boolean);
+    if (current.includes(template)) return;
+    setCaps([...current, template].join(", "));
+  };
+
   return (
     <div className="page">
       <div className="page-head">
@@ -71,6 +83,19 @@ function ApiKeysPage() {
         <div className="form-row">
           <label>Capabilities</label>
           <input value={caps} onChange={(e) => setCaps(e.target.value)} placeholder="capA, capB, capC" />
+          <div className="chips-wrap">
+            {capabilityTemplates.map((template) => (
+              <button
+                key={template}
+                type="button"
+                className="chip"
+                onClick={() => addCapabilityTemplate(template)}
+                title={`Add ${template}`}
+              >
+                {template}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="form-actions"><button className="btn primary" type="submit"><KeySquare /> <span>Create / Update</span></button></div>
       </form>
@@ -92,7 +117,7 @@ function ApiKeysPage() {
                       className="icon"
                       onClick={() => onCopy(it.key)}
                       title="Copy API key"
-                      style={{ padding: '4px', opacity: 0.6, transition: 'opacity 0.2s', cursor: 'pointer' }}
+                      style={{ padding: '4px', opacity: 0.6, transition: 'opacity 0.2s', cursor: 'pointer', color: 'var(--text)' }}
                       onMouseEnter={(e) => e.target.style.opacity = '1'}
                       onMouseLeave={(e) => e.target.style.opacity = '0.6'}
                     >

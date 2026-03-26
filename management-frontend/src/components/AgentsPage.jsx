@@ -31,6 +31,45 @@ function AgentsPage() {
 
     useEffect(() => { load(); }, [load, onlineOnly]);
 
+    useEffect(() => {
+        let intervalId = null;
+
+        const startAutoRefresh = () => {
+            if (intervalId !== null) return;
+            intervalId = window.setInterval(() => {
+                if (document.visibilityState === "visible") {
+                    load();
+                }
+            }, 10000);
+        };
+
+        const stopAutoRefresh = () => {
+            if (intervalId === null) return;
+            window.clearInterval(intervalId);
+            intervalId = null;
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === "visible") {
+                load();
+                startAutoRefresh();
+            } else {
+                stopAutoRefresh();
+            }
+        };
+
+        if (document.visibilityState === "visible") {
+            startAutoRefresh();
+        }
+
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            stopAutoRefresh();
+        };
+    }, [load]);
+
     const toggle = (uid) => setExpanded((s) => ({ ...s, [uid]: !s[uid] }));
 
     const onDelete = async (uid) => {
@@ -78,9 +117,17 @@ function AgentsPage() {
                             <li key={a.uid} className="card">
                                 <div className="row" onClick={() => toggle(a.uid)} aria-expanded={isOpen}>
                                     <div className="row-main">
-                                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                                          <ColorDot seed={a.uid} />
-                                          <div className="row-title">{a.displayName || a.uidShort || a.uid}</div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                          <ColorDot seed={a.systemInfo?.machineId || ""} />
+                                          <div className="row-title">
+                                              <span>{a.uidShort || a.uid}</span>
+                                              {a.systemInfo?.machineId && (
+                                                  <span className="mono" style={{ fontSize: "0.82em", opacity: 0.85, marginLeft: "8px" }}>
+                                                      {a.systemInfo.machineId}
+                                                  </span>
+                                              )}
+                                              {a.displayName && <span style={{ marginLeft: "8px" }}>- {a.displayName}</span>}
+                                          </div>
                                         </div>
                                         <div className="row-sub">
                                             <Chip>Tier {a.tier}</Chip>
