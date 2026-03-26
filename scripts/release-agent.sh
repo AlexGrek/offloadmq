@@ -146,3 +146,32 @@ echo ""
 echo "Released ${BUCKET} ${VERSION} for ${OS_ARCH}"
 echo "  Latest:  ${BASE_URL}/rs/${BUCKET}/latest/${OS_ARCH}/${BINARY_NAME}"
 echo "  Landing: ${BASE_URL}/r/${BUCKET}"
+
+# Release notes (macOS only, upload once per version)
+
+if [[ "$OS_TAG" == "darwin" ]]; then
+  echo ""
+  echo "Generating release notes..."
+
+  PREV_TAG=$(git -C "${REPO_ROOT}" describe --tags --match 'release-*' --abbrev=0 HEAD^ 2>/dev/null || true)
+  if [[ -n "$PREV_TAG" ]]; then
+    NOTES=$(git -C "${REPO_ROOT}" log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges)
+  else
+    NOTES=$(git -C "${REPO_ROOT}" log --pretty=format:"- %s" --no-merges -20)
+  fi
+
+  NOTES_JSON=$(printf '%s' "$NOTES" | python3 -c 'import json,sys; print(json.dumps({"content": sys.stdin.read()}))')
+
+  HTTP_NOTES=$(curl -sS --write-out "%{http_code}" -o /tmp/dl_notes_resp \
+    -X PUT "${BASE_URL}/api/v1/release/${BUCKET}/versions/${VERSION}/docs/release-notes" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "$NOTES_JSON")
+
+  if [[ "$HTTP_NOTES" == "200" || "$HTTP_NOTES" == "201" || "$HTTP_NOTES" == "204" ]]; then
+    echo "Release notes uploaded."
+  else
+    echo "warning: release notes upload failed (HTTP ${HTTP_NOTES})" >&2
+    cat /tmp/dl_notes_resp >&2
+  fi
+fi
