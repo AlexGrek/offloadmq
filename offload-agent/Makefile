@@ -1,8 +1,11 @@
 SERVER ?= http://localhost:3069
 KEY ?= ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
 
-# Version injected at build time (can be overridden)
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+# Version injected at build time (override: make build VERSION=v0.3.260).
+# Same rules as scripts/release-agent.sh (see scripts/compute-agent-version.sh).
+# Avoids a bare "dev" string so PyInstaller binaries always report a concrete version.
+_COMPUTE_VER := $(abspath $(CURDIR)/../scripts/compute-agent-version.sh)
+VERSION ?= $(shell bash "$(_COMPUTE_VER)" 2>/dev/null || echo "v0.0.0")
 
 venv:
 	python3 -m venv venv

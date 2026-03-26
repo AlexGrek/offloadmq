@@ -41,6 +41,12 @@ jobs:
         working-directory: offload-agent
         run: python -m mypy
 
+      - name: Write bundled app version
+        working-directory: offload-agent
+        run: |
+          VER="${GITHUB_REF_NAME#release-}"
+          printf "APP_VERSION = '%s'\n" "${VER}" > app/_version.py
+
       - name: Build single-file executable
         working-directory: offload-agent
         run: |

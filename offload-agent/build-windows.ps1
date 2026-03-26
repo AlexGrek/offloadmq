@@ -86,14 +86,24 @@ try {
         Pop-Location
     }
 
-    # ── 2c. Compute version to inject via environment ──────────────────────
-    $GitCount = & git -C $ScriptDir rev-list --count HEAD 2>$null
-    $AppVersion = if ($GitCount -and $LASTEXITCODE -eq 0) { $GitCount.Trim() } else { "dev" }
+    # ── 2c. Inject app version (app/_version.py is bundled into the exe; env alone is ignored) ──
+    $RepoRoot = git -C $ScriptDir rev-parse --show-toplevel 2>$null
+    if (-not $RepoRoot) { $RepoRoot = $ScriptDir }
+    $Count = git -C $RepoRoot rev-list --count HEAD 2>$null
+    if (-not $Count) { $Count = "0" }
+    $Tag = git -C $RepoRoot describe --tags --match 'release-*' --abbrev=0 2>$null
+    if ($Tag) {
+        $Ver = $Tag -replace '^release-', ''
+        $Prefix = $Ver -replace '\.\d+$', ''
+        $AppVersion = "${Prefix}.${Count}"
+    } else {
+        $AppVersion = "v0.1.${Count}"
+    }
+    Set-Content -Path (Join-Path $ScriptDir "app\_version.py") -Value "APP_VERSION = '$AppVersion'"
     Write-Host "App version: $AppVersion"
 
     # ── 3. Build ───────────────────────────────────────────────────────────
     Write-Host "Building offload-agent.exe ..."
-    $env:OFFLOAD_AGENT_VERSION = $AppVersion
     & $PyExe -m PyInstaller `
         --noconfirm `
         --onefile `

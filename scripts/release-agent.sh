@@ -36,19 +36,7 @@ fi
 # Falls back to v0.1.<count> when no release tag exists yet.
 
 detect_version() {
-  local count
-  count=$(git -C "${REPO_ROOT}" rev-list --count HEAD 2>/dev/null || echo "0")
-
-  local tag
-  tag=$(git -C "${REPO_ROOT}" describe --tags --match 'release-*' --abbrev=0 2>/dev/null || true)
-  if [[ -n "$tag" ]]; then
-    # strip "release-" prefix and replace last numeric segment with commit count
-    local ver="${tag#release-}"           # e.g. v0.3.250
-    local prefix="${ver%.*}"              # e.g. v0.3
-    echo "${prefix}.${count}"
-  else
-    echo "v0.1.${count}"
-  fi
+  bash "${REPO_ROOT}/scripts/compute-agent-version.sh" "${REPO_ROOT}"
 }
 
 VERSION="${1:-$(detect_version)}"
