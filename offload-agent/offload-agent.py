@@ -50,13 +50,29 @@ def _cmd_install_bin(argv: list[str]) -> None:
 
 
 def _cmd_install_systemd(argv: list[str]) -> None:
-    import argparse, getpass, os
+    import argparse, getpass, os, sys
+
+    # Determine default user: 
+    # Fallback to current user (will be 'root' if run via sudo)
+    default_user = getpass.getuser()
+    
+    # Attempt to find a "real" user in /home
+    if os.path.isdir("/home"):
+        for username in os.listdir("/home"):
+            user_home = os.path.join("/home", username)
+            if os.path.isdir(user_home):
+                # Check for indicators of an actual human user's home directory
+                if (os.path.isfile(os.path.join(user_home, ".bashrc")) or 
+                    os.path.isfile(os.path.join(user_home, ".profile")) or
+                    os.path.isfile(os.path.join(user_home, ".bash_profile"))):
+                    default_user = username
+                    break  # Found the first valid user, stop looking
 
     parser = argparse.ArgumentParser(prog="offload-agent install systemd")
     parser.add_argument("--bin-path", default="/usr/local/bin/offload-agent",
                         help="Path to the installed binary (default: /usr/local/bin/offload-agent)")
-    parser.add_argument("--user", default=getpass.getuser(),
-                        help="System user to run the service as (default: current user)")
+    parser.add_argument("--user", default=default_user,
+                        help=f"System user to run the service as (default: {default_user})")
     parser.add_argument("--host", default="0.0.0.0",
                         help="Web UI bind host (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8080,
