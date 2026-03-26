@@ -253,5 +253,7 @@ test-logs:
 	cd itests && make logs
 
 release:
+	@echo "Releasing $(APP_NAME) version $(TAG) via github"
+	git tag release-v$(TAG) &&  git push origin release-v$(TAG)
 	@echo "Releasing $(APP_NAME) $(TAG) ..."
 	@$(MAKE) release-agent
