@@ -251,3 +251,7 @@ test-stop:
 # Show test infrastructure logs
 test-logs:
 	cd itests && make logs
+
+release:
+	@echo "Releasing $(APP_NAME) $(TAG) ..."
+	@$(MAKE) release-agent
