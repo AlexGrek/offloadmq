@@ -252,8 +252,10 @@ test-stop:
 test-logs:
 	cd itests && make logs
 
+release: RELEASE_AGENT_TAG_CALCULATED = $(shell ./scripts/compute-agent-version.sh)
 release:
-	@echo "Releasing $(APP_NAME) version $(TAG) via github"
-	git tag release-v$(TAG) &&  git push origin release-v$(TAG)
-	@echo "Releasing $(APP_NAME) $(TAG) ..."
+	@echo "version: $(RELEASE_AGENT_TAG_CALCULATED)"
+	@echo "Releasing $(APP_NAME) version $(RELEASE_AGENT_TAG_CALCULATED) via github"
+	git tag release-$(RELEASE_AGENT_TAG_CALCULATED) &&  git push origin release-$(RELEASE_AGENT_TAG_CALCULATED)
+	@echo "Releasing $(APP_NAME) $(RELEASE_AGENT_TAG_CALCULATED) ..."
 	@$(MAKE) release-agent
