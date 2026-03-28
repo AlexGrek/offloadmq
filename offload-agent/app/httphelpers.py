@@ -59,6 +59,20 @@ def authenticate_agent(server: str, agent_id: str, key: str) -> Dict[str, Any]:
     return auth_result
 
 
+def update_agent_capabilities(
+    http: HttpClient, capabilities: List[str], tier: int, capacity: int,
+    display_name: Optional[str] = None,
+) -> None:
+    body: Dict[str, Any] = {
+        "capabilities": capabilities,
+        "tier": tier,
+        "capacity": capacity,
+        "displayName": display_name,
+    }
+    resp = http.post("private", "agent", "info", "update", json_body=body, timeout=30)
+    resp.raise_for_status()
+
+
 def test_ping(server: str, jwt_token: str) -> bool:
     url = server.rstrip("/") + "/private/agent/ping"
     try:

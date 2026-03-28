@@ -1,3 +1,4 @@
+import itertools
 import logging
 import threading
 import time
@@ -11,6 +12,7 @@ from .config import *
 from .systeminfo import *
 from .models import *
 from .httphelpers import *
+from .capabilities import detect_capabilities
 from .exec.llm import *
 from .exec.tts import *
 from .exec.debug import *
@@ -280,14 +282,80 @@ def handle_task(http: HttpClient, task: dict[str, Any]) -> None:
 
 
 # -----------------------------------------
+# Capability rescan scheduler
+# -----------------------------------------
+
+# Rescan intervals in seconds: 30s → 2 min → 5 min → 15 min (forever)
+_RESCAN_INTERVALS = [30, 120, 300]
+_RESCAN_STEADY_INTERVAL = 900
+
+
+def _rescan_and_push() -> None:
+    """Detect capabilities and push the updated list to the server."""
+    logger.info("[rescan] Starting capability rescan...")
+    try:
+        cfg = load_config()
+        server_url: str = cfg.get("server", "")
+        jwt: str = cfg.get("jwtToken", "")
+        if not server_url or not jwt:
+            logger.warning("[rescan] No server/JWT in config — skipping.")
+            return
+
+        http = HttpClient(server_url, jwt)
+        caps = detect_capabilities(lambda msg: logger.info(msg))
+        tier: int = cfg.get("tier") or calculate_tier(collect_system_info())
+        capacity: int = cfg.get("capacity", 1)
+        display_name: str | None = cfg.get("displayName") or None
+        update_agent_capabilities(http, caps, tier, capacity, display_name)
+        logger.info(f"[rescan] Updated server with {len(caps)} capabilities.")
+    except Exception as e:
+        logger.error(f"[rescan] Failed to push capabilities: {e}")
+
+
+def _rescan_scheduler(busy_event: threading.Event, stop_event: threading.Event) -> None:
+    """Background thread: fire capability rescans on a stepped schedule.
+
+    Schedule: 30 s → 2 min → 5 min → 15 min (repeating).
+    Skips a cycle (without resetting the schedule) if the agent is busy.
+    """
+    schedule = itertools.chain(_RESCAN_INTERVALS, itertools.repeat(_RESCAN_STEADY_INTERVAL))
+    for interval in schedule:
+        _wait_interruptible(interval, stop_event)
+        if stop_event.is_set():
+            return
+        if busy_event.is_set():
+            logger.info("[rescan] Agent busy — skipping scheduled rescan.")
+            continue
+        threading.Thread(target=_rescan_and_push, daemon=True).start()
+
+
+def _wait_interruptible(seconds: int, stop_event: threading.Event) -> None:
+    """Sleep for `seconds`, waking every second to check stop_event."""
+    deadline = time.monotonic() + seconds
+    while not stop_event.is_set() and time.monotonic() < deadline:
+        time.sleep(1)
+
+
+def start_rescan_scheduler(busy_event: threading.Event, stop_event: threading.Event) -> None:
+    """Launch the background capability rescan scheduler thread."""
+    t = threading.Thread(
+        target=_rescan_scheduler, args=(busy_event, stop_event), daemon=True
+    )
+    t.start()
+
+
+# -----------------------------------------
 # Main loop
 # -----------------------------------------
 
 def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | None = None) -> None:
     http = HttpClient(server_url, jwt_token)
     auth_backoff = 10
+    _stop = stop_event or threading.Event()
+    busy_event = threading.Event()
+    start_rescan_scheduler(busy_event, _stop)
 
-    while not (stop_event and stop_event.is_set()):
+    while not _stop.is_set():
         try:
             task_info = poll_task(http)
             if not task_info or not task_info.get("id"):
@@ -303,7 +371,11 @@ def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | N
                 time.sleep(5)
                 continue
 
-            handle_task(http, task)
+            busy_event.set()
+            try:
+                handle_task(http, task)
+            finally:
+                busy_event.clear()
 
         except AuthError:
             logger.warning(f"Auth rejected — attempting recovery...")
