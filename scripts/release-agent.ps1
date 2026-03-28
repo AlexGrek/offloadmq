@@ -123,7 +123,7 @@ $AuthResp = Invoke-RestMethod `
 
 $Token = $AuthResp.token
 if (-not $Token) {
-    Write-Error "error: failed to obtain JWT — check DL_API_KEY"
+    Write-Error "error: failed to obtain JWT - check DL_API_KEY"
     exit 1
 }
 
