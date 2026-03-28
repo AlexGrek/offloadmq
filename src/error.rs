@@ -49,6 +49,9 @@ pub enum AppError {
 
     #[error("Bcrypt error: {0}")]
     BcryptError(#[from] bcrypt::BcryptError),
+
+    #[error("Client closed request: {0}")]
+    ClientClosedRequest(String),
 }
 
 impl AppError {
@@ -69,6 +72,7 @@ impl AppError {
             AppError::Parse(_) => StatusCode::BAD_REQUEST,
             AppError::BcryptError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::SchedulingImpossible(_) => StatusCode::SERVICE_UNAVAILABLE,
+            AppError::ClientClosedRequest(_) => StatusCode::from_u16(499).unwrap(),
         }
     }
 
@@ -89,6 +93,7 @@ impl AppError {
             AppError::Parse(_) => "parse_error",
             AppError::BcryptError(_) => "bcrypt_error",
             AppError::SchedulingImpossible(_) => "scheduling impossible",
+            AppError::ClientClosedRequest(_) => "client_closed_request",
         }
     }
 
@@ -101,7 +106,8 @@ impl AppError {
             | AppError::NotFound(_)
             | AppError::BadRequest(_)
             | AppError::Jwt(_)
-            | AppError::Parse(_) => false,
+            | AppError::Parse(_)
+            | AppError::ClientClosedRequest(_) => false,
             AppError::Database(_)
             | AppError::Internal(_)
             | AppError::Serialization(_)

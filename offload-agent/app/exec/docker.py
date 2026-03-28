@@ -28,6 +28,17 @@ def enqueue_output(out: IO[str], q: "queue.Queue[str]") -> None:
     out.close()
 
 
+def _drain_queue(q: "queue.Queue[str]") -> str:
+    """Read all remaining lines from a queue without blocking."""
+    lines: list[str] = []
+    while not q.empty():
+        try:
+            lines.append(q.get_nowait())
+        except queue.Empty:
+            break
+    return "".join(lines)
+
+
 def execute_docker_run(
     http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
@@ -135,22 +146,45 @@ def execute_docker_run(
         full_stderr_log = ""
 
         # Collect output while process runs
-        while process.poll() is None or not q_stdout.empty() or not q_stderr.empty():
-            try:
-                line = q_stdout.get_nowait()
-                full_stdout_log += line
-                report_progress(http, log=line, stage="running", task_id=task_id)
-            except queue.Empty:
-                pass
+        try:
+            while process.poll() is None or not q_stdout.empty() or not q_stderr.empty():
+                try:
+                    line = q_stdout.get_nowait()
+                    full_stdout_log += line
+                    report_progress(http, log=line, stage="running", task_id=task_id)
+                except queue.Empty:
+                    pass
 
-            try:
-                line = q_stderr.get_nowait()
-                full_stderr_log += line
-                report_progress(http, log=line, stage="running", task_id=task_id)
-            except queue.Empty:
-                pass
+                try:
+                    line = q_stderr.get_nowait()
+                    full_stderr_log += line
+                    report_progress(http, log=line, stage="running", task_id=task_id)
+                except queue.Empty:
+                    pass
 
-            time.sleep(0.1)
+                time.sleep(0.1)
+
+        except TaskCancelled:
+            timer.cancel()
+            logger.info(f"Task {task_id.id} cancelled — killing container {container_name}")
+            try:
+                subprocess.run(["docker", "kill", container_name], timeout=5, capture_output=True)
+            except Exception:
+                pass
+            process.wait()
+
+            t_stdout.join(timeout=2)
+            t_stderr.join(timeout=2)
+            full_stdout_log += _drain_queue(q_stdout)
+            full_stderr_log += _drain_queue(q_stderr)
+
+            output = {
+                "stdout": full_stdout_log,
+                "stderr": full_stderr_log,
+                "cancelled": True,
+            }
+            report_cancelled(http, task_id, capability, output=output)
+            return True
 
         # Cancel the timeout timer since process finished
         timer.cancel()

@@ -7,7 +7,7 @@ import requests
 
 from ...models import TaskId
 from ...httphelpers import HttpClient
-from ..helpers import make_failure_report, make_success_report, report_progress, report_result
+from ..helpers import TaskCancelled, make_failure_report, make_success_report, report_cancelled, report_progress, report_result
 from .comfyui import queue_prompt, wait_for_completion
 from .workflow import load_workflow_template, inject_params, build_injection_values
 from .output import build_output
@@ -57,6 +57,10 @@ def execute_imggen_comfyui(
         seed = inject_values.get("seed") or payload.get("seed")
         output = build_output(history_entry, task_type, prompt_id, seed, http, output_bucket)
         report = make_success_report(task_id, capability, output)
+
+    except TaskCancelled:
+        report_cancelled(http, task_id, capability, output={"cancelled": True})
+        return True
 
     except requests.RequestException as e:
         response_text = "No response from server"

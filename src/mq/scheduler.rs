@@ -113,11 +113,14 @@ pub async fn report_non_urgent_task<'a>(
         .get_assigned(&report.id)?
         .ok_or(AppError::NotFound(report.id.to_string()))?;
 
-    got.change_status(if success {
-        TaskStatus::Completed
-    } else {
-        TaskStatus::Failed
-    });
+    let is_cancel_requested = got.status == TaskStatus::CancelRequested;
+    if !is_cancel_requested {
+        got.change_status(if success {
+            TaskStatus::Completed
+        } else {
+            TaskStatus::Failed
+        });
+    }
     got.result = report.output;
     store.update_assigned(&got)?;
 
@@ -136,7 +139,13 @@ pub async fn report_non_urgent_task<'a>(
 
     if let Err(e) = heuristic_storage.log_task_completion(&record) {
         debug!("Failed to log heuristic for task {}: {}", report.id, e);
-        // Don't fail the task resolution if heuristic logging fails
+    }
+
+    if is_cancel_requested {
+        return Err(AppError::ClientClosedRequest(format!(
+            "Task {} has been cancelled by the client",
+            report.id
+        )));
     }
 
     Ok(())
@@ -149,17 +158,26 @@ pub async fn update_non_urgent_task<'a>(
     let mut got = store
         .get_assigned(&report.id)?
         .ok_or(AppError::NotFound(report.id.to_string()))?;
+    let is_cancel_requested = got.status == TaskStatus::CancelRequested;
     got.append_log(report.log_update);
     if report.stage.is_some() {
         got.stage = report.stage
     }
-    if let Some(new_status) = report.status {
-        match new_status {
-            TaskStatus::Starting | TaskStatus::Running => got.change_status(new_status),
-            _ => return Err(AppError::BadRequest(format!("Status {:?} cannot be set via progress update", new_status))),
+    if !is_cancel_requested {
+        if let Some(new_status) = report.status {
+            match new_status {
+                TaskStatus::Starting | TaskStatus::Running => got.change_status(new_status),
+                _ => return Err(AppError::BadRequest(format!("Status {:?} cannot be set via progress update", new_status))),
+            }
         }
     }
     store.update_assigned(&got)?;
+    if is_cancel_requested {
+        return Err(AppError::ClientClosedRequest(format!(
+            "Task {} has been cancelled by the client",
+            report.id
+        )));
+    }
     Ok(())
 }
 

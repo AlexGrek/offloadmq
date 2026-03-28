@@ -87,6 +87,12 @@ impl TaskStorage {
         Ok(())
     }
 
+    /// Remove an unassigned task by id (returns true if it existed)
+    pub fn remove_unassigned(&self, id: &TaskId) -> Result<bool> {
+        let key = Self::make_key(id);
+        Ok(self.unassigned.remove(key.as_bytes())?.is_some())
+    }
+
     /// Get an unassigned task by id
     pub fn get_unassigned(&self, id: &TaskId) -> Result<Option<UnassignedTask>> {
         let key = Self::make_key(id);

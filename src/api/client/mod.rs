@@ -16,7 +16,7 @@ use crate::{
     error::AppError,
     models::{Agent, UnassignedTask},
     mq::scheduler::submit_urgent_task,
-    schema::{ApiKeyRequest, TaskId, TaskSubmissionRequest},
+    schema::{ApiKeyRequest, TaskId, TaskStatus, TaskSubmissionRequest},
     state::AppState,
     utils::base_capability,
 };
@@ -176,6 +176,64 @@ pub async fn poll_task_status(
         }
         return Err(AppError::NotFound(task_id.to_string()));
     }
+}
+
+pub async fn cancel_task(
+    State(app_state): State<Arc<AppState>>,
+    Path((cap, id)): Path<(String, String)>,
+    Json(req): Json<ApiKeyRequest>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    let task_id = TaskId::from_url(id, cap)?;
+
+    // Check assigned tasks first
+    if let Some(mut task) = app_state.storage.tasks.get_assigned(&task_id)? {
+        if task.data.api_key != req.api_key {
+            return Err(AppError::NotFound(task_id.to_string()));
+        }
+        match task.status {
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Canceled => {
+                return Err(AppError::Conflict(format!(
+                    "Task {} is already in terminal state {:?}",
+                    task_id, task.status
+                )));
+            }
+            TaskStatus::CancelRequested => {
+                return Err(AppError::Conflict(format!(
+                    "Task {} is already cancel-requested",
+                    task_id
+                )));
+            }
+            _ => {}
+        }
+        task.change_status(TaskStatus::CancelRequested);
+        app_state.storage.tasks.update_assigned(&task)?;
+        info!("Task {} cancel requested (was assigned)", task_id);
+        return Ok(Json(json!({
+            "id": task_id,
+            "status": "cancelRequested",
+            "message": "Cancellation requested"
+        })));
+    }
+
+    // Check unassigned tasks — remove from queue and create an assigned record
+    // in Canceled state so the client can still poll it
+    if let Some(unassigned) = app_state.storage.tasks.get_unassigned(&task_id)? {
+        if unassigned.data.api_key != req.api_key {
+            return Err(AppError::NotFound(task_id.to_string()));
+        }
+        app_state.storage.tasks.remove_unassigned(&task_id)?;
+        let mut assigned = unassigned.into_assigned("(cancelled)");
+        assigned.change_status(TaskStatus::Canceled);
+        app_state.storage.tasks.update_assigned(&assigned)?;
+        info!("Task {} cancelled (was unassigned)", task_id);
+        return Ok(Json(json!({
+            "id": task_id,
+            "status": "canceled",
+            "message": "Task cancelled (was queued)"
+        })));
+    }
+
+    Err(AppError::NotFound(task_id.to_string()))
 }
 
 pub async fn capabilities_online(

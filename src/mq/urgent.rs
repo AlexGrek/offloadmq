@@ -120,20 +120,29 @@ impl UrgentTaskStore {
             let task = entry.assigned_task.as_mut().ok_or(AppError::Conflict(
                 "Task is not assigned but reported".to_string(),
             ))?;
+            let is_cancel_requested = task.status == TaskStatus::CancelRequested;
             task.result = Some(payload);
-            task.change_status(if success {
-                TaskStatus::Completed
-            } else {
-                TaskStatus::Failed
-            });
+            if !is_cancel_requested {
+                task.change_status(if success {
+                    TaskStatus::Completed
+                } else {
+                    TaskStatus::Failed
+                });
 
-            let mut status = entry.state.status.write().await;
-            *status = if success {
-                TaskStatus::Completed
-            } else {
-                TaskStatus::Failed
-            };
-            let _ = entry.state.notify.send(status.clone());
+                let mut status = entry.state.status.write().await;
+                *status = if success {
+                    TaskStatus::Completed
+                } else {
+                    TaskStatus::Failed
+                };
+                let _ = entry.state.notify.send(status.clone());
+            }
+            if is_cancel_requested {
+                return Err(AppError::ClientClosedRequest(format!(
+                    "Task {} has been cancelled by the client",
+                    task_id
+                )));
+            }
             return Ok(true);
         }
         Ok(false)
@@ -151,15 +160,24 @@ impl UrgentTaskStore {
             let task = entry.assigned_task.as_mut().ok_or(AppError::Conflict(
                 "Task is not assigned but reported".to_string(),
             ))?;
+            let is_cancel_requested = task.status == TaskStatus::CancelRequested;
             task.append_log(log);
             if let Some(stage_text) = stage {
                 task.change_stage(&stage_text);
             }
-            if let Some(new_status) = status {
-                match new_status {
-                    TaskStatus::Starting | TaskStatus::Running => task.change_status(new_status),
-                    _ => return Err(AppError::BadRequest(format!("Status {:?} cannot be set via progress update", new_status))),
+            if !is_cancel_requested {
+                if let Some(new_status) = status {
+                    match new_status {
+                        TaskStatus::Starting | TaskStatus::Running => task.change_status(new_status),
+                        _ => return Err(AppError::BadRequest(format!("Status {:?} cannot be set via progress update", new_status))),
+                    }
                 }
+            }
+            if is_cancel_requested {
+                return Err(AppError::ClientClosedRequest(format!(
+                    "Task {} has been cancelled by the client",
+                    task_id
+                )));
             }
             return Ok(true);
         }

@@ -254,9 +254,22 @@ pub async fn resolve_task(
         })
         .unwrap_or_default();
 
-    let found = report_urgent_task(&state.urgent, report.clone(), task_id).await?;
-    if !found {
-        report_non_urgent_task(&state.storage.tasks, report, &agent, &state.storage.heuristics).await?;
+    let mut cancel_err: Option<AppError> = None;
+    match report_urgent_task(&state.urgent, report.clone(), task_id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            if let Err(e) = report_non_urgent_task(&state.storage.tasks, report, &agent, &state.storage.heuristics).await {
+                if matches!(e, AppError::ClientClosedRequest(_)) {
+                    cancel_err = Some(e);
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+        Err(e) if matches!(e, AppError::ClientClosedRequest(_)) => {
+            cancel_err = Some(e);
+        }
+        Err(e) => return Err(e),
     }
 
     for bucket_uid in &file_buckets {
@@ -284,6 +297,9 @@ pub async fn resolve_task(
         );
     }
 
+    if let Some(e) = cancel_err {
+        return Err(e);
+    }
     Ok(())
 }
 

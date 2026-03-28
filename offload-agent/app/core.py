@@ -23,7 +23,7 @@ from .exec.imggen import execute_imggen_comfyui
 from .exec.custom import execute_custom_cap
 from .data.updn import process_data_download
 from .data.fs_utils import *
-from .exec.helpers import report_starting
+from .exec.helpers import TaskCancelled, report_cancelled, report_starting
 
 
 # -----------------------------------------
@@ -256,7 +256,12 @@ def handle_task(http: HttpClient, task: dict[str, Any]) -> None:
         return
 
     data_path = pick_directory(task_id)
-    report_starting(http, task_id)
+    try:
+        report_starting(http, task_id)
+    except TaskCancelled:
+        logger.info(f"Task {task_id.id} cancelled before execution started")
+        report_cancelled(http, task_id, capability)
+        return
 
     # Download files from buckets
     if file_buckets:
@@ -275,6 +280,10 @@ def handle_task(http: HttpClient, task: dict[str, Any]) -> None:
             executor(http, task_id, capability, payload, data_path, output_bucket=output_bucket)
         else:
             executor(http, task_id, capability, payload, data_path)
+    except TaskCancelled:
+        # Fallback: executor didn't handle cancellation itself
+        logger.info(f"Task {task_id.id} cancelled (unhandled by executor)")
+        report_cancelled(http, task_id, capability)
     except Exception as e:
         logger.error(f"Executor failed: {e}")
         report = make_failure_report(task_id, capability, str(e))

@@ -39,6 +39,8 @@ pub enum TaskStatus {
     Completed,
     /// The task failed during execution.
     Failed,
+    /// The client has requested cancellation; the agent should stop work.
+    CancelRequested,
     /// The task was cancelled by a client.
     Canceled,
     /// Task is restartable and is returned to the queue

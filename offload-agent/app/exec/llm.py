@@ -133,6 +133,7 @@ def execute_llm_query(
             last_print_time = time.time()
             final_data: dict[str, Any] = {}
             tool_calls = None
+            cancelled = False
 
             # Make the request with streaming enabled
             r = requests.post(
@@ -141,42 +142,56 @@ def execute_llm_query(
             r.raise_for_status()
 
             # Process the streamed response line by line
-            for line in r.iter_lines(decode_unicode=True):
-                if line.strip():
-                    try:
-                        json_response: dict[str, Any] = json.loads(line)
-                        msg = json_response.get("message", {})
+            try:
+                for line in r.iter_lines(decode_unicode=True):
+                    if line.strip():
+                        try:
+                            json_response: dict[str, Any] = json.loads(line)
+                            msg = json_response.get("message", {})
 
-                        # Accumulate text content
-                        if "content" in msg:
-                            content = msg["content"]
-                            buffer += content
-                            full_response_text += content
+                            # Accumulate text content
+                            if "content" in msg:
+                                content = msg["content"]
+                                buffer += content
+                                full_response_text += content
 
-                        # Capture tool_calls if present
-                        if "tool_calls" in msg:
-                            tool_calls = msg["tool_calls"]
+                            # Capture tool_calls if present
+                            if "tool_calls" in msg:
+                                tool_calls = msg["tool_calls"]
 
-                        # Print buffered content every 2 seconds
-                        current_time = time.time()
-                        if current_time - last_print_time >= 2:
-                            report_progress(
-                                http, log=buffer, stage="running", task_id=task_id
-                            )
-                            buffer = ""
-                            last_print_time = current_time
-
-                        # Capture the final 'done' response for metadata
-                        if json_response.get("done"):
-                            final_data = json_response
-                            if buffer:
+                            # Print buffered content every 2 seconds
+                            current_time = time.time()
+                            if current_time - last_print_time >= 2:
                                 report_progress(
                                     http, log=buffer, stage="running", task_id=task_id
                                 )
+                                buffer = ""
+                                last_print_time = current_time
 
-                    except json.JSONDecodeError:
-                        # Skip malformed lines, sometimes headers are sent
-                        continue
+                            # Capture the final 'done' response for metadata
+                            if json_response.get("done"):
+                                final_data = json_response
+                                if buffer:
+                                    report_progress(
+                                        http, log=buffer, stage="running", task_id=task_id
+                                    )
+
+                        except json.JSONDecodeError:
+                            # Skip malformed lines, sometimes headers are sent
+                            continue
+            except TaskCancelled:
+                cancelled = True
+                r.close()
+                logger.info(f"Task {task_id.id} cancelled — stopping LLM stream")
+
+            if cancelled:
+                output = {
+                    "response": full_response_text,
+                    "model": model_name,
+                    "cancelled": True,
+                }
+                report_cancelled(http, task_id, capability, output=output)
+                return True
 
             # Construct the final response to match the non-streaming format
             if final_data:

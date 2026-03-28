@@ -26,6 +26,7 @@ Tasks flow through a client-server-agent pipeline:
 5. **Agent executes** and reports progress via `POST /private/agent/task/progress/{cap}/{id}`
 6. **Agent resolves** the task via `POST /private/agent/task/resolve/{cap}/{id}`
 7. **Client polls** task status via `POST /api/task/poll/{cap}/{id}` to get results
+8. *(Optional)* **Client cancels** a task via `POST /api/task/cancel/{cap}/{id}`
 
 ### Key Concepts
 
@@ -309,6 +310,7 @@ Failed task:
 | `running` | Task is actively executing |
 | `completed` | Task succeeded, result in `output` |
 | `failed` | Task failed, error in `output` |
+| `cancelRequested` | Client requested cancellation; agent should stop work |
 | `failedRetryPending` | Failed but scheduled for retry |
 | `failedRetryDelayed` | Failed and waiting before retry |
 | `canceled` | Task was cancelled by client |
@@ -328,6 +330,92 @@ Failed task:
 - Log accumulates as agent sends progress updates
 - Completed/failed tasks are archived after 7 days (configurable)
 - Polling a deleted/archived task returns 404
+
+---
+
+### Cancel Task
+
+```
+POST /api/task/cancel/{cap}/{id}
+Content-Type: application/json
+```
+
+Request cancellation of a task. Behavior depends on the task's current state:
+
+- **Unassigned (queued) tasks** are immediately removed from the queue and moved to `canceled` state.
+- **Assigned/running tasks** are moved to `cancelRequested` state. The agent detects the cancellation via `499` responses on progress/resolve calls and stops work gracefully (see [Agent Cancellation Behavior](#agent-cancellation-behavior) below).
+
+**Path parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cap` | string | The capability (queue) -- URL-encoded if contains special chars |
+| `id` | string | The time-sortable task ID |
+
+**Request body**
+
+```json
+{
+  "apiKey": "your-client-api-key"
+}
+```
+
+**Response** (200 OK)
+
+Queued task (immediately cancelled):
+```json
+{
+  "id": {
+    "cap": "llm.mistral",
+    "id": "01ARZ3NDE4V2XTGZUVY7"
+  },
+  "status": "canceled",
+  "message": "Task cancelled (was queued)"
+}
+```
+
+Assigned/running task (cancel requested):
+```json
+{
+  "id": {
+    "cap": "llm.mistral",
+    "id": "01ARZ3NDE4V2XTGZUVY7"
+  },
+  "status": "cancelRequested",
+  "message": "Cancellation requested"
+}
+```
+
+**Error responses**
+
+| Status | Reason |
+|--------|--------|
+| `401` | API key not found or missing |
+| `404` | Task not found or not owned by this API key |
+| `409` | Task is already in a terminal state (`completed`, `failed`, `canceled`) or already `cancelRequested` |
+| `500` | Server error |
+
+**Notes**
+
+- Task ownership is enforced: only the API key that submitted the task can cancel it
+- For queued tasks, cancellation is immediate and final
+- For assigned/running tasks, `cancelRequested` is a signal to the agent; the agent gracefully stops work and reports partial output
+- Clients can poll the task after requesting cancellation to track the final state
+
+#### Agent Cancellation Behavior
+
+When the agent sends a progress update or resolves a task that is in `cancelRequested` state, the server returns **`499 Client Closed Request`**. The agent interprets this as a cancellation signal and stops work gracefully:
+
+1. **Detection**: Any `report_progress` or `report_starting` call that receives 499 raises `TaskCancelled` inside the executor.
+2. **Graceful stop**: The executor catches `TaskCancelled` and performs cleanup:
+   - **Shell tasks** (`shell.bash`, `custom.shell`): The running process is killed (`SIGKILL`), remaining stdout/stderr is collected, and a final resolve is sent with partial output. No file uploads are performed.
+   - **Docker tasks**: The container is killed via `docker kill`, remaining output is collected and reported.
+   - **LLM tasks** (`llm.*`, `custom.llm`): The streaming connection is closed and partial response text is reported.
+   - **Image generation** (`imggen.*`): Generation is abandoned and partial output (if any) is reported.
+   - **Non-streaming executors** (`debug.echo`, `shellcmd.bash`, `tts.kokoro`): These run to completion but 499 on the final resolve is handled silently.
+3. **Final report**: The agent sends a resolve with the partial output collected so far. The server saves the output but keeps the task in `cancelRequested` state (the status in the resolve is ignored). The server returns 499 again, which the agent accepts silently.
+
+Cancellation is **not instantaneous** — it is graceful. The agent finishes any in-flight I/O, collects partial results, and reports them before moving on to the next task.
 
 ---
 
@@ -745,6 +833,7 @@ Or on failure:
 |--------|--------|
 | `400` | Task ID mismatch or malformed request |
 | `404` | Task not found |
+| `499` | Client cancelled the task (output is saved but status stays `cancelRequested`) |
 | `500` | Server error saving result |
 
 **Notes**
@@ -752,6 +841,7 @@ Or on failure:
 - For urgent tasks, resolving triggers the watch channel to unblock waiting client
 - Regular tasks are stored in persistent DB
 - Task transitions to "completed" or "failed" state
+- If the task is in `cancelRequested` state, the output is still saved but the status is **not** changed; the server returns `499 Client Closed Request` to signal the agent to stop work
 - Once resolved, you're done; client polls to get the result
 
 ---
@@ -797,6 +887,15 @@ Same as `/task/resolve`
 }
 ```
 
+**Error responses**
+
+| Status | Reason |
+|--------|--------|
+| `400` | Task ID mismatch or invalid status transition |
+| `404` | Task not found |
+| `499` | Client cancelled the task (logs/stage are still applied but status stays `cancelRequested`) |
+| `500` | Server error |
+
 **Notes**
 
 - Non-blocking: updates are appended to task logs
@@ -804,6 +903,7 @@ Same as `/task/resolve`
 - Stage information is shown in client status polls
 - Useful for providing visibility into long-running tasks
 - Can be called many times; no limit on frequency
+- If the task is in `cancelRequested` state, log and stage updates are still applied but any status transition is ignored; the server returns `499 Client Closed Request` to signal the agent to stop work
 
 ---
 
@@ -905,6 +1005,9 @@ Client Submission
 [Urgent] ──────────────────────→  In-Memory Queue (60s TTL)
                                         ↓
 [Regular] ──────────────────────→  Persistent DB
+     ↓                                  ↓
+     ↓                           [Client Cancels]  (POST /cancel/{cap}/{id})
+     ↓                                  → queued tasks: immediately canceled
      ↓
 [Agent Polls]  (urgent first, then regular)
      ↓
@@ -912,7 +1015,7 @@ Client Submission
      Task: queued → assigned
      ↓
 [Agent Executes & Updates]  (POST /progress/{cap}/{id})
-     Task: starting → running
+     Task: starting → running ←── [Client Cancels] → cancelRequested
      ↓
 [Agent Resolves]  (POST /resolve/{cap}/{id})
      Task: running → completed/failed
@@ -934,6 +1037,8 @@ Client Submission
 | `running` | Agent sends more progress | `running` | Logs/stage accumulate |
 | `running` | Agent reports success (POST /resolve) | `completed` | Result available in `output` |
 | `running` | Agent reports failure (POST /resolve) | `failed` | Error details in `output` |
+| `queued` | Client cancels (POST /cancel) | `canceled` | Removed from queue immediately |
+| `assigned` \| `starting` \| `running` | Client cancels (POST /cancel) | `cancelRequested` | Agent should stop work |
 | `completed` \| `failed` | 7 days pass | (archived) | No longer pollable (404) |
 
 ---
@@ -959,6 +1064,7 @@ Client Submission
 | `408 Timeout` | Timeout waiting | `/submit_blocking` waited 60s with no result |
 | `409 Conflict` | Conflict | Task already claimed by another agent |
 | `413 Payload Too Large` | File too large | Upload exceeds bucket size limit |
+| `499 Client Closed Request` | Client cancelled | Task is in `cancelRequested` state; agent should stop work. Logs/output are still saved but status is not changed. |
 
 ### Server Errors
 
