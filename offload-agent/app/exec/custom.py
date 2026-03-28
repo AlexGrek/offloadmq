@@ -28,6 +28,7 @@ from typing import Any, IO
 
 import requests
 
+from ..config import load_config
 from ..models import TaskId
 from ..httphelpers import HttpClient
 from ..custom_caps import CustomCap, get_custom_cap
@@ -98,7 +99,15 @@ def _execute_shell(
         script_fd = None
         os.chmod(script_path, 0o700)
 
-        report_progress(http, log=f"Running custom cap: {cap.name}\n", stage="running", task_id=task_id)
+        cfg = load_config()
+        agent_id = cfg.get("agentId", "unknown")
+        machine = cfg.get("displayName", "unknown")
+        report_progress(
+            http,
+            log=f"Running custom cap: {cap.name} | agent={agent_id} machine={machine}\n",
+            stage="running",
+            task_id=task_id,
+        )
 
         # Execute the script
         process = subprocess.Popen(
