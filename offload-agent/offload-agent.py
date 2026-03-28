@@ -75,8 +75,6 @@ def _cmd_install_systemd(argv: list[str]) -> None:
                         help=f"System user to run the service as (default: {default_user})")
     parser.add_argument("--host", default="0.0.0.0",
                         help="Web UI bind host (default: 0.0.0.0)")
-    parser.add_argument("--port", type=int, default=8080,
-                        help="Web UI port (default: 8080)")
     args = parser.parse_args(argv)
 
     if sys.platform != "linux":
@@ -101,7 +99,7 @@ Wants=network-online.target
 Type=simple
 User={args.user}
 ExecStartPre=/bin/sleep 30
-ExecStart={args.bin_path} webui --host {args.host} --port {args.port} --agent-autostart
+ExecStart={args.bin_path} webui --host {args.host} --agent-autostart
 Restart=on-failure
 RestartSec=10
 

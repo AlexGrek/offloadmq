@@ -4,16 +4,35 @@ A distributed task queue system for offloading computational tasks to remote age
 
 ## ⚡ Quick Install
 
-Get the latest offload-agent client from GitHub releases:
+Download the latest offload-agent binary:
 
 ```bash
-# Download the latest release
-curl -fsSL "$(curl -s https://api.github.com/repos/AlexGrek/offloadmq/releases/latest | grep browser_download_url | cut -d'"' -f4)" -o offload-agent
-chmod +x offload-agent
-./offload-agent --help
+# macOS (Apple Silicon)
+curl -LO "https://dl.alexgr.space/rs/offload-agent/latest/darwin-arm64/offload-agent-darwin-arm64"
+chmod +x offload-agent-darwin-arm64
+
+# Linux (x86_64)
+curl -LO "https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/offload-agent-linux-amd64"
+chmod +x offload-agent-linux-amd64
 ```
 
-Or visit [Releases](https://github.com/AlexGrek/offloadmq/releases) to download manually.
+### Self-install
+
+The binary can install itself onto the system:
+
+```bash
+# Copy binary to system path (destination is optional)
+offload-agent install bin [--dest DIR]
+
+# Linux — install and enable as a systemd service
+offload-agent install systemd [--bin-path PATH] [--user USER] [--host HOST] [--port PORT]
+# Note: auto-detects the real user when run with sudo
+
+# macOS — install as a launchd service
+offload-agent install launchd [--app-path PATH]
+```
+
+> Windows installer is not yet available.
 
 ## 🐳 Single-Node Setup
 

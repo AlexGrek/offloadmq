@@ -10,12 +10,15 @@ from pydantic import BaseModel, Field
 
 CONFIG_FILE = ".offload-agent.json"
 
+def _config_path() -> Path:
+    return Path.home() / CONFIG_FILE
+
 def config_exists() -> bool:
-    return Path(CONFIG_FILE).exists()
+    return _config_path().exists()
 
 
 def load_config() -> Dict[str, Any]:
-    p = Path(CONFIG_FILE)
+    p = _config_path()
     if p.exists():
         try:
             result: Dict[str, Any] = json.loads(p.read_text())
@@ -27,7 +30,7 @@ def load_config() -> Dict[str, Any]:
 
 def save_config(cfg: Dict[str, Any]) -> None:
     try:
-        Path(CONFIG_FILE).write_text(json.dumps(cfg, indent=2))
+        _config_path().write_text(json.dumps(cfg, indent=2))
     except OSError as e:
         typer.echo(f"Error: Could not save config file: {e}")
         sys.exit(1)

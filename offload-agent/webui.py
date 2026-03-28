@@ -734,7 +734,6 @@ async def route_install_systemd(request: Request):
         return _done(request)
 
     bin_path = sd["bin_path"]
-    webui_port = load_config().get("webuiPort", 8080)
     service_name = "offload-agent"
     service_path = f"/etc/systemd/system/{service_name}.service"
     unit = f"""\
@@ -747,7 +746,7 @@ Wants=network-online.target
 Type=simple
 User={getpass.getuser()}
 ExecStartPre=/bin/sleep 30
-ExecStart={bin_path} webui --host 0.0.0.0 --port {webui_port} --agent-autostart
+ExecStart={bin_path} webui --host 0.0.0.0 --agent-autostart
 Restart=on-failure
 RestartSec=10
 
