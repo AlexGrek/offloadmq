@@ -91,23 +91,21 @@ const tokenMissing = !(localStorage.getItem(TOKEN_KEY) || "");
       </header>
 
       <div className="layout">
-        {navOpen && (
-          <aside className="sidebar">
-            <nav>
-              {routes.map(r => (
-                <NavLink
-                  key={r.path}
-                  to={r.path}
-                  onClick={() => { if (window.innerWidth < 900) setNavOpen(false); }}
-                  className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
-                >
-                  <span className="icon-wrap">{r.icon}</span>
-                  <span>{r.label}</span>
-                </NavLink>
-              ))}
-            </nav>
-          </aside>
-        )}
+        <aside className={`sidebar${navOpen ? ' open' : ''}`} style={window.innerWidth > 900 && !navOpen ? { display: 'none' } : undefined}>
+          <nav>
+            {routes.map(r => (
+              <NavLink
+                key={r.path}
+                to={r.path}
+                onClick={() => { if (window.innerWidth < 900) setNavOpen(false); }}
+                className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
+              >
+                <span className="icon-wrap">{r.icon}</span>
+                <span>{r.label}</span>
+              </NavLink>
+            ))}
+          </nav>
+        </aside>
 
         <main className="content">
           <Suspense fallback={<RouteLoader />}>
