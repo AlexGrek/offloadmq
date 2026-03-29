@@ -223,10 +223,6 @@ function AgentCard({ a, onDelete, onRescanDone }) {
                     </div>
                 </div>
 
-                {/* Actions */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                    <ExpandableDeleteButton onDelete={() => onDelete(a.uid)} itemName={a.uid} />
-                </div>
                 <div style={{ color: 'var(--muted)', flexShrink: 0 }}>
                     {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                 </div>
@@ -341,6 +337,9 @@ function AgentCard({ a, onDelete, onRescanDone }) {
                                     </div>
                                 </div>
                             )}
+                            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                                <ExpandableDeleteButton onDelete={() => onDelete(a.uid)} itemName={a.uid} />
+                            </div>
                         </div>
                     </motion.div>
                 )}
