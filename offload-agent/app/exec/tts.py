@@ -13,9 +13,9 @@ def execute_kokoro_tts(
     http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
     """Send TTS request to Kokoro-Web API (OpenAI-compatible).
-    
+
     Expected payload: {
-        "model": "model_q8f16", 
+        "model": "model_q8f16",
         "voice": "af_heart",
         "input": "Hello world"
     }
@@ -28,6 +28,11 @@ def execute_kokoro_tts(
                 "voice": "af_heart",
                 "input": payload
             }
+
+        # Check for cancellation before starting the (potentially slow) HTTP call.
+        # TaskCancelled is raised here if the client already cancelled the task.
+        report_progress(http, log=None, stage="running", task_id=task_id)
+
         # Make request
         headers = {}
         if KOKORO_API_KEY:
@@ -41,6 +46,9 @@ def execute_kokoro_tts(
             "content_type": r.headers.get("Content-Type"),
             "audio_data_base64": base64.b64encode(r.content).decode("utf-8")
         })
+    except TaskCancelled:
+        report_cancelled(http, task_id, capability)
+        return True
     except requests.RequestException as e:
         response_text = "No response from server"
         resp = getattr(e, "response", None)

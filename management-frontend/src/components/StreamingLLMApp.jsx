@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { cancelTask } from '../sandboxUtils';
 import { stripCapabilityAttrs } from '../utils';
 import { sandboxStyles as ss } from '../sandboxStyles';
 import { useCapabilities } from '../hooks/useCapabilities';
@@ -53,6 +54,15 @@ const StreamingLLMApp = ({ apiKey, addDevEntry }) => {
         onLog: setLog,
         onStatus: (status) => setPollingStatus("Status: " + status),
     });
+
+    const handleCancel = async () => {
+        if (!currentTask) return;
+        const { id, capability } = currentTask;
+        setCurrentTask(null);
+        setIsLoading(false);
+        setPollingStatus('Cancelled');
+        await cancelTask(capability, id, apiKey, addDevEntry);
+    };
 
     const handleSubmit = async () => {
         setIsLoading(true);
@@ -148,9 +158,14 @@ const StreamingLLMApp = ({ apiKey, addDevEntry }) => {
                     </datalist>
                 </div>
 
-                <button type="button" style={ss.button} disabled={isLoading} onClick={handleSubmit}>
-                    {isLoading ? (pollingStatus.startsWith('Polling') ? 'Polling...' : 'Submitting...') : 'Ask'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="button" style={ss.button} disabled={isLoading} onClick={handleSubmit}>
+                        {isLoading ? (pollingStatus.startsWith('Polling') ? 'Polling...' : 'Submitting...') : 'Ask'}
+                    </button>
+                    {isLoading && currentTask && (
+                        <button type="button" style={cancelBtnStyle} onClick={handleCancel}>Cancel</button>
+                    )}
+                </div>
             </div>
 
             <div style={ss.responseContainer}>
@@ -172,6 +187,16 @@ const StreamingLLMApp = ({ apiKey, addDevEntry }) => {
             ) : null}
         </div>
     );
+};
+
+const cancelBtnStyle = {
+    padding: '8px 16px',
+    borderRadius: '6px',
+    background: 'var(--danger, #ef4444)',
+    color: '#fff',
+    border: 'none',
+    cursor: 'pointer',
+    fontWeight: 500,
 };
 
 export default StreamingLLMApp;

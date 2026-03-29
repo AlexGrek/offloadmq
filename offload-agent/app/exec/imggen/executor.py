@@ -51,7 +51,7 @@ def execute_imggen_comfyui(
         prompt_id = queue_prompt(graph)
         report_progress(http, f"Queued as prompt_id={prompt_id}", "queued", task_id)
 
-        history_entry = wait_for_completion(prompt_id)
+        history_entry = wait_for_completion(prompt_id, http, task_id)
         report_progress(http, "Generation complete — collecting output", "collecting", task_id)
 
         seed = inject_values.get("seed") or payload.get("seed")

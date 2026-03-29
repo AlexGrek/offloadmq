@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2, Send, ImagePlus, X } from 'lucide-react';
+import { Trash2, Send, ImagePlus, X, Square } from 'lucide-react';
 import { stripCapabilityAttrs, extractSandboxModelText } from '../utils';
 import SandboxMarkdown from './SandboxMarkdown';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { useTaskPolling } from '../hooks/useTaskPolling';
 import ModelSelector from './ModelSelector';
+import { cancelTask } from '../sandboxUtils';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -155,6 +156,16 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
     }
   };
 
+  const handleCancel = async () => {
+    if (!currentTask) return;
+    const { id, capability } = currentTask;
+    setCurrentTask(null);
+    setIsLoading(false);
+    setPollingStatus('');
+    setStreamingLog('');
+    await cancelTask(capability, id, apiKey, addDevEntry);
+  };
+
   const handleClear = () => {
     setMessages([]);
     setError(null);
@@ -283,13 +294,19 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
             rows={2}
             disabled={isLoading}
           />
-          <button
-            onClick={handleSend}
-            disabled={isLoading || (!input.trim() && pendingImages.length === 0)}
-            style={{ ...styles.sendBtn, opacity: isLoading || (!input.trim() && pendingImages.length === 0) ? 0.5 : 1 }}
-          >
-            <Send size={18} />
-          </button>
+          {isLoading && currentTask ? (
+            <button onClick={handleCancel} style={styles.cancelBtn} title="Cancel">
+              <Square size={18} />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={isLoading || (!input.trim() && pendingImages.length === 0)}
+              style={{ ...styles.sendBtn, opacity: isLoading || (!input.trim() && pendingImages.length === 0) ? 0.5 : 1 }}
+            >
+              <Send size={18} />
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -486,6 +503,17 @@ const styles = {
   sendBtn: {
     padding: '8px 12px',
     backgroundColor: 'var(--primary)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelBtn: {
+    padding: '8px 12px',
+    backgroundColor: 'var(--danger, #ef4444)',
     color: '#fff',
     border: 'none',
     borderRadius: '8px',

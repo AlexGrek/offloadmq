@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Square, RotateCcw, Gavel } from 'lucide-react';
+import { cancelTask } from '../sandboxUtils';
 import { stripCapabilityAttrs, extractSandboxModelText } from '../utils';
 import SandboxMarkdown from './SandboxMarkdown';
 import { useCapabilities } from '../hooks/useCapabilities';
@@ -255,11 +256,13 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
   };
 
   const handleStop = () => {
+    const task = currentTask;
     setIsRunning(false);
     isRunningRef.current = false;
     setCurrentTask(null);
     setStreamingLog('');
     setPollingStatus('');
+    if (task) cancelTask(task.capability, task.id, apiKey, addDevEntry);
   };
 
   const handleReset = () => {

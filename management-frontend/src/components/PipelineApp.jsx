@@ -1,5 +1,6 @@
 import { Trash2 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
+import { cancelTask } from '../sandboxUtils';
 import { sandboxStyles as ss } from '../sandboxStyles';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { useTaskPolling } from '../hooks/useTaskPolling';
@@ -52,6 +53,15 @@ const PipelineApp = ({ apiKey, addDevEntry }) => {
     });
 
     const escapeCommand = (cmd) => cmd.replace(/'/g, "'\"'\"'");
+
+    const handleCancel = async () => {
+        if (!currentTask) return;
+        const { id, capability } = currentTask;
+        setCurrentTask(null);
+        setIsLoading(false);
+        setPollingStatus('Cancelled');
+        await cancelTask(capability, id, apiKey, addDevEntry);
+    };
 
     const handleSubmit = async () => {
         setIsLoading(true);
@@ -144,9 +154,14 @@ const PipelineApp = ({ apiKey, addDevEntry }) => {
                     )}
                 </div>
 
-                <button type="button" style={ss.button} disabled={isLoading} onClick={handleSubmit}>
-                    {isLoading ? (pollingStatus.startsWith('Polling') ? 'Polling...' : 'Submitting...') : 'Execute Command'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="button" style={ss.button} disabled={isLoading} onClick={handleSubmit}>
+                        {isLoading ? (pollingStatus.startsWith('Polling') ? 'Polling...' : 'Submitting...') : 'Execute Command'}
+                    </button>
+                    {isLoading && currentTask && (
+                        <button type="button" style={cancelBtnStyle} onClick={handleCancel}>Cancel</button>
+                    )}
+                </div>
             </div>
 
             <div style={ss.responseContainer}>
@@ -173,6 +188,16 @@ const PipelineApp = ({ apiKey, addDevEntry }) => {
             )}
         </div>
     );
+};
+
+const cancelBtnStyle = {
+    padding: '8px 16px',
+    borderRadius: '6px',
+    background: 'var(--danger, #ef4444)',
+    color: '#fff',
+    border: 'none',
+    cursor: 'pointer',
+    fontWeight: 500,
 };
 
 const styles = {

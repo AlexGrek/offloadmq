@@ -3,6 +3,7 @@ import { sandboxStyles as ss } from '../sandboxStyles';
 import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 import { useTaskPolling } from '../hooks/useTaskPolling';
 import TerminalOutput from './TerminalOutput';
+import { cancelTask } from '../sandboxUtils';
 
 /**
  * Parse a single capability attribute into a field descriptor.
@@ -119,6 +120,15 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
       payload[f.name] = coerceValue(fieldValues[f.name], f.hint);
     });
     return payload;
+  };
+
+  const handleCancel = async () => {
+    if (!currentTask) return;
+    const { id, capability } = currentTask;
+    setCurrentTask(null);
+    setIsLoading(false);
+    setPollingStatus('Cancelled');
+    await cancelTask(capability, id, apiKey, addDevEntry);
   };
 
   const handleSubmit = async () => {
@@ -268,14 +278,19 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
           </>
         )}
 
-        <button
-          type="button"
-          style={ss.button}
-          disabled={isLoading || !selectedCap}
-          onClick={handleSubmit}
-        >
-          {isLoading ? (pollingStatus.startsWith('Polling') ? 'Polling...' : 'Submitting...') : 'Run'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            style={ss.button}
+            disabled={isLoading || !selectedCap}
+            onClick={handleSubmit}
+          >
+            {isLoading ? (pollingStatus.startsWith('Polling') ? 'Polling...' : 'Submitting...') : 'Run'}
+          </button>
+          {isLoading && currentTask && (
+            <button type="button" style={cancelBtnStyle} onClick={handleCancel}>Cancel</button>
+          )}
+        </div>
       </div>
 
       {/* Result area */}
@@ -294,6 +309,16 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
       )}
     </div>
   );
+};
+
+const cancelBtnStyle = {
+  padding: '8px 16px',
+  borderRadius: '6px',
+  background: 'var(--danger, #ef4444)',
+  color: '#fff',
+  border: 'none',
+  cursor: 'pointer',
+  fontWeight: 500,
 };
 
 export default CustomApp;

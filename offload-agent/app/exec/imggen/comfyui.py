@@ -14,6 +14,9 @@ import requests
 from pathlib import Path
 
 from ...config import load_config
+from ...models import TaskId
+from ...httphelpers import HttpClient
+from ..helpers import report_progress
 
 _COMFYUI_DEFAULT_URL = "http://127.0.0.1:8188"
 _POLL_INTERVAL_SEC = 2
@@ -47,10 +50,22 @@ def queue_prompt(workflow_graph: dict[str, Any]) -> str:
     return prompt_id
 
 
-def wait_for_completion(prompt_id: str) -> dict[str, Any]:
-    """Poll /history/{prompt_id} until the job finishes. Returns the history entry."""
+_PROGRESS_REPORT_EVERY = 5  # report progress every N poll cycles (~10 seconds at 2s interval)
+
+
+def wait_for_completion(
+    prompt_id: str,
+    http: HttpClient | None = None,
+    task_id: TaskId | None = None,
+) -> dict[str, Any]:
+    """Poll /history/{prompt_id} until the job finishes. Returns the history entry.
+
+    If ``http`` and ``task_id`` are provided, calls ``report_progress`` every
+    ``_PROGRESS_REPORT_EVERY`` cycles so that a 499 (client cancel) can be
+    detected and raised as ``TaskCancelled`` during the wait loop.
+    """
     url = f"{comfyui_url()}/history/{prompt_id}"
-    for _ in range(_MAX_POLL_ATTEMPTS):
+    for attempt in range(_MAX_POLL_ATTEMPTS):
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         history = r.json()
@@ -73,6 +88,11 @@ def wait_for_completion(prompt_id: str) -> dict[str, Any]:
                 raise RuntimeError("ComfyUI execution failed (no error details returned)")
             result: dict[str, Any] = entry
             return result
+
+        # Periodically report progress to detect client-side cancellation (499 → TaskCancelled).
+        if http is not None and task_id is not None and attempt % _PROGRESS_REPORT_EVERY == 0:
+            report_progress(http, log=None, stage="queued", task_id=task_id)
+
         time.sleep(_POLL_INTERVAL_SEC)
     raise TimeoutError(f"ComfyUI job {prompt_id} did not complete within the allotted time")
 
