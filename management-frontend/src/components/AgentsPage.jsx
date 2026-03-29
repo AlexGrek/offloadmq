@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiFetch, fmtDate, stripCapabilityAttrs, parseCapabilityAttrs, TOKEN_KEY } from "../utils";
-import { RefreshCw, Cpu, Zap, AlertTriangle, CheckCircle2, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { RefreshCw, Cpu, Zap, AlertTriangle, CheckCircle2, Clock, ChevronDown, ChevronUp, Layers, Gauge, Fingerprint } from "lucide-react";
 import Banner from "./Banner";
 import Chip from "./Chip";
 import ExpandableDeleteButton from "./ExpandableDeleteButton";
@@ -155,11 +155,6 @@ function ForceRescanButton({ onDone }) {
 
 // ---------- AgentCard ----------
 
-function isOnline(lastContact) {
-    if (!lastContact) return false;
-    return (Date.now() - new Date(lastContact).getTime()) < 120_000;
-}
-
 function relativeTime(iso) {
     if (!iso) return 'Never';
     const diff = Math.round((new Date(iso) - Date.now()) / 60000);
@@ -169,7 +164,6 @@ function relativeTime(iso) {
 function AgentCard({ a, onDelete, onRescanDone }) {
     const [isOpen, setIsOpen] = useState(false);
     const [capsExpanded, setCapsExpanded] = useState(false);
-    const online = isOnline(a.lastContact);
     const slavemodeCapabilities = (a.capabilities || []).filter(c => stripCapabilityAttrs(c).startsWith('slavemode.'));
     const hasForceRescan = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.force-rescan');
     const regularCaps = (a.capabilities || []).filter(c => !stripCapabilityAttrs(c).startsWith('slavemode.'));
@@ -189,16 +183,9 @@ function AgentCard({ a, onDelete, onRescanDone }) {
                 style={{
                     display: 'flex', alignItems: 'center', gap: '10px',
                     padding: '10px 14px', cursor: 'pointer',
-                    userSelect: 'none',
+                    userSelect: 'none', flexWrap: 'wrap',
                 }}
             >
-                {/* Online indicator */}
-                <div style={{
-                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                    background: online ? '#22c55e' : '#6b7280',
-                    boxShadow: online ? '0 0 0 2px rgba(34,197,94,0.25)' : 'none',
-                }} />
-
                 <ColorDot seed={a.systemInfo?.machineId || ''} />
 
                 {/* Identity */}
@@ -207,20 +194,18 @@ function AgentCard({ a, onDelete, onRescanDone }) {
                         <span style={{ fontWeight: 600, fontSize: '14px', fontFamily: 'monospace' }}>
                             {a.uidShort || a.uid}
                         </span>
-                        {a.systemInfo?.machineId && (
-                            <span style={{ fontSize: '12px', color: 'var(--muted)', fontFamily: 'monospace' }}>
-                                {a.systemInfo.machineId}
-                            </span>
-                        )}
                         {a.displayName && (
                             <span style={{ fontSize: '13px', color: 'var(--text)' }}>— {a.displayName}</span>
                         )}
                     </div>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
-                        <Chip>Tier {a.tier}</Chip>
-                        <Chip>Cap {a.capacity}</Chip>
-                        <Chip><Cpu size={10} style={{ marginRight: 3 }} />{(a.capabilities || []).length} caps</Chip>
-                        {a.appVersion && <Chip>v{a.appVersion}</Chip>}
+                        <Chip><Layers size={10} style={{ marginRight: 3 }} />{a.tier}</Chip>
+                        <Chip><Gauge size={10} style={{ marginRight: 3 }} />{a.capacity}</Chip>
+                        <Chip><Cpu size={10} style={{ marginRight: 3 }} />{(a.capabilities || []).length}</Chip>
+                        {a.appVersion && <Chip>{a.appVersion}</Chip>}
+                        {a.systemInfo?.machineId && (
+                            <Chip><Fingerprint size={10} style={{ marginRight: 3 }} />{a.systemInfo.machineId}</Chip>
+                        )}
                         {a.lastCommMethod === 'WebSocket' && <Chip variant="websocket">WebSocket</Chip>}
                         <Chip>
                             <Clock size={10} style={{ marginRight: 3 }} />
@@ -289,7 +274,7 @@ function AgentCard({ a, onDelete, onRescanDone }) {
                                         <>
                                             <KV label="Vendor" value={a.systemInfo.gpu.vendor} />
                                             <KV label="Model" value={a.systemInfo.gpu.model} />
-                                            <KV label="VRAM" value={`${a.systemInfo.gpu.vramGb} GB`} />
+                                            {!!a.systemInfo.gpu.vramGb && <KV label="VRAM" value={`${a.systemInfo.gpu.vramGb} GB`} />}
                                         </>
                                     ) : (
                                         <span style={{ fontSize: '12px', color: 'var(--muted)' }}>No GPU</span>

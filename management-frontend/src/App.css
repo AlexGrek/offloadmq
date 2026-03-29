@@ -414,7 +414,18 @@ body {
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--chip-bg);
-  font-size: .8rem
+  color: var(--text);
+  font-size: .8rem;
+  cursor: default;
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+button.chip:hover {
+  background: var(--glass-strong);
+  border-color: var(--primary);
 }
 
 .chip-websocket {
