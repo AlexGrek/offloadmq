@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 const DevPanel = React.lazy(() => import('./DevPanel'));
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -95,6 +95,28 @@ const SandboxApps = () => {
   const [capsExpanded, setCapsExpanded] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const selectedApp = apps.find((app) => app.id === selectedId);
+  const closeInterceptorRef = useRef(null);
+
+  const doClose = useCallback(() => {
+    closeInterceptorRef.current = null;
+    setSelectedId(null);
+  }, []);
+
+  const handleCloseButtonClick = useCallback(() => {
+    if (closeInterceptorRef.current) {
+      closeInterceptorRef.current();
+    } else {
+      doClose();
+    }
+  }, [doClose]);
+
+  const setCloseInterceptor = useCallback((fn) => {
+    closeInterceptorRef.current = fn;
+  }, []);
+
+  useEffect(() => {
+    closeInterceptorRef.current = null;
+  }, [selectedId]);
 
   // Sync prop and local state
   useEffect(() => {
@@ -494,7 +516,7 @@ const SandboxApps = () => {
                     {devLog.length > 0 && <span style={{ marginLeft: '5px', fontSize: '10px', background: '#3b82f6', color: '#fff', borderRadius: '999px', padding: '1px 5px', fontWeight: 700 }}>{devLog.length}</span>}
                   </button>
                 </div>
-                <button className="close-button" onClick={() => setSelectedId(null)}>
+                <button className="close-button" onClick={handleCloseButtonClick}>
                   <X size={8} color="#fff" />
                 </button>
               </div>
@@ -502,7 +524,7 @@ const SandboxApps = () => {
                 <React.Suspense fallback={<div>Loading...</div>}>
                   <div style={{ display: activeTab === 'app' ? 'contents' : 'none' }}>
                     <ErrorBoundary>
-                      <selectedApp.app apiKey={apiKey} addDevEntry={addDevEntry} />
+                      <selectedApp.app apiKey={apiKey} addDevEntry={addDevEntry} setCloseInterceptor={setCloseInterceptor} doClose={doClose} />
                     </ErrorBoundary>
                   </div>
                   <div style={{ display: activeTab === 'dev' ? 'contents' : 'none' }}>

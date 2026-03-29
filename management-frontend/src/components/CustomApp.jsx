@@ -41,7 +41,7 @@ function coerceValue(value, hint) {
   return value;
 }
 
-const CustomApp = ({ apiKey, addDevEntry }) => {
+const CustomApp = ({ apiKey, addDevEntry, setCloseInterceptor, doClose }) => {
   const [capabilities, setCapabilities] = useState([]);
   const [selectedCap, setSelectedCap] = useState('');
   const [fields, setFields] = useState([]);
@@ -55,6 +55,7 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
   const [pollingStatus, setPollingStatus] = useState('');
   const [currentTask, setCurrentTask] = useState(null);
   const [log, setLog] = useState('');
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
   // Fetch only custom extended capabilities (those with field:type attrs in brackets)
   useEffect(() => {
@@ -122,6 +123,17 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
     return payload;
   };
 
+  // Register/unregister close interceptor when a task is in flight
+  useEffect(() => {
+    if (!setCloseInterceptor) return;
+    if (currentTask) {
+      setCloseInterceptor(() => setShowExitDialog(true));
+      return () => setCloseInterceptor(null);
+    } else {
+      setCloseInterceptor(null);
+    }
+  }, [currentTask, setCloseInterceptor]);
+
   const handleCancel = async () => {
     if (!currentTask) return;
     const { id, capability } = currentTask;
@@ -129,6 +141,21 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
     setIsLoading(false);
     setPollingStatus('Cancelled');
     await cancelTask(capability, id, apiKey, addDevEntry);
+  };
+
+  const handleExitSendCancellation = async () => {
+    setShowExitDialog(false);
+    await handleCancel();
+    doClose?.();
+  };
+
+  const handleExitLeaveRunning = () => {
+    setShowExitDialog(false);
+    doClose?.();
+  };
+
+  const handleExitCancel = () => {
+    setShowExitDialog(false);
   };
 
   const handleSubmit = async () => {
@@ -196,7 +223,26 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
   const baseCap = selectedCap ? stripCapabilityAttrs(selectedCap) : '';
 
   return (
-    <div style={ss.content}>
+    <div style={{ ...ss.content, position: 'relative' }}>
+      {showExitDialog && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}>
+          <div style={{ background: 'var(--glass-strong)', border: '1px solid var(--border)', borderRadius: '10px', padding: '24px 28px', maxWidth: '340px', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.28)' }}>
+            <div style={{ margin: '0 0 8px', fontWeight: 600, fontSize: '15px', color: 'var(--text)' }}>Task is still running</div>
+            <div style={{ margin: '0 0 20px', fontSize: '13px', color: 'var(--muted)' }}>What would you like to do before closing?</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button style={{ ...exitBtnStyle, background: 'var(--danger, #ef4444)' }} onClick={handleExitSendCancellation}>
+                Send cancellation
+              </button>
+              <button style={{ ...exitBtnStyle, background: '#6b7280' }} onClick={handleExitLeaveRunning}>
+                Leave running
+              </button>
+              <button style={{ ...exitBtnStyle, background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)' }} onClick={handleExitCancel}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={ss.form}>
         {/* Capability selector */}
         <div style={ss.formGroup}>
@@ -309,6 +355,17 @@ const CustomApp = ({ apiKey, addDevEntry }) => {
       )}
     </div>
   );
+};
+
+const exitBtnStyle = {
+  padding: '9px 16px',
+  borderRadius: '6px',
+  color: '#fff',
+  border: 'none',
+  cursor: 'pointer',
+  fontWeight: 500,
+  fontSize: '13px',
+  textAlign: 'left',
 };
 
 const cancelBtnStyle = {
