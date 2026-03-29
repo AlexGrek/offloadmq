@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { sandboxStyles as ss } from '../sandboxStyles';
 import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 import { useTaskPolling } from '../hooks/useTaskPolling';
@@ -55,6 +55,17 @@ const CustomApp = ({ apiKey, addDevEntry, setCloseInterceptor, doClose }) => {
   const [pollingStatus, setPollingStatus] = useState('');
   const [currentTask, setCurrentTask] = useState(null);
   const [log, setLog] = useState('');
+  const logScrollRef = useRef(null);
+  const userScrolledUpRef = useRef(false);
+
+  // Auto-scroll log to bottom on new content, unless user scrolled up
+  useEffect(() => {
+    const el = logScrollRef.current;
+    if (!el) return;
+    if (!userScrolledUpRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [log]);
   const [showExitDialog, setShowExitDialog] = useState(false);
 
   // Fetch only custom extended capabilities (those with field:type attrs in brackets)
@@ -350,7 +361,17 @@ const CustomApp = ({ apiKey, addDevEntry, setCloseInterceptor, doClose }) => {
       {log && (
         <div style={{ marginTop: '16px' }}>
           <label style={ss.label}>Live Log:</label>
-          <TerminalOutput response={{ stdout: log }} style={{ maxHeight: '16em', overflowY: 'auto' }} />
+          <div
+            ref={logScrollRef}
+            style={{ maxHeight: '16em', overflowY: 'auto' }}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+              userScrolledUpRef.current = !atBottom;
+            }}
+          >
+            <TerminalOutput response={{ stdout: log }} />
+          </div>
         </div>
       )}
     </div>

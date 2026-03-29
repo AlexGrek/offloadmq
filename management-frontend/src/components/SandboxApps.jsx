@@ -308,7 +308,6 @@ const SandboxApps = () => {
             justify-content: center;
             align-items: flex-start; /* Align content to the top */
             background-color: rgba(255, 255, 255, 0.75);
-            backdrop-filter: blur(8px);
             padding-top: 24px; /* Add padding from the top */
           }
           
