@@ -286,7 +286,8 @@ Saved to `.offload-agent.json` in the working directory:
   "jwtToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
   "capabilities": ["debug.echo", "shell.bash"],
   "custom_caps": [],
-  "autostart": false
+  "autostart": false,
+  "slavemode-allowed-caps": ["slavemode.force-rescan"]
 }
 ```
 
@@ -298,6 +299,7 @@ Saved to `.offload-agent.json` in the working directory:
 | `capabilities` | Active capability list |
 | `custom_caps` | User-defined extra capabilities |
 | `autostart` | If `true` and `--agent-autostart` is passed, agent starts when webui launches |
+| `slavemode-allowed-caps` | JSON array of allowed slavemode capabilities (empty by default — all disabled) |
 
 ---
 
@@ -313,8 +315,54 @@ Saved to `.offload-agent.json` in the working directory:
 | `docker.node`   | Run `node:*` images only         |
 | `tts.kokoro`    | Text-to-speech via Kokoro        |
 | `llm.*`         | LLM inference (auto-detected via Ollama) |
+| `slavemode.force-rescan` | Re-detect capabilities and push updated list to server |
 
 See [docs/agent-capabilities.md](../../docs/agent-capabilities.md) for detailed capability documentation, payload schemas, and usage examples.
+
+---
+
+## Slavemode Capabilities
+
+Slavemode capabilities let the server instruct the agent to perform **control operations on itself** — capability rescans, config reloads, and other self-management tasks.
+
+**By default, all slavemode capabilities are disabled.** An agent only executes a slavemode task if the capability is explicitly listed in the `slavemode-allowed-caps` config key.
+
+### Managing Permissions
+
+Enable and disable slavemode capabilities via the CLI:
+
+```bash
+# Show which slavemode capabilities are allowed
+offload-agent cli slavemode status
+
+# Allow all slavemode capabilities
+offload-agent cli slavemode allow-all
+
+# Deny all slavemode capabilities
+offload-agent cli slavemode deny-all
+
+# Allow a specific capability
+offload-agent cli slavemode allow slavemode.force-rescan
+
+# Deny a specific capability
+offload-agent cli slavemode deny slavemode.force-rescan
+```
+
+Or manage the `slavemode-allowed-caps` key directly in the config file:
+
+```json
+{
+  "slavemode-allowed-caps": ["slavemode.force-rescan"]
+}
+```
+
+The Web UI also includes a **Slavemode** section (amber styling) in the Capabilities tab for managing permissions.
+
+### Available Capabilities
+
+**`slavemode.force-rescan`** — Re-detect all agent capabilities and push the updated list to the server. Useful when Ollama models are installed, Docker daemon starts, or custom capabilities are added without restarting the agent.
+
+See [docs/slavemode-capabilities.md](../../docs/slavemode-capabilities.md) for complete behavior, payload schemas, server-side usage, and troubleshooting.
 
 ---
 
