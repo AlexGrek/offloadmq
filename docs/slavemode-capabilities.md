@@ -101,18 +101,38 @@ Edit the agent's config file (typically `~/.offload-agent/config.json`):
 
 ## Server-Side Usage
 
-Clients submit tasks with base capability only (no brackets). The scheduler matches tasks to agents and dispatches them:
+Clients submit tasks with base capability only (no brackets). The scheduler matches tasks to agents and dispatches them.
+
+### With a client API key
 
 ```bash
 curl -X POST https://mq.example.com/api/task/submit \
-  -H "Authorization: Bearer <api_key>" \
   -H "Content-Type: application/json" \
   -d '{
     "capability": "slavemode.force-rescan",
     "payload": {},
-    "tier": 0
+    "apiKey": "<client_api_key>"
   }'
 ```
+
+### With the management token (`X-MGMT-API-KEY`)
+
+The management frontend (and any admin tooling) can submit tasks without a client API key by passing the management token in the `X-MGMT-API-KEY` header. This bypasses client key validation and capability restrictions:
+
+```bash
+curl -X POST https://mq.example.com/api/task/submit \
+  -H "Content-Type: application/json" \
+  -H "X-MGMT-API-KEY: <management_token>" \
+  -d '{
+    "capability": "slavemode.force-rescan",
+    "payload": {},
+    "apiKey": "mgmt"
+  }'
+```
+
+The `apiKey` field must be present for JSON parsing but its value is not validated when `X-MGMT-API-KEY` is used. Any placeholder (e.g. `"mgmt"`) works.
+
+See [management-api.md#using-client-api-with-management-token](management-api.md#using-client-api-with-management-token) for full details.
 
 ### Task Rejection
 

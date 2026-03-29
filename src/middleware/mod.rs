@@ -13,6 +13,30 @@ pub mod auth;
 
 use crate::{error::AppError, models::Agent, state::AppState};
 
+/// Marker inserted into request extensions when a valid management token was
+/// supplied via the `X-MGMT-API-KEY` header on a client API route.
+/// Handlers can check for this to bypass per-key capability / ownership checks.
+#[derive(Clone)]
+pub struct MgmtOverride;
+
+/// Optional extractor: `Some(MgmtOverride)` when the mgmt header was used,
+/// `None` for regular client-key requests.  Never rejects.
+pub struct OptionalMgmtOverride(pub Option<MgmtOverride>);
+
+impl OptionalMgmtOverride {
+    pub fn is_active(&self) -> bool {
+        self.0.is_some()
+    }
+}
+
+impl<S: Send + Sync + 'static> FromRequestParts<S> for OptionalMgmtOverride {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        Ok(OptionalMgmtOverride(parts.extensions.get::<MgmtOverride>().cloned()))
+    }
+}
+
 /// Carries the validated client API key extracted from the `X-API-Key` header.
 /// This is the same key used for all other client API endpoints — no separate
 /// key type exists.  Inserted by [`apikey_header_auth_middleware_storage`].
@@ -164,7 +188,25 @@ pub async fn apikey_auth_middleware_user(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, AppError> {
-    let (parts, body) = req.into_parts();
+    let (mut parts, body) = req.into_parts();
+
+    // Check for management override header first
+    let mgmt_key = parts
+        .headers
+        .get("X-MGMT-API-KEY")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    if let Some(ref key) = mgmt_key {
+        if *key == app_state.config.management_token {
+            parts.extensions.insert(MgmtOverride);
+            let req = Request::from_parts(parts, body);
+            return Ok(next.run(req).await);
+        }
+        return Err(AppError::Authorization(
+            "Invalid X-MGMT-API-KEY".to_string(),
+        ));
+    }
 
     // Read the body into bytes
     let body_bytes = axum::body::to_bytes(body, app_state.config.max_request_body_bytes)

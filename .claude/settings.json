@@ -14,7 +14,7 @@
       "Bash(find offload-agent:*)",
       "Bash(gh:*)",
       "Bash(git:*)",
-      "Bash(go build:*)",
+      "Bash(go *)",
       "Bash(grep:*)",
       "Bash(head:*)",
       "Bash(helm:*)",
@@ -74,7 +74,8 @@
       "Bash(sudo rm:*)",
       "Bash(journalctl -u offload-agent --no-pager -n 10)",
       "Bash(sudo sed:*)",
-      "Bash(venv/bin/python -c \"from app.capabilities import rescan_and_push; from app.exec.slavemode import execute_slavemode, ALL_SLAVEMODE_CAPS; from app.core import route_executor; print\\(''OK — no circular imports''\\)\")"
+      "Bash(venv/bin/python -c \"from app.capabilities import rescan_and_push; from app.exec.slavemode import execute_slavemode, ALL_SLAVEMODE_CAPS; from app.core import route_executor; print\\(''OK — no circular imports''\\)\")",
+      "Bash(find *)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

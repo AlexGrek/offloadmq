@@ -46,6 +46,28 @@ Tasks flow through a client-server-agent pipeline:
 Base path: `/api/*`
 Authentication: `apiKey` field in JSON body
 
+#### Management Override (`X-MGMT-API-KEY`)
+
+Any client API endpoint can be called with a management token instead of a client API key. Pass the management token in the `X-MGMT-API-KEY` HTTP header — when present and valid, the server:
+
+- Skips the `apiKey` JSON body validation (the field must still be present for JSON parsing, but its value is ignored)
+- Bypasses per-key capability restrictions (all capabilities are accessible)
+- Bypasses task ownership checks on poll and cancel endpoints
+- Bypasses bucket ownership checks on submit endpoints
+
+```bash
+curl -X POST https://mq.example.com/api/task/submit \
+  -H "Content-Type: application/json" \
+  -H "X-MGMT-API-KEY: <management_token>" \
+  -d '{
+    "capability": "slavemode.force-rescan",
+    "payload": {},
+    "apiKey": "mgmt"
+  }'
+```
+
+This is used by the management frontend to submit tasks (e.g., slavemode commands) without requiring a separate client API key.
+
 ### Submit Task (Non-Blocking)
 
 ```

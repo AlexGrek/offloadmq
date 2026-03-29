@@ -875,6 +875,58 @@ curl -X GET "$BASE/management/tasks/list" \
 
 ---
 
+## Using Client API with Management Token
+
+The management token can also be used to call any client API endpoint (`/api/*`) via the `X-MGMT-API-KEY` header. This is useful for administrative operations like triggering slavemode commands from the management frontend without needing a separate client API key.
+
+When `X-MGMT-API-KEY` is present and valid:
+
+- The `apiKey` field in the JSON body is **not validated** (but must be present for JSON parsing)
+- All capability restrictions are bypassed — any capability can be used
+- Task ownership checks are bypassed on poll and cancel endpoints
+- Bucket ownership checks are bypassed on submit endpoints
+
+### Example: Trigger Force-Rescan on All Agents
+
+```bash
+MGMT_TOKEN="my-management-token"
+BASE="http://localhost:3069"
+
+curl -X POST "$BASE/api/task/submit" \
+  -H "Content-Type: application/json" \
+  -H "X-MGMT-API-KEY: $MGMT_TOKEN" \
+  -d '{
+    "capability": "slavemode.force-rescan",
+    "payload": {},
+    "apiKey": "mgmt"
+  }' | jq .
+```
+
+### JavaScript (Management Frontend)
+
+```js
+const mgmtToken = localStorage.getItem('offload-mq-mgmt-token');
+
+const res = await fetch('/api/task/submit', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-MGMT-API-KEY': mgmtToken,
+  },
+  body: JSON.stringify({
+    capability: 'slavemode.force-rescan',
+    payload: {},
+    apiKey: 'mgmt',
+  }),
+});
+const data = await res.json();
+// data.id.id and data.id.cap for polling
+```
+
+**Note:** The `X-MGMT-API-KEY` header is only checked on `/api/*` routes (client API). Management routes (`/management/*`) continue to use `Authorization: Bearer <token>`.
+
+---
+
 ## Configuration
 
 The management endpoint is controlled via:
