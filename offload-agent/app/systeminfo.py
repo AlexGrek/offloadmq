@@ -2,6 +2,7 @@ import json
 import hashlib
 import platform
 import psutil
+import re
 import subprocess
 from typing import Optional, Dict, Any, List, Tuple
 
@@ -15,9 +16,15 @@ from app.tier import (
 import typer
 
 
+_WIN_NO_WINDOW: int = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 def _try_run(cmd: List[str]) -> Tuple[int, str, str]:
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        res = subprocess.run(
+            cmd, capture_output=True, text=True, check=False,
+            creationflags=_WIN_NO_WINDOW,
+        )
         return res.returncode, res.stdout.strip(), res.stderr.strip()
     except Exception as e:
         return 1, "", str(e)
@@ -140,16 +147,47 @@ def _is_integrated_gpu_for_display(
     return False
 
 
+def _fit_words(words: List[str], max_len: int) -> str:
+    """Join words up to max_len without cutting mid-word."""
+    result = ""
+    for word in words:
+        candidate = f"{result} {word}" if result else word
+        if len(candidate) > max_len:
+            break
+        result = candidate
+    return result or words[0] if words else ""
+
+
 def _shorten_gpu_model_for_display(model: str, max_len: int) -> str:
-    """Drop leading vendor fluff so long names fit the display name cap."""
+    """Drop leading vendor fluff so long names fit the display name cap. Never cuts mid-word."""
     words = model.split()
     priority = ("RTX", "GTX", "RX", "ARC", "QUADRO", "RADEON", "GEFORCE")
     for token in priority:
         for i, w in enumerate(words):
             if w.upper() == token:
-                tail = " ".join(words[i:])
-                return tail[:max_len].rstrip()
-    return model[:max_len].rstrip()
+                return _fit_words(words[i:], max_len)
+    return _fit_words(words, max_len)
+
+
+def _shorten_cpu_for_display(cpu: str) -> str:
+    """Strip vendor/generation fluff from CPU brand strings.
+
+    '12th Gen Intel Core i7-12700KF' → 'i7-12700KF'
+    'AMD Ryzen 9 5900X 12-Core Processor' → 'Ryzen 9 5900X'
+    'Apple M3 Pro' → unchanged
+    """
+    # Strip Intel generation prefix: "12th Gen", "3rd Gen", etc.
+    cpu = re.sub(r"\d+(?:st|nd|rd|th)\s+Gen\s+", "", cpu, flags=re.IGNORECASE)
+    # Strip "Intel" and "Core" for Intel CPUs
+    if re.search(r"\bIntel\b", cpu, re.IGNORECASE):
+        cpu = re.sub(r"\b(?:Intel|Core)\b\s*", "", cpu, flags=re.IGNORECASE)
+    # Strip "AMD" prefix (keep Ryzen/EPYC/Threadripper)
+    elif re.match(r"^AMD\s+", cpu, re.IGNORECASE):
+        cpu = re.sub(r"^AMD\s+", "", cpu, flags=re.IGNORECASE)
+    # Strip trailing noise: "12-Core Processor", "Processor"
+    cpu = re.sub(r"\s+\d+-Core(\s+Processor)?\b.*$", "", cpu, flags=re.IGNORECASE)
+    cpu = re.sub(r"\s+Processor\b.*$", "", cpu, flags=re.IGNORECASE)
+    return " ".join(cpu.split())
 
 
 def _dedicated_gpu_model_label(gpu: Dict[str, Any]) -> str:
@@ -263,18 +301,16 @@ def collect_system_info() -> Dict[str, Any]:
 def compute_default_display_name(sysinfo: Dict[str, Any]) -> str:
     """Build a human-readable display name from system specs.
 
-    Examples: "Apple M3 Pro 16GB", "Intel Core i9-13900 48GB RTX 4090 32GB"
+    Examples: "Apple M3 Pro 16GB", "i9-13900K 48GB RTX 4090 32GB", "Ryzen 9 5900X 32GB RX 6800 XT 16GB"
     Appends " <gpu> <vram>GB" for a discrete GPU (not iGPU); VRAM is always shown (0GB if unknown).
     Result is always <= 50 characters.
     """
     cpu: str = sysinfo.get("cpuModel") or sysinfo.get("cpuArch") or ""
-    # Trim verbose suffixes to keep the name short
-    # e.g. "Apple M3 Pro" stays as-is, "Intel(R) Core(TM) i9-13900K CPU @ 3.00GHz" → "Intel Core i9-13900K"
     cpu = cpu.replace("(R)", "").replace("(TM)", "").replace(" CPU", "")
-    cpu = " ".join(cpu.split())  # collapse whitespace
-    # Strip trailing clock speed like "@ 3.00GHz"
+    cpu = " ".join(cpu.split())
     if " @ " in cpu:
         cpu = cpu[:cpu.index(" @ ")]
+    cpu = _shorten_cpu_for_display(cpu)
     ram_gb = int(sysinfo.get("totalMemoryGb") or 0)
     base = f"{cpu} {ram_gb}GB" if cpu else f"{ram_gb}GB"
 
@@ -288,6 +324,8 @@ def compute_default_display_name(sysinfo: Dict[str, Any]) -> str:
     dgpu = _dedicated_gpu_model_label(gpu)
     if not dgpu:
         return base[:50]
+    # Always strip vendor prefix (e.g. "NVIDIA GeForce RTX 3080 Ti" → "RTX 3080 Ti")
+    dgpu = _shorten_gpu_model_for_display(dgpu, max_len=50) or dgpu
 
     vram_gb = int(gpu.get("vramGb") or 0)
     vram_suffix = f" {vram_gb}GB"

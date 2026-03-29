@@ -74,12 +74,14 @@ def check_docker() -> CapResult:
     """
     import subprocess
 
+    _no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     path = shutil.which("docker")
     if not path:
         return CapResult([], False, "docker.any, docker.python-slim, docker.node", "docker not found in PATH")
     try:
         r = subprocess.run(
-            ["docker", "ps"], capture_output=True, timeout=5
+            ["docker", "ps"], capture_output=True, timeout=5,
+            creationflags=_no_window,
         )
         if r.returncode == 0:
             return CapResult(
