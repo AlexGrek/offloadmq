@@ -11,6 +11,10 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, List, NamedTuple
 
+from .httphelpers import HttpClient, update_agent_capabilities
+from .config import load_config
+from .systeminfo import calculate_tier, collect_system_info
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +33,14 @@ def check_debug() -> CapResult:
     return CapResult(
         ["debug.echo"], True,
         "debug.echo",
+        "built-in, always available",
+    )
+
+
+def check_slavemode() -> CapResult:
+    return CapResult(
+        ["slavemode.force-rescan"], True,
+        "slavemode.force-rescan",
         "built-in, always available",
     )
 
@@ -271,6 +283,7 @@ def check_ollama() -> CapResult:
 # ---------------------------------------------------------------------------
 _CHECKS: List[Callable[[], CapResult]] = [
     check_debug,
+    check_slavemode,
     check_bash,
     check_docker,
     check_kokoro,
@@ -305,3 +318,22 @@ def detect_capabilities(log_fn: Callable[[str], None] | None = None) -> List[str
             log_fn(f"[cap] ! {check_fn.__name__}: unexpected error during check: {e}")
 
     return available
+
+
+def rescan_and_push(
+    http: HttpClient,
+    log_fn: Callable[[str], None] | None = None,
+) -> List[str]:
+    """Detect capabilities and push the updated list to the server.
+
+    Returns the list of detected capability strings.
+    """
+    if log_fn is None:
+        log_fn = logger.info
+    cfg = load_config()
+    caps = detect_capabilities(log_fn)
+    tier: int = cfg.get("tier") or calculate_tier(collect_system_info())
+    capacity: int = cfg.get("capacity", 1)
+    display_name: str | None = cfg.get("displayName") or None
+    update_agent_capabilities(http, caps, tier, capacity, display_name)
+    return caps

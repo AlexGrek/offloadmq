@@ -12,7 +12,7 @@ from .config import *
 from .systeminfo import *
 from .models import *
 from .httphelpers import *
-from .capabilities import detect_capabilities
+from .capabilities import detect_capabilities, rescan_and_push
 from .exec.llm import *
 from .exec.tts import *
 from .exec.debug import *
@@ -21,6 +21,7 @@ from .exec.shellcmd import *
 from .exec.docker import *
 from .exec.imggen import execute_imggen_comfyui
 from .exec.custom import execute_custom_cap
+from .exec.slavemode import execute_slavemode
 from .data.updn import process_data_download
 from .data.fs_utils import *
 from .exec.helpers import TaskCancelled, report_cancelled, report_starting
@@ -223,6 +224,9 @@ def route_executor(cap: str) -> Callable[..., bool] | None:
     if cap.startswith("custom."):
         return execute_custom_cap
 
+    if cap.startswith("slavemode."):
+        return execute_slavemode
+
     return {
         "debug.echo": execute_debug_echo,
         "shell.bash": execute_shell_bash,
@@ -311,11 +315,7 @@ def _rescan_and_push() -> None:
             return
 
         http = HttpClient(server_url, jwt)
-        caps = detect_capabilities(lambda msg: logger.info(msg))
-        tier: int = cfg.get("tier") or calculate_tier(collect_system_info())
-        capacity: int = cfg.get("capacity", 1)
-        display_name: str | None = cfg.get("displayName") or None
-        update_agent_capabilities(http, caps, tier, capacity, display_name)
+        caps = rescan_and_push(http, lambda msg: logger.info(msg))
         logger.info(f"[rescan] Updated server with {len(caps)} capabilities.")
     except Exception as e:
         logger.error(f"[rescan] Failed to push capabilities: {e}")
