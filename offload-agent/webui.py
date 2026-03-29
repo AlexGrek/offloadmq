@@ -43,6 +43,7 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from app.config import load_config, save_config, config_exists
+from app.exec.slavemode import ALL_SLAVEMODE_CAPS, CONFIG_KEY as SLAVEMODE_CONFIG_KEY
 try:
     from app._version import APP_VERSION
 except ModuleNotFoundError:
@@ -578,6 +579,8 @@ def _build_api_state() -> Dict[str, Any]:
         "custom_caps_dir": str(_custom_caps_dir()),
         "running": get_status().get("running", False),
         "version": APP_VERSION,
+        "slavemode_all_caps": ALL_SLAVEMODE_CAPS,
+        "slavemode_allowed": list(cfg.get(SLAVEMODE_CONFIG_KEY) or []),
     }
 
 
@@ -798,6 +801,17 @@ async def route_status():
 @app.post("/scan")
 async def route_scan(request: Request):
     _start_scan()
+    return _done(request)
+
+
+@app.post("/slavemode-caps")
+async def route_slavemode_caps(request: Request):
+    form = await request.form()
+    submitted: List[str] = list(form.getlist("caps"))
+    allowed = [c for c in submitted if c in ALL_SLAVEMODE_CAPS]
+    cfg = load_config()
+    cfg[SLAVEMODE_CONFIG_KEY] = sorted(set(allowed))
+    save_config(cfg)
     return _done(request)
 
 

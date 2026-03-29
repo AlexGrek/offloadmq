@@ -116,6 +116,7 @@ All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nes
 
 1. **Client API** (`/api/*`) — Task submission & polling
    See [docs/tasks-api.md#client-api](docs/tasks-api.md#client-api)
+   Supports **management override**: pass `X-MGMT-API-KEY: <mgmt_token>` header to bypass client key and capability checks (used by the management frontend for slavemode commands etc.)
 
 2. **Storage API** (`/api/storage/*`) — File bucket management
    See [docs/client-storage-api.md](docs/client-storage-api.md)

@@ -8,6 +8,8 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
+_WIN_NO_WINDOW: int = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 OLLAMA_API_URL = "http://127.0.0.1:11434/api/chat"
 OLLAMA_ROOT_URL = "http://127.0.0.1:11434/"
 OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
@@ -26,7 +28,9 @@ def start_ollama_server() -> bool:
     logger.info("Ollama server not found. Attempting to start 'ollama serve'...")
     try:
         subprocess.Popen(
-            ["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            ["ollama", "serve"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=_WIN_NO_WINDOW,
         )
         logger.info("'ollama serve' command issued. Waiting for server to initialize...")
         for _ in range(5):
@@ -120,9 +124,10 @@ def get_ollama_models() -> List[str]:
     function is kept for backward compatibility.
     """
     try:
-        subprocess.run(["ollama", "--version"], check=True, capture_output=True)
+        subprocess.run(["ollama", "--version"], check=True, capture_output=True, creationflags=_WIN_NO_WINDOW)
         res = subprocess.run(
-            ["ollama", "list"], check=True, capture_output=True, text=True
+            ["ollama", "list"], check=True, capture_output=True, text=True,
+            creationflags=_WIN_NO_WINDOW,
         )
         lines = res.stdout.strip().splitlines()
         if len(lines) < 2:

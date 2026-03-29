@@ -33,8 +33,10 @@ from ..models import TaskId
 from ..httphelpers import HttpClient
 from ..custom_caps import CustomCap, get_custom_cap
 from .helpers import (
+    TaskCancelled,
     make_failure_report,
     make_success_report,
+    report_cancelled,
     report_progress,
     report_result,
 )
@@ -133,43 +135,67 @@ def _execute_shell(
         start_time = time.monotonic()
         timed_out = False
 
-        while process.poll() is None or not q_stdout.empty() or not q_stderr.empty():
-            # Check timeout
-            elapsed = time.monotonic() - start_time
-            if elapsed > cap.timeout and process.poll() is None:
-                logger.warning(f"Custom cap '{cap.name}' timed out after {cap.timeout}s, killing...")
-                try:
-                    if sys.platform != "win32":
-                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                    else:
-                        process.terminate()
-                    process.wait(timeout=5)
-                except Exception:
+        try:
+            while process.poll() is None or not q_stdout.empty() or not q_stderr.empty():
+                # Check timeout
+                elapsed = time.monotonic() - start_time
+                if elapsed > cap.timeout and process.poll() is None:
+                    logger.warning(f"Custom cap '{cap.name}' timed out after {cap.timeout}s, killing...")
                     try:
                         if sys.platform != "win32":
-                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
                         else:
-                            process.kill()
+                            process.terminate()
+                        process.wait(timeout=5)
                     except Exception:
-                        process.kill()
-                timed_out = True
-                break
+                        try:
+                            if sys.platform != "win32":
+                                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                            else:
+                                process.kill()
+                        except Exception:
+                            process.kill()
+                    timed_out = True
+                    break
 
+                try:
+                    line = q_stdout.get_nowait()
+                    full_stdout += line
+                    report_progress(http, log=line, stage="running", task_id=task_id)
+                except queue.Empty:
+                    pass
+
+                try:
+                    line = q_stderr.get_nowait()
+                    full_stderr += line
+                    report_progress(http, log=line, stage="running", task_id=task_id)
+                except queue.Empty:
+                    pass
+
+                time.sleep(0.1)
+
+        except TaskCancelled:
+            logger.info(f"Custom cap '{cap.name}' cancelled — killing process")
             try:
-                line = q_stdout.get_nowait()
-                full_stdout += line
-                report_progress(http, log=line, stage="running", task_id=task_id)
-            except queue.Empty:
-                pass
+                if sys.platform != "win32":
+                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                else:
+                    process.terminate()
+                process.wait(timeout=5)
+            except Exception:
+                process.kill()
+                process.wait()
 
-            try:
-                line = q_stderr.get_nowait()
-                full_stderr += line
-                report_progress(http, log=line, stage="running", task_id=task_id)
-            except queue.Empty:
-                pass
+            t_stdout.join(timeout=2)
+            t_stderr.join(timeout=2)
+            while not q_stdout.empty():
+                full_stdout += q_stdout.get_nowait()
+            while not q_stderr.empty():
+                full_stderr += q_stderr.get_nowait()
 
-            time.sleep(0.1)
+            output = {"stdout": full_stdout, "stderr": full_stderr, "cancelled": True}
+            report_cancelled(http, task_id, capability, output=output)
+            return True
 
         # Drain remaining output
         t_stdout.join(timeout=2)
@@ -271,36 +297,47 @@ def _execute_llm(
         buffer = ""
         last_flush = time.time()
         final_data: dict[str, Any] = {}
+        cancelled = False
 
         r = requests.post(OLLAMA_API_URL, json=api_payload, stream=True, timeout=cap.timeout)
         r.raise_for_status()
 
-        for line in r.iter_lines(decode_unicode=True):
-            if not line or not line.strip():
-                continue
-            try:
-                chunk = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        try:
+            for line in r.iter_lines(decode_unicode=True):
+                if not line or not line.strip():
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
 
-            msg = chunk.get("message", {})
-            content = msg.get("content", "")
-            if content:
-                buffer += content
-                full_response += content
+                msg = chunk.get("message", {})
+                content = msg.get("content", "")
+                if content:
+                    buffer += content
+                    full_response += content
 
-            # Flush buffer every 2 seconds
-            now = time.time()
-            if now - last_flush >= 2 and buffer:
-                report_progress(http, log=buffer, stage="running", task_id=task_id)
-                buffer = ""
-                last_flush = now
-
-            if chunk.get("done"):
-                final_data = chunk
-                if buffer:
+                # Flush buffer every 2 seconds
+                now = time.time()
+                if now - last_flush >= 2 and buffer:
                     report_progress(http, log=buffer, stage="running", task_id=task_id)
                     buffer = ""
+                    last_flush = now
+
+                if chunk.get("done"):
+                    final_data = chunk
+                    if buffer:
+                        report_progress(http, log=buffer, stage="running", task_id=task_id)
+                        buffer = ""
+        except TaskCancelled:
+            cancelled = True
+            r.close()
+            logger.info(f"Custom LLM cap '{cap.name}' cancelled — stopping stream")
+
+        if cancelled:
+            output_data = {"response": full_response, "model": model, "name": cap.name, "cancelled": True}
+            report_cancelled(http, task_id, capability, output=output_data)
+            return True
 
         output: dict[str, Any] = {
             "response": full_response,

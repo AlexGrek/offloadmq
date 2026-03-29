@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Upload, Loader, X } from 'lucide-react';
-import { clientFetch, deleteBucket } from '../sandboxUtils';
+import { clientFetch, deleteBucket, cancelTask } from '../sandboxUtils';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 import ModelSelector from './ModelSelector';
@@ -26,6 +26,8 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const fileInputRef = useRef(null);
     const previewsRef = useRef(previews);
     previewsRef.current = previews;
+    const cancelledRef = useRef(false);
+    const activeTaskRef = useRef(null); // { cap, id } — only set in "all at once" mode
 
     const [allCaps] = useCapabilities('llm.');
     const capabilities = useMemo(
@@ -94,7 +96,9 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
         const pollUrl = `/api/task/poll/${encodedCap}/${encodedId}`;
         const pollBody = { apiKey };
         for (let i = 0; i < 120; i++) {
+            if (cancelledRef.current) return null;
             await new Promise(r => setTimeout(r, 3000));
+            if (cancelledRef.current) return null;
             try {
                 const resp = await fetch(pollUrl, {
                     method: 'POST',
@@ -133,11 +137,21 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
         return result;
     }, [apiKey, addDevEntry]);
 
+    const handleCancel = useCallback(async () => {
+        const task = activeTaskRef.current;
+        cancelledRef.current = true;
+        activeTaskRef.current = null;
+        setRunning(false);
+        setStatus('Cancelled', 'info');
+        if (task) await cancelTask(task.cap, task.id, apiKey, addDevEntry);
+    }, [apiKey, addDevEntry, setStatus]);
+
     const handleAnalyze = useCallback(async () => {
         if (!selectedFiles.length) { setStatus('Select at least one image', 'err'); return; }
         if (!apiKey) { setStatus('API key is required', 'err'); return; }
         if (!model) { setStatus('No vision model selected', 'err'); return; }
 
+        cancelledRef.current = false;
         setRunning(true);
         setResult(null);
         setLogText('');
@@ -171,9 +185,12 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
 
                 const taskId = submitResp.id.id;
                 const taskCap = submitResp.id.cap;
+                activeTaskRef.current = { cap: taskCap, id: taskId };
                 setStatus(`Task ${taskId.slice(0, 8)}… queued. Polling...`);
 
                 const taskResult = await pollTask(taskCap, taskId, setLogText, (s) => setStatus(`Status: ${s}`));
+                activeTaskRef.current = null;
+                if (taskResult === null) return; // cancelled
                 const { ok, text } = extractResult(taskResult);
                 setResult(text);
                 setStatus(ok ? 'Analysis complete' : 'Task failed', ok ? 'ok' : 'err');
@@ -334,18 +351,23 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                 </div>
             )}
 
-            {/* Analyze button */}
-            <button
-                style={{ ...s.analyzeBtn, opacity: (!selectedFiles.length || running || !hasVisionModels) ? 0.5 : 1 }}
-                disabled={!selectedFiles.length || running || !hasVisionModels}
-                onClick={handleAnalyze}
-            >
-                {running ? (
-                    <><Loader size={15} style={{ animation: 'spin 1s linear infinite' }} /> Analyzing...</>
-                ) : (
-                    `Analyze ${selectedFiles.length > 0 ? `${selectedFiles.length} image${selectedFiles.length > 1 ? 's' : ''}` : 'Images'}`
+            {/* Analyze / Cancel buttons */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                    style={{ ...s.analyzeBtn, opacity: (!selectedFiles.length || running || !hasVisionModels) ? 0.5 : 1 }}
+                    disabled={!selectedFiles.length || running || !hasVisionModels}
+                    onClick={handleAnalyze}
+                >
+                    {running ? (
+                        <><Loader size={15} style={{ animation: 'spin 1s linear infinite' }} /> Analyzing...</>
+                    ) : (
+                        `Analyze ${selectedFiles.length > 0 ? `${selectedFiles.length} image${selectedFiles.length > 1 ? 's' : ''}` : 'Images'}`
+                    )}
+                </button>
+                {running && (
+                    <button style={s.cancelBtn} onClick={handleCancel}>Cancel</button>
                 )}
-            </button>
+            </div>
 
             {/* Status */}
             {statusMsg && (
@@ -544,6 +566,19 @@ const s = {
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
         textAlign: 'center',
+    },
+    cancelBtn: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '10px 20px',
+        fontSize: '14px',
+        fontWeight: 600,
+        color: '#fff',
+        background: 'var(--danger, #ef4444)',
+        border: 'none',
+        borderRadius: '10px',
+        cursor: 'pointer',
     },
     analyzeBtn: {
         display: 'inline-flex',

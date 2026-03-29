@@ -1,5 +1,6 @@
 import logging
 import subprocess
+import time
 from typing import Any
 from ..models import *
 from ..httphelpers import *
@@ -28,23 +29,46 @@ def execute_shellcmd_bash(
         return report_result(http, report)
 
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
             shell=True,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=True,
             cwd=str(data),
         )
-        output: dict[str, str | int] = {"stdout": result.stdout, "stderr": result.stderr}
-        report = make_success_report(task_id, capability, output)
-    except subprocess.CalledProcessError as e:
-        output = {"stdout": e.stdout, "stderr": e.stderr, "return_code": e.returncode}
-        report = make_failure_report(
-            task_id, capability, e.stderr or str(e), extra_output=output
-        )
+
+        try:
+            while process.poll() is None:
+                report_progress(http, log=None, stage="running", task_id=task_id)
+                time.sleep(2)
+        except TaskCancelled:
+            process.kill()
+            process.wait()
+            stdout_out, stderr_out = process.communicate()
+            output: dict[str, str | int | bool] = {
+                "stdout": stdout_out,
+                "stderr": stderr_out,
+                "cancelled": True,
+            }
+            report_cancelled(http, task_id, capability, output=output)
+            return True
+
+        stdout_out, stderr_out = process.communicate()
+        return_code = process.returncode
+
+        if return_code == 0:
+            final_output: dict[str, str | int] = {"stdout": stdout_out, "stderr": stderr_out}
+            report = make_success_report(task_id, capability, final_output)
+        else:
+            final_output = {"stdout": stdout_out, "stderr": stderr_out, "return_code": return_code}
+            report = make_failure_report(
+                task_id, capability,
+                stderr_out or f"Command failed with return code {return_code}",
+                extra_output=final_output,
+            )
     except Exception as e:
-        output = {"error": str(e)}
-        report = make_failure_report(task_id, capability, str(e), extra_output=output)
+        err_output: dict[str, str] = {"error": str(e)}
+        report = make_failure_report(task_id, capability, str(e), extra_output=err_output)
 
     return report_result(http, report)

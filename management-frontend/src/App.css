@@ -1,7 +1,7 @@
 :root {
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-display: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-  --bg: #eef1f6;
+  --bg: #edeef0;
   --glass: rgba(255, 255, 255, 0.6);
   --glass-strong: rgba(255, 255, 255, 0.8);
   --border: rgba(30, 41, 59, 0.12);
@@ -16,7 +16,7 @@
 }
 
 [data-theme="dark"] {
-  --bg: #0f1117;
+  --bg: #111111;
   --glass: rgba(30, 33, 43, 0.7);
   --glass-strong: rgba(30, 33, 43, 0.9);
   --border: rgba(255, 255, 255, 0.1);
@@ -44,11 +44,11 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   color: var(--text);
-  background: radial-gradient(1200px 800px at 80% -10%, #fafcff, #eaf0ff 40%, #e9edf5 75%, #e6ebf2 100%);
+  background: #edeef0;
 }
 
 [data-theme="dark"] body {
-  background: radial-gradient(1200px 800px at 80% -10%, #151820, #111525 40%, #0f1117 75%, #0b0d14 100%);
+  background: #111111;
 }
 
 .app {
@@ -66,7 +66,6 @@ body {
   gap: .75rem;
   padding: .6rem .8rem;
   background: var(--glass);
-  backdrop-filter: saturate(180%) blur(14px);
   border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow)
 }
@@ -121,7 +120,6 @@ body {
   padding: .8rem;
   border-right: 1px solid var(--border);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.55));
-  backdrop-filter: saturate(180%) blur(16px);
   box-shadow: var(--shadow);
   overflow-y: auto;
   animation: slideInSidebar 0.2s ease-out forwards;
@@ -301,7 +299,6 @@ body {
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--glass);
-  backdrop-filter: saturate(180%) blur(10px);
   box-shadow: var(--shadow);
   overflow: hidden
 }
@@ -414,7 +411,18 @@ body {
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--chip-bg);
-  font-size: .8rem
+  color: var(--text);
+  font-size: .8rem;
+  cursor: default;
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+button.chip:hover {
+  background: var(--glass-strong);
+  border-color: var(--primary);
 }
 
 .chip-websocket {

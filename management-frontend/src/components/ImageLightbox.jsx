@@ -42,8 +42,7 @@ const ImageLightbox = ({ src, alt = '', onClose }) => {
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: `rgba(0,0,0,${visible ? 0.82 : 0})`,
-        backdropFilter: visible ? 'blur(4px)' : 'blur(0px)',
-        transition: 'background-color 0.22s ease, backdrop-filter 0.22s ease',
+        transition: 'background-color 0.22s ease',
         cursor: 'zoom-out',
       }}
     >

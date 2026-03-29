@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Upload, FileText, Loader } from 'lucide-react';
-import { clientFetch } from '../sandboxUtils';
+import { clientFetch, cancelTask } from '../sandboxUtils';
 import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
 import SandboxMarkdown from './SandboxMarkdown';
@@ -19,6 +19,8 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [result, setResult] = useState(null);
     const [logText, setLogText] = useState('');
     const fileInputRef = useRef(null);
+    const cancelledRef = useRef(false);
+    const activeTaskRef = useRef(null); // { cap, id }
 
     const [capabilities] = useCapabilities('llm.');
 
@@ -78,7 +80,9 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
         const pollUrl = `/api/task/poll/${encodedCap}/${encodedId}`;
         const pollBody = { apiKey };
         for (let i = 0; i < 120; i++) {
+            if (cancelledRef.current) return null;
             await new Promise(r => setTimeout(r, 3000));
+            if (cancelledRef.current) return null;
             try {
                 const resp = await fetch(pollUrl, {
                     method: 'POST',
@@ -105,11 +109,21 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
         throw new Error('Polling timed out');
     }, [apiKey, status, addDevEntry]);
 
+    const handleCancel = useCallback(async () => {
+        const task = activeTaskRef.current;
+        cancelledRef.current = true;
+        activeTaskRef.current = null;
+        setRunning(false);
+        status('Cancelled', 'info');
+        if (task) await cancelTask(task.cap, task.id, apiKey, addDevEntry);
+    }, [apiKey, addDevEntry, status]);
+
     const handleAnalyze = useCallback(async () => {
         if (!selectedFile) return;
         if (!apiKey) { status('API key is required', 'err'); return; }
         if (!capability) { status('Capability is required', 'err'); return; }
 
+        cancelledRef.current = false;
         setRunning(true);
         setResult(null);
         setLogText('');
@@ -184,8 +198,11 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                 }, addDevEntry);
                 const taskId = submitResp.id.id;
                 const taskCap = submitResp.id.cap;
+                activeTaskRef.current = { cap: taskCap, id: taskId };
                 status(`Task submitted: ${taskId}. Polling...`);
                 taskResult = await pollTask(taskCap, taskId);
+                activeTaskRef.current = null;
+                if (taskResult === null) return; // cancelled
             }
 
             // Show result
@@ -291,18 +308,23 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                 />
             </div>
 
-            {/* Analyze button */}
-            <button
-                style={{ ...s.analyzeBtn, opacity: (!selectedFile || running) ? 0.5 : 1 }}
-                disabled={!selectedFile || running}
-                onClick={handleAnalyze}
-            >
-                {running ? (
-                    <><Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> Analyzing...</>
-                ) : (
-                    'Analyze'
+            {/* Analyze / Cancel buttons */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                    style={{ ...s.analyzeBtn, opacity: (!selectedFile || running) ? 0.5 : 1 }}
+                    disabled={!selectedFile || running}
+                    onClick={handleAnalyze}
+                >
+                    {running ? (
+                        <><Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> Analyzing...</>
+                    ) : (
+                        'Analyze'
+                    )}
+                </button>
+                {running && mode === 'async' && activeTaskRef.current && (
+                    <button style={s.cancelBtn} onClick={handleCancel}>Cancel</button>
                 )}
-            </button>
+            </div>
 
             {/* Status */}
             {statusMsg && (
@@ -389,6 +411,19 @@ const s = {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
+    },
+    cancelBtn: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '10px 20px',
+        fontSize: '14px',
+        fontWeight: 600,
+        color: '#fff',
+        background: 'var(--danger, #ef4444)',
+        border: 'none',
+        borderRadius: '10px',
+        cursor: 'pointer',
     },
     analyzeBtn: {
         display: 'inline-flex',

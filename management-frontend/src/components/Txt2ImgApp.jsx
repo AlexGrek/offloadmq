@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { cancelTask } from '../sandboxUtils';
 import { sandboxStyles as ss } from '../sandboxStyles';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { useBlobUrls } from '../hooks/useBlobUrls';
@@ -24,12 +25,29 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
   const [statusText, setStatusText] = useState('');
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const outputBucketRef = useRef(null);
+  const cancelledRef = useRef(false);
+  const activeTaskRef = useRef(null); // { cap, id }
   const { revokeAll, track } = useBlobUrls();
 
   const [capabilities] = useCapabilities('imggen.', { setModel, setError });
 
+  const handleCancel = async () => {
+    const task = activeTaskRef.current;
+    cancelledRef.current = true;
+    activeTaskRef.current = null;
+    setIsLoading(false);
+    setStatusText('');
+    setError('Task cancelled');
+    if (outputBucketRef.current) {
+      deleteBucket(outputBucketRef.current, apiKey);
+      outputBucketRef.current = null;
+    }
+    if (task) await cancelTask(task.cap, task.id, apiKey, addDevEntry);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    cancelledRef.current = false;
     setIsLoading(true);
     setResponse(null);
     setError(null);
@@ -86,6 +104,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
         const errorMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
         setError(errorMsg);
       } else if (data.id) {
+        activeTaskRef.current = { cap: data.id.cap, id: data.id.id };
         setResponse(data);
         pollTask(data.id.cap, data.id.id, bucketUid);
       } else {
@@ -104,7 +123,9 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
     let attempts = 0;
 
     const poll = async () => {
+      if (cancelledRef.current) return;
       if (attempts >= maxAttempts) {
+        activeTaskRef.current = null;
         setError('Task polling timeout');
         setIsLoading(false);
         outputBucketRef.current = null;
@@ -123,6 +144,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
         addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { apiKey: apiKey }, response: data });
 
         if (data.status === 'completed') {
+          activeTaskRef.current = null;
           setStatusText('Fetching images...');
           const output = data.output;
           if (output?.images) {
@@ -135,6 +157,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
           outputBucketRef.current = null;
           deleteBucket(outBucketUid, apiKey);
         } else if (data.status === 'failed' || data.status === 'canceled') {
+          activeTaskRef.current = null;
           const errorMsg = data.output?.error
             ? (typeof data.output.error === 'string' ? data.output.error : JSON.stringify(data.output.error))
             : (data.status === 'canceled' ? 'Task was canceled' : 'Task failed');
@@ -148,6 +171,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
           setTimeout(poll, 5000);
         }
       } catch (err) {
+        activeTaskRef.current = null;
         const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
         addDevEntry?.({ label: `Poll task ${id}`, method: 'POST', url: `/api/task/poll/${cap}/${id}`, request: { apiKey: apiKey }, response: { error: errorMsg } });
         setError(`Polling error: ${errorMsg}`);
@@ -217,9 +241,14 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
           <input id="seed" type="number" value={seed} onChange={(e) => setSeed(e.target.value)} placeholder="Leave empty for random" style={ss.input} />
         </div>
 
-        <button type="submit" style={ss.button} disabled={isLoading}>
-          {isLoading ? 'Generating...' : 'Generate Image'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button type="submit" style={ss.button} disabled={isLoading}>
+            {isLoading ? 'Generating...' : 'Generate Image'}
+          </button>
+          {isLoading && activeTaskRef.current && (
+            <button type="button" style={cancelBtnStyle} onClick={handleCancel}>Cancel</button>
+          )}
+        </div>
       </form>
 
       <div style={ss.responseContainer}>
@@ -239,6 +268,16 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
     <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </ErrorBoundary>
   );
+};
+
+const cancelBtnStyle = {
+  padding: '8px 16px',
+  borderRadius: '6px',
+  background: 'var(--danger, #ef4444)',
+  color: '#fff',
+  border: 'none',
+  cursor: 'pointer',
+  fontWeight: 500,
 };
 
 export default Txt2ImgApp;

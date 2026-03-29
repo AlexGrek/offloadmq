@@ -14,6 +14,8 @@ from .websocket_client import serve_websocket
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Offload Agent CLI")
 custom_app = typer.Typer(help="Manage custom capabilities")
 app.add_typer(custom_app, name="custom")
+slavemode_app = typer.Typer(help="Manage slavemode capability permissions")
+app.add_typer(slavemode_app, name="slavemode")
 
 
 @app.command("sysinfo", help="Display system information")
@@ -269,3 +271,98 @@ def cli_custom_export(
     else:
         typer.echo(f"Error: Custom cap file not found on disk")
         raise typer.Exit(code=1)
+
+
+@slavemode_app.command("status", help="Show which slavemode capabilities are currently allowed")
+def cli_slavemode_status() -> None:
+    from .exec.slavemode import ALL_SLAVEMODE_CAPS, CONFIG_KEY
+
+    cfg = load_config()
+    allowed: list[str] = cfg.get(CONFIG_KEY) or []
+
+    typer.echo(f"Config key: {CONFIG_KEY}\n")
+    for cap in ALL_SLAVEMODE_CAPS:
+        mark = "✅" if cap in allowed else "❌"
+        typer.echo(f"  {mark} {cap}")
+
+    if not allowed:
+        typer.echo(f"\nNo slavemode capabilities are allowed. Run 'slavemode allow-all' to enable them.")
+
+
+@slavemode_app.command("allow-all", help="Allow all slavemode capabilities by adding them to the config allow-list")
+def cli_slavemode_allow_all() -> None:
+    from .exec.slavemode import ALL_SLAVEMODE_CAPS, CONFIG_KEY
+
+    cfg = load_config()
+    existing: list[str] = cfg.get(CONFIG_KEY) or []
+    added = [cap for cap in ALL_SLAVEMODE_CAPS if cap not in existing]
+
+    cfg[CONFIG_KEY] = sorted(set(existing + ALL_SLAVEMODE_CAPS))
+    save_config(cfg)
+
+    if added:
+        typer.echo(f"Added {len(added)} cap(s) to '{CONFIG_KEY}':")
+        for cap in added:
+            typer.echo(f"  + {cap}")
+    else:
+        typer.echo(f"All slavemode capabilities were already in '{CONFIG_KEY}'. Nothing changed.")
+
+
+@slavemode_app.command("deny-all", help="Remove all slavemode capabilities from the config allow-list")
+def cli_slavemode_deny_all() -> None:
+    from .exec.slavemode import CONFIG_KEY
+
+    cfg = load_config()
+    if not cfg.get(CONFIG_KEY):
+        typer.echo("Allow-list is already empty. Nothing changed.")
+        return
+
+    cfg[CONFIG_KEY] = []
+    save_config(cfg)
+    typer.echo(f"Cleared '{CONFIG_KEY}'. All slavemode capabilities are now disabled.")
+
+
+@slavemode_app.command("allow", help="Allow a specific slavemode capability")
+def cli_slavemode_allow(
+    cap: str = typer.Argument(..., help="Capability to allow (e.g. slavemode.force-rescan)"),
+) -> None:
+    from .exec.slavemode import ALL_SLAVEMODE_CAPS, CONFIG_KEY
+
+    if cap not in ALL_SLAVEMODE_CAPS:
+        typer.echo(f"Error: Unknown slavemode capability '{cap}'.")
+        typer.echo(f"Available: {', '.join(ALL_SLAVEMODE_CAPS)}")
+        raise typer.Exit(code=1)
+
+    cfg = load_config()
+    existing: list[str] = cfg.get(CONFIG_KEY) or []
+    if cap in existing:
+        typer.echo(f"'{cap}' is already allowed.")
+        return
+
+    existing.append(cap)
+    cfg[CONFIG_KEY] = sorted(set(existing))
+    save_config(cfg)
+    typer.echo(f"Allowed '{cap}'.")
+
+
+@slavemode_app.command("deny", help="Deny a specific slavemode capability")
+def cli_slavemode_deny(
+    cap: str = typer.Argument(..., help="Capability to deny (e.g. slavemode.force-rescan)"),
+) -> None:
+    from .exec.slavemode import ALL_SLAVEMODE_CAPS, CONFIG_KEY
+
+    if cap not in ALL_SLAVEMODE_CAPS:
+        typer.echo(f"Error: Unknown slavemode capability '{cap}'.")
+        typer.echo(f"Available: {', '.join(ALL_SLAVEMODE_CAPS)}")
+        raise typer.Exit(code=1)
+
+    cfg = load_config()
+    existing: list[str] = cfg.get(CONFIG_KEY) or []
+    if cap not in existing:
+        typer.echo(f"'{cap}' is already denied.")
+        return
+
+    existing.remove(cap)
+    cfg[CONFIG_KEY] = sorted(set(existing))
+    save_config(cfg)
+    typer.echo(f"Denied '{cap}'.")

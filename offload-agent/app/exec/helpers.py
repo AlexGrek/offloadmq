@@ -12,6 +12,15 @@ from ..httphelpers import *
 
 logger = logging.getLogger("agent")
 
+
+class TaskCancelled(Exception):
+    """Raised when the server returns 499, indicating the client cancelled the task.
+
+    Executors should catch this to stop work gracefully:
+    kill subprocesses, collect partial output, and call ``report_cancelled``.
+    """
+    pass
+
 # ---------------------------------------------------------------------------
 # Log buffer — accumulates unsent progress logs per task
 # ---------------------------------------------------------------------------
@@ -82,8 +91,12 @@ def _retry_post(
     while True:
         try:
             resp = http.post(*segments, json_body=json_body, timeout=timeout)
+            if resp.status_code == 499:
+                raise TaskCancelled("Server returned 499 — task cancelled by client")
             resp.raise_for_status()
             return resp
+        except TaskCancelled:
+            raise
         except Exception as exc:
             last_exc = exc
             if not _is_retryable(exc):
@@ -126,6 +139,9 @@ def _flush_logs(http: HttpClient, task_id: TaskId) -> bool:
             max_delay=16.0,
         )
         return True
+    except TaskCancelled:
+        # 499 means the server received the logs — task is cancelled but data accepted
+        return True
     except Exception as e:
         logger.warning(f"Failed to flush buffered logs for task {task_id.id}: {e}")
         return False
@@ -161,13 +177,21 @@ def report_result(http: HttpClient, report: TaskResultReport) -> bool:
                 pass
         typer.echo(f"Task result reported. Status Code: {resp.status_code}")
         return True
+    except TaskCancelled:
+        # 499 on resolve means the server saved output but task was already cancelled.
+        # This is expected — the agent's job is done.
+        logger.info(f"Task {q.id} was cancelled by client (499 on resolve)")
+        return True
     except requests.RequestException as e:
         typer.echo(f"Failed to report task result after retries: {e}")
         return False
 
 
 def report_starting(http: HttpClient, task_id: TaskId) -> bool:
-    """Signal to the server that the agent has started working on the task."""
+    """Signal to the server that the agent has started working on the task.
+
+    Raises ``TaskCancelled`` if the server returns 499.
+    """
     q = task_id.quoted()
     report = TaskProgressReport(id=task_id, stage="starting", log_update=None, status="Starting")
     try:
@@ -176,15 +200,22 @@ def report_starting(http: HttpClient, task_id: TaskId) -> bool:
             json_body=report.to_wire(),
             timeout=10,
         )
+        if resp.status_code == 499:
+            raise TaskCancelled("Server returned 499 — task cancelled by client")
         resp.raise_for_status()
         return True
+    except TaskCancelled:
+        raise
     except requests.RequestException:
         _buffer_log(task_id, None, "starting")
         return False
 
 
 def report_progress(http: HttpClient, log: Optional[str], stage: Optional[str], task_id: TaskId) -> bool:
-    """Send progress/logs to server. On failure, buffers for next attempt."""
+    """Send progress/logs to server. On failure, buffers for next attempt.
+
+    Raises ``TaskCancelled`` if the server returns 499.
+    """
     # Merge any previously buffered logs into this call
     buffered_log, buffered_stage = _drain_logs(task_id)
     merged_log: Optional[str] = None
@@ -200,8 +231,12 @@ def report_progress(http: HttpClient, log: Optional[str], stage: Optional[str], 
             json_body=report.to_wire(),
             timeout=10,
         )
+        if resp.status_code == 499:
+            raise TaskCancelled("Server returned 499 — task cancelled by client")
         resp.raise_for_status()
         return True
+    except TaskCancelled:
+        raise
     except requests.RequestException:
         # Failed — re-buffer everything for next attempt
         _buffer_log(task_id, merged_log, effective_stage)
@@ -234,3 +269,27 @@ def make_failure_report(
         output=extra_output or {"error": message},
         capability=capability,
     )
+
+
+def report_cancelled(
+    http: HttpClient,
+    task_id: TaskId,
+    capability: str,
+    output: Optional[dict[str, Any]] = None,
+    remaining_log: Optional[str] = None,
+) -> None:
+    """Gracefully close a cancelled task: flush remaining logs and send resolve.
+
+    Called by executors after catching ``TaskCancelled``. The server will
+    return 499 on both progress and resolve calls — this is expected and
+    handled internally.
+    """
+    if remaining_log:
+        try:
+            report_progress(http, log=remaining_log, stage="cancelled", task_id=task_id)
+        except TaskCancelled:
+            pass  # Expected — server already knows it's cancelled
+    report = make_failure_report(
+        task_id, capability, "Task cancelled by client", extra_output=output,
+    )
+    report_result(http, report)

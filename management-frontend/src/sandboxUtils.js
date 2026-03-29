@@ -49,6 +49,24 @@ export function statusLabel(status, stage) {
   return stage ? `${base} [${stage}]` : base;
 }
 
+/** Cancel a running task. Logs to DevPanel. Fails silently. */
+export async function cancelTask(cap, id, apiKey, addDevEntry) {
+  const url = `/api/task/cancel/${encodeURIComponent(cap)}/${encodeURIComponent(id)}`;
+  const body = { apiKey };
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    addDevEntry?.({ label: 'Cancel task', method: 'POST', url, request: body, response: data });
+    return data;
+  } catch (err) {
+    console.warn('cancelTask failed:', err);
+  }
+}
+
 /** Delete a storage bucket by UID. Fails silently. */
 export async function deleteBucket(uid, apiKey) {
   if (!uid) return;
