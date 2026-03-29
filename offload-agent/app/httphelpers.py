@@ -67,6 +67,8 @@ def update_agent_capabilities(
         "capabilities": capabilities,
         "tier": tier,
         "capacity": capacity,
+        "systemInfo": collect_system_info(),
+        "appVersion": APP_VERSION,
         "displayName": display_name,
     }
     resp = http.post("private", "agent", "info", "update", json_body=body, timeout=30)

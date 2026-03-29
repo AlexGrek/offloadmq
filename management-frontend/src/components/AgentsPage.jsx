@@ -78,7 +78,9 @@ function ForceRescanButton({ onDone }) {
                         clearInterval(pollRef.current);
                         if (status === 'failed' || poll?.error) {
                             setState('error');
-                            setMessage(poll?.output || poll?.error || 'Task failed');
+                            const raw = poll?.output;
+                            const outputMsg = typeof raw === 'string' ? raw : raw?.error ?? (raw != null ? JSON.stringify(raw) : null);
+                            setMessage(outputMsg || poll?.error || 'Task failed');
                         } else {
                             const count = poll?.output?.count;
                             setState('done');
