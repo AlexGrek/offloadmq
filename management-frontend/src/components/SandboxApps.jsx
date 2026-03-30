@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 const DevPanel = React.lazy(() => import('./DevPanel'));
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch, MessageCircleMore } from 'lucide-react';
+import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch, MessageCircleMore, GitCompareArrows } from 'lucide-react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Define the content for each app as a functional component.
@@ -67,6 +67,7 @@ const Img2ImgApp = React.lazy(() => import('./Img2ImgApp'))
 const CustomApp = React.lazy(() => import('./CustomApp'))
 const ImageAnalyzerApp = React.lazy(() => import('./ImageAnalyzerApp'))
 const LlmDebateApp = React.lazy(() => import('./LlmDebateApp'))
+const LlmCompareApp = React.lazy(() => import('./LlmCompareApp'))
 
 const CAPABILITIES_COLLAPSE_AT = 3;
 
@@ -82,6 +83,7 @@ const apps = [
   { id: 'pdf', name: 'PDF Analyzer', logo: FileText, app: PdfAnalyzerApp },
   { id: 'imganalyzer', name: 'Image Analyzer', logo: ScanSearch, app: ImageAnalyzerApp },
   { id: 'llmdebate', name: 'LLM Debate', logo: MessageCircleMore, app: LlmDebateApp },
+  { id: 'llmcompare', name: 'LLM Compare', logo: GitCompareArrows, app: LlmCompareApp },
   { id: 'custom', name: 'Custom', logo: Blocks, app: CustomApp },
 ];
 

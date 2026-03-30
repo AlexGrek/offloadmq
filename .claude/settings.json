@@ -62,7 +62,12 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:linux-hardware.org)",
       "WebFetch(domain:ollama.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(node -e \"const l = require\\(''lucide-react''\\); console.log\\(''GitCompareArrows:'', !!l.GitCompareArrows\\); console.log\\(''Send:'', !!l.Send\\); console.log\\(''ArrowDownWideNarrow:'', !!l.ArrowDownWideNarrow\\); console.log\\(''CircleX:'', !!l.CircleX\\); console.log\\(''Timer:'', !!l.Timer\\); console.log\\(''Sparkles:'', !!l.Sparkles\\);\")",
+      "Bash(node -e 'const l = require\\(\"\"lucide-react\"\"\\); [\"\"GitCompareArrows\"\",\"\"Send\"\",\"\"ArrowDownWideNarrow\"\",\"\"CircleX\"\",\"\"Timer\"\",\"\"Sparkles\"\",\"\"Rows2\"\",\"\"Columns2\"\"].forEach\\(n => console.log\\(n + \"\":\"\", !!l[n]\\)\\)')",
+      "Bash(node --no-experimental-strip-types -e 'var l = require\\(\"\"lucide-react\"\"\\); var names = [\"\"GitCompareArrows\"\",\"\"Send\"\",\"\"ArrowDownWideNarrow\"\",\"\"CircleX\"\",\"\"Timer\"\",\"\"Sparkles\"\",\"\"Rows2\"\",\"\"Columns2\"\"]; names.forEach\\(function\\(n\\) { console.log\\(n, typeof l[n] === \"\"function\"\" ? \"\"OK\"\" : \"\"MISSING\"\"\\); }\\);')",
+      "Bash(node --no-experimental-strip-types -e 'var l = require\\(\"\"lucide-react\"\"\\); var names = [\"\"GitCompareArrows\"\",\"\"Send\"\",\"\"ArrowDownWideNarrow\"\",\"\"CircleX\"\",\"\"Timer\"\",\"\"Sparkles\"\",\"\"Rows2\"\",\"\"Columns2\"\",\"\"GitCompare\"\",\"\"SendHorizontal\"\",\"\"ArrowDownNarrowWide\"\",\"\"XCircle\"\",\"\"Clock\"\",\"\"Wand2\"\",\"\"LayoutGrid\"\",\"\"LayoutList\"\"]; names.forEach\\(function\\(n\\) { console.log\\(n, typeof l[n] === \"\"function\"\" ? \"\"OK\"\" : \"\"MISSING\"\"\\); }\\);')",
+      "Bash(node --no-experimental-strip-types -e 'var l = require\\(\"\"lucide-react\"\"\\); console.log\\(typeof l.Play\\); console.log\\(Object.keys\\(l\\).length\\);')"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
