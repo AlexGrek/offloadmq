@@ -79,7 +79,7 @@ if [[ "${SKIP_BUILD:-}" == "1" ]]; then
   fi
 else
   echo "→ Building offload-agent..."
-  make -C "${AGENT_DIR}" build VERSION="${VERSION}" OFFLOAD_AGENT_VERSION="${VERSION}"
+  make -C "${AGENT_DIR}" rebuild VERSION="${VERSION}" OFFLOAD_AGENT_VERSION="${VERSION}"
   if [[ ! -f "$DIST_BINARY" ]]; then
     echo "error: expected binary not found at ${DIST_BINARY}" >&2
     exit 1

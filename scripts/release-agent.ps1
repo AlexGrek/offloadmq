@@ -91,6 +91,9 @@ try {
     # Inject version into _version.py so it's bundled correctly
     Set-Content -Path "app\_version.py" -Value "APP_VERSION = '$Version'"
 
+    # Clean stale build artifacts so PyInstaller always picks up current source
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "dist", "build"
+
     # Build single-file exe (Windows uses ; as add-data separator)
     & venv\Scripts\python.exe -m PyInstaller `
         --onefile `
