@@ -259,3 +259,9 @@ release:
 	git tag release-$(RELEASE_AGENT_TAG_CALCULATED) &&  git push origin release-$(RELEASE_AGENT_TAG_CALCULATED)
 	@echo "Releasing $(APP_NAME) $(RELEASE_AGENT_TAG_CALCULATED) ..."
 	@$(MAKE) release-agent
+
+update-agent-on-this-linux:
+	@echo "Installing on this Linux machine..."
+	@curl -LO "https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/offload-agent-linux-amd64" && chmod +x offload-agent-linux-amd64 && (sudo systemctl stop offload-agent; sudo ./offload-agent-linux-amd64 install bin; sudo restorecon -v /usr/local/bin/offload-agent; sudo systemctl start offload-agent)
+	@rm -f offload-agent-linux-amd64
+	offload-agent --version
