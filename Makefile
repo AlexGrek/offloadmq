@@ -14,7 +14,7 @@ CONTAINER_RUNTIME := docker
 DL_API_KEY  ?=
 DL_BASE_URL ?= https://dl.alexgr.space
 
-.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all pre-pull-images wait-for-image-pull release-agent
+.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all pre-pull-images wait-for-image-pull release-agent update-agent-on-this-linux update-agent-on-this-mac
 
 # Build container image (linux/amd64 only, pushed directly via buildx)
 build:
@@ -264,4 +264,14 @@ update-agent-on-this-linux:
 	@echo "Installing on this Linux machine..."
 	@curl -LO "https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/offload-agent-linux-amd64" && chmod +x offload-agent-linux-amd64 && (sudo systemctl stop offload-agent; sudo ./offload-agent-linux-amd64 install bin; sudo restorecon -v /usr/local/bin/offload-agent; sudo systemctl start offload-agent)
 	@rm -f offload-agent-linux-amd64
+	offload-agent --version
+
+update-agent-on-this-mac:
+	@echo "Installing on this macOS machine..."
+	@curl -LO "https://dl.alexgr.space/rs/offload-agent/latest/macos-amd64/offload-agent-macos-amd64"
+	@chmod +x offload-agent-macos-amd64
+	@launchctl unload ~/Library/LaunchAgents/com.offloadmq.agent.plist 2>/dev/null || true
+	@sudo ./offload-agent-macos-amd64 install bin
+	@launchctl load ~/Library/LaunchAgents/com.offloadmq.agent.plist 2>/dev/null || true
+	@rm -f offload-agent-macos-amd64
 	offload-agent --version
