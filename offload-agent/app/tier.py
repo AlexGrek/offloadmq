@@ -1,3 +1,4 @@
+import re
 from typing import Optional, Dict, Any, Tuple
 
 # Shared with systeminfo (display names) and tier scoring.
@@ -20,6 +21,29 @@ AMD_HANDHELD_GPU_KEYWORDS: Tuple[str, ...] = (
     "CUSTOM GPU 0405",
     "CUSTOM GPU 0932",
 )
+
+
+def _intel_core_gen(cpu_model: str) -> Optional[int]:
+    """Return the Intel Core generation number, or None if not detectable.
+
+    Handles: 'i5-8400T', 'Core i7-13700K', 'Intel Core i9-14900KS', etc.
+    The generation is the leading digits of the 4-5 digit model number:
+      8400  → gen  8
+      11600 → gen 11
+      13700 → gen 13
+    """
+    m = re.search(r"\bi[3579]-(\d{4,5})", cpu_model, re.IGNORECASE)
+    if not m:
+        return None
+    digits = m.group(1)
+    # 4-digit: first digit is gen (e.g. 8400 → 8); 5-digit: first two (e.g. 13700 → 13)
+    return int(digits[:-3])
+
+
+def _intel_core_series(cpu_model: str) -> Optional[int]:
+    """Return 3, 5, 7, or 9 for Intel Core i3/i5/i7/i9, else None."""
+    m = re.search(r"\bi([3579])-\d{4,5}", cpu_model, re.IGNORECASE)
+    return int(m.group(1)) if m else None
 
 
 def calculate_tier(system_info: Dict[str, Any]) -> int:
@@ -98,6 +122,18 @@ def calculate_tier(system_info: Dict[str, Any]) -> int:
     # Tier 2: modern AMD iGPU (Vega/RDNA on Zen APU -- handhelds, mini-PCs)
     if is_amd_modern_igpu:
         return 2
+
+    # Intel Core generation-based tiers (iGPU-only; discrete GPU already handled above).
+    # i7 13th gen+ → Tier 3; i5 11th gen+ → Tier 2; older Intel → Tier 1.
+    if is_intel and not has_dedicated_vram:
+        intel_gen = _intel_core_gen(cpu_model)
+        intel_series = _intel_core_series(cpu_model)
+        if intel_gen is not None and intel_series is not None:
+            if intel_series >= 7 and intel_gen >= 13:
+                return 3
+            if intel_series >= 5 and intel_gen >= 11:
+                return 2
+            return 1
 
     # Tier 2: 12-16GB RAM
     if 12 <= ram_gb <= 16:
