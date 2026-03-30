@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiFetch, fmtDate, stripCapabilityAttrs, parseCapabilityAttrs, TOKEN_KEY } from "../utils";
-import { RefreshCw, Cpu, Zap, AlertTriangle, CheckCircle2, Clock, ChevronDown, ChevronUp, Layers, Gauge, Fingerprint } from "lucide-react";
+import { RefreshCw, Cpu, Zap, AlertTriangle, CheckCircle2, Clock, ChevronDown, ChevronUp, Layers, Gauge, Fingerprint, SquareArrowRightEnter } from "lucide-react";
 import Banner from "./Banner";
 import Chip from "./Chip";
 import ExpandableDeleteButton from "./ExpandableDeleteButton";
@@ -321,7 +321,7 @@ function AgentCard({ a, onDelete, onRescanDone }) {
                                     border: '1px solid rgba(217,119,6,0.25)',
                                 }}>
                                     <div style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#f59e0b', marginBottom: '8px' }}>
-                                        Slavemode
+                                        <SquareArrowRightEnter />
                                     </div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
                                         {hasForceRescan && (
