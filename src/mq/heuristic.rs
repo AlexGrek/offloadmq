@@ -34,6 +34,9 @@ pub struct HeuristicRecord {
     pub runner_cpu_arch: String,
     /// Total system RAM on runner (whole gigabytes)
     pub runner_total_memory_gb: u64,
+    /// Machine ID of the runner host (shared across agents on the same machine)
+    /// Used for machine-level heuristics — similar machines share performance characteristics
+    pub machine_id: Option<String>,
     /// Execution time in milliseconds
     pub execution_time_ms: f64,
     /// Whether the task succeeded
@@ -64,6 +67,8 @@ struct HeuristicRecordDe {
     runner_total_memory_gb: Option<u64>,
     #[serde(default)]
     runner_total_memory_mb: Option<u64>,
+    #[serde(default)]
+    machine_id: Option<String>,
     execution_time_ms: f64,
     success: bool,
     buckets_used: Vec<String>,
@@ -87,6 +92,7 @@ impl From<HeuristicRecordDe> for HeuristicRecord {
             runner_os: d.runner_os,
             runner_cpu_arch: d.runner_cpu_arch,
             runner_total_memory_gb,
+            machine_id: d.machine_id,
             execution_time_ms: d.execution_time_ms,
             success: d.success,
             buckets_used: d.buckets_used,
@@ -122,6 +128,7 @@ impl HeuristicRecord {
             runner_os: agent.system_info.os.clone(),
             runner_cpu_arch: agent.system_info.cpu_arch.clone(),
             runner_total_memory_gb: agent.system_info.total_memory_gb,
+            machine_id: agent.system_info.machine_id.clone(),
             execution_time_ms,
             success,
             buckets_used: buckets_used.clone(),
@@ -136,6 +143,14 @@ impl HeuristicRecord {
     /// Create composite key for storage: "capability|runner_id|record_id"
     pub fn make_key(&self) -> String {
         format!("{}|{}|{}", self.capability, self.runner_id, self.record_id)
+    }
+
+    /// Create machine-indexed composite key: "machine_id|capability|record_id"
+    /// Returns None if this record has no machine_id
+    pub fn make_machine_key(&self) -> Option<String> {
+        self.machine_id
+            .as_ref()
+            .map(|mid| format!("{}|{}|{}", mid, self.capability, self.record_id))
     }
 
     /// Add free-form notes (for heuristic engine use)

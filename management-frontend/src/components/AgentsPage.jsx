@@ -249,7 +249,7 @@ function AgentCard({ a, onDelete, onRescanDone }) {
                                     <KV label="UID" value={a.uid} mono />
                                     <KV label="Registered" value={fmtDate(a.registeredAt)} />
                                     <KV label="Last contact" value={fmtDate(a.lastContact)} />
-                                    {a.appVersion && <KV label="Version" value={`v${a.appVersion}`} />}
+                                    {a.appVersion && <KV label="Version" value={a.appVersion} />}
                                     <KV label="Token" value={a.personalLoginToken} mono />
                                 </div>
 
