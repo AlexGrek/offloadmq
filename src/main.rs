@@ -139,6 +139,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     post(api::mgmt::storage::trigger_storage_cleanup),
                 )
                 .route(
+                    "/heuristics/records",
+                    get(api::mgmt::heuristics::list_records),
+                )
+                .route(
+                    "/heuristics/stats/runners",
+                    get(api::mgmt::heuristics::list_runner_stats),
+                )
+                .route(
+                    "/heuristics/stats/machines",
+                    get(api::mgmt::heuristics::list_machine_stats),
+                )
+                .route(
                     "/heuristics/cleanup/trigger",
                     post(api::mgmt::trigger_heuristics_cleanup),
                 )

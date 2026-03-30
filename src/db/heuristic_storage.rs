@@ -317,11 +317,159 @@ impl HeuristicStorage {
         if records.is_empty() {
             return Ok(None);
         }
+        Ok(Some(Self::stats_from_records(&records)))
+    }
 
+    // ========== Pagination ==========
+
+    /// Scan a Sled tree with optional key prefix and cursor-based pagination.
+    ///
+    /// - `prefix`: restricts results to keys starting with this string; empty = all keys
+    /// - `cursor`: if `Some`, starts scanning strictly *after* this key (exclusive)
+    /// - `limit`: max records to return (clamped to 1–500 by the caller)
+    ///
+    /// Returns `(records, next_cursor)`.  `next_cursor` is the key of the last returned
+    /// record; pass it as `cursor` on the next call to get the following page.
+    fn scan_tree_paginated(
+        &self,
+        tree: &sled::Tree,
+        prefix: &str,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<HeuristicRecord>, Option<String>)> {
+        use std::ops::Bound;
+
+        // Choose the range start bound
+        let start: Bound<Vec<u8>> = match cursor {
+            Some(c) => Bound::Excluded(c.as_bytes().to_vec()),
+            None if !prefix.is_empty() => Bound::Included(prefix.as_bytes().to_vec()),
+            None => Bound::Unbounded,
+        };
+
+        let mut pairs: Vec<(String, HeuristicRecord)> = Vec::with_capacity(limit + 1);
+        let mut has_more = false;
+
+        for item in tree.range((start, Bound::<Vec<u8>>::Unbounded)) {
+            let (key, bytes) = item?;
+            let key_str = String::from_utf8_lossy(&key).into_owned();
+
+            // When using range() we must enforce the prefix boundary manually
+            if !prefix.is_empty() && !key_str.starts_with(prefix) {
+                break;
+            }
+
+            if pairs.len() == limit {
+                has_more = true;
+                break;
+            }
+
+            let record: HeuristicRecord = rmp_serde::from_slice(&bytes)?;
+            pairs.push((key_str, record));
+        }
+
+        let next_cursor = if has_more {
+            pairs.last().map(|(k, _)| k.clone())
+        } else {
+            None
+        };
+
+        Ok((pairs.into_iter().map(|(_, r)| r).collect(), next_cursor))
+    }
+
+    /// Paginated listing with optional filters.
+    ///
+    /// Filters select the most specific index available:
+    /// - `machine_id` (± `capability`) → `heuristics_by_machine`
+    /// - `runner_id`  (± `capability`) → `heuristics_by_runner`
+    /// - `capability` only             → `heuristics_by_cap`
+    /// - no filter                     → `heuristics_by_cap` (full scan)
+    pub fn list_paginated(
+        &self,
+        capability: Option<&str>,
+        runner_id: Option<&str>,
+        machine_id: Option<&str>,
+        limit: usize,
+        cursor: Option<&str>,
+    ) -> Result<(Vec<HeuristicRecord>, Option<String>)> {
+        let limit = limit.clamp(1, 500);
+
+        if let Some(mid) = machine_id {
+            let prefix = match capability {
+                Some(cap) => format!("{}|{}|", mid, cap),
+                None => format!("{}|", mid),
+            };
+            self.scan_tree_paginated(&self.heuristics_by_machine, &prefix, cursor, limit)
+        } else if let Some(rid) = runner_id {
+            let prefix = match capability {
+                Some(cap) => format!("{}|{}|", rid, cap),
+                None => format!("{}|", rid),
+            };
+            self.scan_tree_paginated(&self.heuristics_by_runner, &prefix, cursor, limit)
+        } else if let Some(cap) = capability {
+            let prefix = format!("{}|", cap);
+            self.scan_tree_paginated(&self.heuristics_by_cap, &prefix, cursor, limit)
+        } else {
+            self.scan_tree_paginated(&self.heuristics_by_cap, "", cursor, limit)
+        }
+    }
+
+    // ========== Aggregate Stats ==========
+
+    /// Aggregate stats for every (capability, runner_id) pair in the database.
+    /// Returns a vec of `(capability, runner_id, stats)` sorted by capability then runner.
+    pub fn list_runner_stats(&self) -> Result<Vec<(String, String, RunnerCapStats)>> {
+        let mut pairs: std::collections::HashSet<(String, String)> = Default::default();
+        for item in self.heuristics_by_runner.iter() {
+            let (key, _) = item?;
+            let key_str = String::from_utf8_lossy(&key);
+            let mut parts = key_str.splitn(3, '|');
+            if let (Some(runner_id), Some(capability)) = (parts.next(), parts.next()) {
+                pairs.insert((runner_id.to_string(), capability.to_string()));
+            }
+        }
+
+        let mut results = vec![];
+        for (runner_id, capability) in pairs {
+            if let Some(stats) = self.compute_stats_for(&runner_id, &capability)? {
+                results.push((capability, runner_id, stats));
+            }
+        }
+        results.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        Ok(results)
+    }
+
+    /// Aggregate stats for every (capability, machine_id) pair in the database.
+    /// Returns a vec of `(capability, machine_id, stats)` sorted by capability then machine.
+    pub fn list_machine_stats(&self) -> Result<Vec<(String, String, RunnerCapStats)>> {
+        let mut pairs: std::collections::HashSet<(String, String)> = Default::default();
+        for item in self.heuristics_by_machine.iter() {
+            let (key, _) = item?;
+            let key_str = String::from_utf8_lossy(&key);
+            let mut parts = key_str.splitn(3, '|');
+            if let (Some(machine_id), Some(capability)) = (parts.next(), parts.next()) {
+                pairs.insert((machine_id.to_string(), capability.to_string()));
+            }
+        }
+
+        let mut results = vec![];
+        for (machine_id, capability) in pairs {
+            let records = self.query_by_machine_and_capability(&machine_id, &capability)?;
+            if records.is_empty() {
+                continue;
+            }
+            results.push((capability, machine_id, Self::stats_from_records(&records)));
+        }
+        results.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        Ok(results)
+    }
+
+    // ========== Internal Helpers ==========
+
+    fn stats_from_records(records: &[HeuristicRecord]) -> RunnerCapStats {
         let mut success_times: Vec<f64> = Vec::new();
         let mut fail_times: Vec<f64> = Vec::new();
 
-        for r in &records {
+        for r in records {
             if r.success {
                 success_times.push(r.execution_time_ms);
             } else {
@@ -356,7 +504,7 @@ impl HeuristicStorage {
             (None, None, None)
         };
 
-        Ok(Some(RunnerCapStats {
+        RunnerCapStats {
             total_runs: total,
             success_count,
             fail_count,
@@ -367,6 +515,6 @@ impl HeuristicStorage {
             fail_avg_ms,
             fail_min_ms,
             fail_max_ms,
-        }))
+        }
     }
 }

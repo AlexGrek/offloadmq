@@ -3,7 +3,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { BrowserRouter as Router, Routes, Route, NavLink } from "react-router-dom";
 import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
-import { Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Loader2, Menu, Moon, ScrollText, SquarePlay, Sun, Zap, Wrench } from "lucide-react";
+import { Activity, Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Loader2, Menu, Moon, ScrollText, SquarePlay, Sun, Zap, Wrench } from "lucide-react";
 import { TOKEN_KEY, apiFetch } from "./utils";
 
 const AgentsPage = React.lazy(() => import("./components/AgentsPage"));
@@ -16,6 +16,7 @@ const ServiceLogsPage = React.lazy(() => import("./components/ServiceLogsPage"))
 const BackgroundJobTriggersPage = React.lazy(() => import("./components/BackgroundJobTriggersPage"));
 const UtilsPage = React.lazy(() => import("./components/UtilsPage"));
 const TokenSettingsPage = React.lazy(() => import("./components/TokenSettingsPage"));
+const HeuristicsPage = React.lazy(() => import("./components/HeuristicsPage"));
 
 // ----- Route Loader -----
 function RouteLoader() {
@@ -35,6 +36,7 @@ const routes = [
   { path: "/tasks", label: "Tasks", icon: <ListChecks /> },
   { path: "/storage", label: "Storage", icon: <Database /> },
   { path: "/sandbox", label: "Sandbox", icon: <SquarePlay /> },
+  { path: "/heuristics",   label: "Heuristics",   icon: <Activity /> },
   { path: "/service-logs", label: "Service Logs", icon: <ScrollText /> },
   { path: "/bg-triggers", label: "BG Triggers", icon: <Zap /> },
   { path: "/utils", label: "Utils", icon: <Wrench /> },
@@ -116,6 +118,7 @@ const tokenMissing = !(localStorage.getItem(TOKEN_KEY) || "");
                 <Route path="/tasks" element={<TasksPage />} />
                 <Route path="/storage" element={<StoragePage />} />
                 <Route path="/sandbox" element={<SandboxApps />} />
+                <Route path="/heuristics" element={<HeuristicsPage />} />
                 <Route path="/service-logs" element={<ServiceLogsPage />} />
                 <Route path="/bg-triggers" element={<BackgroundJobTriggersPage />} />
                 <Route path="/utils" element={<UtilsPage />} />
