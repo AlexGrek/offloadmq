@@ -140,7 +140,12 @@ const CustomApp = ({ apiKey, addDevEntry, setCloseInterceptor, doClose }) => {
     }
     const payload = {};
     fields.forEach(f => {
-      payload[f.name] = coerceValue(fieldValues[f.name], f.hint);
+      const raw = fieldValues[f.name];
+      // Empty string / null → omit from payload so the agent applies its default.
+      // The agent treats a missing key exactly the same as null: falls back to
+      // the param's default value or raises if none is defined.
+      if (raw === '' || raw === null || raw === undefined) return;
+      payload[f.name] = coerceValue(raw, f.hint);
     });
     return payload;
   };
@@ -314,31 +319,42 @@ const CustomApp = ({ apiKey, addDevEntry, setCloseInterceptor, doClose }) => {
               </div>
             ) : (
               fields.length > 0 ? (
-                fields.map(f => (
-                  <div key={f.name} style={ss.formGroup}>
-                    <label style={ss.label}>
-                      {f.name}
-                      {f.hint && <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: '6px', fontSize: '12px' }}>({f.hint})</span>}
-                    </label>
-                    {(f.hint === 'text' || f.hint === 'json' || f.hint === 'object') ? (
-                      <textarea
-                        value={fieldValues[f.name] || ''}
-                        onChange={(e) => setFieldValue(f.name, e.target.value)}
-                        style={{ ...ss.textarea, minHeight: '80px' }}
-                        placeholder={f.hint ? `Enter ${f.hint}...` : `Enter ${f.name}...`}
-                      />
-                    ) : (
-                      <input
-                        type={f.hint === 'int' || f.hint === 'integer' || f.hint === 'float' || f.hint === 'number' ? 'number' : 'text'}
-                        step={f.hint === 'float' || f.hint === 'number' ? 'any' : undefined}
-                        value={fieldValues[f.name] || ''}
-                        onChange={(e) => setFieldValue(f.name, e.target.value)}
-                        style={ss.input}
-                        placeholder={f.hint ? `Enter ${f.hint}...` : `Enter ${f.name}...`}
-                      />
-                    )}
-                  </div>
-                ))
+                fields.map(f => {
+                  const isEmpty = fieldValues[f.name] === '' || fieldValues[f.name] == null;
+                  const isMultiline = f.hint === 'text' || f.hint === 'json' || f.hint === 'object';
+                  const isNumeric = f.hint === 'int' || f.hint === 'integer' || f.hint === 'float' || f.hint === 'number';
+                  return (
+                    <div key={f.name} style={ss.formGroup}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                        <label style={{ ...ss.label, margin: 0 }}>
+                          {f.name}
+                          {f.hint && <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: '6px', fontSize: '12px' }}>({f.hint})</span>}
+                        </label>
+                        {isEmpty
+                          ? <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>default</span>
+                          : <button type="button" onClick={() => setFieldValue(f.name, '')} style={clearBtnStyle} title="Clear — agent will use default">×</button>
+                        }
+                      </div>
+                      {isMultiline ? (
+                        <textarea
+                          value={fieldValues[f.name] || ''}
+                          onChange={(e) => setFieldValue(f.name, e.target.value)}
+                          style={{ ...ss.textarea, minHeight: '80px', ...(isEmpty ? emptyFieldStyle : {}) }}
+                          placeholder="leave empty → agent uses default"
+                        />
+                      ) : (
+                        <input
+                          type={isNumeric ? 'number' : 'text'}
+                          step={f.hint === 'float' || f.hint === 'number' ? 'any' : undefined}
+                          value={fieldValues[f.name] || ''}
+                          onChange={(e) => setFieldValue(f.name, e.target.value)}
+                          style={{ ...ss.input, ...(isEmpty ? emptyFieldStyle : {}) }}
+                          placeholder="leave empty → agent uses default"
+                        />
+                      )}
+                    </div>
+                  );
+                })
               ) : (
                 <p style={ss.defaultHint}>
                   No parameters detected in capability attributes. Use raw JSON payload or submit with empty payload.
@@ -405,6 +421,20 @@ const exitBtnStyle = {
   fontWeight: 500,
   fontSize: '13px',
   textAlign: 'left',
+};
+
+const clearBtnStyle = {
+  background: 'none',
+  border: 'none',
+  color: 'var(--muted)',
+  cursor: 'pointer',
+  fontSize: '14px',
+  lineHeight: 1,
+  padding: '0 2px',
+};
+
+const emptyFieldStyle = {
+  opacity: 0.6,
 };
 
 const cancelBtnStyle = {
