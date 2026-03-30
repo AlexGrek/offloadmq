@@ -217,7 +217,11 @@ class CustomCap:
 
         resolved = self._resolve_params(payload)
         for name, value in resolved.items():
+            # Export as both CUSTOM_NAME (canonical) and NAME (convenience alias).
+            # Scripts can use either form; CUSTOM_ prefix is there to make the
+            # origin clear, but requiring it everywhere is unnecessarily verbose.
             env[f"CUSTOM_{name.upper()}"] = value
+            env[name.upper()] = value
 
         return env
 
