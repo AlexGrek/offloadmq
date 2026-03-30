@@ -45,7 +45,7 @@ if (-not $Version) {
         $Prefix = $Ver -replace '\.\d+$', ''      # e.g. v0.3
         $Version = "${Prefix}.${Count}"
     } else {
-        $Version = "v0.1.${Count}"
+        $Version = "v0.3.${Count}"
     }
 }
 

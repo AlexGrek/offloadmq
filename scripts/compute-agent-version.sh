@@ -23,5 +23,5 @@ if [[ -n "${tag}" ]]; then
   prefix="${ver%.*}"
   echo "${prefix}.${count}"
 else
-  echo "v0.1.${count}"
+  echo "v0.3.${count}"
 fi
