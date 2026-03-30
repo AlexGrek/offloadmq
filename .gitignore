@@ -9,3 +9,4 @@
 offload-agent/app/_version.py
 ansible/inventory/hosts.yml
 .claude/settings.local.json
+offload-agent-macos-*
