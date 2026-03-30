@@ -4,6 +4,7 @@ import { clientFetch, cancelTask } from '../sandboxUtils';
 import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
 import SandboxMarkdown from './SandboxMarkdown';
+import CircularProgress from './CircularProgress';
 
 const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
@@ -18,6 +19,8 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [statusType, setStatusType] = useState('info');
     const [result, setResult] = useState(null);
     const [logText, setLogText] = useState('');
+    const [heuristicSecs, setHeuristicSecs] = useState(null);
+    const [taskCreatedAt, setTaskCreatedAt] = useState(null);
     const fileInputRef = useRef(null);
     const cancelledRef = useRef(false);
     const activeTaskRef = useRef(null); // { cap, id }
@@ -99,8 +102,12 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
 
                 if (taskStatus === 'completed' || taskStatus === 'failed') {
                     addDevEntry?.({ key: `poll-${id}`, label: 'Poll task (final)', method: 'POST', url: pollUrl, request: pollBody, response: data });
+                    setHeuristicSecs(null);
+                    setTaskCreatedAt(null);
                     return data;
                 }
+                if (data.createdAt) setTaskCreatedAt(prev => prev ?? data.createdAt);
+                if (data.typicalRuntimeSeconds?.secs != null) setHeuristicSecs(data.typicalRuntimeSeconds.secs);
                 addDevEntry?.({ key: `poll-${id}`, label: 'Poll task', method: 'POST', url: pollUrl, request: pollBody, response: data });
             } catch {
                 // retry
@@ -114,6 +121,8 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
         cancelledRef.current = true;
         activeTaskRef.current = null;
         setRunning(false);
+        setHeuristicSecs(null);
+        setTaskCreatedAt(null);
         status('Cancelled', 'info');
         if (task) await cancelTask(task.cap, task.id, apiKey, addDevEntry);
     }, [apiKey, addDevEntry, status]);
@@ -220,6 +229,8 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
             }
         } finally {
             setRunning(false);
+            setHeuristicSecs(null);
+            setTaskCreatedAt(null);
         }
     }, [selectedFile, apiKey, capability, prompt, systemPrompt, mode, status, pollTask, addDevEntry, showResult]);
 
@@ -332,8 +343,17 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                     ...s.statusBox,
                     background: statusType === 'ok' ? 'rgba(76,175,136,0.1)' : statusType === 'err' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)',
                     color: statusType === 'ok' ? '#4caf88' : statusType === 'err' ? '#ef4444' : 'var(--accent, #3b82f6)',
+                    display: 'flex', alignItems: 'center', gap: '10px',
                 }}>
-                    {statusMsg}
+                    {running && (
+                        <CircularProgress
+                            typicalRuntimeSeconds={heuristicSecs}
+                            createdAt={taskCreatedAt}
+                            size={32}
+                            strokeWidth={3}
+                        />
+                    )}
+                    <span>{statusMsg}</span>
                 </div>
             )}
 

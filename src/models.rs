@@ -40,9 +40,11 @@ impl UnassignedTask {
         TaskStatusResponse {
             id: self.id,
             status: TaskStatus::Queued,
+            created_at: self.created_at,
             stage: None,
             output: None,
             log: None,
+            typical_runtime_seconds: None,
         }
     }
 
@@ -99,6 +101,8 @@ pub struct AssignedTask {
     pub log: Option<String>,
     #[serde(default)]
     pub stage: Option<String>,
+    #[serde(default)]
+    pub typical_runtime_seconds: Option<std::time::Duration>,
 }
 
 impl AssignedTask {
@@ -129,9 +133,11 @@ impl AssignedTask {
         TaskStatusResponse {
             id: self.id,
             status: self.status,
+            created_at: self.created_at,
             stage: self.stage,
             output: self.result,
             log: self.log,
+            typical_runtime_seconds: self.typical_runtime_seconds,
         }
     }
 }

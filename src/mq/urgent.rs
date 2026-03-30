@@ -207,6 +207,15 @@ impl UrgentTaskStore {
         }
     }
 
+    pub async fn set_runtime_estimate(&self, task_id: &TaskId, duration: std::time::Duration) {
+        let mut tasks = self.tasks.write().await;
+        if let Some(entry) = tasks.get_mut(task_id) {
+            if let Some(assigned) = entry.assigned_task.as_mut() {
+                assigned.typical_runtime_seconds = Some(duration);
+            }
+        }
+    }
+
     pub async fn get_assigned_task(&self, task_id: &TaskId) -> Option<AssignedTask> {
         let assigned = self.tasks.read().await;
         assigned

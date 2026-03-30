@@ -249,7 +249,7 @@ Checks the status of a task by ID. Works for both urgent and regular tasks.
 
 **Response** (200 OK)
 
-Pending task:
+Pending task (just submitted, not yet picked up by an agent):
 ```json
 {
   "id": {
@@ -257,13 +257,15 @@ Pending task:
     "id": "01ARZ3NDE4V2XTGZUVY7"
   },
   "status": "queued",
+  "createdAt": "2026-03-18T14:30:00Z",
   "stage": null,
   "output": null,
-  "log": null
+  "log": null,
+  "typicalRuntimeSeconds": null
 }
 ```
 
-Running task:
+Running task (agent has picked it up; estimate available if heuristic data exists):
 ```json
 {
   "id": {
@@ -271,9 +273,11 @@ Running task:
     "id": "01ARZ3NDE4V2XTGZUVY7"
   },
   "status": "running",
+  "createdAt": "2026-03-18T14:30:00Z",
   "stage": "inference",
   "output": null,
-  "log": "Loading model from /models/mistral-7b...\nModel loaded in 2.5s\nProcessing prompt...\n"
+  "log": "Loading model from /models/mistral-7b...\nModel loaded in 2.5s\nProcessing prompt...\n",
+  "typicalRuntimeSeconds": { "secs": 12, "nanos": 0 }
 }
 ```
 
@@ -285,13 +289,15 @@ Completed task:
     "id": "01ARZ3NDE4V2XTGZUVY7"
   },
   "status": "completed",
+  "createdAt": "2026-03-18T14:30:00Z",
   "stage": null,
   "output": {
     "result": "2 + 2 = 4",
     "tokens_used": 15,
     "inference_time_ms": 245
   },
-  "log": "Model loaded in 2.5s\nInference took 245ms\n"
+  "log": "Model loaded in 2.5s\nInference took 245ms\n",
+  "typicalRuntimeSeconds": { "secs": 12, "nanos": 0 }
 }
 ```
 
@@ -303,12 +309,14 @@ Failed task:
     "id": "01ARZ3NDE4V2XTGZUVY7"
   },
   "status": "failed",
+  "createdAt": "2026-03-18T14:30:00Z",
   "stage": null,
   "output": {
     "error": "Out of memory",
     "error_code": "OOM"
   },
-  "log": "Loading model...\nModel loaded in 2.5s\nAllocating 8GB for inference...\nError: insufficient memory\n"
+  "log": "Loading model...\nModel loaded in 2.5s\nAllocating 8GB for inference...\nError: insufficient memory\n",
+  "typicalRuntimeSeconds": { "secs": 12, "nanos": 0 }
 }
 ```
 
@@ -316,9 +324,11 @@ Failed task:
 |-------|-------------|
 | `id` | Task identifier |
 | `status` | Current task status (see Task Lifecycle below) |
+| `createdAt` | ISO 8601 UTC timestamp when the task was submitted. Always present. |
 | `stage` | Optional human-readable current stage (e.g., "inference", "post-processing") |
 | `output` | Task result object (only present if completed or failed) |
 | `log` | Accumulated agent logs (only if agent sent updates) |
+| `typicalRuntimeSeconds` | Estimated typical duration as `{ "secs": N, "nanos": N }`. Set once when an agent claims the task, based on historical heuristic data. `null` if no heuristic data exists yet (fewer than 2 completed runs). Useful for rendering progress bars. |
 
 **Task Status Values**
 

@@ -9,6 +9,7 @@ import { stripCapabilityAttrs, extractSandboxModelText } from '../utils';
 import SandboxMarkdown from './SandboxMarkdown';
 import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
+import CircularProgress from './CircularProgress';
 
 /* ── helpers ─────────────────────────────────────────────── */
 
@@ -139,6 +140,10 @@ const LlmCompareApp = ({ apiKey, addDevEntry }) => {
       if (data.status) {
         updateResult(idx, { pollingStatus: data.status });
       }
+      const hPatch = {};
+      if (data.createdAt) hPatch.createdAt = data.createdAt;
+      if (data.typicalRuntimeSeconds?.secs != null) hPatch.typicalRuntimeSeconds = data.typicalRuntimeSeconds.secs;
+      if (Object.keys(hPatch).length) updateResult(idx, hPatch);
       return 'polling';
     } catch (err) {
       updateResult(idx, {
@@ -194,6 +199,8 @@ const LlmCompareApp = ({ apiKey, addDevEntry }) => {
       endTime: null,
       copiedTimeout: null,
       pollingStatus: '',
+      createdAt: null,
+      typicalRuntimeSeconds: null,
     }));
     setResults(initResults);
     resultsRef.current = initResults;
@@ -533,8 +540,14 @@ const LlmCompareApp = ({ apiKey, addDevEntry }) => {
                   )}
 
                   {r.status === 'polling' && !r.log && !r.content && (
-                    <span style={styles.thinking}>
-                      <Loader size={12} style={{ animation: 'compare-spin 1s linear infinite' }} />
+                    <span style={{ ...styles.thinking, alignItems: 'center', gap: '8px' }}>
+                      <CircularProgress
+                        typicalRuntimeSeconds={r.typicalRuntimeSeconds}
+                        createdAt={r.createdAt}
+                        size={28}
+                        strokeWidth={3}
+                        color={slotColors[idx]}
+                      />
                       {r.pollingStatus ? `Status: ${r.pollingStatus}` : 'Waiting for response…'}
                     </span>
                   )}

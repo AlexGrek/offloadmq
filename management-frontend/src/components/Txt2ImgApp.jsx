@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { cancelTask } from '../sandboxUtils';
 import { sandboxStyles as ss } from '../sandboxStyles';
+import CircularProgress from './CircularProgress';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { useBlobUrls } from '../hooks/useBlobUrls';
 import { statusLabel, deleteBucket, fetchImageBlobs } from '../sandboxUtils';
@@ -23,6 +24,8 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
+  const [heuristicSecs, setHeuristicSecs] = useState(null);
+  const [taskCreatedAt, setTaskCreatedAt] = useState(null);
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const outputBucketRef = useRef(null);
   const cancelledRef = useRef(false);
@@ -37,6 +40,8 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
     activeTaskRef.current = null;
     setIsLoading(false);
     setStatusText('');
+    setHeuristicSecs(null);
+    setTaskCreatedAt(null);
     setError('Task cancelled');
     if (outputBucketRef.current) {
       deleteBucket(outputBucketRef.current, apiKey);
@@ -145,6 +150,8 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
 
         if (data.status === 'completed') {
           activeTaskRef.current = null;
+          setHeuristicSecs(null);
+          setTaskCreatedAt(null);
           setStatusText('Fetching images...');
           const output = data.output;
           if (output?.images) {
@@ -158,6 +165,8 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
           deleteBucket(outBucketUid, apiKey);
         } else if (data.status === 'failed' || data.status === 'canceled') {
           activeTaskRef.current = null;
+          setHeuristicSecs(null);
+          setTaskCreatedAt(null);
           const errorMsg = data.output?.error
             ? (typeof data.output.error === 'string' ? data.output.error : JSON.stringify(data.output.error))
             : (data.status === 'canceled' ? 'Task was canceled' : 'Task failed');
@@ -166,6 +175,8 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
           outputBucketRef.current = null;
           deleteBucket(outBucketUid, apiKey);
         } else {
+          if (data.createdAt) setTaskCreatedAt(prev => prev ?? data.createdAt);
+          if (data.typicalRuntimeSeconds?.secs != null) setHeuristicSecs(data.typicalRuntimeSeconds.secs);
           setStatusText(statusLabel(data.status, data.stage));
           attempts++;
           setTimeout(poll, 5000);
@@ -252,7 +263,12 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
       </form>
 
       <div style={ss.responseContainer}>
-        {isLoading && <p style={ss.loading}>{statusText || 'Generating image...'}</p>}
+        {isLoading && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <CircularProgress typicalRuntimeSeconds={heuristicSecs} createdAt={taskCreatedAt} size={32} strokeWidth={3} />
+            <p style={{ ...ss.loading, margin: 0 }}>{statusText || 'Generating image...'}</p>
+          </div>
+        )}
         {error && <pre style={ss.error}>{error}</pre>}
         {response && response.images && (
           <div>

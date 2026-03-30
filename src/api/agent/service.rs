@@ -188,11 +188,23 @@ pub async fn take_task(
     state: &Arc<AppState>,
 ) -> Result<AssignedTask, AppError> {
     info!("Agent {} picking up task {task_id}", agent.uid_short);
-    if let Some(picked) = try_pick_up_urgent_task(&state.urgent, agent, &task_id).await? {
+    let cap = base_capability(&task_id.cap);
+    let machine_id = agent.system_info.machine_id.as_deref().unwrap_or("");
+    let estimate = state.storage.heuristics.estimate_duration(cap, machine_id).unwrap_or(None);
+
+    if let Some(mut picked) = try_pick_up_urgent_task(&state.urgent, agent, &task_id).await? {
+        picked.typical_runtime_seconds = estimate;
+        if let Some(d) = estimate {
+            state.urgent.set_runtime_estimate(&task_id, d).await;
+        }
         Ok(picked)
     } else {
-        let assigned = try_pick_up_non_urgent_task(&state.storage.tasks, agent, task_id.clone()).await?;
+        let mut assigned = try_pick_up_non_urgent_task(&state.storage.tasks, agent, task_id.clone()).await?;
         log_runner_history(agent, &task_id, &state.storage.heuristics);
+        assigned.typical_runtime_seconds = estimate;
+        if let Err(e) = state.storage.tasks.update_assigned(&assigned) {
+            debug!("Failed to persist runtime estimate for task {task_id}: {e}");
+        }
         Ok(assigned)
     }
 }

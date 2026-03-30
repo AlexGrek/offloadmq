@@ -5,6 +5,7 @@ import { useCapabilities } from '../hooks/useCapabilities';
 import { stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 import ModelSelector from './ModelSelector';
 import SandboxMarkdown from './SandboxMarkdown';
+import CircularProgress from './CircularProgress';
 
 const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
@@ -21,6 +22,8 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     // "all at once" result
     const [result, setResult] = useState(null);
     const [logText, setLogText] = useState('');
+    const [heuristicSecs, setHeuristicSecs] = useState(null);
+    const [taskCreatedAt, setTaskCreatedAt] = useState(null);
     // "one by one" results: [{ name, phase, statusText, result, error, log }]
     const [itemResults, setItemResults] = useState([]);
     const fileInputRef = useRef(null);
@@ -115,6 +118,8 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                     addDevEntry?.({ key: `poll-${id}`, label: 'Poll task (final)', method: 'POST', url: pollUrl, request: pollBody, response: data });
                     return data;
                 }
+                if (data.createdAt) setTaskCreatedAt(prev => prev ?? data.createdAt);
+                if (data.typicalRuntimeSeconds?.secs != null) setHeuristicSecs(data.typicalRuntimeSeconds.secs);
                 addDevEntry?.({ key: `poll-${id}`, label: 'Poll task', method: 'POST', url: pollUrl, request: pollBody, response: data });
             } catch { /* retry */ }
         }
@@ -142,6 +147,8 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
         cancelledRef.current = true;
         activeTaskRef.current = null;
         setRunning(false);
+        setHeuristicSecs(null);
+        setTaskCreatedAt(null);
         setStatus('Cancelled', 'info');
         if (task) await cancelTask(task.cap, task.id, apiKey, addDevEntry);
     }, [apiKey, addDevEntry, setStatus]);
@@ -194,6 +201,8 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                 const { ok, text } = extractResult(taskResult);
                 setResult(text);
                 setStatus(ok ? 'Analysis complete' : 'Task failed', ok ? 'ok' : 'err');
+                setHeuristicSecs(null);
+                setTaskCreatedAt(null);
 
                 await deleteBucket(bucketUid, apiKey);
                 bucketUid = null;
@@ -375,8 +384,17 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                     ...s.statusBox,
                     background: statusType === 'ok' ? 'rgba(76,175,136,0.1)' : statusType === 'err' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)',
                     color: statusType === 'ok' ? '#4caf88' : statusType === 'err' ? '#ef4444' : 'var(--accent, #3b82f6)',
+                    display: 'flex', alignItems: 'center', gap: '10px',
                 }}>
-                    {statusMsg}
+                    {running && mode === 'all' && (
+                        <CircularProgress
+                            typicalRuntimeSeconds={heuristicSecs}
+                            createdAt={taskCreatedAt}
+                            size={32}
+                            strokeWidth={3}
+                        />
+                    )}
+                    <span>{statusMsg}</span>
                 </div>
             )}
 

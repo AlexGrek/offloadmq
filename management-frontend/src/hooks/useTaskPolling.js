@@ -12,9 +12,10 @@ import { useEffect, useRef } from 'react';
  * @param {function} options.onError - Called with error message string
  * @param {function} [options.onLog] - Called with log text when available
  * @param {function} [options.onStatus] - Called with status text on each poll
+ * @param {function} [options.onHeuristics] - Called with { createdAt, typicalRuntimeSeconds } when heuristic fields are present
  * @param {number} [options.interval=2000] - Polling interval in ms
  */
-export function useTaskPolling({ currentTask, apiKey, addDevEntry, onResult, onError, onLog, onStatus, interval = 2000 }) {
+export function useTaskPolling({ currentTask, apiKey, addDevEntry, onResult, onError, onLog, onStatus, onHeuristics, interval = 2000 }) {
   const pollIntervalRef = useRef(null);
 
   useEffect(() => {
@@ -41,6 +42,12 @@ export function useTaskPolling({ currentTask, apiKey, addDevEntry, onResult, onE
           onError(data.error.message || String(data.error));
         } else {
           onStatus?.(data.status);
+          if (data.createdAt || data.typicalRuntimeSeconds) {
+            onHeuristics?.({
+              createdAt: data.createdAt ?? null,
+              typicalRuntimeSeconds: data.typicalRuntimeSeconds?.secs ?? null,
+            });
+          }
         }
       } catch (err) {
         addDevEntry?.({ key: `poll-${currentTask.id}`, label: 'Poll task', method: 'POST', url: pollUrl, request: pollPayload, response: { error: err.message } });

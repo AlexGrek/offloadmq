@@ -11,6 +11,12 @@ use serde_json::json;
 use crate::{error::AppError, state::AppState};
 
 #[derive(Deserialize)]
+pub struct EstimateDurationQuery {
+    pub capability: String,
+    pub machine_id: String,
+}
+
+#[derive(Deserialize)]
 pub struct RecordsQuery {
     pub capability: Option<String>,
     pub runner_id: Option<String>,
@@ -77,6 +83,27 @@ pub async fn list_runner_stats(
         .collect();
 
     Ok(Json(json!({ "items": items, "count": items.len() })))
+}
+
+/// GET /management/heuristics/estimate_duration?capability=foo&machine_id=bar
+/// Returns the estimated typical execution time for a capability on a given machine.
+/// Prefers machine-specific data (≥2 successful runs); falls back to global average.
+/// Returns `null` when there is insufficient data.
+pub async fn estimate_duration(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<EstimateDurationQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let duration = state
+        .storage
+        .heuristics
+        .estimate_duration(&params.capability, &params.machine_id)
+        .map_err(AppError::Internal)?;
+
+    Ok(Json(json!({
+        "capability": params.capability,
+        "machineId": params.machine_id,
+        "estimatedMs": duration.map(|d| d.as_millis()),
+    })))
 }
 
 /// GET /management/heuristics/stats/machines

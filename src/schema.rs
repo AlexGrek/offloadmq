@@ -318,15 +318,15 @@ pub struct TaskSubmissionRequest {
     /// Can be any valid JSON object.
     pub payload: Value,
     #[serde(default)]
-    pub fetch_files:  Vec<FileReference>,
+    pub fetch_files: Vec<FileReference>,
     #[serde(default)]
-    pub file_bucket:  Vec<String>,
+    pub file_bucket: Vec<String>,
     /// Optional bucket UID where the agent should upload output files.
     /// The client must create this bucket before submitting the task and own it.
     #[serde(default)]
     pub output_bucket: Option<String>,
     #[serde(default)]
-    pub artifacts:  Vec<FileReference>,
+    pub artifacts: Vec<FileReference>,
     pub api_key: String,
 }
 
@@ -382,6 +382,7 @@ pub struct TaskSubmissionResponse {
 pub struct TaskStatusResponse {
     pub id: TaskId,
     pub status: TaskStatus,
+    pub created_at: chrono::DateTime<chrono::Utc>,
     /// Optional field describing the current stage (e.g., "processing_data").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stage: Option<String>,
@@ -390,6 +391,9 @@ pub struct TaskStatusResponse {
     pub output: Option<Value>,
 
     pub log: Option<String>,
+
+    #[serde(default)]
+    pub typical_runtime_seconds: Option<std::time::Duration>,
 }
 
 /// The message pushed to an agent via WebSocket to assign a new task.

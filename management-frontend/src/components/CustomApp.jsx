@@ -4,6 +4,7 @@ import { fetchOnlineCapabilities, stripCapabilityAttrs, parseCapabilityAttrs } f
 import { useTaskPolling } from '../hooks/useTaskPolling';
 import TerminalOutput from './TerminalOutput';
 import { cancelTask } from '../sandboxUtils';
+import CircularProgress from './CircularProgress';
 
 /**
  * Parse a single capability attribute into a field descriptor.
@@ -55,6 +56,8 @@ const CustomApp = ({ apiKey, addDevEntry, setCloseInterceptor, doClose }) => {
   const [pollingStatus, setPollingStatus] = useState('');
   const [currentTask, setCurrentTask] = useState(null);
   const [log, setLog] = useState('');
+  const [heuristicSecs, setHeuristicSecs] = useState(null);
+  const [taskCreatedAt, setTaskCreatedAt] = useState(null);
   const logScrollRef = useRef(null);
   const userScrolledUpRef = useRef(false);
 
@@ -108,15 +111,23 @@ const CustomApp = ({ apiKey, addDevEntry, setCloseInterceptor, doClose }) => {
       setResponse(data.output || data);
       setPollingStatus('');
       setCurrentTask(null);
+      setHeuristicSecs(null);
+      setTaskCreatedAt(null);
     },
     onError: (msg) => {
       setIsLoading(false);
       setError(msg);
       setPollingStatus('');
       setCurrentTask(null);
+      setHeuristicSecs(null);
+      setTaskCreatedAt(null);
     },
     onLog: setLog,
     onStatus: (status) => setPollingStatus('Status: ' + status),
+    onHeuristics: ({ createdAt, typicalRuntimeSeconds }) => {
+      if (createdAt) setTaskCreatedAt(prev => prev ?? createdAt);
+      if (typicalRuntimeSeconds != null) setHeuristicSecs(typicalRuntimeSeconds);
+    },
   });
 
   const buildPayload = () => {
@@ -151,6 +162,8 @@ const CustomApp = ({ apiKey, addDevEntry, setCloseInterceptor, doClose }) => {
     setCurrentTask(null);
     setIsLoading(false);
     setPollingStatus('Cancelled');
+    setHeuristicSecs(null);
+    setTaskCreatedAt(null);
     await cancelTask(capability, id, apiKey, addDevEntry);
   };
 
@@ -352,7 +365,12 @@ const CustomApp = ({ apiKey, addDevEntry, setCloseInterceptor, doClose }) => {
 
       {/* Result area */}
       <div style={ss.responseContainer}>
-        {(isLoading || pollingStatus) && <p style={ss.loading}>{pollingStatus || 'Running...'}</p>}
+        {(isLoading || pollingStatus) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+            <CircularProgress typicalRuntimeSeconds={heuristicSecs} createdAt={taskCreatedAt} size={32} strokeWidth={3} />
+            <p style={{ ...ss.loading, margin: 0 }}>{pollingStatus || 'Running...'}</p>
+          </div>
+        )}
         {error && <pre style={ss.error}>{error}</pre>}
         <TerminalOutput response={response} style={{ maxHeight: '24em', overflowY: 'auto' }} markdown markdownTone="dark" />
       </div>

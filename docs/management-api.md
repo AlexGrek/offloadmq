@@ -15,9 +15,10 @@ Administrative endpoints for monitoring and managing agents, tasks, and client A
 4. [Agents](#agents)
 5. [Tasks](#tasks)
 6. [Client API Keys](#client-api-keys)
-7. [Maintenance Jobs](#maintenance-jobs)
-8. [Service Logs](#service-logs)
-9. [Examples](#examples)
+7. [Heuristics](#heuristics)
+8. [Maintenance Jobs](#maintenance-jobs)
+9. [Service Logs](#service-logs)
+10. [Examples](#examples)
 
 ---
 
@@ -519,6 +520,180 @@ Mark a client API key as revoked. Clients using this key will receive `401 Unaut
 - Can be un-revoked by updating the key with `is_revoked: false` (if that feature is added)
 - Existing tasks from this key are not affected (continue executing)
 - Future task submissions with this key will be rejected
+
+---
+
+## Heuristics
+
+Heuristics records capture execution timing and success/failure data for every completed non-urgent task. The server uses this data to estimate how long a task will typically take when an agent claims it (see `typicalRuntimeSeconds` in the [Tasks API](tasks-api.md)).
+
+### List Heuristic Records
+
+```
+GET /management/heuristics/records
+Authorization: Bearer <token>
+```
+
+Paginated listing of raw heuristic records. Supports filtering by capability, runner, or machine.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `capability` | string | No | Filter by base capability (e.g. `llm.mistral`) |
+| `runner_id` | string | No | Filter by agent UID |
+| `machine_id` | string | No | Filter by machine ID (aggregates across agents sharing the same host) |
+| `limit` | integer | No | Max records per page (default: 50, max: 500) |
+| `cursor` | string | No | Cursor from previous page's `next_cursor`. Omit for first page. |
+
+**Response** (200 OK)
+
+```json
+{
+  "count": 2,
+  "items": [
+    {
+      "capability": "llm.mistral",
+      "runnerId": "01ARZ3NDE4V2XTGZUVY7",
+      "runnerTier": 5,
+      "runnerOs": "Linux",
+      "runnerCpuArch": "aarch64",
+      "runnerTotalMemoryGb": 32,
+      "machineId": "mac-pro-studio-01",
+      "executionTimeMs": 12450.0,
+      "success": true,
+      "completedAt": "2026-03-18T14:30:22Z"
+    }
+  ],
+  "next_cursor": "llm.mistral|01ARZ...|01BRZ..."
+}
+```
+
+**Notes**
+
+- Filter priority when multiple filters provided: `machine_id` > `runner_id` > `capability`
+- Records only exist for non-urgent tasks
+- `machineId` may be `null` if the agent did not report a machine ID
+
+---
+
+### Runner Execution Stats
+
+```
+GET /management/heuristics/stats/runners
+Authorization: Bearer <token>
+```
+
+Aggregated execution statistics for each `(capability, runner)` pair.
+
+**Response** (200 OK)
+
+```json
+{
+  "count": 1,
+  "items": [
+    {
+      "capability": "llm.mistral",
+      "runnerId": "01ARZ3NDE4V2XTGZUVY7",
+      "totalRuns": 120,
+      "successCount": 115,
+      "failCount": 5,
+      "successPct": 95.83,
+      "successAvgMs": 12200.0,
+      "successMinMs": 9800.0,
+      "successMaxMs": 15600.0,
+      "failAvgMs": 3100.0,
+      "failMinMs": 800.0,
+      "failMaxMs": 5400.0
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `successPct` | Percentage of successful runs (0–100) |
+| `successAvgMs` | Average duration of successful runs in milliseconds (`null` if no successes) |
+| `successMinMs` | Fastest successful run in milliseconds |
+| `successMaxMs` | Slowest successful run in milliseconds |
+| `failAvgMs` | Average duration of failed runs (`null` if no failures) |
+
+---
+
+### Machine Execution Stats
+
+```
+GET /management/heuristics/stats/machines
+Authorization: Bearer <token>
+```
+
+Same as runner stats, but aggregated per `(capability, machine_id)` pair. Useful for comparing performance across different host machines, regardless of which agent instance ran the task.
+
+**Response** (200 OK)
+
+```json
+{
+  "count": 1,
+  "items": [
+    {
+      "capability": "llm.mistral",
+      "machineId": "mac-pro-studio-01",
+      "totalRuns": 240,
+      "successCount": 232,
+      "failCount": 8,
+      "successPct": 96.67,
+      "successAvgMs": 11800.0,
+      "successMinMs": 9200.0,
+      "successMaxMs": 14900.0,
+      "failAvgMs": 2800.0,
+      "failMinMs": 600.0,
+      "failMaxMs": 4900.0
+    }
+  ]
+}
+```
+
+---
+
+### Estimate Duration
+
+```
+GET /management/heuristics/estimate_duration?capability=<cap>&machine_id=<id>
+Authorization: Bearer <token>
+```
+
+Returns the estimated typical execution time for a capability on a given machine, using the same two-level fallback rule that is applied when an agent claims a task:
+
+1. **Machine-specific** — average of successful runs for `(machine_id, capability)`, if ≥ 2 exist.
+2. **Global fallback** — average of all successful runs for `(capability)` across all machines, if ≥ 2 exist.
+3. `null` if neither level has at least 2 successful runs.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `capability` | string | Yes | Base capability (e.g. `llm.mistral`) |
+| `machine_id` | string | Yes | Machine ID to check first |
+
+**Response** (200 OK)
+
+```json
+{
+  "capability": "llm.mistral",
+  "machineId": "mac-pro-studio-01",
+  "estimatedMs": 11800
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `estimatedMs` | Estimated duration in milliseconds. `null` if insufficient data. |
+
+**Notes**
+
+- This endpoint exposes the same logic used to populate `typicalRuntimeSeconds` on task status responses
+- The estimate is based on successful runs only
+- Minimum 2 successful runs required at each level before an estimate is returned
 
 ---
 

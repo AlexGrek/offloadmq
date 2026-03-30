@@ -151,6 +151,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     get(api::mgmt::heuristics::list_machine_stats),
                 )
                 .route(
+                    "/heuristics/estimate_duration",
+                    get(api::mgmt::heuristics::estimate_duration),
+                )
+                .route(
                     "/heuristics/cleanup/trigger",
                     post(api::mgmt::trigger_heuristics_cleanup),
                 )
