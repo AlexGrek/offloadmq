@@ -39,8 +39,8 @@ def check_debug() -> CapResult:
 
 def check_slavemode() -> CapResult:
     return CapResult(
-        ["slavemode.force-rescan"], True,
-        "slavemode.force-rescan",
+        ["slavemode.force-rescan", "slavemode.special-caps-ctrl"], True,
+        "slavemode.force-rescan, slavemode.special-caps-ctrl",
         "built-in, always available",
     )
 

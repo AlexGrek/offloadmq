@@ -14,8 +14,9 @@ use crate::{
 pub async fn find_urgent_tasks_with_capabilities(
     store: &UrgentTaskStore,
     caps: &Vec<String>,
+    agent_uid: &str,
 ) -> Option<UnassignedTask> {
-    store.find_with_capabilities(caps).await
+    store.find_with_capabilities(caps, agent_uid).await
 }
 
 pub async fn find_assignable_non_urgent_tasks_with_capabilities_for_tier(
@@ -23,11 +24,17 @@ pub async fn find_assignable_non_urgent_tasks_with_capabilities_for_tier(
     caps: &Vec<String>,
     tier: u8,
     agents: &CachedAgentStorage,
+    agent_uid: &str,
 ) -> Result<Vec<UnassignedTask>, AppError> {
     let all = store.list_unassigned_with_caps(caps)?;
     let mut collected = vec![];
     debug!("Total jobs available: {} (our tier is {})", all.len(), tier);
     for task in all {
+        if let Some(runner) = task.data.payload.get("runner").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+            if runner != agent_uid {
+                continue;
+            }
+        }
         let top_online_tier = all_online_agents_for(&task.id.cap, agents)
             .await
             .into_iter()

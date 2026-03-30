@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
+import * as jsyaml from 'js-yaml';
 import { apiFetch, fmtDate, stripCapabilityAttrs, parseCapabilityAttrs, TOKEN_KEY } from "../utils";
 import { RefreshCw, Cpu, Zap, AlertTriangle, CheckCircle2, Clock, ChevronDown, ChevronUp, Layers, Gauge, Fingerprint, SquareArrowRight } from "lucide-react";
 import Banner from "./Banner";
@@ -10,20 +11,43 @@ import ColorDot from "./ColorDot";
 
 // ---------- Slavemode helpers ----------
 
-async function submitSlavemodeTask(capability, mgmtToken) {
+async function submitSlavemodeTask(capability, payload, mgmtToken) {
     const res = await fetch('/api/task/submit', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-MGMT-API-KEY': mgmtToken,
         },
-        body: JSON.stringify({ capability, payload: {}, apiKey: 'mgmt' }),
+        body: JSON.stringify({ capability, payload, apiKey: 'mgmt' }),
     });
     if (!res.ok) {
         const text = await res.text().catch(() => '');
         throw new Error(`${res.status} ${res.statusText}${text ? ` – ${text}` : ''}`);
     }
     return res.json();
+}
+
+async function runSlavemodeAndPoll(capability, payload, mgmtToken) {
+    const submitData = await submitSlavemodeTask(capability, payload, mgmtToken);
+    const taskId = submitData?.id?.id;
+    const taskCap = submitData?.id?.cap;
+    if (!taskId || !taskCap) throw new Error('Unexpected submit response');
+
+    const MAX_ATTEMPTS = 30;
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const poll = await pollTask(taskCap, taskId, mgmtToken);
+        const status = poll?.status || '';
+        if (poll?.output != null || status === 'completed' || status === 'failed') {
+            if (status === 'failed' || poll?.error) {
+                const raw = poll?.output;
+                const msg = typeof raw === 'string' ? raw : raw?.error ?? (raw != null ? JSON.stringify(raw) : null);
+                throw new Error(msg || poll?.error || 'Task failed');
+            }
+            return poll?.output;
+        }
+    }
+    throw new Error('Timed out waiting for agent');
 }
 
 async function pollTask(cap, id, mgmtToken) {
@@ -59,7 +83,7 @@ function ForceRescanButton({ onDone }) {
         setState('running');
         setMessage('Submitting…');
         try {
-            const submitData = await submitSlavemodeTask('slavemode.force-rescan', mgmtToken);
+            const submitData = await submitSlavemodeTask('slavemode.force-rescan', {}, mgmtToken);
             const taskId = submitData?.id?.id;
             const taskCap = submitData?.id?.cap;
             if (!taskId || !taskCap) throw new Error('Unexpected submit response');
@@ -155,6 +179,271 @@ function ForceRescanButton({ onDone }) {
     );
 }
 
+// ---------- SpecialCapsCtrl ----------
+
+const SHELL_TEMPLATE = `name: my-cap
+type: shell
+description: Shell script custom cap
+script: |
+  #!/bin/bash
+  set -euo pipefail
+  echo "Hello from \${CUSTOM_NAME}"
+params:
+  - name: name
+    type: string
+    default: World
+timeout: 120
+`;
+
+const LLM_TEMPLATE = `name: my-llm-cap
+type: llm
+description: LLM prompt custom cap
+model: mistral:7b
+prompt: |
+  Answer the following question in {{style}} style:
+  {{question}}
+system: You are a helpful assistant.
+temperature: 0.7
+max_tokens: 512
+params:
+  - name: question
+    type: text
+  - name: style
+    type: string
+    default: concise
+`;
+
+function smBtnStyle(bg, border, color, disabled = false) {
+    return {
+        padding: '3px 9px', borderRadius: '5px', fontSize: '11px', fontWeight: 600,
+        background: bg, border: `1px solid ${border}`, color,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'opacity 0.15s',
+    };
+}
+
+function SpecialCapsCtrl({ agentUid }) {
+    const [open, setOpen] = useState(false);
+    const [caps, setCaps] = useState(null);
+    const [loadingCaps, setLoadingCaps] = useState(false);
+    const [yaml, setYaml] = useState('');
+    const [opStatus, setOpStatus] = useState({ msg: '', kind: '' });
+    const [saving, setSaving] = useState(false);
+
+    function getMgmtToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
+
+    async function fetchCaps() {
+        setLoadingCaps(true);
+        try {
+            const out = await runSlavemodeAndPoll(
+                'slavemode.special-caps-ctrl',
+                { runner: agentUid, get: true },
+                getMgmtToken(),
+            );
+            setCaps(out?.caps || []);
+            setOpStatus({ msg: '', kind: '' });
+        } catch (e) {
+            setOpStatus({ msg: e.message, kind: 'error' });
+        } finally {
+            setLoadingCaps(false);
+        }
+    }
+
+    function handleToggle(e) {
+        e.stopPropagation();
+        if (!open) {
+            setOpen(true);
+            if (caps === null) fetchCaps();
+        } else {
+            setOpen(false);
+        }
+    }
+
+    async function saveCap(e) {
+        e.stopPropagation();
+        let parsed;
+        try {
+            parsed = jsyaml.load(yaml);
+            if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                throw new Error('Must be a YAML object');
+            }
+        } catch (err) {
+            setOpStatus({ msg: `YAML error: ${err.message}`, kind: 'error' });
+            return;
+        }
+        setSaving(true);
+        setOpStatus({ msg: 'Saving…', kind: 'running' });
+        try {
+            await runSlavemodeAndPoll(
+                'slavemode.special-caps-ctrl',
+                { runner: agentUid, set: parsed },
+                getMgmtToken(),
+            );
+            setYaml('');
+            setOpStatus({ msg: 'Saved', kind: 'ok' });
+            await fetchCaps();
+        } catch (e) {
+            setOpStatus({ msg: e.message, kind: 'error' });
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    async function deleteCap(name) {
+        if (!window.confirm(`Delete custom cap "${name}"?`)) return;
+        setOpStatus({ msg: 'Deleting…', kind: 'running' });
+        try {
+            await runSlavemodeAndPoll(
+                'slavemode.special-caps-ctrl',
+                { runner: agentUid, delete: name },
+                getMgmtToken(),
+            );
+            setOpStatus({ msg: `Deleted "${name}"`, kind: 'ok' });
+            await fetchCaps();
+        } catch (e) {
+            setOpStatus({ msg: e.message, kind: 'error' });
+        }
+    }
+
+    function editCap(cap) {
+        try {
+            setYaml(jsyaml.dump(cap));
+        } catch {
+            setYaml('');
+        }
+    }
+
+    const statusColor = opStatus.kind === 'error' ? '#f87171'
+        : opStatus.kind === 'ok' ? '#4ade80'
+        : 'var(--muted)';
+
+    return (
+        <div
+            style={{ borderTop: '1px solid rgba(217,119,6,0.2)', marginTop: '10px', paddingTop: '10px', width: '100%' }}
+            onClick={e => e.stopPropagation()}
+        >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                    onClick={handleToggle}
+                    style={smBtnStyle('#78350f', '#92400e', '#fef3c7')}
+                >
+                    {open ? '▴' : '▾'} Custom Caps
+                </button>
+                {opStatus.msg && (
+                    <span style={{ fontSize: '11px', color: statusColor, maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {opStatus.msg}
+                    </span>
+                )}
+                {opStatus.msg && (opStatus.kind === 'ok' || opStatus.kind === 'error') && (
+                    <button onClick={() => setOpStatus({ msg: '', kind: '' })} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '11px', padding: '0 2px' }}>✕</button>
+                )}
+            </div>
+
+            {open && (
+                <div style={{ marginTop: '10px' }}>
+                    {/* Editor section */}
+                    <div style={{ marginBottom: '14px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#f59e0b', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                            Custom Cap Editor
+                        </div>
+                        <textarea
+                            value={yaml}
+                            onChange={e => setYaml(e.target.value)}
+                            placeholder={'name: my-cap\ntype: shell\ndescription: ...'}
+                            rows={12}
+                            style={{
+                                width: '100%', boxSizing: 'border-box',
+                                fontFamily: 'monospace', fontSize: '12px',
+                                background: '#0d1117', color: '#e6edf3',
+                                border: '1px solid rgba(217,119,6,0.3)',
+                                borderRadius: '6px', padding: '10px',
+                                resize: 'vertical', outline: 'none',
+                                lineHeight: 1.6,
+                            }}
+                        />
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                            <button
+                                onClick={saveCap}
+                                disabled={!yaml.trim() || saving}
+                                style={smBtnStyle('#1e3a5f', '#2563eb', '#93c5fd', !yaml.trim() || saving)}
+                            >
+                                {saving ? 'Saving…' : 'Save'}
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); setYaml(SHELL_TEMPLATE); }} style={smBtnStyle('#292524', '#44403c', '#d6d3d1')}>
+                                Shell template
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); setYaml(LLM_TEMPLATE); }} style={smBtnStyle('#292524', '#44403c', '#d6d3d1')}>
+                                LLM template
+                            </button>
+                            {yaml.trim() && (
+                                <button onClick={e => { e.stopPropagation(); setYaml(''); }} style={smBtnStyle('#3b0a0a', '#7f1d1d', '#fca5a5')}>
+                                    Clear
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Installed caps list */}
+                    <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                Installed custom caps
+                            </span>
+                            <button
+                                onClick={e => { e.stopPropagation(); fetchCaps(); }}
+                                disabled={loadingCaps}
+                                style={{ background: 'none', border: 'none', cursor: loadingCaps ? 'not-allowed' : 'pointer', color: 'var(--muted)', fontSize: '13px', padding: '0 2px', opacity: loadingCaps ? 0.5 : 1 }}
+                            >
+                                ↻
+                            </button>
+                        </div>
+                        {loadingCaps ? (
+                            <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Loading…</span>
+                        ) : (caps === null || caps.length === 0) ? (
+                            <span style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>No custom caps installed</span>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {caps.map(cap => (
+                                    <div key={cap.name} style={{
+                                        background: 'rgba(0,0,0,0.3)', borderRadius: '6px',
+                                        padding: '8px 10px', border: '1px solid rgba(217,119,6,0.15)',
+                                        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px',
+                                    }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#e2e8f0' }}>
+                                                {cap.name}
+                                                <span style={{ fontSize: '11px', fontWeight: 400, color: 'var(--muted)', marginLeft: '6px' }}>{cap.type}</span>
+                                            </div>
+                                            {cap.description && (
+                                                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>{cap.description}</div>
+                                            )}
+                                            <code style={{ fontSize: '10px', color: '#94a3b8', marginTop: '3px', display: 'block', wordBreak: 'break-all' }}>{cap.capability}</code>
+                                            {cap.params?.length > 0 && (
+                                                <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>
+                                                    Params: {cap.params.map(p => p.name).join(', ')}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                            <button onClick={e => { e.stopPropagation(); editCap(cap); }} style={smBtnStyle('#1e293b', '#334155', '#94a3b8')}>
+                                                Edit
+                                            </button>
+                                            <button onClick={e => { e.stopPropagation(); deleteCap(cap.name); }} style={smBtnStyle('#3b0a0a', '#7f1d1d', '#fca5a5')}>
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ---------- AgentCard ----------
 
 function relativeTime(iso) {
@@ -168,6 +457,7 @@ function AgentCard({ a, onDelete, onRescanDone }) {
     const [capsExpanded, setCapsExpanded] = useState(false);
     const slavemodeCapabilities = (a.capabilities || []).filter(c => stripCapabilityAttrs(c).startsWith('slavemode.'));
     const hasForceRescan = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.force-rescan');
+    const hasSpecialCapsCtrl = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.special-caps-ctrl');
     const regularCaps = (a.capabilities || []).filter(c => !stripCapabilityAttrs(c).startsWith('slavemode.'));
     const visibleCaps = capsExpanded ? regularCaps : regularCaps.slice(0, 4);
 
@@ -327,16 +617,22 @@ function AgentCard({ a, onDelete, onRescanDone }) {
                                         {hasForceRescan && (
                                             <ForceRescanButton onDone={onRescanDone} />
                                         )}
-                                        {slavemodeCapabilities.filter(c => stripCapabilityAttrs(c) !== 'slavemode.force-rescan').map((c, i) => (
-                                            <span key={i} style={{
-                                                fontSize: '12px', padding: '2px 8px', borderRadius: '4px',
-                                                background: 'rgba(217,119,6,0.12)', border: '1px solid rgba(217,119,6,0.3)',
-                                                color: '#fbbf24', fontFamily: 'monospace',
-                                            }}>
-                                                {stripCapabilityAttrs(c)}
-                                            </span>
-                                        ))}
+                                        {slavemodeCapabilities
+                                            .filter(c => !['slavemode.force-rescan', 'slavemode.special-caps-ctrl'].includes(stripCapabilityAttrs(c)))
+                                            .map((c, i) => (
+                                                <span key={i} style={{
+                                                    fontSize: '12px', padding: '2px 8px', borderRadius: '4px',
+                                                    background: 'rgba(217,119,6,0.12)', border: '1px solid rgba(217,119,6,0.3)',
+                                                    color: '#fbbf24', fontFamily: 'monospace',
+                                                }}>
+                                                    {stripCapabilityAttrs(c)}
+                                                </span>
+                                            ))
+                                        }
                                     </div>
+                                    {hasSpecialCapsCtrl && (
+                                        <SpecialCapsCtrl agentUid={a.uid} />
+                                    )}
                                 </div>
                             )}
                             <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>

@@ -28,7 +28,7 @@ pub async fn poll_urgent(
 ) -> Result<Option<UnassignedTask>, AppError> {
     let agent = state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
     let caps = &agent.capabilities;
-    Ok(find_urgent_tasks_with_capabilities(&state.urgent, caps).await)
+    Ok(find_urgent_tasks_with_capabilities(&state.urgent, caps, &agent.uid).await)
 }
 
 pub async fn poll_non_urgent(
@@ -41,7 +41,7 @@ pub async fn poll_non_urgent(
         "Searching for tasks for agent {:?} with tier {:?}",
         agent, agent.tier
     );
-    let urgent = find_urgent_tasks_with_capabilities(&state.urgent, caps).await;
+    let urgent = find_urgent_tasks_with_capabilities(&state.urgent, caps, &agent.uid).await;
     if let Some(task) = urgent {
         return Ok(Some(task));
     }
@@ -50,6 +50,7 @@ pub async fn poll_non_urgent(
         caps,
         agent.tier,
         &state.storage.agents,
+        &agent.uid,
     )
     .await?;
     if all.len() > 0 {

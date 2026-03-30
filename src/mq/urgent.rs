@@ -50,14 +50,26 @@ impl UrgentTaskStore {
         store
     }
 
-    pub async fn find_with_capabilities(&self, caps: &Vec<String>) -> Option<UnassignedTask> {
+    pub async fn find_with_capabilities(
+        &self,
+        caps: &Vec<String>,
+        agent_uid: &str,
+    ) -> Option<UnassignedTask> {
         self.tasks
             .read()
             .await
             .iter()
             .find(|item| {
-                item.1.assigned_task.is_none()
-                    && caps.iter().any(|c| base_capability(c) == item.1.task.id.cap.as_str())
+                if item.1.assigned_task.is_some() {
+                    return false;
+                }
+                if !caps.iter().any(|c| base_capability(c) == item.1.task.id.cap.as_str()) {
+                    return false;
+                }
+                if let Some(runner) = item.1.task.data.payload.get("runner").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    return runner == agent_uid;
+                }
+                true
             })
             .map(|(_id, item)| item.task.clone())
     }
