@@ -102,6 +102,12 @@ def _reauth_or_reregister(server_url: str) -> str | None:
             save_config(cfg)
             logger.info("Re-authentication successful.")
             return jwt
+        except requests.ConnectionError as e:
+            logger.warning(f"Re-authentication failed (server unreachable): {e}. Keeping existing credentials.")
+            return None
+        except requests.Timeout as e:
+            logger.warning(f"Re-authentication timed out: {e}. Keeping existing credentials.")
+            return None
         except Exception as e:
             logger.warning(f"Re-authentication failed: {e}. Attempting re-registration...")
 
