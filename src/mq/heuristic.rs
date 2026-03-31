@@ -159,3 +159,40 @@ impl HeuristicRecord {
         self
     }
 }
+
+/// Estimate the typical successful execution time for a capability on a given machine.
+///
+/// Strategy (requires at least 2 successful runs at each level):
+/// 1. Average of successful runs for `(machine_id, capability)` — machine-specific estimate.
+/// 2. Falls back to average of all successful runs for `(capability)` across all machines.
+/// 3. Returns `None` if neither level has at least 2 successful runs.
+pub fn estimate_duration(
+    machine_records: &[HeuristicRecord],
+    all_records: &[HeuristicRecord],
+) -> Option<std::time::Duration> {
+    const MIN_RUNS: usize = 2;
+
+    let machine_success_ms: Vec<f64> = machine_records
+        .iter()
+        .filter(|r| r.success)
+        .map(|r| r.execution_time_ms)
+        .collect();
+
+    if machine_success_ms.len() >= MIN_RUNS {
+        let avg_ms = machine_success_ms.iter().sum::<f64>() / machine_success_ms.len() as f64;
+        return Some(std::time::Duration::from_millis(avg_ms as u64));
+    }
+
+    let global_success_ms: Vec<f64> = all_records
+        .iter()
+        .filter(|r| r.success)
+        .map(|r| r.execution_time_ms)
+        .collect();
+
+    if global_success_ms.len() >= MIN_RUNS {
+        let avg_ms = global_success_ms.iter().sum::<f64>() / global_success_ms.len() as f64;
+        return Some(std::time::Duration::from_millis(avg_ms as u64));
+    }
+
+    None
+}

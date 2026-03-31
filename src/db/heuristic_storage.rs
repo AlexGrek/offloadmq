@@ -465,46 +465,14 @@ impl HeuristicStorage {
 
     // ========== Duration Estimation ==========
 
-    /// Estimate the typical successful execution time for a capability on a given machine.
-    ///
-    /// Strategy (requires at least 2 successful runs at each level):
-    /// 1. Average of successful runs for `(machine_id, capability)` — machine-specific estimate.
-    /// 2. Falls back to average of all successful runs for `(capability)` across all machines.
-    /// 3. Returns `None` if neither level has at least 2 successful runs.
     pub fn estimate_duration(
         &self,
         capability: &str,
         machine_id: &str,
     ) -> Result<Option<std::time::Duration>> {
-        const MIN_RUNS: usize = 2;
-
-        // Level 1: machine-specific
         let machine_records = self.query_by_machine_and_capability(machine_id, capability)?;
-        let machine_success_ms: Vec<f64> = machine_records
-            .iter()
-            .filter(|r| r.success)
-            .map(|r| r.execution_time_ms)
-            .collect();
-
-        if machine_success_ms.len() >= MIN_RUNS {
-            let avg_ms = machine_success_ms.iter().sum::<f64>() / machine_success_ms.len() as f64;
-            return Ok(Some(std::time::Duration::from_millis(avg_ms as u64)));
-        }
-
-        // Level 2: global fallback across all machines
         let all_records = self.query_by_capability(capability)?;
-        let global_success_ms: Vec<f64> = all_records
-            .iter()
-            .filter(|r| r.success)
-            .map(|r| r.execution_time_ms)
-            .collect();
-
-        if global_success_ms.len() >= MIN_RUNS {
-            let avg_ms = global_success_ms.iter().sum::<f64>() / global_success_ms.len() as f64;
-            return Ok(Some(std::time::Duration::from_millis(avg_ms as u64)));
-        }
-
-        Ok(None)
+        Ok(crate::mq::heuristic::estimate_duration(&machine_records, &all_records))
     }
 
     // ========== Internal Helpers ==========
