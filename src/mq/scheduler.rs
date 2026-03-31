@@ -1,4 +1,5 @@
 use axum::{Json, response::IntoResponse};
+use chrono::Utc;
 use log::debug;
 use serde_json::json;
 
@@ -110,15 +111,20 @@ pub async fn report_non_urgent_task<'a>(
     agent: &Agent,
     heuristic_storage: &HeuristicStorage,
 ) -> Result<(), AppError> {
-    let (success, execution_time_ms) = match &report.status {
-        TaskResultStatus::Success(duration) => (true, duration * 1000.0),
-        TaskResultStatus::Failure(_, duration) => (false, duration * 1000.0),
-        TaskResultStatus::NotExecuted(_) => (false, 0.0),
-    };
+    let success = matches!(&report.status, TaskResultStatus::Success(_));
 
     let mut got = store
         .get_assigned(&report.id)?
         .ok_or(AppError::NotFound(report.id.to_string()))?;
+
+    let execution_time_ms = if matches!(&report.status, TaskResultStatus::NotExecuted(_)) {
+        0.0
+    } else {
+        Utc::now()
+            .signed_duration_since(got.assigned_at)
+            .num_milliseconds()
+            .max(0) as f64
+    };
 
     let is_cancel_requested = got.status == TaskStatus::CancelRequested;
     if !is_cancel_requested {
