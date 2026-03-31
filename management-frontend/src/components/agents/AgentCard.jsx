@@ -60,8 +60,8 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
                         {a.lastCommMethod === 'WebSocket' && <Chip variant="websocket">WebSocket</Chip>}
                         <Chip><Clock size={10} style={{ marginRight: 3 }} />{relativeTime(a.lastContact)}</Chip>
                         {hasForceRescan && (
-                            <span style={{ fontSize: '10px', fontWeight: 600, padding: '1px 6px', borderRadius: '4px', background: 'rgba(217,119,6,0.15)', border: '1px solid rgba(217,119,6,0.3)', color: '#f59e0b' }}>
-                                SLAVEMODE
+                            <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 5px', borderRadius: '4px', background: 'rgba(217,119,6,0.15)', border: '1px solid rgba(217,119,6,0.3)', color: '#f59e0b' }}>
+                                <SquareArrowRight size={12} />
                             </span>
                         )}
                     </div>

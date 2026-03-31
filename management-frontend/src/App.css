@@ -2,8 +2,8 @@
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-display: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   --bg: #edeef0;
-  --glass: rgba(255, 255, 255, 0.6);
-  --glass-strong: rgba(255, 255, 255, 0.8);
+  --glass: rgba(255, 255, 255, 0.85);
+  --glass-strong: rgba(255, 255, 255, 0.95);
   --border: rgba(30, 41, 59, 0.12);
   --text: #0f172a;
   --muted: #5b6474;
@@ -17,8 +17,8 @@
 
 [data-theme="dark"] {
   --bg: #111111;
-  --glass: rgba(30, 33, 43, 0.7);
-  --glass-strong: rgba(30, 33, 43, 0.9);
+  --glass: rgba(30, 33, 43, 0.88);
+  --glass-strong: rgba(30, 33, 43, 0.97);
   --border: rgba(255, 255, 255, 0.1);
   --text: #e2e8f0;
   --muted: #94a3b8;
@@ -119,7 +119,7 @@ body {
   gap: .6rem;
   padding: .8rem;
   border-right: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.55));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.88));
   box-shadow: var(--shadow);
   overflow-y: auto;
   animation: slideInSidebar 0.2s ease-out forwards;
@@ -149,7 +149,7 @@ body {
 }
 
 [data-theme="dark"] .sidebar {
-  background: linear-gradient(180deg, rgba(20, 22, 30, 0.9), rgba(15, 17, 23, 0.85));
+  background: linear-gradient(180deg, rgba(20, 22, 30, 0.97), rgba(15, 17, 23, 0.95));
 }
 
 .sidebar nav {

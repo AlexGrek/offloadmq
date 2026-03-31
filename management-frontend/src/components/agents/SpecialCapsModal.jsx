@@ -160,7 +160,7 @@ export default function SpecialCapsModal({ agentUid }) {
                         style={{
                             width: '100%', maxWidth: '640px', maxHeight: '85vh',
                             overflowY: 'auto',
-                            background: 'var(--glass-strong)',
+                            background: 'var(--bg)',
                             border: '1px solid rgba(217,119,6,0.35)',
                             borderRadius: '10px',
                             boxShadow: 'var(--shadow)',
