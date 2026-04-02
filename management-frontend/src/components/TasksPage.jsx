@@ -14,6 +14,32 @@ function filterUnassigned(data) {
     return result;
 }
 
+function taskCreatedMs(task) {
+    const t = task?.createdAt;
+    if (t == null) return 0;
+    const ms = typeof t === "number" ? t : Date.parse(t);
+    return Number.isFinite(ms) ? ms : 0;
+}
+
+function sortTasksRecentFirst(tasks) {
+    if (!Array.isArray(tasks) || tasks.length <= 1) {
+        return tasks ? [...tasks] : [];
+    }
+    return [...tasks].sort((a, b) => taskCreatedMs(b) - taskCreatedMs(a));
+}
+
+function sortTaskCategories(data) {
+    if (!data) return data;
+    const out = {};
+    for (const [cat, val] of Object.entries(data)) {
+        out[cat] = {
+            assigned: sortTasksRecentFirst(val?.assigned || []),
+            unassigned: sortTasksRecentFirst(val?.unassigned || []),
+        };
+    }
+    return out;
+}
+
 function TasksPage() {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -64,7 +90,7 @@ function TasksPage() {
             {loading ? (
                 <div className="loader" aria-busy="true">Loading…</div>
             ) : (
-                <TaskDataRenderer data={newOnly ? filterUnassigned(data) : data} />
+                <TaskDataRenderer data={sortTaskCategories(newOnly ? filterUnassigned(data) : data)} />
             )}
         </div>
     );
