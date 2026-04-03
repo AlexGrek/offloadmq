@@ -24,7 +24,12 @@ from .exec.custom import execute_custom_cap
 from .exec.slavemode import execute_slavemode
 from .data.updn import process_data_download
 from .data.fs_utils import *
-from .exec.helpers import TaskCancelled, report_cancelled, report_starting
+from .exec.helpers import (
+    TaskCancelled,
+    report_cancelled,
+    report_progress,
+    report_starting,
+)
 
 
 # -----------------------------------------
@@ -282,6 +287,13 @@ def handle_task(http: HttpClient, task: dict[str, Any]) -> None:
     # Download files from fetch_files references
     if not download_required_files(http, task_id, capability, fetch_files, data_path):
         logger.error("File download failed; skipping task.")
+        return
+
+    try:
+        report_progress(http, log=None, stage="running", task_id=task_id)
+    except TaskCancelled:
+        logger.info(f"Task {task_id.id} cancelled before execution")
+        report_cancelled(http, task_id, capability)
         return
 
     # Execute task

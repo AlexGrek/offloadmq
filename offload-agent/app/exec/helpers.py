@@ -120,6 +120,17 @@ def _retry_post(
             delay = min(delay * 2, max_delay)
 
 
+def _progress_wire_status(stage: Optional[str], has_log: bool) -> Optional[str]:
+    """JSON TaskStatus strings for the progress API (serde camelCase on the server)."""
+    if stage == "cancelled":
+        return None
+    if stage == "starting":
+        return "starting"
+    if has_log or stage is not None:
+        return "running"
+    return None
+
+
 def _flush_logs(http: HttpClient, task_id: TaskId) -> bool:
     """Send all buffered logs with fast retry. Called before report_result."""
     combined, stage = _drain_logs(task_id)
@@ -127,7 +138,10 @@ def _flush_logs(http: HttpClient, task_id: TaskId) -> bool:
         return True
 
     q = task_id.quoted()
-    report = TaskProgressReport(id=task_id, stage=stage, log_update=combined)
+    wire_status = _progress_wire_status(stage, combined is not None)
+    report = TaskProgressReport(
+        id=task_id, stage=stage, log_update=combined, status=wire_status
+    )
     try:
         _retry_post(
             http,
@@ -193,7 +207,9 @@ def report_starting(http: HttpClient, task_id: TaskId) -> bool:
     Raises ``TaskCancelled`` if the server returns 499.
     """
     q = task_id.quoted()
-    report = TaskProgressReport(id=task_id, stage="starting", log_update=None, status="Starting")
+    report = TaskProgressReport(
+        id=task_id, stage="starting", log_update=None, status="starting"
+    )
     try:
         resp = http.post(
             "private", "agent", "task", "progress", q.cap, q.id,
@@ -224,7 +240,13 @@ def report_progress(http: HttpClient, log: Optional[str], stage: Optional[str], 
     effective_stage = stage if stage is not None else buffered_stage
 
     q = task_id.quoted()
-    report = TaskProgressReport(id=task_id, stage=effective_stage, log_update=merged_log)
+    wire_status = _progress_wire_status(effective_stage, merged_log is not None)
+    report = TaskProgressReport(
+        id=task_id,
+        stage=effective_stage,
+        log_update=merged_log,
+        status=wire_status,
+    )
     try:
         resp = http.post(
             "private", "agent", "task", "progress", q.cap, q.id,

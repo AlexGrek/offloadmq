@@ -107,6 +107,9 @@ pub struct AssignedTask {
 
 impl AssignedTask {
     pub fn change_status(&mut self, new_status: TaskStatus) {
+        if self.status == new_status {
+            return;
+        }
         self.history.push(TaskEvent {
             timestamp: Utc::now(),
             description: format!("Status set to {:?}", new_status),
