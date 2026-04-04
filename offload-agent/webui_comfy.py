@@ -600,6 +600,7 @@ def register_comfy_routes(
         wf_dir.mkdir(parents=True, exist_ok=True)
 
         json_path = wf_dir / f"{task_type}.json"
+        saved_graph_from_upload = False
         if workflow_file and workflow_file.filename:
             raw = await workflow_file.read()
             try:
@@ -609,6 +610,7 @@ def register_comfy_routes(
                 return done(request)
             with open(json_path, "w", encoding="utf-8") as f:
                 json_module.dump(parsed, f, indent=2)
+            saved_graph_from_upload = True
             log(f"[imggen] Saved workflow JSON: {json_path}")
         else:
             if not json_path.exists():
@@ -620,7 +622,12 @@ def register_comfy_routes(
                 )
 
         params_path = wf_dir / f"{task_type}.params.json"
-        if not params_path.exists():
+        # Regenerate params when missing, or when the user uploads a new graph file.
+        # Otherwise the common flow (Add without file -> stub params, then Add with JSON)
+        # would keep FIXME-only params forever.
+        need_param_autodetect = (not params_path.exists()) or saved_graph_from_upload
+
+        if need_param_autodetect:
             guessed: Dict[str, Any] = {}
             try:
                 with open(json_path, encoding="utf-8") as f:
@@ -635,8 +642,9 @@ def register_comfy_routes(
                 json_module.dump(merged, f, indent=2)
             detected = sorted(guessed.keys())
             stub_keys = sorted(k for k in merged if k not in guessed)
+            note = "after JSON upload" if saved_graph_from_upload else "new params file"
             log(
-                f"[imggen] Generated params mapping: {params_path} -- "
+                f"[imggen] Generated params mapping ({note}): {params_path} -- "
                 f"auto-detected: {detected or 'none'}, stubs: {stub_keys or 'none'}"
             )
 
