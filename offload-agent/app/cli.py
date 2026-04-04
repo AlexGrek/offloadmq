@@ -8,6 +8,7 @@ from .systeminfo import *
 from .models import *
 from .httphelpers import *
 from .core import serve_tasks
+from .exec.slavemode import merge_registration_caps, strip_slavemode_caps
 from .websocket_client import serve_websocket
 
 
@@ -67,7 +68,8 @@ def cli_register(
         typer.echo(f"Auto-detected tier: {tier}")
 
     ollama_models = get_ollama_models()
-    combined_caps = sorted(set(list(caps) + ollama_models))
+    combined_caps = sorted(set(strip_slavemode_caps(list(caps)) + ollama_models))
+    combined_caps = merge_registration_caps(combined_caps, cfg)
 
     typer.echo(f"\nRegistering with server: {server}")
     typer.echo(f"Capabilities: {combined_caps}")

@@ -244,14 +244,16 @@ The allow-list is stored in the agent's persistent config file and persists acro
 
 Changes via CLI or Web UI are immediately persisted to disk.
 
-### Integration with Capability Detection
+### Integration with Regular Capabilities
 
-Slavemode capabilities are always detected as available (see `check_slavemode()` in `capabilities.py`), regardless of the allow-list. The allow-list only gates **task execution**, not capability advertisement.
+Slavemode is separate from the regular capability scan and from the `capabilities` config field. Control is only through `slavemode-allowed-caps` (Web UI Slavemode tab, CLI `slavemode` commands, or raw JSON).
 
-This means:
-- Agent advertises `slavemode.force-rescan` to the server
-- Server knows the agent supports it
-- But task execution is gated by the allow-list
+When the agent registers or pushes updates to the server, it reports the union of:
+
+- Regular capabilities: detected on the machine, filtered by the saved selection in `capabilities` (never include `slavemode.*` there)
+- Slavemode capabilities: each cap must be implemented in the agent build and listed in `slavemode-allowed-caps`
+
+The allow-list still gates **task execution**; caps not allow-listed are not advertised and will not run.
 
 ### No Payload Validation
 

@@ -43,7 +43,9 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from app.config import load_config, save_config, config_exists
+from app.capabilities import compute_registration_caps
 from app.exec.slavemode import ALL_SLAVEMODE_CAPS, CONFIG_KEY as SLAVEMODE_CONFIG_KEY
+from app.exec.slavemode import strip_slavemode_caps
 try:
     from app._version import APP_VERSION
 except ModuleNotFoundError:
@@ -173,18 +175,7 @@ def start_agent() -> str:
         _log("[webui] WARNING: capability scan timed out after 120s, continuing with whatever was found")
     with _scan_lock:
         detected = list(_scan["caps"])
-    saved = cfg.get("capabilities")
-    if saved:
-        detected_set = set(detected)
-        caps = [c for c in saved if c in detected_set]
-        if not caps:
-            _log("[webui] WARNING: none of the saved capabilities were detected; registering with all detected capabilities")
-            caps = detected
-        elif len(caps) < len(saved):
-            dropped = sorted(set(saved) - detected_set)
-            _log(f"[webui] Skipping {len(dropped)} undetected capability(s): {', '.join(dropped)}")
-    else:
-        caps = detected
+    caps = compute_registration_caps(cfg, detected, log_fn=_log)
 
     if not server or not api_key:
         _log("[webui] ERROR: save Server URL and API Key before starting")
@@ -530,11 +521,14 @@ def _done(request: Request) -> Union[JSONResponse, RedirectResponse]:
 
 
 def _get_all_caps(cfg: Dict) -> tuple[List[str], List[str]]:
-    custom = list(cfg.get("custom_caps", []))
+    custom = strip_slavemode_caps(list(cfg.get("custom_caps", [])))
     with _scan_lock:
-        detected = list(_scan["caps"])
+        detected = strip_slavemode_caps(list(_scan["caps"]))
     saved = cfg.get("capabilities")
-    selected = list(saved) if saved is not None else list(detected)
+    if saved is not None:
+        selected = strip_slavemode_caps(list(saved))
+    else:
+        selected = list(detected)
     all_caps = sorted(set(detected + custom + selected))
     return all_caps, selected
 
@@ -542,6 +536,11 @@ def _get_all_caps(cfg: Dict) -> tuple[List[str], List[str]]:
 def _build_api_state() -> Dict[str, Any]:
     cfg = load_config()
     all_caps, selected = _get_all_caps(cfg)
+    raw_saved_caps = cfg.get("capabilities")
+    if raw_saved_caps is not None:
+        capabilities_for_ui = strip_slavemode_caps(list(raw_saved_caps))
+    else:
+        capabilities_for_ui = None
     with _scan_lock:
         scanning = _scan["scanning"]
         sysinfo = dict(_scan["sysinfo"])
@@ -558,7 +557,7 @@ def _build_api_state() -> Dict[str, Any]:
         "apiKey": cfg.get("apiKey", ""),
         "displayName": cfg.get("displayName", ""),
         "autostart": bool(cfg.get("autostart")),
-        "capabilities": cfg.get("capabilities"),
+        "capabilities": capabilities_for_ui,
         "custom_caps": cfg.get("custom_caps", []),
         "all_caps": all_caps,
         "selected_caps": selected,
@@ -661,7 +660,9 @@ async def save_capabilities(
     custom_cap: str = Form(""),
 ):
     form = await request.form()
-    checked: List[str] = list(form.getlist("caps"))
+    checked: List[str] = [
+        str(c) for c in form.getlist("caps") if not str(c).startswith("slavemode.")
+    ]
 
     cfg = load_config()
     custom: List[str] = list(cfg.get("custom_caps", []))
@@ -804,6 +805,36 @@ async def route_scan(request: Request):
     return _done(request)
 
 
+def _push_capabilities_to_server_async() -> None:
+    """If the agent loop is running, push merged caps so slavemode changes take effect."""
+
+    def _run() -> None:
+        cfg = load_config()
+        if not get_status().get("running"):
+            return
+        jwt = str(cfg.get("jwtToken", "") or "").strip()
+        server = str(cfg.get("server", "") or "").strip()
+        if not jwt or not server:
+            return
+        try:
+            from app.httphelpers import HttpClient, update_agent_capabilities
+            from app.systeminfo import calculate_tier, collect_system_info
+
+            with _scan_lock:
+                detected = list(_scan["caps"])
+            caps = compute_registration_caps(cfg, detected, log_fn=_log)
+            http = HttpClient(server, jwt)
+            tier: int = cfg.get("tier") or calculate_tier(collect_system_info())
+            capacity: int = int(cfg.get("capacity", 1))
+            display_name: Optional[str] = cfg.get("displayName") or None
+            update_agent_capabilities(http, caps, tier, capacity, display_name)
+            _log("[slavemode] Pushed updated capabilities to server")
+        except Exception as exc:
+            _log(f"[slavemode] Could not push capabilities: {exc}")
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 @app.post("/slavemode-caps")
 async def route_slavemode_caps(request: Request):
     form = await request.form()
@@ -812,6 +843,7 @@ async def route_slavemode_caps(request: Request):
     cfg = load_config()
     cfg[SLAVEMODE_CONFIG_KEY] = sorted(set(allowed))
     save_config(cfg)
+    _push_capabilities_to_server_async()
     return _done(request)
 
 

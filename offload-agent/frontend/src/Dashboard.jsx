@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { StatusTab } from './components/StatusTab'
 import { ConnectionTab } from './components/ConnectionTab'
 import { CapabilitiesTab } from './components/CapabilitiesTab'
+import { SlavemodeTab } from './components/SlavemodeTab'
 import { CustomTab } from './components/CustomTab'
 import { SystemTab } from './components/SystemTab'
 import { ComfyUITab } from './components/ComfyUITab'
@@ -11,6 +12,7 @@ const TABS = [
   { id: 'status', label: 'Status' },
   { id: 'connection', label: 'Connection' },
   { id: 'capabilities', label: 'Capabilities' },
+  { id: 'slavemode', label: 'Slavemode' },
   { id: 'custom', label: 'Custom' },
   { id: 'system', label: 'System' },
   { id: 'comfyui', label: 'ComfyUI' },
@@ -110,6 +112,10 @@ export function Dashboard() {
       {/* Capabilities tab */}
       <div style={{ display: activeTab === 'capabilities' ? 'block' : 'none' }}>
         <CapabilitiesTab state={state} loadState={loadState} run={run} />
+      </div>
+
+      <div style={{ display: activeTab === 'slavemode' ? 'block' : 'none' }}>
+        <SlavemodeTab state={state} loadState={loadState} run={run} />
       </div>
 
       {/* Custom tab */}

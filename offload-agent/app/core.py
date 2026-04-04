@@ -21,7 +21,7 @@ from .exec.shellcmd import *
 from .exec.docker import *
 from .exec.imggen import execute_imggen_comfyui
 from .exec.custom import execute_custom_cap
-from .exec.slavemode import execute_slavemode
+from .exec.slavemode import execute_slavemode, merge_registration_caps
 from .data.updn import process_data_download
 from .data.fs_utils import *
 from .exec.helpers import (
@@ -122,6 +122,7 @@ def _reauth_or_reregister(server_url: str) -> str | None:
 
     try:
         caps = cfg.get("capabilities") or ["debug.echo", "shell.bash", "shellcmd.bash", "tts.kokoro"]
+        caps = merge_registration_caps(list(caps), cfg)
         stored_tier = cfg.get("tier")
         tier = stored_tier if stored_tier is not None else calculate_tier(collect_system_info())
         capacity = cfg.get("capacity", 1)

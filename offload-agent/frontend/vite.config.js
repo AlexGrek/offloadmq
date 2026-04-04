@@ -13,6 +13,7 @@ export default defineConfig({
       '/agent': backend,
       '/config': backend,
       '/capabilities': backend,
+      '/slavemode-caps': backend,
       '/scan': backend,
       '/install': backend,
       '/workflows': backend,

@@ -9,10 +9,11 @@ import logging
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Callable, List, NamedTuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional
 
 from .httphelpers import HttpClient, update_agent_capabilities
 from .config import load_config
+from .exec.slavemode import merge_registration_caps, strip_slavemode_caps
 from .systeminfo import calculate_tier, collect_system_info
 
 logger = logging.getLogger(__name__)
@@ -33,14 +34,6 @@ def check_debug() -> CapResult:
     return CapResult(
         ["debug.echo"], True,
         "debug.echo",
-        "built-in, always available",
-    )
-
-
-def check_slavemode() -> CapResult:
-    return CapResult(
-        ["slavemode.force-rescan", "slavemode.special-caps-ctrl"], True,
-        "slavemode.force-rescan, slavemode.special-caps-ctrl",
         "built-in, always available",
     )
 
@@ -285,7 +278,6 @@ def check_ollama() -> CapResult:
 # ---------------------------------------------------------------------------
 _CHECKS: List[Callable[[], CapResult]] = [
     check_debug,
-    check_slavemode,
     check_bash,
     check_docker,
     check_kokoro,
@@ -322,6 +314,37 @@ def detect_capabilities(log_fn: Callable[[str], None] | None = None) -> List[str
     return available
 
 
+def compute_registration_caps(
+    cfg: Dict[str, Any],
+    detected: List[str],
+    log_fn: Optional[Callable[[str], None]] = None,
+) -> List[str]:
+    """Capability list for server registration: saved regular selection filtered by
+    detection, plus allow-listed slavemode caps (never from the regular checklist).
+    """
+    detected_clean = strip_slavemode_caps(list(detected))
+    detected_set = set(detected_clean)
+    saved = cfg.get("capabilities")
+    if saved:
+        saved_reg = strip_slavemode_caps(list(saved))
+        caps = [c for c in saved_reg if c in detected_set]
+        if not caps:
+            if log_fn:
+                log_fn(
+                    "[caps] WARNING: none of the saved capabilities were detected; "
+                    "registering with all detected capabilities"
+                )
+            caps = list(detected_clean)
+        elif len(saved_reg) > len(caps) and log_fn:
+            dropped = sorted(set(saved_reg) - detected_set)
+            log_fn(
+                f"[caps] Skipping {len(dropped)} undetected capability(s): {', '.join(dropped)}"
+            )
+    else:
+        caps = list(detected_clean)
+    return merge_registration_caps(caps, cfg)
+
+
 def rescan_and_push(
     http: HttpClient,
     log_fn: Callable[[str], None] | None = None,
@@ -334,6 +357,7 @@ def rescan_and_push(
         log_fn = logger.info
     cfg = load_config()
     caps = detect_capabilities(log_fn)
+    caps = merge_registration_caps(caps, cfg)
     tier: int = cfg.get("tier") or calculate_tier(collect_system_info())
     capacity: int = cfg.get("capacity", 1)
     display_name: str | None = cfg.get("displayName") or None
