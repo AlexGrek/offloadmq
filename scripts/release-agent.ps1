@@ -100,6 +100,7 @@ try {
         --name offload-agent `
         "--add-data=app;app" `
         "--add-data=webui.py;." `
+        "--add-data=webui_comfy.py;." `
         "--add-data=frontend/dist;frontend/dist" `
         offload-agent.py
 } finally {

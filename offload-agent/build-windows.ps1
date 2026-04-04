@@ -112,9 +112,11 @@ try {
         --paths "." `
         --add-data "app;app" `
         --add-data "webui.py;." `
+        --add-data "webui_comfy.py;." `
         --add-data "frontend\dist;frontend/dist" `
         --hidden-import "pystray._win32" `
         --hidden-import "webui" `
+        --hidden-import "webui_comfy" `
         --hidden-import "app" `
         --hidden-import "app.config" `
         --hidden-import "app.ollama" `

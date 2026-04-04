@@ -36,6 +36,7 @@ build: venv frontend-build
 	bash -c "source venv/bin/activate && python -m PyInstaller --onefile --name offload-agent \
 		--add-data 'app:app' \
 		--add-data 'webui.py:.' \
+		--add-data 'webui_comfy.py:.' \
 		--add-data 'frontend/dist:frontend/dist' \
 		offload-agent.py"
 	@echo ""
