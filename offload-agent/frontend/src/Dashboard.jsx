@@ -9,14 +9,14 @@ import { ComfyUITab } from './components/ComfyUITab'
 import { ConfigTab } from './components/ConfigTab'
 
 const TABS = [
-  { id: 'status', label: 'Status' },
-  { id: 'connection', label: 'Connection' },
-  { id: 'capabilities', label: 'Capabilities' },
-  { id: 'slavemode', label: 'Slavemode' },
-  { id: 'custom', label: 'Custom' },
-  { id: 'system', label: 'System' },
-  { id: 'comfyui', label: 'ComfyUI' },
-  { id: 'config', label: 'Config' },
+  { id: 'status', label: '📊 Status' },
+  { id: 'connection', label: '🔌 Connection' },
+  { id: 'capabilities', label: '✅ Capabilities' },
+  { id: 'slavemode', label: '🔗 Slavemode' },
+  { id: 'custom', label: '🧩 Custom' },
+  { id: 'system', label: '🖥️ System' },
+  { id: 'comfyui', label: '🎨 ComfyUI' },
+  { id: 'config', label: '🔧 Config' },
 ]
 
 function TabBar({ active, onChange }) {

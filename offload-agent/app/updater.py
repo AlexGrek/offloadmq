@@ -116,8 +116,10 @@ def download_update(log_fn: Callable[[str], None]) -> Dict[str, Any]:
 
     log_fn(f"[update] Downloading {latest_version} from {url} ...")
     try:
+        # Never use current_exe.parent (e.g. /usr/local/bin): it is often not writable,
+        # and tempfile would fail or confuse users with paths like /usr/local/bin/tmpXXXXXX.
         with tempfile.NamedTemporaryFile(
-            dir=current_exe.parent, delete=False, suffix=".download"
+            delete=False, suffix=".download"
         ) as tmp:
             tmp_path = Path(tmp.name)
             with urllib.request.urlopen(url, timeout=120) as resp:
