@@ -220,9 +220,12 @@ def get_cpu_model() -> Optional[str]:
     """
     system = platform.system()
 
-    # macOS
+    # macOS (brand_string is empty on some ARM / restricted environments)
     if system == "Darwin":
         rc, out, _ = _try_run(["sysctl", "-n", "machdep.cpu.brand_string"])
+        if rc == 0 and out:
+            return out
+        rc, out, _ = _try_run(["sysctl", "-n", "hw.model"])
         if rc == 0 and out:
             return out
 
