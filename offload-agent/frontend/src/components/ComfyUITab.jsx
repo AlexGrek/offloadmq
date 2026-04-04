@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ComfyParamMapEditor } from './ComfyParamMapEditor'
 
 const JSON_ACCEPT = { Accept: 'application/json' }
 
@@ -172,6 +173,7 @@ export function ComfyUITab({ state, loadState, run }) {
           </span>
         </div>
       </form>
+      <ComfyParamMapEditor state={state} run={run} />
     </div>
   )
 }
