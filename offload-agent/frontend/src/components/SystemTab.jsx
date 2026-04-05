@@ -246,7 +246,7 @@ export function SystemTab({ state, loadState, run }) {
               Launch Offload Agent when you log in to Windows.
             </p>
             {cfgExists ? (
-              <label className="flex items-center gap-2 text-sm cursor-pointer mb-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer mb-2">
                 <input
                   type="checkbox"
                   checked={!!state.win_startup_enabled}
@@ -256,7 +256,7 @@ export function SystemTab({ state, loadState, run }) {
                 Start with Windows
               </label>
             ) : (
-              <label className="flex items-center gap-2 text-sm opacity-50 mb-4">
+              <label className="flex items-center gap-2 text-sm opacity-50 mb-2">
                 <input type="checkbox" disabled className="w-[15px] h-[15px]" />
                 Start with Windows
                 <span className="text-xs text-amber-500">
@@ -264,6 +264,28 @@ export function SystemTab({ state, loadState, run }) {
                 </span>
               </label>
             )}
+            <div className="mt-2 mb-4 rounded bg-slate-900 p-3 text-xs font-mono text-slate-400 space-y-1">
+              <div>
+                <span className="text-slate-500">exe: </span>
+                <span className="text-slate-200 break-all">{state.win_startup_exe ?? '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">frozen: </span>
+                <span className={state.win_startup_frozen ? 'text-green-400' : 'text-amber-400'}>
+                  {String(!!state.win_startup_frozen)}
+                </span>
+                {!state.win_startup_frozen && (
+                  <span className="text-amber-500 ml-2">(running from source — startup still works but exe path will be python.exe)</span>
+                )}
+              </div>
+              <div>
+                <span className="text-slate-500">registry value: </span>
+                {state.win_startup_value
+                  ? <span className="text-green-300 break-all">{state.win_startup_value}</span>
+                  : <span className="text-slate-500 italic">not set</span>
+                }
+              </div>
+            </div>
             <hr className="border-slate-700 my-3" />
           </>
         )}

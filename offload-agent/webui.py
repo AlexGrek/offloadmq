@@ -222,47 +222,19 @@ def _systemd_status() -> Dict[str, Any]:
     return {"ok": True, "reason": "", "bin_path": bin_path}
 
 
-_WIN_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-_WIN_REG_NAME = "OffloadAgent"
+from app import startup_win as _startup_win
 
 
 def _win_startup_available() -> bool:
-    return sys.platform == "win32" and getattr(sys, "frozen", False)
+    return _startup_win.available()
 
 
 def _win_startup_enabled() -> bool:
-    if not _win_startup_available():
-        return False
-    import winreg
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_READ) as key:
-            winreg.QueryValueEx(key, _WIN_REG_NAME)
-            return True
-    except FileNotFoundError:
-        return False
-    except OSError:
-        return False
+    return _startup_win.enabled(log=_log)
 
 
 def _win_startup_set(enable: bool) -> None:
-    if not _win_startup_available():
-        return
-    import winreg
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
-            if enable:
-                exe_path = sys.executable
-                delayed_cmd = f'powershell.exe -NoProfile -Command "Start-Sleep -Seconds 60; & \'{exe_path}\'"'
-                winreg.SetValueEx(key, _WIN_REG_NAME, 0, winreg.REG_SZ, delayed_cmd)
-                _log(f"[startup] Enabled Windows startup with 60s delay: {exe_path}")
-            else:
-                try:
-                    winreg.DeleteValue(key, _WIN_REG_NAME)
-                    _log("[startup] Disabled Windows startup")
-                except FileNotFoundError:
-                    pass
-    except OSError as exc:
-        _log(f"[startup] ERROR: {exc}")
+    _startup_win.set_enabled(enable, log=_log)
 
 
 _MAC_LAUNCHD_LABEL = "com.offloadmq.agent"
@@ -399,6 +371,9 @@ def _build_api_state() -> Dict[str, Any]:
         "systemd": sd,
         "win_startup_available": win_a,
         "win_startup_enabled": _win_startup_enabled() if win_a else False,
+        "win_startup_value": _startup_win.read_value() if win_a else None,
+        "win_startup_exe": sys.executable if win_a else None,
+        "win_startup_frozen": getattr(sys, "frozen", False) if win_a else False,
         "mac_startup_available": mac_a,
         "mac_startup_enabled": _mac_launchd_enabled() if mac_a else False,
         "workflows": list_workflows(),
@@ -524,6 +499,16 @@ async def save_autostart(request: Request):
     cfg["autostart"] = bool(form.get("autostart"))
     save_config(cfg)
     return _done(request)
+
+
+@app.get("/api/win-startup/debug")
+async def win_startup_debug() -> JSONResponse:
+    return JSONResponse({
+        "available": _startup_win.available(),
+        "frozen": getattr(sys, "frozen", False),
+        "exe": sys.executable,
+        "registry_value": _startup_win.read_value(),
+    })
 
 
 @app.post("/config/win-startup")
