@@ -33,6 +33,23 @@ def enabled(log: Callable[[str], None] | None = None) -> bool:
     return value is not None
 
 
+def _build_startup_cmd(exe_path: str) -> str:
+    """
+    Build the registry Run command for Windows startup.
+
+    Uses Start-Process to launch the exe detached (PowerShell exits immediately after
+    spawning it), with an explicit WorkingDirectory so the exe finds its config file
+    regardless of what CWD Windows assigns at login.
+    """
+    from pathlib import Path
+    work_dir = str(Path(exe_path).parent)
+    return (
+        f'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command '
+        f'"Start-Sleep -Seconds 10; '
+        f'Start-Process -FilePath \'{exe_path}\' -WorkingDirectory \'{work_dir}\'"'
+    )
+
+
 def set_enabled(enable: bool, log: Callable[[str], None]) -> None:
     if not available():
         return
@@ -43,9 +60,9 @@ def set_enabled(enable: bool, log: Callable[[str], None]) -> None:
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
             if enable:
-                delayed_cmd = f'powershell.exe -NoProfile -Command "Start-Sleep -Seconds 60; & \'{exe_path}\'"'
-                winreg.SetValueEx(key, _WIN_REG_NAME, 0, winreg.REG_SZ, delayed_cmd)
-                log(f"[startup] Wrote registry value: {delayed_cmd}")
+                cmd = _build_startup_cmd(exe_path)
+                winreg.SetValueEx(key, _WIN_REG_NAME, 0, winreg.REG_SZ, cmd)
+                log(f"[startup] Wrote registry value: {cmd}")
             else:
                 try:
                     winreg.DeleteValue(key, _WIN_REG_NAME)

@@ -87,6 +87,13 @@ def main():
 
     atexit.register(stop_agent)
 
+    # uvicorn runs in a daemon thread — pystray must own the main thread on Windows
+    # because it drives the Win32 message loop (WM_* messages require the UI thread).
+    def _run_server():
+        uvicorn.run(fastapi_app, host=HOST, port=PORT)
+
+    threading.Thread(target=_run_server, daemon=True).start()
+
     # Open browser after a short delay to let uvicorn bind
     def _open_browser():
         import time
@@ -95,10 +102,8 @@ def main():
 
     threading.Thread(target=_open_browser, daemon=True).start()
 
-    # System tray icon (runs its own message loop in a daemon thread)
-    threading.Thread(target=_create_tray_icon, daemon=True).start()
-
-    uvicorn.run(fastapi_app, host=HOST, port=PORT)
+    # Tray icon on the main thread — blocks until the user clicks Quit.
+    _create_tray_icon()
 
 
 if __name__ == "__main__":
