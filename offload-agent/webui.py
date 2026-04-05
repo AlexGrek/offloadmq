@@ -237,56 +237,19 @@ def _win_startup_set(enable: bool) -> None:
     _startup_win.set_enabled(enable, log=_log)
 
 
-_MAC_LAUNCHD_LABEL = "com.offloadmq.agent"
-_MAC_LAUNCHD_PLIST = os.path.expanduser(
-    f"~/Library/LaunchAgents/{_MAC_LAUNCHD_LABEL}.plist"
-)
+from app import startup_mac as _startup_mac
 
 
 def _mac_launchd_available() -> bool:
-    return sys.platform == "darwin" and getattr(sys, "frozen", False)
+    return _startup_mac.available()
 
 
 def _mac_launchd_enabled() -> bool:
-    if not _mac_launchd_available():
-        return False
-    return os.path.isfile(_MAC_LAUNCHD_PLIST)
+    return _startup_mac.enabled()
 
 
 def _mac_launchd_set(enable: bool) -> None:
-    if not _mac_launchd_available():
-        return
-    import subprocess
-    if enable:
-        plist = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{_MAC_LAUNCHD_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{sys.executable}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <false/>
-</dict>
-</plist>
-"""
-        os.makedirs(os.path.dirname(_MAC_LAUNCHD_PLIST), exist_ok=True)
-        with open(_MAC_LAUNCHD_PLIST, "w") as f:
-            f.write(plist)
-        subprocess.run(["launchctl", "load", _MAC_LAUNCHD_PLIST], capture_output=True)
-        _log(f"[startup] Enabled macOS LaunchAgent: {_MAC_LAUNCHD_PLIST}")
-    else:
-        subprocess.run(["launchctl", "unload", _MAC_LAUNCHD_PLIST], capture_output=True)
-        try:
-            os.remove(_MAC_LAUNCHD_PLIST)
-            _log("[startup] Disabled macOS LaunchAgent")
-        except FileNotFoundError:
-            pass
+    _startup_mac.set_enabled(enable, log=_log)
 
 
 _CUSTOM_SAFE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
@@ -376,6 +339,10 @@ def _build_api_state() -> Dict[str, Any]:
         "win_startup_frozen": getattr(sys, "frozen", False) if win_a else False,
         "mac_startup_available": mac_a,
         "mac_startup_enabled": _mac_launchd_enabled() if mac_a else False,
+        "mac_startup_plist": _startup_mac.read_plist() if mac_a else None,
+        "mac_startup_exe": sys.executable if mac_a else None,
+        "mac_startup_frozen": getattr(sys, "frozen", False) if mac_a else False,
+        "mac_startup_log_dir": _startup_mac._LOG_DIR if mac_a else None,
         "workflows": list_workflows(),
         "workflows_dir": str(workflows_dir()),
         "task_types": list(STANDARD_TASK_TYPES),

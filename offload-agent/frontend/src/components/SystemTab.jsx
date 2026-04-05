@@ -295,7 +295,7 @@ export function SystemTab({ state, loadState, run }) {
               Launch Offload Agent when you log in to macOS.
             </p>
             {cfgExists ? (
-              <label className="flex items-center gap-2 text-sm cursor-pointer mb-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer mb-2">
                 <input
                   type="checkbox"
                   checked={!!state.mac_startup_enabled}
@@ -305,7 +305,7 @@ export function SystemTab({ state, loadState, run }) {
                 Start with macOS
               </label>
             ) : (
-              <label className="flex items-center gap-2 text-sm opacity-50 mb-4">
+              <label className="flex items-center gap-2 text-sm opacity-50 mb-2">
                 <input type="checkbox" disabled className="w-[15px] h-[15px]" />
                 Start with macOS
                 <span className="text-xs text-amber-500">
@@ -313,6 +313,34 @@ export function SystemTab({ state, loadState, run }) {
                 </span>
               </label>
             )}
+            <div className="mt-2 mb-4 rounded bg-slate-900 p-3 text-xs font-mono text-slate-400 space-y-1">
+              <div>
+                <span className="text-slate-500">exe: </span>
+                <span className="text-slate-200 break-all">{state.mac_startup_exe ?? '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">frozen: </span>
+                <span className={state.mac_startup_frozen ? 'text-green-400' : 'text-amber-400'}>
+                  {String(!!state.mac_startup_frozen)}
+                </span>
+                {!state.mac_startup_frozen && (
+                  <span className="text-amber-500 ml-2">(running from source — exe path will be python)</span>
+                )}
+              </div>
+              <div>
+                <span className="text-slate-500">plist: </span>
+                {state.mac_startup_plist
+                  ? <span className="text-green-300 whitespace-pre-wrap break-all">{state.mac_startup_plist}</span>
+                  : <span className="text-slate-500 italic">not installed</span>
+                }
+              </div>
+              {state.mac_startup_log_dir && (
+                <div>
+                  <span className="text-slate-500">logs: </span>
+                  <span className="text-slate-300">{state.mac_startup_log_dir}/stdout.log</span>
+                </div>
+              )}
+            </div>
             <hr className="border-slate-700 my-3" />
           </>
         )}
