@@ -82,7 +82,7 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
       apiKey: apiKey,
       capability: `imggen.${model}`,
       urgent: false,
-      outputBucket: bucketUid,
+      output_bucket: bucketUid,
       payload: {
         workflow: workflow,
         prompt: prompt,

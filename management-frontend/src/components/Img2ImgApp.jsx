@@ -158,8 +158,8 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
       apiKey: apiKey,
       capability: `imggen.${model}`,
       urgent: false,
-      fileBucket: bucketUid ? [bucketUid] : [],
-      outputBucket: outBucketUid,
+      file_bucket: bucketUid ? [bucketUid] : [],
+      output_bucket: outBucketUid,
       payload: {
         workflow: workflow,
         prompt: prompt,

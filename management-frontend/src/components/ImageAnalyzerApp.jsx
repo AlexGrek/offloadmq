@@ -186,7 +186,7 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                 const submitResp = await clientFetch('/api/task/submit', apiKey, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ capability, urgent: false, restartable: false, payload: taskPayload, fileBucket: [bucketUid], fetchFiles: [], artifacts: [], apiKey }),
+                    body: JSON.stringify({ capability, urgent: false, restartable: false, payload: taskPayload, file_bucket: [bucketUid], fetchFiles: [], artifacts: [], apiKey }),
                     _label: 'Submit task',
                 }, addDevEntry);
 
@@ -230,7 +230,7 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                     const submitResp = await clientFetch('/api/task/submit', apiKey, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ capability, urgent: false, restartable: false, payload: taskPayload, fileBucket: [bucketUid], fetchFiles: [], artifacts: [], apiKey }),
+                        body: JSON.stringify({ capability, urgent: false, restartable: false, payload: taskPayload, file_bucket: [bucketUid], fetchFiles: [], artifacts: [], apiKey }),
                         _label: `Submit [${file.name}]`,
                     }, addDevEntry);
 

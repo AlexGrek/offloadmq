@@ -80,7 +80,7 @@ def main():
             "messages": [{"role": "user", "content": "Summarize this document in 2-3 sentences."}],
             "stream": False,
         },
-        "fileBucket": [bucket_uid],
+        "file_bucket": [bucket_uid],
         "fetchFiles": [],
         "artifacts": [],
         "apiKey": CLIENT_API_KEY,

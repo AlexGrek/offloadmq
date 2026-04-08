@@ -465,7 +465,7 @@ class TestRmAfterTask:
             "urgent": False,
             "payload": {"msg": "hello"},
             "apiKey": API_KEY,
-            "fileBucket": [bucket_uid],
+            "file_bucket": [bucket_uid],
         }
 
         # First submission — records the task in the bucket

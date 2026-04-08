@@ -319,11 +319,11 @@ pub struct TaskSubmissionRequest {
     pub payload: Value,
     #[serde(default)]
     pub fetch_files: Vec<FileReference>,
-    #[serde(default)]
+    #[serde(default, rename = "file_bucket")]
     pub file_bucket: Vec<String>,
     /// Optional bucket UID where the agent should upload output files.
     /// The client must create this bucket before submitting the task and own it.
-    #[serde(default)]
+    #[serde(default, rename = "output_bucket")]
     pub output_bucket: Option<String>,
     #[serde(default)]
     pub artifacts: Vec<FileReference>,
@@ -434,7 +434,6 @@ pub struct TaskUpdate {
 
 /// Metadata for a single file within a bucket, returned by `bucket_stat`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct FileStatEntry {
     pub file_uid: String,
     pub original_name: String,
@@ -444,7 +443,6 @@ pub struct FileStatEntry {
 
 /// Response body for the agent bucket-stat endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct BucketStatResponse {
     pub bucket_uid: String,
     pub file_count: usize,

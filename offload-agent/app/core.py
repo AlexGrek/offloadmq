@@ -191,8 +191,8 @@ def download_bucket_files(http: HttpClient, task_id: TaskId, capability: str, fi
             logger.info(f"Bucket {bucket_uid}: {len(files)} file(s) to download")
 
             for file_info in files:
-                file_uid = file_info["fileUid"]
-                original_name = file_info.get("originalName", file_uid)
+                file_uid = file_info["file_uid"]
+                original_name = file_info.get("original_name", file_uid)
                 save_path = data_path / original_name
 
                 if save_path.exists():
@@ -257,8 +257,8 @@ def handle_task(http: HttpClient, task: dict[str, Any]) -> None:
     task_data = task.get("data") or {}
     payload = task_data.get("payload")
     fetch_files = task_data.get("fetchFiles") or []
-    file_buckets = task_data.get("fileBucket") or []
-    output_bucket = task_data.get("outputBucket")
+    file_buckets = task_data.get("file_bucket") or []
+    output_bucket = task_data.get("output_bucket")
 
     logger.info(f"Received task: {task_id.to_wire()} with capability '{capability}'")
     logger.info(f"Required files: {fetch_files}, buckets: {file_buckets}, output_bucket: {output_bucket}")

@@ -18,9 +18,9 @@ Clients can create up to 256 buckets (configurable) to stage files. Each bucket 
 
 Buckets serve two purposes:
 
-**Input buckets** (`fileBucket` in task submission) — upload files before submitting a task; the agent downloads them before execution.
+**Input buckets** (`file_bucket` in task submission) — upload files before submitting a task; the agent downloads them before execution.
 
-**Output buckets** (`outputBucket` in task submission) — create an empty bucket, pass its UID with the task, and the agent uploads result files (images, video) into it after generation. Download the results with `GET /api/storage/bucket/{uid}/file/{file_uid}` once the task completes.
+**Output buckets** (`output_bucket` in task submission) — create an empty bucket, pass its UID with the task, and the agent uploads result files (images, video) into it after generation. Download the results with `GET /api/storage/bucket/{uid}/file/{file_uid}` once the task completes.
 
 ---
 
@@ -441,7 +441,7 @@ curl -s -X DELETE "$BASE/api/storage/bucket/$BUCKET" \
 
 - **Ownership enforcement** — every request validates that the bucket belongs to your API key
 - **TTL expiration** — buckets are automatically deleted 24 hours after creation (configurable); ensure you download output files before expiry
-- **Output file download** — files uploaded by agents into an `outputBucket` are downloadable via `GET /api/storage/bucket/{uid}/file/{file_uid}`
+- **Output file download** — files uploaded by agents into an `output_bucket` are downloadable via `GET /api/storage/bucket/{uid}/file/{file_uid}`
 - **File UIDs for output** — after polling a completed imggen task, the `output.images[].file_uid` and `output.images[].bucket_uid` fields give you the coordinates to download each result file
 - **Storage backends** — files are stored in the configured location (local filesystem, WebDAV, or S3) transparently
 - **Cleanup** — a background worker runs every 3 hours to delete expired buckets and their associated files

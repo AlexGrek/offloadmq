@@ -36,8 +36,8 @@ Tasks flow through a client-server-agent pipeline:
 | **Task ID** | Composed of capability (queue) and a time-sortable unique ID: `TaskId { cap: "llm.mistral", id: "01ARZ3NDE..." }` |
 | **Urgent** | Tasks with `urgent: true` are stored in-memory with 60s TTL and return immediate blocking (for `/submit_blocking`). Regular tasks persist to Sled DB with 24h+ lifetime. |
 | **Tier** | Agent performance tier (0-255). Higher-tier agents get priority for non-urgent tasks. Lower-tier agents still receive tasks when no higher-tier agents are online. |
-| **Input Buckets** (`fileBucket`) | Optional list of storage bucket UIDs where the agent can download input files. Agents learn these UIDs from the task data; the unguessable UUIDs act as capability tokens. |
-| **Output Bucket** (`outputBucket`) | Optional single bucket UID where the agent should upload output files (e.g., generated images). The client creates this bucket before submitting the task and downloads results from it afterwards via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
+| **Input Buckets** (`file_bucket`) | Optional list of storage bucket UIDs where the agent can download input files. Agents learn these UIDs from the task data; the unguessable UUIDs act as capability tokens. |
+| **Output Bucket** (`output_bucket`) | Optional single bucket UID where the agent should upload output files (e.g., generated images). The client creates this bucket before submitting the task and downloads results from it afterwards via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
 
 ---
 
@@ -89,8 +89,8 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
   },
   "urgent": false,
   "restartable": true,
-  "fileBucket": ["bucket-uid-1", "bucket-uid-2"],
-  "outputBucket": "output-bucket-uid",
+  "file_bucket": ["bucket-uid-1", "bucket-uid-2"],
+  "output_bucket": "output-bucket-uid",
   "fetchFiles": [],
   "artifacts": []
 }
@@ -103,8 +103,8 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 | `payload` | object | Yes | Task-specific data (any valid JSON) — passed to agent as-is |
 | `urgent` | boolean | No (default: false) | If true, stored in-memory with 60s TTL; if false, persisted to DB |
 | `restartable` | boolean | No (default: false) | If true, task can be retried on another agent if it fails |
-| `fileBucket` | string[] | No | List of bucket UIDs containing input files. Agents can download from these buckets. |
-| `outputBucket` | string | No | UID of a bucket the agent should upload output files into. The client must create this bucket beforehand and own it. When provided, the agent uploads output files (e.g., images, video) directly to the bucket instead of embedding them as base64 in the task output. The client can then download them via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
+| `file_bucket` | string[] | No | List of bucket UIDs containing input files. Agents can download from these buckets. |
+| `output_bucket` | string | No | UID of a bucket the agent should upload output files into. The client must create this bucket beforehand and own it. When provided, the agent uploads output files (e.g., images, video) directly to the bucket instead of embedding them as base64 in the task output. The client can then download them via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
 | `fetchFiles` | object[] | No | Advanced: HTTP fetch rules (see Advanced below) |
 | `artifacts` | object[] | No | Advanced: Output artifact definitions (see Advanced below) |
 
@@ -673,7 +673,7 @@ With available task:
     },
     "urgent": true,
     "restartable": true,
-    "fileBucket": ["bucket-uid-1"],
+    "file_bucket": ["bucket-uid-1"],
     "fetchFiles": [],
     "artifacts": []
   },
@@ -690,8 +690,8 @@ null
 |-------|-------------|
 | `id` | Task identifier (cap + id) |
 | `data` | Full task submission request from client |
-| `data.fileBucket` | List of bucket UIDs you can download input files from via `GET /private/agent/bucket/{bucket_uid}/file/{file_uid}` |
-| `data.outputBucket` | Optional bucket UID where you should upload output files via `POST /private/agent/bucket/{bucket_uid}/upload` |
+| `data.file_bucket` | List of bucket UIDs you can download input files from via `GET /private/agent/bucket/{bucket_uid}/file/{file_uid}` |
+| `data.output_bucket` | Optional bucket UID where you should upload output files via `POST /private/agent/bucket/{bucket_uid}/upload` |
 | `data.payload` | The client's task payload |
 | `createdAt` | When the task was submitted |
 
@@ -765,7 +765,7 @@ Claim a task you polled and transition it to "assigned" state.
     },
     "urgent": true,
     "restartable": true,
-    "fileBucket": ["bucket-uid-1"],
+    "file_bucket": ["bucket-uid-1"],
     "fetchFiles": [],
     "artifacts": []
   }
@@ -947,13 +947,13 @@ Authorization: Bearer <JWT>
 Content-Type: multipart/form-data
 ```
 
-Upload an output file (e.g., generated image or video) to the task's output bucket. Only meaningful when the task provides an `outputBucket` UID in its `data` field.
+Upload an output file (e.g., generated image or video) to the task's output bucket. Only meaningful when the task provides an `output_bucket` UID in its `data` field.
 
 **Path parameters**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `bucket_uid` | string | The output bucket UID from `task.data.outputBucket` |
+| `bucket_uid` | string | The output bucket UID from `task.data.output_bucket` |
 
 **Form fields**
 
@@ -995,7 +995,7 @@ GET /private/agent/bucket/{bucket_uid}/file/{file_uid}
 Authorization: Bearer <JWT>
 ```
 
-Download a file from a task's input bucket. Only works for buckets listed in the task's `fileBucket` field.
+Download a file from a task's input bucket. Only works for buckets listed in the task's `file_bucket` field.
 
 **Path parameters**
 

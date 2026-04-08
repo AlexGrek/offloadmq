@@ -29,7 +29,7 @@ def execute_imggen_comfyui(
     try:
         if not output_bucket:
             raise ValueError(
-                "imggen tasks require an 'outputBucket' field — "
+                "imggen tasks require an 'output_bucket' field — "
                 "create a bucket via the client storage API and pass its UID in the task"
             )
 

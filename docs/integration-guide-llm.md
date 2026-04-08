@@ -74,11 +74,11 @@ The same client API key is used for both the Task API and the Storage API.
 
 ## Critical: JSON Field Naming
 
-**All Task API request and response fields use camelCase.** All Storage API response fields use snake_case. This is the most common source of integration bugs.
+**Task API request and response fields use camelCase, with two exceptions: `file_bucket` and `output_bucket` are snake_case.** All Storage API fields use snake_case. This inconsistency is intentional and permanent — be careful.
 
-### Task API — camelCase
+### Task API — mostly camelCase
 
-Request fields: `apiKey`, `capability`, `urgent`, `restartable`, `payload`, `fetchFiles`, `fileBucket`, `outputBucket`
+Request fields: `apiKey`, `capability`, `urgent`, `restartable`, `payload`, `fetchFiles`, `file_bucket`, `output_bucket`
 
 Response fields: `id`, `status`, `createdAt`, `stage`, `output`, `log`, `typicalRuntimeSeconds`, `agentId`, `assignedAt`, `createdAt`
 
@@ -88,15 +88,16 @@ TaskStatus string values are camelCase: `pending`, `queued`, `assigned`, `starti
 
 ### Storage API — snake_case
 
-Response fields: `bucket_uid`, `file_uid`, `original_name`, `size`, `sha256`, `used_bytes`, `remaining_bytes`, `capacity_bytes`, `file_count`, `created_at`, `uploaded_at`, `rm_after_task`, `max_buckets_per_key`, `bucket_size_bytes`, `bucket_ttl_minutes`
+All fields: `bucket_uid`, `file_uid`, `original_name`, `size`, `sha256`, `used_bytes`, `remaining_bytes`, `capacity_bytes`, `file_count`, `created_at`, `uploaded_at`, `rm_after_task`, `max_buckets_per_key`, `bucket_size_bytes`, `bucket_ttl_minutes`
 
 ### Summary table
 
-| Context | Example field | Format |
-|---------|--------------|--------|
-| Task submission body | `apiKey`, `fileBucket` | camelCase |
+| Context | Field examples | Format |
+|---------|---------------|--------|
+| Task submission — general | `apiKey`, `fetchFiles` | camelCase |
+| Task submission — bucket refs | `file_bucket`, `output_bucket` | **snake_case** |
 | Task status response | `createdAt`, `typicalRuntimeSeconds` | camelCase |
-| Storage response | `bucket_uid`, `file_uid` | snake_case |
+| Storage API requests/responses | `bucket_uid`, `file_uid` | snake_case |
 
 ---
 
@@ -149,8 +150,8 @@ Content-Type: application/json
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `restartable` | boolean | `false` | Allow retry on a different agent if this one fails |
-| `fileBucket` | string[] | `[]` | Bucket UIDs containing input files (see Storage API) |
-| `outputBucket` | string | `null` | Bucket UID for agent to upload output files into |
+| `file_bucket` | string[] | `[]` | Bucket UIDs containing input files (see Storage API) |
+| `output_bucket` | string | `null` | Bucket UID for agent to upload output files into |
 
 ### Payload Format (LLM)
 
@@ -185,8 +186,8 @@ The response is the full assigned task record serialized with camelCase:
     "restartable": false,
     "payload": { ... },
     "fetchFiles": [],
-    "fileBucket": [],
-    "outputBucket": null,
+    "file_bucket": [],
+    "output_bucket": null,
     "artifacts": [],
     "apiKey": "your-client-api-key"
   },
@@ -460,7 +461,7 @@ The `log` field accumulates all agent log lines. It grows over time — diff aga
 
 ## Storage API — Uploading Files for Vision / Analysis
 
-For vision models or document analysis you need to upload files before submitting the task, then pass the bucket UID to the agent via the task's `fileBucket` field.
+For vision models or document analysis you need to upload files before submitting the task, then pass the bucket UID to the agent via the task's `file_bucket` field.
 
 ### Auth header
 
@@ -597,7 +598,7 @@ GET /api/storage/bucket/{bucket_uid}/file/{file_uid}
 X-API-Key: your-client-api-key
 ```
 
-Returns raw file bytes with `Content-Disposition: attachment; filename="original_name"`. This is how clients retrieve files that an agent has uploaded to an `outputBucket`.
+Returns raw file bytes with `Content-Disposition: attachment; filename="original_name"`. This is how clients retrieve files that an agent has uploaded to an `output_bucket`.
 
 ### Delete a file
 
@@ -699,8 +700,6 @@ curl -X POST https://mq.example.com/api/storage/bucket/550e8400-.../upload \
 
 ### Step 3 — Submit the LLM vision task (blocking)
 
-The `fileBucket` field is **camelCase** in the task request body.
-
 ```bash
 curl -X POST https://mq.example.com/api/task/submit_blocking \
   -H "Content-Type: application/json" \
@@ -708,7 +707,7 @@ curl -X POST https://mq.example.com/api/task/submit_blocking \
     "apiKey": "client_secret_key_123",
     "capability": "llm.llava",
     "urgent": true,
-    "fileBucket": ["550e8400-e29b-41d4-a716-446655440000"],
+    "file_bucket": ["550e8400-e29b-41d4-a716-446655440000"],
     "payload": {
       "model": "llava",
       "stream": false,
