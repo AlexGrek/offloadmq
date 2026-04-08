@@ -128,6 +128,10 @@ All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nes
    - Tasks/agents/keys: [docs/management-api.md](docs/management-api.md)
    - Storage: [docs/management-storage-api.md](docs/management-storage-api.md)
 
+### LLM Integration
+
+See [docs/integration-guide-llm.md](docs/integration-guide-llm.md) for the complete self-contained guide on integrating LLM inference (including vision/file analysis) into a client application. Covers both blocking and polling request patterns, full JSON field reference (camelCase for Task API, snake_case for Storage API), storage bucket workflow, progress bars, and error handling.
+
 ### Extended Capability Attributes
 
 Agents can register capabilities with extended metadata using bracket notation:
