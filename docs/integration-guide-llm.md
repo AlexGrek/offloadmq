@@ -9,16 +9,17 @@ A complete reference for integrating LLM inference (and vision/file analysis) in
 1. [Overview](#overview)
 2. [Authentication](#authentication)
 3. [Critical: JSON Field Naming](#critical-json-field-naming)
-4. [Task API — Blocking (Synchronous) Request](#task-api--blocking-synchronous-request)
-5. [Task API — Non-Blocking (Polling) Request](#task-api--non-blocking-polling-request)
-6. [Task Lifecycle and Status Values](#task-lifecycle-and-status-values)
-7. [Progress Bars and Time Estimates](#progress-bars-and-time-estimates)
-8. [Storage API — Uploading Files for Vision / Analysis](#storage-api--uploading-files-for-vision--analysis)
-9. [End-to-End: Vision Model with File Upload](#end-to-end-vision-model-with-file-upload)
-10. [Discovering Available LLM Capabilities](#discovering-available-llm-capabilities)
-11. [Cancelling a Task](#cancelling-a-task)
-12. [Error Reference](#error-reference)
-13. [Timing and Retry Guidance](#timing-and-retry-guidance)
+4. [Recommended: `llm.*` task body with `file_bucket` (vision)](#recommended-llm-task-body-with-file_bucket-vision)
+5. [Task API — Blocking (Synchronous) Request](#task-api--blocking-synchronous-request)
+6. [Task API — Non-Blocking (Polling) Request](#task-api--non-blocking-polling-request)
+7. [Task Lifecycle and Status Values](#task-lifecycle-and-status-values)
+8. [Progress Bars and Time Estimates](#progress-bars-and-time-estimates)
+9. [Storage API — Uploading Files for Vision / Analysis](#storage-api--uploading-files-for-vision--analysis)
+10. [End-to-End: Vision Model with File Upload](#end-to-end-vision-model-with-file-upload)
+11. [Discovering Available LLM Capabilities](#discovering-available-llm-capabilities)
+12. [Cancelling a Task](#cancelling-a-task)
+13. [Error Reference](#error-reference)
+14. [Timing and Retry Guidance](#timing-and-retry-guidance)
 
 ---
 
@@ -101,6 +102,28 @@ All fields: `bucket_uid`, `file_uid`, `original_name`, `size`, `sha256`, `used_b
 
 ---
 
+## Recommended: `llm.*` task body with `file_bucket` (vision)
+
+External clients (and the **management frontend** sandbox) should treat the following as the **stable contract** for vision and file-backed `llm.*` tasks. Reference implementation: `management-frontend/src/components/ImageAnalyzerApp.jsx` (create bucket, upload multipart field `file`, submit with `file_bucket`, empty `fetchFiles` / `artifacts`, chat-style `payload`).
+
+### Always send `fetchFiles` and `artifacts` when unused
+
+Set both to empty JSON arrays **`[]`** on every submit if you are not using HTTP fetch rules or artifact output definitions. The sandbox apps always include these keys so parsers and integrations see a consistent shape.
+
+### Prefer chat `payload` without a top-level `model` for vision
+
+For Ollama chat-style tasks, the offload agent (`offload-agent/app/exec/llm.py`) builds the REST body as follows: it merges your `payload`, attaches base64 images from files downloaded from **`file_bucket`**, then sets **`model`** from the task **`capability`** string (the part after `llm.`, before any `[` bracket).
+
+**Recommended:** put only **`stream`** (usually `false`) and **`messages`** in `payload`, and **omit** a top-level **`model`** key. That matches the Image Analyzer sandbox and avoids duplicating or drifting from the agent's model selection.
+
+**Still valid:** older clients may include **`model`** inside `payload` for text-only flows; the agent overwrites `model` from `capability` at send time. For vision with `file_bucket`, omitting `payload.model` is the path that matches the known-good sandbox.
+
+### Name the file in user text when it helps
+
+After upload, the server stores `original_name` (from multipart filename). The agent saves downloads under that path and scans for image extensions. Referencing that name in the user `content` string (for example `diagram.png`) keeps logs and model instructions aligned with the bucket listing.
+
+---
+
 ## Task API — Blocking (Synchronous) Request
 
 Use this mode when you need the result inline, like a standard HTTP request-response. The server holds the HTTP connection open until the agent completes the task or 60 seconds elapse.
@@ -119,8 +142,8 @@ Content-Type: application/json
   "apiKey": "your-client-api-key",
   "capability": "llm.dolphin-mistral",
   "urgent": true,
+  "restartable": false,
   "payload": {
-    "model": "dolphin-mistral",
     "stream": false,
     "messages": [
       {
@@ -132,7 +155,10 @@ Content-Type: application/json
         "content": "Summarize the theory of relativity in two sentences."
       }
     ]
-  }
+  },
+  "fetchFiles": [],
+  "file_bucket": [],
+  "artifacts": []
 }
 ```
 
@@ -150,16 +176,17 @@ Content-Type: application/json
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `restartable` | boolean | `false` | Allow retry on a different agent if this one fails |
+| `fetchFiles` | object[] | `[]` | Send `[]` when unused (recommended for all clients; see [Recommended: `llm.*` task body with `file_bucket` (vision)](#recommended-llm-task-body-with-file_bucket-vision)) |
 | `file_bucket` | string[] | `[]` | Bucket UIDs containing input files (see Storage API) |
+| `artifacts` | object[] | `[]` | Send `[]` when unused (recommended alongside `fetchFiles`) |
 | `output_bucket` | string | `null` | Bucket UID for agent to upload output files into |
 
 ### Payload Format (LLM)
 
-The payload is passed as-is to the agent. Agents use the Ollama chat API format:
+The payload is passed to the agent. Agents normalize it toward the Ollama chat API. **Recommended** chat shape (matches the management Image Analyzer sandbox):
 
 ```json
 {
-  "model": "mistral",
   "stream": false,
   "messages": [
     { "role": "system", "content": "System prompt here." },
@@ -168,7 +195,7 @@ The payload is passed as-is to the agent. Agents use the Ollama chat API format:
 }
 ```
 
-The `model` field inside the payload should match the model the agent has loaded. The `capability` field in the task request is what the server uses for routing — they are often the same but can differ if an agent handles multiple model names under one capability.
+The server routes tasks using the top-level **`capability`** string. The Python offload agent sets **`model`** on the Ollama request from that capability (see [Recommended: `llm.*` task body with `file_bucket` (vision)](#recommended-llm-task-body-with-file_bucket-vision)). You may still include **`model`** inside `payload` for legacy text-only clients; it is overwritten for the actual Ollama call.
 
 ### Successful Response (HTTP 200)
 
@@ -277,13 +304,16 @@ Content-Type: application/json
   "apiKey": "your-client-api-key",
   "capability": "llm.qwen3:8b",
   "urgent": false,
+  "restartable": false,
   "payload": {
-    "model": "qwen3:8b",
     "stream": false,
     "messages": [
       { "role": "user", "content": "Write a poem about the ocean." }
     ]
-  }
+  },
+  "fetchFiles": [],
+  "file_bucket": [],
+  "artifacts": []
 }
 ```
 
@@ -707,9 +737,11 @@ curl -X POST https://mq.example.com/api/task/submit_blocking \
     "apiKey": "client_secret_key_123",
     "capability": "llm.llava",
     "urgent": true,
+    "restartable": false,
+    "fetchFiles": [],
     "file_bucket": ["550e8400-e29b-41d4-a716-446655440000"],
+    "artifacts": [],
     "payload": {
-      "model": "llava",
       "stream": false,
       "messages": [
         {

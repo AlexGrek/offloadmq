@@ -338,6 +338,15 @@ await clientFetch(`/api/storage/bucket/${inputBucketId}/upload`, {
 });
 ```
 
+### Vision LLM task submit (Image Analyzer contract)
+
+When submitting an `llm.*` task after uploading images to a bucket, mirror **`ImageAnalyzerApp.jsx`**:
+
+- Top-level JSON: `fetchFiles: []`, `artifacts: []`, **`file_bucket`: [bucketUid]**, `capability`, `urgent`, `restartable`, `apiKey`.
+- **`payload`**: `{ stream: false, messages: [...] }` only — **do not** put a top-level `model` key inside `payload`. The offload agent derives `model` from the task `capability` when calling Ollama and attaches images from downloaded bucket files.
+
+Documented for external integrators in **`docs/integration-guide-llm.md`** (section *Recommended: `llm.*` task body with `file_bucket` (vision)*).
+
 ---
 
 ## Tab Visibility — Keep Apps Mounted

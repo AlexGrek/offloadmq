@@ -105,8 +105,10 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 | `restartable` | boolean | No (default: false) | If true, task can be retried on another agent if it fails |
 | `file_bucket` | string[] | No | List of bucket UIDs containing input files. Agents can download from these buckets. |
 | `output_bucket` | string | No | UID of a bucket the agent should upload output files into. The client must create this bucket beforehand and own it. When provided, the agent uploads output files (e.g., images, video) directly to the bucket instead of embedding them as base64 in the task output. The client can then download them via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
-| `fetchFiles` | object[] | No | Advanced: HTTP fetch rules (see Advanced below) |
-| `artifacts` | object[] | No | Advanced: Output artifact definitions (see Advanced below) |
+| `fetchFiles` | object[] | No | Advanced: HTTP fetch rules (see Advanced below). For a stable JSON shape, send **`[]`** when unused (management sandbox apps always do). |
+| `artifacts` | object[] | No | Advanced: Output artifact definitions (see Advanced below). Send **`[]`** when unused alongside empty `fetchFiles`. |
+
+For **`llm.*` tasks that use `file_bucket`** (vision / file analysis), follow the contract in [integration-guide-llm.md](integration-guide-llm.md) section **Recommended: `llm.*` task body with `file_bucket` (vision)** — chat-style `payload` with `stream` + `messages`, omit top-level `payload.model` (the offload agent sets `model` from `capability`).
 
 **Response** (202 Accepted for urgent, 201 Created for regular)
 
