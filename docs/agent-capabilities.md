@@ -527,7 +527,7 @@ Some capabilities include extended attributes in brackets to provide additional 
 **Matching behavior:**
 - Attributes are **stripped before matching**
 - Task capability: `"llm.mistral:7b"` matches agent capability: `"llm.mistral:7b[vision;tools]"`
-- Extended attributes are visible in management API (`/capabilities/list/online_ext`) for inspection
+- Extended attributes are visible via `GET /management/capabilities/list/online_ext` (management Bearer token) or `POST /api/capabilities/list/online_ext` (client API key; key-filtered on base capability) for inspection
 
 ---
 
@@ -583,6 +583,18 @@ offload-agent cli ollama     # List Ollama models (if available)
 curl -H "Authorization: Bearer <token>" \
   http://your-server:3069/management/capabilities/list/online
 ```
+
+### Via Client API (extended strings)
+
+Same JSON body style as task submission (`apiKey` field). Returns raw capability strings including brackets, scoped to capabilities the key may use:
+
+```bash
+curl -X POST http://your-server:3069/api/capabilities/list/online_ext \
+  -H "Content-Type: application/json" \
+  -d '{"apiKey":"<your-client-api-key>"}'
+```
+
+See [tasks-api.md](tasks-api.md#get-online-capabilities-extended-client-filtered) for management override and error behavior.
 
 ---
 

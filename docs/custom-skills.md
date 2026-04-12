@@ -433,7 +433,7 @@ bash /path/to/script.sh
 
 The [CustomApp](../management-frontend/src/components/CustomApp.jsx) sandbox component auto-detects skills and generates forms:
 
-1. Fetches all extended capabilities: `GET /management/capabilities/list/online_ext`
+1. Fetches all extended capabilities: `GET /management/capabilities/list/online_ext` (standalone clients can use `POST /api/capabilities/list/online_ext` with a client API key — see [tasks-api.md](tasks-api.md#get-online-capabilities-extended-client-filtered))
 2. Parses attributes to build field list
 3. Generates input controls based on type hints
 4. Submits task with validated payload

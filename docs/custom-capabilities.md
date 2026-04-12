@@ -254,13 +254,22 @@ If an agent registers a custom capability but has no executor for it, `route_exe
 Clients discover available capabilities through the API:
 
 **Client API** (filtered by API key permissions):
+
+Base names only:
 ```
 POST /api/capabilities/online
 { "apiKey": "..." }
 → ["custom.weather", "ml.predict", ...]  // base capabilities only
 ```
 
-**Management API** (all capabilities, with extended attributes):
+Raw strings with extended attributes (still filtered by key — matching uses each string’s base capability):
+```
+POST /api/capabilities/list/online_ext
+{ "apiKey": "..." }
+→ ["custom.weather[city;units;days:int]", "ml.predict[model;input:json]", ...]
+```
+
+**Management API** (all capabilities from all online agents, with extended attributes; no per-client key filter):
 ```
 GET /management/capabilities/list/online_ext
 Authorization: Bearer <mgmt-token>
@@ -326,7 +335,7 @@ Use the standard polling mechanism — custom capabilities follow the same task 
 
 The management frontend includes a **Custom** sandbox app (`CustomApp.jsx`) that implements the full client flow:
 
-1. Fetches all online capabilities (with extended attributes) from `/management/capabilities/list/online_ext`
+1. Fetches all online capabilities (with extended attributes) from `GET /management/capabilities/list/online_ext` (operators can also use `POST /api/capabilities/list/online_ext` with a client key or `X-MGMT-API-KEY`; see [tasks-api.md](tasks-api.md#get-online-capabilities-extended-client-filtered))
 2. Presents a dropdown of all available capabilities
 3. Parses `[...]` attributes into input fields with type-appropriate controls
 4. Optionally allows raw JSON payload editing via a toggle

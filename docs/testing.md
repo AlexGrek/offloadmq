@@ -304,6 +304,13 @@ Tests for administrative Management API (`/management/*`).
 | `/management/storage/key/{key}/buckets` | DELETE | 200 | Bearer | Delete key's buckets |
 | `/management/version` | GET | 200 | Bearer | Server version |
 
+**Client Task API — capability discovery** (same JSON `apiKey` body and middleware as `POST /api/task/submit`; not covered by the management test module above):
+
+| Endpoint | Method | Status | Auth | Notes |
+|----------|--------|--------|------|-------|
+| `/api/capabilities/online` | POST | 200 | JSON `apiKey` | Base capabilities; filtered by key |
+| `/api/capabilities/list/online_ext` | POST | 200 | JSON `apiKey` | Raw capabilities with `[...]`; filtered by key (base match); optional `X-MGMT-API-KEY` for full set |
+
 **Request/Response Examples:**
 
 Create client key:

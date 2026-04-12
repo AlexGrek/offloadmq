@@ -769,6 +769,21 @@ Content-Type: application/json
 
 The response is a flat array of base capability strings (no brackets). Filter by prefix `"llm."` to find LLM-capable agents. Only capabilities permitted by your API key are returned.
 
+### Extended capability strings (optional)
+
+If you need bracket metadata from agents (model tags, `vision`, tool hints, etc.) while still using a **client API key**, use:
+
+```
+POST /api/capabilities/list/online_ext
+Content-Type: application/json
+```
+
+```json
+{ "apiKey": "your-client-api-key" }
+```
+
+The response is a JSON array of **raw** capability strings (extended attributes preserved). Entries are limited to capabilities your key is allowed to use (matching is on the base capability, i.e. the part before `[`). For the full fleet with no per-key filter, use the management endpoint `GET /management/capabilities/list/online_ext` with a Bearer management token, or pass `X-MGMT-API-KEY` on this Client API route (see [tasks-api.md](tasks-api.md#get-online-capabilities-extended-client-filtered)).
+
 ---
 
 ## Cancelling a Task

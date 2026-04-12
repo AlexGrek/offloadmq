@@ -494,6 +494,55 @@ The response is a JSON array of base capability strings (extended attributes str
 
 ---
 
+### Get Online Capabilities (Extended, Client-Filtered)
+
+```
+POST /api/capabilities/list/online_ext
+Content-Type: application/json
+```
+
+Same authentication and middleware as other Client API routes (`POST /api/*` with a JSON body). Returns **raw capability strings as advertised by online agents**, including extended attributes in brackets (e.g. `llm.qwen3:8b[vision;tools;8b]`).
+
+**Request body**
+
+```json
+{
+  "apiKey": "your-client-api-key"
+}
+```
+
+**Response** (200 OK)
+
+```json
+[
+  "llm.mistral",
+  "llm.qwen3:8b[vision;tools;8b]"
+]
+```
+
+**Filtering (without management override)**
+
+Only capabilities whose **base name** (text before `[`) is allowed for the API key are included — same wildcard rules as [`POST /api/capabilities/online`](#get-online-capabilities-client-filtered). Extended strings from multiple agents are deduplicated as a set.
+
+**Management override**
+
+Pass header `X-MGMT-API-KEY: <management token>` (same as other Client API routes). The JSON body is still required for middleware, but the result is **not** filtered by the key’s capability list (equivalent to `GET /management/capabilities/list/online_ext` for online agents only).
+
+**Error responses**
+
+| Status | Reason |
+|--------|--------|
+| `401` | API key not found or revoked (or invalid management override header) |
+| `500` | Server error |
+
+**Notes**
+
+- Online threshold: agent must have contacted the server within the last 120 seconds
+- Result is a deduplicated set (unordered in JSON)
+- Complements `GET /management/capabilities/list/online_ext`, which uses Bearer management auth and does not require a client API key in the body
+
+---
+
 ## Agent API
 
 Base path: `/private/agent/*`

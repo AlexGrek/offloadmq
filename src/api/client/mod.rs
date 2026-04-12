@@ -273,3 +273,32 @@ pub async fn capabilities_online(
     }
     Ok(Json(capabilities))
 }
+
+pub async fn capabilities_online_ext(
+    State(app_state): State<Arc<AppState>>,
+    mgmt: OptionalMgmtOverride,
+    Json(req): Json<ApiKeyRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let mut capabilities: HashSet<String> = HashSet::new();
+    app_state
+        .storage
+        .agents
+        .list_all_agents()
+        .into_iter()
+        .filter(Agent::is_online)
+        .flat_map(|agent| agent.capabilities)
+        .for_each(|cap| {
+            capabilities.insert(cap);
+        });
+    if !mgmt.is_active() {
+        let key = app_state
+            .storage
+            .client_keys
+            .find_active(&req.api_key)?
+            .ok_or_else(|| AppError::Authorization("API key not found".to_string()))?;
+        capabilities.retain(|el| {
+            ApiKeysStorage::has_capability(&key.capabilities, base_capability(el))
+        });
+    }
+    Ok(Json(capabilities))
+}

@@ -189,6 +189,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/capabilities/online",
                     post(api::client::capabilities_online),
                 )
+                .route(
+                    "/capabilities/list/online_ext",
+                    post(api::client::capabilities_online_ext),
+                )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::apikey_auth_middleware_user,

@@ -116,6 +116,7 @@ Returns raw capabilities including extended attributes from all online agents. U
 - Extended attributes in brackets are preserved
 - Useful for debugging agent registration and capability metadata
 - Deduplicated set
+- **Client-scoped variant:** `POST /api/capabilities/list/online_ext` with a client API key in the JSON body returns the same shape but **only** raw capabilities whose base name is allowed for that key (documented in [tasks-api.md](tasks-api.md#get-online-capabilities-extended-client-filtered)). With header `X-MGMT-API-KEY`, the Client API returns the unfiltered online set like this endpoint.
 
 ---
 
@@ -1127,7 +1128,7 @@ MGMT_TOKEN=super-secret-management-token-12345
 5. **Reset is destructive** — only use `/tasks/reset` and `/agents/reset` in test environments
 6. **Use HTTPS in production** — management endpoints expose sensitive data
 7. **Implement access controls** — restrict management endpoint access to authorized staff only
-8. **Monitor capabilities** — track `/capabilities/list/online_ext` to verify agent health and configuration
+8. **Monitor capabilities** — track `GET /management/capabilities/list/online_ext` (or `POST /api/capabilities/list/online_ext` for key-scoped discovery) to verify agent health and configuration
 
 ---
 
