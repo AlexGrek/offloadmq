@@ -13,17 +13,17 @@ def available() -> bool:
 
 def read_value() -> str | None:
     """Return the raw registry value for the OffloadAgent startup entry, or None if absent."""
-    if sys.platform != "win32":
-        return None
-    import winreg
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_READ) as key:
-            value, _ = winreg.QueryValueEx(key, _WIN_REG_NAME)
-            return str(value)
-    except FileNotFoundError:
-        return None
-    except OSError as exc:
-        return f"ERROR: {exc}"
+    if sys.platform == "win32":
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_READ) as key:
+                value, _ = winreg.QueryValueEx(key, _WIN_REG_NAME)
+                return str(value)
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            return f"ERROR: {exc}"
+    return None
 
 
 def enabled(log: Callable[[str], None] | None = None) -> bool:
@@ -51,23 +51,22 @@ def _build_startup_cmd(exe_path: str) -> str:
 
 
 def set_enabled(enable: bool, log: Callable[[str], None]) -> None:
-    if not available():
-        return
-    import winreg
-    frozen = getattr(sys, "frozen", False)
-    exe_path = sys.executable
-    log(f"[startup] sys.executable={exe_path!r}  frozen={frozen}")
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
-            if enable:
-                cmd = _build_startup_cmd(exe_path)
-                winreg.SetValueEx(key, _WIN_REG_NAME, 0, winreg.REG_SZ, cmd)
-                log(f"[startup] Wrote registry value: {cmd}")
-            else:
-                try:
-                    winreg.DeleteValue(key, _WIN_REG_NAME)
-                    log("[startup] Deleted registry entry (startup disabled)")
-                except FileNotFoundError:
-                    log("[startup] No registry entry to delete (already absent)")
-    except OSError as exc:
-        log(f"[startup] ERROR writing registry: {exc}")
+    if sys.platform == "win32":
+        import winreg
+        frozen = getattr(sys, "frozen", False)
+        exe_path = sys.executable
+        log(f"[startup] sys.executable={exe_path!r}  frozen={frozen}")
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
+                if enable:
+                    cmd = _build_startup_cmd(exe_path)
+                    winreg.SetValueEx(key, _WIN_REG_NAME, 0, winreg.REG_SZ, cmd)
+                    log(f"[startup] Wrote registry value: {cmd}")
+                else:
+                    try:
+                        winreg.DeleteValue(key, _WIN_REG_NAME)
+                        log("[startup] Deleted registry entry (startup disabled)")
+                    except FileNotFoundError:
+                        log("[startup] No registry entry to delete (already absent)")
+        except OSError as exc:
+            log(f"[startup] ERROR writing registry: {exc}")
