@@ -47,12 +47,12 @@ export function SlavemodeTab({ state, loadState, run }) {
   return (
     <div className="bg-slate-800 rounded-lg p-5">
       <h2 className="text-[0.72rem] font-semibold text-amber-500/80 uppercase tracking-wider mb-1">
-        Slavemode
+        Slavemode (Tier 1: Control Operations)
       </h2>
       <p className="text-xs text-slate-500 mb-4">
-        Separate from regular capabilities. Allow the server to trigger control operations on this
-        agent. Allowed caps are merged into what the agent reports to the queue when you save or when
-        the agent pushes an update.
+        <strong>Opt-in only.</strong> Allow the server to trigger control operations on this
+        agent (capability rescans, config management, etc). These are separate from task capabilities
+        and require explicit permission. Changes take effect immediately when saved.
       </p>
       <div className="space-y-1 mb-4">
         {allSlavemodeCaps.map((cap) => (

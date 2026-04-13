@@ -274,6 +274,46 @@ def check_ollama() -> CapResult:
 
 
 # ---------------------------------------------------------------------------
+# Capability tier classification
+# ---------------------------------------------------------------------------
+
+def is_sensitive_capability(cap: str) -> bool:
+    """Return True if capability requires opt-in (security-sensitive)."""
+    return cap.startswith("docker.") or cap.startswith("shell.") or cap.startswith("shellcmd.")
+
+
+def is_regular_capability(cap: str) -> bool:
+    """Return True if capability is regular (opt-out, enabled by default)."""
+    # Regular: llm, imggen, tts, debug, custom
+    prefixes = ("llm.", "imggen.", "tts.", "debug.", "custom.")
+    return any(cap.startswith(p) for p in prefixes)
+
+
+def classify_capabilities(caps: List[str]) -> Dict[str, List[str]]:
+    """Split capabilities into tiers: regular, sensitive, unknown.
+
+    Returns dict with keys: 'regular', 'sensitive', 'unknown'
+    """
+    regular = []
+    sensitive = []
+    unknown = []
+
+    for cap in caps:
+        if is_sensitive_capability(cap):
+            sensitive.append(cap)
+        elif is_regular_capability(cap):
+            regular.append(cap)
+        else:
+            unknown.append(cap)
+
+    return {
+        "regular": regular,
+        "sensitive": sensitive,
+        "unknown": unknown,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Ordered list of active checks
 # ---------------------------------------------------------------------------
 _CHECKS: List[Callable[[], CapResult]] = [
@@ -319,30 +359,100 @@ def compute_registration_caps(
     detected: List[str],
     log_fn: Optional[Callable[[str], None]] = None,
 ) -> List[str]:
-    """Capability list for server registration: saved regular selection filtered by
-    detection, plus allow-listed slavemode caps (never from the regular checklist).
+    """Compute capabilities for server registration using 3-tier system.
+
+    Tier 1 (Slavemode): Opt-in, separate allow-list (already implemented)
+    Tier 2 (Sensitive): Opt-in (docker, shell) - must be explicitly allowed
+    Tier 3 (Regular): Opt-out (llm, imggen, tts, debug, custom) - enabled by default unless disabled
+
+    Config keys:
+        - sensitive-allowed-caps: List of sensitive caps to allow (opt-in)
+        - regular-disabled-caps: List of regular caps to disable (opt-out)
+        - capabilities: Legacy key, migrated to tier-based on first use
     """
     detected_clean = strip_slavemode_caps(list(detected))
     detected_set = set(detected_clean)
-    saved = cfg.get("capabilities")
-    if saved:
-        saved_reg = strip_slavemode_caps(list(saved))
-        caps = [c for c in saved_reg if c in detected_set]
-        if not caps:
-            if log_fn:
-                log_fn(
-                    "[caps] WARNING: none of the saved capabilities were detected; "
-                    "registering with all detected capabilities"
-                )
-            caps = list(detected_clean)
-        elif len(saved_reg) > len(caps) and log_fn:
-            dropped = sorted(set(saved_reg) - detected_set)
-            log_fn(
-                f"[caps] Skipping {len(dropped)} undetected capability(s): {', '.join(dropped)}"
-            )
-    else:
-        caps = list(detected_clean)
+
+    # Classify detected capabilities
+    classified = classify_capabilities(detected_clean)
+    detected_regular = set(classified["regular"])
+    detected_sensitive = set(classified["sensitive"])
+    detected_unknown = set(classified["unknown"])
+
+    # Migrate legacy config format if needed
+    if "capabilities" in cfg and "sensitive-allowed-caps" not in cfg:
+        _migrate_legacy_config(cfg, detected_clean, log_fn)
+
+    # Tier 2: Sensitive capabilities (opt-in)
+    sensitive_allowed = set(cfg.get("sensitive-allowed-caps", []))
+    sensitive_enabled = [c for c in detected_sensitive if c in sensitive_allowed]
+
+    # Tier 3: Regular capabilities (opt-out)
+    regular_disabled = set(cfg.get("regular-disabled-caps", []))
+    regular_enabled = [c for c in detected_regular if c not in regular_disabled]
+
+    # Unknown capabilities: treat as regular (opt-out)
+    unknown_disabled = set(cfg.get("regular-disabled-caps", []))
+    unknown_enabled = [c for c in detected_unknown if c not in unknown_disabled]
+
+    # Log warnings for disabled capabilities that aren't detected
+    if log_fn:
+        for cap in sensitive_allowed:
+            if cap not in detected_set:
+                log_fn(f"[caps] WARNING: allowed sensitive capability '{cap}' not detected")
+
+        missing_disabled = regular_disabled - detected_set
+        if missing_disabled:
+            log_fn(f"[caps] NOTE: {len(missing_disabled)} disabled cap(s) not detected: {', '.join(sorted(missing_disabled))}")
+
+    # Combine all enabled capabilities
+    caps = regular_enabled + sensitive_enabled + unknown_enabled
+
+    # Tier 1: Merge slavemode allow-listed capabilities
     return merge_registration_caps(caps, cfg)
+
+
+def _migrate_legacy_config(
+    cfg: Dict[str, Any],
+    detected_clean: List[str],
+    log_fn: Optional[Callable[[str], None]] = None,
+) -> None:
+    """Migrate legacy 'capabilities' config to tier-based format.
+
+    Old format: capabilities = [list of all selected caps]
+    New format:
+        - sensitive-allowed-caps = [caps that were selected AND are sensitive]
+        - regular-disabled-caps = [regular caps that were NOT selected]
+    """
+    saved = cfg.get("capabilities", [])
+    saved_set = set(strip_slavemode_caps(list(saved)))
+    detected_set = set(detected_clean)
+
+    classified = classify_capabilities(detected_clean)
+    detected_regular = set(classified["regular"])
+    detected_sensitive = set(classified["sensitive"])
+
+    # Sensitive: include only those that were explicitly selected
+    sensitive_allowed = [c for c in detected_sensitive if c in saved_set]
+
+    # Regular: disable those that were NOT selected (opt-out model)
+    regular_disabled = [c for c in detected_regular if c not in saved_set]
+
+    # Save new format
+    cfg["sensitive-allowed-caps"] = sorted(sensitive_allowed)
+    cfg["regular-disabled-caps"] = sorted(regular_disabled)
+
+    # Keep legacy key for compatibility (will be ignored going forward)
+    # Don't delete it in case user downgrades
+
+    if log_fn:
+        log_fn("[caps] Migrated legacy config to tier-based format")
+        log_fn(f"[caps]   Sensitive allowed: {len(sensitive_allowed)} cap(s)")
+        log_fn(f"[caps]   Regular disabled: {len(regular_disabled)} cap(s)")
+
+    # Save config immediately
+    from .config import save_config
+    save_config(cfg)
 
 
 def rescan_and_push(

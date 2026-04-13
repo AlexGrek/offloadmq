@@ -286,6 +286,7 @@ def _done(request: Request) -> Union[JSONResponse, RedirectResponse]:
 
 
 def _get_all_caps(cfg: Dict) -> tuple[List[str], List[str]]:
+    """Legacy function for backwards compatibility - use _get_tier_caps() instead."""
     custom = strip_slavemode_caps(list(cfg.get("custom_caps", [])))
     with _scan_lock:
         detected = strip_slavemode_caps(list(_scan["caps"]))
@@ -298,14 +299,56 @@ def _get_all_caps(cfg: Dict) -> tuple[List[str], List[str]]:
     return all_caps, selected
 
 
+def _get_tier_caps(cfg: Dict) -> Dict[str, Any]:
+    """Get capabilities organized by tier for UI display.
+
+    Returns:
+        {
+            "regular": { "all": [...], "disabled": [...] },
+            "sensitive": { "all": [...], "allowed": [...] },
+            "detected_raw": [...],
+        }
+    """
+    from app.capabilities import classify_capabilities
+
+    with _scan_lock:
+        detected = strip_slavemode_caps(list(_scan["caps"]))
+
+    classified = classify_capabilities(detected)
+
+    # Regular capabilities: opt-out model
+    regular_all = sorted(classified["regular"] + classified["unknown"])
+    regular_disabled = set(cfg.get("regular-disabled-caps", []))
+
+    # Sensitive capabilities: opt-in model
+    sensitive_all = sorted(classified["sensitive"])
+    sensitive_allowed = set(cfg.get("sensitive-allowed-caps", []))
+
+    return {
+        "regular": {
+            "all": regular_all,
+            "disabled": sorted(regular_disabled & set(regular_all)),
+        },
+        "sensitive": {
+            "all": sensitive_all,
+            "allowed": sorted(sensitive_allowed & set(sensitive_all)),
+        },
+        "detected_raw": detected,
+    }
+
+
 def _build_api_state() -> Dict[str, Any]:
     cfg = load_config()
+    tier_caps = _get_tier_caps(cfg)
+
+    # Legacy format for backwards compatibility
     all_caps, selected = _get_all_caps(cfg)
     raw_saved_caps = cfg.get("capabilities")
     if raw_saved_caps is not None:
         capabilities_for_ui = strip_slavemode_caps(list(raw_saved_caps))
     else:
         capabilities_for_ui = None
+
     with _scan_lock:
         scanning = _scan["scanning"]
         sysinfo = dict(_scan["sysinfo"])
@@ -322,10 +365,14 @@ def _build_api_state() -> Dict[str, Any]:
         "apiKey": cfg.get("apiKey", ""),
         "displayName": cfg.get("displayName", ""),
         "autostart": bool(cfg.get("autostart")),
+        # Legacy fields
         "capabilities": capabilities_for_ui,
         "custom_caps": cfg.get("custom_caps", []),
         "all_caps": all_caps,
         "selected_caps": selected,
+        # New tier-based fields
+        "tier_caps": tier_caps,
+        # Other fields
         "cfg_exists": ce,
         "comfyui_url": cfg.get("comfyui_url", ""),
         "webuiPort": cfg.get("webuiPort", 8080),
@@ -433,24 +480,46 @@ async def save_capabilities(
     action: str = Form("save"),
     custom_cap: str = Form(""),
 ):
+    """Save capability selections using tier-based model.
+
+    Form fields:
+        - regular_disabled: List of regular caps to disable (opt-out)
+        - sensitive_allowed: List of sensitive caps to allow (opt-in)
+        - action: 'save' or 'add'
+        - custom_cap: Custom capability to add (when action='add')
+    """
     form = await request.form()
-    checked: List[str] = [
-        str(c) for c in form.getlist("caps") if not str(c).startswith("slavemode.")
-    ]
-
     cfg = load_config()
-    custom: List[str] = list(cfg.get("custom_caps", []))
 
-    if action == "add" and custom_cap.strip():
-        cap = custom_cap.strip()
-        if cap not in custom:
-            custom.append(cap)
-        if cap not in checked:
-            checked.append(cap)
-        cfg["custom_caps"] = custom
+    # Handle legacy format for backwards compatibility
+    if "caps" in form:
+        # Old format: just a list of selected caps
+        checked: List[str] = [
+            str(c) for c in form.getlist("caps") if not str(c).startswith("slavemode.")
+        ]
+        custom: List[str] = list(cfg.get("custom_caps", []))
+        if action == "add" and custom_cap.strip():
+            cap = custom_cap.strip()
+            if cap not in custom:
+                custom.append(cap)
+            if cap not in checked:
+                checked.append(cap)
+            cfg["custom_caps"] = custom
+        cfg["capabilities"] = sorted(set(checked))
+    else:
+        # New tier-based format
+        regular_disabled = [str(c) for c in form.getlist("regular_disabled")]
+        sensitive_allowed = [str(c) for c in form.getlist("sensitive_allowed")]
 
-    cfg["capabilities"] = sorted(set(checked))
+        cfg["regular-disabled-caps"] = sorted(set(regular_disabled))
+        cfg["sensitive-allowed-caps"] = sorted(set(sensitive_allowed))
+
+        # Remove legacy key if it exists (migration complete)
+        if "capabilities" in cfg:
+            del cfg["capabilities"]
+
     save_config(cfg)
+    _push_capabilities_to_server_async()
     return _done(request)
 
 
