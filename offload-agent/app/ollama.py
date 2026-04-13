@@ -1,24 +1,45 @@
 from __future__ import annotations
 
+import json
 import logging
 import requests
 import subprocess
 import time
-from typing import List
+from typing import Callable, List
 
 logger = logging.getLogger(__name__)
 
 _WIN_NO_WINDOW: int = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-OLLAMA_API_URL = "http://127.0.0.1:11434/api/chat"
-OLLAMA_ROOT_URL = "http://127.0.0.1:11434/"
-OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
-OLLAMA_SHOW_URL = "http://127.0.0.1:11434/api/show"
+DEFAULT_OLLAMA_BASE = "http://127.0.0.1:11434"
+
+# Module-level constants kept for backward compatibility with external imports.
+# All functions in this module use get_ollama_base_url() so they respect config.
+OLLAMA_ROOT_URL = f"{DEFAULT_OLLAMA_BASE}/"
+OLLAMA_API_URL = f"{DEFAULT_OLLAMA_BASE}/api/chat"
+OLLAMA_TAGS_URL = f"{DEFAULT_OLLAMA_BASE}/api/tags"
+OLLAMA_SHOW_URL = f"{DEFAULT_OLLAMA_BASE}/api/show"
+
+
+def get_ollama_base_url() -> str:
+    """Return the configured Ollama base URL.
+
+    Reads ``ollamaBaseUrl`` from the agent config.  Falls back to
+    ``DEFAULT_OLLAMA_BASE`` (``http://127.0.0.1:11434``) when unset.
+
+    Config key: ``ollamaBaseUrl``
+    Example:    ``"http://192.168.1.10:11434"``
+    """
+    from .config import load_config
+
+    cfg = load_config()
+    base = cfg.get("ollamaBaseUrl", "").strip().rstrip("/")
+    return base if base else DEFAULT_OLLAMA_BASE
 
 
 def is_ollama_server_running() -> bool:
     try:
-        r = requests.get(OLLAMA_ROOT_URL, timeout=1)
+        r = requests.get(f"{get_ollama_base_url()}/", timeout=1)
         return r.status_code == 200 and "Ollama is running" in r.text
     except requests.RequestException:
         return False
@@ -64,7 +85,8 @@ def _get_model_extended_attrs(model_name: str) -> List[str]:
     Returns an empty list on any error or if the Ollama version does not expose capabilities.
     """
     try:
-        r = requests.post(OLLAMA_SHOW_URL, json={"name": model_name}, timeout=5)
+        url = f"{get_ollama_base_url()}/api/show"
+        r = requests.post(url, json={"name": model_name}, timeout=5)
         if r.status_code != 200:
             return []
         caps = r.json().get("capabilities", [])
@@ -81,13 +103,14 @@ def build_llm_cap_strings() -> List[str]:
 
     Attributes are omitted when not available (e.g. older Ollama without /api/show capabilities).
     """
+    tags_url = f"{get_ollama_base_url()}/api/tags"
     try:
-        r = requests.get(OLLAMA_TAGS_URL, timeout=5)
+        r = requests.get(tags_url, timeout=5)
         if r.status_code != 200:
             return []
         models = r.json().get("models", [])
     except Exception as e:
-        logger.warning(f"[ollama] Failed to fetch model list from {OLLAMA_TAGS_URL}: {e}")
+        logger.warning(f"[ollama] Failed to fetch model list from {tags_url}: {e}")
         return []
 
     cap_strings: List[str] = []
@@ -115,6 +138,97 @@ def build_llm_cap_strings() -> List[str]:
         cap_strings.append(cap)
 
     return cap_strings
+
+
+def list_ollama_models_raw() -> List[dict[str, object]]:
+    """Return raw model list from /api/tags with name, size, size_human, and modified_at.
+
+    Raises RuntimeError if Ollama is unreachable or returns an unexpected response.
+    """
+    tags_url = f"{get_ollama_base_url()}/api/tags"
+    try:
+        r = requests.get(tags_url, timeout=5)
+        if r.status_code != 200:
+            raise RuntimeError(f"Ollama returned HTTP {r.status_code}")
+        models = r.json().get("models", [])
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"Failed to list Ollama models: {e}") from e
+
+    return [
+        {
+            "name": m.get("name", ""),
+            "size": m.get("size", 0),
+            "size_human": _format_size(m.get("size", 0)) if m.get("size") else "",
+            "modified_at": m.get("modified_at", ""),
+        }
+        for m in models
+        if m.get("name")
+    ]
+
+
+def delete_ollama_model(name: str) -> None:
+    """Delete an installed Ollama model by name.
+
+    Raises RuntimeError on failure. A 404 (model not found) is also treated as an error.
+    """
+    delete_url = f"{get_ollama_base_url()}/api/delete"
+    try:
+        r = requests.delete(delete_url, json={"name": name}, timeout=30)
+        if r.status_code == 404:
+            raise RuntimeError(f"Model '{name}' not found")
+        if r.status_code != 200:
+            raise RuntimeError(f"Ollama returned HTTP {r.status_code}: {r.text[:200]}")
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"Failed to delete model '{name}': {e}") from e
+
+
+def pull_ollama_model(name: str, progress_fn: Callable[[str], None]) -> None:
+    """Pull an Ollama model, calling progress_fn with human-readable status lines.
+
+    Uses the streaming /api/pull endpoint — progress_fn is called for each update.
+    Raises RuntimeError on HTTP/connection errors. Any exception raised inside
+    progress_fn (e.g. TaskCancelled) propagates naturally to the caller.
+    """
+    pull_url = f"{get_ollama_base_url()}/api/pull"
+    try:
+        with requests.post(
+            pull_url,
+            json={"name": name, "stream": True},
+            stream=True,
+            timeout=600,
+        ) as resp:
+            if resp.status_code != 200:
+                raise RuntimeError(f"Ollama returned HTTP {resp.status_code}: {resp.text[:200]}")
+
+            for raw_line in resp.iter_lines():
+                if not raw_line:
+                    continue
+                try:
+                    data = json.loads(raw_line)
+                except ValueError:
+                    continue
+
+                if data.get("error"):
+                    raise RuntimeError(f"Ollama pull error: {data['error']}")
+
+                status = data.get("status", "")
+                total = data.get("total", 0)
+                completed = data.get("completed", 0)
+
+                if total and completed:
+                    pct = int(completed * 100 / total)
+                    progress_fn(f"{status}: {pct}%")
+                elif status:
+                    progress_fn(status)
+
+    except RuntimeError:
+        raise
+    except requests.RequestException as e:
+        raise RuntimeError(f"Failed to pull model '{name}': {e}") from e
 
 
 def get_ollama_models() -> List[str]:

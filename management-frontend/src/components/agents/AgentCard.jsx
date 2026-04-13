@@ -7,6 +7,7 @@ import AttributeTag from "../AttributeTag";
 import ColorDot from "../ColorDot";
 import ExpandableDeleteButton from "../ExpandableDeleteButton";
 import ForceRescanButton from "./ForceRescanButton";
+import OllamaManagerModal from "./OllamaManagerModal";
 import SpecialCapsModal from "./SpecialCapsModal";
 
 function relativeTime(iso) {
@@ -34,6 +35,9 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
     const slavemodeCapabilities = (a.capabilities || []).filter(c => stripCapabilityAttrs(c).startsWith('slavemode.'));
     const hasForceRescan = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.force-rescan');
     const hasSpecialCapsCtrl = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.special-caps-ctrl');
+    const hasOllamaList = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.ollama-list');
+    const hasOllamaDelete = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.ollama-delete');
+    const hasOllamaPull = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.ollama-pull');
     const regularCaps = (a.capabilities || []).filter(c => !stripCapabilityAttrs(c).startsWith('slavemode.'));
     const visibleCaps = capsExpanded ? regularCaps : regularCaps.slice(0, 4);
 
@@ -162,8 +166,16 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
                                         {hasForceRescan && <ForceRescanButton onDone={onRescanDone} />}
                                         {hasSpecialCapsCtrl && <SpecialCapsModal agentUid={a.uid} />}
+                                        {(hasOllamaList || hasOllamaDelete || hasOllamaPull) && (
+                                            <OllamaManagerModal
+                                                agentUid={a.uid}
+                                                hasList={hasOllamaList}
+                                                hasDelete={hasOllamaDelete}
+                                                hasPull={hasOllamaPull}
+                                            />
+                                        )}
                                         {slavemodeCapabilities
-                                            .filter(c => !['slavemode.force-rescan', 'slavemode.special-caps-ctrl'].includes(stripCapabilityAttrs(c)))
+                                            .filter(c => !['slavemode.force-rescan', 'slavemode.special-caps-ctrl', 'slavemode.ollama-list', 'slavemode.ollama-delete', 'slavemode.ollama-pull'].includes(stripCapabilityAttrs(c)))
                                             .map((c, i) => (
                                                 <span key={i} style={{ fontSize: '12px', padding: '2px 8px', borderRadius: '4px', background: 'rgba(217,119,6,0.12)', border: '1px solid rgba(217,119,6,0.3)', color: '#fbbf24', fontFamily: 'monospace' }}>
                                                     {stripCapabilityAttrs(c)}

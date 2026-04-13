@@ -32,6 +32,9 @@ CONFIG_KEY = "slavemode-allowed-caps"
 # All slavemode capabilities implemented in this module.
 ALL_SLAVEMODE_CAPS = [
     "slavemode.force-rescan",
+    "slavemode.ollama-delete",
+    "slavemode.ollama-list",
+    "slavemode.ollama-pull",
     "slavemode.special-caps-ctrl",
 ]
 
@@ -132,6 +135,84 @@ def _special_caps_ctrl(http: HttpClient, task_id: TaskId, capability: str, paylo
     return report_result(http, report)
 
 
+def _ollama_list(http: HttpClient, task_id: TaskId, capability: str) -> bool:
+    """List installed Ollama models and return their metadata."""
+    from ..ollama import list_ollama_models_raw
+
+    logger.info("[slavemode] ollama-list: fetching model list")
+    try:
+        models = list_ollama_models_raw()
+    except RuntimeError as e:
+        report = make_failure_report(task_id, capability, str(e))
+        return report_result(http, report)
+
+    logger.info(f"[slavemode] ollama-list: {len(models)} model(s)")
+    report = make_success_report(task_id, capability, {"models": models, "count": len(models)})
+    return report_result(http, report)
+
+
+def _ollama_delete(http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any]) -> bool:
+    """Delete an installed Ollama model.
+
+    Payload: { "model": "<name>" }
+    """
+    from ..ollama import delete_ollama_model
+
+    name = payload.get("model", "")
+    if not isinstance(name, str) or not name.strip():
+        msg = "'model' field must be a non-empty string"
+        report = make_failure_report(task_id, capability, msg)
+        return report_result(http, report)
+
+    name = name.strip()
+    logger.info(f"[slavemode] ollama-delete: deleting '{name}'")
+    try:
+        delete_ollama_model(name)
+    except RuntimeError as e:
+        report = make_failure_report(task_id, capability, str(e))
+        return report_result(http, report)
+
+    logger.info(f"[slavemode] ollama-delete: deleted '{name}'")
+    report = make_success_report(task_id, capability, {"deleted": name})
+    return report_result(http, report)
+
+
+def _ollama_pull(http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any]) -> bool:
+    """Pull an Ollama model with streaming progress updates.
+
+    Payload: { "model": "<name>" }
+    """
+    from ..ollama import pull_ollama_model
+    from .helpers import TaskCancelled, report_cancelled, report_progress, report_starting
+
+    name = payload.get("model", "")
+    if not isinstance(name, str) or not name.strip():
+        msg = "'model' field must be a non-empty string"
+        report = make_failure_report(task_id, capability, msg)
+        return report_result(http, report)
+
+    name = name.strip()
+    logger.info(f"[slavemode] ollama-pull: pulling '{name}'")
+    report_starting(http, task_id)
+
+    def on_progress(status: str) -> None:
+        logger.info(f"[slavemode] ollama-pull {name}: {status}")
+        report_progress(http, log=f"{status}\n", stage=None, task_id=task_id)
+
+    try:
+        pull_ollama_model(name, on_progress)
+    except TaskCancelled:
+        report_cancelled(http, task_id, capability)
+        return True
+    except RuntimeError as e:
+        report = make_failure_report(task_id, capability, str(e))
+        return report_result(http, report)
+
+    logger.info(f"[slavemode] ollama-pull: completed '{name}'")
+    report = make_success_report(task_id, capability, {"pulled": name}, duration_sec=60.0)
+    return report_result(http, report)
+
+
 def execute_slavemode(
     http: HttpClient,
     task_id: TaskId,
@@ -153,6 +234,12 @@ def execute_slavemode(
             return _force_rescan(http, task_id, capability)
         case "slavemode.special-caps-ctrl":
             return _special_caps_ctrl(http, task_id, capability, payload)
+        case "slavemode.ollama-list":
+            return _ollama_list(http, task_id, capability)
+        case "slavemode.ollama-delete":
+            return _ollama_delete(http, task_id, capability, payload)
+        case "slavemode.ollama-pull":
+            return _ollama_pull(http, task_id, capability, payload)
         case _:
             msg = f"Unknown slavemode capability: {capability}"
             logger.error(f"[slavemode] {msg}")

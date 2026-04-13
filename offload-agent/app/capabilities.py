@@ -239,22 +239,23 @@ def check_ollama() -> CapResult:
         llm.qwen2.5vl:7b[vision;size:5Gb;tools]
     """
     import requests
-    from .ollama import OLLAMA_ROOT_URL, build_llm_cap_strings
+    from .ollama import build_llm_cap_strings, get_ollama_base_url
 
     if not shutil.which("ollama"):
         return CapResult([], False, "llm.*", "ollama binary not found in PATH")
 
+    base_url = get_ollama_base_url()
     try:
-        r = requests.get(OLLAMA_ROOT_URL, timeout=2)
+        r = requests.get(f"{base_url}/", timeout=2)
         if not (r.status_code == 200 and "Ollama is running" in r.text):
             return CapResult(
                 [], False, "llm.*",
-                f"Ollama server at {OLLAMA_ROOT_URL} returned unexpected response (HTTP {r.status_code})",
+                f"Ollama server at {base_url} returned unexpected response (HTTP {r.status_code})",
             )
     except requests.RequestException as e:
         return CapResult(
             [], False, "llm.*",
-            f"Ollama server not reachable at {OLLAMA_ROOT_URL}: {type(e).__name__}",
+            f"Ollama server not reachable at {base_url}: {type(e).__name__}",
         )
 
     try:
@@ -354,6 +355,40 @@ def detect_capabilities(log_fn: Callable[[str], None] | None = None) -> List[str
     return available
 
 
+# Slavemode caps auto-enabled on first configuration when Ollama is detected.
+_OLLAMA_SLAVEMODE_DEFAULTS = [
+    "slavemode.ollama-delete",
+    "slavemode.ollama-list",
+    "slavemode.ollama-pull",
+]
+
+
+def _apply_default_ollama_slavemode(
+    cfg: Dict[str, Any],
+    detected_caps: List[str],
+    log_fn: Optional[Callable[[str], None]] = None,
+) -> None:
+    """Auto-enable Ollama slavemode caps when Ollama is first detected.
+
+    Runs only when ``slavemode-allowed-caps`` is absent from config (i.e. never
+    been set).  If any llm.* capability is detected, the three Ollama management
+    caps are written to config immediately so the next registration picks them up.
+    """
+    from .exec.slavemode import CONFIG_KEY as SLAVEMODE_CONFIG_KEY
+    from .config import save_config
+
+    if SLAVEMODE_CONFIG_KEY in cfg:
+        return  # User has already configured slavemode — never override
+
+    if not any(c.startswith("llm.") for c in detected_caps):
+        return
+
+    cfg[SLAVEMODE_CONFIG_KEY] = sorted(_OLLAMA_SLAVEMODE_DEFAULTS)
+    save_config(cfg)
+    if log_fn:
+        log_fn("[caps] Auto-enabled Ollama slavemode caps (first launch with Ollama detected)")
+
+
 def compute_registration_caps(
     cfg: Dict[str, Any],
     detected: List[str],
@@ -372,6 +407,9 @@ def compute_registration_caps(
     """
     detected_clean = strip_slavemode_caps(list(detected))
     detected_set = set(detected_clean)
+
+    # Auto-enable Ollama slavemode caps on first configuration
+    _apply_default_ollama_slavemode(cfg, detected_clean, log_fn)
 
     # Classify detected capabilities
     classified = classify_capabilities(detected_clean)

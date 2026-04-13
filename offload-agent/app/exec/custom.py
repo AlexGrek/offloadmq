@@ -256,7 +256,8 @@ def _execute_llm(
     data_path: Path,
 ) -> bool:
     """Execute an LLM-type custom cap by rendering the prompt template and calling Ollama."""
-    from ..ollama import OLLAMA_API_URL
+    from ..ollama import get_ollama_base_url
+    OLLAMA_API_URL = f"{get_ollama_base_url()}/api/chat"
 
     # Render prompt template with parameter values
     try:

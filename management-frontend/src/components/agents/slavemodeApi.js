@@ -31,13 +31,17 @@ export async function pollTask(cap, id, mgmtToken) {
 }
 
 export async function runSlavemodeAndPoll(capability, payload, mgmtToken) {
+    return runSlavemodeAndPollWithTimeout(capability, payload, mgmtToken, 60);
+}
+
+export async function runSlavemodeAndPollWithTimeout(capability, payload, mgmtToken, timeoutSeconds = 60) {
     const submitData = await submitSlavemodeTask(capability, payload, mgmtToken);
     const taskId = submitData?.id?.id;
     const taskCap = submitData?.id?.cap;
     if (!taskId || !taskCap) throw new Error('Unexpected submit response');
 
-    const MAX_ATTEMPTS = 30;
-    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    const maxAttempts = Math.ceil(timeoutSeconds / 2);
+    for (let i = 0; i < maxAttempts; i++) {
         await new Promise(r => setTimeout(r, 2000));
         const poll = await pollTask(taskCap, taskId, mgmtToken);
         const status = poll?.status || '';
@@ -50,5 +54,5 @@ export async function runSlavemodeAndPoll(capability, payload, mgmtToken) {
             return poll?.output;
         }
     }
-    throw new Error('Timed out waiting for agent');
+    throw new Error(`Timed out waiting for agent (${timeoutSeconds}s)`);
 }
