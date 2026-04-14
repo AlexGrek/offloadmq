@@ -2,13 +2,14 @@ import logging
 import random
 import time
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import requests
 import typer
 
+from ..httphelpers import HttpClient
 from ..models import *
-from ..httphelpers import *
+from ..transport import AgentTransport
 
 logger = logging.getLogger("agent")
 
@@ -26,6 +27,7 @@ class TaskCancelled(Exception):
 # ---------------------------------------------------------------------------
 _pending_logs: dict[str, list[str]] = {}
 _pending_stage: dict[str, Optional[str]] = {}
+ReportClient = AgentTransport | HttpClient
 
 
 def _buffer_log(task_id: TaskId, log: Optional[str], stage: Optional[str]) -> None:
@@ -75,10 +77,7 @@ def _is_retryable(exc: Exception) -> bool:
 
 
 def _retry_post(
-    http: HttpClient,
-    segments: tuple[str, ...],
-    json_body: dict[str, Any],
-    timeout: int,
+    send_fn: Callable[[], requests.Response],
     max_elapsed_sec: float,
     base_delay: float,
     max_delay: float,
@@ -90,7 +89,7 @@ def _retry_post(
 
     while True:
         try:
-            resp = http.post(*segments, json_body=json_body, timeout=timeout)
+            resp = send_fn()
             if resp.status_code == 499:
                 raise TaskCancelled("Server returned 499 — task cancelled by client")
             resp.raise_for_status()
@@ -131,23 +130,45 @@ def _progress_wire_status(stage: Optional[str], has_log: bool) -> Optional[str]:
     return None
 
 
-def _flush_logs(http: HttpClient, task_id: TaskId) -> bool:
+def _post_progress(
+    transport: ReportClient, task_id: TaskId, report: TaskProgressReport, timeout: int
+) -> requests.Response:
+    if hasattr(transport, "post_task_progress"):
+        return transport.post_task_progress(task_id, report, timeout=timeout)
+    q = task_id.quoted()
+    return transport.post(
+        "private", "agent", "task", "progress", q.cap, q.id,
+        json_body=report.to_wire(),
+        timeout=timeout,
+    )
+
+
+def _post_result(
+    transport: ReportClient, report: TaskResultReport, timeout: int
+) -> requests.Response:
+    if hasattr(transport, "post_task_result"):
+        return transport.post_task_result(report, timeout=timeout)
+    q = report.task_id.quoted()
+    return transport.post(
+        "private", "agent", "task", "resolve", q.cap, q.id,
+        json_body=report.to_wire(),
+        timeout=timeout,
+    )
+
+
+def _flush_logs(transport: ReportClient, task_id: TaskId) -> bool:
     """Send all buffered logs with fast retry. Called before report_result."""
     combined, stage = _drain_logs(task_id)
     if combined is None and stage is None:
         return True
 
-    q = task_id.quoted()
     wire_status = _progress_wire_status(stage, combined is not None)
     report = TaskProgressReport(
         id=task_id, stage=stage, log_update=combined, status=wire_status
     )
     try:
         _retry_post(
-            http,
-            ("private", "agent", "task", "progress", q.cap, q.id),
-            json_body=report.to_wire(),
-            timeout=30,
+            send_fn=lambda: _post_progress(transport, task_id, report, timeout=30),
             max_elapsed_sec=30.0,
             base_delay=1.0,
             max_delay=16.0,
@@ -165,21 +186,17 @@ def _flush_logs(http: HttpClient, task_id: TaskId) -> bool:
 # Public API — signatures unchanged
 # ---------------------------------------------------------------------------
 
-def report_result(http: HttpClient, report: TaskResultReport) -> bool:
+def report_result(transport: ReportClient, report: TaskResultReport) -> bool:
     """Send final task result to the server with retry (up to 5 minutes)."""
     # Flush any buffered logs first (best-effort, doesn't block result)
-    _flush_logs(http, report.task_id)
+    _flush_logs(transport, report.task_id)
 
     q = report.task_id.quoted()
-    wire = report.to_wire()
-    logger.info(f"Sending resolve report: {wire}")
+    logger.info(f"Sending resolve report: {report.to_wire()}")
     try:
         typer.echo(f"Reporting result for task id={q.id} cap={q.cap}")
         resp = _retry_post(
-            http,
-            ("private", "agent", "task", "resolve", q.cap, q.id),
-            json_body=wire,
-            timeout=60,
+            send_fn=lambda: _post_result(transport, report, timeout=60),
             max_elapsed_sec=300.0,
             base_delay=2.0,
             max_delay=60.0,
@@ -201,21 +218,16 @@ def report_result(http: HttpClient, report: TaskResultReport) -> bool:
         return False
 
 
-def report_starting(http: HttpClient, task_id: TaskId) -> bool:
+def report_starting(transport: ReportClient, task_id: TaskId) -> bool:
     """Signal to the server that the agent has started working on the task.
 
     Raises ``TaskCancelled`` if the server returns 499.
     """
-    q = task_id.quoted()
     report = TaskProgressReport(
         id=task_id, stage="starting", log_update=None, status="starting"
     )
     try:
-        resp = http.post(
-            "private", "agent", "task", "progress", q.cap, q.id,
-            json_body=report.to_wire(),
-            timeout=10,
-        )
+        resp = _post_progress(transport, task_id, report, timeout=10)
         if resp.status_code == 499:
             raise TaskCancelled("Server returned 499 — task cancelled by client")
         resp.raise_for_status()
@@ -227,7 +239,7 @@ def report_starting(http: HttpClient, task_id: TaskId) -> bool:
         return False
 
 
-def report_progress(http: HttpClient, log: Optional[str], stage: Optional[str], task_id: TaskId) -> bool:
+def report_progress(transport: ReportClient, log: Optional[str], stage: Optional[str], task_id: TaskId) -> bool:
     """Send progress/logs to server. On failure, buffers for next attempt.
 
     Raises ``TaskCancelled`` if the server returns 499.
@@ -239,7 +251,6 @@ def report_progress(http: HttpClient, log: Optional[str], stage: Optional[str], 
         merged_log = (buffered_log or "") + (log or "")
     effective_stage = stage if stage is not None else buffered_stage
 
-    q = task_id.quoted()
     wire_status = _progress_wire_status(effective_stage, merged_log is not None)
     report = TaskProgressReport(
         id=task_id,
@@ -248,11 +259,7 @@ def report_progress(http: HttpClient, log: Optional[str], stage: Optional[str], 
         status=wire_status,
     )
     try:
-        resp = http.post(
-            "private", "agent", "task", "progress", q.cap, q.id,
-            json_body=report.to_wire(),
-            timeout=10,
-        )
+        resp = _post_progress(transport, task_id, report, timeout=10)
         if resp.status_code == 499:
             raise TaskCancelled("Server returned 499 — task cancelled by client")
         resp.raise_for_status()
@@ -294,7 +301,7 @@ def make_failure_report(
 
 
 def report_cancelled(
-    http: HttpClient,
+    transport: ReportClient,
     task_id: TaskId,
     capability: str,
     output: Optional[dict[str, Any]] = None,
@@ -308,10 +315,10 @@ def report_cancelled(
     """
     if remaining_log:
         try:
-            report_progress(http, log=remaining_log, stage="cancelled", task_id=task_id)
+            report_progress(transport, log=remaining_log, stage="cancelled", task_id=task_id)
         except TaskCancelled:
             pass  # Expected — server already knows it's cancelled
     report = make_failure_report(
         task_id, capability, "Task cancelled by client", extra_output=output,
     )
-    report_result(http, report)
+    report_result(transport, report)
