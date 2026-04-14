@@ -1,11 +1,12 @@
-"""ONNX model registry — download, list, delete, and locate model files.
+"""ONNX model registry - download, list, delete, and locate model files.
 
 Models are stored in a configurable directory (default: ~/.offload-agent/onnx-models/).
 Each model is identified by a short name (e.g. 'nudenet') and maps to a known
-download URL and expected filename.
+download URL (or mirror list) and expected filename.
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,14 +18,42 @@ logger = logging.getLogger("agent")
 
 _DEFAULT_MODELS_DIR = Path.home() / ".offload-agent" / "onnx-models"
 
-ONNX_MODEL_REGISTRY: dict[str, dict[str, str]] = {
+# Reject tiny payloads (e.g. HTML error/login pages) so we can try the next mirror.
+_MIN_VALID_ONNX_BYTES = 2_000_000
+
+# Anonymous access to notaitech/nudenet on Hugging Face often returns 401; mirrors listed first.
+ONNX_MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     "nudenet": {
-        "url": "https://huggingface.co/notaitech/nudenet/resolve/main/320n.onnx",
+        "urls": [
+            "https://huggingface.co/zhangsongbo365/nudenet_onnx/resolve/main/320n.onnx",
+            "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.onnx",
+            "https://huggingface.co/notaitech/nudenet/resolve/main/320n.onnx",
+        ],
         "filename": "320n.onnx",
         "capability": "onnx.nudenet",
-        "description": "NudeNet v3 detector — NSFW region detection (YOLO-based, 320px)",
+        "description": "NudeNet v3 detector - NSFW region detection (YOLO-based, 320px)",
     },
 }
+
+
+def _model_urls(meta: dict[str, Any]) -> list[str]:
+    urls = meta.get("urls")
+    if isinstance(urls, list) and urls:
+        return [str(u) for u in urls]
+    single = meta.get("url")
+    return [str(single)] if single else []
+
+
+def _download_headers(url: str) -> dict[str, str]:
+    """Headers for model downloads (HF token if set; UA avoids some CDN edge cases)."""
+    headers: dict[str, str] = {
+        "User-Agent": "offload-agent (onnx-models; https://github.com/notAI-tech/NudeNet)",
+    }
+    if "huggingface.co" in url:
+        token = (os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def models_dir() -> Path:
@@ -41,7 +70,8 @@ def model_path(name: str) -> Path | None:
     meta = ONNX_MODEL_REGISTRY.get(name)
     if not meta:
         return None
-    p = models_dir() / meta["filename"]
+    fname = str(meta["filename"])
+    p = models_dir() / fname
     return p if p.is_file() else None
 
 
@@ -53,12 +83,13 @@ def list_models() -> list[dict[str, Any]]:
     """Return metadata for all known models with availability status."""
     result: list[dict[str, Any]] = []
     for name, meta in ONNX_MODEL_REGISTRY.items():
-        p = models_dir() / meta["filename"]
+        fname = str(meta["filename"])
+        p = models_dir() / fname
         entry: dict[str, Any] = {
             "name": name,
             "capability": meta["capability"],
             "description": meta["description"],
-            "filename": meta["filename"],
+            "filename": fname,
             "installed": p.is_file(),
         }
         if p.is_file():
@@ -93,38 +124,57 @@ def prepare_model(
 
     dest_dir = models_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / meta["filename"]
+    fname = str(meta["filename"])
+    dest = dest_dir / fname
 
     if dest.is_file():
         if on_progress:
             on_progress(f"Model '{name}' already downloaded at {dest}")
         return dest
 
-    url = meta["url"]
-    if on_progress:
-        on_progress(f"Downloading '{name}' from {url}...")
+    urls = _model_urls(meta)
+    if not urls:
+        raise RuntimeError(f"No download URLs configured for model '{name}'")
 
     tmp = dest.with_suffix(".download")
-    try:
-        resp = requests.get(url, stream=True, timeout=30)
-        resp.raise_for_status()
-        total = int(resp.headers.get("content-length", 0))
-        downloaded = 0
+    errors: list[str] = []
 
-        with open(tmp, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=256 * 1024):
-                f.write(chunk)
-                downloaded += len(chunk)
-                if on_progress and total:
-                    pct = downloaded * 100 // total
-                    on_progress(f"Downloading '{name}': {pct}% ({downloaded}/{total} bytes)")
-
-        tmp.rename(dest)
-        if on_progress:
-            on_progress(f"Model '{name}' downloaded to {dest} ({downloaded} bytes)")
-        return dest
-
-    except Exception as e:
+    for url in urls:
         if tmp.is_file():
             tmp.unlink()
-        raise RuntimeError(f"Failed to download model '{name}': {e}") from e
+        try:
+            if on_progress:
+                on_progress(f"Downloading '{name}' from {url}...")
+
+            headers = _download_headers(url)
+            resp = requests.get(url, stream=True, timeout=120, headers=headers)
+            resp.raise_for_status()
+            total = int(resp.headers.get("content-length", 0))
+            downloaded = 0
+
+            with open(tmp, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=256 * 1024):
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if on_progress and total:
+                        pct = downloaded * 100 // total
+                        on_progress(f"Downloading '{name}': {pct}% ({downloaded}/{total} bytes)")
+
+            if downloaded < _MIN_VALID_ONNX_BYTES:
+                raise ValueError(
+                    f"Download too small ({downloaded} bytes); expected a multi-MB ONNX file"
+                )
+
+            tmp.rename(dest)
+            if on_progress:
+                on_progress(f"Model '{name}' downloaded to {dest} ({downloaded} bytes)")
+            return dest
+
+        except Exception as e:
+            if tmp.is_file():
+                tmp.unlink()
+            err = f"{url}: {e}"
+            errors.append(err)
+            logger.warning(f"[onnx] {err}")
+
+    raise RuntimeError(f"Failed to download model '{name}'. Tried: {' | '.join(errors)}")
