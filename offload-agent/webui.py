@@ -260,6 +260,15 @@ def _custom_caps_dir() -> Path:
     return _find_custom_caps_dir()
 
 
+def _list_onnx_models() -> List[Dict[str, Any]]:
+    try:
+        from app.onnx_models import list_models
+        return list_models()
+    except Exception as exc:
+        _log(f"[onnx] Error listing ONNX models: {exc}")
+        return []
+
+
 def _list_custom_caps() -> List[Dict[str, Any]]:
     from app.custom_caps import discover_custom_caps
     try:
@@ -399,6 +408,7 @@ def _build_api_state() -> Dict[str, Any]:
         "version": APP_VERSION,
         "slavemode_all_caps": ALL_SLAVEMODE_CAPS,
         "slavemode_allowed": list(cfg.get(SLAVEMODE_CONFIG_KEY) or []),
+        "onnx_models": _list_onnx_models(),
     }
 
 

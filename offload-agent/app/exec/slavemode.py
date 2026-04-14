@@ -23,6 +23,7 @@ from ..config import load_config
 from ..custom_caps import delete_custom_cap, discover_custom_caps, save_custom_cap_yaml
 from ..httphelpers import HttpClient
 from ..models import TaskId
+from ..onnx_models import ONNX_MODEL_REGISTRY, delete_model as onnx_delete, list_models as onnx_list, prepare_model as onnx_prepare
 from .helpers import make_failure_report, make_success_report, report_result
 
 logger = logging.getLogger("agent")
@@ -35,6 +36,9 @@ ALL_SLAVEMODE_CAPS = [
     "slavemode.ollama-delete",
     "slavemode.ollama-list",
     "slavemode.ollama-pull",
+    "slavemode.onnx-models-delete",
+    "slavemode.onnx-models-list",
+    "slavemode.onnx-models-prepare",
     "slavemode.special-caps-ctrl",
 ]
 
@@ -213,6 +217,85 @@ def _ollama_pull(http: HttpClient, task_id: TaskId, capability: str, payload: di
     return report_result(http, report)
 
 
+def _onnx_models_list(http: HttpClient, task_id: TaskId, capability: str) -> bool:
+    """List all known ONNX models and their download status."""
+    logger.info("[slavemode] onnx-models-list: fetching model list")
+    models = onnx_list()
+    logger.info(f"[slavemode] onnx-models-list: {len(models)} model(s)")
+    report = make_success_report(task_id, capability, {"models": models, "count": len(models)})
+    return report_result(http, report)
+
+
+def _onnx_models_delete(http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any]) -> bool:
+    """Delete a downloaded ONNX model.
+
+    Payload: { "model": "<name>" }
+    """
+    name = payload.get("model", "")
+    if not isinstance(name, str) or not name.strip():
+        msg = "'model' field must be a non-empty string"
+        report = make_failure_report(task_id, capability, msg)
+        return report_result(http, report)
+
+    name = name.strip()
+    if name not in ONNX_MODEL_REGISTRY:
+        known = ", ".join(ONNX_MODEL_REGISTRY)
+        msg = f"Unknown ONNX model '{name}'. Known models: {known}"
+        report = make_failure_report(task_id, capability, msg)
+        return report_result(http, report)
+
+    logger.info(f"[slavemode] onnx-models-delete: deleting '{name}'")
+    deleted = onnx_delete(name)
+    if not deleted:
+        msg = f"ONNX model '{name}' is not installed"
+        report = make_failure_report(task_id, capability, msg)
+        return report_result(http, report)
+
+    logger.info(f"[slavemode] onnx-models-delete: deleted '{name}'")
+    from ..capabilities import rescan_and_push
+    updated_caps = rescan_and_push(http, lambda msg: logger.info(msg))
+    report = make_success_report(task_id, capability, {"deleted": name, "caps": updated_caps})
+    return report_result(http, report)
+
+
+def _onnx_models_prepare(http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any]) -> bool:
+    """Download an ONNX model with streaming progress updates.
+
+    Payload: { "model": "<name>" }
+    """
+    from .helpers import TaskCancelled, report_cancelled, report_progress, report_starting
+
+    name = payload.get("model", "")
+    if not isinstance(name, str) or not name.strip():
+        msg = "'model' field must be a non-empty string"
+        report = make_failure_report(task_id, capability, msg)
+        return report_result(http, report)
+
+    name = name.strip()
+    logger.info(f"[slavemode] onnx-models-prepare: preparing '{name}'")
+    report_starting(http, task_id)
+
+    def on_progress(status: str) -> None:
+        logger.info(f"[slavemode] onnx-models-prepare {name}: {status}")
+        report_progress(http, log=f"{status}\n", stage=None, task_id=task_id)
+
+    try:
+        path = onnx_prepare(name, on_progress)
+    except TaskCancelled:
+        report_cancelled(http, task_id, capability)
+        return True
+    except RuntimeError as e:
+        report = make_failure_report(task_id, capability, str(e))
+        return report_result(http, report)
+
+    logger.info(f"[slavemode] onnx-models-prepare: completed '{name}' at {path}")
+
+    from ..capabilities import rescan_and_push
+    updated_caps = rescan_and_push(http, lambda msg: logger.info(msg))
+    report = make_success_report(task_id, capability, {"prepared": name, "path": str(path), "caps": updated_caps})
+    return report_result(http, report)
+
+
 def execute_slavemode(
     http: HttpClient,
     task_id: TaskId,
@@ -240,6 +323,12 @@ def execute_slavemode(
             return _ollama_delete(http, task_id, capability, payload)
         case "slavemode.ollama-pull":
             return _ollama_pull(http, task_id, capability, payload)
+        case "slavemode.onnx-models-list":
+            return _onnx_models_list(http, task_id, capability)
+        case "slavemode.onnx-models-delete":
+            return _onnx_models_delete(http, task_id, capability, payload)
+        case "slavemode.onnx-models-prepare":
+            return _onnx_models_prepare(http, task_id, capability, payload)
         case _:
             msg = f"Unknown slavemode capability: {capability}"
             logger.error(f"[slavemode] {msg}")

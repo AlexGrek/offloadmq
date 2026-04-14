@@ -21,6 +21,7 @@ from .exec.shellcmd import *
 from .exec.docker import *
 from .exec.imggen import execute_imggen_comfyui
 from .exec.custom import execute_custom_cap
+from .exec.onnx import execute_onnx
 from .exec.slavemode import execute_slavemode, merge_registration_caps
 from .data.updn import process_data_download
 from .data.fs_utils import *
@@ -232,6 +233,9 @@ def route_executor(cap: str) -> Callable[..., bool] | None:
 
     if cap.startswith("imggen."):
         return execute_imggen_comfyui
+
+    if cap.startswith("onnx."):
+        return execute_onnx
 
     if cap.startswith("custom."):
         return execute_custom_cap

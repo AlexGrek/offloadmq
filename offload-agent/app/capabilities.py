@@ -232,6 +232,40 @@ def check_custom_caps() -> CapResult:
     )
 
 
+def check_onnx() -> CapResult:
+    """Check for downloaded ONNX models and onnxruntime availability.
+
+    Returns one capability per installed model (e.g. onnx.nudenet).
+    Only reports models whose files are present on disk — downloading
+    is handled separately via slavemode or CLI.
+    """
+    try:
+        import onnxruntime  # type: ignore[import-untyped]  # noqa: F401
+    except ImportError:
+        return CapResult(
+            [], False, "onnx.*",
+            "onnxruntime not installed — run 'pip install onnxruntime'",
+        )
+
+    from .onnx_models import list_models
+
+    models = list_models()
+    installed = [m for m in models if m["installed"]]
+    if not installed:
+        known = ", ".join(m["name"] for m in models)
+        return CapResult(
+            [], False, "onnx.*",
+            f"onnxruntime available but no models downloaded (known: {known})",
+        )
+
+    caps = [m["capability"] for m in installed]
+    label = ", ".join(caps)
+    return CapResult(
+        caps, True, "onnx.*",
+        f"{len(installed)} ONNX model(s) ready: {label}",
+    )
+
+
 def check_ollama() -> CapResult:
     """Check Ollama availability and return one extended llm.* cap per installed model.
 
@@ -285,8 +319,8 @@ def is_sensitive_capability(cap: str) -> bool:
 
 def is_regular_capability(cap: str) -> bool:
     """Return True if capability is regular (opt-out, enabled by default)."""
-    # Regular: llm, imggen, tts, debug, custom
-    prefixes = ("llm.", "imggen.", "tts.", "debug.", "custom.")
+    # Regular: llm, imggen, tts, debug, custom, onnx
+    prefixes = ("llm.", "imggen.", "tts.", "debug.", "custom.", "onnx.")
     return any(cap.startswith(p) for p in prefixes)
 
 
@@ -324,6 +358,7 @@ _CHECKS: List[Callable[[], CapResult]] = [
     check_kokoro,
     check_comfyui,
     check_custom_caps,
+    check_onnx,
     check_ollama,
 ]
 
@@ -362,6 +397,12 @@ _OLLAMA_SLAVEMODE_DEFAULTS = [
     "slavemode.ollama-pull",
 ]
 
+_ONNX_SLAVEMODE_DEFAULTS = [
+    "slavemode.onnx-models-delete",
+    "slavemode.onnx-models-list",
+    "slavemode.onnx-models-prepare",
+]
+
 
 def _apply_default_ollama_slavemode(
     cfg: Dict[str, Any],
@@ -389,6 +430,45 @@ def _apply_default_ollama_slavemode(
         log_fn("[caps] Auto-enabled Ollama slavemode caps (first launch with Ollama detected)")
 
 
+def _apply_default_onnx_slavemode(
+    cfg: Dict[str, Any],
+    detected_caps: List[str],
+    log_fn: Optional[Callable[[str], None]] = None,
+) -> None:
+    """Auto-enable ONNX slavemode caps once ONNX runtime is available.
+
+    Uses a separate flag (``_onnx_slavemode_initialized``) so it doesn't conflict
+    with the Ollama auto-enable logic that checks for the slavemode key's existence.
+    """
+    from .exec.slavemode import CONFIG_KEY as SLAVEMODE_CONFIG_KEY
+    from .config import save_config
+
+    if cfg.get("_onnx_slavemode_initialized"):
+        return
+
+    has_onnx_cap = any(c.startswith("onnx.") for c in detected_caps)
+    has_onnx_runtime = False
+    if not has_onnx_cap:
+        try:
+            import onnxruntime  # noqa: F401
+            has_onnx_runtime = True
+        except ImportError:
+            has_onnx_runtime = False
+
+    if not has_onnx_cap and not has_onnx_runtime:
+        return
+
+    existing: list[Any] = cfg.get(SLAVEMODE_CONFIG_KEY) or []
+    added = [c for c in _ONNX_SLAVEMODE_DEFAULTS if c not in existing]
+    if added:
+        cfg[SLAVEMODE_CONFIG_KEY] = sorted(set(list(existing) + _ONNX_SLAVEMODE_DEFAULTS))
+
+    cfg["_onnx_slavemode_initialized"] = True
+    save_config(cfg)
+    if log_fn and added:
+        log_fn("[caps] Auto-enabled ONNX slavemode caps (first launch with ONNX runtime available)")
+
+
 def compute_registration_caps(
     cfg: Dict[str, Any],
     detected: List[str],
@@ -408,8 +488,9 @@ def compute_registration_caps(
     detected_clean = strip_slavemode_caps(list(detected))
     detected_set = set(detected_clean)
 
-    # Auto-enable Ollama slavemode caps on first configuration
+    # Auto-enable slavemode caps on first configuration
     _apply_default_ollama_slavemode(cfg, detected_clean, log_fn)
+    _apply_default_onnx_slavemode(cfg, detected_clean, log_fn)
 
     # Classify detected capabilities
     classified = classify_capabilities(detected_clean)

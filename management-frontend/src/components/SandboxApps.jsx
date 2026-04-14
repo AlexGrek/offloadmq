@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 const DevPanel = React.lazy(() => import('./DevPanel'));
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch, MessageCircleMore, GitCompareArrows } from 'lucide-react';
+import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch, MessageCircleMore, GitCompareArrows, ShieldAlert } from 'lucide-react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Define the content for each app as a functional component.
@@ -68,6 +68,7 @@ const CustomApp = React.lazy(() => import('./CustomApp'))
 const ImageAnalyzerApp = React.lazy(() => import('./ImageAnalyzerApp'))
 const LlmDebateApp = React.lazy(() => import('./LlmDebateApp'))
 const LlmCompareApp = React.lazy(() => import('./LlmCompareApp'))
+const NudeDetectorApp = React.lazy(() => import('./NudeDetectorApp'))
 
 const CAPABILITIES_COLLAPSE_AT = 3;
 
@@ -84,6 +85,7 @@ const apps = [
   { id: 'imganalyzer', name: 'Image Analyzer', logo: ScanSearch, app: ImageAnalyzerApp },
   { id: 'llmdebate', name: 'LLM Debate', logo: MessageCircleMore, app: LlmDebateApp },
   { id: 'llmcompare', name: 'LLM Compare', logo: GitCompareArrows, app: LlmCompareApp },
+  { id: 'nudedetect', name: 'Nude Detector', logo: ShieldAlert, app: NudeDetectorApp },
   { id: 'custom', name: 'Custom', logo: Blocks, app: CustomApp },
 ];
 

@@ -17,6 +17,8 @@ custom_app = typer.Typer(help="Manage custom capabilities")
 app.add_typer(custom_app, name="custom")
 slavemode_app = typer.Typer(help="Manage slavemode capability permissions")
 app.add_typer(slavemode_app, name="slavemode")
+onnx_app = typer.Typer(help="Manage ONNX models (download, list, delete)")
+app.add_typer(onnx_app, name="onnx")
 
 
 @app.command("sysinfo", help="Display system information")
@@ -368,3 +370,107 @@ def cli_slavemode_deny(
     cfg[CONFIG_KEY] = sorted(set(existing))
     save_config(cfg)
     typer.echo(f"Denied '{cap}'.")
+
+
+# ---------------------------------------------------------------------------
+# ONNX model management
+# ---------------------------------------------------------------------------
+
+@onnx_app.command("list", help="List known ONNX models and their download status")
+def cli_onnx_list() -> None:
+    from .onnx_models import list_models, models_dir
+
+    typer.echo(f"Models directory: {models_dir()}\n")
+    models = list_models()
+    if not models:
+        typer.echo("No known ONNX models in registry.")
+        return
+
+    for m in models:
+        status = "✅ installed" if m["installed"] else "❌ not downloaded"
+        typer.echo(f"  {m['name']} ({m['capability']})")
+        typer.echo(f"    {m['description']}")
+        typer.echo(f"    Status: {status}")
+        if m.get("size_bytes"):
+            mb = m["size_bytes"] / (1024 * 1024)
+            typer.echo(f"    Size: {mb:.1f} MB")
+            typer.echo(f"    Path: {m['path']}")
+        typer.echo()
+
+
+@onnx_app.command("prepare", help="Download an ONNX model")
+def cli_onnx_prepare(
+    name: str = typer.Argument(..., help="Model name to download (e.g. 'nudenet')"),
+) -> None:
+    from .onnx_models import prepare_model
+
+    def on_progress(status: str) -> None:
+        typer.echo(status)
+
+    try:
+        path = prepare_model(name, on_progress)
+    except RuntimeError as e:
+        typer.echo(f"Error: {e}")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"\n✅ Model '{name}' ready at {path}")
+
+
+@onnx_app.command("delete", help="Delete a downloaded ONNX model")
+def cli_onnx_delete(
+    name: str = typer.Argument(..., help="Model name to delete (e.g. 'nudenet')"),
+) -> None:
+    from .onnx_models import delete_model
+
+    if delete_model(name):
+        typer.echo(f"Deleted ONNX model '{name}'.")
+    else:
+        typer.echo(f"ONNX model '{name}' is not installed or unknown.")
+        raise typer.Exit(code=1)
+
+
+@onnx_app.command("enable", help="Download model(s) and enable ONNX + slavemode capabilities")
+def cli_onnx_enable(
+    name: str = typer.Argument("nudenet", help="Model name to prepare (default: nudenet)"),
+) -> None:
+    from .onnx_models import prepare_model, ONNX_MODEL_REGISTRY
+    from .exec.slavemode import CONFIG_KEY
+
+    if name not in ONNX_MODEL_REGISTRY:
+        known = ", ".join(ONNX_MODEL_REGISTRY)
+        typer.echo(f"Error: Unknown model '{name}'. Known: {known}")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Preparing ONNX model '{name}'...")
+
+    def on_progress(status: str) -> None:
+        typer.echo(f"  {status}")
+
+    try:
+        path = prepare_model(name, on_progress)
+    except RuntimeError as e:
+        typer.echo(f"Error: {e}")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"✅ Model ready at {path}\n")
+
+    onnx_slavemode = [
+        "slavemode.onnx-models-delete",
+        "slavemode.onnx-models-list",
+        "slavemode.onnx-models-prepare",
+    ]
+
+    cfg = load_config()
+    existing: list[str] = cfg.get(CONFIG_KEY) or []
+    added = [c for c in onnx_slavemode if c not in existing]
+
+    if added:
+        cfg[CONFIG_KEY] = sorted(set(existing + onnx_slavemode))
+        save_config(cfg)
+        typer.echo(f"Enabled {len(added)} ONNX slavemode cap(s):")
+        for cap in added:
+            typer.echo(f"  + {cap}")
+    else:
+        typer.echo("ONNX slavemode capabilities were already enabled.")
+
+    typer.echo(f"\nONNX capability '{ONNX_MODEL_REGISTRY[name]['capability']}' is now available.")
