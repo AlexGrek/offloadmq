@@ -1,5 +1,6 @@
 SERVER ?= http://localhost:3069
 KEY ?= ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
+PDM ?= pdm
 
 # Version injected at build time (override: make build VERSION=v0.3.260).
 # Same rules as scripts/release-agent.sh (see scripts/compute-agent-version.sh).
@@ -8,42 +9,39 @@ _COMPUTE_VER := $(abspath $(CURDIR)/../scripts/compute-agent-version.sh)
 VERSION ?= $(shell bash "$(_COMPUTE_VER)" 2>/dev/null || echo "v0.0.0")
 
 venv:
-	python3 -m venv venv
-	bash -c "source venv/bin/activate && pip3 install -r requirements.txt"
+	$(PDM) sync --group dev --group build
 
 # Production web UI bundle (required for packaged agent and make webui)
 frontend-build:
 	cd frontend && npm ci && npm run build
 
 register: venv
-	bash -c "source venv/bin/activate && python offload-agent.py cli register --server $(SERVER) --key $(KEY)"
+	$(PDM) run python offload-agent.py cli register --server $(SERVER) --key $(KEY)
 
 serve: register
-	bash -c "source venv/bin/activate && python offload-agent.py cli serve"
+	$(PDM) run python offload-agent.py cli serve
 
 sysinfo: venv
-	bash -c "source venv/bin/activate && python offload-agent.py cli sysinfo"
+	$(PDM) run python offload-agent.py cli sysinfo
 
 ollama: venv
-	bash -c "source venv/bin/activate && python offload-agent.py cli ollama"
+	$(PDM) run python offload-agent.py cli ollama
 
 # Standalone binary: rebuilds frontend then PyInstaller
 build: venv frontend-build
-	@echo "Installing PyInstaller..."
-	bash -c "source venv/bin/activate && pip install pyinstaller --quiet"
 	@echo "APP_VERSION = '$(VERSION)'" > app/_version.py
 	@echo "Building binary with PyInstaller (version: $(VERSION))..."
-	bash -c "source venv/bin/activate && python -m PyInstaller --onefile --name offload-agent \
+	$(PDM) run pyinstaller --onefile --name offload-agent \
 		--add-data 'app:app' \
 		--add-data 'webui.py:.' \
 		--add-data 'webui_comfy.py:.' \
 		--add-data 'frontend/dist:frontend/dist' \
-		offload-agent.py"
+		offload-agent.py
 	@echo ""
 	@echo "Build complete. The binary is located in the 'dist' directory."
 
 typecheck: venv
-	bash -c "source venv/bin/activate && python -m mypy"
+	$(PDM) run mypy
 
 # Install binary + register + set up headless systemd service (no webui)
 # Usage: make install-systemd SERVER=https://offloadmq.alexgr.space KEY=<agent_key>
@@ -77,10 +75,10 @@ rebuild: clean build
 
 clean:
 	@echo "Cleaning up build artifacts..."
-	rm -rf build/ dist/ offload-agent.spec
+	rm -rf build/ dist/ offload-agent.spec .venv/ __pypackages__/ .pdm-python
 	@echo "Cleanup complete."
 
 webui: venv frontend-build
-	bash -c "source venv/bin/activate && python offload-agent.py webui"
+	$(PDM) run python offload-agent.py webui
 
 .PHONY: sysinfo register ollama build rebuild clean webui frontend-build typecheck install-systemd register-systemd _write-systemd-service release

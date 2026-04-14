@@ -172,21 +172,17 @@ offload-agent install launchd             # macOS: creates LaunchAgent
 ```bash
 git clone ...
 cd offload-agent
+python3 -m pip install --user pdm
+pdm sync --group dev --group build
 
-# Core only (cli command)
-pip install requests psutil websocket-client typer colorlog pydantic
-
-# With webui support
-pip install -r requirements.txt
-
-python offload-agent.py cli register --server http://localhost:3069 --key ak_live_...
-python offload-agent.py cli serve
+pdm run python offload-agent.py cli register --server http://localhost:3069 --key ak_live_...
+pdm run python offload-agent.py cli serve
 ```
 
 Or use make:
 
 ```bash
-make venv       # create virtualenv + install all deps
+make venv       # sync dependencies via pdm
 make register   # register agent
 make serve      # register + serve
 make webui      # start web UI
@@ -377,3 +373,8 @@ See [docs/slavemode-capabilities.md](../../docs/slavemode-capabilities.md) for c
 **Optional**:
 - `GPUtil`, `pynvml` — GPU detection
 - `boto3` — AWS integration
+
+Dependency management uses `pdm` with:
+- runtime dependencies in `pyproject.toml` `[project.dependencies]`
+- `build` group for PyInstaller
+- `dev` group for mypy + typing stubs

@@ -12,8 +12,9 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PDM_CHECK_UPDATE=false
+COPY pyproject.toml pdm.lock ./
+RUN pip install --no-cache-dir pdm && pdm sync --prod --no-editable --no-self
 
 COPY . .
 COPY --from=frontend-build /app/dist ./frontend/dist
@@ -24,5 +25,5 @@ ENV WEBUI_PORT=8081
 
 EXPOSE 8081
 
-CMD python offload-agent.py cli register --server "$SERVER" --key "$AGENT_KEY" && \
-    python offload-agent.py webui --host 0.0.0.0 --port "$WEBUI_PORT" --agent-autostart
+CMD pdm run python offload-agent.py cli register --server "$SERVER" --key "$AGENT_KEY" && \
+    pdm run python offload-agent.py webui --host 0.0.0.0 --port "$WEBUI_PORT" --agent-autostart

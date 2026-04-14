@@ -73,9 +73,9 @@ Write-Host "-> Building offload-agent..."
 
 Push-Location $AgentDir
 try {
-    # Create venv if missing
-    if (-not (Test-Path "venv")) {
-        python -m venv venv
+    $PdmExe = Get-Command pdm -ErrorAction SilentlyContinue
+    if (-not $PdmExe) {
+        throw "pdm is required (install with: python -m pip install --user pdm)"
     }
 
     # Build frontend
@@ -85,8 +85,8 @@ try {
     Pop-Location
 
     # Install deps + pyinstaller
-    & venv\Scripts\pip.exe install -r requirements.txt --quiet
-    & venv\Scripts\pip.exe install pyinstaller --quiet
+    & pdm sync --group dev --group build
+    if ($LASTEXITCODE -ne 0) { throw "pdm sync failed" }
 
     # Inject version into _version.py so it's bundled correctly
     Set-Content -Path "app\_version.py" -Value "APP_VERSION = '$Version'"
@@ -95,7 +95,7 @@ try {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "dist", "build"
 
     # Build single-file exe (Windows uses ; as add-data separator)
-    & venv\Scripts\python.exe -m PyInstaller `
+    & pdm run pyinstaller `
         --onefile `
         --name offload-agent `
         "--add-data=app;app" `
