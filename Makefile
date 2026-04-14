@@ -14,7 +14,7 @@ CONTAINER_RUNTIME := docker
 DL_API_KEY  ?=
 DL_BASE_URL ?= https://dl.alexgr.space
 
-.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all pre-pull-images wait-for-image-pull release-agent update-agent-on-this-linux update-agent-on-this-mac
+.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all pre-pull-images wait-for-image-pull release-agent update-agent-on-this-linux update-agent-on-this-mac kill-agent-on-this-mac
 
 # Build container image (linux/amd64 only, pushed directly via buildx)
 build:
@@ -266,12 +266,16 @@ update-agent-on-this-linux:
 	@rm -f offload-agent-linux-amd64
 	offload-agent --version
 
-update-agent-on-this-mac:
+kill-agent-on-this-mac:
+	@echo "Stopping local offload-agent processes on macOS..."
+	@launchctl unload ~/Library/LaunchAgents/com.offloadmq.agent.plist 2>/dev/null || true
+	@pkill -f "offload-agent|Offload Agent" 2>/dev/null || true
+
+update-agent-on-this-mac: kill-agent-on-this-mac
 	@echo "Installing on this macOS machine..."
 	$(eval MAC_ARCH := $(shell uname -m | sed 's/x86_64/amd64/;s/arm64/arm64/'))
 	@curl -fLO "https://dl.alexgr.space/rs/offload-agent/latest/darwin-$(MAC_ARCH)/offload-agent-darwin-$(MAC_ARCH)"
 	@chmod +x offload-agent-darwin-$(MAC_ARCH)
-	@launchctl unload ~/Library/LaunchAgents/com.offloadmq.agent.plist 2>/dev/null || true
 	@sudo ./offload-agent-darwin-$(MAC_ARCH) install bin
 	@launchctl load ~/Library/LaunchAgents/com.offloadmq.agent.plist 2>/dev/null || true
 	@rm -f offload-agent-darwin-$(MAC_ARCH)
