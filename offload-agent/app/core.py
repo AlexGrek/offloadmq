@@ -12,6 +12,7 @@ from .config import *
 from .systeminfo import *
 from .models import *
 from .httphelpers import *
+from .transport import AgentTransport, HttpAgentTransport
 from .capabilities import detect_capabilities, rescan_and_push
 from .exec.llm import *
 from .exec.tts import *
@@ -69,15 +70,14 @@ class AuthError(Exception):
     pass
 
 
-def poll_task(http: HttpClient) -> dict[str, Any] | None:
+def poll_task(transport: AgentTransport) -> dict[str, Any] | None:
     """Poll server for a new task, return task_info or None."""
     try:
-        resp = http.get("private", "agent", "task", "poll", timeout=60)
-        if resp.status_code == 403:
-            raise AuthError("403 Forbidden — JWT rejected or agent deregistered")
-        resp.raise_for_status()
-        task_data: dict[str, Any] = resp.json()
+        task_data = transport.poll_task(timeout=60)
         return task_data
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 403:
+            raise AuthError("403 Forbidden — JWT rejected or agent deregistered")
     except AuthError:
         raise
     except requests.Timeout:
@@ -141,21 +141,10 @@ def _reauth_or_reregister(server_url: str) -> str | None:
         return None
 
 
-def take_task(http: HttpClient, raw_id: str, raw_cap: str) -> dict[str, Any] | None:
+def take_task(transport: AgentTransport, raw_id: str, raw_cap: str) -> dict[str, Any] | None:
     """Take a task from the server and return full task object."""
     try:
-        q_cap = qpart(raw_cap)
-        resp = http.post(
-            "private",
-            "agent",
-            "take",
-            q_cap,
-            qpart(raw_id),
-            json_body={},
-            timeout=60,
-        )
-        resp.raise_for_status()
-        taken: dict[str, Any] = resp.json()
+        taken = transport.take_task(raw_id, raw_cap, timeout=60)
         return taken
 
     except Exception as e:
@@ -163,7 +152,7 @@ def take_task(http: HttpClient, raw_id: str, raw_cap: str) -> dict[str, Any] | N
         return None
 
 
-def download_required_files(http: HttpClient, task_id: TaskId, capability: str, fetch_files: list[Any], data_path: Path) -> bool:
+def download_required_files(transport: AgentTransport, task_id: TaskId, capability: str, fetch_files: list[Any], data_path: Path) -> bool:
     """Download associated file references. Returns True if succeeded."""
     for fileref in fetch_files:
         try:
@@ -173,18 +162,18 @@ def download_required_files(http: HttpClient, task_id: TaskId, capability: str, 
         except Exception as e:
             logger.error(f"Failed to fetch file {fileref}: {e}")
             report = make_failure_report(task_id, capability, str(e))
-            report_result(http, report)
+            report_result(transport, report)
             return False
 
     return True
 
 
-def download_bucket_files(http: HttpClient, task_id: TaskId, capability: str, file_buckets: list[Any], data_path: Path) -> bool:
+def download_bucket_files(transport: AgentTransport, task_id: TaskId, capability: str, file_buckets: list[Any], data_path: Path) -> bool:
     """Download all files from the listed storage buckets. Returns True on success."""
     for bucket_uid in file_buckets:
         try:
             # Stat the bucket to discover files
-            resp = http.get("private", "agent", "bucket", bucket_uid, "stat", timeout=60)
+            resp = transport.get("private", "agent", "bucket", bucket_uid, "stat", timeout=60)
             resp.raise_for_status()
             bucket_info = resp.json()
 
@@ -203,7 +192,7 @@ def download_bucket_files(http: HttpClient, task_id: TaskId, capability: str, fi
                 save_path.parent.mkdir(parents=True, exist_ok=True)
 
                 # Download the file
-                dl_resp = http.get(
+                dl_resp = transport.get(
                     "private", "agent", "bucket", bucket_uid, "file", file_uid,
                     timeout=300,
                 )
@@ -217,7 +206,7 @@ def download_bucket_files(http: HttpClient, task_id: TaskId, capability: str, fi
         except Exception as e:
             logger.error(f"Failed to download from bucket {bucket_uid}: {e}")
             report = make_failure_report(task_id, capability, str(e))
-            report_result(http, report)
+            report_result(transport, report)
             return False
 
     return True
@@ -251,7 +240,7 @@ def route_executor(cap: str) -> Callable[..., bool] | None:
     }.get(cap)
 
 
-def handle_task(http: HttpClient, task: dict[str, Any]) -> None:
+def handle_task(transport: AgentTransport, task: dict[str, Any]) -> None:
     """Parse and run a single task from the server."""
     task_id = TaskId(
         id=str(task.get("id", {}).get("id", "")),
@@ -272,49 +261,49 @@ def handle_task(http: HttpClient, task: dict[str, Any]) -> None:
         msg = f"Unknown capability: {capability}"
         logger.error(msg)
         report = make_failure_report(task_id, capability, msg)
-        report_result(http, report)
+        report_result(transport, report)
         return
 
     data_path = pick_directory(task_id)
     try:
-        report_starting(http, task_id)
+        report_starting(transport, task_id)
     except TaskCancelled:
         logger.info(f"Task {task_id.id} cancelled before execution started")
-        report_cancelled(http, task_id, capability)
+        report_cancelled(transport, task_id, capability)
         return
 
     # Download files from buckets
     if file_buckets:
-        if not download_bucket_files(http, task_id, capability, file_buckets, data_path):
+        if not download_bucket_files(transport, task_id, capability, file_buckets, data_path):
             logger.error("Bucket file download failed; skipping task.")
             return
 
     # Download files from fetch_files references
-    if not download_required_files(http, task_id, capability, fetch_files, data_path):
+    if not download_required_files(transport, task_id, capability, fetch_files, data_path):
         logger.error("File download failed; skipping task.")
         return
 
     try:
-        report_progress(http, log=None, stage="running", task_id=task_id)
+        report_progress(transport, log=None, stage="running", task_id=task_id)
     except TaskCancelled:
         logger.info(f"Task {task_id.id} cancelled before execution")
-        report_cancelled(http, task_id, capability)
+        report_cancelled(transport, task_id, capability)
         return
 
     # Execute task
     try:
         if capability.startswith("imggen."):
-            executor(http, task_id, capability, payload, data_path, output_bucket=output_bucket)
+            executor(transport, task_id, capability, payload, data_path, output_bucket=output_bucket)
         else:
-            executor(http, task_id, capability, payload, data_path)
+            executor(transport, task_id, capability, payload, data_path)
     except TaskCancelled:
         # Fallback: executor didn't handle cancellation itself
         logger.info(f"Task {task_id.id} cancelled (unhandled by executor)")
-        report_cancelled(http, task_id, capability)
+        report_cancelled(transport, task_id, capability)
     except Exception as e:
         logger.error(f"Executor failed: {e}")
         report = make_failure_report(task_id, capability, str(e))
-        report_result(http, report)
+        report_result(transport, report)
 
 
 # -----------------------------------------
@@ -381,7 +370,7 @@ def start_rescan_scheduler(busy_event: threading.Event, stop_event: threading.Ev
 # -----------------------------------------
 
 def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | None = None) -> None:
-    http = HttpClient(server_url, jwt_token)
+    transport: AgentTransport = HttpAgentTransport(server_url, jwt_token)
     auth_backoff = 10
     _stop = stop_event or threading.Event()
     busy_event = threading.Event()
@@ -389,7 +378,7 @@ def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | N
 
     while not _stop.is_set():
         try:
-            task_info = poll_task(http)
+            task_info = poll_task(transport)
             if not task_info or not task_info.get("id"):
                 time.sleep(5)
                 continue
@@ -398,14 +387,14 @@ def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | N
             raw_id = task_info["id"]["id"]
             raw_cap = task_info["id"]["cap"]
 
-            task = take_task(http, raw_id, raw_cap)
+            task = take_task(transport, raw_id, raw_cap)
             if not task:
                 time.sleep(5)
                 continue
 
             busy_event.set()
             try:
-                handle_task(http, task)
+                handle_task(transport, task)
             finally:
                 busy_event.clear()
 
@@ -413,7 +402,7 @@ def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | N
             logger.warning(f"Auth rejected — attempting recovery...")
             new_jwt = _reauth_or_reregister(server_url)
             if new_jwt:
-                http = HttpClient(server_url, new_jwt)
+                transport = HttpAgentTransport(server_url, new_jwt)
                 auth_backoff = 10
             else:
                 logger.error(f"Could not recover auth. Backing off for {auth_backoff}s...")
