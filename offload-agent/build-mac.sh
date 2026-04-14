@@ -3,9 +3,9 @@
 #
 # Prerequisites:
 #   - Python 3.10+ on PATH
-#   - pip available
+#   - pdm available
 #
-# The script creates a venv, installs dependencies + PyInstaller, and
+# The script installs dependencies via pdm and
 # produces dist/Offload Agent.app (a self-contained macOS application).
 #
 # Usage:
@@ -15,23 +15,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-VENV_DIR="$SCRIPT_DIR/venv-mac"
-
-# ── 1. Create / reuse venv ──────────────────────────────────────────────────
-if [ ! -x "$VENV_DIR/bin/pip" ]; then
-    echo "Creating venv at $VENV_DIR ..."
-    python3 -m venv "$VENV_DIR"
+if ! command -v pdm >/dev/null 2>&1; then
+    echo "ERROR: pdm is required (install: python3 -m pip install --user pdm)." >&2
+    exit 1
 fi
 
-PIP="$VENV_DIR/bin/pip"
-PYTHON="$VENV_DIR/bin/python"
-
 # ── 2. Install dependencies ─────────────────────────────────────────────────
-echo "Installing dependencies ..."
-"$PIP" install --quiet -r requirements.txt
-
-echo "Installing PyInstaller ..."
-"$PIP" install --quiet pyinstaller
+echo "Syncing dependencies via pdm ..."
+pdm sync --group dev --group build
 
 # ── 2b. Web UI (Vite) ───────────────────────────────────────────────────────
 if ! command -v npm >/dev/null 2>&1; then
@@ -43,7 +34,7 @@ echo "Building web UI (frontend/dist) ..."
 
 # ── 2c. Type-check ──────────────────────────────────────────────────────────
 echo "Running mypy type check ..."
-"$PYTHON" -m mypy
+pdm run mypy
 
 # ── 2d. Inject app version (same as make build / scripts/compute-agent-version.sh) ──
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
@@ -66,7 +57,7 @@ echo "Injected version: $APP_VERSION"
 
 # ── 3. Build .app bundle ────────────────────────────────────────────────────
 echo "Building Offload Agent.app ..."
-"$PYTHON" -m PyInstaller \
+pdm run pyinstaller \
     --noconfirm \
     --onefile \
     --windowed \
@@ -102,7 +93,6 @@ echo "Building Offload Agent.app ..."
     --hidden-import "app.data.updn" \
     --collect-submodules "app" \
     --osx-bundle-identifier "com.offloadmq.agent" \
-    --info-plist '{"LSUIElement": true}' \
     "offload-agent-mac.py"
 
 APP="$SCRIPT_DIR/dist/Offload Agent.app"

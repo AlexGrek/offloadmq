@@ -30,16 +30,19 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up PDM
+        uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: "3.11"
+
       - name: Install dependencies
         working-directory: offload-agent
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          pdm sync --group dev --group build
 
       - name: Type check
         working-directory: offload-agent
-        run: python -m mypy
+        run: pdm run mypy
 
       - name: Write bundled app version
         working-directory: offload-agent
@@ -50,7 +53,7 @@ jobs:
       - name: Build single-file executable
         working-directory: offload-agent
         run: |
-          pyinstaller \
+          pdm run pyinstaller \
             --onefile \
             --name offload-agent \
             --add-data "app:app" \

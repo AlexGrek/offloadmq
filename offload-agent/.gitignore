@@ -1,8 +1,10 @@
 /venv
+.venv
 .offload-agent.json
 /build
 /dist
 offload-agent.spec
 **/__pycache__
 **/*.pyc
-/venv-win
+__pypackages__/
+.pdm-python

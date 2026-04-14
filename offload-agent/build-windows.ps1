@@ -9,9 +9,9 @@
 
     Prerequisites:
       - Python 3.10+ on PATH
-      - pip available
+      - pdm available
 
-    The script creates a temporary venv, installs dependencies + PyInstaller,
+    The script syncs dependencies via pdm and builds with PyInstaller,
     and produces dist/offload-agent.exe.
 
 .EXAMPLE
@@ -44,33 +44,18 @@ function Kill-ExistingAgent {
 
 try {
     Kill-ExistingAgent
-    # ── 1. Create / reuse venv ─────────────────────────────────────────────
-    $VenvDir = Join-Path $ScriptDir "venv-win"
-    $PipExe  = Join-Path $VenvDir "Scripts\pip.exe"
-    $PyExe   = Join-Path $VenvDir "Scripts\python.exe"
-
-    if (-not (Test-Path $PipExe)) {
-        Write-Host "Creating venv at $VenvDir ..."
-        python -m venv $VenvDir
-        if ($LASTEXITCODE -ne 0) { throw "Failed to create venv" }
+    $PdmExe = Get-Command pdm -ErrorAction SilentlyContinue
+    if (-not $PdmExe) {
+        throw "pdm is required (install with: python -m pip install --user pdm)"
     }
 
     # ── 2. Install dependencies ────────────────────────────────────────────
-    Write-Host "Installing dependencies ..."
-    & $PipExe install --quiet -r requirements.txt
-    if ($LASTEXITCODE -ne 0) { throw "pip install requirements.txt failed" }
-
-    Write-Host "Installing PyInstaller ..."
-    & $PipExe install --quiet pyinstaller
-    if ($LASTEXITCODE -ne 0) { throw "pip install pyinstaller failed" }
-
-    # ── 2b. Type checking with mypy ────────────────────────────────────────────
-    Write-Host "Installing mypy and type stubs ..."
-    & $PipExe install --quiet mypy types-requests
-    if ($LASTEXITCODE -ne 0) { throw "pip install mypy/types-requests failed" }
+    Write-Host "Syncing dependencies via pdm ..."
+    & pdm sync --group dev --group build
+    if ($LASTEXITCODE -ne 0) { throw "pdm sync failed" }
 
     Write-Host "Running mypy type checks ..."
-    & $PyExe -m mypy app/ --warn-unused-ignores
+    & pdm run mypy app/ --warn-unused-ignores
     if ($LASTEXITCODE -ne 0) { throw "mypy type check failed" }
 
     $Npm = Get-Command npm -ErrorAction SilentlyContinue
@@ -104,7 +89,7 @@ try {
 
     # ── 3. Build ───────────────────────────────────────────────────────────
     Write-Host "Building offload-agent.exe ..."
-    & $PyExe -m PyInstaller `
+    & pdm run pyinstaller `
         --noconfirm `
         --onefile `
         --windowed `
