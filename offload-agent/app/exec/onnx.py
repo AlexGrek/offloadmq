@@ -93,7 +93,7 @@ def _run_nudenet(
     """Run NudeNet 320n ONNX model on a single image. Returns list of detections."""
     import numpy as np
     from PIL import Image
-    import onnxruntime as ort  # type: ignore[import-untyped]
+    import onnxruntime as ort
 
     img = Image.open(image_path).convert("RGB")
     orig_w, orig_h = img.size
