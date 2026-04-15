@@ -208,12 +208,29 @@ pub async fn apikey_auth_middleware_user(
         ));
     }
 
-    // Read the body into bytes
+    // Prefer header-based auth (no body read required).
+    // This enables non-JSON transports (WebSocket, etc.) to authenticate cleanly.
+    if let Some(api_key) = parts
+        .headers
+        .get("X-API-Key")
+        .and_then(|v| v.to_str().ok())
+    {
+        if !app_state
+            .storage
+            .client_keys
+            .is_key_real_not_revoked(api_key)
+        {
+            return Err(AppError::Authorization("Unauthorized".to_string()));
+        }
+        let req = Request::from_parts(parts, body);
+        return Ok(next.run(req).await);
+    }
+
+    // Fallback: read API key from JSON body (backward compatibility).
     let body_bytes = axum::body::to_bytes(body, app_state.config.max_request_body_bytes)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    // Attempt to parse the API key from the JSON payload
     let api_key_payload: ApiKeyPayload = serde_json::from_slice(&body_bytes)
         .map_err(|e| AppError::Authorization(format!("Failed to parse JSON body: {}", e)))?;
 

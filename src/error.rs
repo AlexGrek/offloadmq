@@ -55,25 +55,25 @@ pub enum AppError {
 }
 
 impl AppError {
-    /// Get the HTTP status code for this error
-    pub fn status_code(&self) -> StatusCode {
+    /// Transport-agnostic numeric status code.
+    /// Usable by any transport adapter (HTTP, WebSocket, gRPC) without framework imports.
+    pub fn status_code_number(&self) -> u16 {
         match self {
-            AppError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::Serialization(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::Authentication(_) => StatusCode::UNAUTHORIZED,
-            AppError::Authorization(_) => StatusCode::FORBIDDEN,
-            AppError::Validation(_) => StatusCode::BAD_REQUEST,
-            AppError::NotFound(_) => StatusCode::NOT_FOUND,
-            AppError::Conflict(_) => StatusCode::CONFLICT,
-            AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
-            AppError::Jwt(_) => StatusCode::UNAUTHORIZED,
-            AppError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::Parse(_) => StatusCode::BAD_REQUEST,
-            AppError::BcryptError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::SchedulingImpossible(_) => StatusCode::SERVICE_UNAVAILABLE,
-            AppError::ClientClosedRequest(_) => StatusCode::from_u16(499).unwrap(),
+            AppError::Database(_) | AppError::Internal(_) | AppError::Serialization(_)
+            | AppError::Io(_) | AppError::BcryptError(_) => 500,
+            AppError::Authentication(_) | AppError::Jwt(_) => 401,
+            AppError::Authorization(_) => 403,
+            AppError::Validation(_) | AppError::BadRequest(_) | AppError::Parse(_) => 400,
+            AppError::NotFound(_) => 404,
+            AppError::Conflict(_) => 409,
+            AppError::SchedulingImpossible(_) => 503,
+            AppError::ClientClosedRequest(_) => 499,
         }
+    }
+
+    /// Get the Axum HTTP status code for this error.
+    pub fn status_code(&self) -> StatusCode {
+        StatusCode::from_u16(self.status_code_number()).unwrap()
     }
 
     /// Get error type as string for JSON responses
@@ -117,6 +117,18 @@ impl AppError {
             AppError::SchedulingImpossible(_) => true,
         }
     }
+
+    /// Build the standard error JSON envelope without any framework dependency.
+    /// Usable by WebSocket, gRPC, or any other transport adapter.
+    pub fn to_error_json(&self) -> serde_json::Value {
+        json!({
+            "error": {
+                "type": self.error_type(),
+                "message": self.to_string(),
+                "status": self.status_code_number()
+            }
+        })
+    }
 }
 
 // Implement IntoResponse for Axum
@@ -124,22 +136,13 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = self.status_code();
 
-        // Log server errors
         if self.should_log() {
             tracing::error!("AppError: {} (status: {})", self, status);
         } else {
             tracing::debug!("AppError: {} (status: {})", self, status);
         }
 
-        let body = json!({
-            "error": {
-                "type": self.error_type(),
-                "message": self.to_string(),
-                "status": status.as_u16()
-            }
-        });
-
-        (status, Json(body)).into_response()
+        (status, Json(self.to_error_json())).into_response()
     }
 }
 
@@ -238,6 +241,28 @@ mod tests {
             AppError::conflict("test").status_code(),
             StatusCode::CONFLICT
         );
+    }
+
+    #[test]
+    fn test_status_code_number() {
+        assert_eq!(AppError::authentication("t").status_code_number(), 401);
+        assert_eq!(AppError::authorization("t").status_code_number(), 403);
+        assert_eq!(AppError::validation("t").status_code_number(), 400);
+        assert_eq!(AppError::not_found("t").status_code_number(), 404);
+        assert_eq!(AppError::conflict("t").status_code_number(), 409);
+        assert_eq!(AppError::bad_request("t").status_code_number(), 400);
+        assert_eq!(AppError::SchedulingImpossible("t".into()).status_code_number(), 503);
+        assert_eq!(AppError::ClientClosedRequest("t".into()).status_code_number(), 499);
+    }
+
+    #[test]
+    fn test_to_error_json() {
+        let err = AppError::not_found("thing");
+        let json = err.to_error_json();
+        let error_obj = json.get("error").expect("missing error key");
+        assert_eq!(error_obj.get("type").unwrap(), "not_found");
+        assert_eq!(error_obj.get("status").unwrap(), 404);
+        assert!(error_obj.get("message").unwrap().as_str().unwrap().contains("thing"));
     }
 
     #[test]
