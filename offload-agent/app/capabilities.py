@@ -241,7 +241,7 @@ def check_onnx() -> CapResult:
     is handled separately via slavemode or CLI.
     """
     try:
-        import onnxruntime  # type: ignore[import-untyped]  # noqa: F401
+        import onnxruntime  # noqa: F401
     except ImportError:
         return CapResult(
             [], False, "onnx.*",
