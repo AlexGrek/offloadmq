@@ -62,7 +62,8 @@ class HttpAgentTransport:
     def poll_task(self, timeout: int = 60) -> dict[str, Any]:
         resp = self._http.get("private", "agent", "task", "poll", timeout=timeout)
         resp.raise_for_status()
-        return dict(resp.json())
+        data = resp.json()
+        return dict(data) if data is not None else {}
 
     def take_task(self, raw_id: str, raw_cap: str, timeout: int = 60) -> dict[str, Any]:
         q_cap = qpart(raw_cap)
