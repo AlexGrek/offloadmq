@@ -48,7 +48,7 @@ Out of scope (for this migration):
 
 ## Phased Plan
 
-### Phase 0 - Baseline and Safety Nets
+### Phase 0 - Baseline and Safety Nets (existing integration tests in itests/)
 
 - Add integration tests for current behavior:
   - urgent submit blocking response behavior
@@ -61,9 +61,9 @@ Exit criteria:
 
 - Tests capture existing behavior before refactor.
 
-### Phase 1 - Extract Client Service Layer
+### Phase 1 - Extract Client Service Layer (done)
 
-Create `src/api/client/service.rs` with pure-Rust service functions:
+Created `src/api/client/service.rs` with pure-Rust service functions:
 
 - `submit_task(...) -> ClientSubmitResult`
 - `submit_task_blocking(...) -> ClientBlockingResult`
@@ -89,9 +89,9 @@ Exit criteria:
 - `src/api/client/mod.rs` mostly adapter glue.
 - No domain transitions in handler bodies.
 
-### Phase 2 - Remove Axum Types from Scheduler/Core
+### Phase 2 - Remove Axum Types from Scheduler/Core (done)
 
-Refactor `src/mq/scheduler.rs`:
+Refactored `src/mq/scheduler.rs`:
 
 - change `submit_urgent_task(...)` return type from `impl IntoResponse` to domain enum, e.g.:
   - `UrgentSubmitOutcome::Completed(AssignedTask)`
@@ -104,34 +104,28 @@ Exit criteria:
 
 - `src/mq/*` has zero Axum imports.
 
-### Phase 3 - Split Domain Errors from HTTP Mapping
+### Phase 3 - Split Domain Errors from HTTP Mapping (done)
 
-Refactor error handling:
+Added transport-agnostic methods to `AppError`:
 
-- Keep `AppError` (or introduce `DomainError`) as framework-agnostic.
-- Move `IntoResponse` implementation and status mapping to adapter module:
-  - e.g. `src/api/http_error.rs` with `HttpError(AppError)`.
+- `status_code_number() -> u16` — no framework imports needed
+- `to_error_json() -> serde_json::Value` — standard error envelope for any transport
+- `status_code()` now delegates to `status_code_number()`
+- `IntoResponse` impl uses `to_error_json()` internally
+- Unit tests added for both new methods
 
-Guideline:
+Approach: kept `AppError` enum intact (changing the type would touch 30+ files).
+The `IntoResponse` impl remains as the HTTP adapter; WS/gRPC transports use
+`to_error_json()` and `status_code_number()` directly.
 
-- core/service returns domain errors only.
-- adapters decide protocol status codes and payload envelopes.
+### Phase 4 - Normalize Auth Boundaries (done)
 
-Exit criteria:
+Refactored `apikey_auth_middleware_user` with backward-compatible header-first auth:
 
-- core/service modules do not depend on Axum error traits.
-
-### Phase 4 - Normalize Auth Boundaries
-
-Refactor `apikey_auth_middleware_user`:
-
-- avoid parsing JSON payload in middleware.
-- preferred path: use header-based key extraction for all relevant routes.
-- if body-key compatibility must remain, implement a dedicated extractor in adapter layer instead of global middleware body parsing.
-
-Exit criteria:
-
-- middleware only handles protocol-level concerns (headers/tokens/extensions), not request-body schema.
+- Checks `X-API-Key` header first (no body read required)
+- Falls back to JSON body parsing for existing clients
+- Enables WebSocket and non-JSON transports to authenticate via header
+- Existing clients sending `api_key` in JSON body continue to work unchanged
 
 ### Phase 5 - Introduce Transport-Neutral Service Contracts
 

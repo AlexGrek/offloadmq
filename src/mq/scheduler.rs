@@ -1,13 +1,11 @@
-use axum::{Json, response::IntoResponse};
 use chrono::Utc;
 use log::debug;
-use serde_json::json;
 
 use crate::{
     db::{agent::CachedAgentStorage, persistent_task_storage::TaskStorage, heuristic_storage::HeuristicStorage},
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
-    mq::{urgent::UrgentTaskStore, heuristic::HeuristicRecord},
+    mq::{urgent::UrgentTaskStore, heuristic::HeuristicRecord, types::UrgentSubmitOutcome},
     schema::{TaskId, TaskResultReport, TaskResultStatus, TaskStatus, TaskUpdate},
     utils::base_capability,
 };
@@ -224,7 +222,7 @@ pub async fn submit_urgent_task(
     store: &UrgentTaskStore,
     agents: &CachedAgentStorage,
     task: UnassignedTask,
-) -> Result<impl axum::response::IntoResponse, AppError> {
+) -> Result<UrgentSubmitOutcome, AppError> {
     if !has_potential_agents_for(&task.id.cap, agents).await {
         return Err(AppError::SchedulingImpossible(format!(
             "no online runners for capability {}",
@@ -242,18 +240,15 @@ pub async fn submit_urgent_task(
 
         if status == TaskStatus::Completed || status == TaskStatus::Failed {
             if let Some(assigned_task) = store.get_assigned_task(&task.id).await {
-                // Remove the task from the store after returning
                 store.remove_task(&task.id).await;
-                return Ok(Json(assigned_task).into_response());
+                return Ok(UrgentSubmitOutcome::Completed(assigned_task));
             } else {
                 store.remove_task(&task.id).await;
-
-                return Ok(Json(json!({
-                    "id": task.id,
-                    "status": status,
-                    "message": "Task completed but full info unavailable"
-                }))
-                .into_response());
+                return Ok(UrgentSubmitOutcome::CompletedPartial {
+                    id: task.id,
+                    status,
+                    message: "Task completed but full info unavailable".into(),
+                });
             }
         }
     }
