@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, IO
 
 from ..models import *
-from ..httphelpers import *
+from ..transport import AgentTransport
 from .helpers import *
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def _drain_queue(q: "queue.Queue[str]") -> str:
 
 
 def execute_docker_run(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
     """Execute a Docker container with streaming output and timeout support.
 
@@ -64,7 +64,7 @@ def execute_docker_run(
                 task_id, capability, "Payload must be a JSON object or dict.",
                 extra_output={"error": "Invalid payload format"}
             )
-            return report_result(http, report)
+            return report_result(transport, report)
 
     payload = payload or {}
     image = payload.get("image")
@@ -78,7 +78,7 @@ def execute_docker_run(
             task_id, capability, "No 'image' provided in payload.",
             extra_output={"error": "No 'image' provided in payload."}
         )
-        return report_result(http, report)
+        return report_result(transport, report)
 
     # Validate image against capability restrictions
     allowed_images = IMAGE_PATTERNS.get(capability)
@@ -88,7 +88,7 @@ def execute_docker_run(
             task_id, capability, msg,
             extra_output={"error": msg, "image": image, "capability": capability}
         )
-        return report_result(http, report)
+        return report_result(transport, report)
 
     # Build docker run command
     container_name = f"offloadmq-{task_id.id[:12]}"
@@ -151,14 +151,14 @@ def execute_docker_run(
                 try:
                     line = q_stdout.get_nowait()
                     full_stdout_log += line
-                    report_progress(http, log=line, stage="running", task_id=task_id)
+                    report_progress(transport, log=line, stage="running", task_id=task_id)
                 except queue.Empty:
                     pass
 
                 try:
                     line = q_stderr.get_nowait()
                     full_stderr_log += line
-                    report_progress(http, log=line, stage="running", task_id=task_id)
+                    report_progress(transport, log=line, stage="running", task_id=task_id)
                 except queue.Empty:
                     pass
 
@@ -183,7 +183,7 @@ def execute_docker_run(
                 "stderr": full_stderr_log,
                 "cancelled": True,
             }
-            report_cancelled(http, task_id, capability, output=output)
+            report_cancelled(transport, task_id, capability, output=output)
             return True
 
         # Cancel the timeout timer since process finished
@@ -231,4 +231,4 @@ def execute_docker_run(
         output = {"error": str(e)}
         report = make_failure_report(task_id, capability, str(e), extra_output=output)
 
-    return report_result(http, report)
+    return report_result(transport, report)

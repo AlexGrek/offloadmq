@@ -11,7 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional
 
-from .httphelpers import HttpClient, update_agent_capabilities
+from .httphelpers import update_agent_capabilities
+from .transport import AgentTransport
 from .config import load_config
 from .exec.slavemode import merge_registration_caps, strip_slavemode_caps
 from .systeminfo import calculate_tier, collect_system_info
@@ -575,7 +576,7 @@ def _migrate_legacy_config(
 
 
 def rescan_and_push(
-    http: HttpClient,
+    transport: AgentTransport,
     log_fn: Callable[[str], None] | None = None,
 ) -> List[str]:
     """Detect capabilities and push the updated list to the server.
@@ -590,5 +591,5 @@ def rescan_and_push(
     tier: int = cfg.get("tier") or calculate_tier(collect_system_info())
     capacity: int = cfg.get("capacity", 1)
     display_name: str | None = cfg.get("displayName") or None
-    update_agent_capabilities(http, caps, tier, capacity, display_name)
+    update_agent_capabilities(transport, caps, tier, capacity, display_name)
     return caps

@@ -6,7 +6,7 @@ from typing import Any
 import requests
 
 from ...models import TaskId
-from ...httphelpers import HttpClient
+from ...transport import AgentTransport
 from ..helpers import TaskCancelled, make_failure_report, make_success_report, report_cancelled, report_progress, report_result
 from .comfyui import queue_prompt, wait_for_completion
 from .workflow import load_workflow_template, inject_params, build_injection_values
@@ -14,7 +14,7 @@ from .output import build_output
 
 
 def execute_imggen_comfyui(
-    http: HttpClient,
+    transport: AgentTransport,
     task_id: TaskId,
     capability: str,
     payload: dict[str, Any],
@@ -49,17 +49,17 @@ def execute_imggen_comfyui(
         graph = inject_params(graph, param_map, inject_values)
 
         prompt_id = queue_prompt(graph)
-        report_progress(http, f"Queued as prompt_id={prompt_id}", "queued", task_id)
+        report_progress(transport, f"Queued as prompt_id={prompt_id}", "queued", task_id)
 
-        history_entry = wait_for_completion(prompt_id, http, task_id)
-        report_progress(http, "Generation complete — collecting output", "collecting", task_id)
+        history_entry = wait_for_completion(prompt_id, transport, task_id)
+        report_progress(transport, "Generation complete — collecting output", "collecting", task_id)
 
         seed = inject_values.get("seed") or payload.get("seed")
-        output = build_output(history_entry, task_type, prompt_id, seed, http, output_bucket)
+        output = build_output(history_entry, task_type, prompt_id, seed, transport, output_bucket)
         report = make_success_report(task_id, capability, output)
 
     except TaskCancelled:
-        report_cancelled(http, task_id, capability, output={"cancelled": True})
+        report_cancelled(transport, task_id, capability, output={"cancelled": True})
         return True
 
     except requests.RequestException as e:
@@ -75,4 +75,4 @@ def execute_imggen_comfyui(
     except Exception as e:
         report = make_failure_report(task_id, capability, str(e))
 
-    return report_result(http, report)
+    return report_result(transport, report)

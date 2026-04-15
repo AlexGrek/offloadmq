@@ -12,8 +12,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ..httphelpers import HttpClient
 from ..models import TaskId
+from ..transport import AgentTransport
 from ..onnx_models import model_path
 from .helpers import make_failure_report, make_success_report, report_result
 
@@ -150,7 +150,7 @@ def _run_nudenet(
 # ---------------------------------------------------------------------------
 
 def execute_onnx(
-    http: HttpClient,
+    transport: AgentTransport,
     task_id: TaskId,
     capability: str,
     payload: dict[str, Any],
@@ -158,16 +158,16 @@ def execute_onnx(
 ) -> bool:
     """Dispatch to the appropriate ONNX executor based on capability name."""
     if capability == "onnx.nudenet":
-        return _execute_nudenet(http, task_id, capability, payload, data)
+        return _execute_nudenet(transport, task_id, capability, payload, data)
 
     msg = f"Unknown ONNX capability: {capability}"
     logger.error(msg)
     report = make_failure_report(task_id, capability, msg)
-    return report_result(http, report)
+    return report_result(transport, report)
 
 
 def _execute_nudenet(
-    http: HttpClient,
+    transport: AgentTransport,
     task_id: TaskId,
     capability: str,
     payload: dict[str, Any],
@@ -178,7 +178,7 @@ def _execute_nudenet(
     if not mpath:
         msg = "NudeNet model not installed. Use slavemode.onnx-models-prepare or CLI 'onnx prepare nudenet'"
         report = make_failure_report(task_id, capability, msg)
-        return report_result(http, report)
+        return report_result(transport, report)
 
     threshold = 0.25
     if isinstance(payload, dict):
@@ -188,7 +188,7 @@ def _execute_nudenet(
     if not images:
         msg = "No image files found in task data. Attach images via file_bucket or fetchFiles."
         report = make_failure_report(task_id, capability, msg)
-        return report_result(http, report)
+        return report_result(transport, report)
 
     results: list[dict[str, Any]] = []
     for img_path in images:
@@ -216,4 +216,4 @@ def _execute_nudenet(
         "results": results,
     }
     report = make_success_report(task_id, capability, output)
-    return report_result(http, report)
+    return report_result(transport, report)

@@ -2,7 +2,7 @@ import base64
 import requests
 from typing import Any
 from ..models import *
-from ..httphelpers import *
+from ..transport import AgentTransport
 from .helpers import *
 from pathlib import Path
 
@@ -10,7 +10,7 @@ KOKORO_API_URL = "http://192.168.0.191:4069/api/v1/audio/speech"  # adjust if ne
 KOKORO_API_KEY = "your-api-key-hehehe"  # set if you use KW_SECRET_API_KEY
 
 def execute_kokoro_tts(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
     """Send TTS request to Kokoro-Web API (OpenAI-compatible).
 
@@ -31,7 +31,7 @@ def execute_kokoro_tts(
 
         # Check for cancellation before starting the (potentially slow) HTTP call.
         # TaskCancelled is raised here if the client already cancelled the task.
-        report_progress(http, log=None, stage="running", task_id=task_id)
+        report_progress(transport, log=None, stage="running", task_id=task_id)
 
         # Make request
         headers = {}
@@ -47,7 +47,7 @@ def execute_kokoro_tts(
             "audio_data_base64": base64.b64encode(r.content).decode("utf-8")
         })
     except TaskCancelled:
-        report_cancelled(http, task_id, capability)
+        report_cancelled(transport, task_id, capability)
         return True
     except requests.RequestException as e:
         response_text = "No response from server"
@@ -64,4 +64,4 @@ def execute_kokoro_tts(
     except Exception as e:
         report = make_failure_report(task_id, capability, str(e))
 
-    return report_result(http, report)
+    return report_result(transport, report)

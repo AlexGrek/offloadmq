@@ -30,7 +30,7 @@ import requests
 
 from ..config import load_config
 from ..models import TaskId
-from ..httphelpers import HttpClient
+from ..transport import AgentTransport
 from ..custom_caps import CustomCap, get_custom_cap
 from .helpers import (
     TaskCancelled,
@@ -70,7 +70,7 @@ def _enqueue_output(stream: IO[str], q: queue.Queue[str]) -> None:
 
 
 def _execute_shell(
-    http: HttpClient,
+    transport: AgentTransport,
     task_id: TaskId,
     capability: str,
     cap: CustomCap,
@@ -85,7 +85,7 @@ def _execute_shell(
         msg = f"Parameter validation failed: {e}"
         logger.error(msg)
         report = make_failure_report(task_id, capability, msg)
-        return report_result(http, report)
+        return report_result(transport, report)
 
     # Write script to temp file (not from payload — trusted content)
     script_content = cap.script
@@ -105,7 +105,7 @@ def _execute_shell(
         agent_id = cfg.get("agentId", "unknown")
         machine = cfg.get("displayName", "unknown")
         report_progress(
-            http,
+            transport,
             log=f"Running custom cap: {cap.name} | agent={agent_id} machine={machine}\n",
             stage="running",
             task_id=task_id,
@@ -161,14 +161,14 @@ def _execute_shell(
                 try:
                     line = q_stdout.get_nowait()
                     full_stdout += line
-                    report_progress(http, log=line, stage="running", task_id=task_id)
+                    report_progress(transport, log=line, stage="running", task_id=task_id)
                 except queue.Empty:
                     pass
 
                 try:
                     line = q_stderr.get_nowait()
                     full_stderr += line
-                    report_progress(http, log=line, stage="running", task_id=task_id)
+                    report_progress(transport, log=line, stage="running", task_id=task_id)
                 except queue.Empty:
                     pass
 
@@ -194,7 +194,7 @@ def _execute_shell(
                 full_stderr += q_stderr.get_nowait()
 
             output = {"stdout": full_stdout, "stderr": full_stderr, "cancelled": True}
-            report_cancelled(http, task_id, capability, output=output)
+            report_cancelled(transport, task_id, capability, output=output)
             return True
 
         # Drain remaining output
@@ -240,7 +240,7 @@ def _execute_shell(
             except OSError:
                 pass
 
-    return report_result(http, report)
+    return report_result(transport, report)
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +248,7 @@ def _execute_shell(
 # ---------------------------------------------------------------------------
 
 def _execute_llm(
-    http: HttpClient,
+    transport: AgentTransport,
     task_id: TaskId,
     capability: str,
     cap: CustomCap,
@@ -266,12 +266,12 @@ def _execute_llm(
         msg = f"Parameter validation failed: {e}"
         logger.error(msg)
         report = make_failure_report(task_id, capability, msg)
-        return report_result(http, report)
+        return report_result(transport, report)
 
     model = cap.model
     if not model:
         report = make_failure_report(task_id, capability, "LLM custom cap has no 'model' configured")
-        return report_result(http, report)
+        return report_result(transport, report)
 
     # Build Ollama chat API payload
     messages: list[dict[str, str]] = [{"role": "user", "content": rendered_prompt}]
@@ -290,7 +290,7 @@ def _execute_llm(
         api_payload["options"] = api_payload.get("options", {})
         api_payload["options"]["num_predict"] = cap.max_tokens
 
-    report_progress(http, log=f"Running LLM custom cap: {cap.name} (model: {model})\n", stage="running", task_id=task_id)
+    report_progress(transport, log=f"Running LLM custom cap: {cap.name} (model: {model})\n", stage="running", task_id=task_id)
     logger.info(f"LLM custom cap '{cap.name}': sending to {OLLAMA_API_URL} with model={model}")
 
     try:
@@ -321,14 +321,14 @@ def _execute_llm(
                 # Flush buffer every 2 seconds
                 now = time.time()
                 if now - last_flush >= 2 and buffer:
-                    report_progress(http, log=buffer, stage="running", task_id=task_id)
+                    report_progress(transport, log=buffer, stage="running", task_id=task_id)
                     buffer = ""
                     last_flush = now
 
                 if chunk.get("done"):
                     final_data = chunk
                     if buffer:
-                        report_progress(http, log=buffer, stage="running", task_id=task_id)
+                        report_progress(transport, log=buffer, stage="running", task_id=task_id)
                         buffer = ""
         except TaskCancelled:
             cancelled = True
@@ -337,7 +337,7 @@ def _execute_llm(
 
         if cancelled:
             output_data = {"response": full_response, "model": model, "name": cap.name, "cancelled": True}
-            report_cancelled(http, task_id, capability, output=output_data)
+            report_cancelled(transport, task_id, capability, output=output_data)
             return True
 
         output: dict[str, Any] = {
@@ -374,7 +374,7 @@ def _execute_llm(
         logger.error(f"LLM custom cap execution error: {e}")
         report = make_failure_report(task_id, capability, str(e), extra_output={"error": str(e)})
 
-    return report_result(http, report)
+    return report_result(transport, report)
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +382,7 @@ def _execute_llm(
 # ---------------------------------------------------------------------------
 
 def execute_custom_cap(
-    http: HttpClient,
+    transport: AgentTransport,
     task_id: TaskId,
     capability: str,
     payload: Any,
@@ -397,16 +397,16 @@ def execute_custom_cap(
         msg = f"Custom cap not found for capability: {capability}"
         logger.error(msg)
         report = make_failure_report(task_id, capability, msg)
-        return report_result(http, report)
+        return report_result(transport, report)
 
     payload = _normalise_payload(payload)
 
     if cap.exec_type == "shell":
-        return _execute_shell(http, task_id, capability, cap, payload, data_path)
+        return _execute_shell(transport, task_id, capability, cap, payload, data_path)
     elif cap.exec_type == "llm":
-        return _execute_llm(http, task_id, capability, cap, payload, data_path)
+        return _execute_llm(transport, task_id, capability, cap, payload, data_path)
     else:
         msg = f"Unknown exec type '{cap.exec_type}' for custom cap '{cap.name}'"
         logger.error(msg)
         report = make_failure_report(task_id, capability, msg)
-        return report_result(http, report)
+        return report_result(transport, report)

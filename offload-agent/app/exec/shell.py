@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, IO
 from ..models import *
-from ..httphelpers import *
+from ..transport import AgentTransport
 from .helpers import *
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ def _drain_queue(q: "queue.Queue[str]") -> str:
 
 
 def execute_shell_bash(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
     logger.info(f"Executing shell.bash for task {task_id.dict()} in {data}")
     if isinstance(payload, str):
@@ -44,7 +44,7 @@ def execute_shell_bash(
             "No 'command' provided in payload.",
             extra_output={"error": "No 'command' provided in payload."},
         )
-        return report_result(http, report)
+        return report_result(transport, report)
 
     try:
         process = subprocess.Popen(
@@ -79,7 +79,7 @@ def execute_shell_bash(
                     line = q_stdout.get_nowait()
                     full_stdout_log += line
                     report_progress(
-                        http, log=line, stage="running", task_id=task_id
+                        transport, log=line, stage="running", task_id=task_id
                     )
                 except queue.Empty:
                     pass
@@ -88,7 +88,7 @@ def execute_shell_bash(
                     line = q_stderr.get_nowait()
                     full_stderr_log += line
                     report_progress(
-                        http, log=line, stage="running", task_id=task_id
+                        transport, log=line, stage="running", task_id=task_id
                     )
                 except queue.Empty:
                     pass
@@ -112,7 +112,7 @@ def execute_shell_bash(
                 "cancelled": True,
             }
             report_cancelled(
-                http, task_id, capability,
+                transport, task_id, capability,
                 output=cancel_output,
                 remaining_log=full_stderr_log[-2048:] if full_stderr_log else None,
             )
@@ -147,4 +147,4 @@ def execute_shell_bash(
         output = {"error": str(e)}
         report = make_failure_report(task_id, capability, str(e), extra_output=output)
 
-    return report_result(http, report)
+    return report_result(transport, report)
