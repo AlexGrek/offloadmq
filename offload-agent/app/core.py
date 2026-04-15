@@ -326,8 +326,8 @@ def _rescan_and_push() -> None:
             logger.warning("[rescan] No server/JWT in config — skipping.")
             return
 
-        http = HttpClient(server_url, jwt)
-        caps = rescan_and_push(http, lambda msg: logger.info(msg))
+        transport = HttpAgentTransport(server_url, jwt)
+        caps = rescan_and_push(transport, lambda msg: logger.info(msg))
         logger.info(f"[rescan] Updated server with {len(caps)} capabilities.")
     except Exception as e:
         logger.error(f"[rescan] Failed to push capabilities: {e}")

@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 import requests
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
 
 from app.ollama import *
 from app.systeminfo import *
 from app.url_utils import *
+
+if TYPE_CHECKING:
+    from app.transport import AgentTransport
 
 # Version is injected at build time; provide fallback for local dev
 try:
@@ -71,7 +76,7 @@ def authenticate_agent(server: str, agent_id: str, key: str) -> Dict[str, Any]:
 
 
 def update_agent_capabilities(
-    http: HttpClient, capabilities: List[str], tier: int, capacity: int,
+    http: AgentTransport, capabilities: List[str], tier: int, capacity: int,
     display_name: Optional[str] = None,
 ) -> None:
     # Must send the resolved name, not null: the server overwrites display_name on every

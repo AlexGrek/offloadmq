@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ...config import load_config
 from ...models import TaskId
-from ...httphelpers import HttpClient
+from ...transport import AgentTransport
 from ..helpers import report_progress
 
 _COMFYUI_DEFAULT_URL = "http://127.0.0.1:8188"
@@ -55,12 +55,12 @@ _PROGRESS_REPORT_EVERY = 5  # report progress every N poll cycles (~10 seconds a
 
 def wait_for_completion(
     prompt_id: str,
-    http: HttpClient | None = None,
+    transport: AgentTransport | None = None,
     task_id: TaskId | None = None,
 ) -> dict[str, Any]:
     """Poll /history/{prompt_id} until the job finishes. Returns the history entry.
 
-    If ``http`` and ``task_id`` are provided, calls ``report_progress`` every
+    If ``transport`` and ``task_id`` are provided, calls ``report_progress`` every
     ``_PROGRESS_REPORT_EVERY`` cycles so that a 499 (client cancel) can be
     detected and raised as ``TaskCancelled`` during the wait loop.
     """
@@ -90,8 +90,8 @@ def wait_for_completion(
             return result
 
         # Periodically report progress to detect client-side cancellation (499 → TaskCancelled).
-        if http is not None and task_id is not None and attempt % _PROGRESS_REPORT_EVERY == 0:
-            report_progress(http, log=None, stage="queued", task_id=task_id)
+        if transport is not None and task_id is not None and attempt % _PROGRESS_REPORT_EVERY == 0:
+            report_progress(transport, log=None, stage="queued", task_id=task_id)
 
         time.sleep(_POLL_INTERVAL_SEC)
     raise TimeoutError(f"ComfyUI job {prompt_id} did not complete within the allotted time")

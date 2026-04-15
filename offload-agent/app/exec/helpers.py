@@ -7,7 +7,6 @@ from typing import Any, Callable, Optional
 import requests
 import typer
 
-from ..httphelpers import HttpClient
 from ..models import *
 from ..transport import AgentTransport
 
@@ -27,7 +26,7 @@ class TaskCancelled(Exception):
 # ---------------------------------------------------------------------------
 _pending_logs: dict[str, list[str]] = {}
 _pending_stage: dict[str, Optional[str]] = {}
-ReportClient = AgentTransport | HttpClient
+ReportClient = AgentTransport
 
 
 def _buffer_log(task_id: TaskId, log: Optional[str], stage: Optional[str]) -> None:
@@ -133,27 +132,13 @@ def _progress_wire_status(stage: Optional[str], has_log: bool) -> Optional[str]:
 def _post_progress(
     transport: ReportClient, task_id: TaskId, report: TaskProgressReport, timeout: int
 ) -> requests.Response:
-    if hasattr(transport, "post_task_progress"):
-        return transport.post_task_progress(task_id, report, timeout=timeout)
-    q = task_id.quoted()
-    return transport.post(
-        "private", "agent", "task", "progress", q.cap, q.id,
-        json_body=report.to_wire(),
-        timeout=timeout,
-    )
+    return transport.post_task_progress(task_id, report, timeout=timeout)
 
 
 def _post_result(
     transport: ReportClient, report: TaskResultReport, timeout: int
 ) -> requests.Response:
-    if hasattr(transport, "post_task_result"):
-        return transport.post_task_result(report, timeout=timeout)
-    q = report.task_id.quoted()
-    return transport.post(
-        "private", "agent", "task", "resolve", q.cap, q.id,
-        json_body=report.to_wire(),
-        timeout=timeout,
-    )
+    return transport.post_task_result(report, timeout=timeout)
 
 
 def _flush_logs(transport: ReportClient, task_id: TaskId) -> bool:

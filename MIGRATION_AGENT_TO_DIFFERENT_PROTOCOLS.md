@@ -29,6 +29,7 @@ Any new protocol implementation should satisfy the `AgentTransport` surface:
 - `take_task(raw_id, raw_cap, timeout=...) -> dict[str, Any]`
 - `post_task_progress(task_id, report, timeout=...) -> ResponseLike`
 - `post_task_result(report, timeout=...) -> ResponseLike`
+- `upload_file(bucket_uid, filename, content, content_type, timeout=...) -> str`
 - optional passthrough `get/post` methods if needed by transitional code
 
 Behavioral expectations:
@@ -45,15 +46,20 @@ Behavioral expectations:
 - Route core polling/take path through transport.
 - Keep HTTP implementation as default.
 
-### Phase 2 - Remove Legacy Reporting Fallback
+### Phase 2 - Remove Legacy Reporting Fallback (done)
 
-Update all executors and helper callsites to accept/pass `AgentTransport` instead of `HttpClient`:
+All executors and helper callsites now accept/pass `AgentTransport` instead of `HttpClient`:
 
-- `offload-agent/app/exec/*.py`
-- `offload-agent/app/exec/imggen/*.py`
-- any helper or utility passing `http` to `report_*` functions
+- All `offload-agent/app/exec/*.py` executors: parameter renamed `http: HttpClient` → `transport: AgentTransport`
+- All `offload-agent/app/exec/imggen/*.py` files: same migration
+- `offload-agent/app/exec/helpers.py`: `ReportClient` simplified to `AgentTransport`, `hasattr` fallbacks removed
+- `offload-agent/app/capabilities.py`: `rescan_and_push()` accepts `AgentTransport`
+- `offload-agent/app/httphelpers.py`: `update_agent_capabilities()` accepts `AgentTransport`
+- `offload-agent/app/core.py`: rescan scheduler uses `HttpAgentTransport` instead of `HttpClient`
+- `offload-agent/app/exec/imggen/output.py`: direct `http.base`/`http.headers` access replaced with `transport.upload_file()`
+- `AgentTransport` protocol extended with `upload_file()` method for bucket file uploads
 
-Then remove compatibility branch in `app/exec/helpers.py` that detects raw `HttpClient`.
+`HttpClient` is now an implementation detail of `HttpAgentTransport` only — no executor or helper imports it.
 
 ### Phase 3 - Introduce Second Protocol Adapter
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Protocol
+from urllib.parse import quote
 
 import requests
 
@@ -34,6 +35,13 @@ class AgentTransport(Protocol):
     def post_task_result(
         self, report: TaskResultReport, timeout: int = 60
     ) -> requests.Response:
+        ...
+
+    def upload_file(
+        self, bucket_uid: str, filename: str, content: bytes, content_type: str,
+        timeout: int = 300,
+    ) -> str:
+        """Upload a file to an output bucket. Returns the file_uid assigned by the server."""
         ...
 
 
@@ -99,3 +107,18 @@ class HttpAgentTransport:
             json_body=report.to_wire(),
             timeout=timeout,
         )
+
+    def upload_file(
+        self, bucket_uid: str, filename: str, content: bytes, content_type: str,
+        timeout: int = 300,
+    ) -> str:
+        q_bucket = quote(bucket_uid, safe="")
+        url = f"{self._http.base}/private/agent/bucket/{q_bucket}/upload"
+        resp = requests.post(
+            url,
+            headers=self._http.headers,
+            files={"file": (filename, content, content_type)},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return str(resp.json()["file_uid"])

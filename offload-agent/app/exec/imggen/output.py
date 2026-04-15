@@ -5,40 +5,28 @@ output bucket on the offload server.
 """
 
 from typing import Any
-from urllib.parse import quote
 
-import requests
-
-from ...httphelpers import HttpClient
+from ...transport import AgentTransport
 from .comfyui import download_file
 
 _VIDEO_TASK_TYPES = {"txt2video", "img2video"}
 
 
 def upload_output_file(
-    http: HttpClient, bucket_uid: str, filename: str, content: bytes, content_type: str
+    transport: AgentTransport, bucket_uid: str, filename: str, content: bytes, content_type: str
 ) -> str:
     """Upload an output file to the server bucket. Returns the file_uid assigned by the server."""
-    q_bucket = quote(bucket_uid, safe="")
-    url = f"{http.base}/private/agent/bucket/{q_bucket}/upload"
-    resp = requests.post(
-        url,
-        headers=http.headers,
-        files={"file": (filename, content, content_type)},
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return str(resp.json()["file_uid"])
+    return transport.upload_file(bucket_uid, filename, content, content_type)
 
 
-def collect_images(history_entry: dict[str, Any], http: HttpClient, bucket_uid: str) -> list[dict[str, Any]]:
+def collect_images(history_entry: dict[str, Any], transport: AgentTransport, bucket_uid: str) -> list[dict[str, Any]]:
     """Download all output images from a history entry and upload them to the bucket."""
     images = []
     for node_output in history_entry.get("outputs", {}).values():
         for img in node_output.get("images", []):
             filename = img.get("filename", "")
             content, ct = download_file(filename, img.get("subfolder", ""), img.get("type", "output"))
-            file_uid = upload_output_file(http, bucket_uid, filename, content, ct)
+            file_uid = upload_output_file(transport, bucket_uid, filename, content, ct)
             images.append({
                 "filename":     filename,
                 "content_type": ct,
@@ -48,13 +36,13 @@ def collect_images(history_entry: dict[str, Any], http: HttpClient, bucket_uid: 
     return images
 
 
-def collect_video(history_entry: dict[str, Any], http: HttpClient, bucket_uid: str) -> dict[str, Any] | None:
+def collect_video(history_entry: dict[str, Any], transport: AgentTransport, bucket_uid: str) -> dict[str, Any] | None:
     """Download the first output video/gif from a history entry and upload it to the bucket."""
     for node_output in history_entry.get("outputs", {}).values():
         for vid in node_output.get("videos", []) or node_output.get("gifs", []):
             filename = vid.get("filename", "")
             content, ct = download_file(filename, vid.get("subfolder", ""), vid.get("type", "output"))
-            file_uid = upload_output_file(http, bucket_uid, filename, content, ct)
+            file_uid = upload_output_file(transport, bucket_uid, filename, content, ct)
             return {
                 "filename":     filename,
                 "content_type": ct,
@@ -69,7 +57,7 @@ def build_output(
     task_type: str,
     prompt_id: str,
     seed: int | None,
-    http: HttpClient,
+    transport: AgentTransport,
     bucket_uid: str,
 ) -> dict[str, Any]:
     """Collect all outputs from a completed ComfyUI job and return a result dict."""
@@ -78,7 +66,7 @@ def build_output(
         base["seed"] = seed
 
     if task_type in _VIDEO_TASK_TYPES:
-        video = collect_video(history_entry, http, bucket_uid)
+        video = collect_video(history_entry, transport, bucket_uid)
         if not video:
             raise ValueError("ComfyUI completed but returned no video output")
         frame_count = 0
@@ -86,7 +74,7 @@ def build_output(
             frame_count = len(node_output.get("images", [])) or frame_count
         return {**base, "frame_count": frame_count, "video": video}
 
-    images = collect_images(history_entry, http, bucket_uid)
+    images = collect_images(history_entry, transport, bucket_uid)
     if not images:
         raise ValueError("ComfyUI completed but returned no output images")
     return {**base, "image_count": len(images), "images": images}

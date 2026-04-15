@@ -3,7 +3,7 @@ import subprocess
 import time
 from typing import Any
 from ..models import *
-from ..httphelpers import *
+from ..transport import AgentTransport
 from .helpers import *
 
 from pathlib import Path
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def execute_shellcmd_bash(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
     logger.info(f"Executing shellcmd.bash for task {task_id.dict()} in {data}")
     if isinstance(payload, str):
@@ -26,7 +26,7 @@ def execute_shellcmd_bash(
             "No 'command' provided in payload.",
             extra_output={"error": "No 'command' provided in payload."},
         )
-        return report_result(http, report)
+        return report_result(transport, report)
 
     try:
         process = subprocess.Popen(
@@ -40,7 +40,7 @@ def execute_shellcmd_bash(
 
         try:
             while process.poll() is None:
-                report_progress(http, log=None, stage="running", task_id=task_id)
+                report_progress(transport, log=None, stage="running", task_id=task_id)
                 time.sleep(2)
         except TaskCancelled:
             process.kill()
@@ -51,7 +51,7 @@ def execute_shellcmd_bash(
                 "stderr": stderr_out,
                 "cancelled": True,
             }
-            report_cancelled(http, task_id, capability, output=output)
+            report_cancelled(transport, task_id, capability, output=output)
             return True
 
         stdout_out, stderr_out = process.communicate()
@@ -71,4 +71,4 @@ def execute_shellcmd_bash(
         err_output: dict[str, str] = {"error": str(e)}
         report = make_failure_report(task_id, capability, str(e), extra_output=err_output)
 
-    return report_result(http, report)
+    return report_result(transport, report)

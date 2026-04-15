@@ -5,7 +5,7 @@ import requests
 import time
 from typing import Any
 from ..models import *
-from ..httphelpers import *
+from ..transport import AgentTransport
 from ..data.text_extract import extract_texts_from_directory
 from .helpers import *
 
@@ -35,7 +35,7 @@ def _collect_image_attachments(data_path: Path) -> list[str]:
 
 
 def execute_llm_query(
-    http: HttpClient, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
 ) -> bool:
     """Send LLM request to local Ollama REST API (chat or generate style).
 
@@ -165,7 +165,7 @@ def execute_llm_query(
                             current_time = time.time()
                             if current_time - last_print_time >= 2:
                                 report_progress(
-                                    http, log=buffer, stage="running", task_id=task_id
+                                    transport, log=buffer, stage="running", task_id=task_id
                                 )
                                 buffer = ""
                                 last_print_time = current_time
@@ -175,7 +175,7 @@ def execute_llm_query(
                                 final_data = json_response
                                 if buffer:
                                     report_progress(
-                                        http, log=buffer, stage="running", task_id=task_id
+                                        transport, log=buffer, stage="running", task_id=task_id
                                     )
 
                         except json.JSONDecodeError:
@@ -192,7 +192,7 @@ def execute_llm_query(
                     "model": model_name,
                     "cancelled": True,
                 }
-                report_cancelled(http, task_id, capability, output=output)
+                report_cancelled(transport, task_id, capability, output=output)
                 return True
 
             # Construct the final response to match the non-streaming format
@@ -238,4 +238,4 @@ def execute_llm_query(
     except Exception as e:
         report = make_failure_report(task_id, capability, str(e))
 
-    return report_result(http, report)
+    return report_result(transport, report)
