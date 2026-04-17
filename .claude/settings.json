@@ -67,7 +67,15 @@
       "Bash(node -e 'const l = require\\(\"\"lucide-react\"\"\\); [\"\"GitCompareArrows\"\",\"\"Send\"\",\"\"ArrowDownWideNarrow\"\",\"\"CircleX\"\",\"\"Timer\"\",\"\"Sparkles\"\",\"\"Rows2\"\",\"\"Columns2\"\"].forEach\\(n => console.log\\(n + \"\":\"\", !!l[n]\\)\\)')",
       "Bash(node --no-experimental-strip-types -e 'var l = require\\(\"\"lucide-react\"\"\\); var names = [\"\"GitCompareArrows\"\",\"\"Send\"\",\"\"ArrowDownWideNarrow\"\",\"\"CircleX\"\",\"\"Timer\"\",\"\"Sparkles\"\",\"\"Rows2\"\",\"\"Columns2\"\"]; names.forEach\\(function\\(n\\) { console.log\\(n, typeof l[n] === \"\"function\"\" ? \"\"OK\"\" : \"\"MISSING\"\"\\); }\\);')",
       "Bash(node --no-experimental-strip-types -e 'var l = require\\(\"\"lucide-react\"\"\\); var names = [\"\"GitCompareArrows\"\",\"\"Send\"\",\"\"ArrowDownWideNarrow\"\",\"\"CircleX\"\",\"\"Timer\"\",\"\"Sparkles\"\",\"\"Rows2\"\",\"\"Columns2\"\",\"\"GitCompare\"\",\"\"SendHorizontal\"\",\"\"ArrowDownNarrowWide\"\",\"\"XCircle\"\",\"\"Clock\"\",\"\"Wand2\"\",\"\"LayoutGrid\"\",\"\"LayoutList\"\"]; names.forEach\\(function\\(n\\) { console.log\\(n, typeof l[n] === \"\"function\"\" ? \"\"OK\"\" : \"\"MISSING\"\"\\); }\\);')",
-      "Bash(node --no-experimental-strip-types -e 'var l = require\\(\"\"lucide-react\"\"\\); console.log\\(typeof l.Play\\); console.log\\(Object.keys\\(l\\).length\\);')"
+      "Bash(node --no-experimental-strip-types -e 'var l = require\\(\"\"lucide-react\"\"\\); console.log\\(typeof l.Play\\); console.log\\(Object.keys\\(l\\).length\\);')",
+      "Bash(pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString\\(\\)')",
+      "Bash(powershell.exe -NoProfile -Command '$PSVersionTable.PSVersion.ToString\\(\\)')",
+      "Bash(pdm --version)",
+      "Bash(where.exe curl *)",
+      "Read(//c/Users/AlexG/.claude/projects/c--Users-AlexG-Documents-dev-offloadmq/memory//**)",
+      "Read(//c/Users/AlexG/.claude/projects//**)",
+      "Bash(powershell.exe -NoProfile -Command '$ErrorActionPreference=\"Stop\"; try { $r = Invoke-RestMethod -Method Post -Uri \"https://dl.alexgr.space/api/v1/auth/token\" -Headers @{ Authorization = \"Bearer $env:DL_API_KEY\" }; Write-Host \"OK token starts:\" $r.token.Substring\\(0,10\\) } catch { Write-Host \"FAIL:\" $_.Exception.Message; Write-Host \"Type:\" $_.Exception.GetType\\(\\).FullName }')",
+      "Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/release-agent.ps1)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
