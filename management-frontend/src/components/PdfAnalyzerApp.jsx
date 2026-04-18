@@ -5,6 +5,7 @@ import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
 import SandboxMarkdown from './SandboxMarkdown';
 import CircularProgress from './CircularProgress';
+import SpeechWidget from './SpeechWidget';
 
 const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
@@ -360,7 +361,10 @@ const PdfAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
             {/* Result */}
             {result && (
                 <div style={s.panel}>
-                    <label style={s.label}>Result</label>
+                    <div style={s.labelRow}>
+                        <label style={s.label}>Result</label>
+                        <SpeechWidget text={result} apiKey={apiKey} addDevEntry={addDevEntry} />
+                    </div>
                     <div style={s.resultContent}>
                         <SandboxMarkdown tone="light">{result}</SandboxMarkdown>
                     </div>
@@ -407,6 +411,12 @@ const s = {
         color: 'var(--muted)',
         marginBottom: '4px',
         display: 'block',
+    },
+    labelRow: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px',
     },
     input: {
         width: '100%',

@@ -4,6 +4,7 @@ import { sandboxStyles as ss } from '../sandboxStyles';
 import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
 import SandboxMarkdown from './SandboxMarkdown';
+import SpeechWidget from './SpeechWidget';
 
 const LlmApp = ({ apiKey, addDevEntry }) => {
   const [model, setModel] = useState('');
@@ -99,7 +100,14 @@ const LlmApp = ({ apiKey, addDevEntry }) => {
       <div style={ss.responseContainer}>
         {isLoading && <p style={ss.loading}>Loading...</p>}
         {error && <pre style={ss.error}>{error}</pre>}
-        {response && <SandboxMarkdown tone="light" style={{ fontSize: '14px' }}>{response}</SandboxMarkdown>}
+        {response && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+              <SpeechWidget text={response} apiKey={apiKey} addDevEntry={addDevEntry} />
+            </div>
+            <SandboxMarkdown tone="light" style={{ fontSize: '14px' }}>{response}</SandboxMarkdown>
+          </>
+        )}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 import ModelSelector from './ModelSelector';
 import SandboxMarkdown from './SandboxMarkdown';
 import CircularProgress from './CircularProgress';
+import SpeechWidget from './SpeechWidget';
 
 const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
@@ -401,7 +402,10 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
             {/* "All at once" result */}
             {result && mode === 'all' && (
                 <div style={s.panel}>
-                    <label style={s.label}>Result</label>
+                    <div style={s.labelRow}>
+                        <label style={s.label}>Result</label>
+                        <SpeechWidget text={result} apiKey={apiKey} addDevEntry={addDevEntry} />
+                    </div>
                     <div style={s.resultContent}>
                         <SandboxMarkdown tone="light">{result}</SandboxMarkdown>
                     </div>
@@ -435,9 +439,14 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                                 <div style={s.logContent}>{item.log}</div>
                             )}
                             {item.result && (
-                                <div style={s.resultContent}>
-                                    <SandboxMarkdown tone="light">{item.result}</SandboxMarkdown>
-                                </div>
+                                <>
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                        <SpeechWidget text={item.result} apiKey={apiKey} addDevEntry={addDevEntry} />
+                                    </div>
+                                    <div style={s.resultContent}>
+                                        <SandboxMarkdown tone="light">{item.result}</SandboxMarkdown>
+                                    </div>
+                                </>
                             )}
                             {item.error && (
                                 <div style={{ fontSize: '0.82rem', color: '#ef4444', padding: '6px 8px', background: 'rgba(239,68,68,0.08)', borderRadius: '6px' }}>{item.error}</div>
@@ -514,6 +523,12 @@ const s = {
         color: 'var(--muted)',
         marginBottom: '4px',
         display: 'block',
+    },
+    labelRow: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px',
     },
     input: {
         width: '100%',

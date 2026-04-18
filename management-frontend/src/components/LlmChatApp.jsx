@@ -5,6 +5,7 @@ import SandboxMarkdown from './SandboxMarkdown';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { useTaskPolling } from '../hooks/useTaskPolling';
 import ModelSelector from './ModelSelector';
+import SpeechWidget from './SpeechWidget';
 import { cancelTask } from '../sandboxUtils';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -224,7 +225,12 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
             )}
             {msg.content && (
               msg.role === 'assistant' ? (
-                <SandboxMarkdown tone="light" style={{ fontSize: '14px' }}>{msg.content}</SandboxMarkdown>
+                <>
+                  <SandboxMarkdown tone="light" style={{ fontSize: '14px' }}>{msg.content}</SandboxMarkdown>
+                  <div style={styles.bubbleActions}>
+                    <SpeechWidget text={msg.content} apiKey={apiKey} addDevEntry={addDevEntry} />
+                  </div>
+                </>
               ) : (
                 <div style={styles.bubbleText}>{msg.content}</div>
               )
@@ -405,6 +411,12 @@ const styles = {
   bubbleText: {
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
+  },
+  bubbleActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    marginTop: '6px',
+    opacity: 0.75,
   },
   typing: {
     color: 'var(--muted)',
