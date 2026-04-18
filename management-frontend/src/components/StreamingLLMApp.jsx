@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { cancelTask } from '../sandboxUtils';
-import { stripCapabilityAttrs } from '../utils';
+import { stripCapabilityAttrs, extractSandboxModelText } from '../utils';
 import { sandboxStyles as ss } from '../sandboxStyles';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { useTaskPolling } from '../hooks/useTaskPolling';
 import ModelSelector from './ModelSelector';
 import TerminalOutput from './TerminalOutput';
 import SandboxMarkdown from './SandboxMarkdown';
+import SpeechWidget from './SpeechWidget';
 
 const StreamingLLMApp = ({ apiKey, addDevEntry }) => {
     const [command, setCommand] = useState("What is the capital of Ukraine? Describe it with 8 sentences and do not mention it's name.");
@@ -171,6 +172,14 @@ const StreamingLLMApp = ({ apiKey, addDevEntry }) => {
             <div style={ss.responseContainer}>
                 {(isLoading || pollingStatus) && <p style={ss.loading}>{pollingStatus || 'Executing command...'}</p>}
                 {error && <pre style={ss.error}>{error}</pre>}
+                {response && !isLoading && (() => {
+                    const speechText = extractSandboxModelText(response);
+                    return speechText ? (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                            <SpeechWidget text={speechText} apiKey={apiKey} addDevEntry={addDevEntry} />
+                        </div>
+                    ) : null;
+                })()}
                 <TerminalOutput
                     response={response}
                     style={{ maxHeight: '24em', overflowY: 'auto', backgroundColor: 'var(--code-bg)' }}

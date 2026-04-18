@@ -6,6 +6,7 @@ import { stripCapabilityAttrs } from '../utils';
 import { cancelTask } from '../sandboxUtils';
 import ModelSelector from './ModelSelector';
 import SandboxMarkdown from './SandboxMarkdown';
+import SpeechWidget from './SpeechWidget';
 
 const TranslatorApp = ({ apiKey, addDevEntry }) => {
     const [text, setText] = useState('');
@@ -185,7 +186,14 @@ const TranslatorApp = ({ apiKey, addDevEntry }) => {
                 <div style={ss.responseContainer}>
                     {isLoading && <p style={ss.loading}>{pollingStatus}</p>}
                     {error && <pre style={ss.error}>{error}</pre>}
-                    {response && <SandboxMarkdown tone="light">{response}</SandboxMarkdown>}
+                    {response && (
+                        <>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                                <SpeechWidget text={response} apiKey={apiKey} addDevEntry={addDevEntry} />
+                            </div>
+                            <SandboxMarkdown tone="light">{response}</SandboxMarkdown>
+                        </>
+                    )}
                 </div>
             )}
         </div>

@@ -29,6 +29,8 @@ Sandbox apps are interactive demo/test widgets embedded in the management fronte
 | `Txt2ImgApp.jsx` | Text-to-image generation via output bucket |
 | `Img2ImgApp.jsx` | Image-to-image transformation via input+output buckets |
 | `CustomApp.jsx` | Generic capability runner: auto-detects fields from extended attrs, submits + polls |
+| `TtsApp.jsx` | Text-to-speech: full UI for synthesizing audio via `tts.*` capability |
+| `SpeechWidget.jsx` | **Reusable** compact TTS widget (voice picker + play button) — embed in any app to read text aloud |
 
 ---
 
@@ -135,6 +137,47 @@ import TerminalOutput from './TerminalOutput';
 <TerminalOutput response={response} style={{ maxHeight: '24em', overflowY: 'auto' }} />
 <TerminalOutput response={{ stdout: logText }} />  {/* force stdout rendering */}
 ```
+
+### `SpeechWidget` component
+
+**File:** `management-frontend/src/components/SpeechWidget.jsx`
+
+Compact "read aloud" widget: voice dropdown + 24px play button. On click → spins a loader while a blocking TTS task runs → auto-plays the returned audio via `new Audio(blobUrl)`. During playback the button becomes a red Stop button.
+
+```jsx
+import SpeechWidget from './SpeechWidget';
+
+<SpeechWidget text={assistantResponse} apiKey={apiKey} addDevEntry={addDevEntry} />
+```
+
+**Props:**
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `text` | `string` | Text to synthesize. Button is disabled if empty. |
+| `apiKey` | `string` | Client API key (required). |
+| `addDevEntry` | `(entry) => void` | Optional — logs the TTS call to the Dev tab. |
+| `disabled` | `boolean` | Optional — force-disable (e.g. while a parent task is running). Default `false`. |
+| `compact` | `boolean` | Optional — reserved (currently only affects gap). Default `true`. |
+
+**Behavior:**
+
+- Auto-discovers `tts.*` capabilities via `useCapabilities('tts.')`, auto-picks first capability and first voice.
+- Persists the last chosen voice + capability in `localStorage` under keys `offroadmq-tts-voice` and `offroadmq-tts-capability` (shared across all embeds on the page).
+- Derives `model` from the capability string (`tts.kokoro` → `kokoro`) and submits `POST /api/task/submit_blocking` with `{ urgent: true, payload: { model, voice, input: text } }`.
+- Expects `data.result.audio_data_base64` + `data.result.content_type` on success (standard `tts.*` response shape).
+- Cleans up blob URLs on unmount, on playback end, and before each new request.
+- If no `tts.*` capability is online, the dropdown shows `no tts` and the button is disabled.
+
+**Where to embed:** Next to any assistant-visible text. Common patterns:
+
+- **Bubble / message** (LlmChatApp, LlmDebateApp): in a right-aligned action row inside or beside the bubble.
+- **Result panel header** (PdfAnalyzerApp, ImageAnalyzerApp): use a `labelRow` flex row with the "Result" label on the left and `<SpeechWidget>` on the right.
+- **Simple response container** (LlmApp, TranslatorApp): a top-right-aligned div above the markdown body.
+- **Multi-slot results** (LlmCompareApp): inside each result header, alongside the Copy button — renders only when `r.content` is present.
+- **Streaming output** (StreamingLLMApp): guard with `response && !isLoading` so the widget only appears after the full response arrives (don't offer speech of partial streams). Extract text with `extractSandboxModelText(response)` when the output is an object.
+
+For object-shaped responses, unwrap the text first: `extractSandboxModelText(response)` from `utils.js`.
 
 ## Capability Utilities
 
