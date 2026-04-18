@@ -12,7 +12,7 @@ from .config import *
 from .systeminfo import *
 from .models import *
 from .httphelpers import *
-from .transport import AgentTransport, HttpAgentTransport
+from .transport import AgentTransport, HttpAgentTransport, WebSocketAgentTransport
 from .capabilities import detect_capabilities, rescan_and_push
 from .exec.llm import *
 from .exec.tts import *
@@ -369,8 +369,20 @@ def start_rescan_scheduler(busy_event: threading.Event, stop_event: threading.Ev
 # Main loop
 # -----------------------------------------
 
-def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | None = None) -> None:
-    transport: AgentTransport = HttpAgentTransport(server_url, jwt_token)
+def _build_transport(server_url: str, jwt_token: str, transport_type: str) -> AgentTransport:
+    """Construct the appropriate transport implementation."""
+    if transport_type == "websocket":
+        return WebSocketAgentTransport(server_url, jwt_token)
+    return HttpAgentTransport(server_url, jwt_token)
+
+
+def serve_tasks(
+    server_url: str,
+    jwt_token: str,
+    stop_event: threading.Event | None = None,
+    transport_type: str = "http",
+) -> None:
+    transport: AgentTransport = _build_transport(server_url, jwt_token, transport_type)
     auth_backoff = 10
     _stop = stop_event or threading.Event()
     busy_event = threading.Event()
@@ -402,7 +414,7 @@ def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | N
             logger.warning(f"Auth rejected — attempting recovery...")
             new_jwt = _reauth_or_reregister(server_url)
             if new_jwt:
-                transport = HttpAgentTransport(server_url, new_jwt)
+                transport = _build_transport(server_url, new_jwt, transport_type)
                 auth_backoff = 10
             else:
                 logger.error(f"Could not recover auth. Backing off for {auth_backoff}s...")

@@ -82,7 +82,8 @@
       "Bash(powershell.exe -NoProfile -Command 'Get-Process -Name \"offload-agent*\" -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,Path')",
       "Bash(powershell.exe -NoProfile -Command 'try { \\(Invoke-WebRequest -UseBasicParsing -Uri \"http://127.0.0.1:8080/\" -TimeoutSec 2\\).StatusCode } catch { \"HTTP check failed: \" + $_.Exception.Message }')",
       "Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command \"Start-Sleep -Seconds 1; Start-Process -FilePath 'C:\\\\Users\\\\AlexG\\\\Documents\\\\dev\\\\offloadmq\\\\offload-agent\\\\dist\\\\offload-agent-windows-amd64.exe' -WorkingDirectory 'C:\\\\Users\\\\AlexG\\\\Documents\\\\dev\\\\offloadmq\\\\offload-agent\\\\dist'\")",
-      "Bash(echo \"launcher exited with $?\")"
+      "Bash(echo \"launcher exited with $?\")",
+      "Bash(npm run *)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
