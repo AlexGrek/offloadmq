@@ -24,10 +24,16 @@ def execute_kokoro_tts(
         if isinstance(payload, str):
             # default voice/model if payload is just text
             payload = {
-                "model": "model_q8f16",
+                "model": "kokoro",
                 "voice": "af_heart",
                 "input": payload
             }
+        elif isinstance(payload, dict):
+            # Normalize legacy model names to Kokoro-FastAPI's OpenAI-compatible IDs
+            valid_models = {"kokoro", "tts-1", "tts-1-hd"}
+            if payload.get("model") not in valid_models:
+                payload = {**payload, "model": "kokoro"}
+            payload.setdefault("voice", "af_heart")
 
         # Check for cancellation before starting the (potentially slow) HTTP call.
         # TaskCancelled is raised here if the client already cancelled the task.

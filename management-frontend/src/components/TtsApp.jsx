@@ -3,7 +3,7 @@ import { stripCapabilityAttrs, parseCapabilityAttrs } from '../utils';
 import { sandboxStyles as ss } from '../sandboxStyles';
 import { useCapabilities } from '../hooks/useCapabilities';
 
-const DEFAULT_MODEL = 'model_q8f16';
+const DEFAULT_MODEL = 'kokoro';
 const DEFAULT_TEXT = 'Hello from OffloadMQ. This is a text-to-speech test using Kokoro.';
 
 const TtsApp = ({ apiKey, addDevEntry }) => {
