@@ -61,22 +61,32 @@ All executors and helper callsites now accept/pass `AgentTransport` instead of `
 
 `HttpClient` is now an implementation detail of `HttpAgentTransport` only — no executor or helper imports it.
 
-### Phase 3 - Introduce Second Protocol Adapter
+### Phase 3 - Introduce Second Protocol Adapter (done)
 
-Add e.g. `WebSocketAgentTransport` in `app/transport_ws.py` (or within `transport.py`):
+Added `WebSocketAgentTransport` in `app/transport.py`:
 
-- maintain task stream subscription (push or request/response)
-- implement ack/take semantics atomically
-- map server cancel event -> local `TaskCancelled` behavior
-- support progress/result frames with delivery confirmation
+- JSON request/response envelope protocol over persistent WS connection
+- Agent-initiated polling (same semantics as HTTP, not server-push)
+- `req_id` correlation for multiplexed request/response matching
+- File upload via text frame (metadata) + binary frame (data)
+- File download via base64-encoded response data
+- Auto-reconnect on connection loss, raises `requests.HTTPError` for auth errors
+- `ResponseLike` protocol + `WsResponse` class for compatibility with existing error-handling code
 
-### Phase 4 - Runtime Selection
+Server side (`src/api/agent/mod.rs`):
 
-Select transport in startup/config:
+- Full WS message dispatcher in `handle_agent_websocket` calling same service layer as HTTP handlers
+- Supports all actions: `poll_task`, `take_task`, `resolve_task`, `update_progress`, `upload_file`, `get`, `post`
+- `CommunicationMethod` parameter added to service functions for proper tracking
 
-- config key example: `"transport": "http" | "ws" | "custom"`
-- CLI/WebUI option for protocol
-- factory method (example): `build_transport(config) -> AgentTransport`
+### Phase 4 - Runtime Selection (done)
+
+Transport selected via config + CLI:
+
+- Config key: `"transport": "http" | "websocket"` (default: `"http"`)
+- CLI: `serve --ws` flag overrides config to use WebSocket
+- WebUI: Transport dropdown in Connection tab
+- Factory method: `_build_transport(server_url, jwt_token, transport_type) -> AgentTransport` in `core.py`
 
 ### Phase 5 - Reliability Hardening
 

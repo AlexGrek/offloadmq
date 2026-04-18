@@ -9,7 +9,6 @@ from .models import *
 from .httphelpers import *
 from .core import serve_tasks
 from .exec.slavemode import merge_registration_caps, strip_slavemode_caps
-from .websocket_client import serve_websocket
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Offload Agent CLI")
@@ -160,12 +159,10 @@ def cli_serve(
     cfg["jwtToken"] = jwt
     save_config(cfg)
 
-    if ws:
-        typer.echo("Starting WebSocket connection...")
-        serve_websocket(server, jwt)
-    else:
-        typer.echo("Starting task polling...")
-        serve_tasks(server, jwt)
+    # Determine transport: --ws flag overrides config
+    transport_type: str = "websocket" if ws else cfg.get("transport", "http")
+    typer.echo(f"Starting task loop (transport={transport_type})...")
+    serve_tasks(server, jwt, transport_type=transport_type)
 
 
 @custom_app.command("list", help="List all discovered custom capabilities")

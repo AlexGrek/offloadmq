@@ -8,7 +8,7 @@ import requests
 import typer
 
 from ..models import *
-from ..transport import AgentTransport
+from ..transport import AgentTransport, ResponseLike
 
 logger = logging.getLogger("agent")
 
@@ -76,11 +76,11 @@ def _is_retryable(exc: Exception) -> bool:
 
 
 def _retry_post(
-    send_fn: Callable[[], requests.Response],
+    send_fn: Callable[[], ResponseLike],
     max_elapsed_sec: float,
     base_delay: float,
     max_delay: float,
-) -> requests.Response:
+) -> ResponseLike:
     """POST with exponential backoff. Raises on permanent or exhausted failure."""
     start = time.monotonic()
     delay = base_delay
@@ -131,13 +131,13 @@ def _progress_wire_status(stage: Optional[str], has_log: bool) -> Optional[str]:
 
 def _post_progress(
     transport: ReportClient, task_id: TaskId, report: TaskProgressReport, timeout: int
-) -> requests.Response:
+) -> ResponseLike:
     return transport.post_task_progress(task_id, report, timeout=timeout)
 
 
 def _post_result(
     transport: ReportClient, report: TaskResultReport, timeout: int
-) -> requests.Response:
+) -> ResponseLike:
     return transport.post_task_result(report, timeout=timeout)
 
 

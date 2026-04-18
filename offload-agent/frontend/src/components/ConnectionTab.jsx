@@ -27,12 +27,14 @@ export function ConnectionTab({ state, loadState, run }) {
   const [server, setServer] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [transport, setTransport] = useState('http')
 
   // Sync form values from state
   useEffect(() => {
     setServer(state?.server || '')
     setApiKey(state?.apiKey || '')
     setDisplayName(state?.displayName || '')
+    setTransport(state?.transport || 'http')
   }, [state])
 
   async function saveConnection(e) {
@@ -42,6 +44,7 @@ export function ConnectionTab({ state, loadState, run }) {
       fd.append('server', server)
       fd.append('apiKey', apiKey)
       fd.append('displayName', displayName)
+      fd.append('transport', transport)
       await postForm('/config', fd)
       loadState()
     })
@@ -80,6 +83,15 @@ export function ConnectionTab({ state, loadState, run }) {
           maxLength={50}
           className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 mb-3 focus:outline-none focus:border-indigo-500"
         />
+        <label className="block text-xs text-slate-500 mb-1">Transport</label>
+        <select
+          value={transport}
+          onChange={(e) => setTransport(e.target.value)}
+          className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 mb-3 focus:outline-none focus:border-indigo-500"
+        >
+          <option value="http">HTTP (polling)</option>
+          <option value="websocket">WebSocket</option>
+        </select>
         <div className="flex flex-wrap gap-2 items-center">
           <button
             type="submit"

@@ -25,8 +25,9 @@ use crate::{
 pub async fn poll_urgent(
     agent: Agent,
     state: &Arc<AppState>,
+    comm_method: CommunicationMethod,
 ) -> Result<Option<UnassignedTask>, AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method)?;
     let caps = &agent.capabilities;
     Ok(find_urgent_tasks_with_capabilities(&state.urgent, caps, &agent.uid).await)
 }
@@ -34,8 +35,9 @@ pub async fn poll_urgent(
 pub async fn poll_non_urgent(
     agent: Agent,
     state: &Arc<AppState>,
+    comm_method: CommunicationMethod,
 ) -> Result<Option<UnassignedTask>, AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method)?;
     let caps = &agent.capabilities;
     debug!(
         "Searching for tasks for agent {:?} with tier {:?}",
@@ -77,6 +79,7 @@ pub fn do_update_agent_info(
     mut agent: Agent,
     req: AgentUpdateRequest,
     state: &Arc<AppState>,
+    comm_method: CommunicationMethod,
 ) -> Result<AgentRegistrationResponse, AppError> {
     validate_display_name(&req.display_name)?;
     agent.capabilities = req.capabilities;
@@ -87,7 +90,7 @@ pub fn do_update_agent_info(
     agent.display_name = req.display_name;
     let uid = agent.uid.clone();
     let key = agent.personal_login_token.clone();
-    state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
+    state.storage.agents.update_agent_last_contact(agent, comm_method)?;
     Ok(AgentRegistrationResponse {
         agent_id: uid,
         message: "Updated".to_string(),
@@ -246,8 +249,9 @@ pub async fn resolve_task(
     task_id: TaskId,
     report: TaskResultReport,
     state: &Arc<AppState>,
+    comm_method: CommunicationMethod,
 ) -> Result<(), AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method)?;
     info!("Agent {} reporting task {task_id}", agent.uid_short);
     debug!("Report: {:?}", &report);
 
@@ -321,8 +325,9 @@ pub async fn update_task_progress(
     task_id: TaskId,
     update: TaskUpdate,
     state: &Arc<AppState>,
+    comm_method: CommunicationMethod,
 ) -> Result<(), AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, CommunicationMethod::Http)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method)?;
     info!(
         "Agent {} updating task {task_id} with log: {:?}",
         agent.uid_short,
