@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 const DevPanel = React.lazy(() => import('./DevPanel'));
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch, MessageCircleMore, GitCompareArrows, ShieldAlert, Languages } from 'lucide-react';
+import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch, MessageCircleMore, GitCompareArrows, ShieldAlert, Languages, AudioWaveform } from 'lucide-react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Define the content for each app as a functional component.
@@ -70,6 +70,7 @@ const LlmDebateApp = React.lazy(() => import('./LlmDebateApp'))
 const LlmCompareApp = React.lazy(() => import('./LlmCompareApp'))
 const NudeDetectorApp = React.lazy(() => import('./NudeDetectorApp'))
 const TranslatorApp = React.lazy(() => import('./TranslatorApp'))
+const TtsApp = React.lazy(() => import('./TtsApp'))
 
 const CAPABILITIES_COLLAPSE_AT = 3;
 
@@ -88,6 +89,7 @@ const apps = [
   { id: 'llmcompare', name: 'LLM Compare', logo: GitCompareArrows, app: LlmCompareApp },
   { id: 'nudedetect', name: 'Nude Detector', logo: ShieldAlert, app: NudeDetectorApp },
   { id: 'translator', name: 'Translator', logo: Languages, app: TranslatorApp },
+  { id: 'tts', name: 'TTS', logo: AudioWaveform, app: TtsApp },
   { id: 'custom', name: 'Custom', logo: Blocks, app: CustomApp },
 ];
 
