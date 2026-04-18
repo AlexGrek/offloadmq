@@ -98,18 +98,21 @@ def check_docker() -> CapResult:
 
 def check_kokoro() -> CapResult:
     import requests
+    from urllib.parse import urlparse
     from .exec.tts import KOKORO_API_URL
 
-    base = KOKORO_API_URL.split("/api/")[0] if "/api/" in KOKORO_API_URL else KOKORO_API_URL
-    models_url = f"{base}/api/v1/models"
+    parsed = urlparse(KOKORO_API_URL)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    models_url = f"{base}/v1/models"
+    verify_tls = not (parsed.hostname in ("localhost", "127.0.0.1", "::1"))
 
     try:
-        r = requests.get(models_url, timeout=3)
+        r = requests.get(models_url, timeout=3, verify=verify_tls)
         r.raise_for_status()
     except requests.HTTPError:
         return CapResult(
             [], False, "tts.kokoro",
-            f"Kokoro /api/v1/models returned HTTP {r.status_code} at {base}",
+            f"Kokoro /v1/models returned HTTP {r.status_code} at {base}",
         )
     except requests.RequestException as e:
         return CapResult(

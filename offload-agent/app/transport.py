@@ -239,7 +239,7 @@ class WebSocketAgentTransport:
         url = build_ws_url(self._server_url, self._jwt_token)
         logger.info("WS connecting to %s", url.split("?")[0])
         ws = self._ws_lib.WebSocket()
-        ws.connect(url, timeout=30)  # type: ignore[no-untyped-call]
+        ws.connect(url, timeout=30)  # type: ignore[no-untyped-call,unused-ignore]
         # Read welcome message
         raw = ws.recv()
         if raw:

@@ -6,7 +6,7 @@ from ..transport import AgentTransport
 from .helpers import *
 from pathlib import Path
 
-KOKORO_API_URL = "http://192.168.0.191:4069/api/v1/audio/speech"  # adjust if needed
+KOKORO_API_URL = "https://localhost:8443/v1/audio/speech"  # adjust if needed
 KOKORO_API_KEY = "your-api-key-hehehe"  # set if you use KW_SECRET_API_KEY
 
 def execute_kokoro_tts(
@@ -38,7 +38,7 @@ def execute_kokoro_tts(
         if KOKORO_API_KEY:
             headers["Authorization"] = f"Bearer {KOKORO_API_KEY}"
 
-        r = requests.post(KOKORO_API_URL, json=payload, headers=headers, timeout=3000)
+        r = requests.post(KOKORO_API_URL, json=payload, headers=headers, timeout=3000, verify=False)
         r.raise_for_status()
 
         # Kokoro returns audio in binary; here we keep it raw
