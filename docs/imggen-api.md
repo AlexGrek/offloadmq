@@ -69,8 +69,9 @@ Submitted as the `payload` field of `POST /api/task/submit` or `/api/task/submit
 
 ```json
 {
-  "apiKey":     "your-client-api-key",
-  "capability": "imggen.wan-2.1-outpaint",
+  "apiKey":       "your-client-api-key",
+  "capability":   "imggen.wan-2.1-outpaint",
+  "timeoutSecs":  300,
   "payload": {
     "workflow":    "img2img",
     "prompt":      "cinematic portrait, dramatic lighting",
@@ -90,6 +91,7 @@ Create a separate empty bucket and pass it as `output_bucket` to have the agent 
 {
   "apiKey":        "your-client-api-key",
   "capability":    "imggen.wan-2.1-outpaint",
+  "timeoutSecs":   300,
   "output_bucket": "empty-bucket-uid-for-results",
   "payload": {
     "workflow": "txt2img",

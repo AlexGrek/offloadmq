@@ -196,6 +196,7 @@ Request model:
   "capability": "onnx.nudenet",
   "urgent": true,
   "restartable": false,
+  "timeoutSecs": 120,
   "payload": {
     "threshold": 0.25
   },
@@ -252,6 +253,7 @@ Request model (recommended for image batches):
   "capability": "onnx.nudenet",
   "urgent": false,
   "restartable": false,
+  "timeoutSecs": 120,
   "payload": {
     "threshold": 0.3
   },
