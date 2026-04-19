@@ -331,6 +331,8 @@ pub struct TaskSubmissionRequest {
     pub timeout_secs: Option<u64>,
     #[serde(default)]
     pub artifacts: Vec<FileReference>,
+    #[serde(default)]
+    pub data_preparation: HashMap<String, String>,
     pub api_key: String,
 }
 

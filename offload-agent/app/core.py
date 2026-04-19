@@ -253,6 +253,7 @@ def handle_task(transport: AgentTransport, task: dict[str, Any]) -> None:
     file_buckets = task_data.get("file_bucket") or []
     output_bucket = task_data.get("output_bucket")
     job_timeout: int = int(task_data.get("timeoutSecs") or 600)
+    data_preparation: dict[str, str] = task_data.get("dataPreparation") or {}
 
     logger.info(f"Received task: {task_id.to_wire()} with capability '{capability}'")
     logger.info(f"Required files: {fetch_files}, buckets: {file_buckets}, output_bucket: {output_bucket}, timeout: {job_timeout}s")
@@ -283,6 +284,16 @@ def handle_task(transport: AgentTransport, task: dict[str, Any]) -> None:
     if not download_required_files(transport, task_id, capability, fetch_files, data_path):
         logger.error("File download failed; skipping task.")
         return
+
+    if data_preparation:
+        try:
+            from .exec.data_preparation import apply_data_preparation
+            apply_data_preparation(data_path, data_preparation)
+        except Exception as e:
+            logger.error(f"Data preparation failed: {e}")
+            report = make_failure_report(task_id, capability, str(e))
+            report_result(transport, report)
+            return
 
     try:
         report_progress(transport, log=None, stage="running", task_id=task_id)

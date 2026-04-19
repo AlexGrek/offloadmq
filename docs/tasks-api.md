@@ -109,6 +109,7 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 | `output_bucket` | string | No | UID of a bucket the agent should upload output files into. The client must create this bucket beforehand and own it. When provided, the agent uploads output files (e.g., images, video) directly to the bucket instead of embedding them as base64 in the task output. The client can then download them via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
 | `fetchFiles` | object[] | No | Advanced: HTTP fetch rules (see Advanced below). For a stable JSON shape, send **`[]`** when unused (management sandbox apps always do). |
 | `artifacts` | object[] | No | Advanced: Output artifact definitions (see Advanced below). Send **`[]`** when unused alongside empty `fetchFiles`. |
+| `dataPreparation` | object | No | Map of glob mask → action string, applied to downloaded input files before the executor runs. Key: glob pattern (`*` = all files, `*.jpg`, `video.*`). Value: `scale/WxH` to resize (e.g. `"scale/1920x1080"`) or `transcode/FORMAT[key=val;…]` to convert format (e.g. `"transcode/jpeg[quality=85]"`). Applied after all `file_bucket` and `fetchFiles` downloads complete. |
 
 For **`llm.*` tasks that use `file_bucket`** (vision / file analysis), follow the contract in [integration-guide-llm.md](integration-guide-llm.md) section **Recommended: `llm.*` task body with `file_bucket` (vision)** — chat-style `payload` with `stream` + `messages`, omit top-level `payload.model` (the offload agent sets `model` from `capability`).
 
@@ -1160,6 +1161,28 @@ Client Submission
 ---
 
 ## Examples
+
+### Task with `dataPreparation` — resize and transcode input files
+
+Submit a task that instructs the agent to scale all JPEGs to 1920×1080 and convert PNG files to WebP before running the executor:
+
+```json
+{
+  "apiKey": "your-client-api-key",
+  "capability": "onnx.nudenet",
+  "payload": { "threshold": 0.25 },
+  "file_bucket": ["bucket-uid-abc123"],
+  "dataPreparation": {
+    "*.jpg": "scale/1920x1080",
+    "*.jpeg": "scale/1920x1080",
+    "*.png": "transcode/webp[quality=85]"
+  }
+}
+```
+
+The agent downloads bucket files first, then applies each rule (first matching mask wins per file) before handing `data_path` to the executor. Non-image files and files with no matching mask are left untouched.
+
+---
 
 ### Python Client - Submit and Poll
 
