@@ -237,10 +237,16 @@ class WebSocketAgentTransport:
 
     def _connect(self) -> None:
         import ssl
+        import sys
         url = build_ws_url(self._server_url, self._jwt_token)
         logger.info("WS connecting to %s", url.split("?")[0])
         ws = self._ws_lib.WebSocket()
-        ws.connect(url, timeout=30, sslopt={"context": ssl.create_default_context()})  # type: ignore[no-untyped-call,unused-ignore]
+        ctx = ssl.create_default_context()
+        if getattr(sys, "frozen", False):
+            import os
+            ca_bundle = os.path.join(sys._MEIPASS, "certifi", "cacert.pem")  # type: ignore[attr-defined]
+            ctx.load_verify_locations(ca_bundle)
+        ws.connect(url, timeout=30, sslopt={"context": ctx})  # type: ignore[no-untyped-call,unused-ignore]
         # Read welcome message
         raw = ws.recv()
         if raw:
