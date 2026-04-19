@@ -242,17 +242,6 @@ class WebSocketAgentTransport:
         logger.info("WS connecting to %s", url.split("?")[0])
         ws = self._ws_lib.WebSocket()
 
-        dvp = ssl.get_default_verify_paths()
-        logger.info(
-            "WS SSL diag: openssl=%s cafile=%s(exists=%s) capath=%s(exists=%s) "
-            "env_SSL_CERT_FILE=%s env_SSL_CERT_DIR=%s",
-            ssl.OPENSSL_VERSION,
-            dvp.cafile, dvp.cafile and os.path.exists(dvp.cafile),
-            dvp.capath, dvp.capath and os.path.exists(dvp.capath),
-            os.environ.get("SSL_CERT_FILE"),
-            os.environ.get("SSL_CERT_DIR"),
-        )
-
         ca_file: str | None = None
         for ca_path in (
             "/etc/pki/tls/certs/ca-bundle.crt",
@@ -263,18 +252,11 @@ class WebSocketAgentTransport:
             if os.path.exists(ca_path):
                 ca_file = ca_path
                 break
-        ctx = ssl.create_default_context(cafile=ca_file)
-        cert_count = len(ctx.get_ca_certs())
-        has_isrg = any(
-            "ISRG" in str(c.get("issuer", "")) or "ISRG" in str(c.get("subject", ""))
-            for c in ctx.get_ca_certs()
-        )
-        logger.info(
-            "WS SSL diag: chosen_cafile=%s ctx_ca_count=%d has_ISRG=%s",
-            ca_file, cert_count, has_isrg,
-        )
 
-        ws.connect(url, timeout=30, sslopt={"context": ctx})  # type: ignore[no-untyped-call,unused-ignore]
+        sslopt: dict[str, Any] = {}
+        if ca_file:
+            sslopt["ca_certs"] = ca_file
+        ws.connect(url, timeout=30, sslopt=sslopt)  # type: ignore[no-untyped-call,unused-ignore]
         # Read welcome message
         raw = ws.recv()
         if raw:
