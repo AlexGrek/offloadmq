@@ -236,11 +236,11 @@ class WebSocketAgentTransport:
     # ── connection management ────────────────────────────────────
 
     def _connect(self) -> None:
-        import certifi
+        import ssl
         url = build_ws_url(self._server_url, self._jwt_token)
         logger.info("WS connecting to %s", url.split("?")[0])
         ws = self._ws_lib.WebSocket()
-        ws.connect(url, timeout=30, sslopt={"ca_certs": certifi.where()})  # type: ignore[no-untyped-call,unused-ignore]
+        ws.connect(url, timeout=30, sslopt={"context": ssl.create_default_context()})  # type: ignore[no-untyped-call,unused-ignore]
         # Read welcome message
         raw = ws.recv()
         if raw:
