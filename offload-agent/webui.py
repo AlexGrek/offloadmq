@@ -410,7 +410,7 @@ def _build_api_state() -> Dict[str, Any]:
         "slavemode_all_caps": ALL_SLAVEMODE_CAPS,
         "slavemode_allowed": list(cfg.get(SLAVEMODE_CONFIG_KEY) or []),
         "onnx_models": _list_onnx_models(),
-        "transport": cfg.get("transport", "http"),
+        "transport": cfg.get("transport", "websocket"),
     }
 
 
