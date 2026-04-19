@@ -64,10 +64,10 @@ class ScalePreparation(DataPreparation):
     def apply(self, file: Path) -> None:
         from PIL import Image
 
-        with Image.open(file) as img:
-            img = img.convert("RGB") if img.mode not in ("RGB", "RGBA", "L") else img
-            img.thumbnail((self.width, self.height), Image.LANCZOS)
-            img.save(file)
+        with Image.open(file) as raw:
+            out: Image.Image = raw.convert("RGB") if raw.mode not in ("RGB", "RGBA", "L") else raw.copy()
+            out.thumbnail((self.width, self.height), Image.Resampling.LANCZOS)
+            out.save(file)
 
         logger.info(f"Scaled {file.name} to max {self.width}x{self.height}")
 

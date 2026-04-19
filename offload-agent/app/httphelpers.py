@@ -62,7 +62,7 @@ def register_agent(
         "displayName": resolved_display_name,
     }
     url = server.rstrip("/") + "/agent/register"
-    logger.info("Registering at %s with %d caps", url, len(registration_data.get("capabilities", [])))
+    logger.info("Registering at %s with %d caps", url, len(capabilities))
     resp = requests.post(url, json=registration_data, timeout=30)
     logger.info("Register response: %d", resp.status_code)
     resp.raise_for_status()
