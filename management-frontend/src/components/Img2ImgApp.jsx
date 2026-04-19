@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Upload, X } from 'lucide-react';
 import { sandboxStyles as ss } from '../sandboxStyles';
 import CircularProgress from './CircularProgress';
@@ -9,6 +9,7 @@ import ImgGenModelSelector from './ImgGenModelSelector';
 import ErrorBoundary from './ErrorBoundary';
 import ImageLightbox from './ImageLightbox';
 import ImageGallery from './ImageGallery';
+import RescaleWidget, { rescaleDataPrep } from './RescaleWidget';
 
 const Img2ImgApp = ({ apiKey, addDevEntry }) => {
   const [workflow] = useState('img2img');
@@ -19,6 +20,22 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
   const [width, setWidth] = useState(768);
   const [height, setHeight] = useState(768);
   const [seed, setSeed] = useState('');
+
+  const [rescaleEnabled, setRescaleEnabled] = useState(true);
+  const [rescaleMode, setRescaleMode] = useState('exact');
+  const [rescaleWidth, setRescaleWidth] = useState(768);
+  const [rescaleHeight, setRescaleHeight] = useState(768);
+  const [rescalePx, setRescalePx] = useState('');
+  const [rescaleMp, setRescaleMp] = useState('');
+  const rescaleUserEditedRef = useRef(false);
+
+  // Keep exact-mode rescale in sync with output dims until user overrides
+  useEffect(() => {
+    if (rescaleMode === 'exact' && !rescaleUserEditedRef.current) {
+      setRescaleWidth(width);
+      setRescaleHeight(height);
+    }
+  }, [width, height, rescaleMode]);
 
   const [bucketUid, setBucketUid] = useState(null);
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -160,6 +177,7 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
       urgent: false,
       file_bucket: bucketUid ? [bucketUid] : [],
       output_bucket: outBucketUid,
+      ...(rescaleDataPrep(rescaleEnabled, { mode: rescaleMode, width: rescaleWidth, height: rescaleHeight, px: rescalePx, mp: rescaleMp }) && { dataPreparation: rescaleDataPrep(rescaleEnabled, { mode: rescaleMode, width: rescaleWidth, height: rescaleHeight, px: rescalePx, mp: rescaleMp }) }),
       payload: {
         workflow: workflow,
         prompt: prompt,
@@ -307,6 +325,28 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         </div>
 
         <div style={ss.formGroup}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: 'var(--muted)' }}>
+              <input type="checkbox" checked={rescaleEnabled} onChange={(e) => setRescaleEnabled(e.target.checked)} />
+              Rescale input image
+            </label>
+            {rescaleEnabled && (
+              <>
+                <input
+                  type="number" value={rescaleWidth} onChange={(e) => { rescaleUserEditedRef.current = true; setRescaleWidth(e.target.value); }}
+                  style={{ ...ss.input, width: '72px' }} aria-label="Rescale width"
+                />
+                <span style={{ color: 'var(--muted)', fontSize: '13px' }}>×</span>
+                <input
+                  type="number" value={rescaleHeight} onChange={(e) => { rescaleUserEditedRef.current = true; setRescaleHeight(e.target.value); }}
+                  style={{ ...ss.input, width: '72px' }} aria-label="Rescale height"
+                />
+              </>
+            )}
+          </div>
+        </div>
+
+        <div style={ss.formGroup}>
           <label htmlFor="prompt" style={ss.label}>Prompt:</label>
           <textarea id="prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} style={ss.textarea} rows="4" />
         </div>
@@ -328,11 +368,11 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         <div style={ss.row}>
           <div style={ss.formGroup}>
             <label htmlFor="width" style={ss.label}>Width:</label>
-            <input id="width" type="number" value={width} onChange={(e) => setWidth(e.target.value)} style={ss.input} />
+            <input id="width" type="number" value={width} onChange={(e) => { rescaleUserEditedRef.current = false; setWidth(e.target.value); }} style={ss.input} />
           </div>
           <div style={ss.formGroup}>
             <label htmlFor="height" style={ss.label}>Height:</label>
-            <input id="height" type="number" value={height} onChange={(e) => setHeight(e.target.value)} style={ss.input} />
+            <input id="height" type="number" value={height} onChange={(e) => { rescaleUserEditedRef.current = false; setHeight(e.target.value); }} style={ss.input} />
           </div>
         </div>
 

@@ -26,11 +26,15 @@ class DataPreparation(ABC):
         """Parse an action string into a concrete DataPreparation instance.
 
         Supported formats:
-          scale/WxH              e.g. "scale/1920x1080"
-          transcode/FMT          e.g. "transcode/jpeg"
-          transcode/FMT[k=v;…]   e.g. "transcode/jpeg[quality=85]"
+          scale/WxH                     e.g. "scale/1920x1080"
+          scale/max[px=N,mp=N]          e.g. "scale/max[px=1920,mp=12]"
+          transcode/FMT                  e.g. "transcode/jpeg"
+          transcode/FMT[k=v;…]           e.g. "transcode/jpeg[quality=85]"
         """
         if action.startswith("scale/"):
+            body = action[len("scale/"):]
+            if body.startswith("max"):
+                return ScaleMaxPreparation.from_action(pattern, action)
             return ScalePreparation.from_action(pattern, action)
         if action.startswith("transcode/"):
             return TranscodePreparation.from_action(pattern, action)
@@ -66,6 +70,77 @@ class ScalePreparation(DataPreparation):
             img.save(file)
 
         logger.info(f"Scaled {file.name} to max {self.width}x{self.height}")
+
+
+class ScaleMaxPreparation(DataPreparation):
+    """Resize images so that all supplied constraints are satisfied simultaneously.
+
+    Constraints (all optional, at least one required):
+      px=N   — neither dimension may exceed N pixels
+      mp=N   — total pixel count (W×H) may not exceed N megapixels
+
+    The most restrictive constraint wins. Images that already satisfy every
+    constraint are left untouched (never upscaled). Aspect ratio is preserved.
+
+    Action format:  scale/max[px=1920,mp=12]
+    """
+
+    def __init__(self, pattern: str, px: int | None, mp: float | None) -> None:
+        super().__init__(pattern)
+        self.px = px    # max pixels per side
+        self.mp = mp    # max megapixels total
+
+    @classmethod
+    def from_action(cls, pattern: str, action: str) -> "ScaleMaxPreparation":
+        m = re.fullmatch(r"scale/max(?:\[([^\]]*)\])?", action)
+        if not m:
+            raise ValueError(f"Invalid scale/max action: {action!r}")
+        px: int | None = None
+        mp: float | None = None
+        if m.group(1):
+            for pair in re.split(r"[,;]", m.group(1)):
+                pair = pair.strip()
+                if "=" in pair:
+                    k, v = pair.split("=", 1)
+                    k = k.strip()
+                    if k == "px":
+                        px = int(v.strip())
+                    elif k == "mp":
+                        mp = float(v.strip())
+        if px is None and mp is None:
+            raise ValueError(f"scale/max requires at least one of px= or mp=: {action!r}")
+        return cls(pattern, px, mp)
+
+    def _scale_factor(self, orig_w: int, orig_h: int) -> float:
+        scale = 1.0
+        if self.px is not None:
+            scale = min(scale, self.px / orig_w, self.px / orig_h)
+        if self.mp is not None:
+            mp_limit = self.mp * 1_000_000
+            total = orig_w * orig_h
+            if total > mp_limit:
+                scale = min(scale, (mp_limit / total) ** 0.5)
+        return scale
+
+    def apply(self, file: Path) -> None:
+        from PIL import Image
+
+        with Image.open(file) as img:
+            orig_w, orig_h = img.size
+            scale = self._scale_factor(orig_w, orig_h)
+            if scale >= 1.0:
+                logger.info(f"scale/max: {file.name} already within constraints, skipping")
+                return
+            new_w = max(1, round(orig_w * scale))
+            new_h = max(1, round(orig_h * scale))
+            img = img.convert("RGB") if img.mode not in ("RGB", "RGBA", "L") else img
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            img.save(file)
+
+        logger.info(
+            f"scale/max: {file.name} {orig_w}x{orig_h} → {new_w}x{new_h} "
+            f"(scale={scale:.4f}, px={self.px}, mp={self.mp})"
+        )
 
 
 class TranscodePreparation(DataPreparation):

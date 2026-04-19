@@ -202,7 +202,10 @@ Request model:
   },
   "fetchFiles": [],
   "file_bucket": ["550e8400-e29b-41d4-a716-446655440000"],
-  "artifacts": []
+  "artifacts": [],
+  "dataPreparation": {
+    "*": "scale/640x640"
+  }
 }
 ```
 
@@ -259,7 +262,10 @@ Request model (recommended for image batches):
   },
   "fetchFiles": [],
   "file_bucket": ["550e8400-e29b-41d4-a716-446655440000"],
-  "artifacts": []
+  "artifacts": [],
+  "dataPreparation": {
+    "*": "scale/640x640"
+  }
 }
 ```
 
@@ -475,7 +481,7 @@ curl -s -X POST "$BASE/api/storage/bucket/$BUCKET_UID/upload" \
   -H "X-API-Key: $API_KEY" \
   -F "file=@./sample2.jpg"
 
-# 4) Submit async ONNX task
+# 4) Submit async ONNX task (rescale all images to 640x640 before detection)
 SUBMIT=$(curl -s -X POST "$BASE/api/task/submit" \
   -H "Content-Type: application/json" \
   -d "{
@@ -486,7 +492,8 @@ SUBMIT=$(curl -s -X POST "$BASE/api/task/submit" \
     \"payload\":{\"threshold\":0.25},
     \"fetchFiles\":[],
     \"file_bucket\":[\"$BUCKET_UID\"],
-    \"artifacts\":[]
+    \"artifacts\":[],
+    \"dataPreparation\":{\"*\":\"scale/640x640\"}
   }")
 
 TASK_CAP=$(echo "$SUBMIT" | jq -r '.id.cap')
@@ -513,11 +520,60 @@ curl -s -X DELETE "$BASE/api/storage/bucket/$BUCKET_UID" \
 
 ---
 
+## 7) Pre-processing Input Images (`dataPreparation`)
+
+The optional `dataPreparation` top-level field instructs the agent to transform downloaded input files before passing them to the detector.
+
+```json
+"dataPreparation": {
+  "<glob-mask>": "<action>"
+}
+```
+
+| Key (glob mask) | Matches |
+|----------------|---------|
+| `"*"` | All files |
+| `"*.jpg"` | JPEG files only |
+| `"*.png"` | PNG files only |
+
+| Value (action) | Effect |
+|---------------|--------|
+| `"scale/WxH"` | Resize to fit within W×H (LANCZOS, in-place). E.g. `"scale/640x640"` |
+| `"scale/max[…]"` | Resize so every supplied constraint is satisfied: `px=N` = max pixels per side, `mp=N` = max megapixels total. Any non-empty subset is valid — e.g. `"scale/max[px=640]"`, `"scale/max[mp=2]"`, `"scale/max[px=1920,mp=12]"`. Most restrictive wins; images already within all constraints are untouched. |
+| `"transcode/FORMAT"` | Convert to target format. E.g. `"transcode/jpeg"` |
+| `"transcode/FORMAT[key=val;…]"` | Convert with options. E.g. `"transcode/jpeg[quality=85]"` |
+
+Only the first matching mask is applied per file.
+
+**Why use it for NudeNet:**
+
+NudeNet's ONNX model internally resizes images to 320×320. Sending very large images (e.g. 4K) wastes transfer time and agent memory without improving detection quality. Rescaling to 640×640 before detection is a practical default — it preserves enough detail while keeping processing fast.
+
+```json
+{
+  "apiKey": "client_secret_key_123",
+  "capability": "onnx.nudenet",
+  "urgent": false,
+  "payload": { "threshold": 0.25 },
+  "file_bucket": ["550e8400-e29b-41d4-a716-446655440000"],
+  "fetchFiles": [],
+  "artifacts": [],
+  "dataPreparation": {
+    "*": "scale/640x640"
+  }
+}
+```
+
+`dataPreparation` is applied after all bucket files are downloaded and before the executor runs. Omit it entirely (or send `{}`) to skip pre-processing.
+
+---
+
 ## Implementation Checklist
 
 - [ ] Call `/api/capabilities/online` and confirm `onnx.nudenet` exists
 - [ ] Create storage bucket and upload at least one image
 - [ ] Submit task with `capability: "onnx.nudenet"` and `file_bucket`
+- [ ] Include `dataPreparation: {"*": "scale/640x640"}` to normalise input images
 - [ ] Poll until terminal state for async flows
 - [ ] Parse `output.results[*].detections[*]`
 - [ ] Handle `status=failed` and HTTP-level errors

@@ -104,6 +104,36 @@ When `output_bucket` is set, the agent uploads each generated file and includes 
 
 If `output_bucket` is omitted, the agent falls back to embedding files as base64 in the task output (suitable for small images, not recommended for video).
 
+### Pre-processing input images (`dataPreparation`)
+
+The optional top-level `dataPreparation` field rescales or transcodes input bucket files before the agent runs the ComfyUI workflow. Useful for normalising `input_image` to the workflow's expected resolution:
+
+```json
+{
+  "apiKey":        "your-client-api-key",
+  "capability":    "imggen.wan-2.1-outpaint",
+  "file_bucket":   ["input-bucket-uid"],
+  "output_bucket": "output-bucket-uid",
+  "dataPreparation": {
+    "*": "scale/768x768"
+  },
+  "payload": {
+    "workflow":    "img2img",
+    "prompt":      "turn this into an oil painting",
+    "input_image": "source.jpg",
+    "resolution":  { "width": 768, "height": 768 }
+  }
+}
+```
+
+| Key (glob mask) | Value (action) | Effect |
+|----------------|---------------|--------|
+| `"*"` | `"scale/WxH"` | Resize all files to fit within W×H (LANCZOS, in-place) |
+| `"*"` | `"scale/max[px=N,mp=N]"` | Resize so every supplied constraint is satisfied: `px` = max per side, `mp` = max megapixels total. Any non-empty subset is valid (e.g. `scale/max[px=1920]`). |
+| `"*.png"` | `"transcode/jpeg[quality=85]"` | Convert PNG files to JPEG before processing |
+
+Only the first matching mask is applied per file. `dataPreparation` runs after all bucket downloads and before the executor. Omit or send `{}` to skip.
+
 ### Forward compatibility
 
 Clients may include fields not listed here; agents must silently ignore unknown fields. This allows clients to be written against a newer contract than the agent implements.
@@ -359,13 +389,14 @@ with open("source.jpg", "rb") as f:
 # 2. Create output bucket for results
 out_bucket_uid = requests.post(f"{BASE}/api/storage/bucket/create", headers=hdrs).json()["bucket_uid"]
 
-# 3. Submit task
+# 3. Submit task (rescale input to match output resolution before processing)
 resp = requests.post(f"{BASE}/api/task/submit", json={
     "apiKey":        KEY,
     "capability":    "imggen.wan-2.1-outpaint",
     "urgent":        False,
     "file_bucket":   [in_bucket_uid],
     "output_bucket": out_bucket_uid,
+    "dataPreparation": {"*": "scale/768x768"},
     "payload": {
         "workflow":    "img2img",
         "prompt":      "turn this into an oil painting",

@@ -181,6 +181,7 @@ Content-Type: application/json
 | `file_bucket` | string[] | `[]` | Bucket UIDs containing input files (see Storage API) |
 | `artifacts` | object[] | `[]` | Send `[]` when unused (recommended alongside `fetchFiles`) |
 | `output_bucket` | string | `null` | Bucket UID for agent to upload output files into |
+| `dataPreparation` | object | `{}` | Map of glob mask → action applied to downloaded input files before the agent runs inference. Useful for vision tasks to normalise image size. Key: glob pattern (`"*"`, `"*.jpg"`). Value: `"scale/WxH"` (resize, e.g. `"scale/1024x1024"`) or `"transcode/FORMAT[key=val;…]"` (convert format, e.g. `"transcode/jpeg[quality=85]"`). Applied after all bucket and fetch-file downloads complete. |
 
 ### Payload Format (LLM)
 

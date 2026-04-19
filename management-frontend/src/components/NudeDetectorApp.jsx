@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { Upload, Loader, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { clientFetch, deleteBucket, cancelTask } from '../sandboxUtils';
 import CircularProgress from './CircularProgress';
+import RescaleWidget, { rescaleDataPrep } from './RescaleWidget';
 
 const EXPOSED_LABELS = new Set([
     'FEMALE_BREAST_EXPOSED', 'FEMALE_GENITALIA_EXPOSED', 'MALE_GENITALIA_EXPOSED',
@@ -23,6 +24,12 @@ function labelShort(label) {
 const NudeDetectorApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
     const [threshold, setThreshold] = useState(0.25);
+    const [rescaleEnabled, setRescaleEnabled] = useState(true);
+    const [rescaleMode, setRescaleMode] = useState('max');
+    const [rescaleWidth, setRescaleWidth] = useState(640);
+    const [rescaleHeight, setRescaleHeight] = useState(640);
+    const [rescalePx, setRescalePx] = useState(640);
+    const [rescaleMp, setRescaleMp] = useState('');
     const [selectedFiles, setSelectedFiles] = useState([]);
     const [previews, setPreviews] = useState([]);
     const [dragover, setDragover] = useState(false);
@@ -112,6 +119,7 @@ const NudeDetectorApp = ({ apiKey: propApiKey, addDevEntry }) => {
         cancelledRef.current = false;
         setRunning(true);
         setResults(null);
+        const dataPrep = rescaleDataPrep(rescaleEnabled, { mode: rescaleMode, width: rescaleWidth, height: rescaleHeight, px: rescalePx, mp: rescaleMp });
 
         let bucketUid = null;
         try {
@@ -144,6 +152,7 @@ const NudeDetectorApp = ({ apiKey: propApiKey, addDevEntry }) => {
                     fetchFiles: [],
                     artifacts: [],
                     apiKey,
+                    ...(dataPrep && { dataPreparation: dataPrep }),
                 }),
                 _label: 'Submit task',
             }, addDevEntry);
@@ -185,7 +194,7 @@ const NudeDetectorApp = ({ apiKey: propApiKey, addDevEntry }) => {
             setHeuristicSecs(null);
             setTaskCreatedAt(null);
         }
-    }, [selectedFiles, apiKey, threshold, setStatus, pollTask, addDevEntry]);
+    }, [selectedFiles, apiKey, threshold, rescaleEnabled, rescaleMode, rescaleWidth, rescaleHeight, rescalePx, rescaleMp, setStatus, pollTask, addDevEntry]);
 
     const previewByName = {};
     selectedFiles.forEach((f, i) => { previewByName[f.name] = previews[i]; });
@@ -216,6 +225,16 @@ const NudeDetectorApp = ({ apiKey: propApiKey, addDevEntry }) => {
                             <span style={{ fontFamily: 'monospace', fontSize: '14px', minWidth: '40px' }}>{threshold.toFixed(2)}</span>
                         </div>
                     </div>
+                </div>
+                <div>
+                    <RescaleWidget
+                        enabled={rescaleEnabled} onEnabledChange={setRescaleEnabled}
+                        mode={rescaleMode} onModeChange={setRescaleMode}
+                        width={rescaleWidth} onWidthChange={setRescaleWidth}
+                        height={rescaleHeight} onHeightChange={setRescaleHeight}
+                        px={rescalePx} onPxChange={setRescalePx}
+                        mp={rescaleMp} onMpChange={setRescaleMp}
+                    />
                 </div>
             </div>
 

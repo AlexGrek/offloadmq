@@ -109,7 +109,16 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 | `output_bucket` | string | No | UID of a bucket the agent should upload output files into. The client must create this bucket beforehand and own it. When provided, the agent uploads output files (e.g., images, video) directly to the bucket instead of embedding them as base64 in the task output. The client can then download them via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
 | `fetchFiles` | object[] | No | Advanced: HTTP fetch rules (see Advanced below). For a stable JSON shape, send **`[]`** when unused (management sandbox apps always do). |
 | `artifacts` | object[] | No | Advanced: Output artifact definitions (see Advanced below). Send **`[]`** when unused alongside empty `fetchFiles`. |
-| `dataPreparation` | object | No | Map of glob mask → action string, applied to downloaded input files before the executor runs. Key: glob pattern (`*` = all files, `*.jpg`, `video.*`). Value: `scale/WxH` to resize (e.g. `"scale/1920x1080"`) or `transcode/FORMAT[key=val;…]` to convert format (e.g. `"transcode/jpeg[quality=85]"`). Applied after all `file_bucket` and `fetchFiles` downloads complete. |
+| `dataPreparation` | object | No | Map of glob mask → action string, applied to downloaded input files before the executor runs. Key: glob pattern (`*` = all files, `*.jpg`, `video.*`). Value: one of the actions below. Applied after all `file_bucket` and `fetchFiles` downloads complete. |
+
+**`dataPreparation` action strings:**
+
+| Action | Example | Effect |
+|--------|---------|--------|
+| `scale/WxH` | `"scale/1920x1080"` | Resize to fit within W×H (keeps aspect ratio, LANCZOS) |
+| `scale/max[px=N,mp=N]` | `"scale/max[px=1920,mp=12]"` | Resize so every supplied constraint is satisfied: `px` = max pixels per side, `mp` = max megapixels total. Any non-empty subset of constraints is valid (e.g. `scale/max[px=1920]` or `scale/max[mp=12]`). Most restrictive wins; images already within all constraints are not touched. |
+| `transcode/FORMAT` | `"transcode/jpeg"` | Convert to target format, rename file |
+| `transcode/FORMAT[k=v;…]` | `"transcode/jpeg[quality=85]"` | Convert with options (`quality`, `optimize`, `lossless`) |
 
 For **`llm.*` tasks that use `file_bucket`** (vision / file analysis), follow the contract in [integration-guide-llm.md](integration-guide-llm.md) section **Recommended: `llm.*` task body with `file_bucket` (vision)** — chat-style `payload` with `stream` + `messages`, omit top-level `payload.model` (the offload agent sets `model` from `capability`).
 

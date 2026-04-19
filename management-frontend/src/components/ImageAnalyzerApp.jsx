@@ -7,6 +7,7 @@ import ModelSelector from './ModelSelector';
 import SandboxMarkdown from './SandboxMarkdown';
 import CircularProgress from './CircularProgress';
 import SpeechWidget from './SpeechWidget';
+import RescaleWidget, { rescaleDataPrep } from './RescaleWidget';
 
 const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     const [apiKey, setApiKey] = useState(propApiKey || '');
@@ -32,6 +33,13 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
     previewsRef.current = previews;
     const cancelledRef = useRef(false);
     const activeTaskRef = useRef(null); // { cap, id } — only set in "all at once" mode
+
+    const [rescaleEnabled, setRescaleEnabled] = useState(true);
+    const [rescaleMode, setRescaleMode] = useState('max');
+    const [rescaleWidth, setRescaleWidth] = useState(1024);
+    const [rescaleHeight, setRescaleHeight] = useState(1024);
+    const [rescalePx, setRescalePx] = useState(1024);
+    const [rescaleMp, setRescaleMp] = useState('');
 
     const [allCaps] = useCapabilities('llm.');
     const capabilities = useMemo(
@@ -165,6 +173,7 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
         setLogText('');
         setItemResults([]);
 
+        const dataPrep = rescaleDataPrep(rescaleEnabled, { mode: rescaleMode, width: rescaleWidth, height: rescaleHeight, px: rescalePx, mp: rescaleMp });
         const capability = `llm.${model}`;
         const messages = [];
         if (systemPrompt.trim()) messages.push({ role: 'system', content: systemPrompt.trim() });
@@ -187,7 +196,7 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                 const submitResp = await clientFetch('/api/task/submit', apiKey, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ capability, urgent: false, restartable: false, payload: taskPayload, file_bucket: [bucketUid], fetchFiles: [], artifacts: [], apiKey }),
+                    body: JSON.stringify({ capability, urgent: false, restartable: false, payload: taskPayload, file_bucket: [bucketUid], fetchFiles: [], artifacts: [], apiKey, ...(dataPrep && { dataPreparation: dataPrep }) }),
                     _label: 'Submit task',
                 }, addDevEntry);
 
@@ -231,7 +240,7 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                     const submitResp = await clientFetch('/api/task/submit', apiKey, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ capability, urgent: false, restartable: false, payload: taskPayload, file_bucket: [bucketUid], fetchFiles: [], artifacts: [], apiKey }),
+                        body: JSON.stringify({ capability, urgent: false, restartable: false, payload: taskPayload, file_bucket: [bucketUid], fetchFiles: [], artifacts: [], apiKey, ...(dataPrep && { dataPreparation: dataPrep }) }),
                         _label: `Submit [${file.name}]`,
                     }, addDevEntry);
 
@@ -258,7 +267,7 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
             setStatus('All tasks complete', 'ok');
         }
         setRunning(false);
-    }, [selectedFiles, apiKey, model, prompt, systemPrompt, mode, setStatus, pollTask, uploadFile, extractResult, addDevEntry]);
+    }, [selectedFiles, apiKey, model, prompt, systemPrompt, mode, rescaleEnabled, rescaleMode, rescaleWidth, rescaleHeight, rescalePx, rescaleMp, setStatus, pollTask, uploadFile, extractResult, addDevEntry]);
 
     const hasVisionModels = capabilities.length > 0;
 
@@ -300,6 +309,16 @@ const ImageAnalyzerApp = ({ apiKey: propApiKey, addDevEntry }) => {
                             <option value="one">One by one (parallel tasks)</option>
                         </select>
                     </div>
+                </div>
+                <div>
+                    <RescaleWidget
+                        enabled={rescaleEnabled} onEnabledChange={setRescaleEnabled}
+                        mode={rescaleMode} onModeChange={setRescaleMode}
+                        width={rescaleWidth} onWidthChange={setRescaleWidth}
+                        height={rescaleHeight} onHeightChange={setRescaleHeight}
+                        px={rescalePx} onPxChange={setRescalePx}
+                        mp={rescaleMp} onMpChange={setRescaleMp}
+                    />
                 </div>
                 <div>
                     <label style={s.label}>System Prompt</label>
