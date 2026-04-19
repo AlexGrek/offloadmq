@@ -160,7 +160,7 @@ def _do_start(server: str, api_key: str, caps: List[str], display_name: Optional
         })
         save_config(cfg)
 
-        transport_type: str = cfg.get("transport", "http")
+        transport_type: str = cfg.get("transport", "websocket")
         _log(f"[webui] Starting serve loop (transport={transport_type})...")
         _stop_event.clear()
         serve_tasks(server, jwt, stop_event=_stop_event, transport_type=transport_type)

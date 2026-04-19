@@ -160,7 +160,7 @@ def cli_serve(
     save_config(cfg)
 
     # Determine transport: --ws flag overrides config
-    transport_type: str = "websocket" if ws else cfg.get("transport", "http")
+    transport_type: str = "websocket" if ws else cfg.get("transport", "websocket")
     typer.echo(f"Starting task loop (transport={transport_type})...")
     serve_tasks(server, jwt, transport_type=transport_type)
 

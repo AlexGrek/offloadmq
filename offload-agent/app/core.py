@@ -380,7 +380,7 @@ def serve_tasks(
     server_url: str,
     jwt_token: str,
     stop_event: threading.Event | None = None,
-    transport_type: str = "http",
+    transport_type: str = "websocket",
 ) -> None:
     transport: AgentTransport = _build_transport(server_url, jwt_token, transport_type)
     auth_backoff = 10
