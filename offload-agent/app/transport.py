@@ -236,27 +236,11 @@ class WebSocketAgentTransport:
     # ── connection management ────────────────────────────────────
 
     def _connect(self) -> None:
-        import os
         import ssl
         url = build_ws_url(self._server_url, self._jwt_token)
         logger.info("WS connecting to %s", url.split("?")[0])
         ws = self._ws_lib.WebSocket()
-
-        ca_file: str | None = None
-        for ca_path in (
-            "/etc/pki/tls/certs/ca-bundle.crt",
-            "/etc/ssl/certs/ca-certificates.crt",
-            "/etc/ssl/ca-bundle.pem",
-            "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
-        ):
-            if os.path.exists(ca_path):
-                ca_file = ca_path
-                break
-
-        sslopt: dict[str, Any] = {}
-        if ca_file:
-            sslopt["ca_certs"] = ca_file
-        ws.connect(url, timeout=30, sslopt=sslopt)  # type: ignore[no-untyped-call,unused-ignore]
+        ws.connect(url, timeout=30, sslopt={"context": ssl.create_default_context()})  # type: ignore[no-untyped-call,unused-ignore]
         # Read welcome message
         raw = ws.recv()
         if raw:
