@@ -136,7 +136,9 @@ def _do_start(server: str, api_key: str, caps: List[str], display_name: Optional
         try:
             reg = register_agent(server, sorted(set(caps)), tier=5, capacity=1, api_key=api_key, display_name=display_name)
         except Exception as exc:
-            _log(f"[webui] ERROR: registration failed: {exc}")
+            msg = f"[webui] ERROR: registration failed: {exc}"
+            _log(msg)
+            print(msg, flush=True)
             return
         _log(f"[webui] Registered (agentId={reg.get('agentId')})")
 
@@ -144,7 +146,9 @@ def _do_start(server: str, api_key: str, caps: List[str], display_name: Optional
         try:
             auth = authenticate_agent(server, reg["agentId"], reg["key"])
         except Exception as exc:
-            _log(f"[webui] ERROR: authentication failed: {exc}")
+            msg = f"[webui] ERROR: authentication failed: {exc}"
+            _log(msg)
+            print(msg, flush=True)
             return
         jwt = auth["token"]
         _log("[webui] Authentication successful")

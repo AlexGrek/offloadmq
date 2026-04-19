@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import requests
 from pathlib import Path
+
+logger = logging.getLogger("agent")
 from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
 
 from app.ollama import *
@@ -59,9 +62,9 @@ def register_agent(
         "displayName": resolved_display_name,
     }
     url = server.rstrip("/") + "/agent/register"
-    print(registration_data)
+    logger.info("Registering at %s with %d caps", url, len(registration_data.get("capabilities", [])))
     resp = requests.post(url, json=registration_data, timeout=30)
-    print(resp.content)
+    logger.info("Register response: %d", resp.status_code)
     resp.raise_for_status()
     result: Dict[str, Any] = resp.json()
     return result
