@@ -146,10 +146,11 @@ impl AssignedTask {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum CommunicationMethod {
     #[default]
     Http,
+    #[serde(rename = "ws")]
     WebSocket,
 }
 
