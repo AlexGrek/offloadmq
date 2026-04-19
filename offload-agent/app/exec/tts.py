@@ -10,7 +10,8 @@ KOKORO_API_URL = "https://localhost:8443/v1/audio/speech"  # adjust if needed
 KOKORO_API_KEY = "your-api-key-hehehe"  # set if you use KW_SECRET_API_KEY
 
 def execute_kokoro_tts(
-    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path,
+    job_timeout: int = 600,
 ) -> bool:
     """Send TTS request to Kokoro-Web API (OpenAI-compatible).
 
@@ -44,7 +45,7 @@ def execute_kokoro_tts(
         if KOKORO_API_KEY:
             headers["Authorization"] = f"Bearer {KOKORO_API_KEY}"
 
-        r = requests.post(KOKORO_API_URL, json=payload, headers=headers, timeout=3000, verify=False)
+        r = requests.post(KOKORO_API_URL, json=payload, headers=headers, timeout=job_timeout, verify=False)
         r.raise_for_status()
 
         # Kokoro returns audio in binary; here we keep it raw

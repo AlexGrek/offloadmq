@@ -89,6 +89,7 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
   },
   "urgent": false,
   "restartable": true,
+  "timeoutSecs": 300,
   "file_bucket": ["bucket-uid-1", "bucket-uid-2"],
   "output_bucket": "output-bucket-uid",
   "fetchFiles": [],
@@ -103,6 +104,7 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 | `payload` | object | Yes | Task-specific data (any valid JSON) — passed to agent as-is |
 | `urgent` | boolean | No (default: false) | If true, stored in-memory with 60s TTL; if false, persisted to DB |
 | `restartable` | boolean | No (default: false) | If true, task can be retried on another agent if it fails |
+| `timeoutSecs` | integer | No (default: 600) | Maximum seconds the agent may spend executing this task. Applies to all capability types: HTTP request timeout for `llm.*`, `tts.*`; wall-clock kill timeout for `shell.*`, `docker.*`; request timeout for custom and other capabilities. |
 | `file_bucket` | string[] | No | List of bucket UIDs containing input files. Agents can download from these buckets. |
 | `output_bucket` | string | No | UID of a bucket the agent should upload output files into. The client must create this bucket beforehand and own it. When provided, the agent uploads output files (e.g., images, video) directly to the bucket instead of embedding them as base64 in the task output. The client can then download them via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
 | `fetchFiles` | object[] | No | Advanced: HTTP fetch rules (see Advanced below). For a stable JSON shape, send **`[]`** when unused (management sandbox apps always do). |

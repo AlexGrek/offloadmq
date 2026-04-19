@@ -252,9 +252,10 @@ def handle_task(transport: AgentTransport, task: dict[str, Any]) -> None:
     fetch_files = task_data.get("fetchFiles") or []
     file_buckets = task_data.get("file_bucket") or []
     output_bucket = task_data.get("output_bucket")
+    job_timeout: int = int(task_data.get("timeoutSecs") or 600)
 
     logger.info(f"Received task: {task_id.to_wire()} with capability '{capability}'")
-    logger.info(f"Required files: {fetch_files}, buckets: {file_buckets}, output_bucket: {output_bucket}")
+    logger.info(f"Required files: {fetch_files}, buckets: {file_buckets}, output_bucket: {output_bucket}, timeout: {job_timeout}s")
 
     executor = route_executor(capability)
     if not executor:
@@ -293,9 +294,9 @@ def handle_task(transport: AgentTransport, task: dict[str, Any]) -> None:
     # Execute task
     try:
         if capability.startswith("imggen."):
-            executor(transport, task_id, capability, payload, data_path, output_bucket=output_bucket)
+            executor(transport, task_id, capability, payload, data_path, output_bucket=output_bucket, job_timeout=job_timeout)
         else:
-            executor(transport, task_id, capability, payload, data_path)
+            executor(transport, task_id, capability, payload, data_path, job_timeout=job_timeout)
     except TaskCancelled:
         # Fallback: executor didn't handle cancellation itself
         logger.info(f"Task {task_id.id} cancelled (unhandled by executor)")
