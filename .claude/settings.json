@@ -83,7 +83,21 @@
       "Bash(powershell.exe -NoProfile -Command 'try { \\(Invoke-WebRequest -UseBasicParsing -Uri \"http://127.0.0.1:8080/\" -TimeoutSec 2\\).StatusCode } catch { \"HTTP check failed: \" + $_.Exception.Message }')",
       "Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command \"Start-Sleep -Seconds 1; Start-Process -FilePath 'C:\\\\Users\\\\AlexG\\\\Documents\\\\dev\\\\offloadmq\\\\offload-agent\\\\dist\\\\offload-agent-windows-amd64.exe' -WorkingDirectory 'C:\\\\Users\\\\AlexG\\\\Documents\\\\dev\\\\offloadmq\\\\offload-agent\\\\dist'\")",
       "Bash(echo \"launcher exited with $?\")",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Read(//home/alex/**)",
+      "Read(//usr/local/**)",
+      "Bash(pip show *)",
+      "Read(//opt/**)",
+      "Bash(dnf list *)",
+      "Bash(apt list *)",
+      "Bash(sudo dnf *)",
+      "Bash(python3.12 --version)",
+      "Bash(python3.11 --version)",
+      "Bash(python3.10 --version)",
+      "Bash(uv --version)",
+      "Bash(pip index *)",
+      "Bash(/home/alex/src/offloadmq/kokoro-setup/venv/bin/pip index *)",
+      "Bash(docker pull *)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
