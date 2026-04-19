@@ -1,7 +1,9 @@
 """
 PyInstaller runtime hook — runs before any user code.
-Sets SSL env vars so the bundled Ubuntu OpenSSL finds system CA certs
+Sets SSL_CERT_FILE so the bundled Ubuntu OpenSSL finds system CA certs
 on non-Ubuntu Linux (e.g. Fedora/RHEL where OPENSSLDIR=/usr/lib/ssl doesn't exist).
+Do NOT set OPENSSL_CONF — distro-specific configs may reference providers
+(e.g. FIPS) that the bundled Ubuntu OpenSSL cannot load.
 """
 import os
 
@@ -13,12 +15,4 @@ for _cert in (
 ):
     if os.path.exists(_cert):
         os.environ.setdefault("SSL_CERT_FILE", _cert)
-        break
-
-for _conf in (
-    "/etc/pki/tls/openssl.cnf",
-    "/etc/ssl/openssl.cnf",
-):
-    if os.path.exists(_conf):
-        os.environ.setdefault("OPENSSL_CONF", _conf)
         break
