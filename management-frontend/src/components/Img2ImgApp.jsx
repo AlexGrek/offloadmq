@@ -171,13 +171,14 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
       return;
     }
 
+    const dataPrep = rescaleDataPrep(rescaleEnabled, { mode: rescaleMode, width: rescaleWidth, height: rescaleHeight, px: rescalePx, mp: rescaleMp });
     const payload = {
       apiKey: apiKey,
       capability: `imggen.${model}`,
       urgent: false,
       file_bucket: bucketUid ? [bucketUid] : [],
       output_bucket: outBucketUid,
-      ...(rescaleDataPrep(rescaleEnabled, { mode: rescaleMode, width: rescaleWidth, height: rescaleHeight, px: rescalePx, mp: rescaleMp }) && { dataPreparation: rescaleDataPrep(rescaleEnabled, { mode: rescaleMode, width: rescaleWidth, height: rescaleHeight, px: rescalePx, mp: rescaleMp }) }),
+      ...(dataPrep && { dataPreparation: dataPrep }),
       payload: {
         workflow: workflow,
         prompt: prompt,
@@ -325,25 +326,15 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         </div>
 
         <div style={ss.formGroup}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: 'var(--muted)' }}>
-              <input type="checkbox" checked={rescaleEnabled} onChange={(e) => setRescaleEnabled(e.target.checked)} />
-              Rescale input image
-            </label>
-            {rescaleEnabled && (
-              <>
-                <input
-                  type="number" value={rescaleWidth} onChange={(e) => { rescaleUserEditedRef.current = true; setRescaleWidth(e.target.value); }}
-                  style={{ ...ss.input, width: '72px' }} aria-label="Rescale width"
-                />
-                <span style={{ color: 'var(--muted)', fontSize: '13px' }}>×</span>
-                <input
-                  type="number" value={rescaleHeight} onChange={(e) => { rescaleUserEditedRef.current = true; setRescaleHeight(e.target.value); }}
-                  style={{ ...ss.input, width: '72px' }} aria-label="Rescale height"
-                />
-              </>
-            )}
-          </div>
+          <RescaleWidget
+            enabled={rescaleEnabled} onEnabledChange={setRescaleEnabled}
+            mode={rescaleMode} onModeChange={(m) => { rescaleUserEditedRef.current = false; setRescaleMode(m); }}
+            width={rescaleWidth} onWidthChange={(v) => { rescaleUserEditedRef.current = true; setRescaleWidth(v); }}
+            height={rescaleHeight} onHeightChange={(v) => { rescaleUserEditedRef.current = true; setRescaleHeight(v); }}
+            px={rescalePx} onPxChange={setRescalePx}
+            mp={rescaleMp} onMpChange={setRescaleMp}
+            label="Rescale input image"
+          />
         </div>
 
         <div style={ss.formGroup}>
@@ -368,11 +359,11 @@ const Img2ImgApp = ({ apiKey, addDevEntry }) => {
         <div style={ss.row}>
           <div style={ss.formGroup}>
             <label htmlFor="width" style={ss.label}>Width:</label>
-            <input id="width" type="number" value={width} onChange={(e) => { rescaleUserEditedRef.current = false; setWidth(e.target.value); }} style={ss.input} />
+            <input id="width" type="number" value={width} onChange={(e) => { if (rescaleMode === 'exact') rescaleUserEditedRef.current = false; setWidth(e.target.value); }} style={ss.input} />
           </div>
           <div style={ss.formGroup}>
             <label htmlFor="height" style={ss.label}>Height:</label>
-            <input id="height" type="number" value={height} onChange={(e) => { rescaleUserEditedRef.current = false; setHeight(e.target.value); }} style={ss.input} />
+            <input id="height" type="number" value={height} onChange={(e) => { if (rescaleMode === 'exact') rescaleUserEditedRef.current = false; setHeight(e.target.value); }} style={ss.input} />
           </div>
         </div>
 
