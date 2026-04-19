@@ -6,14 +6,17 @@ import re
 from abc import ABC, abstractmethod
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import logging
+
+if TYPE_CHECKING:
+    from PIL.Image import Image as PilImage
 
 logger = logging.getLogger(__name__)
 
 
-def _exif_transpose(image: "Image.Image") -> "Image.Image":
+def _exif_transpose(image: PilImage) -> PilImage:
     """Apply EXIF orientation so pixel layout matches intended display before geometry."""
     from PIL import ImageOps
 
