@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import errno
 import json
 import logging
 import threading
@@ -235,8 +236,43 @@ class WebSocketAgentTransport:
 
     # ── connection management ────────────────────────────────────
 
+    def _drop_socket(self) -> None:
+        """Close the current socket and clear ``_ws`` so the next I/O opens fresh."""
+        ws = self._ws
+        self._ws = None
+        if ws is not None:
+            try:
+                ws.close()
+            except Exception:
+                pass
+
+    def _recoverable_ws_io_error(self, exc: BaseException) -> bool:
+        """True if the failure is likely a dead transport (retry after reconnect)."""
+        if isinstance(exc, self._ws_lib.WebSocketConnectionClosedException):
+            return True
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return True
+        if isinstance(exc, OSError) and exc.errno in (
+            errno.EPIPE,
+            errno.ECONNRESET,
+            errno.ENOTCONN,
+            errno.ECONNABORTED,
+            errno.ETIMEDOUT,
+            errno.ECONNREFUSED,
+        ):
+            return True
+        try:
+            import ssl
+
+            if isinstance(exc, ssl.SSLEOFError):
+                return True
+        except ImportError:
+            pass
+        return False
+
     def _connect(self) -> None:
         import ssl
+        self._drop_socket()
         url = build_ws_url(self._server_url, self._jwt_token)
         logger.info("WS connecting to %s (SSL_CERT_FILE=%s)", url.split("?")[0], __import__("os").environ.get("SSL_CERT_FILE"))
         ws = self._ws_lib.WebSocket()
@@ -256,14 +292,76 @@ class WebSocketAgentTransport:
             self._connect()
 
     def close(self) -> None:
-        if self._ws is not None:
-            try:
-                self._ws.close()
-            except Exception:
-                pass
-            self._ws = None
+        self._drop_socket()
 
     # ── low-level request/response ───────────────────────────────
+
+    def _exchange_request(
+        self,
+        action_label: str,
+        text_msg: str,
+        req_id: str,
+        timeout: int,
+        binary_chunk: bytes | None,
+    ) -> dict[str, Any]:
+        """Send one logical request (optional binary tail) and read the matching JSON."""
+        attempts = 0
+        while attempts < 3:
+            attempts += 1
+            self._ensure_connected()
+            assert self._ws is not None
+            self._ws.settimeout(timeout)
+            try:
+                self._ws.send(text_msg)
+                if binary_chunk is not None:
+                    self._ws.send_binary(binary_chunk)
+            except Exception as e:
+                if attempts >= 3 or not self._recoverable_ws_io_error(e):
+                    raise
+                logger.warning("WS send failed (%s), reconnecting (try %s/3)", e, attempts)
+                self._drop_socket()
+                continue
+
+            while True:
+                try:
+                    raw = self._ws.recv()
+                except self._ws_lib.WebSocketTimeoutException as e:
+                    raise requests.Timeout(
+                        f"WS request {action_label} timed out after {timeout}s"
+                    ) from e
+                except Exception as e:
+                    if attempts >= 3 or not self._recoverable_ws_io_error(e):
+                        if isinstance(
+                            e, self._ws_lib.WebSocketConnectionClosedException
+                        ):
+                            raise requests.ConnectionError(
+                                "WebSocket connection closed"
+                            ) from e
+                        raise
+                    logger.warning(
+                        "WS recv failed (%s), reconnecting (try %s/3)", e, attempts
+                    )
+                    self._drop_socket()
+                    break
+
+                if not raw:
+                    if attempts >= 3:
+                        raise requests.ConnectionError(
+                            "WebSocket received empty frame"
+                        )
+                    logger.warning("WS empty recv, reconnecting (try %s/3)", attempts)
+                    self._drop_socket()
+                    break
+
+                resp: dict[str, Any] = json.loads(raw)
+                if resp.get("type") in ("heartbeat", "connected"):
+                    continue
+                if resp.get("req_id") == req_id:
+                    return resp
+
+        raise requests.ConnectionError(
+            "WebSocket connection closed after repeated reconnects"
+        )
 
     def _send_request(
         self, action: str, params: dict[str, Any], timeout: int = 60
@@ -273,36 +371,7 @@ class WebSocketAgentTransport:
         msg = json.dumps({"req_id": req_id, "action": action, "params": params})
 
         with self._lock:
-            self._ensure_connected()
-            assert self._ws is not None
-            self._ws.settimeout(timeout)
-            try:
-                self._ws.send(msg)
-            except self._ws_lib.WebSocketConnectionClosedException:
-                # One reconnect attempt
-                self._connect()
-                assert self._ws is not None
-                self._ws.settimeout(timeout)
-                self._ws.send(msg)
-
-            # Read until we get the matching response
-            while True:
-                try:
-                    raw = self._ws.recv()
-                except self._ws_lib.WebSocketConnectionClosedException:
-                    raise requests.ConnectionError("WebSocket connection closed")
-                except self._ws_lib.WebSocketTimeoutException:
-                    raise requests.Timeout(
-                        f"WS request {action} timed out after {timeout}s"
-                    )
-                if not raw:
-                    raise requests.ConnectionError("WebSocket received empty frame")
-                resp: dict[str, Any] = json.loads(raw)
-                # Skip heartbeats and other server-initiated messages
-                if resp.get("type") in ("heartbeat", "connected"):
-                    continue
-                if resp.get("req_id") == req_id:
-                    return resp
+            return self._exchange_request(action, msg, req_id, timeout, None)
 
     def _send_request_with_binary(
         self, action: str, params: dict[str, Any], data: bytes, timeout: int = 60
@@ -312,35 +381,7 @@ class WebSocketAgentTransport:
         msg = json.dumps({"req_id": req_id, "action": action, "params": params})
 
         with self._lock:
-            self._ensure_connected()
-            assert self._ws is not None
-            self._ws.settimeout(timeout)
-            try:
-                self._ws.send(msg)
-                self._ws.send_binary(data)
-            except self._ws_lib.WebSocketConnectionClosedException:
-                self._connect()
-                assert self._ws is not None
-                self._ws.settimeout(timeout)
-                self._ws.send(msg)
-                self._ws.send_binary(data)
-
-            while True:
-                try:
-                    raw = self._ws.recv()
-                except self._ws_lib.WebSocketConnectionClosedException:
-                    raise requests.ConnectionError("WebSocket connection closed")
-                except self._ws_lib.WebSocketTimeoutException:
-                    raise requests.Timeout(
-                        f"WS request {action} timed out after {timeout}s"
-                    )
-                if not raw:
-                    raise requests.ConnectionError("WebSocket received empty frame")
-                resp: dict[str, Any] = json.loads(raw)
-                if resp.get("type") in ("heartbeat", "connected"):
-                    continue
-                if resp.get("req_id") == req_id:
-                    return resp
+            return self._exchange_request(action, msg, req_id, timeout, data)
 
     # ── AgentTransport implementation ────────────────────────────
 

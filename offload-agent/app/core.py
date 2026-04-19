@@ -70,6 +70,29 @@ class AuthError(Exception):
     pass
 
 
+def _reauth_http_error_warrants_reregister(exc: requests.HTTPError) -> bool:
+    """True when /agent/auth failed with an authorization-style rejection (re-register).
+
+    Do not create a new agent record for HTTP 401 / ``authentication_error`` responses
+    or for non-403 failures (e.g. server errors).
+    """
+    resp = exc.response
+    if resp is None:
+        return False
+    if resp.status_code == 401:
+        return False
+    if resp.status_code != 403:
+        return False
+    try:
+        payload = resp.json()
+    except Exception:
+        return True
+    err = payload.get("error")
+    if isinstance(err, dict) and err.get("type") == "authentication_error":
+        return False
+    return True
+
+
 def poll_task(transport: AgentTransport) -> dict[str, Any] | None:
     """Poll server for a new task, return task_info or None."""
     try:
@@ -92,7 +115,9 @@ def _reauth_or_reregister(server_url: str) -> str | None:
     """Attempt to recover a valid JWT after a 403.
 
     Tries re-authentication first (JWT expired but agent still exists).
-    Falls back to re-registration if the agent record was deleted.
+    Falls back to re-registration only when /agent/auth rejects stored agent
+    credentials with an authorization-style 403, not for 401 / authentication_error
+    or transient/server errors.
     Returns a fresh JWT string, or None if all attempts fail.
     """
     cfg = load_config()
@@ -114,8 +139,21 @@ def _reauth_or_reregister(server_url: str) -> str | None:
         except requests.Timeout as e:
             logger.warning(f"Re-authentication timed out: {e}. Keeping existing credentials.")
             return None
+        except requests.HTTPError as e:
+            if not _reauth_http_error_warrants_reregister(e):
+                logger.warning(
+                    "Re-authentication failed: %s. Not re-registering (not an authorization rejection).",
+                    e,
+                )
+                return None
+            logger.warning(
+                "Re-authentication failed (stored agent rejected). Attempting re-registration..."
+            )
         except Exception as e:
-            logger.warning(f"Re-authentication failed: {e}. Attempting re-registration...")
+            logger.warning(
+                "Re-authentication failed: %s. Not re-registering.", e
+            )
+            return None
 
     if not api_key:
         logger.error("No API key in config — cannot re-register.")
