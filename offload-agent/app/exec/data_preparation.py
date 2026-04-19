@@ -13,6 +13,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _exif_transpose(image: "Image.Image") -> "Image.Image":
+    """Apply EXIF orientation so pixel layout matches intended display before geometry."""
+    from PIL import ImageOps
+
+    return ImageOps.exif_transpose(image)
+
+
 class DataPreparation(ABC):
     def __init__(self, pattern: str) -> None:
         self.pattern = pattern
@@ -65,7 +72,12 @@ class ScalePreparation(DataPreparation):
         from PIL import Image
 
         with Image.open(file) as raw:
-            out: Image.Image = raw.convert("RGB") if raw.mode not in ("RGB", "RGBA", "L") else raw.copy()
+            base = _exif_transpose(raw)
+            out: Image.Image = (
+                base.convert("RGB")
+                if base.mode not in ("RGB", "RGBA", "L")
+                else base.copy()
+            )
             out.thumbnail((self.width, self.height), Image.Resampling.LANCZOS)
             out.save(file)
 
@@ -126,23 +138,40 @@ class ScaleMaxPreparation(DataPreparation):
         from PIL import Image
 
         with Image.open(file) as src:
-            orig_w, orig_h = src.size
+            exif = src.getexif()
+            had_orientation = bool(exif and exif.get(274) not in (None, 1))
+            image = _exif_transpose(src)
+            orig_w, orig_h = image.size
             scale = self._scale_factor(orig_w, orig_h)
             if scale >= 1.0:
-                logger.info(f"scale/max: {file.name} already within constraints, skipping")
+                if had_orientation:
+                    work: Image.Image = (
+                        image.convert("RGB")
+                        if image.mode not in ("RGB", "RGBA", "L")
+                        else image.copy()
+                    )
+                    work.save(file)
+                    logger.info(
+                        f"scale/max: {file.name} EXIF orientation applied, no resize "
+                        f"(px={self.px}, mp={self.mp})"
+                    )
+                else:
+                    logger.info(
+                        f"scale/max: {file.name} already within constraints, skipping"
+                    )
                 return
             new_w = max(1, round(orig_w * scale))
             new_h = max(1, round(orig_h * scale))
-            image: Image.Image = (
-                src.convert("RGB")
-                if src.mode not in ("RGB", "RGBA", "L")
-                else src.copy()
+            work = (
+                image.convert("RGB")
+                if image.mode not in ("RGB", "RGBA", "L")
+                else image.copy()
             )
-            image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            image.save(file)
+            work = work.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            work.save(file)
 
         logger.info(
-            f"scale/max: {file.name} {orig_w}x{orig_h} → {new_w}x{new_h} "
+            f"scale/max: {file.name} {orig_w}x{orig_h} -> {new_w}x{new_h} "
             f"(scale={scale:.4f}, px={self.px}, mp={self.mp})"
         )
 
@@ -208,17 +237,20 @@ class TranscodePreparation(DataPreparation):
         target = file.with_suffix(ext)
 
         with Image.open(file) as src:
+            image = _exif_transpose(src)
             work: Image.Image
-            if pil_fmt == "JPEG" and src.mode in ("RGBA", "P"):
-                work = src.convert("RGB")
+            if pil_fmt == "JPEG" and image.mode in ("RGBA", "P"):
+                work = image.convert("RGB")
             else:
-                work = src
+                work = image
             work.save(target, format=pil_fmt, **self._save_kwargs())
 
         if target != file:
             file.unlink()
 
-        logger.info(f"Transcoded {file.name} → {target.name} (fmt={pil_fmt}, opts={self.options})")
+        logger.info(
+            f"Transcoded {file.name} -> {target.name} (fmt={pil_fmt}, opts={self.options})"
+        )
 
 
 def apply_data_preparation(data_path: Path, rules: dict[str, str]) -> None:

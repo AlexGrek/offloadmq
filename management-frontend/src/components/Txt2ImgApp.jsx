@@ -236,20 +236,20 @@ const Txt2ImgApp = ({ apiKey, addDevEntry }) => {
           )}
         </div>
 
-        <div style={ss.row}>
-          <div style={ss.formGroup}>
+        <div style={ss.rowWrap}>
+          <div style={{ ...ss.formGroup, ...ss.dimensionField }}>
             <label htmlFor="width" style={ss.label}>Width:</label>
-            <input id="width" type="number" value={width} onChange={(e) => setWidth(e.target.value)} style={ss.input} />
+            <input id="width" type="number" value={width} onChange={(e) => setWidth(e.target.value)} style={ss.inputInDimensionField} />
           </div>
-          <div style={ss.formGroup}>
+          <div style={{ ...ss.formGroup, ...ss.dimensionField }}>
             <label htmlFor="height" style={ss.label}>Height:</label>
-            <input id="height" type="number" value={height} onChange={(e) => setHeight(e.target.value)} style={ss.input} />
+            <input id="height" type="number" value={height} onChange={(e) => setHeight(e.target.value)} style={ss.inputInDimensionField} />
           </div>
         </div>
 
         <div style={ss.formGroup}>
           <label htmlFor="seed" style={ss.label}>Seed (optional):</label>
-          <input id="seed" type="number" value={seed} onChange={(e) => setSeed(e.target.value)} placeholder="Leave empty for random" style={ss.input} />
+          <input id="seed" type="number" value={seed} onChange={(e) => setSeed(e.target.value)} placeholder="Leave empty for random" style={ss.inputInDimensionField} />
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>

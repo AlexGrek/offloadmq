@@ -4,11 +4,17 @@
 export const sandboxStyles = {
   content: {
     padding: '4px',
+    width: '100%',
+    minWidth: 0,
+    boxSizing: 'border-box',
   },
   form: {
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
+    width: '100%',
+    minWidth: 0,
+    boxSizing: 'border-box',
   },
   formGroup: {
     display: 'flex',
@@ -17,6 +23,21 @@ export const sandboxStyles = {
   row: {
     display: 'flex',
     gap: '16px',
+  },
+  /** Flex row that wraps on narrow viewports (e.g. width/height pair on mobile). */
+  rowWrap: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '16px',
+    width: '100%',
+    minWidth: 0,
+    boxSizing: 'border-box',
+  },
+  /** Use inside rowWrap for paired numeric fields; stacks to full width when wrapped. */
+  dimensionField: {
+    flex: '1 1 140px',
+    minWidth: 0,
+    maxWidth: '100%',
   },
   label: {
     fontFamily: 'var(--font-display)',
@@ -40,6 +61,20 @@ export const sandboxStyles = {
     outline: 'none',
     background: 'var(--input-bg)',
     color: 'var(--text)',
+  },
+  /** Full-width input (paired WxH fields or any block that should span the form on mobile). */
+  inputInDimensionField: {
+    fontFamily: 'var(--font-sans)',
+    padding: '8px 12px',
+    fontSize: '14px',
+    border: '1px solid var(--border)',
+    borderRadius: '6px',
+    outline: 'none',
+    background: 'var(--input-bg)',
+    color: 'var(--text)',
+    width: '100%',
+    maxWidth: '100%',
+    boxSizing: 'border-box',
   },
   monoInput: {
     padding: '8px 12px',
@@ -88,7 +123,7 @@ export const sandboxStyles = {
   },
   responseContainer: {
     marginTop: '24px',
-    padding: '16px',
+    padding: '16px 16px 28px 16px',
     background: 'var(--glass)',
     border: '1px solid var(--border)',
     borderRadius: '8px',
@@ -149,7 +184,7 @@ export const sandboxStyles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(256px, 1fr))',
     gap: '12px',
-    marginBottom: '12px',
+    marginBottom: '24px',
   },
   image: {
     width: '100%',
