@@ -242,17 +242,16 @@ class WebSocketAgentTransport:
         logger.info("WS connecting to %s", url.split("?")[0])
         ws = self._ws_lib.WebSocket()
         ctx = ssl.create_default_context()
-        if not ctx.get_ca_certs():
-            for ca_path in (
-                "/etc/pki/tls/certs/ca-bundle.crt",
-                "/etc/ssl/certs/ca-certificates.crt",
-                "/etc/ssl/ca-bundle.pem",
-                "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
-            ):
-                if os.path.exists(ca_path):
-                    ctx.load_verify_locations(ca_path)
-                    logger.info("WS SSL: loaded system CA from %s", ca_path)
-                    break
+        for ca_path in (
+            "/etc/pki/tls/certs/ca-bundle.crt",
+            "/etc/ssl/certs/ca-certificates.crt",
+            "/etc/ssl/ca-bundle.pem",
+            "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+        ):
+            if os.path.exists(ca_path):
+                ctx.load_verify_locations(ca_path)
+                logger.info("WS SSL: loaded system CA from %s", ca_path)
+                break
         ws.connect(url, timeout=30, sslopt={"context": ctx})  # type: ignore[no-untyped-call,unused-ignore]
         # Read welcome message
         raw = ws.recv()
