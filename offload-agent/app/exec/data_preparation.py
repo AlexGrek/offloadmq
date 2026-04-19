@@ -125,17 +125,21 @@ class ScaleMaxPreparation(DataPreparation):
     def apply(self, file: Path) -> None:
         from PIL import Image
 
-        with Image.open(file) as img:
-            orig_w, orig_h = img.size
+        with Image.open(file) as src:
+            orig_w, orig_h = src.size
             scale = self._scale_factor(orig_w, orig_h)
             if scale >= 1.0:
                 logger.info(f"scale/max: {file.name} already within constraints, skipping")
                 return
             new_w = max(1, round(orig_w * scale))
             new_h = max(1, round(orig_h * scale))
-            img = img.convert("RGB") if img.mode not in ("RGB", "RGBA", "L") else img
-            img = img.resize((new_w, new_h), Image.LANCZOS)
-            img.save(file)
+            image: Image.Image = (
+                src.convert("RGB")
+                if src.mode not in ("RGB", "RGBA", "L")
+                else src.copy()
+            )
+            image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            image.save(file)
 
         logger.info(
             f"scale/max: {file.name} {orig_w}x{orig_h} → {new_w}x{new_h} "
@@ -203,10 +207,13 @@ class TranscodePreparation(DataPreparation):
         ext = self._FORMAT_EXTENSIONS.get(self.fmt, f".{self.fmt}")
         target = file.with_suffix(ext)
 
-        with Image.open(file) as img:
-            if pil_fmt == "JPEG" and img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-            img.save(target, format=pil_fmt, **self._save_kwargs())
+        with Image.open(file) as src:
+            work: Image.Image
+            if pil_fmt == "JPEG" and src.mode in ("RGBA", "P"):
+                work = src.convert("RGB")
+            else:
+                work = src
+            work.save(target, format=pil_fmt, **self._save_kwargs())
 
         if target != file:
             file.unlink()
