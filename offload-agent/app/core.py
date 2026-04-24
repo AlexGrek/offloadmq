@@ -21,6 +21,7 @@ from .exec.shell import *
 from .exec.shellcmd import *
 from .exec.docker import *
 from .exec.imggen import execute_imggen_comfyui
+from .exec.musicgen import execute_musicgen_comfyui
 from .exec.custom import execute_custom_cap
 from .exec.onnx import execute_onnx
 from .exec.slavemode import execute_slavemode, merge_registration_caps
@@ -261,6 +262,9 @@ def route_executor(cap: str) -> Callable[..., bool] | None:
     if cap.startswith("imggen."):
         return execute_imggen_comfyui
 
+    if cap.startswith("txt2music."):
+        return execute_musicgen_comfyui
+
     if cap.startswith("onnx."):
         return execute_onnx
 
@@ -342,7 +346,7 @@ def handle_task(transport: AgentTransport, task: dict[str, Any]) -> None:
 
     # Execute task
     try:
-        if capability.startswith("imggen."):
+        if capability.startswith("imggen.") or capability.startswith("txt2music."):
             executor(transport, task_id, capability, payload, data_path, output_bucket=output_bucket, job_timeout=job_timeout)
         else:
             executor(transport, task_id, capability, payload, data_path, job_timeout=job_timeout)

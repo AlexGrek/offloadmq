@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 const DevPanel = React.lazy(() => import('./DevPanel'));
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch, MessageCircleMore, GitCompareArrows, ShieldAlert, Languages, AudioWaveform } from 'lucide-react';
+import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch, MessageCircleMore, GitCompareArrows, ShieldAlert, Languages, AudioWaveform, Music2 } from 'lucide-react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Define the content for each app as a functional component.
@@ -71,6 +71,7 @@ const LlmCompareApp = React.lazy(() => import('./LlmCompareApp'))
 const NudeDetectorApp = React.lazy(() => import('./NudeDetectorApp'))
 const TranslatorApp = React.lazy(() => import('./TranslatorApp'))
 const TtsApp = React.lazy(() => import('./TtsApp'))
+const Txt2MusicApp = React.lazy(() => import('./Txt2MusicApp'))
 
 const CAPABILITIES_COLLAPSE_AT = 3;
 
@@ -90,6 +91,7 @@ const apps = [
   { id: 'nudedetect', name: 'Nude Detector', logo: ShieldAlert, app: NudeDetectorApp },
   { id: 'translator', name: 'Translator', logo: Languages, app: TranslatorApp },
   { id: 'tts', name: 'TTS', logo: AudioWaveform, app: TtsApp },
+  { id: 'txt2music', name: 'Txt2Music', logo: Music2, app: Txt2MusicApp },
   { id: 'custom', name: 'Custom', logo: Blocks, app: CustomApp },
 ];
 

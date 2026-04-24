@@ -3,6 +3,11 @@ import { ComfyParamMapEditor } from './ComfyParamMapEditor'
 
 const JSON_ACCEPT = { Accept: 'application/json' }
 
+const NAMESPACES = [
+  { value: '', label: 'imggen (image / video)' },
+  { value: 'txt2music', label: 'txt2music (audio)' },
+]
+
 async function postForm(url, formData) {
   const r = await fetch(url, {
     method: 'POST',
@@ -16,10 +21,10 @@ async function postForm(url, formData) {
 export function ComfyUITab({ state, loadState, run }) {
   const [comfyuiUrl, setComfyuiUrl] = useState('')
   const [wfName, setWfName] = useState('')
+  const [wfNamespace, setWfNamespace] = useState('')
   const [wfTaskType, setWfTaskType] = useState('txt2img')
   const wfFileRef = useRef(null)
 
-  // Sync ComfyUI URL from state
   useEffect(() => {
     setComfyuiUrl(state?.comfyui_url || '')
   }, [state])
@@ -42,6 +47,7 @@ export function ComfyUITab({ state, loadState, run }) {
       const fd = new FormData()
       fd.append('workflow_name', wfName.trim())
       fd.append('task_type', wfTaskType)
+      fd.append('namespace', wfNamespace)
       const f = wfFileRef.current?.files?.[0]
       if (f) fd.append('workflow_file', f)
       await postForm('/workflows/add', fd)
@@ -51,11 +57,13 @@ export function ComfyUITab({ state, loadState, run }) {
     })
   }
 
-  function deleteWorkflow(name) {
-    if (!window.confirm(`Delete workflow ${name} and all its files?`)) return
+  function deleteWorkflow(name, namespace) {
+    const label = namespace ? `${namespace}/${name}` : name
+    if (!window.confirm(`Delete workflow ${label} and all its files?`)) return
     run(async () => {
       const fd = new FormData()
       fd.append('workflow_name', name)
+      fd.append('namespace', namespace || '')
       await postForm('/workflows/delete', fd)
       loadState()
     })
@@ -64,7 +72,7 @@ export function ComfyUITab({ state, loadState, run }) {
   return (
     <div className="bg-slate-800 rounded-lg p-5">
       <h2 className="text-[0.72rem] font-semibold text-slate-500 uppercase tracking-wider mb-3">
-        ImgGen / ComfyUI
+        ComfyUI / Workflows
       </h2>
       <form onSubmit={saveComfyui}>
         <label className="block text-xs text-slate-500 mb-1">ComfyUI URL</label>
@@ -95,26 +103,32 @@ export function ComfyUITab({ state, loadState, run }) {
         </p>
       ) : (
         <div className="mb-4 space-y-0">
-          {(state?.workflows || []).map((wf) => (
-            <div
-              key={wf.name}
-              className="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-900 text-sm"
-            >
-              <span className="font-medium text-slate-200 min-w-[140px] break-all">
-                {wf.name}
-              </span>
-              <span className="flex-1 text-slate-500 text-xs">
-                {wf.task_types?.length ? wf.task_types.join(', ') : 'no task files yet'}
-              </span>
-              <button
-                type="button"
-                onClick={() => deleteWorkflow(wf.name)}
-                className="px-2 py-1 rounded bg-red-500 text-white text-xs hover:opacity-85"
+          {(state?.workflows || []).map((wf) => {
+            const label = wf.namespace ? `${wf.namespace}/${wf.name}` : wf.name
+            return (
+              <div
+                key={label}
+                className="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-900 text-sm"
               >
-                Delete
-              </button>
-            </div>
-          ))}
+                <span className="font-medium text-slate-200 min-w-35 break-all">
+                  {wf.namespace && (
+                    <span className="text-indigo-400 text-xs mr-1">[{wf.namespace}]</span>
+                  )}
+                  {wf.name}
+                </span>
+                <span className="flex-1 text-slate-500 text-xs">
+                  {wf.task_types?.length ? wf.task_types.join(', ') : 'no task files yet'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => deleteWorkflow(wf.name, wf.namespace)}
+                  className="px-2 py-1 rounded bg-red-500 text-white text-xs hover:opacity-85"
+                >
+                  Delete
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
       <hr className="border-slate-700 my-4" />
@@ -122,16 +136,33 @@ export function ComfyUITab({ state, loadState, run }) {
         Add Workflow
       </h3>
       <form onSubmit={addWorkflow}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Capability type</label>
+            <select
+              value={wfNamespace}
+              onChange={(e) => {
+                setWfNamespace(e.target.value)
+                setWfTaskType(e.target.value === 'txt2music' ? 'txt2music' : 'txt2img')
+              }}
+              className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200"
+            >
+              {NAMESPACES.map((ns) => (
+                <option key={ns.value} value={ns.value}>
+                  {ns.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="block text-xs text-slate-500 mb-1">
-              Workflow name (must match ComfyUI workflow name exactly)
+              Workflow name
             </label>
             <input
               type="text"
               value={wfName}
               onChange={(e) => setWfName(e.target.value)}
-              placeholder="wan-2.1-outpaint"
+              placeholder={wfNamespace === 'txt2music' ? 'ace-step-1.5-xl-turbo' : 'wan-2.1-outpaint'}
               className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
             />
           </div>
@@ -142,16 +173,20 @@ export function ComfyUITab({ state, loadState, run }) {
               onChange={(e) => setWfTaskType(e.target.value)}
               className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200"
             >
-              {taskTypes.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
+              {taskTypes
+                .filter((t) =>
+                  wfNamespace === 'txt2music' ? t === 'txt2music' : t !== 'txt2music',
+                )
+                .map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
             </select>
           </div>
         </div>
         <label className="block text-xs text-slate-500 mt-2 mb-1">
-          ComfyUI workflow JSON (exported via Save then API Format in ComfyUI)
+          ComfyUI workflow JSON (exported via Save → API Format in ComfyUI)
         </label>
         <input
           ref={wfFileRef}

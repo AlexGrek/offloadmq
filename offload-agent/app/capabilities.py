@@ -143,11 +143,10 @@ def _parse_kokoro_voices(response: "Any") -> list[str]:
 
 
 def check_comfyui() -> CapResult:
-    """Check ComfyUI availability and enumerate imggen capabilities from the workflows directory.
+    """Check ComfyUI availability and enumerate imggen/txt2music capabilities.
 
-    Each subdirectory of workflows/ is a workflow name; .json files inside it (excluding
-    *.params.json) identify supported task types.  Produces one extended capability string
-    per workflow, e.g. imggen.wan-2.1-outpaint[txt2img;img2img;upscale].
+    imggen:    flat subdirs of workflows/ → imggen.<name>[task_types...]
+    txt2music: workflows/txt2music/<name>/ → txt2music.<name>[task_types...]
     """
     import requests
     from .exec.imggen.comfyui import comfyui_url
@@ -160,7 +159,7 @@ def check_comfyui() -> CapResult:
     except requests.RequestException as e:
         return CapResult(
             [], False,
-            "imggen.*",
+            "imggen.*, txt2music.*",
             f"ComfyUI API not reachable at {url}: {type(e).__name__}",
         )
 
@@ -169,23 +168,27 @@ def check_comfyui() -> CapResult:
     if not caps:
         return CapResult(
             [], False,
-            "imggen.*",
+            "imggen.*, txt2music.*",
             f"ComfyUI reachable at {url} but no workflow templates found in {workflows_dir}",
         )
 
     label = ", ".join(caps)
     return CapResult(
         caps, True,
-        "imggen.*",
+        "imggen.*, txt2music.*",
         f"ComfyUI reachable at {url} — {len(caps)} workflow(s): {label}",
     )
+
+
+# Namespaced capability prefixes that live in a subdirectory of workflows/.
+_NAMESPACED_CAP_PREFIXES = ("txt2music",)
 
 
 def _discover_workflow_caps(workflows_dir: Path | str) -> list[str]:
     """Scan workflows_dir and return one extended capability string per workflow.
 
-    Skips entries that are not directories or whose names contain path-unsafe characters
-    (same rules as _safe_path_component in imggen.py).
+    Flat subdirs (not matching a known namespace) → imggen.<name>[task_types...]
+    Namespaced subdirs (e.g. txt2music/) → txt2music.<name>[task_types...]
     """
     import re
     from pathlib import Path
@@ -203,6 +206,11 @@ def _discover_workflow_caps(workflows_dir: Path | str) -> list[str]:
         if not safe_re.match(entry.name):
             continue
 
+        # Namespaced subdirectory (e.g. txt2music/) — recurse one level.
+        if entry.name in _NAMESPACED_CAP_PREFIXES:
+            caps.extend(_discover_namespaced_caps(entry, namespace=entry.name, safe_re=safe_re))
+            continue
+
         task_types = sorted(
             p.stem
             for p in entry.glob("*.json")
@@ -213,6 +221,33 @@ def _discover_workflow_caps(workflows_dir: Path | str) -> list[str]:
 
         attrs = ";".join(task_types)
         caps.append(f"imggen.{entry.name}[{attrs}]")
+
+    return caps
+
+
+def _discover_namespaced_caps(
+    namespace_dir: Path,
+    namespace: str,
+    safe_re: "Any",
+) -> list[str]:
+    """Scan a namespace subdirectory and return capability strings like namespace.<name>[types...]."""
+    caps: list[str] = []
+    for entry in sorted(namespace_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        if not safe_re.match(entry.name):
+            continue
+
+        task_types = sorted(
+            p.stem
+            for p in entry.glob("*.json")
+            if not p.name.endswith(".params.json") and safe_re.match(p.stem)
+        )
+        if not task_types:
+            continue
+
+        attrs = ";".join(task_types)
+        caps.append(f"{namespace}.{entry.name}[{attrs}]")
 
     return caps
 
@@ -324,8 +359,7 @@ def is_sensitive_capability(cap: str) -> bool:
 
 def is_regular_capability(cap: str) -> bool:
     """Return True if capability is regular (opt-out, enabled by default)."""
-    # Regular: llm, imggen, tts, debug, custom, onnx
-    prefixes = ("llm.", "imggen.", "tts.", "debug.", "custom.", "onnx.")
+    prefixes = ("llm.", "imggen.", "txt2music.", "tts.", "debug.", "custom.", "onnx.")
     return any(cap.startswith(p) for p in prefixes)
 
 

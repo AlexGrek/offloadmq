@@ -1,0 +1,16 @@
+{
+  "seed":          [["109", "value"]],
+  "tags":          [["94", "tags"]],
+  "lyrics":        [["94", "lyrics"]],
+  "bpm":           [["94", "bpm"]],
+  "duration":      [["94", "duration"], ["98", "seconds"]],
+  "timesignature": [["94", "timesignature"]],
+  "language":      [["94", "language"]],
+  "keyscale":      [["94", "keyscale"]],
+  "cfg_scale":     [["94", "cfg_scale"]],
+  "temperature":   [["94", "temperature"]],
+  "top_p":         [["94", "top_p"]],
+  "top_k":         [["94", "top_k"]],
+  "min_p":         [["94", "min_p"]],
+  "steps":         [["3", "steps"]]
+}
