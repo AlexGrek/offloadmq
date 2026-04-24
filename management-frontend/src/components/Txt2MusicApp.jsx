@@ -305,7 +305,7 @@ const Txt2MusicApp = ({ apiKey, addDevEntry }) => {
       payload: {
         workflow: 'txt2music',
         tags,
-        ...(lyrics.trim() && { lyrics: lyrics.trim() }),
+        lyrics: lyrics.trim(),
         ...(bpm && { bpm: parseInt(bpm) }),
         duration: parseInt(duration) || 30,
         ...(seed && { seed: parseInt(seed) || -1 }),
