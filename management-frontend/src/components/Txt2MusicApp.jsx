@@ -231,6 +231,13 @@ const Txt2MusicApp = ({ apiKey, addDevEntry }) => {
   const [duration, setDuration] = useState(30);
   const [seed, setSeed] = useState('');
 
+  // Model-specific fields (ACE Step and compatible models)
+  const [language, setLanguage] = useState('');
+  const [keyscale, setKeyscale] = useState('');
+  const [cfgScale, setCfgScale] = useState('');
+  const [temperature, setTemperature] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   const [response, setResponse] = useState(null);
   const [audioItems, setAudioItems] = useState([]);
   const [error, setError] = useState(null);
@@ -302,6 +309,10 @@ const Txt2MusicApp = ({ apiKey, addDevEntry }) => {
         ...(bpm && { bpm: parseInt(bpm) }),
         duration: parseInt(duration) || 30,
         ...(seed && { seed: parseInt(seed) || -1 }),
+        ...(language.trim() && { language: language.trim() }),
+        ...(keyscale.trim() && { keyscale: keyscale.trim() }),
+        ...(cfgScale !== '' && { cfg_scale: parseFloat(cfgScale) }),
+        ...(temperature !== '' && { temperature: parseFloat(temperature) }),
       },
     };
 
@@ -477,6 +488,80 @@ const Txt2MusicApp = ({ apiKey, addDevEntry }) => {
             </div>
           </div>
 
+          {/* Model-specific / advanced fields */}
+          <div style={advancedSectionStyle}>
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen(v => !v)}
+              style={advancedToggleStyle}
+            >
+              <span style={{ marginRight: '6px' }}>{advancedOpen ? '▾' : '▸'}</span>
+              Model-specific settings
+              <span style={advancedBadgeStyle}>ACE Step + compatible</span>
+            </button>
+            {advancedOpen && (
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <p style={advancedHintStyle}>
+                  Fields below are forwarded as-is to the agent. Unsupported fields for a given model are silently ignored.
+                </p>
+                <div style={ss.rowWrap}>
+                  <div style={{ ...ss.formGroup, ...ss.dimensionField }}>
+                    <label htmlFor="language" style={ss.label}>Language:</label>
+                    <input
+                      id="language"
+                      type="text"
+                      value={language}
+                      onChange={e => setLanguage(e.target.value)}
+                      placeholder="e.g. en, zh, fr"
+                      style={ss.inputInDimensionField}
+                    />
+                  </div>
+                  <div style={{ ...ss.formGroup, ...ss.dimensionField }}>
+                    <label htmlFor="keyscale" style={ss.label}>Key &amp; scale:</label>
+                    <input
+                      id="keyscale"
+                      type="text"
+                      value={keyscale}
+                      onChange={e => setKeyscale(e.target.value)}
+                      placeholder="e.g. C major, A minor"
+                      style={ss.inputInDimensionField}
+                    />
+                  </div>
+                </div>
+                <div style={ss.rowWrap}>
+                  <div style={{ ...ss.formGroup, ...ss.dimensionField }}>
+                    <label htmlFor="cfg_scale" style={ss.label}>CFG scale:</label>
+                    <input
+                      id="cfg_scale"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="30"
+                      value={cfgScale}
+                      onChange={e => setCfgScale(e.target.value)}
+                      placeholder="e.g. 7.0"
+                      style={ss.inputInDimensionField}
+                    />
+                  </div>
+                  <div style={{ ...ss.formGroup, ...ss.dimensionField }}>
+                    <label htmlFor="temperature" style={ss.label}>Temperature:</label>
+                    <input
+                      id="temperature"
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      max="2"
+                      value={temperature}
+                      onChange={e => setTemperature(e.target.value)}
+                      placeholder="e.g. 1.0"
+                      style={ss.inputInDimensionField}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div style={{ display: 'flex', gap: '8px' }}>
             <button type="submit" style={ss.button} disabled={isLoading || !model}>
               {isLoading ? 'Generating...' : 'Generate Music'}
@@ -530,6 +615,26 @@ const cancelBtnStyle = {
   padding: '8px 16px', borderRadius: '6px',
   background: 'var(--danger, #ef4444)', color: '#fff',
   border: 'none', cursor: 'pointer', fontWeight: 500,
+};
+
+const advancedSectionStyle = {
+  border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px',
+};
+
+const advancedToggleStyle = {
+  background: 'none', border: 'none', cursor: 'pointer',
+  color: 'var(--text)', fontSize: '13px', fontWeight: 600,
+  padding: 0, display: 'flex', alignItems: 'center', gap: '4px',
+};
+
+const advancedBadgeStyle = {
+  marginLeft: '8px', fontSize: '10px', padding: '1px 6px',
+  borderRadius: '4px', background: 'var(--chip-bg)',
+  color: 'var(--muted)', fontWeight: 400,
+};
+
+const advancedHintStyle = {
+  fontSize: '11px', color: 'var(--muted)', margin: 0, lineHeight: 1.5,
 };
 
 export default Txt2MusicApp;
