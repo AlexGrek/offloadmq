@@ -17,7 +17,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_DIR="${REPO_ROOT}/micro-agent"
 BASE_URL="${DL_BASE_URL:-https://dl.alexgr.space}"
-BUCKET="${DL_BUCKET:-micro-agent}"
+BUCKET="${DL_BUCKET:-offload-agent}"
 
 if [[ -z "${DL_API_KEY:-}" ]]; then
   echo "error: DL_API_KEY is not set" >&2
