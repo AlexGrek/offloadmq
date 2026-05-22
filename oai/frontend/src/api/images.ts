@@ -117,6 +117,8 @@ export interface ImgGenCapability {
   base: string
   tags: string[]
   raw: string
+  online: boolean
+  last_available_at: string // RFC3339
 }
 
 async function request<T>(path: string, token: string, options?: RequestInit): Promise<T> {

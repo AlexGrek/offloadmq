@@ -42,6 +42,7 @@ import {
   IMGGEN_NEW_PANEL,
 } from '../components/imggen/ImageJobHistorySidebar'
 import { PipelineJobParamsPanel } from '../components/imggen/PipelineJobParamsPanel'
+import { ImgGenModelPicker } from '../components/imggen/ImgGenModelPicker'
 import {
   ToolDebugHeaderButton,
   ToolDebugModal,
@@ -50,7 +51,6 @@ import {
 import {
   MODE_DEFAULTS,
   applyPipelineParamsToNewForm,
-  capabilityLabel,
   filterCapabilitiesByWorkflow,
   jobPromptTitle,
   jobTechMeta,
@@ -122,10 +122,10 @@ export default function ImageGenerationPage() {
 
   const canSubmit = useMemo(() => {
     if (!prompt.trim()) return false
-    if (!capabilities.some(c => c.base === capability)) return false
+    if (!capability) return false
     if (mode === 'img2img' && !uploadedInput) return false
     return true
-  }, [prompt, capability, mode, uploadedInput, capabilities])
+  }, [prompt, capability, mode, uploadedInput])
 
   const patchRescale = useCallback((patch: Partial<RescaleState>) => {
     setRescale(prev => ({ ...prev, ...patch }))
@@ -168,12 +168,39 @@ export default function ImageGenerationPage() {
     })()
   }, [token])
 
+  const refreshCapabilities = useCallback(async () => {
+    if (!token) return
+    try {
+      const caps = await listImgGenCapabilities(token)
+      setAllCapabilities(caps)
+    } catch {
+      // non-fatal
+    }
+  }, [token])
+
+  const capabilityInitialized = useRef(false)
+
   useEffect(() => {
     if (capabilities.length === 0) return
-    if (!capabilities.some(c => c.base === capability)) {
-      setCapability(capabilities[0].base)
+
+    if (!capabilityInitialized.current) {
+      capabilityInitialized.current = true
+      const lastJobCap = jobs[0]?.capability
+      if (lastJobCap && capabilities.some(c => c.base === lastJobCap)) {
+        setCapability(lastJobCap)
+        return
+      }
+      const firstOnline = capabilities.find(c => c.online)
+      setCapability(firstOnline?.base ?? capabilities[0].base)
+      return
     }
-  }, [capabilities, capability])
+
+    // Mode switch: re-select if current cap is no longer in the filtered list
+    if (!capabilities.some(c => c.base === capability)) {
+      const firstOnline = capabilities.find(c => c.online)
+      setCapability(firstOnline?.base ?? capabilities[0].base)
+    }
+  }, [capabilities, capability, jobs])
 
   function switchMode(next: ImgGenMode) {
     if (next === mode) return
@@ -558,29 +585,17 @@ export default function ImageGenerationPage() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="capability">Model</Label>
-                <select
-                  id="capability"
-                  value={capabilities.length > 0 ? capability : ''}
-                  onChange={e => setCapability(e.target.value)}
-                  disabled={capabilities.length === 0}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                  data-testid="imggen-capability-select"
-                >
-                  {capabilities.length === 0 ? (
-                    <option value="">No models available</option>
-                  ) : (
-                    capabilities.map(cap => (
-                      <option key={cap.raw} value={cap.base}>
-                        {capabilityLabel(cap)}
-                      </option>
-                    ))
-                  )}
-                </select>
-                {capabilities.length === 0 && (
+              <div className="space-y-1.5 sm:col-span-2" data-testid="imggen-capability-select">
+                <Label>Model</Label>
+                <ImgGenModelPicker
+                  capabilities={capabilities}
+                  selected={capability}
+                  onSelect={setCapability}
+                  onRefresh={refreshCapabilities}
+                />
+                {allCapabilities.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    No image models online. Start an imggen agent or check OffloadMQ connection in Settings.
+                    No image models found. Start an imggen agent or check OffloadMQ connection in Settings.
                   </p>
                 )}
               </div>

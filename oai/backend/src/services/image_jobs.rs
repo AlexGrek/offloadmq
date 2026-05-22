@@ -10,11 +10,11 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    db::{app_settings, image_generation, users},
+    db::{app_settings, image_generation, imggen_capabilities, users},
     error::AppError,
     offload::{
         image_tasks::{OffloadImageClient, OffloadPollResponse, OffloadTaskId},
-        CapabilityInfo, OffloadClient,
+        LlmCapabilityInfo, OffloadClient,
     },
     services::{
         image_job_names,
@@ -429,14 +429,33 @@ pub async fn list_user_files(
     Ok(UserFileListing { files, used_bytes: user.used_storage_bytes })
 }
 
-pub async fn list_imggen_capabilities(state: &AppState) -> Result<Vec<CapabilityInfo>, AppError> {
+pub async fn list_imggen_capabilities(
+    state: &AppState,
+) -> Result<Vec<LlmCapabilityInfo>, AppError> {
+    use std::collections::HashSet;
+
     let settings = app_settings::get(&state.db).await?;
     let api_key = settings.client_api_token.clone().unwrap_or_default();
+
     if api_key.is_empty() {
-        return Ok(vec![]);
+        // No client token — return known caps from DB, all marked offline.
+        let online_bases = HashSet::new();
+        return imggen_capabilities::list_for_display(&state.db, &online_bases).await;
     }
+
     let client = OffloadClient::new(state.http.clone(), settings.offloadmq_url, api_key);
-    client.list_capabilities_with_prefix("imggen.").await
+    let now = chrono::Utc::now().to_rfc3339();
+    let online_caps: Vec<LlmCapabilityInfo> = client
+        .list_capabilities_with_prefix("imggen.")
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| LlmCapabilityInfo { base: c.base, tags: c.tags, raw: c.raw, online: true, last_available_at: now.clone() })
+        .collect();
+
+    imggen_capabilities::sync_online(&state.db, &online_caps).await?;
+    let online_bases: HashSet<String> = online_caps.iter().map(|c| c.base.clone()).collect();
+    imggen_capabilities::list_for_display(&state.db, &online_bases).await
 }
 
 pub async fn user_job_detail(

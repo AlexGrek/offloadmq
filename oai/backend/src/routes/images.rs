@@ -82,6 +82,8 @@ pub struct ImgGenCapability {
     pub base: String,
     pub tags: Vec<String>,
     pub raw: String,
+    pub online: bool,
+    pub last_available_at: String,
 }
 
 #[derive(Serialize)]
@@ -206,7 +208,13 @@ pub async fn list_imggen_capabilities(
     let caps = image_jobs::list_imggen_capabilities(&state).await?;
     Ok(Json(
         caps.into_iter()
-            .map(|c| ImgGenCapability { base: c.base, tags: c.tags, raw: c.raw })
+            .map(|c| ImgGenCapability {
+                base: c.base,
+                tags: c.tags,
+                raw: c.raw,
+                online: c.online,
+                last_available_at: c.last_available_at,
+            })
             .collect(),
     ))
 }
