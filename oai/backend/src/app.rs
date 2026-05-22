@@ -79,7 +79,18 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/images/jobs/{id}", get(routes::images::get_job))
         .route("/api/images/jobs/{id}/poll", post(routes::images::poll_job))
         .route("/api/images/jobs/{id}/cancel", post(routes::images::cancel_job))
-        .route("/api/images/files/{id}", get(routes::images::get_image))
+        .route(
+            "/api/images/files/{id}",
+            get(routes::images::get_image).delete(routes::images::delete_image),
+        )
+        .route(
+            "/api/images/files/{id}/thumbnail",
+            get(routes::images::get_image_thumbnail),
+        )
+        .route(
+            "/api/images/files/{id}/starred",
+            get(routes::images::get_image_starred).patch(routes::images::set_image_starred),
+        )
         .route("/api/progress/running", get(routes::progress::running_jobs))
         .route(
             "/api/tasks/cancel/{cap}/{id}",

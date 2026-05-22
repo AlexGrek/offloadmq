@@ -3,6 +3,7 @@ import { FileText, HardDrive, ImageIcon, Lock, RefreshCw } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { listFiles } from '../api/files'
 import type { FileBrowserResponse, UserFile } from '../api/files'
+import { imageFileUrl, imageThumbnailUrl } from '../api/images'
 import { ImageLightbox } from '@/components/ImageLightbox'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,7 @@ export default function FilesPage() {
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<DirectionFilter>('all')
   const [query, setQuery] = useState('')
+  const [mediaRevision, setMediaRevision] = useState(0)
 
   const load = useCallback(() => {
     if (!token) return
@@ -51,10 +53,6 @@ export default function FilesPage() {
   }, [data, filter, query])
 
   const summary = data?.summary
-
-  // The file-bytes endpoint authenticates via Authorization header, cookie, or
-  // ?token= query. <img>/<a> can only use the query form.
-  const withToken = (url: string) => `${url}?token=${encodeURIComponent(token ?? '')}`
 
   return (
     <main
@@ -130,7 +128,20 @@ export default function FilesPage() {
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
         {files.map(file => (
-          <FileTile key={file.id} file={file} href={withToken(file.url)} />
+          <FileTile
+            key={file.id}
+            file={file}
+            token={token}
+            mediaRevision={mediaRevision}
+            thumbSrc={
+              file.is_image ? imageThumbnailUrl(file.id, token, mediaRevision) : undefined
+            }
+            fullSrc={file.is_image ? imageFileUrl(file.id, token, mediaRevision) : undefined}
+            onImageMutated={() => {
+              setMediaRevision(v => v + 1)
+              load()
+            }}
+          />
         ))}
       </div>
     </main>
@@ -161,7 +172,23 @@ function SummaryStat({
   )
 }
 
-function FileTile({ file, href }: { file: UserFile; href: string }) {
+function FileTile({
+  file,
+  token,
+  mediaRevision,
+  thumbSrc,
+  fullSrc,
+  onImageMutated,
+}: {
+  file: UserFile
+  token: string | null
+  mediaRevision: number
+  /** Grid preview — stored thumbnail JPEG. */
+  thumbSrc?: string
+  /** Lightbox / open full size. */
+  fullSrc?: string
+  onImageMutated: () => void
+}) {
   const meta = (
     <div className="border-t border-border px-3 py-2">
       <p className="truncate text-xs font-medium" title={file.filename}>
@@ -179,9 +206,9 @@ function FileTile({ file, href }: { file: UserFile; href: string }) {
 
   const thumb = (
     <div className="relative flex aspect-square items-center justify-center bg-muted/40">
-      {file.is_image ? (
+      {file.is_image && thumbSrc ? (
         <img
-          src={href}
+          src={thumbSrc}
           alt=""
           aria-hidden
           loading="lazy"
@@ -199,7 +226,7 @@ function FileTile({ file, href }: { file: UserFile; href: string }) {
   const tileClass =
     'group flex flex-col overflow-hidden rounded-xl border border-border transition-all hover:shadow-md hover:border-border/60'
 
-  if (file.is_image) {
+  if (file.is_image && fullSrc && token) {
     const caption =
       file.width > 0 && file.height > 0
         ? `${file.filename} — ${file.width}×${file.height}`
@@ -207,13 +234,32 @@ function FileTile({ file, href }: { file: UserFile; href: string }) {
     return (
       <div className={tileClass} data-testid={`file-tile-${file.id}`}>
         <ImageLightbox
-          src={href}
+          src={fullSrc}
           alt={file.filename}
           caption={caption}
           triggerClassName="w-full"
           testId={`file-tile-${file.id}`}
+          actions={{
+            imageId: file.id,
+            filename: file.filename,
+            direction: file.direction,
+            token,
+            onDeleted: onImageMutated,
+          }}
         >
-          {thumb}
+          <div className="relative flex aspect-square items-center justify-center bg-muted/40">
+            <img
+              key={`${file.id}-${mediaRevision}`}
+              src={thumbSrc}
+              alt=""
+              aria-hidden
+              loading="lazy"
+              className="h-full w-full object-cover transition-transform group-hover:scale-[1.03]"
+            />
+            <span className="absolute left-2 top-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] font-medium capitalize backdrop-blur">
+              {file.direction === 'output' ? 'Generated' : 'Upload'}
+            </span>
+          </div>
         </ImageLightbox>
         {meta}
       </div>
@@ -221,15 +267,9 @@ function FileTile({ file, href }: { file: UserFile; href: string }) {
   }
 
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className={tileClass}
-      data-testid={`file-tile-${file.id}`}
-    >
+    <div className={tileClass} data-testid={`file-tile-${file.id}`}>
       {thumb}
       {meta}
-    </a>
+    </div>
   )
 }

@@ -11,6 +11,8 @@ pub struct Model {
     pub direction: String,
     pub source: String,
     pub storage_path: String,
+    pub thumbnail_storage_path: Option<String>,
+    pub thumbnail_stored_bytes: i64,
     pub filename: String,
     pub content_type: String,
     pub original_bytes: Option<i64>,

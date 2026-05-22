@@ -31,3 +31,19 @@ pub async fn write(op: &Operator, path: &str, bytes: Vec<u8>) -> Result<(), AppE
         .map(|_| ())
         .map_err(|e| AppError::Internal(format!("storage write failed: {e}")))
 }
+
+/// Returns whether a blob exists at `path`.
+pub async fn exists(op: &Operator, path: &str) -> Result<bool, AppError> {
+    op.exists(path)
+        .await
+        .map_err(|e| AppError::Internal(format!("storage exists check failed: {e}")))
+}
+
+/// Deletes a blob if present; missing paths are ignored.
+pub async fn delete(op: &Operator, path: &str) -> Result<(), AppError> {
+    match op.delete(path).await {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == opendal::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(AppError::Internal(format!("storage delete failed: {e}"))),
+    }
+}

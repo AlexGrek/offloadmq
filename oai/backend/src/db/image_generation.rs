@@ -40,6 +40,8 @@ pub struct NewImageFileInput<'a> {
     pub direction: &'a str,
     pub source: &'a str,
     pub storage_path: &'a str,
+    pub thumbnail_storage_path: &'a str,
+    pub thumbnail_stored_bytes: i64,
     pub filename: &'a str,
     pub content_type: &'a str,
     pub original_bytes: Option<i64>,
@@ -246,6 +248,8 @@ pub async fn create_image_file(
         direction: ActiveValue::Set(input.direction.to_string()),
         source: ActiveValue::Set(input.source.to_string()),
         storage_path: ActiveValue::Set(input.storage_path.to_string()),
+        thumbnail_storage_path: ActiveValue::Set(Some(input.thumbnail_storage_path.to_string())),
+        thumbnail_stored_bytes: ActiveValue::Set(input.thumbnail_stored_bytes),
         filename: ActiveValue::Set(input.filename.to_string()),
         content_type: ActiveValue::Set(input.content_type.to_string()),
         original_bytes: ActiveValue::Set(input.original_bytes),
@@ -284,6 +288,40 @@ pub async fn get_image_file(
         .one(db)
         .await
         .map_err(AppError::Database)
+}
+
+pub async fn set_image_thumbnail_meta(
+    db: &DatabaseConnection,
+    id: i64,
+    user_id: i64,
+    thumbnail_storage_path: &str,
+    thumbnail_stored_bytes: i64,
+) -> Result<(), AppError> {
+    let file = get_image_file(db, id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let mut active: image_files::ActiveModel = file.into();
+    active.thumbnail_storage_path = ActiveValue::Set(Some(thumbnail_storage_path.to_string()));
+    active.thumbnail_stored_bytes = ActiveValue::Set(thumbnail_stored_bytes);
+    active.update(db).await.map_err(AppError::Database)?;
+    Ok(())
+}
+
+pub async fn delete_image_file(
+    db: &DatabaseConnection,
+    id: i64,
+    user_id: i64,
+) -> Result<(), AppError> {
+    let result = ImageFileEntity::delete_many()
+        .filter(image_files::Column::Id.eq(id))
+        .filter(image_files::Column::UserId.eq(user_id))
+        .exec(db)
+        .await
+        .map_err(AppError::Database)?;
+    if result.rows_affected == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
 }
 
 pub async fn set_image_file_job(
@@ -364,15 +402,16 @@ pub async fn sum_user_stored_bytes(
     db: &DatabaseConnection,
     user_id: i64,
 ) -> Result<i64, AppError> {
-    let sizes: Vec<i64> = ImageFileEntity::find()
+    let rows: Vec<(i64, i64)> = ImageFileEntity::find()
         .select_only()
         .column(image_files::Column::StoredBytes)
+        .column(image_files::Column::ThumbnailStoredBytes)
         .filter(image_files::Column::UserId.eq(user_id))
         .into_tuple()
         .all(db)
         .await
         .map_err(AppError::Database)?;
-    Ok(sizes.iter().sum())
+    Ok(rows.iter().map(|(main, thumb)| main + thumb).sum())
 }
 
 pub async fn list_image_files_global(

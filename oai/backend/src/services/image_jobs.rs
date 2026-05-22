@@ -18,6 +18,7 @@ use crate::{
     },
     services::{
         image_job_names,
+        image_paths,
         image_pipeline_params::{self, ImagePipelineParams, RescaleParams},
         image_processing, image_processing::ProcessedImage, offload_factory, storage,
     },
@@ -87,7 +88,7 @@ pub async fn upload_input_image(
     let processed = image_processing::process_image(bytes, Some(content_type))?;
 
     let image_id = state.next_id();
-    let storage_path = format!("users/{user_id}/images/input/{image_id}.jpg");
+    let storage_path = image_paths::main_image_path(user_id, "input", None, image_id);
     store_image(
         state,
         StoredImageSpec {
@@ -301,7 +302,112 @@ pub async fn image_bytes(
         .await?
         .ok_or(AppError::NotFound)?;
     let bytes = storage::read(op, &file.storage_path).await?;
-    Ok((bytes, file.content_type))
+    let bytes = image_processing::ensure_jpeg_response(bytes, &file.content_type)?;
+    Ok((bytes, "image/jpeg".to_string()))
+}
+
+pub async fn image_thumbnail_bytes(
+    state: &AppState,
+    user_id: i64,
+    image_id: i64,
+) -> Result<Vec<u8>, AppError> {
+    let op = storage::operator(state)?;
+    let file = image_generation::get_image_file(&state.db, image_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let thumb_path = file
+        .thumbnail_storage_path
+        .clone()
+        .unwrap_or_else(|| image_paths::thumbnail_path(user_id, image_id));
+
+    if let Ok(bytes) = storage::read(op, &thumb_path).await {
+        return Ok(bytes);
+    }
+
+    let main = storage::read(op, &file.storage_path).await?;
+    let main_jpeg = image_processing::ensure_jpeg_response(main, &file.content_type)?;
+    let (thumb_bytes, _tw, _th) = image_processing::thumbnail_from_main_jpeg(&main_jpeg)?;
+    storage::write(op, &thumb_path, thumb_bytes.clone()).await?;
+    image_generation::set_image_thumbnail_meta(
+        &state.db,
+        file.id,
+        user_id,
+        &thumb_path,
+        thumb_bytes.len() as i64,
+    )
+    .await?;
+    recalc_user_storage(state, user_id).await?;
+    Ok(thumb_bytes)
+}
+
+/// Whether the user's starred storage directory contains a copy of this image.
+pub async fn image_is_starred(
+    state: &AppState,
+    user_id: i64,
+    image_id: i64,
+) -> Result<bool, AppError> {
+    image_generation::get_image_file(&state.db, image_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let op = storage::operator(state)?;
+    let path = image_paths::starred_image_path(user_id, image_id);
+    storage::exists(op, &path).await
+}
+
+/// Copies the main JPEG into the starred directory, or removes that copy.
+pub async fn set_image_starred(
+    state: &AppState,
+    user_id: i64,
+    image_id: i64,
+    starred: bool,
+) -> Result<bool, AppError> {
+    let file = image_generation::get_image_file(&state.db, image_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let op = storage::operator(state)?;
+    let starred_path = image_paths::starred_image_path(user_id, image_id);
+    if starred {
+        let bytes = storage::read(op, &file.storage_path).await?;
+        storage::write(op, &starred_path, bytes).await?;
+        Ok(true)
+    } else {
+        storage::delete(op, &starred_path).await?;
+        Ok(false)
+    }
+}
+
+/// Deletes storage blobs and the DB row for a user-owned generated output image.
+pub async fn remove_user_image(
+    state: &AppState,
+    user_id: i64,
+    image_id: i64,
+) -> Result<(), AppError> {
+    let file = image_generation::get_image_file(&state.db, image_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if file.direction != "output" {
+        return Err(AppError::BadRequest(
+            "only generated output images can be deleted".into(),
+        ));
+    }
+    purge_stored_image(state, &file).await?;
+    let op = storage::operator(state)?;
+    storage::delete(op, &image_paths::starred_image_path(user_id, image_id)).await?;
+    image_generation::delete_image_file(&state.db, image_id, user_id).await?;
+    recalc_user_storage(state, user_id).await?;
+    Ok(())
+}
+
+/// Removes main image and thumbnail blobs from storage (call before deleting the DB row).
+pub async fn purge_stored_image(state: &AppState, file: &image_generation::ImageFile) -> Result<(), AppError> {
+    let op = storage::operator(state)?;
+    storage::delete(op, &file.storage_path).await?;
+    let thumb = file
+        .thumbnail_storage_path
+        .clone()
+        .unwrap_or_else(|| image_paths::thumbnail_path(file.user_id, file.id));
+    storage::delete(op, &thumb).await?;
+    Ok(())
 }
 
 /// A user's files plus the cached total used bytes from the users table —
@@ -715,7 +821,7 @@ async fn store_output_image(
     let processed = process_output_image(client, output_bucket, image, file_uid).await?;
 
     let image_id = state.next_id();
-    let storage_path = format!("users/{user_id}/images/output/{}/{}.jpg", job.id, image_id);
+    let storage_path = image_paths::main_image_path(user_id, "output", Some(job.id), image_id);
     store_image(
         state,
         StoredImageSpec {
@@ -768,7 +874,15 @@ async fn store_image(
     processed: &ProcessedImage,
 ) -> Result<image_generation::ImageFile, AppError> {
     let user_id = spec.user_id;
-    storage::write(storage::operator(state)?, spec.storage_path, processed.bytes.clone()).await?;
+    let op = storage::operator(state)?;
+    let thumbnail_storage_path = image_paths::thumbnail_path(user_id, spec.image_id);
+    storage::write(op, spec.storage_path, processed.bytes.clone()).await?;
+    storage::write(
+        op,
+        &thumbnail_storage_path,
+        processed.thumbnail_bytes.clone(),
+    )
+    .await?;
     let file = image_generation::create_image_file(
         &state.db,
         image_generation::NewImageFileInput {
@@ -778,6 +892,8 @@ async fn store_image(
             direction: spec.direction,
             source: spec.source,
             storage_path: spec.storage_path,
+            thumbnail_storage_path: &thumbnail_storage_path,
+            thumbnail_stored_bytes: processed.thumbnail_bytes.len() as i64,
             filename: spec.filename,
             content_type: &processed.content_type,
             original_bytes: processed.original_bytes,

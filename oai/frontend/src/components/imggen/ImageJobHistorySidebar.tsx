@@ -1,6 +1,6 @@
 import { Loader2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { imageFileUrl, type ImageJobDetails } from '../../api/images'
+import { imageThumbnailUrl, type ImageJobDetails } from '../../api/images'
 import { jobPromptTitle, jobTechMeta, lastOutputImageId } from '../../lib/imggen'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
@@ -11,6 +11,8 @@ type ImageJobHistorySidebarProps = {
   /** `'new'` or a job id */
   activePanel: string
   token: string | null
+  /** Bust thumbnail cache after image delete / storage changes. */
+  mediaRevision?: number
   loading?: boolean
   onSelectNew: () => void
   onSelectJob: (jobId: string) => void
@@ -25,6 +27,7 @@ export function ImageJobHistorySidebar({
   jobs,
   activePanel,
   token,
+  mediaRevision = 0,
   loading,
   onSelectNew,
   onSelectJob,
@@ -59,7 +62,9 @@ export function ImageJobHistorySidebar({
           <ul className="space-y-1">
             {jobs.map(job => {
               const outputId = lastOutputImageId(job)
-              const bgUrl = outputId ? imageFileUrl(outputId, token) : null
+              const bgUrl = outputId
+                ? imageThumbnailUrl(outputId, token, mediaRevision)
+                : null
               const active = activePanel === job.job_id
               const inProgress = statusLabel(job.status)
 
@@ -80,6 +85,7 @@ export function ImageJobHistorySidebar({
                     {bgUrl ? (
                       <>
                         <img
+                          key={`${job.job_id}-${outputId}-${mediaRevision}`}
                           src={bgUrl}
                           alt=""
                           aria-hidden

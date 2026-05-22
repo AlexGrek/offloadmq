@@ -32,8 +32,10 @@ pub struct UserFile {
     pub sha256: String,
     pub job_id: Option<String>,
     pub created_at: String,
-    /// URL that serves the file bytes (same ownership check applies).
+    /// URL that serves the full image bytes (same ownership check applies).
     pub url: String,
+    /// URL for the stored thumbnail JPEG (grid previews).
+    pub thumbnail_url: String,
     /// True when the content type is an image and can be previewed inline.
     pub is_image: bool,
 }
@@ -66,10 +68,11 @@ pub async fn list_files(
         .files
         .into_iter()
         .map(|f| {
+            let file_bytes = f.stored_bytes + f.thumbnail_stored_bytes;
             if f.direction == "output" {
-                output_bytes += f.stored_bytes;
+                output_bytes += file_bytes;
             } else {
-                input_bytes += f.stored_bytes;
+                input_bytes += file_bytes;
             }
             map_user_file(f)
         })
@@ -90,6 +93,7 @@ fn map_user_file(f: image_generation::ImageFile) -> UserFile {
     let is_image = f.content_type.starts_with("image/");
     UserFile {
         url: format!("/api/images/files/{}", f.id),
+        thumbnail_url: format!("/api/images/files/{}/thumbnail", f.id),
         id: f.id.to_string(),
         direction: f.direction,
         source: f.source,

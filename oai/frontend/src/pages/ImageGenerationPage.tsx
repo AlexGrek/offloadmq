@@ -106,6 +106,7 @@ export default function ImageGenerationPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [debugOpen, setDebugOpen] = useState(false)
   const [jobsLoading, setJobsLoading] = useState(true)
+  const [mediaRevision, setMediaRevision] = useState(0)
 
   const viewingJob = activePanel !== IMGGEN_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
@@ -248,6 +249,25 @@ export default function ImageGenerationPage() {
       return details
     },
     [token],
+  )
+
+  const onImageMutated = useCallback(async () => {
+    setMediaRevision(v => v + 1)
+    if (viewedJobId) await refreshJob(viewedJobId)
+  }, [viewedJobId, refreshJob])
+
+  const lightboxActions = useCallback(
+    (imageId: string, filename: string, direction: string) =>
+      token
+        ? {
+            imageId,
+            filename,
+            direction,
+            token,
+            onDeleted: onImageMutated,
+          }
+        : undefined,
+    [token, onImageMutated],
   )
 
   const runPoll = useCallback(
@@ -458,6 +478,7 @@ export default function ImageGenerationPage() {
           jobs={jobs}
           activePanel={activePanel}
           token={token}
+          mediaRevision={mediaRevision}
           loading={jobsLoading}
           onSelectNew={selectNew}
           onSelectJob={jobId => void selectJob(jobId)}
@@ -599,17 +620,26 @@ export default function ImageGenerationPage() {
                     <ImageLightbox
                       src={
                         uploadedInput
-                          ? imageFileUrl(uploadedInput.image_id, token)
+                          ? imageFileUrl(uploadedInput.image_id, token, mediaRevision)
                           : inputPreviewUrl!
                       }
                       alt="Input preview"
                       triggerClassName="relative block w-full max-w-xs overflow-hidden rounded-lg bg-muted/30"
                       testId="imggen-input-preview"
+                      actions={
+                        uploadedInput
+                          ? lightboxActions(
+                              uploadedInput.image_id,
+                              uploadedInput.filename,
+                              'input',
+                            )
+                          : undefined
+                      }
                     >
                       <img
                         src={
                           uploadedInput
-                            ? imageFileUrl(uploadedInput.image_id, token)
+                            ? imageFileUrl(uploadedInput.image_id, token, mediaRevision)
                             : inputPreviewUrl!
                         }
                         alt=""
@@ -799,13 +829,18 @@ export default function ImageGenerationPage() {
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">Input</p>
                   <ImageLightbox
-                    src={imageFileUrl(selectedJob.input_image_id, token)}
+                    src={imageFileUrl(selectedJob.input_image_id, token, mediaRevision)}
                     alt="Job input"
                     triggerClassName="block max-w-full"
                     testId="imggen-job-input"
+                    actions={lightboxActions(
+                      selectedJob.input_image_id,
+                      'Job input',
+                      'input',
+                    )}
                   >
                     <img
-                      src={imageFileUrl(selectedJob.input_image_id, token)}
+                      src={imageFileUrl(selectedJob.input_image_id, token, mediaRevision)}
                       alt=""
                       aria-hidden
                       className="max-h-40 rounded-lg border border-border object-contain"
@@ -878,14 +913,15 @@ export default function ImageGenerationPage() {
                   .map(file => (
                     <ImageLightbox
                       key={file.image_id}
-                      src={imageFileUrl(file.image_id, token)}
+                      src={imageFileUrl(file.image_id, token, mediaRevision)}
                       alt={file.filename}
                       caption={`${file.filename} — ${file.width}×${file.height}`}
                       triggerClassName="group w-full overflow-hidden rounded-lg border border-border"
                       testId={`imggen-output-${file.image_id}`}
+                      actions={lightboxActions(file.image_id, file.filename, file.direction)}
                     >
                       <img
-                        src={imageFileUrl(file.image_id, token)}
+                        src={imageFileUrl(file.image_id, token, mediaRevision)}
                         alt=""
                         aria-hidden
                         className="h-52 w-full object-cover transition-transform group-hover:scale-[1.02]"

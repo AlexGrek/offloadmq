@@ -171,11 +171,61 @@ export function getImageJob(token: string, jobId: string): Promise<ImageJobDetai
   return request(`/api/images/jobs/${jobId}`, token)
 }
 
-/** URL for `<img src>` / links — includes JWT query param (browsers omit Authorization). */
-export function imageFileUrl(imageId: string, token: string | null | undefined): string {
+/** Bust browser cache for thumbnails after delete or storage changes. */
+export function withImageCacheRevision(url: string, revision?: number): string {
+  if (!revision) return url
+  return `${url}${url.includes('?') ? '&' : '?'}v=${revision}`
+}
+
+/** URL for full-size JPEG — includes JWT query param (browsers omit Authorization). */
+export function imageFileUrl(
+  imageId: string,
+  token: string | null | undefined,
+  revision?: number,
+): string {
   const base = `/api/images/files/${encodeURIComponent(imageId)}`
-  if (!token) return base
-  return `${base}?token=${encodeURIComponent(token)}`
+  const withAuth = token ? `${base}?token=${encodeURIComponent(token)}` : base
+  return withImageCacheRevision(withAuth, revision)
+}
+
+/** URL for stored thumbnail JPEG (sidebar / list previews). */
+export function imageThumbnailUrl(
+  imageId: string,
+  token: string | null | undefined,
+  revision?: number,
+): string {
+  const base = `/api/images/files/${encodeURIComponent(imageId)}/thumbnail`
+  const withAuth = token ? `${base}?token=${encodeURIComponent(token)}` : base
+  return withImageCacheRevision(withAuth, revision)
+}
+
+export function getImageStarred(
+  token: string,
+  imageId: string,
+): Promise<{ starred: boolean }> {
+  return request(`/api/images/files/${encodeURIComponent(imageId)}/starred`, token)
+}
+
+export function setImageStarred(
+  token: string,
+  imageId: string,
+  starred: boolean,
+): Promise<{ starred: boolean }> {
+  return request(`/api/images/files/${encodeURIComponent(imageId)}/starred`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ starred }),
+  })
+}
+
+export async function deleteImage(token: string, imageId: string): Promise<void> {
+  const res = await fetch(`/api/images/files/${encodeURIComponent(imageId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
+  }
 }
 
 export function listImgGenCapabilities(token: string): Promise<ImgGenCapability[]> {

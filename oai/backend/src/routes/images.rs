@@ -6,7 +6,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     db::image_generation,
@@ -218,12 +218,67 @@ pub async fn get_image(
 ) -> Result<impl IntoResponse, AppError> {
     let image_id = parse_id(&image_id_str, "image_id")?;
     let (bytes, content_type) = image_jobs::image_bytes(&state, user_id, image_id).await?;
+    Ok(image_jpeg_response(bytes, &content_type))
+}
+
+pub async fn get_image_thumbnail(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(image_id_str): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let image_id = parse_id(&image_id_str, "image_id")?;
+    let bytes = image_jobs::image_thumbnail_bytes(&state, user_id, image_id).await?;
+    Ok(image_jpeg_response(bytes, "image/jpeg"))
+}
+
+#[derive(Serialize)]
+pub struct ImageStarredResponse {
+    pub starred: bool,
+}
+
+pub async fn get_image_starred(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(image_id_str): Path<String>,
+) -> Result<Json<ImageStarredResponse>, AppError> {
+    let image_id = parse_id(&image_id_str, "image_id")?;
+    let starred = image_jobs::image_is_starred(&state, user_id, image_id).await?;
+    Ok(Json(ImageStarredResponse { starred }))
+}
+
+#[derive(Deserialize)]
+pub struct SetImageStarredRequest {
+    pub starred: bool,
+}
+
+pub async fn set_image_starred(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(image_id_str): Path<String>,
+    Json(req): Json<SetImageStarredRequest>,
+) -> Result<Json<ImageStarredResponse>, AppError> {
+    let image_id = parse_id(&image_id_str, "image_id")?;
+    let starred = image_jobs::set_image_starred(&state, user_id, image_id, req.starred).await?;
+    Ok(Json(ImageStarredResponse { starred }))
+}
+
+pub async fn delete_image(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(image_id_str): Path<String>,
+) -> Result<StatusCode, AppError> {
+    let image_id = parse_id(&image_id_str, "image_id")?;
+    image_jobs::remove_user_image(&state, user_id, image_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn image_jpeg_response(bytes: Vec<u8>, content_type: &str) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(
         axum::http::header::CONTENT_TYPE,
-        HeaderValue::from_str(&content_type).unwrap_or(HeaderValue::from_static("image/jpeg")),
+        HeaderValue::from_str(content_type).unwrap_or(HeaderValue::from_static("image/jpeg")),
     );
-    Ok((StatusCode::OK, headers, bytes))
+    (StatusCode::OK, headers, bytes)
 }
 
 // ── Shared DTO mapping (also used by the admin routes) ──────────────────────

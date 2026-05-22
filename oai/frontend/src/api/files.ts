@@ -11,6 +11,7 @@ export interface UserFile {
   job_id: string | null
   created_at: string
   url: string
+  thumbnail_url: string
   is_image: boolean
 }
 
