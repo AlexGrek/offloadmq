@@ -29,7 +29,6 @@ struct PollContext {
     id: String,
     chat_id: i64,
     assistant_msg_id: i64,
-    capability: String,
 }
 
 pub async fn list_capabilities(
@@ -123,7 +122,22 @@ async fn run_chat(
     let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
     let task_id = client.submit_chat(&capability, messages).await.map_err(|e| e.to_string())?;
 
+    // Persist the assistant reply as `pending` up front, carrying the offload
+    // task id. This is the authoritative record: the live poll loop below
+    // finalizes it for connected clients, and the background chat worker
+    // reconciles it if the WS drops or the pod restarts.
     let assistant_msg_id = state.next_id();
+    db_chats::add_pending_assistant_message(
+        &state.db,
+        assistant_msg_id,
+        chat_id,
+        &capability,
+        &task_id.cap,
+        &task_id.id,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
     let _ = tx.send(ServerEvent::TaskQueued {
         req_id: req_id.to_string(),
         cap: task_id.cap.clone(),
@@ -135,7 +149,6 @@ async fn run_chat(
         id: task_id.id.clone(),
         chat_id,
         assistant_msg_id,
-        capability,
     };
     tokio::spawn(poll_loop(ctx, task_id, client, tx.clone(), state.clone()));
     Ok(())
@@ -179,7 +192,10 @@ async fn poll_loop(
             }
             "cancelRequested" => {
                 let stream_log = progress_stream_text(&resp);
-                let sent = tx.send(ServerEvent::TaskProgress {
+                // Ignore send errors: if the WS is gone we keep polling so the
+                // reply is still persisted (the background worker is the backstop
+                // only for a pod restart, not a mere disconnect).
+                let _ = tx.send(ServerEvent::TaskProgress {
                     req_id: ctx.req_id.clone(),
                     cap: ctx.cap.clone(),
                     id: ctx.id.clone(),
@@ -187,13 +203,10 @@ async fn poll_loop(
                     stage: resp.stage.clone(),
                     log: stream_log,
                 });
-                if sent.is_err() {
-                    return;
-                }
             }
             status => {
                 let stream_log = progress_stream_text(&resp);
-                let sent = tx.send(ServerEvent::TaskProgress {
+                let _ = tx.send(ServerEvent::TaskProgress {
                     req_id: ctx.req_id.clone(),
                     cap: ctx.cap.clone(),
                     id: ctx.id.clone(),
@@ -201,9 +214,6 @@ async fn poll_loop(
                     stage: resp.stage,
                     log: stream_log,
                 });
-                if sent.is_err() {
-                    return; // receiver dropped — WS is gone
-                }
             }
         }
     }
@@ -211,7 +221,7 @@ async fn poll_loop(
     finish_failure(&state, &tx, &ctx, "Task timed out waiting for result".to_string(), None).await;
 }
 
-/// Persists a successful assistant reply and notifies the client.
+/// Finalizes the pending assistant reply (idempotent) and notifies the client.
 async fn finish_success(
     state: &AppState,
     tx: &UnboundedSender<ServerEvent>,
@@ -219,16 +229,7 @@ async fn finish_success(
     text: String,
     log: Option<String>,
 ) {
-    let _ = db_chats::add_message(
-        &state.db,
-        ctx.assistant_msg_id,
-        ctx.chat_id,
-        "assistant",
-        &text,
-        "complete",
-        Some(&ctx.capability),
-    )
-    .await;
+    let _ = db_chats::finalize_message(&state.db, ctx.assistant_msg_id, &text, "complete").await;
     let _ = db_chats::touch_chat(&state.db, ctx.chat_id).await;
     let _ = tx.send(ServerEvent::TaskResult {
         req_id: ctx.req_id.clone(),
@@ -239,7 +240,8 @@ async fn finish_success(
     });
 }
 
-/// Persists a failed/canceled/timed-out assistant turn and notifies the client.
+/// Finalizes a failed/canceled/timed-out assistant turn (idempotent) and notifies
+/// the client.
 async fn finish_failure(
     state: &AppState,
     tx: &UnboundedSender<ServerEvent>,
@@ -247,16 +249,7 @@ async fn finish_failure(
     error: String,
     log: Option<String>,
 ) {
-    let _ = db_chats::add_message(
-        &state.db,
-        ctx.assistant_msg_id,
-        ctx.chat_id,
-        "assistant",
-        &error,
-        "failed",
-        Some(&ctx.capability),
-    )
-    .await;
+    let _ = db_chats::finalize_message(&state.db, ctx.assistant_msg_id, &error, "failed").await;
     let _ = tx.send(ServerEvent::TaskFailed {
         req_id: ctx.req_id.clone(),
         cap: ctx.cap.clone(),
@@ -264,6 +257,89 @@ async fn finish_failure(
         error,
         log,
     });
+}
+
+// ── Background reconciliation (stateless / restart-safe) ─────────────────────
+
+/// Pending assistant replies older than this with no terminal offload result are
+/// failed as timed out. Generous vs. the live loop so a slow task still lands.
+const RECONCILE_DEADLINE_SECS: i64 = 900; // 15 min
+
+/// Worker pass: reconcile every in-flight (`status="pending"`) assistant reply by
+/// polling its offload task and persisting the result. Runs regardless of any WS,
+/// so chats finish when the user leaves or the pod restarts.
+pub async fn run_background_reconcile_pass(
+    state: &AppState,
+    batch_size: u64,
+) -> Result<(), AppError> {
+    let pending = db_chats::list_pending_assistant_messages(&state.db, batch_size).await?;
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let client = offload_factory::chat_client(state).await?;
+    for msg in pending {
+        if let Err(e) = reconcile_pending_message(state, &client, &msg).await {
+            tracing::warn!(message_id = msg.id, "chat reconcile pass: {e}");
+        }
+    }
+    Ok(())
+}
+
+async fn reconcile_pending_message(
+    state: &AppState,
+    client: &OffloadClient,
+    msg: &db_chats::ChatMessage,
+) -> Result<(), AppError> {
+    let (cap, id) = match (msg.offload_cap.clone(), msg.offload_task_id.clone()) {
+        (Some(cap), Some(id)) => (cap, id),
+        _ => return Ok(()),
+    };
+    let task_id = TaskId { cap, id };
+    let aged_out =
+        chrono::Utc::now().fixed_offset() - msg.created_at > chrono::Duration::seconds(RECONCILE_DEADLINE_SECS);
+
+    let resp = match client.poll_task(&task_id).await {
+        Ok(r) => r,
+        Err(e) => {
+            // Task likely gone (e.g. urgent TTL expired) — fail it once it's old.
+            if aged_out {
+                let _ = db_chats::finalize_message(
+                    &state.db,
+                    msg.id,
+                    "Task timed out waiting for result",
+                    "failed",
+                )
+                .await;
+            }
+            return Err(e);
+        }
+    };
+
+    match resp.status.as_str() {
+        "completed" => {
+            db_chats::finalize_message(&state.db, msg.id, &extract_llm_text(&resp.output), "complete")
+                .await?;
+            let _ = db_chats::touch_chat(&state.db, msg.chat_id).await;
+        }
+        "failed" => {
+            db_chats::finalize_message(&state.db, msg.id, &extract_error_text(&resp.output), "failed")
+                .await?;
+        }
+        "canceled" => {
+            db_chats::finalize_message(&state.db, msg.id, "Task was canceled", "failed").await?;
+        }
+        _ if aged_out => {
+            db_chats::finalize_message(
+                &state.db,
+                msg.id,
+                "Task timed out waiting for result",
+                "failed",
+            )
+            .await?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn send_error(tx: &UnboundedSender<ServerEvent>, req_id: &str, message: &str) {
@@ -390,6 +466,8 @@ mod tests {
                 content: "hi".to_string(),
                 status: "complete".to_string(),
                 model: None,
+                offload_cap: None,
+                offload_task_id: None,
                 created_at: chrono::Utc::now().fixed_offset(),
             },
             db_chats::ChatMessage {
@@ -399,6 +477,8 @@ mod tests {
                 content: "hello".to_string(),
                 status: "complete".to_string(),
                 model: Some("llm.qwen".to_string()),
+                offload_cap: None,
+                offload_task_id: None,
                 created_at: chrono::Utc::now().fixed_offset(),
             },
             db_chats::ChatMessage {
@@ -408,6 +488,8 @@ mod tests {
                 content: "again".to_string(),
                 status: "complete".to_string(),
                 model: None,
+                offload_cap: None,
+                offload_task_id: None,
                 created_at: chrono::Utc::now().fixed_offset(),
             },
         ];
@@ -429,6 +511,8 @@ mod tests {
                 content: "q".to_string(),
                 status: "complete".to_string(),
                 model: None,
+                offload_cap: None,
+                offload_task_id: None,
                 created_at: chrono::Utc::now().fixed_offset(),
             },
             db_chats::ChatMessage {
@@ -438,6 +522,8 @@ mod tests {
                 content: "⚠ timeout".to_string(),
                 status: "failed".to_string(),
                 model: Some("llm.qwen".to_string()),
+                offload_cap: None,
+                offload_task_id: None,
                 created_at: chrono::Utc::now().fixed_offset(),
             },
             db_chats::ChatMessage {
@@ -447,6 +533,8 @@ mod tests {
                 content: "retry".to_string(),
                 status: "complete".to_string(),
                 model: None,
+                offload_cap: None,
+                offload_task_id: None,
                 created_at: chrono::Utc::now().fixed_offset(),
             },
         ];
@@ -466,6 +554,8 @@ mod tests {
                 content: "you are helpful".to_string(),
                 status: "complete".to_string(),
                 model: None,
+                offload_cap: None,
+                offload_task_id: None,
                 created_at: chrono::Utc::now().fixed_offset(),
             },
             db_chats::ChatMessage {
@@ -475,6 +565,8 @@ mod tests {
                 content: "   ".to_string(),
                 status: "complete".to_string(),
                 model: None,
+                offload_cap: None,
+                offload_task_id: None,
                 created_at: chrono::Utc::now().fixed_offset(),
             },
             db_chats::ChatMessage {
@@ -484,6 +576,8 @@ mod tests {
                 content: "ok".to_string(),
                 status: "complete".to_string(),
                 model: None,
+                offload_cap: None,
+                offload_task_id: None,
                 created_at: chrono::Utc::now().fixed_offset(),
             },
         ];

@@ -147,9 +147,16 @@ function inFlightToMessage(task: ChatTaskRecord): Message {
 
 function mergeInFlightMessages(base: Message[], running: ChatTaskRecord[]): Message[] {
   const runningReqIds = new Set(running.map(t => t.reqId))
-  const next = base.filter(
-    m => m.status !== 'thinking' || (m.reqId != null && runningReqIds.has(m.reqId)),
-  )
+  const hasRunning = running.length > 0
+  const next = base.filter(m => {
+    if (m.status !== 'thinking') return true
+    // Optimistic bubbles carry a reqId: keep only while their task is running.
+    if (m.reqId != null) return runningReqIds.has(m.reqId)
+    // REST-backed pending replies (no reqId) are real DB rows the background
+    // worker will finalize — keep them on reload so the in-flight reply survives a
+    // disconnect/restart, but drop when a live optimistic bubble already covers it.
+    return !hasRunning
+  })
   for (const task of running) {
     const row = inFlightToMessage(task)
     const idx = next.findIndex(m => m.reqId === task.reqId)
@@ -416,6 +423,16 @@ export default function ChatPage() {
   }, [chatTasks, activeChatId, loadingMessages, chatTasksForChat])
 
   const activeChat = chats.find(c => c.id === activeChatId)
+
+  // A persisted (REST-backed) assistant reply still in flight: no live WS task
+  // owns it (reqId == null), so the background worker is finishing it. Poll the
+  // transcript until it resolves — this is the "came back later" / post-restart path.
+  const hasRestPendingReply = messages.some(m => m.status === 'thinking' && m.reqId == null)
+  useEffect(() => {
+    if (!activeChatId || !token || !hasRestPendingReply) return
+    const interval = setInterval(() => refreshChatMessages(activeChatId), 2500)
+    return () => clearInterval(interval)
+  }, [activeChatId, token, hasRestPendingReply]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeChat) {

@@ -10,10 +10,15 @@ pub struct Model {
     /// "user" | "assistant" | "system"
     pub role: String,
     pub content: String,
-    /// "complete" | "failed"
+    /// "pending" (assistant reply in flight) | "complete" | "failed"
     pub status: String,
     /// capability used, e.g. "llm.qwen3:8b"; null for user/system messages
     pub model: Option<String>,
+    /// Offload task capability for an in-flight assistant reply; null otherwise.
+    pub offload_cap: Option<String>,
+    /// Offload task id for an in-flight assistant reply; the background worker
+    /// reconciles `status="pending"` rows that carry one. Null otherwise.
+    pub offload_task_id: Option<String>,
     pub created_at: DateTimeWithTimeZone,
 }
 

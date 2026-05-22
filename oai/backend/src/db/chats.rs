@@ -1,6 +1,6 @@
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder,
+    QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 use crate::{
@@ -151,7 +151,71 @@ pub async fn add_message(
         content: ActiveValue::Set(content.to_string()),
         status: ActiveValue::Set(status.to_string()),
         model: ActiveValue::Set(model.map(str::to_string)),
+        offload_cap: ActiveValue::Set(None),
+        offload_task_id: ActiveValue::Set(None),
         created_at: ActiveValue::Set(now),
     };
     msg.insert(db).await.map_err(AppError::Database)
+}
+
+/// Inserts the assistant reply as `status="pending"` with the offload task it is
+/// waiting on. The poll loop (live) or the background worker (after a disconnect
+/// or pod restart) finalizes it via [`finalize_message`].
+pub async fn add_pending_assistant_message(
+    db: &DatabaseConnection,
+    id: i64,
+    chat_id: i64,
+    model: &str,
+    offload_cap: &str,
+    offload_task_id: &str,
+) -> Result<ChatMessage, AppError> {
+    let now = chrono::Utc::now().fixed_offset();
+    let msg = chat_messages::ActiveModel {
+        id: ActiveValue::Set(id),
+        chat_id: ActiveValue::Set(chat_id),
+        role: ActiveValue::Set("assistant".to_string()),
+        content: ActiveValue::Set(String::new()),
+        status: ActiveValue::Set("pending".to_string()),
+        model: ActiveValue::Set(Some(model.to_string())),
+        offload_cap: ActiveValue::Set(Some(offload_cap.to_string())),
+        offload_task_id: ActiveValue::Set(Some(offload_task_id.to_string())),
+        created_at: ActiveValue::Set(now),
+    };
+    msg.insert(db).await.map_err(AppError::Database)
+}
+
+/// Idempotently writes the final content/status of a pending assistant message.
+/// Only rows still `status="pending"` are touched, so the live poll loop and the
+/// background worker can race without double-writing. Returns rows affected.
+pub async fn finalize_message(
+    db: &DatabaseConnection,
+    id: i64,
+    content: &str,
+    status: &str,
+) -> Result<u64, AppError> {
+    let res = ChatMessageEntity::update_many()
+        .col_expr(chat_messages::Column::Content, Expr::value(content.to_string()))
+        .col_expr(chat_messages::Column::Status, Expr::value(status.to_string()))
+        .filter(chat_messages::Column::Id.eq(id))
+        .filter(chat_messages::Column::Status.eq("pending"))
+        .exec(db)
+        .await
+        .map_err(AppError::Database)?;
+    Ok(res.rows_affected)
+}
+
+/// In-flight assistant replies awaiting reconciliation, oldest first. The
+/// background worker polls each one's offload task and finalizes it.
+pub async fn list_pending_assistant_messages(
+    db: &DatabaseConnection,
+    limit: u64,
+) -> Result<Vec<ChatMessage>, AppError> {
+    ChatMessageEntity::find()
+        .filter(chat_messages::Column::Status.eq("pending"))
+        .filter(chat_messages::Column::OffloadTaskId.is_not_null())
+        .order_by_asc(chat_messages::Column::CreatedAt)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AppError::Database)
 }
