@@ -38,12 +38,26 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/chats", post(routes::chats::create_chat))
         .route("/api/chats/{id}", axum::routing::delete(routes::chats::delete_chat))
         .route("/api/chats/{id}/messages", get(routes::chats::get_messages))
+        .route("/api/images/upload", post(routes::images::upload_input_image))
+        .route("/api/images/jobs", post(routes::images::start_job))
+        .route("/api/images/jobs", get(routes::images::list_jobs))
+        .route("/api/images/capabilities", get(routes::images::list_imggen_capabilities))
+        .route("/api/images/jobs/{id}", get(routes::images::get_job))
+        .route("/api/images/jobs/{id}/poll", post(routes::images::poll_job))
+        .route("/api/images/files/{id}", get(routes::images::get_image))
         .layer(from_fn_with_state(state.clone(), middleware::jwt_auth_middleware));
 
     let admin = Router::new()
         .route("/api/admin/settings", get(routes::admin::get_settings))
         .route("/api/admin/settings", post(routes::admin::update_settings))
         .route("/api/admin/check_connection", post(routes::admin::check_connection))
+        .route("/api/admin/images/jobs", get(routes::admin::admin_list_image_jobs))
+        .route("/api/admin/images/jobs/{id}", get(routes::admin::admin_get_image_job))
+        .route("/api/admin/images/jobs/{id}/reconcile", post(routes::admin::admin_reconcile_image_job))
+        .route("/api/admin/images/files", get(routes::admin::admin_list_image_files))
+        .route("/api/admin/images/events", get(routes::admin::admin_list_image_events))
+        .route("/api/admin/images/offload_tasks", get(routes::admin::admin_list_image_offload_tasks))
+        .route("/api/admin/images/worker_logs", get(routes::admin::admin_list_image_worker_logs))
         .layer(from_fn_with_state(state.clone(), middleware::admin_auth_middleware));
 
     Router::new()

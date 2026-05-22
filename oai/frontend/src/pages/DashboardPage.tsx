@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Bot } from 'lucide-react'
+import { Bot, ImagePlus } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const apps = [
@@ -12,6 +12,16 @@ const apps = [
     gradient: 'from-indigo-500/20 to-violet-500/20',
     iconBg: 'bg-indigo-500/20',
     iconColor: 'text-indigo-400',
+  },
+  {
+    id: 'image-generation',
+    icon: ImagePlus,
+    title: 'Image Generation',
+    description: 'Txt2Img and Img2Img with tracked pipeline',
+    href: '/app/images',
+    gradient: 'from-emerald-500/20 to-cyan-500/20',
+    iconBg: 'bg-emerald-500/20',
+    iconColor: 'text-emerald-400',
   },
 ] as const
 

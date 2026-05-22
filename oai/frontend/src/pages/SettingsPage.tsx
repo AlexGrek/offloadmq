@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ChevronRight, Server } from 'lucide-react'
+import { ChevronRight, ScrollText, Server } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useAdminStatus } from '../hooks/useAdminStatus'
 import { Button } from '@/components/ui/button'
@@ -102,7 +102,7 @@ export default function SettingsPage() {
                 <CardTitle>Administration</CardTitle>
                 <CardDescription>Server settings and system configuration</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex flex-col gap-2">
                 <Link
                   to="/app/settings/server"
                   className="group flex items-center justify-between rounded-lg border border-border p-4 transition-colors hover:bg-muted/50"
@@ -115,6 +115,24 @@ export default function SettingsPage() {
                       <p className="text-sm font-medium">Server Configuration</p>
                       <p className="text-xs text-muted-foreground">
                         OffloadMQ connection, model defaults, system settings
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
+                </Link>
+                <Link
+                  to="/app/settings/worker-logs"
+                  className="group flex items-center justify-between rounded-lg border border-border p-4 transition-colors hover:bg-muted/50"
+                  data-testid="settings-worker-logs-link"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-muted p-2">
+                      <ScrollText className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Image Pipeline Worker</p>
+                      <p className="text-xs text-muted-foreground">
+                        Background reconcile passes, duration, and errors
                       </p>
                     </div>
                   </div>

@@ -1,6 +1,8 @@
 pub mod app_settings;
 pub mod chats;
 pub mod entities;
+pub mod image_generation;
+pub mod image_worker_logs;
 pub mod migrator;
 pub mod users;
 

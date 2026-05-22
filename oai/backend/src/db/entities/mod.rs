@@ -1,4 +1,9 @@
 pub mod app_settings;
 pub mod chat_messages;
 pub mod chats;
+pub mod image_files;
+pub mod image_generation_jobs;
+pub mod image_offload_tasks;
+pub mod image_pipeline_events;
+pub mod image_worker_logs;
 pub mod users;

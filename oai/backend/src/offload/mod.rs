@@ -3,8 +3,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 
+pub mod image_tasks;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmCapabilityInfo {
+    pub base: String,
+    pub tags: Vec<String>,
+    pub raw: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityInfo {
     pub base: String,
     pub tags: Vec<String>,
     pub raw: String,
@@ -42,6 +51,18 @@ impl OffloadClient {
     }
 
     pub async fn list_llm_capabilities(&self) -> Result<Vec<LlmCapabilityInfo>, AppError> {
+        Ok(self
+            .list_capabilities_with_prefix("llm.")
+            .await?
+            .into_iter()
+            .map(|c| LlmCapabilityInfo { base: c.base, tags: c.tags, raw: c.raw })
+            .collect())
+    }
+
+    pub async fn list_capabilities_with_prefix(
+        &self,
+        prefix: &str,
+    ) -> Result<Vec<CapabilityInfo>, AppError> {
         let url = format!("{}/api/capabilities/list/online_ext", self.base_url);
         let body = serde_json::json!({ "apiKey": self.api_key });
         let resp = self
@@ -59,7 +80,7 @@ impl OffloadClient {
         }
         let raw: Vec<String> =
             resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))?;
-        Ok(parse_llm_capabilities(&raw))
+        Ok(parse_capabilities_with_prefix(&raw, prefix))
     }
 
     pub async fn submit_chat(
@@ -125,17 +146,17 @@ impl OffloadClient {
     }
 }
 
-fn parse_llm_capabilities(raw: &[String]) -> Vec<LlmCapabilityInfo> {
+fn parse_capabilities_with_prefix(raw: &[String], prefix: &str) -> Vec<CapabilityInfo> {
     raw.iter()
-        .filter(|s| s.starts_with("llm."))
+        .filter(|s| s.starts_with(prefix))
         .map(|s| {
             if let Some(open) = s.find('[') {
                 let base = s[..open].to_string();
                 let inner = s[open + 1..].trim_end_matches(']');
                 let tags = inner.split(';').map(|t| t.to_string()).collect();
-                LlmCapabilityInfo { base, tags, raw: s.clone() }
+                CapabilityInfo { base, tags, raw: s.clone() }
             } else {
-                LlmCapabilityInfo { base: s.clone(), tags: vec![], raw: s.clone() }
+                CapabilityInfo { base: s.clone(), tags: vec![], raw: s.clone() }
             }
         })
         .collect()

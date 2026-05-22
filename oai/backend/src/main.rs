@@ -5,6 +5,7 @@ use anyhow::Result;
 mod app;
 mod db;
 mod error;
+mod jobs;
 mod middleware;
 mod offload;
 mod routes;
@@ -43,6 +44,7 @@ async fn main() -> Result<()> {
 
     let http = reqwest::Client::new();
     let state = Arc::new(AppState { db, auth, snowflake, storage, http });
+    jobs::image_pipeline_worker::spawn(state.clone());
 
     let app = app::create_app(state, &static_dir);
     let listener = tokio::net::TcpListener::bind(&addr).await?;

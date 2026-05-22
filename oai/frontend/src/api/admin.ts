@@ -60,3 +60,28 @@ export function checkConnection(token: string, settings: AdminSettings) {
     body: JSON.stringify(settings),
   })
 }
+
+export interface ImageWorkerLogPayload {
+  component?: string
+  tick_secs?: number
+  batch_size?: number
+  started_at?: string
+  finished_at?: string
+  duration_ms?: number
+  status?: string
+  error?: string | null
+  raw?: unknown
+}
+
+export interface AdminImageWorkerLog {
+  id: string
+  run_id: string
+  level: string
+  message: string
+  data_json: ImageWorkerLogPayload
+  created_at: string
+}
+
+export function listImageWorkerLogs(token: string) {
+  return adminRequest<AdminImageWorkerLog[]>('/images/worker_logs', token)
+}
