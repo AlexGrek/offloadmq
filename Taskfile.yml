@@ -1,0 +1,296 @@
+version: '3'
+
+vars:
+  APP_NAME: offloadmq
+  CHART_DIR: offloadmq-chart
+  NAMESPACE: offloadmq
+  RELEASE: offloadmq
+  IMAGE: grekodocker/offloadmq
+  FRONTEND_IMAGE: grekodocker/offloadmq-management-frontend
+  TAG:
+    sh: git rev-list --count HEAD
+  SECRETS_FILE: .secrets.yaml
+  DL_BASE_URL: https://dl.alexgr.space
+  PLATFORMS: linux/amd64,linux/arm64
+  VERSION: ""
+
+tasks:
+  # ── Dev ───────────────────────────────────────────────────────────────────────
+
+  dev:
+    desc: Run the MQ server (cargo run)
+    cmd: cargo run
+
+  dev:agent:
+    desc: Register agent and start serving
+    dir: offload-agent
+    cmd: make serve
+
+  dev:frontend:
+    desc: Start management frontend Vite dev server
+    dir: management-frontend
+    cmd: npm run dev
+
+  # ── Tests ─────────────────────────────────────────────────────────────────────
+
+  test:unit:
+    desc: Run Rust unit tests
+    cmd: cargo test
+
+  test:
+    desc: Run integration tests (server + agent must be running)
+    dir: itests
+    cmd: make run
+
+  test:full:
+    desc: Start server + agent, run all integration tests, then stop
+    dir: itests
+    cmd: make test-full
+
+  test:start:
+    desc: Start server and agent for manual testing
+    dir: itests
+    cmd: make start-agent
+
+  test:stop:
+    desc: Stop server and agent
+    dir: itests
+    cmd: make stop-all
+
+  test:logs:
+    desc: Show server and agent logs
+    dir: itests
+    cmd: make logs
+
+  # ── Secrets ───────────────────────────────────────────────────────────────────
+
+  secrets:
+    desc: Generate .secrets.yaml with random secrets (fails if file already exists)
+    cmd: |
+      #!/usr/bin/env bash
+      set -e
+      if [ -f {{.SECRETS_FILE}} ]; then
+        echo "ERROR: {{.SECRETS_FILE}} already exists. Use 'task secrets:force' to regenerate."
+        exit 1
+      fi
+      AGENT_KEY=$(openssl rand -hex 32)
+      CLIENT_KEY=$(openssl rand -hex 32)
+      JWT_SECRET=$(openssl rand -hex 48)
+      MGMT_TOKEN=$(openssl rand -hex 48)
+      printf 'secrets:\n  AGENT_API_KEYS: "%s"\n  CLIENT_API_KEYS: "%s"\n  JWT_SECRET: "%s"\n  MGMT_TOKEN: "%s"\n' \
+        "$AGENT_KEY" "$CLIENT_KEY" "$JWT_SECRET" "$MGMT_TOKEN" > {{.SECRETS_FILE}}
+      echo "✓ Generated {{.SECRETS_FILE}} with random secrets"
+
+  secrets:force:
+    desc: Force-regenerate .secrets.yaml (overwrites existing)
+    cmds:
+      - rm -f {{.SECRETS_FILE}}
+      - task: secrets
+
+  # ── Docker ────────────────────────────────────────────────────────────────────
+
+  docker:release:
+    desc: Build and push backend Docker image (linux/amd64)
+    cmd: |
+      docker buildx build \
+        --platform linux/amd64 \
+        --tag {{.IMAGE}}:{{.TAG}} \
+        --push \
+        .
+
+  docker:release:frontend:
+    desc: Build and push management frontend Docker image (linux/amd64)
+    cmd: |
+      docker buildx build \
+        --platform linux/amd64 \
+        --tag {{.FRONTEND_IMAGE}}:{{.TAG}} \
+        --push \
+        management-frontend/
+
+  docker:release:multi:
+    desc: Build and push multiplatform backend image ({{.PLATFORMS}})
+    cmd: |
+      docker buildx build \
+        --platform {{.PLATFORMS}} \
+        --tag {{.IMAGE}}:{{.TAG}} \
+        --push \
+        .
+
+  # ── Helm / Kubernetes ─────────────────────────────────────────────────────────
+
+  deploy:
+    desc: Install or upgrade the Helm release (pre-pulls images before upgrade)
+    cmd: |
+      #!/usr/bin/env bash
+      set -e
+      if [ ! -f {{.SECRETS_FILE}} ]; then
+        echo "ERROR: {{.SECRETS_FILE}} not found. Run 'task secrets' first."
+        exit 1
+      fi
+      HELM_ARGS=(
+        --namespace {{.NAMESPACE}}
+        --set image.repository={{.IMAGE}}
+        --set image.tag={{.TAG}}
+        --set frontend.image.repository={{.FRONTEND_IMAGE}}
+        --set frontend.image.tag={{.TAG}}
+        --set appVersion={{.TAG}}
+        -f {{.SECRETS_FILE}}
+      )
+      if helm status {{.RELEASE}} -n {{.NAMESPACE}} >/dev/null 2>&1; then
+        echo "==> Pre-pulling images on cluster nodes..."
+        helm template {{.RELEASE}} {{.CHART_DIR}} "${HELM_ARGS[@]}" \
+          --set imagePullPolicy.preLoadImages=true \
+          | kubectl apply -f -
+        job="offloadmq-image-pull-{{.TAG}}"
+        timeout=120; elapsed=0
+        while [ $elapsed -lt $timeout ]; do
+          sleep 5; elapsed=$((elapsed + 5))
+          if kubectl wait --for=condition=Complete "job/$job" -n {{.NAMESPACE}} --timeout=5s 2>/dev/null; then
+            echo "✓ Image pull complete"
+            kubectl delete "job/$job" -n {{.NAMESPACE}} --ignore-not-found=true 2>/dev/null || true
+            break
+          fi
+          if ! kubectl get "job/$job" -n {{.NAMESPACE}} >/dev/null 2>&1; then
+            echo "✓ Image pull already complete"
+            break
+          fi
+          echo "Pulling... (${elapsed}/${timeout}s)"
+        done
+        echo "==> Upgrading {{.RELEASE}} → {{.IMAGE}}:{{.TAG}}"
+        helm upgrade {{.RELEASE}} {{.CHART_DIR}} "${HELM_ARGS[@]}"
+      else
+        echo "==> Installing {{.RELEASE}} as {{.IMAGE}}:{{.TAG}}"
+        helm install {{.RELEASE}} {{.CHART_DIR}} "${HELM_ARGS[@]}" --create-namespace
+      fi
+
+  undeploy:
+    desc: Uninstall the Helm release
+    cmd: helm uninstall {{.RELEASE}} --namespace {{.NAMESPACE}}
+
+  status:
+    desc: Show Helm release status
+    cmd: helm status {{.RELEASE}} --namespace {{.NAMESPACE}}
+
+  template:
+    desc: Render Helm manifests locally without deploying
+    cmd: |
+      helm template {{.RELEASE}} {{.CHART_DIR}} \
+        --namespace {{.NAMESPACE}} \
+        --set image.repository={{.IMAGE}} \
+        --set image.tag={{.TAG}} \
+        --set frontend.image.repository={{.FRONTEND_IMAGE}} \
+        --set frontend.image.tag={{.TAG}} \
+        --set appVersion={{.TAG}} \
+        -f {{.SECRETS_FILE}}
+
+  diff:
+    desc: Diff deployed vs local chart (requires helm-diff plugin)
+    cmd: |
+      helm diff upgrade {{.RELEASE}} {{.CHART_DIR}} \
+        --namespace {{.NAMESPACE}} \
+        --set image.repository={{.IMAGE}} \
+        --set image.tag={{.TAG}} \
+        --set frontend.image.repository={{.FRONTEND_IMAGE}} \
+        --set frontend.image.tag={{.TAG}} \
+        --set appVersion={{.TAG}} \
+        -f {{.SECRETS_FILE}}
+
+  rollback:
+    desc: Rollback Helm release to previous revision
+    cmd: helm rollback {{.RELEASE}} --namespace {{.NAMESPACE}}
+
+  # ── Agent release ─────────────────────────────────────────────────────────────
+
+  release:agent:
+    desc: Build and upload offload-agent binary to dl.alexgr.space (VERSION= to override auto-version)
+    cmd: |
+      #!/usr/bin/env bash
+      if [ -z "$DL_API_KEY" ]; then echo "error: DL_API_KEY is not set"; exit 1; fi
+      DL_BASE_URL={{.DL_BASE_URL}} ./scripts/release-agent.sh {{.VERSION}}
+
+  release:micro-agent:
+    desc: Build and upload micro-agent binary to dl.alexgr.space (VERSION= to override auto-version)
+    cmd: |
+      #!/usr/bin/env bash
+      if [ -z "$DL_API_KEY" ]; then echo "error: DL_API_KEY is not set"; exit 1; fi
+      DL_BASE_URL={{.DL_BASE_URL}} ./scripts/release-micro-agent.sh {{.VERSION}}
+
+  release:
+    desc: Compute version, tag, push, then upload agent + micro-agent binaries
+    cmd: |
+      #!/usr/bin/env bash
+      set -e
+      if [ -z "$DL_API_KEY" ]; then echo "error: DL_API_KEY is not set"; exit 1; fi
+      VERSION=$(./scripts/compute-agent-version.sh)
+      echo "==> Releasing {{.APP_NAME}} $VERSION"
+      git tag "release-$VERSION"
+      git push origin "release-$VERSION"
+      DL_BASE_URL={{.DL_BASE_URL}} ./scripts/release-agent.sh "$VERSION"
+      DL_BASE_URL={{.DL_BASE_URL}} ./scripts/release-micro-agent.sh "$VERSION"
+
+  # ── Agent install helpers ─────────────────────────────────────────────────────
+
+  agent:kill:mac:
+    desc: Stop all offload-agent processes on macOS
+    cmd: |
+      launchctl unload ~/Library/LaunchAgents/com.offloadmq.agent.plist 2>/dev/null || true
+      pkill -f "offload-agent|Offload Agent" 2>/dev/null || true
+
+  agent:update:mac:
+    desc: Download and install latest offload-agent on this macOS machine
+    deps: [agent:kill:mac]
+    cmd: |
+      #!/usr/bin/env bash
+      set -e
+      MAC_ARCH=$(uname -m | sed 's/x86_64/amd64/')
+      BIN="offload-agent-darwin-${MAC_ARCH}"
+      curl -fLO "https://dl.alexgr.space/rs/offload-agent/latest/darwin-${MAC_ARCH}/${BIN}"
+      chmod +x "$BIN"
+      sudo "./$BIN" install bin
+      launchctl load ~/Library/LaunchAgents/com.offloadmq.agent.plist 2>/dev/null || true
+      rm -f "$BIN"
+      offload-agent --version
+
+  agent:update:linux:
+    desc: Download and install latest offload-agent on this Linux machine
+    cmd: |
+      #!/usr/bin/env bash
+      set -e
+      curl -fLO "https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/offload-agent-linux-amd64"
+      chmod +x offload-agent-linux-amd64
+      sudo systemctl stop offload-agent || true
+      sudo ./offload-agent-linux-amd64 install bin
+      sudo restorecon -v /usr/local/bin/offload-agent 2>/dev/null || true
+      sudo systemctl start offload-agent
+      rm -f offload-agent-linux-amd64
+      offload-agent --version
+
+  # ── Build helpers ─────────────────────────────────────────────────────────────
+
+  build:agent:
+    desc: Build offload-agent standalone binary
+    dir: offload-agent
+    cmd: make build
+
+  build:agent:clean:
+    desc: Clean and rebuild offload-agent standalone binary
+    dir: offload-agent
+    cmd: make rebuild
+
+  # ── Clean ─────────────────────────────────────────────────────────────────────
+
+  clean:
+    desc: Clean all build artifacts (Rust, offload-agent, management-frontend dist)
+    cmds:
+      - cargo clean
+      - cd offload-agent && make clean
+      - rm -rf management-frontend/dist
+
+  # ── Shortcut: build → push → deploy ──────────────────────────────────────────
+
+  ship:
+    desc: Build + push backend and frontend Docker images, then deploy to cluster
+    cmds:
+      - task: docker:release
+      - task: docker:release:frontend
+      - task: deploy

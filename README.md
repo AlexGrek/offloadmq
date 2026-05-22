@@ -69,27 +69,27 @@ curl -X POST http://localhost:3069/api/task/submit \
 
 ### 🖥️ Server
 ```bash
-make dev-mq          # cargo run
-cargo test           # unit tests
+task dev             # cargo run
+task test:unit       # unit tests
 ```
 
 ### ⚙️ Agent
 ```bash
-make dev-agent       # register and start serving (requires running server)
+task dev:agent       # register and start serving (requires running server)
 ```
 
 ### 🎨 Frontend
 ```bash
-make dev-frontend    # npm run dev (Vite dev server at http://localhost:5173)
+task dev:frontend    # npm run dev (Vite dev server at http://localhost:5173)
 ```
 
 ### 🧪 Integration Tests
 ```bash
-make test-full       # start server + agent, run tests, stop everything
-make test-start      # start server + agent in background
-make test            # run tests (server + agent must be running)
-make test-stop       # stop server + agent
-make test-logs       # tail logs
+task test:full       # start server + agent, run tests, stop everything
+task test:start      # start server + agent in background
+task test            # run tests (server + agent must be running)
+task test:stop       # stop server + agent
+task test:logs       # tail logs
 ```
 
 ## ☸️ Kubernetes Deployment
@@ -105,73 +105,45 @@ make test-logs       # tail logs
 Creates `.secrets.yaml` with randomly generated values in Helm values format. The secret is created once on first install and never overwritten by subsequent upgrades — keys persist across redeploys.
 
 ```bash
-make secrets
+task secrets
 ```
 
-This file is used by `install` and `upgrade`. Keep it safe and out of version control — it is already in `.gitignore`.
+This file is used by `deploy`. Keep it safe and out of version control — it is already in `.gitignore`.
 
 To regenerate (overwrites existing file):
 ```bash
-make secrets-force
+task secrets:force
 ```
 
-### 2️⃣ Build and push the image
+### 2️⃣ Build, push, and deploy
 
 ```bash
-make build push
+task ship
 ```
 
-The image tag defaults to the current `git describe` output. Override with:
+This builds the backend and frontend Docker images, pushes them to the registry, pre-pulls on cluster nodes, then installs or upgrades the Helm release automatically.
+
+The image tag defaults to `git rev-list --count HEAD`. Override with:
 
 ```bash
-make build push TAG=1.2.3
+task ship TAG=1234
 ```
 
-For multi-platform builds (pushes directly to the registry):
+For a multi-platform backend build:
 ```bash
-make build-multiplatform TAG=1.2.3
+task docker:release:multi
+task ship
 ```
 
-### 3️⃣ Install
+### 3️⃣ Other helm commands
 
-```bash
-make install
-```
-
-Equivalent helm command:
-```bash
-helm install offloadmq offloadmq-chart \
-  --namespace offloadmq --create-namespace \
-  --set image.tag=<TAG> \
-  -f .secrets.yaml
-```
-
-### 4️⃣ Upgrade
-
-After rebuilding and pushing a new image:
-
-```bash
-make upgrade
-```
-
-Or do it all in one step (build → push → install-or-upgrade):
-
-```bash
-make deploy
-```
-
-Multi-platform variant:
-```bash
-make deploy-multiplatform
-```
-
-### 5️⃣ Other helm commands
-
-| Command          | Description                                 |
-| ---------------- | ------------------------------------------- |
-| `make template`  | Render manifests to stdout without applying |
-| `make status`    | Show helm release status                    |
-| `make uninstall` | Remove the release (data PVC is retained)   |
+| Command           | Description                                      |
+| ----------------- | ------------------------------------------------ |
+| `task template`   | Render manifests to stdout without applying      |
+| `task diff`       | Diff deployed vs local chart (helm-diff plugin)  |
+| `task status`     | Show helm release status                         |
+| `task rollback`   | Rollback to previous revision                    |
+| `task undeploy`   | Remove the release (data PVC is retained)        |
 
 ### 🎛️ Management UI
 
@@ -183,8 +155,6 @@ https://<your-host>/ui
 
 To disable it:
 ```bash
-make install   # first install
-# or
 helm upgrade offloadmq offloadmq-chart \
   --namespace offloadmq \
   --set frontend.enabled=false \
