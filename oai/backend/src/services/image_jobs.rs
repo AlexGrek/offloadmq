@@ -187,6 +187,53 @@ pub async fn start_job(
     Ok(job_id)
 }
 
+pub async fn cancel_job(state: &AppState, user_id: i64, job_id: i64) -> Result<CancelJobOutcome, AppError> {
+    let job = image_generation::get_job(&state.db, job_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if is_terminal(&job.status) {
+        return Err(AppError::BadRequest(format!(
+            "job is already in terminal state: {}",
+            job.status
+        )));
+    }
+    let task = image_generation::get_offload_task_by_job(&state.db, job.id)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("job has no offload task yet".into()))?;
+    let client = offload_factory::image_client(state).await?;
+    let resp = client
+        .cancel_task(&OffloadTaskId {
+            cap: task.offload_cap.clone(),
+            id: task.offload_task_id.clone(),
+        })
+        .await?;
+    image_generation::update_job_status(&state.db, job.id, &resp.status, None).await?;
+    record_event(
+        state,
+        job.id,
+        "offload.cancel",
+        "ok",
+        Some(&format!("status={} {}", resp.status, resp.message)),
+    )
+    .await?;
+    Ok(CancelJobOutcome {
+        job_id: job.id,
+        offload_cap: resp.id.cap,
+        offload_task_id: resp.id.id,
+        status: resp.status,
+        message: resp.message,
+    })
+}
+
+#[derive(Debug)]
+pub struct CancelJobOutcome {
+    pub job_id: i64,
+    pub offload_cap: String,
+    pub offload_task_id: String,
+    pub status: String,
+    pub message: String,
+}
+
 pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<PolledJob, AppError> {
     storage::operator(state)?;
     let job = image_generation::get_job(&state.db, job_id, user_id)
@@ -213,6 +260,9 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
     match poll.status.as_str() {
         "completed" => fetch_and_store_outputs(state, user_id, &job, poll.output).await?,
         "failed" | "canceled" => mark_failed(state, job.id, &poll).await?,
+        "cancelRequested" => {
+            image_generation::update_job_status(&state.db, job.id, "cancelRequested", None).await?;
+        }
         _ => {}
     }
 

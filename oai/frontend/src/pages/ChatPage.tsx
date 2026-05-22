@@ -3,6 +3,7 @@ import {
   ArrowUp,
   ChevronDown,
   Loader2,
+  Square,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -21,6 +22,7 @@ import {
   ToolDebugModal,
   toolDebugReady,
 } from '../components/ToolDebugModal'
+import { cancelOffloadTask } from '../api/tasks'
 import { useWsChat, nextReqId } from '../hooks/useWsChat'
 import type { LlmCapabilityInfo, ServerEvent } from '../types/ws'
 import type { ChatTaskRecord } from '../contexts/WorkloadContext'
@@ -33,6 +35,7 @@ import {
   type ChatSummary,
   type ChatMessageRecord,
 } from '../api/chats'
+import { MarkdownContent } from '../components/MarkdownContent'
 import { SystemPromptBlock } from '../components/chat/SystemPromptBlock'
 import { SystemPromptStudio, DEFAULT_PROMPT } from '../components/chat/SystemPromptStudio'
 
@@ -92,13 +95,6 @@ function inFlightToMessage(task: ChatTaskRecord): Message {
     reqId: task.reqId,
     statusText: streaming ? '' : (task.statusText ?? 'Thinking…'),
   }
-}
-
-/** Append/replace in-flight assistant bubbles from WorkloadContext (survives chat switches). */
-function chatListStatusLabel(task: ChatTaskRecord | undefined): string | null {
-  if (!task) return null
-  if (task.streamContent?.trim()) return 'Generating…'
-  return task.statusText ?? 'In progress…'
 }
 
 function mergeInFlightMessages(base: Message[], running: ChatTaskRecord[]): Message[] {
@@ -237,12 +233,9 @@ function ThinkingBubble({ statusText, content }: { statusText?: string; content?
       aria-live="polite"
     >
       {streaming ? (
-        <p
-          className="mb-3 whitespace-pre-wrap leading-relaxed text-foreground"
-          data-testid="message-streaming"
-        >
-          {content}
-        </p>
+        <div className="mb-3" data-testid="message-streaming">
+          <MarkdownContent>{content!}</MarkdownContent>
+        </div>
       ) : null}
       <div className="flex items-center gap-2 text-muted-foreground">
         <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
@@ -567,43 +560,40 @@ export default function ChatPage() {
     setShowScrollBtn(!autoScrollRef.current)
   }
 
+  function maxScrollTop(el: HTMLDivElement): number {
+    return Math.max(0, el.scrollHeight - el.clientHeight)
+  }
+
   function scrollMessagesToBottom(behavior: ScrollBehavior = 'smooth') {
     const el = scrollRef.current
     if (!el) return
-    el.scrollTo({ top: el.scrollHeight, behavior })
+    const top = maxScrollTop(el)
+    el.scrollTo({ top, behavior })
     autoScrollRef.current = true
-    lastScrollTopRef.current = el.scrollTop
+    lastScrollTopRef.current = top
     setShowScrollBtn(false)
   }
 
-  useLayoutEffect(() => {
+  function pinToBottomIfFollowing() {
     if (!autoScrollRef.current) return
     const el = scrollRef.current
     if (!el) return
-    el.scrollTop = el.scrollHeight
-    lastScrollTopRef.current = el.scrollTop
-  }, [messages, isStreaming, systemPrompt, showSystemStudio, loadingMessages])
+    const top = maxScrollTop(el)
+    if (top <= 0) return
+    el.scrollTop = top
+    lastScrollTopRef.current = top
+  }
+
+  useLayoutEffect(() => {
+    if (showSystemStudio || loadingMessages) return
+    pinToBottomIfFollowing()
+  }, [messages, isStreaming, showSystemStudio, loadingMessages])
 
   useEffect(() => {
-    const el = scrollRef.current
-    if (!el || !messagesEndRef.current) return
-    const root = el
-    const end = messagesEndRef.current
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          autoScrollRef.current = true
-          setShowScrollBtn(false)
-        }
-      },
-      { root, threshold: 0, rootMargin: `0px 0px ${BOTTOM_THRESHOLD_PX}px 0px` },
-    )
-    io.observe(end)
-    return () => io.disconnect()
-  }, [activeChatId, showSystemStudio, loadingMessages])
-
-  useEffect(() => {
-    scrollMessagesToBottom('instant')
+    autoScrollRef.current = true
+    setShowScrollBtn(false)
+    lastScrollTopRef.current = 0
+    requestAnimationFrame(() => scrollMessagesToBottom('instant'))
   }, [activeChatId])
 
   // ── Textarea auto-resize ──────────────────────────────────────────────────
@@ -706,11 +696,31 @@ export default function ChatPage() {
 
   const canSend = !!input.trim() && !!selectedModel && ws.status === 'connected' && !!activeChatId
 
+  const activeChatTask = latestChatTaskForChat(activeChatId)
+  const isGenerating =
+    (activeChatTask != null && !activeChatTask.terminal) ||
+    messages.some(m => isMessagePending(m))
+  const canCancelTask = !!(activeChatTask?.cap && activeChatTask?.id)
+
+  const handleCancel = useCallback(async () => {
+    if (!token || !activeChatTask?.cap || !activeChatTask.id) return
+    const { reqId, cap, id } = activeChatTask
+    try {
+      await cancelOffloadTask(token, cap, id)
+      if (activeChatIdRef.current === activeChatTask.chatId) {
+        resolveThinking(reqId, '⚠ Task was canceled', 'failed')
+      }
+      finishChatTask(reqId, 'canceled', true)
+    } catch (e) {
+      console.error('cancel chat task', e)
+    }
+  }, [token, activeChatTask, finishChatTask])
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div
-      className="flex h-full min-h-0 flex-1 overflow-hidden bg-background"
+      className="flex min-h-0 flex-1 overflow-hidden bg-background"
       data-testid="chat-page"
     >
       {/* ── Sidebar: fixed header + independently scrollable chat list ── */}
@@ -749,9 +759,7 @@ export default function ChatPage() {
             </p>
           ) : (
             chats.map(chat => {
-              const runningTask = inProgressByChatId.get(chat.id)
-              const inProgress = runningTask != null
-              const statusLabel = chatListStatusLabel(runningTask)
+              const inProgress = inProgressByChatId.has(chat.id)
               return (
                 <div
                   key={chat.id}
@@ -760,7 +768,6 @@ export default function ChatPage() {
                     chat.id === activeChatId
                       ? 'bg-sidebar-accent text-sidebar-accent-foreground'
                       : 'hover:bg-sidebar-accent/50 text-sidebar-foreground',
-                    inProgress && chat.id !== activeChatId && 'ring-1 ring-amber-500/30',
                   )}
                   data-in-progress={inProgress || undefined}
                 >
@@ -769,32 +776,17 @@ export default function ChatPage() {
                     onClick={() => setActiveChatId(chat.id)}
                     data-testid={`chat-item-${chat.id}`}
                     aria-busy={inProgress}
-                    className="flex flex-1 items-start gap-2 min-w-0 px-3 py-2 text-left"
+                    className="flex flex-1 items-center gap-2 min-w-0 px-3 py-2 text-left"
                   >
                     {inProgress ? (
                       <Loader2
-                        className="size-3.5 shrink-0 animate-spin text-amber-600 dark:text-amber-400 mt-0.5"
+                        className="size-3.5 shrink-0 animate-spin text-muted-foreground"
                         aria-hidden
                         data-testid={`chat-item-${chat.id}-loader`}
                       />
                     ) : null}
-                    <span
-                      className={cn(
-                        'flex min-w-0 flex-1 flex-col',
-                        statusLabel && 'gap-0.5',
-                      )}
-                    >
-                      <span className="truncate text-sm leading-tight">
-                        {chat.title || 'New chat'}
-                      </span>
-                      {statusLabel ? (
-                        <span
-                          className="truncate text-[10px] leading-tight text-muted-foreground"
-                          data-testid={`chat-item-${chat.id}-status`}
-                        >
-                          {statusLabel}
-                        </span>
-                      ) : null}
+                    <span className="truncate text-sm leading-tight min-w-0 flex-1">
+                      {chat.title || 'New chat'}
                     </span>
                   </button>
                   <button
@@ -820,7 +812,7 @@ export default function ChatPage() {
       </aside>
 
       {/* ── Main: header + scrollable transcript + fixed input ── */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden">
         {/* topbar */}
         <header className="flex items-center gap-2 px-3 h-11 border-b border-border shrink-0">
           <Button
@@ -859,7 +851,10 @@ export default function ChatPage() {
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          onWheel={e => {
+            if (e.deltaY < 0) autoScrollRef.current = false
+          }}
+          className="relative min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
           data-testid="messages-area"
         >
           {!token ? null : showSystemStudio ? (
@@ -902,7 +897,7 @@ export default function ChatPage() {
                   ) : (
                     <div
                       className={cn(
-                        'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap leading-relaxed',
+                        'max-w-[80%] rounded-2xl px-4 py-2.5',
                         msg.role === 'user'
                           ? 'bg-primary text-primary-foreground rounded-br-sm'
                           : msg.status === 'failed'
@@ -910,7 +905,12 @@ export default function ChatPage() {
                             : 'bg-muted text-foreground rounded-bl-sm',
                       )}
                     >
-                      {msg.content}
+                      <MarkdownContent
+                        tone={msg.role === 'user' ? 'inverted' : 'default'}
+                        className={msg.status === 'failed' ? 'text-destructive' : undefined}
+                      >
+                        {msg.content}
+                      </MarkdownContent>
                     </div>
                   )}
                 </div>
@@ -978,20 +978,39 @@ export default function ChatPage() {
 
                 <span className="flex-1" />
 
-                <button
-                  onClick={send}
-                  disabled={!canSend}
-                  aria-label="Send"
-                  data-testid="send-btn"
-                  className={cn(
-                    'size-7 rounded-full flex items-center justify-center shrink-0 transition-colors',
-                    canSend
-                      ? 'bg-foreground text-background hover:bg-foreground/80'
-                      : 'bg-muted text-muted-foreground cursor-not-allowed',
-                  )}
-                >
-                  <ArrowUp className="size-4" />
-                </button>
+                {isGenerating ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleCancel()}
+                    disabled={!canCancelTask}
+                    aria-label="Cancel"
+                    data-testid="chat-cancel-btn"
+                    title={canCancelTask ? 'Cancel response' : 'Waiting for task id…'}
+                    className={cn(
+                      'size-7 rounded-full flex items-center justify-center shrink-0 transition-colors',
+                      canCancelTask
+                        ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                        : 'bg-muted text-muted-foreground cursor-not-allowed',
+                    )}
+                  >
+                    <Square className="size-3.5 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={send}
+                    disabled={!canSend}
+                    aria-label="Send"
+                    data-testid="send-btn"
+                    className={cn(
+                      'size-7 rounded-full flex items-center justify-center shrink-0 transition-colors',
+                      canSend
+                        ? 'bg-foreground text-background hover:bg-foreground/80'
+                        : 'bg-muted text-muted-foreground cursor-not-allowed',
+                    )}
+                  >
+                    <ArrowUp className="size-4" />
+                  </button>
+                )}
               </div>
             </div>
 

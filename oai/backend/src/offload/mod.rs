@@ -39,6 +39,19 @@ pub struct PollResponse {
     pub log: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelTaskResponse {
+    pub id: CancelTaskId,
+    pub status: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelTaskId {
+    pub cap: String,
+    pub id: String,
+}
+
 pub struct OffloadClient {
     http: Client,
     base_url: String,
@@ -149,6 +162,33 @@ impl OffloadClient {
         }
         resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))
     }
+
+    pub async fn cancel_task(&self, task_id: &TaskId) -> Result<CancelTaskResponse, AppError> {
+        post_cancel(&self.http, &self.base_url, &self.api_key, &task_id.cap, &task_id.id).await
+    }
+}
+
+pub(crate) async fn post_cancel(
+    http: &Client,
+    base_url: &str,
+    api_key: &str,
+    cap: &str,
+    id: &str,
+) -> Result<CancelTaskResponse, AppError> {
+    let cap_encoded = urlencoding::encode(cap);
+    let url = format!("{base_url}/api/task/cancel/{cap_encoded}/{id}");
+    let body = serde_json::json!({ "apiKey": api_key });
+    let resp = http
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| AppError::ExternalService(e.to_string()))?;
+    if !resp.status().is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AppError::ExternalService(format!("cancel failed: {text}")));
+    }
+    resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))
 }
 
 fn parse_capabilities_with_prefix(raw: &[String], prefix: &str) -> Vec<CapabilityInfo> {

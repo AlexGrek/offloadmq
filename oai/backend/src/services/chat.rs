@@ -161,6 +161,20 @@ async fn poll_loop(
                 finish_failure(&state, &tx, &ctx, "Task was canceled".to_string(), resp.log).await;
                 return;
             }
+            "cancelRequested" => {
+                let stream_log = progress_stream_text(&resp);
+                let sent = tx.send(ServerEvent::TaskProgress {
+                    req_id: ctx.req_id.clone(),
+                    cap: ctx.cap.clone(),
+                    id: ctx.id.clone(),
+                    status: "cancelRequested".to_string(),
+                    stage: resp.stage.clone(),
+                    log: stream_log,
+                });
+                if sent.is_err() {
+                    return;
+                }
+            }
             status => {
                 let stream_log = progress_stream_text(&resp);
                 let sent = tx.send(ServerEvent::TaskProgress {

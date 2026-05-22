@@ -1,9 +1,14 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { Activity, Loader2, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
 import { useWorkload } from '../contexts/WorkloadContext'
+import { cancelOffloadTask } from '../api/tasks'
+import { cancelImageJob } from '../api/images'
+import type { RunningJobItem } from '../api/progress'
+import type { ChatTaskRecord } from '../contexts/WorkloadContext'
 import {
   ProgressPanel,
   chatProgressRows,
@@ -18,10 +23,43 @@ export function GlobalProgressDrawer() {
     runningImageJobsLoading: loadingImages,
     refreshRunningImageJobs: refreshImages,
   } = useProgress()
-  const { runningChatTasks } = useWorkload()
+  const { token } = useAuth()
+  const { runningChatTasks, finishChatTask } = useWorkload()
 
-  const chatRows = useMemo(() => chatProgressRows(runningChatTasks), [runningChatTasks])
-  const imageRows = useMemo(() => imageProgressRows(imageJobs, null), [imageJobs])
+  const handleCancelChat = useCallback(
+    async (task: ChatTaskRecord) => {
+      if (!token || !task.cap || !task.id) return
+      try {
+        await cancelOffloadTask(token, task.cap, task.id)
+        finishChatTask(task.reqId, 'canceled', true)
+      } catch (e) {
+        console.error('cancel chat task', e)
+      }
+    },
+    [token, finishChatTask],
+  )
+
+  const handleCancelImage = useCallback(
+    async (job: RunningJobItem) => {
+      if (!token) return
+      try {
+        await cancelImageJob(token, job.job_id)
+        await refreshImages()
+      } catch (e) {
+        console.error('cancel image job', e)
+      }
+    },
+    [token, refreshImages],
+  )
+
+  const chatRows = useMemo(
+    () => chatProgressRows(runningChatTasks, handleCancelChat),
+    [runningChatTasks, handleCancelChat],
+  )
+  const imageRows = useMemo(
+    () => imageProgressRows(imageJobs, null, handleCancelImage),
+    [imageJobs, handleCancelImage],
+  )
   const totalRunning = chatRows.length + imageRows.length
 
   return (

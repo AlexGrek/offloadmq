@@ -4,6 +4,7 @@ pub mod chats;
 pub mod system_prompts;
 pub mod debug;
 pub mod progress;
+pub mod tasks;
 pub mod files;
 pub mod health;
 pub mod images;

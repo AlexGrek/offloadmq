@@ -1,7 +1,10 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppError;
+use crate::{
+    error::AppError,
+    offload::{post_cancel, CancelTaskResponse},
+};
 
 #[derive(Debug, Clone)]
 pub struct OffloadImageClient {
@@ -194,5 +197,9 @@ impl OffloadImageClient {
         resp.json()
             .await
             .map_err(|e| AppError::ExternalService(e.to_string()))
+    }
+
+    pub async fn cancel_task(&self, task_id: &OffloadTaskId) -> Result<CancelTaskResponse, AppError> {
+        post_cancel(&self.http, &self.base_url, &self.api_key, &task_id.cap, &task_id.id).await
     }
 }

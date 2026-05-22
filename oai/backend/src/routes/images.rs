@@ -151,6 +151,31 @@ pub async fn poll_job(
     }))
 }
 
+#[derive(Serialize)]
+pub struct CancelJobResponse {
+    pub job_id: String,
+    pub status: String,
+    pub message: String,
+    pub offload_cap: String,
+    pub offload_task_id: String,
+}
+
+pub async fn cancel_job(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(job_id_str): Path<String>,
+) -> Result<Json<CancelJobResponse>, AppError> {
+    let job_id = parse_id(&job_id_str, "job_id")?;
+    let out = image_jobs::cancel_job(&state, user_id, job_id).await?;
+    Ok(Json(CancelJobResponse {
+        job_id: out.job_id.to_string(),
+        status: out.status,
+        message: out.message,
+        offload_cap: out.offload_cap,
+        offload_task_id: out.offload_task_id,
+    }))
+}
+
 pub async fn get_job(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,

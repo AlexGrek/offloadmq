@@ -122,6 +122,18 @@ export function pollImageJob(token: string, jobId: string): Promise<PollImageJob
   return request(`/api/images/jobs/${jobId}/poll`, token, { method: 'POST' })
 }
 
+export interface CancelImageJobResponse {
+  job_id: string
+  status: string
+  message: string
+  offload_cap: string
+  offload_task_id: string
+}
+
+export function cancelImageJob(token: string, jobId: string): Promise<CancelImageJobResponse> {
+  return request(`/api/images/jobs/${jobId}/cancel`, token, { method: 'POST' })
+}
+
 export function listImageJobs(token: string): Promise<ImageJobDetails[]> {
   return request('/api/images/jobs', token)
 }

@@ -6,6 +6,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
+  Square,
   Sparkles,
   Upload,
   Wand2,
@@ -13,16 +14,18 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '../contexts/AuthContext'
+import { useProgress } from '../contexts/ProgressContext'
 import { getSettings } from '../api/admin'
 import {
   getImageJob,
   imageFileUrl,
   listImgGenCapabilities,
   listImageJobs,
+  cancelImageJob,
   pollImageJob,
   startImageJob,
   type ImgGenCapability,
@@ -32,7 +35,10 @@ import {
   uploadImage,
 } from '../api/images'
 import RescaleControls from '../components/imggen/RescaleControls'
-import { ImageJobHistorySidebar } from '../components/imggen/ImageJobHistorySidebar'
+import {
+  ImageJobHistorySidebar,
+  IMGGEN_NEW_PANEL,
+} from '../components/imggen/ImageJobHistorySidebar'
 import {
   ToolDebugHeaderButton,
   ToolDebugModal,
@@ -42,6 +48,7 @@ import {
   MODE_DEFAULTS,
   capabilityLabel,
   filterCapabilitiesByWorkflow,
+  modelNameFromCapability,
   pipelineEventsWithoutPolls,
   pipelineStatusLine,
   rescaleDataPrep,
@@ -63,6 +70,7 @@ const DEFAULT_RESCALE: RescaleState = {
 
 export default function ImageGenerationPage() {
   const { token } = useAuth()
+  const { refreshRunningImageJobs } = useProgress()
   const [mode, setMode] = useState<ImgGenMode>('txt2img')
   const [prompt, setPrompt] = useState(MODE_DEFAULTS.txt2img.prompt)
   const [negativePrompt, setNegativePrompt] = useState('')
@@ -80,10 +88,11 @@ export default function ImageGenerationPage() {
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [polling, setPolling] = useState(false)
-  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [activePanel, setActivePanel] = useState<string>(IMGGEN_NEW_PANEL)
   const [activePoll, setActivePoll] = useState<PollImageJobResponse | null>(null)
   const [jobs, setJobs] = useState<ImageJobDetails[]>([])
   const [selectedJob, setSelectedJob] = useState<ImageJobDetails | null>(null)
+  const [jobDetailLoading, setJobDetailLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [timelineOpen, setTimelineOpen] = useState(false)
@@ -91,9 +100,12 @@ export default function ImageGenerationPage() {
   const [debugOpen, setDebugOpen] = useState(false)
   const [jobsLoading, setJobsLoading] = useState(true)
 
+  const viewingJob = activePanel !== IMGGEN_NEW_PANEL
+  const viewedJobId = viewingJob ? activePanel : null
+
   useEffect(() => {
     setDebugOpen(false)
-  }, [selectedJob?.job_id])
+  }, [activePanel])
 
   const capabilities = useMemo(
     () => filterCapabilitiesByWorkflow(allCapabilities, mode),
@@ -241,6 +253,25 @@ export default function ImageGenerationPage() {
     [token, refreshJob],
   )
 
+  async function onCancelJob(jobId: string) {
+    if (!token) return
+    setError(null)
+    try {
+      const res = await cancelImageJob(token, jobId)
+      setInfo(res.message)
+      setActivePoll(prev =>
+        prev
+          ? { ...prev, status: res.status, error: null }
+          : { job_id: jobId, status: res.status, stage: null, error: null, output_images: [] },
+      )
+      await refreshJob(jobId)
+      void runPoll(jobId)
+      void refreshRunningImageJobs()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
   async function onSubmit() {
     if (!token || !canSubmit) return
     setSubmitting(true)
@@ -260,7 +291,7 @@ export default function ImageGenerationPage() {
         input_image_id: uploadedInput?.image_id ?? null,
         data_preparation: dataPrep,
       })
-      setActiveJobId(res.job_id)
+      setActivePanel(res.job_id)
       await refreshJob(res.job_id)
       setActivePoll({ job_id: res.job_id, status: res.status, stage: null, error: null, output_images: [] })
       setInfo(`Job ${res.job_id} submitted. Polling for results…`)
@@ -271,17 +302,17 @@ export default function ImageGenerationPage() {
     }
   }
 
-  // Auto-poll while job is in progress (sandbox-style; user can still poll manually).
+  // Auto-poll while viewing a job that is still in progress.
   useEffect(() => {
-    if (!token || !activeJobId) return
+    if (!token || !viewedJobId) return
     const status = activePoll?.status ?? selectedJob?.status
     if (status && TERMINAL.has(status)) return
 
     const id = window.setInterval(() => {
-      void runPoll(activeJobId)
+      void runPoll(viewedJobId)
     }, POLL_MS)
     return () => window.clearInterval(id)
-  }, [token, activeJobId, activePoll?.status, selectedJob?.status, runPoll])
+  }, [token, viewedJobId, activePoll?.status, selectedJob?.status, runPoll])
 
   useEffect(() => {
     return () => {
@@ -289,10 +320,16 @@ export default function ImageGenerationPage() {
     }
   }, [inputPreviewUrl])
 
+  function selectNew() {
+    setActivePanel(IMGGEN_NEW_PANEL)
+    setError(null)
+  }
+
   async function selectJob(jobId: string) {
     if (!token) return
-    setActiveJobId(jobId)
+    setActivePanel(jobId)
     setError(null)
+    setJobDetailLoading(true)
     try {
       const details = await refreshJob(jobId)
       setActivePoll(
@@ -317,12 +354,17 @@ export default function ImageGenerationPage() {
       )
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      setJobDetailLoading(false)
     }
   }
 
-  const displayStatus = activePoll?.status ?? selectedJob?.status
+  const displayStatus =
+    viewingJob && selectedJob?.job_id === viewedJobId
+      ? activePoll?.status ?? selectedJob?.status
+      : undefined
   const isRunning =
-    displayStatus != null && !TERMINAL.has(displayStatus) && (submitting || polling || !!activeJobId)
+    viewingJob && displayStatus != null && !TERMINAL.has(displayStatus)
 
   const pipelineEvents = useMemo(
     () => (selectedJob ? pipelineEventsWithoutPolls(selectedJob.events) : []),
@@ -340,7 +382,7 @@ export default function ImageGenerationPage() {
 
   return (
     <div
-      className="flex h-full min-h-0 flex-1 overflow-hidden bg-background"
+      className="flex min-h-0 flex-1 overflow-hidden bg-background"
       data-testid="image-generation-page"
     >
       <aside
@@ -355,14 +397,15 @@ export default function ImageGenerationPage() {
         </div>
         <ImageJobHistorySidebar
           jobs={jobs}
-          activeJobId={activeJobId}
+          activePanel={activePanel}
           token={token}
           loading={jobsLoading}
-          onSelect={jobId => void selectJob(jobId)}
+          onSelectNew={selectNew}
+          onSelectJob={jobId => void selectJob(jobId)}
         />
       </aside>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden">
         <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
           <Button
             variant="ghost"
@@ -373,11 +416,11 @@ export default function ImageGenerationPage() {
             {sidebarOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
           </Button>
           <h1 className="min-w-0 flex-1 truncate font-display text-sm font-semibold">
-            {selectedJob ? `Job ${selectedJob.job_id}` : 'Image Generation'}
+            {viewingJob && selectedJob ? `Job ${selectedJob.job_id}` : 'New'}
           </h1>
           <ToolDebugHeaderButton
             onClick={() => setDebugOpen(true)}
-            disabled={!selectedJob}
+            disabled={!viewingJob || !selectedJob}
             active={toolDebugReady(selectedJob?.offload_cap, selectedJob?.offload_task_id)}
           />
         </header>
@@ -398,23 +441,25 @@ export default function ImageGenerationPage() {
         />
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl space-y-5 px-4 py-5 sm:px-6">
+          <div className="mx-auto max-w-3xl space-y-5 px-3 py-4 sm:px-6 sm:py-5">
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+        {activePanel === IMGGEN_NEW_PANEL && (
+        <section data-testid="imggen-new-panel" className="flex flex-col gap-5">
+          <header className="space-y-1">
+            <h2 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
               <Wand2 className="h-4 w-4" />
               New Job
-            </CardTitle>
-            <CardDescription>
+            </h2>
+            <p className="text-sm text-muted-foreground">
               Img2Img uploads your image to a bucket, rescales it with dataPreparation, then runs the workflow.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2" data-testid="imggen-mode-tabs">
+            </p>
+          </header>
+          <div className="flex flex-col gap-4">
+            <div className="flex gap-2 sm:gap-2" data-testid="imggen-mode-tabs">
               <Button
                 variant={mode === 'txt2img' ? 'default' : 'outline'}
                 size="sm"
+                className="min-h-10 flex-1 sm:flex-none"
                 onClick={() => switchMode('txt2img')}
               >
                 <Sparkles className="mr-1 h-3.5 w-3.5" />
@@ -423,6 +468,7 @@ export default function ImageGenerationPage() {
               <Button
                 variant={mode === 'img2img' ? 'default' : 'outline'}
                 size="sm"
+                className="min-h-10 flex-1 sm:flex-none"
                 onClick={() => switchMode('img2img')}
                 data-testid="imggen-mode-img2img"
               >
@@ -468,7 +514,7 @@ export default function ImageGenerationPage() {
                 <div className="space-y-3 sm:col-span-2" data-testid="imggen-input-section">
                   <Label>Input image</Label>
                   <div className="flex flex-wrap items-start gap-4">
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-4 py-3 text-sm hover:bg-muted">
+                    <label className="inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-muted/50 px-4 py-3 text-sm transition-colors hover:bg-muted sm:w-auto sm:justify-start">
                       <Upload className="h-4 w-4" />
                       {uploading ? 'Uploading…' : 'Choose image'}
                       <input
@@ -496,7 +542,7 @@ export default function ImageGenerationPage() {
                     )}
                   </div>
                   {(inputPreviewUrl || uploadedInput) && (
-                    <div className="relative max-w-xs overflow-hidden rounded-lg border border-border">
+                    <div className="relative w-full max-w-xs overflow-hidden rounded-lg bg-muted/30">
                       <img
                         src={uploadedInput ? imageFileUrl(uploadedInput.image_id, token) : inputPreviewUrl!}
                         alt="Input preview"
@@ -594,40 +640,74 @@ export default function ImageGenerationPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void onSubmit()} disabled={!canSubmit || submitting} data-testid="imggen-submit-job">
-                {submitting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-                {mode === 'img2img' ? 'Edit Image' : 'Generate Image'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => activeJobId && void runPoll(activeJobId)}
-                disabled={!activeJobId || polling}
-                data-testid="imggen-poll-job"
-              >
-                {polling ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
-                Poll now
-              </Button>
-              {isRunning && (
-                <span className="flex items-center text-xs text-muted-foreground">
-                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                  Auto-polling every {POLL_MS / 1000}s…
-                </span>
-              )}
+            <Button
+              className="min-h-11 w-full sm:w-auto"
+              onClick={() => void onSubmit()}
+              disabled={!canSubmit || submitting}
+              data-testid="imggen-submit-job"
+            >
+              {submitting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              {mode === 'img2img' ? 'Edit Image' : 'Generate Image'}
+            </Button>
+
+            {info && activePanel === IMGGEN_NEW_PANEL && (
+              <p className="text-xs text-muted-foreground">{info}</p>
+            )}
+            {error && activePanel === IMGGEN_NEW_PANEL && (
+              <p className="text-xs text-destructive">{error}</p>
+            )}
+          </div>
+        </section>
+        )}
+
+        {viewingJob && (
+          jobDetailLoading ? (
+            <div className="flex min-h-[40vh] items-center justify-center">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
-
-            {info && <p className="text-xs text-muted-foreground">{info}</p>}
-            {error && <p className="text-xs text-destructive">{error}</p>}
-          </CardContent>
-        </Card>
-
-        {selectedJob && (
+          ) : selectedJob?.job_id === viewedJobId ? (
           <Card data-testid="imggen-job-detail">
             <CardHeader>
-              <CardTitle>Job {selectedJob.job_id}</CardTitle>
-              <CardDescription>{selectedJob.workflow}</CardDescription>
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                <span>{modelNameFromCapability(selectedJob.capability)}</span>
+                <span className="text-sm font-normal text-muted-foreground capitalize">
+                  {selectedJob.workflow} · {selectedJob.status.replace(/_/g, ' ')}
+                </span>
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => viewedJobId && void runPoll(viewedJobId)}
+                  disabled={!viewedJobId || polling}
+                  data-testid="imggen-poll-job"
+                >
+                  {polling ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
+                  Poll now
+                </Button>
+                {isRunning && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => viewedJobId && void onCancelJob(viewedJobId)}
+                    disabled={!selectedJob.offload_task_id}
+                    data-testid="imggen-cancel-job"
+                  >
+                    <Square className="mr-1 h-4 w-4 fill-current" />
+                    Cancel
+                  </Button>
+                )}
+                {isRunning && (
+                  <span className="flex items-center text-xs text-muted-foreground">
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    Auto-polling every {POLL_MS / 1000}s…
+                  </span>
+                )}
+              </div>
+              {info && <p className="text-xs text-muted-foreground">{info}</p>}
+              {error && <p className="text-xs text-destructive">{error}</p>}
               {selectedJob.input_image_id && (
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">Input</p>
@@ -721,6 +801,9 @@ export default function ImageGenerationPage() {
               </div>
             </CardContent>
           </Card>
+          ) : (
+            <p className="text-center text-sm text-muted-foreground">Could not load this job.</p>
+          )
         )}
           </div>
         </main>

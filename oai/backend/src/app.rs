@@ -74,8 +74,13 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/images/capabilities", get(routes::images::list_imggen_capabilities))
         .route("/api/images/jobs/{id}", get(routes::images::get_job))
         .route("/api/images/jobs/{id}/poll", post(routes::images::poll_job))
+        .route("/api/images/jobs/{id}/cancel", post(routes::images::cancel_job))
         .route("/api/images/files/{id}", get(routes::images::get_image))
         .route("/api/progress/running", get(routes::progress::running_jobs))
+        .route(
+            "/api/tasks/cancel/{cap}/{id}",
+            post(routes::tasks::cancel_offload_task),
+        )
         .route("/api/debug/offload_poll", post(routes::debug::offload_poll))
         .layer(from_fn_with_state(state.clone(), middleware::jwt_auth_middleware));
 

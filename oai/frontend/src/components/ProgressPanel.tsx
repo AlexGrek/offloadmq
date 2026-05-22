@@ -1,4 +1,5 @@
-import { Loader2 } from 'lucide-react'
+import { Loader2, Square } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import type { RunningJobItem } from '../api/progress'
 import type { ChatTaskRecord } from '../contexts/WorkloadContext'
 
@@ -8,25 +9,39 @@ export type ProgressRow = {
   status: string
   stage?: string | null
   detail?: string
+  /** When set, shows a stop control that calls this handler. */
+  onCancel?: () => void
+  cancelDisabled?: boolean
 }
 
-function chatRows(tasks: ChatTaskRecord[]): ProgressRow[] {
+function chatRows(
+  tasks: ChatTaskRecord[],
+  onCancelChat?: (task: ChatTaskRecord) => void,
+): ProgressRow[] {
   return tasks.map(t => ({
     key: t.reqId,
     label: `Chat ${t.chatId.slice(0, 8)}…`,
     status: t.statusText ?? t.status,
     stage: t.stage,
     detail: t.cap ? `${t.cap} · ${t.id.slice(0, 8)}…` : t.id.slice(0, 8) + '…',
+    onCancel: onCancelChat ? () => onCancelChat(t) : undefined,
+    cancelDisabled: !t.cap || !t.id,
   }))
 }
 
-function imageRows(jobs: RunningJobItem[], focusJobId: string | null): ProgressRow[] {
+function imageRows(
+  jobs: RunningJobItem[],
+  focusJobId: string | null,
+  onCancelImage?: (job: RunningJobItem) => void,
+): ProgressRow[] {
   const rows = jobs.map(j => ({
     key: j.key,
     label: j.label,
     status: j.status,
     stage: j.stage,
     detail: focusJobId === j.job_id ? 'current' : undefined,
+    onCancel: onCancelImage ? () => onCancelImage(j) : undefined,
+    cancelDisabled: !j.offload_cap || !j.offload_task_id,
   }))
   if (focusJobId && !rows.some(r => r.key === `image:${focusJobId}`)) {
     return rows
@@ -68,6 +83,20 @@ export function ProgressPanel({ title = 'Progress', loading, emptyMessage, rows 
                     current
                   </span>
                 )}
+                <span className="flex-1" />
+                {row.onCancel && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-6 shrink-0 text-destructive hover:text-destructive"
+                    title="Cancel task"
+                    data-testid={`progress-cancel-${row.key}`}
+                    disabled={row.cancelDisabled}
+                    onClick={() => row.onCancel?.()}
+                  >
+                    <Square className="size-3 fill-current" />
+                  </Button>
+                )}
               </div>
               <p className="text-muted-foreground">
                 {row.status}
@@ -84,10 +113,17 @@ export function ProgressPanel({ title = 'Progress', loading, emptyMessage, rows 
   )
 }
 
-export function chatProgressRows(tasks: ChatTaskRecord[]): ProgressRow[] {
-  return chatRows(tasks)
+export function chatProgressRows(
+  tasks: ChatTaskRecord[],
+  onCancelChat?: (task: ChatTaskRecord) => void,
+): ProgressRow[] {
+  return chatRows(tasks, onCancelChat)
 }
 
-export function imageProgressRows(jobs: RunningJobItem[], focusJobId: string | null): ProgressRow[] {
-  return imageRows(jobs, focusJobId)
+export function imageProgressRows(
+  jobs: RunningJobItem[],
+  focusJobId: string | null,
+  onCancelImage?: (job: RunningJobItem) => void,
+): ProgressRow[] {
+  return imageRows(jobs, focusJobId, onCancelImage)
 }
