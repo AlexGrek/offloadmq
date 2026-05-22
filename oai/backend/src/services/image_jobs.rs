@@ -818,7 +818,8 @@ async fn store_output_image(
         .as_str()
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("output_{}.jpg", idx + 1));
-    let processed = process_output_image(client, output_bucket, image, file_uid).await?;
+    let processed =
+        process_output_image(client, output_bucket, image, file_uid, job.prompt.trim()).await?;
 
     let image_id = state.next_id();
     let storage_path = image_paths::main_image_path(user_id, "output", Some(job.id), image_id);
@@ -849,21 +850,26 @@ async fn store_output_image(
 }
 
 /// Decodes an inline base64 image when present, otherwise downloads it from the
-/// offload bucket. Either way the result is normalized via `process_image`.
+/// offload bucket. Normalized to JPEG with the job prompt in EXIF.
 async fn process_output_image(
     client: &OffloadImageClient,
     output_bucket: &str,
     image: &Value,
     file_uid: &str,
+    prompt: &str,
 ) -> Result<ProcessedImage, AppError> {
     if let Some(data_base64) = image["data_base64"].as_str() {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(data_base64)
             .map_err(|e| AppError::ExternalService(format!("bad base64 image: {e}")))?;
-        image_processing::process_image(bytes, image["content_type"].as_str().map(ToOwned::to_owned))
+        image_processing::process_generated_image(
+            bytes,
+            image["content_type"].as_str().map(ToOwned::to_owned),
+            prompt,
+        )
     } else {
         let (bytes, content_type) = download_with_retries(client, output_bucket, file_uid, 3).await?;
-        image_processing::process_image(bytes, Some(content_type))
+        image_processing::process_generated_image(bytes, Some(content_type), prompt)
     }
 }
 

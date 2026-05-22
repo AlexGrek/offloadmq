@@ -35,6 +35,21 @@ pub struct ProcessedImage {
     pub thumbnail_height: i32,
 }
 
+/// Like [`process_image`], then writes the job prompt into EXIF `ImageDescription`
+/// (generated / OffloadMQ outputs only).
+pub fn process_generated_image(
+    bytes: Vec<u8>,
+    content_type_hint: Option<String>,
+    prompt: &str,
+) -> Result<ProcessedImage, AppError> {
+    let mut out = process_image(bytes, content_type_hint)?;
+    if !prompt.trim().is_empty() {
+        embed_prompt_exif(&mut out.bytes, prompt.trim())?;
+        out.sha256 = sha256_hex(&out.bytes);
+    }
+    Ok(out)
+}
+
 /// Decodes arbitrary input, applies EXIF orientation, downscales to
 /// `MAX_IMAGE_EDGE`, encodes as JPEG (quality 90) when needed, and builds a thumbnail.
 pub fn process_image(
@@ -222,6 +237,55 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Max chars for EXIF `ImageDescription` (viewers vary; stay conservative).
+const EXIF_DESCRIPTION_MAX_CHARS: usize = 2000;
+
+fn embed_prompt_exif(jpeg: &mut Vec<u8>, prompt: &str) -> Result<(), AppError> {
+    use little_exif::{
+        exif_tag::ExifTag,
+        filetype::FileExtension,
+        metadata::Metadata,
+    };
+
+    if !is_jpeg_blob(jpeg, "image/jpeg") {
+        return Err(AppError::Internal(
+            "embed_prompt_exif called on non-JPEG bytes".into(),
+        ));
+    }
+
+    let file_type = FileExtension::JPEG;
+    let _ = Metadata::clear_app12_segment(jpeg, file_type);
+    let _ = Metadata::clear_app13_segment(jpeg, file_type);
+
+    let description = truncate_exif_text(prompt, EXIF_DESCRIPTION_MAX_CHARS);
+    let mut metadata = Metadata::new_from_vec(jpeg, file_type).unwrap_or_else(|_| Metadata::new());
+    metadata.set_tag(ExifTag::ImageDescription(description));
+    metadata
+        .write_to_vec(jpeg, file_type)
+        .map_err(|e| AppError::Internal(format!("exif write failed: {e}")))?;
+    Ok(())
+}
+
+fn truncate_exif_text(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let end: String = text.chars().take(max_chars.saturating_sub(1)).collect();
+    format!("{end}…")
+}
+
+pub fn exif_image_description(jpeg: &[u8]) -> Option<String> {
+    let mut cursor = Cursor::new(jpeg);
+    let exif = exif::Reader::new()
+        .continue_on_error(true)
+        .read_from_container(&mut cursor)
+        .ok()?;
+    let field = exif.get_field(exif::Tag::ImageDescription, exif::In::PRIMARY)?;
+    let s = field.display_value().to_string();
+    let s = s.trim().to_string();
+    (!s.is_empty()).then_some(s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +325,20 @@ mod tests {
         let png = tiny_png();
         let jpeg = ensure_jpeg_response(png, "image/png").unwrap();
         assert!(is_jpeg_blob(&jpeg, "image/jpeg"));
+    }
+
+    #[test]
+    fn generated_jpeg_embeds_prompt_in_exif() {
+        let prompt = "a red cube on a marble table, studio lighting";
+        let out =
+            process_generated_image(tiny_png(), Some("image/png".into()), prompt).unwrap();
+        let desc = exif_image_description(&out.bytes).unwrap();
+        assert!(desc.contains("red cube"));
+    }
+
+    #[test]
+    fn upload_path_does_not_embed_prompt() {
+        let out = process_image(tiny_png(), Some("image/png".into())).unwrap();
+        assert!(exif_image_description(&out.bytes).is_none());
     }
 }

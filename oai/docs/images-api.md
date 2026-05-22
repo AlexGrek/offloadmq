@@ -40,6 +40,8 @@ Every stored image is normalized on ingest (upload or OffloadMQ output download)
 
 Non-JPEG uploads (PNG, WebP, etc.) are transcoded. JPEG inputs are kept as-is when no resize or orientation fix is required.
 
+**Generated outputs** (OffloadMQ download path) are always normalized the same way, then the job **prompt** is written to EXIF `ImageDescription` (UTF-8, truncated to 2000 characters). User uploads do not get prompt metadata.
+
 **On download**, `GET /api/images/files/{id}` returns JPEG bytes. Legacy non-JPEG blobs in storage are transcoded on read.
 
 **Storage layout** (OpenDAL; FS or S3/Garage):
