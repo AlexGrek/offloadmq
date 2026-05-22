@@ -15,6 +15,21 @@ use crate::{db::users, error::AppError, state::AppState};
 #[derive(Clone, Debug)]
 pub struct AuthenticatedUser(pub i64);
 
+fn query_param_token(query: &str) -> Option<String> {
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=')?;
+        if key != "token" {
+            continue;
+        }
+        return Some(
+            urlencoding::decode(value)
+                .map(|cow| cow.into_owned())
+                .unwrap_or_else(|_| value.to_string()),
+        );
+    }
+    None
+}
+
 pub fn extract_jwt_token(parts: &Parts) -> Option<String> {
     parts
         .headers
@@ -37,12 +52,8 @@ pub fn extract_jwt_token(parts: &Parts) -> Option<String> {
                 })
         })
         .or_else(|| {
-            // WebSocket clients can't set Authorization headers; support ?token= query param.
-            parts.uri.query().and_then(|q| {
-                q.split('&').find_map(|pair| {
-                    pair.strip_prefix("token=").map(|v| v.to_string())
-                })
-            })
+            // WebSocket and <img src> cannot send Authorization; support ?token= query param.
+            parts.uri.query().and_then(query_param_token)
         })
 }
 

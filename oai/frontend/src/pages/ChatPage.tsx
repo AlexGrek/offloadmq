@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUp,
   ChevronDown,
@@ -528,32 +528,82 @@ export default function ChatPage() {
       .catch(console.error)
   }
 
+  const showSystemStudio = !loadingMessages && (!activeChatId || messages.length === 0)
+
   // ── Scroll ────────────────────────────────────────────────────────────────
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  const atBottomRef = useRef(true)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  /** When true, new content keeps the transcript pinned to the bottom. */
+  const autoScrollRef = useRef(true)
+  const lastScrollTopRef = useRef(0)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+
+  const BOTTOM_THRESHOLD_PX = 48
+
+  const isStreaming = useMemo(
+    () => messages.some(m => isMessagePending(m)),
+    [messages],
+  )
+
+  function distanceFromBottom(el: HTMLDivElement): number {
+    return el.scrollHeight - el.scrollTop - el.clientHeight
+  }
 
   function handleScroll() {
     const el = scrollRef.current
     if (!el) return
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-    atBottomRef.current = atBottom
-    setShowScrollBtn(!atBottom)
+    const { scrollTop } = el
+    const dist = distanceFromBottom(el)
+
+    // Any upward scroll disables follow; reaching the end re-enables it.
+    if (scrollTop < lastScrollTopRef.current - 1) {
+      autoScrollRef.current = false
+    } else if (dist <= BOTTOM_THRESHOLD_PX) {
+      autoScrollRef.current = true
+    }
+
+    lastScrollTopRef.current = scrollTop
+    setShowScrollBtn(!autoScrollRef.current)
   }
 
-  useEffect(() => {
-    if (atBottomRef.current) {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-    }
-  }, [messages])
+  function scrollMessagesToBottom(behavior: ScrollBehavior = 'smooth') {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior })
+    autoScrollRef.current = true
+    lastScrollTopRef.current = el.scrollTop
+    setShowScrollBtn(false)
+  }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!autoScrollRef.current) return
     const el = scrollRef.current
     if (!el) return
     el.scrollTop = el.scrollHeight
-    atBottomRef.current = true
-    setShowScrollBtn(false)
+    lastScrollTopRef.current = el.scrollTop
+  }, [messages, isStreaming, systemPrompt, showSystemStudio, loadingMessages])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !messagesEndRef.current) return
+    const root = el
+    const end = messagesEndRef.current
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          autoScrollRef.current = true
+          setShowScrollBtn(false)
+        }
+      },
+      { root, threshold: 0, rootMargin: `0px 0px ${BOTTOM_THRESHOLD_PX}px 0px` },
+    )
+    io.observe(end)
+    return () => io.disconnect()
+  }, [activeChatId, showSystemStudio, loadingMessages])
+
+  useEffect(() => {
+    scrollMessagesToBottom('instant')
   }, [activeChatId])
 
   // ── Textarea auto-resize ──────────────────────────────────────────────────
@@ -618,7 +668,7 @@ export default function ChatPage() {
 
     setMessages(prev => [...prev, userMsg, thinkingMsg])
     setInput('')
-    atBottomRef.current = true
+    autoScrollRef.current = true
     setShowScrollBtn(false)
     reqToMsgId.current.set(reqId, assistantMsgId)
 
@@ -644,9 +694,7 @@ export default function ChatPage() {
   }, [input, selectedModel, ws, activeChatId, upsertChatTask])
 
   function scrollToBottom() {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-    atBottomRef.current = true
-    setShowScrollBtn(false)
+    scrollMessagesToBottom('smooth')
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -657,16 +705,18 @@ export default function ChatPage() {
   }
 
   const canSend = !!input.trim() && !!selectedModel && ws.status === 'connected' && !!activeChatId
-  const showSystemStudio = !loadingMessages && (!activeChatId || messages.length === 0)
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden bg-background" data-testid="chat-page">
-      {/* ── Sidebar ── */}
+    <div
+      className="flex h-full min-h-0 flex-1 overflow-hidden bg-background"
+      data-testid="chat-page"
+    >
+      {/* ── Sidebar: fixed header + independently scrollable chat list ── */}
       <aside
         className={cn(
-          'flex flex-col border-r border-border bg-sidebar shrink-0 overflow-hidden',
+          'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar',
           'transition-[width] duration-200',
           sidebarOpen ? 'w-64' : 'w-0',
         )}
@@ -685,7 +735,10 @@ export default function ChatPage() {
           </Button>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-1 px-1">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 px-1"
+          data-testid="chat-sidebar-list"
+        >
           {loadingChats ? (
             <div className="flex justify-center py-4">
               <Loader2 className="size-4 animate-spin text-muted-foreground" />
@@ -766,8 +819,8 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      {/* ── Main ── */}
-      <div className="flex flex-col flex-1 min-w-0">
+      {/* ── Main: header + scrollable transcript + fixed input ── */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {/* topbar */}
         <header className="flex items-center gap-2 px-3 h-11 border-b border-border shrink-0">
           <Button
@@ -796,22 +849,21 @@ export default function ChatPage() {
           onOpenChange={setDebugOpen}
           cap={debugTask?.cap}
           taskId={debugTask?.id}
-          wsEvents={debugTask?.wsEvents}
           subject={activeChat?.title || 'New chat'}
           disabledReason={
             debugTask ? undefined : 'Send a message to capture OffloadMQ task ids.'
           }
         />
 
-        {/* messages */}
+        {/* messages — only this region scrolls */}
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="relative flex-1 overflow-y-auto"
+          className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
           data-testid="messages-area"
         >
           {!token ? null : showSystemStudio ? (
-            <div className="flex h-full flex-col items-center justify-center overflow-y-auto px-4 py-8">
+            <div className="flex flex-col items-center px-4 py-8">
               <SystemPromptStudio
                 token={token}
                 value={systemPrompt}
@@ -830,13 +882,14 @@ export default function ChatPage() {
                   New chat with this prompt
                 </Button>
               )}
+              <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />
             </div>
           ) : loadingMessages ? (
-            <div className="flex h-full items-center justify-center">
+            <div className="flex min-h-[50vh] items-center justify-center">
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-6">
+            <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
               <SystemPromptBlock content={systemPrompt} />
               {messages.map(msg => (
                 <div
@@ -862,6 +915,7 @@ export default function ChatPage() {
                   )}
                 </div>
               ))}
+              <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />
             </div>
           )}
 
@@ -880,8 +934,8 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* ── Input ── */}
-        <div className="shrink-0 px-4 pb-4 pt-2">
+        {/* ── Input — pinned below transcript ── */}
+        <div className="shrink-0 border-t border-border bg-background px-4 pb-4 pt-2">
           <div className="max-w-2xl mx-auto">
             <div
               className="group/input-group rounded-2xl border border-input bg-background shadow-sm transition-[border-color,box-shadow] duration-150 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"

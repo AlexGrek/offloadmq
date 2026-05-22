@@ -8,6 +8,7 @@ const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 type ImageJobHistorySidebarProps = {
   jobs: ImageJobDetails[]
   activeJobId: string | null
+  token: string | null
   loading?: boolean
   onSelect: (jobId: string) => void
 }
@@ -20,11 +21,12 @@ function statusLabel(status: string): string | null {
 export function ImageJobHistorySidebar({
   jobs,
   activeJobId,
+  token,
   loading,
   onSelect,
 }: ImageJobHistorySidebarProps) {
   return (
-    <div className="flex-1 overflow-y-auto py-1 px-1">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 px-1">
       {loading ? (
         <div className="flex justify-center py-4">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
@@ -35,7 +37,7 @@ export function ImageJobHistorySidebar({
         <ul className="space-y-1">
           {jobs.map(job => {
             const outputId = lastOutputImageId(job)
-            const bgUrl = outputId ? imageFileUrl(outputId) : null
+            const bgUrl = outputId ? imageFileUrl(outputId, token) : null
             const active = job.job_id === activeJobId
             const inProgress = statusLabel(job.status)
 

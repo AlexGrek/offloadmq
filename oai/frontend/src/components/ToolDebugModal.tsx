@@ -12,14 +12,12 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchOffloadPoll } from '../api/debug'
-import type { ServerEvent } from '../types/ws'
 
 export type ToolDebugModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   cap: string | null | undefined
   taskId: string | null | undefined
-  wsEvents?: ServerEvent[]
   disabledReason?: string
   /** e.g. chat title or "Image job 42" */
   subject?: string
@@ -45,7 +43,7 @@ export function ToolDebugHeaderButton({
     <Button
       type="button"
       variant="ghost"
-      size="sm"
+      size="icon-sm"
       onClick={onClick}
       disabled={disabled}
       title={disabled ? 'Debug unavailable' : 'OffloadMQ task debug'}
@@ -57,7 +55,6 @@ export function ToolDebugHeaderButton({
       )}
     >
       <Bug className="size-4" />
-      <span className="ml-1.5 hidden sm:inline">Debug</span>
     </Button>
   )
 }
@@ -67,7 +64,6 @@ export function ToolDebugModal({
   onOpenChange,
   cap,
   taskId,
-  wsEvents = [],
   disabledReason,
   subject,
 }: ToolDebugModalProps) {
@@ -150,17 +146,6 @@ export function ToolDebugModal({
             <p className="text-xs text-destructive" data-testid="tool-debug-error">
               {error}
             </p>
-          )}
-          {wsEvents.length > 0 && (
-            <div>
-              <p className="mb-1 text-xs font-medium text-muted-foreground">WebSocket events</p>
-              <pre
-                className="max-h-48 overflow-auto rounded-md border border-border bg-muted/30 p-2 font-mono text-[10px] leading-relaxed"
-                data-testid="tool-debug-ws"
-              >
-                {JSON.stringify(wsEvents, null, 2)}
-              </pre>
-            </div>
           )}
           {pollJson && (
             <div>

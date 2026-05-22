@@ -339,10 +339,13 @@ export default function ImageGenerationPage() {
   }, [selectedJob?.job_id])
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden bg-background" data-testid="image-generation-page">
+    <div
+      className="flex h-full min-h-0 flex-1 overflow-hidden bg-background"
+      data-testid="image-generation-page"
+    >
       <aside
         className={cn(
-          'flex shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200',
+          'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200',
           sidebarOpen ? 'w-64' : 'w-0',
         )}
         data-testid="imggen-pipelines-sidebar"
@@ -353,12 +356,13 @@ export default function ImageGenerationPage() {
         <ImageJobHistorySidebar
           jobs={jobs}
           activeJobId={activeJobId}
+          token={token}
           loading={jobsLoading}
           onSelect={jobId => void selectJob(jobId)}
         />
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
           <Button
             variant="ghost"
@@ -494,7 +498,7 @@ export default function ImageGenerationPage() {
                   {(inputPreviewUrl || uploadedInput) && (
                     <div className="relative max-w-xs overflow-hidden rounded-lg border border-border">
                       <img
-                        src={uploadedInput ? imageFileUrl(uploadedInput.image_id) : inputPreviewUrl!}
+                        src={uploadedInput ? imageFileUrl(uploadedInput.image_id, token) : inputPreviewUrl!}
                         alt="Input preview"
                         className="max-h-48 w-full object-contain bg-muted/30"
                         data-testid="imggen-input-preview"
@@ -628,7 +632,7 @@ export default function ImageGenerationPage() {
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">Input</p>
                   <img
-                    src={imageFileUrl(selectedJob.input_image_id)}
+                    src={imageFileUrl(selectedJob.input_image_id, token)}
                     alt="Job input"
                     className="max-h-40 rounded-lg border border-border object-contain"
                   />
@@ -699,13 +703,13 @@ export default function ImageGenerationPage() {
                   .map(file => (
                     <a
                       key={file.image_id}
-                      href={imageFileUrl(file.image_id)}
+                      href={imageFileUrl(file.image_id, token)}
                       target="_blank"
                       rel="noreferrer"
                       className="group overflow-hidden rounded-lg border border-border"
                     >
                       <img
-                        src={imageFileUrl(file.image_id)}
+                        src={imageFileUrl(file.image_id, token)}
                         alt={file.filename}
                         className="h-52 w-full object-cover transition-transform group-hover:scale-[1.02]"
                       />

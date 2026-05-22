@@ -130,8 +130,11 @@ export function getImageJob(token: string, jobId: string): Promise<ImageJobDetai
   return request(`/api/images/jobs/${jobId}`, token)
 }
 
-export function imageFileUrl(imageId: string): string {
-  return `/api/images/files/${imageId}`
+/** URL for `<img src>` / links — includes JWT query param (browsers omit Authorization). */
+export function imageFileUrl(imageId: string, token: string | null | undefined): string {
+  const base = `/api/images/files/${encodeURIComponent(imageId)}`
+  if (!token) return base
+  return `${base}?token=${encodeURIComponent(token)}`
 }
 
 export function listImgGenCapabilities(token: string): Promise<ImgGenCapability[]> {
