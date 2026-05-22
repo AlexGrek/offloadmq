@@ -97,13 +97,30 @@
       "Bash(uv --version)",
       "Bash(pip index *)",
       "Bash(/home/alex/src/offloadmq/kokoro-setup/venv/bin/pip index *)",
-      "Bash(docker pull *)"
+      "Bash(docker pull *)",
+      "Bash(task --version)",
+      "Bash(docker compose *)",
+      "Bash(docker exec *)",
+      "Bash(docker run *)",
+      "Bash(cat > *)",
+      "Bash(mkdir -p src/components/ui src/lib && cp @/components/ui/*.tsx src/components/ui/ && cp @/lib/utils.ts src/lib/ && rm -rf @)",
+      "WebFetch(domain:ui.shadcn.com)",
+      "Bash('input[type=\\\\\"text\\\\\"]')",
+      "Bash('input[name=\\\\\"login\\\\\"]')",
+      "Bash('input[type=\\\\\"password\\\\\"]')",
+      "Bash(node -e ' *)",
+      "Bash(node --input-type=module)",
+      "Bash(pkill -f \"vite\")",
+      "Bash(mktemp -d)",
+      "Bash(mkdir -p /Users/vedmedik/dev/offloadmq/.claude/skills/oai-frontend)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
       "/private/tmp/ollama-src",
       "/Users/vedmedik/.offload-agent/skills",
-      "/Users/vedmedik/Library/LaunchAgents"
+      "/Users/vedmedik/Library/LaunchAgents",
+      "/tmp",
+      "/Users/vedmedik/dev/offloadmq/oai/frontend/@/components/ui"
     ]
   }
 }

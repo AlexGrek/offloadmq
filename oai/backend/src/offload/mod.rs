@@ -1,0 +1,142 @@
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+
+use crate::error::AppError;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmCapabilityInfo {
+    pub base: String,
+    pub tags: Vec<String>,
+    pub raw: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskId {
+    pub cap: String,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PollResponse {
+    pub status: String,
+    pub stage: Option<String>,
+    pub output: Option<serde_json::Value>,
+    pub log: Option<String>,
+}
+
+pub struct OffloadClient {
+    http: Client,
+    base_url: String,
+    api_key: String,
+}
+
+impl OffloadClient {
+    pub fn new(http: Client, base_url: String, api_key: String) -> Self {
+        Self { http, base_url: base_url.trim_end_matches('/').to_string(), api_key }
+    }
+
+    pub async fn list_llm_capabilities(&self) -> Result<Vec<LlmCapabilityInfo>, AppError> {
+        let url = format!("{}/api/capabilities/list/online_ext", self.base_url);
+        let body = serde_json::json!({ "apiKey": self.api_key });
+        let resp = self
+            .http
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(e.to_string()))?;
+        if !resp.status().is_success() {
+            return Err(AppError::ExternalService(format!(
+                "capabilities endpoint returned {}",
+                resp.status()
+            )));
+        }
+        let raw: Vec<String> =
+            resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))?;
+        Ok(parse_llm_capabilities(&raw))
+    }
+
+    pub async fn submit_chat(
+        &self,
+        capability: &str,
+        messages: Vec<ChatMessage>,
+    ) -> Result<TaskId, AppError> {
+        let url = format!("{}/api/task/submit", self.base_url);
+        let body = serde_json::json!({
+            "apiKey": self.api_key,
+            "capability": capability,
+            "urgent": false,
+            "restartable": false,
+            "payload": {
+                "stream": false,
+                "messages": messages
+            },
+            "fetchFiles": [],
+            "file_bucket": [],
+            "artifacts": []
+        });
+        let resp = self
+            .http
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(e.to_string()))?;
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("submit failed: {text}")));
+        }
+        let val: serde_json::Value =
+            resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))?;
+        let cap = val["id"]["cap"]
+            .as_str()
+            .ok_or_else(|| AppError::ExternalService("missing id.cap in submit response".into()))?
+            .to_string();
+        let id = val["id"]["id"]
+            .as_str()
+            .ok_or_else(|| AppError::ExternalService("missing id.id in submit response".into()))?
+            .to_string();
+        Ok(TaskId { cap, id })
+    }
+
+    pub async fn poll_task(&self, task_id: &TaskId) -> Result<PollResponse, AppError> {
+        let cap_encoded = urlencoding::encode(&task_id.cap);
+        let url =
+            format!("{}/api/task/poll/{}/{}", self.base_url, cap_encoded, task_id.id);
+        let body = serde_json::json!({ "apiKey": self.api_key });
+        let resp = self
+            .http
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(e.to_string()))?;
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("poll failed: {text}")));
+        }
+        resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))
+    }
+}
+
+fn parse_llm_capabilities(raw: &[String]) -> Vec<LlmCapabilityInfo> {
+    raw.iter()
+        .filter(|s| s.starts_with("llm."))
+        .map(|s| {
+            if let Some(open) = s.find('[') {
+                let base = s[..open].to_string();
+                let inner = s[open + 1..].trim_end_matches(']');
+                let tags = inner.split(';').map(|t| t.to_string()).collect();
+                LlmCapabilityInfo { base, tags, raw: s.clone() }
+            } else {
+                LlmCapabilityInfo { base: s.clone(), tags: vec![], raw: s.clone() }
+            }
+        })
+        .collect()
+}

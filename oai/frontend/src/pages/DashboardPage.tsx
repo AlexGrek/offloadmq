@@ -1,0 +1,53 @@
+import { Link } from 'react-router-dom'
+import { Bot } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
+import { TopBar } from '../components/TopBar'
+
+const apps = [
+  {
+    id: 'chat',
+    icon: Bot,
+    title: 'LLM Chat',
+    description: 'Chat with AI models',
+    href: '/chat',
+    gradient: 'from-indigo-500/20 to-violet-500/20',
+    iconBg: 'bg-indigo-500/20',
+    iconColor: 'text-indigo-400',
+  },
+] as const
+
+export default function DashboardPage() {
+  const { user } = useAuth()
+
+  return (
+    <div className="flex min-h-dvh flex-col">
+      <TopBar />
+      <main className="mx-auto w-full max-w-5xl flex-1 p-6">
+        <div className="mb-8">
+          <h1 className="font-display text-2xl font-bold">
+            Welcome back{user?.login ? `, ${user.login}` : ''}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">What would you like to do today?</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+          {apps.map(app => (
+            <Link
+              key={app.id}
+              to={app.href}
+              className={`group flex flex-col gap-3 rounded-2xl border border-border bg-gradient-to-br ${app.gradient} p-5 transition-all hover:shadow-md hover:border-border/60`}
+            >
+              <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${app.iconBg}`}>
+                <app.icon className={`h-6 w-6 ${app.iconColor}`} />
+              </div>
+              <div>
+                <p className="font-semibold text-sm">{app.title}</p>
+                <p className="text-xs text-muted-foreground">{app.description}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </main>
+    </div>
+  )
+}

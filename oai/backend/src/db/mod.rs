@@ -1,0 +1,15 @@
+pub mod app_settings;
+pub mod chats;
+pub mod entities;
+pub mod migrator;
+pub mod users;
+
+use anyhow::Result;
+use sea_orm::{Database, DatabaseConnection};
+use sea_orm_migration::MigratorTrait;
+
+pub async fn connect(database_url: &str) -> Result<DatabaseConnection> {
+    let db = Database::connect(database_url).await?;
+    migrator::Migrator::up(&db, None).await?;
+    Ok(db)
+}

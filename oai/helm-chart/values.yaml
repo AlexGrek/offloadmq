@@ -1,0 +1,84 @@
+replicaCount: 1
+
+image:
+  repository: grekodocker/oai
+  tag: latest  # overridden at deploy time via --set image.tag=<git-hash>
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 3000
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+ingress:
+  enabled: true
+  className: "traefik"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  host: "oai.alexgr.space"
+  tls:
+    secretName: oai-tls
+
+config:
+  staticDir: "/app/static"
+  rustLog: "info"
+
+secret:
+  jwtSecret: "change-me-in-production"
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+  database: oai
+  user: oai
+  password: "change-me-in-production"
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+garage:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: dxflrs/garage
+    tag: v2.2.0
+    pullPolicy: IfNotPresent
+  service:
+    s3Port: 3900
+    rpcPort: 3901
+    adminPort: 3903
+  persistence:
+    metadataSize: 1Gi
+    dataSize: 20Gi
+    storageClass: ""
+  replicationFactor: 1
+  rpcSecret: "change-me-in-production"
+  storage:
+    bucket: oai
+    region: us-east-1
+    accessKeyId: ""
+    secretAccessKey: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
