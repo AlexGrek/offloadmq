@@ -286,6 +286,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .storage
                         .buckets
                         .delete_bucket(&bucket.uid, &bucket.api_key)
+                        .await
                     {
                         log::warn!("Failed to delete bucket metadata {}: {}", bucket.uid, e);
                         ok = false;
@@ -388,7 +389,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let ttl_days = state.config.stale_agents.ttl_days;
 
-                match state.storage.agents.cleanup_stale_agents(ttl_days) {
+                match state.storage.agents.cleanup_stale_agents(ttl_days).await {
                     Ok(deleted) => {
                         if deleted > 0 {
                             info!(

@@ -27,7 +27,7 @@ pub async fn poll_urgent(
     state: &Arc<AppState>,
     comm_method: CommunicationMethod,
 ) -> Result<Option<UnassignedTask>, AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method).await?;
     let caps = &agent.capabilities;
     Ok(find_urgent_tasks_with_capabilities(&state.urgent, caps, &agent.uid).await)
 }
@@ -37,7 +37,7 @@ pub async fn poll_non_urgent(
     state: &Arc<AppState>,
     comm_method: CommunicationMethod,
 ) -> Result<Option<UnassignedTask>, AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method).await?;
     let caps = &agent.capabilities;
     debug!(
         "Searching for tasks for agent {:?} with tier {:?}",
@@ -75,7 +75,7 @@ fn validate_display_name(name: &Option<String>) -> Result<(), AppError> {
     Ok(())
 }
 
-pub fn do_update_agent_info(
+pub async fn do_update_agent_info(
     mut agent: Agent,
     req: AgentUpdateRequest,
     state: &Arc<AppState>,
@@ -90,7 +90,7 @@ pub fn do_update_agent_info(
     agent.display_name = req.display_name;
     let uid = agent.uid.clone();
     let key = agent.personal_login_token.clone();
-    state.storage.agents.update_agent_last_contact(agent, comm_method)?;
+    state.storage.agents.update_agent_last_contact(agent, comm_method).await?;
     Ok(AgentRegistrationResponse {
         agent_id: uid,
         message: "Updated".to_string(),
@@ -98,14 +98,14 @@ pub fn do_update_agent_info(
     })
 }
 
-pub fn do_register_agent(
+pub async fn do_register_agent(
     req: AgentRegistrationRequest,
     state: &Arc<AppState>,
 ) -> Result<AgentRegistrationResponse, AppError> {
     validate_api_key(&state.config.agent_api_keys, &req.api_key)?;
     validate_display_name(&req.display_name)?;
     let mut agent_object: Agent = req.into();
-    state.storage.agents.create_agent(&mut agent_object)?;
+    state.storage.agents.create_agent(&mut agent_object).await?;
     Ok(AgentRegistrationResponse {
         agent_id: agent_object.uid,
         message: "Registered".to_string(),
@@ -251,7 +251,7 @@ pub async fn resolve_task(
     state: &Arc<AppState>,
     comm_method: CommunicationMethod,
 ) -> Result<(), AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method).await?;
     info!("Agent {} reporting task {task_id}", agent.uid_short);
     debug!("Report: {:?}", &report);
 
@@ -307,6 +307,7 @@ pub async fn resolve_task(
             .storage
             .buckets
             .delete_bucket(bucket_uid, &bucket.api_key)
+            .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
         info!(
             "Deleted rm_after_task bucket {} after task completion",
@@ -327,7 +328,7 @@ pub async fn update_task_progress(
     state: &Arc<AppState>,
     comm_method: CommunicationMethod,
 ) -> Result<(), AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method)?;
+    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method).await?;
     info!(
         "Agent {} updating task {task_id} with log: {:?}",
         agent.uid_short,

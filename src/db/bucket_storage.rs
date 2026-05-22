@@ -53,7 +53,7 @@ impl BucketStorage {
 
     // ── bucket CRUD ──────────────────────────────────────────────────────────
 
-    pub fn create_bucket(&self, api_key: &str, rm_after_task: bool) -> anyhow::Result<BucketMeta> {
+    pub async fn create_bucket(&self, api_key: &str, rm_after_task: bool) -> anyhow::Result<BucketMeta> {
         let uid = uuid::Uuid::new_v4().to_string();
         let meta = BucketMeta {
             uid: uid.clone(),
@@ -64,11 +64,11 @@ impl BucketStorage {
             tasks: vec![],
             rm_after_task,
         };
-        self.save_bucket(&meta)?;
+        self.save_bucket(&meta).await?;
         let idx_key = format!("{}|{}", api_key, uid);
         self.owner_idx
             .insert(idx_key.as_bytes(), uid.as_bytes())?;
-        self.owner_idx.flush()?;
+        self.owner_idx.flush_async().await?;
         Ok(meta)
     }
 
@@ -79,28 +79,28 @@ impl BucketStorage {
         }
     }
 
-    pub fn save_bucket(&self, meta: &BucketMeta) -> anyhow::Result<()> {
+    pub async fn save_bucket(&self, meta: &BucketMeta) -> anyhow::Result<()> {
         let data = to_vec_named(meta)?;
         self.buckets.insert(meta.uid.as_bytes(), data)?;
-        self.buckets.flush()?;
+        self.buckets.flush_async().await?;
         Ok(())
     }
 
-    pub fn delete_bucket(&self, bucket_uid: &str, api_key: &str) -> anyhow::Result<()> {
+    pub async fn delete_bucket(&self, bucket_uid: &str, api_key: &str) -> anyhow::Result<()> {
         self.buckets.remove(bucket_uid.as_bytes())?;
         let idx_key = format!("{}|{}", api_key, bucket_uid);
         self.owner_idx.remove(idx_key.as_bytes())?;
-        self.buckets.flush()?;
-        self.owner_idx.flush()?;
+        self.buckets.flush_async().await?;
+        self.owner_idx.flush_async().await?;
         Ok(())
     }
 
     /// Append `task_id` to the bucket's task list (idempotent; no-op if already present).
-    pub fn add_task(&self, bucket_uid: &str, task_id: &str) -> anyhow::Result<()> {
+    pub async fn add_task(&self, bucket_uid: &str, task_id: &str) -> anyhow::Result<()> {
         if let Some(mut meta) = self.get_bucket(bucket_uid)? {
             if !meta.tasks.iter().any(|t| t == task_id) {
                 meta.tasks.push(task_id.to_string());
-                self.save_bucket(&meta)?;
+                self.save_bucket(&meta).await?;
             }
         }
         Ok(())

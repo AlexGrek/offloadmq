@@ -22,6 +22,9 @@ pub struct UrgentTaskEntry {
     pub assigned_task: Option<AssignedTask>,
     pub state: Arc<TaskState>,
     pub created_at: DateTime<Utc>,
+    /// Last time the task saw activity — set on assignment and on every progress
+    /// update. Used to expire in-flight tasks whose agent has gone silent.
+    pub last_update: DateTime<Utc>,
     pub ttl: TimeDelta,
 }
 
@@ -90,6 +93,7 @@ impl UrgentTaskStore {
             assigned_task: Option::default(),
             state: state.clone(),
             created_at: Utc::now(),
+            last_update: Utc::now(),
             ttl: TimeDelta::seconds(ttl_secs),
         };
 
@@ -104,9 +108,12 @@ impl UrgentTaskStore {
     pub async fn assign_task(&self, task_id: &TaskId, agent: &str) -> bool {
         let mut tasks = self.tasks.write().await;
         if let Some(entry) = tasks.get_mut(task_id) {
-            entry.assigned_task = Some(entry.task.assign_to(agent));
             let mut status = entry.state.status.write().await;
+            // Only assign a still-Pending task. Mutating `assigned_task` before
+            // this check let a losing racer overwrite the winner's assignment.
             if *status == TaskStatus::Pending {
+                entry.assigned_task = Some(entry.task.assign_to(agent));
+                entry.last_update = Utc::now();
                 *status = TaskStatus::Assigned;
                 let _ = entry.state.notify.send(TaskStatus::Assigned);
                 return true;
@@ -169,6 +176,7 @@ impl UrgentTaskStore {
     ) -> Result<bool, AppError> {
         let mut tasks = self.tasks.write().await;
         if let Some(entry) = tasks.get_mut(task_id) {
+            entry.last_update = Utc::now();
             let task = entry.assigned_task.as_mut().ok_or(AppError::Conflict(
                 "Task is not assigned but reported".to_string(),
             ))?;
@@ -202,9 +210,19 @@ impl UrgentTaskStore {
         let mut tasks = self.tasks.write().await;
         let mut to_remove = vec![];
         for (id, entry) in tasks.iter() {
-            if *entry.state.status.read().await == TaskStatus::Pending
-                && now - entry.created_at > entry.ttl
-            {
+            let status = entry.state.status.read().await.clone();
+            let expired = match status {
+                // Already terminal — the waiting submitter will remove it.
+                TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Canceled => false,
+                // Never picked up: expire relative to creation time.
+                TaskStatus::Pending => now - entry.created_at > entry.ttl,
+                // Picked up but in-flight: expire when the assigned agent has
+                // gone silent (no progress / no resolution) for longer than the
+                // TTL. Without this an agent that dies after pickup would leave
+                // the blocking client waiting forever.
+                _ => now - entry.last_update > entry.ttl,
+            };
+            if expired {
                 to_remove.push(id.clone());
             }
         }
@@ -212,8 +230,10 @@ impl UrgentTaskStore {
         for id in to_remove {
             if let Some(entry) = tasks.get(&id) {
                 let mut status = entry.state.status.write().await;
-                *status = TaskStatus::Failed;
-                let _ = entry.state.notify.send(TaskStatus::Failed);
+                if *status != TaskStatus::Completed && *status != TaskStatus::Failed {
+                    *status = TaskStatus::Failed;
+                    let _ = entry.state.notify.send(TaskStatus::Failed);
+                }
             }
             tasks.shift_remove(&id);
         }

@@ -98,19 +98,19 @@ impl AppStorage {
 
 // Convenience methods that delegate to the underlying storages
 impl AppStorage {
-    pub fn create_agent(&self, agent: &mut Agent) -> sled::Result<()> {
-        self.agents.create_agent(agent)
+    pub async fn create_agent(&self, agent: &mut Agent) -> sled::Result<()> {
+        self.agents.create_agent(agent).await
     }
 
     pub fn get_agent(&self, id: &str) -> Option<Agent> {
         self.agents.get_agent(id)
     }
 
-    pub fn update_agent(&self, agent: Agent) -> sled::Result<()> {
-        self.agents.update_agent(agent)
+    pub async fn update_agent(&self, agent: Agent) -> sled::Result<()> {
+        self.agents.update_agent(agent).await
     }
 
-    pub fn delete_agent(&self, id: &str) -> sled::Result<()> {
-        self.agents.delete_agent(id)
+    pub async fn delete_agent(&self, id: &str) -> sled::Result<()> {
+        self.agents.delete_agent(id).await
     }
 }

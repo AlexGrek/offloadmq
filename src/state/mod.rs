@@ -7,7 +7,11 @@ pub struct AppState {
     pub storage: Arc<AppStorage>,
     pub config: Arc<AppConfig>,
     pub auth: Arc<Auth>,
-    pub urgent: Arc<UrgentTaskStore>
+    pub urgent: Arc<UrgentTaskStore>,
+    /// Serializes bucket validation + reservation during task submission so two
+    /// concurrent submissions can't both pass the `rm_after_task` single-use
+    /// check before either records its task id (TOCTOU).
+    pub bucket_submit_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl AppState {
@@ -16,7 +20,8 @@ impl AppState {
             storage: Arc::new(storage),
             config: Arc::new(config),
             auth: Arc::new(auth),
-            urgent: UrgentTaskStore::new()
+            urgent: UrgentTaskStore::new(),
+            bucket_submit_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 }

@@ -43,7 +43,7 @@ pub async fn remove_agent(
     State(state): State<Arc<AppState>>,
     Path(agent_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    state.storage.delete_agent(&agent_id)?;
+    state.storage.delete_agent(&agent_id).await?;
     Ok(Json(json!("Agent deleted")))
 }
 
@@ -211,7 +211,8 @@ pub async fn trigger_stale_agents_cleanup(
     let deleted = state
         .storage
         .agents
-        .cleanup_stale_agents(ttl_days)?;
+        .cleanup_stale_agents(ttl_days)
+        .await?;
 
     info!(
         "Management: stale agents cleanup triggered, deleted {} agent(s)",

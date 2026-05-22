@@ -98,7 +98,7 @@ pub async fn create_bucket(
             current, cfg.max_buckets_per_key
         )));
     }
-    let bucket = state.storage.buckets.create_bucket(&api_key, params.rm_after_task)?;
+    let bucket = state.storage.buckets.create_bucket(&api_key, params.rm_after_task).await?;
     info!("Created bucket {} for key ...{}", bucket.uid, &api_key[api_key.len().saturating_sub(6)..]);
     Ok((
         StatusCode::CREATED,
@@ -176,7 +176,7 @@ pub async fn upload_file(
         };
         bucket.files.push(file_meta);
         bucket.used_bytes += size;
-        state.storage.buckets.save_bucket(&bucket)?;
+        state.storage.buckets.save_bucket(&bucket).await?;
 
         info!(
             "Uploaded file {} ({} bytes) to bucket {}",
@@ -318,7 +318,7 @@ pub async fn delete_file(
         .await
         .map_err(|e| AppError::Internal(e))?;
 
-    state.storage.buckets.save_bucket(&bucket)?;
+    state.storage.buckets.save_bucket(&bucket).await?;
 
     Ok(Json(json!({ "deleted_file_uid": file_uid })))
 }
@@ -343,7 +343,8 @@ pub async fn delete_bucket(
     state
         .storage
         .buckets
-        .delete_bucket(&bucket_uid, &api_key)?;
+        .delete_bucket(&bucket_uid, &api_key)
+        .await?;
 
     info!("Deleted bucket {}", bucket_uid);
     Ok(Json(json!({ "deleted_bucket_uid": bucket_uid })))

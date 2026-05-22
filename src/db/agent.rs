@@ -64,7 +64,7 @@ impl CachedAgentStorage {
 
     // CRUD for agents
 
-    pub fn create_agent(&self, agent: &mut Agent) -> sled::Result<()> {
+    pub async fn create_agent(&self, agent: &mut Agent) -> sled::Result<()> {
         // Generate unique UID if not provided or if collision exists
         if agent.uid.is_empty() || self.get_agent(&agent.uid).is_some() {
             agent.uid = self.generate_unique_uid();
@@ -80,7 +80,7 @@ impl CachedAgentStorage {
         })?;
 
         self.db.insert(id.as_bytes(), data)?;
-        self.db.flush()?;
+        self.db.flush_async().await?;
 
         self.agent_cache.write().unwrap().insert(id, agent.clone());
 
@@ -108,13 +108,13 @@ impl CachedAgentStorage {
         None
     }
 
-    pub fn update_agent_last_contact(&self, mut agent: Agent, method: CommunicationMethod) -> Result<Agent, sled::Error> {
+    pub async fn update_agent_last_contact(&self, mut agent: Agent, method: CommunicationMethod) -> Result<Agent, sled::Error> {
         agent.last_contact = Some(Utc::now());
         agent.last_comm_method = method;
-        self.update_agent(agent.clone()).map(|()| agent)
+        self.update_agent(agent.clone()).await.map(|()| agent)
     }
 
-    pub fn update_agent(&self, agent: Agent) -> sled::Result<()> {
+    pub async fn update_agent(&self, agent: Agent) -> sled::Result<()> {
         let id = agent.uid.clone();
 
         // Verify agent exists
@@ -133,15 +133,15 @@ impl CachedAgentStorage {
         })?;
 
         self.db.insert(id.as_bytes(), data)?;
-        self.db.flush()?;
+        self.db.flush_async().await?;
 
         self.agent_cache.write().unwrap().insert(id, agent);
         Ok(())
     }
 
-    pub fn delete_agent(&self, id: &str) -> sled::Result<()> {
+    pub async fn delete_agent(&self, id: &str) -> sled::Result<()> {
         self.db.remove(id.as_bytes())?;
-        self.db.flush()?;
+        self.db.flush_async().await?;
 
         self.agent_cache.write().unwrap().remove(id);
         Ok(())
@@ -207,7 +207,7 @@ impl CachedAgentStorage {
 
     /// Clean up agents that haven't been contacted for more than ttl_days
     /// Returns the number of deleted agents
-    pub fn cleanup_stale_agents(&self, ttl_days: u32) -> Result<usize, sled::Error> {
+    pub async fn cleanup_stale_agents(&self, ttl_days: u32) -> Result<usize, sled::Error> {
         let mut deleted = 0usize;
         let now = Utc::now();
         let ttl_secs = ttl_days as i64 * 24 * 60 * 60;
@@ -231,7 +231,7 @@ impl CachedAgentStorage {
             .collect();
 
         for agent_id in agents_to_delete {
-            self.delete_agent(&agent_id)?;
+            self.delete_agent(&agent_id).await?;
             deleted += 1;
         }
 

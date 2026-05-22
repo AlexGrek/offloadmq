@@ -138,7 +138,8 @@ pub async fn delete_bucket(
     state
         .storage
         .buckets
-        .delete_bucket(&bucket_uid, &bucket.api_key)?;
+        .delete_bucket(&bucket_uid, &bucket.api_key)
+        .await?;
 
     info!("Management: deleted bucket {}", bucket_uid);
     Ok(Json(json!({ "deleted_bucket_uid": bucket_uid })))
@@ -157,7 +158,7 @@ pub async fn delete_key_buckets(
         if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
             log::warn!("Management: failed to delete bucket files {}: {}", bucket.uid, e);
         }
-        state.storage.buckets.delete_bucket(&bucket.uid, &api_key)?;
+        state.storage.buckets.delete_bucket(&bucket.uid, &api_key).await?;
     }
 
     info!("Management: deleted {} bucket(s) for key ...{}", count, &api_key[api_key.len().saturating_sub(6)..]);
@@ -177,7 +178,7 @@ pub async fn trigger_storage_cleanup(
         if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
             log::warn!("Management: cleanup failed to delete bucket files {}: {}", bucket.uid, e);
         }
-        if let Err(e) = state.storage.buckets.delete_bucket(&bucket.uid, &bucket.api_key) {
+        if let Err(e) = state.storage.buckets.delete_bucket(&bucket.uid, &bucket.api_key).await {
             log::warn!("Management: cleanup failed to delete bucket metadata {}: {}", bucket.uid, e);
         }
     }
@@ -198,7 +199,7 @@ pub async fn purge_all_buckets(
         if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
             log::warn!("Management: failed to delete bucket files {}: {}", bucket.uid, e);
         }
-        if let Err(e) = state.storage.buckets.delete_bucket(&bucket.uid, &bucket.api_key) {
+        if let Err(e) = state.storage.buckets.delete_bucket(&bucket.uid, &bucket.api_key).await {
             log::warn!("Management: failed to delete bucket metadata {}: {}", bucket.uid, e);
         }
     }

@@ -125,12 +125,16 @@ def execute_shell_bash(
             )
             return True
 
-        # Final logs after process completion
+        # Process finished — join the reader threads (guarantees the pipes are
+        # fully drained to EOF) then collect any trailing buffered output.
+        # Do NOT call process.communicate() here: the reader threads have
+        # already read and closed the pipes, so communicate() would re-read
+        # closed files (returns (None, None) on Windows -> TypeError).
         t_stdout.join()
         t_stderr.join()
-        final_stdout, final_stderr = process.communicate()
-        full_stdout_log += final_stdout
-        full_stderr_log += final_stderr
+        full_stdout_log += _drain_queue(q_stdout)
+        full_stderr_log += _drain_queue(q_stderr)
+        process.wait()
 
         # Check the return code for success or failure
         return_code = process.returncode

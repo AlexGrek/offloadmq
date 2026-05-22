@@ -44,7 +44,7 @@ pub async fn update_agent_info(
     State(state): State<Arc<AppState>>,
     Json(info): Json<schema::AgentUpdateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let resp = service::do_update_agent_info(agent, info, &state, CommunicationMethod::Http)?;
+    let resp = service::do_update_agent_info(agent, info, &state, CommunicationMethod::Http).await?;
     Ok(Json(resp))
 }
 
@@ -52,7 +52,7 @@ pub async fn register_agent(
     State(state): State<Arc<AppState>>,
     Json(req): Json<schema::AgentRegistrationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let resp = service::do_register_agent(req, &state)?;
+    let resp = service::do_register_agent(req, &state).await?;
     Ok(Json(resp))
 }
 
@@ -181,7 +181,7 @@ pub async fn upload_to_bucket(
         };
         bucket.files.push(file_meta);
         bucket.used_bytes += size;
-        app_state.storage.buckets.save_bucket(&bucket)?;
+        app_state.storage.buckets.save_bucket(&bucket).await?;
 
         let response = Response::builder()
             .status(StatusCode::CREATED)
@@ -258,7 +258,7 @@ pub async fn websocket_handler(
     if let Err(e) = app_state.storage.agents.update_agent_last_contact(
         agent.clone(),
         CommunicationMethod::WebSocket,
-    ) {
+    ).await {
         warn!(
             "Failed to update agent last contact on WebSocket connect: {}",
             e
@@ -426,7 +426,7 @@ async fn ws_dispatch(
             };
             bucket.files.push(file_meta);
             bucket.used_bytes += size;
-            state.storage.buckets.save_bucket(&bucket)?;
+            state.storage.buckets.save_bucket(&bucket).await?;
 
             Ok((
                 201,
@@ -532,7 +532,7 @@ async fn ws_route_post(
                 req,
                 state,
                 CommunicationMethod::WebSocket,
-            )?;
+            ).await?;
             Ok((200, serde_json::to_value(resp).unwrap_or(json!(null))))
         }
         _ => Err(AppError::NotFound(format!(

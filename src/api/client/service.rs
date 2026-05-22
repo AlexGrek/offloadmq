@@ -43,9 +43,9 @@ pub struct CancelOutcome {
 /// Record `task_id` in every bucket listed in `file_bucket`.
 /// Failures are logged as warnings rather than surfaced to the caller —
 /// the task has already been accepted and bucket tracking is best-effort.
-pub fn record_task_in_buckets(state: &AppState, task_id: &str, file_bucket: &[String]) {
+pub async fn record_task_in_buckets(state: &AppState, task_id: &str, file_bucket: &[String]) {
     for bucket_uid in file_bucket {
-        if let Err(e) = state.storage.buckets.add_task(bucket_uid, task_id) {
+        if let Err(e) = state.storage.buckets.add_task(bucket_uid, task_id).await {
             log::warn!(
                 "Failed to record task {} in bucket {}: {}",
                 task_id, bucket_uid, e
@@ -114,15 +114,21 @@ pub async fn do_submit_task_blocking(
             "Only urgent tasks can be submitted to this endpoint".to_string(),
         ));
     }
-    validate_file_buckets(state, &req, skip_owner)?;
     let file_bucket = req.file_bucket.clone();
+    let id = TaskId::new_with_cap(req.capability.clone());
+    // Hold the reservation lock across validate + record so a concurrent
+    // submission cannot slip between the rm_after_task check and the recording.
+    {
+        let _reservation = state.bucket_submit_lock.lock().await;
+        validate_file_buckets(state, &req, skip_owner)?;
+        record_task_in_buckets(state, &id.to_string(), &file_bucket).await;
+    }
     let task = UnassignedTask {
-        id: TaskId::new_with_cap(req.capability.clone()),
+        id,
         data: req,
         created_at: Utc::now(),
     };
     info!("New urgent task: {:?}", task);
-    record_task_in_buckets(state, &task.id.to_string(), &file_bucket);
     submit_urgent_task(&state.urgent, &state.storage.agents, task).await
 }
 
@@ -134,16 +140,22 @@ pub async fn do_submit_task(
     if !skip_owner {
         state.storage.client_keys.verify_key(&req.api_key, &req.capability)?;
     }
-    validate_file_buckets(state, &req, skip_owner)?;
     let urgent = req.urgent;
     let file_bucket = req.file_bucket.clone();
+    let id = TaskId::new_with_cap(req.capability.clone());
+    // Hold the reservation lock across validate + record so a concurrent
+    // submission cannot slip between the rm_after_task check and the recording.
+    {
+        let _reservation = state.bucket_submit_lock.lock().await;
+        validate_file_buckets(state, &req, skip_owner)?;
+        record_task_in_buckets(state, &id.to_string(), &file_bucket).await;
+    }
     let task = UnassignedTask {
-        id: TaskId::new_with_cap(req.capability.clone()),
+        id,
         data: req,
         created_at: Utc::now(),
     };
     info!("New unassigned task: {:?}", task);
-    record_task_in_buckets(state, &task.id.to_string(), &file_bucket);
     if urgent {
         let outcome = submit_urgent_task(&state.urgent, &state.storage.agents, task).await?;
         Ok(SubmitOutcome::Urgent(outcome))
