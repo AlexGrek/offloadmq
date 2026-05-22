@@ -136,6 +136,7 @@ impl OffloadImageClient {
         payload: serde_json::Value,
         input_bucket_uid: Option<&str>,
         output_bucket_uid: &str,
+        data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
     ) -> Result<(OffloadTaskId, serde_json::Value), AppError> {
         let mut body = serde_json::json!({
             "apiKey": self.api_key,
@@ -146,6 +147,9 @@ impl OffloadImageClient {
         });
         if let Some(input_bucket) = input_bucket_uid {
             body["file_bucket"] = serde_json::json!([input_bucket]);
+        }
+        if let Some(prep) = data_preparation.filter(|m| !m.is_empty()) {
+            body["dataPreparation"] = serde_json::Value::Object(prep.clone());
         }
         let url = format!("{}/api/task/submit", self.base_url);
         let resp = self

@@ -3,6 +3,8 @@
 //! multi-step logic that used to live inside the image route handlers lives
 //! here so the handlers stay thin (parse request → call service → map DTO).
 
+use std::collections::HashMap;
+
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::Value;
@@ -24,11 +26,16 @@ pub struct StartJobParams {
     pub capability: String,
     pub prompt: String,
     pub negative_prompt: Option<String>,
+    /// When true, send `secondary_prompts.negative`; when false, use the workflow default.
+    #[serde(default)]
+    pub override_negative: bool,
     pub width: i32,
     pub height: i32,
     pub seed: Option<i64>,
     pub workflow: Option<String>,
     pub input_image_id: Option<String>,
+    /// OffloadMQ `dataPreparation` map (glob mask → action), applied to input bucket files.
+    pub data_preparation: Option<HashMap<String, String>>,
 }
 
 /// Result of polling a job — domain data the route maps to its response DTO.
@@ -96,7 +103,6 @@ pub async fn start_job(
     req: StartJobParams,
 ) -> Result<i64, AppError> {
     storage::operator(state)?;
-    validate_start_job(&req)?;
 
     let input_image_id = parse_input_image_id(&req)?;
     let input = match input_image_id {
@@ -104,6 +110,7 @@ pub async fn start_job(
         None => None,
     };
     let workflow = resolve_workflow(&req);
+    validate_start_job(&req, &workflow)?;
 
     let job_id = state.next_id();
     image_generation::create_job(
@@ -141,8 +148,15 @@ pub async fn start_job(
     };
 
     let payload = build_submit_payload(&req, &workflow, input.as_ref());
+    let data_prep = data_preparation_map(&req.data_preparation);
     let (task_id, submit_payload) = client
-        .submit_img_task(&req.capability, payload, input_bucket_uid.as_deref(), &output_bucket.bucket_uid)
+        .submit_img_task(
+            &req.capability,
+            payload,
+            input_bucket_uid.as_deref(),
+            &output_bucket.bucket_uid,
+            data_prep.as_ref(),
+        )
         .await?;
 
     image_generation::create_offload_task(
@@ -353,12 +367,15 @@ async fn output_files(
 
 // ── start_job helpers ───────────────────────────────────────────────────────
 
-fn validate_start_job(req: &StartJobParams) -> Result<(), AppError> {
+fn validate_start_job(req: &StartJobParams, workflow: &str) -> Result<(), AppError> {
     if req.prompt.trim().is_empty() {
         return Err(AppError::BadRequest("prompt is required".into()));
     }
     if !req.capability.starts_with("imggen.") {
         return Err(AppError::BadRequest("capability must start with imggen.".into()));
+    }
+    if workflow == "img2img" && req.input_image_id.is_none() {
+        return Err(AppError::BadRequest("img2img requires input_image_id".into()));
     }
     Ok(())
 }
@@ -399,6 +416,17 @@ async fn stage_input_image(
     Ok(bucket.bucket_uid)
 }
 
+fn data_preparation_map(
+    prep: &Option<HashMap<String, String>>,
+) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let map = prep.as_ref().filter(|m| !m.is_empty())?;
+    Some(
+        map.iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect(),
+    )
+}
+
 fn build_submit_payload(
     req: &StartJobParams,
     workflow: &str,
@@ -409,8 +437,10 @@ fn build_submit_payload(
         "prompt": req.prompt.trim(),
         "resolution": { "width": req.width, "height": req.height },
     });
-    if let Some(neg) = req.negative_prompt.as_deref().filter(|s| !s.trim().is_empty()) {
-        payload["secondary_prompts"] = serde_json::json!({ "negative": neg });
+    if req.override_negative {
+        if let Some(neg) = req.negative_prompt.as_deref().filter(|s| !s.trim().is_empty()) {
+            payload["secondary_prompts"] = serde_json::json!({ "negative": neg });
+        }
     }
     if let Some(seed) = req.seed {
         payload["seed"] = serde_json::json!(seed);

@@ -13,11 +13,15 @@ export interface StartImageJobRequest {
   capability: string
   prompt: string
   negative_prompt?: string | null
+  /** When true, send negative_prompt to OffloadMQ; when false, use workflow default. */
+  override_negative?: boolean
   width: number
   height: number
   seed?: number | null
   workflow?: 'txt2img' | 'img2img'
   input_image_id?: string | null
+  /** OffloadMQ dataPreparation (glob → action), e.g. `{ "*": "scale/768x768" }`. */
+  data_preparation?: Record<string, string> | null
 }
 
 export interface StartImageJobResponse {
