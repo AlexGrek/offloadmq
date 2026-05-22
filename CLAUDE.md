@@ -318,6 +318,8 @@ Skills provide domain-specific context for OAI work. They are activated automati
 
 **OAI Integration Tests** — Python integration tests (httpx + pytest-xdist) that run against the live OAI backend. One test file per route group, fixtures in conftest.py, no mocking. See `.claude/skills/oai-itests/SKILL.md`.
 
+**OAI DevOps** — Helm/Kubernetes deploy, Garage init job, Docker image publish, and troubleshooting (`garage-init` failures, `wait-garage-creds`, ImagePullBackOff). See `.claude/skills/oai-devops/SKILL.md`.
+
 ### Development Commands
 
 Uses [Go Task](https://taskfile.dev) (`task`) — no Makefile.

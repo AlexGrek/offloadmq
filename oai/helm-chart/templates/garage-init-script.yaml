@@ -53,10 +53,12 @@ data:
     if [ "$ROLE_TYPE" = "null" ]; then
       echo "Applying initial cluster layout for node ${NODE_ID}..."
       PAYLOAD=$(jq -n --arg id "$NODE_ID" --argjson cap "$CAP" \
-        '{($id): {"zone": "k8s", "capacity": $cap, "tags": []}}')
-      curl -sf -X POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+        '{roles: [{id: $id, zone: "k8s", capacity: $cap, tags: []}]}')
+      LAYOUT_RESP=$(curl -sf -X POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
         -H "Content-Type: application/json" \
-        "${ADMIN_URL}/v2/UpdateClusterLayout" -d "$PAYLOAD" >/dev/null
+        "${ADMIN_URL}/v2/UpdateClusterLayout" -d "$PAYLOAD")
+      echo "$LAYOUT_RESP" | jq -e '(.code | not) and ((.stagedRoleChanges // []) | length >= 1)' >/dev/null \
+        || { echo "ERROR: UpdateClusterLayout did not stage role changes: $LAYOUT_RESP"; exit 1; }
       NEXT_VER=$((CUR_VER + 1))
       curl -sf -X POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
         -H "Content-Type: application/json" \

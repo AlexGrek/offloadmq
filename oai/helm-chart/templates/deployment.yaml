@@ -4,6 +4,13 @@ metadata:
   name: {{ include "oai.fullname" . }}
   labels:
     {{- include "oai.labels" . | nindent 4 }}
+  {{- if .Values.garage.enabled }}
+  annotations:
+    # After garage-init hook (weight -5) creates oai-garage-creds.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+  {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -100,5 +107,4 @@ spec:
         - name: garage-creds
           secret:
             secretName: {{ include "oai.fullname" . }}-garage-creds
-            optional: true
       {{- end }}
