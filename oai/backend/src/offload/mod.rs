@@ -95,7 +95,7 @@ impl OffloadClient {
             "urgent": false,
             "restartable": false,
             "payload": {
-                "stream": false,
+                "stream": true,
                 "messages": messages
             },
             "fetchFiles": [],

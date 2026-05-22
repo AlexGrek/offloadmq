@@ -11,7 +11,10 @@ use crate::{error::AppError, state::AppState};
 /// pattern with a single fallible accessor.
 pub fn operator(state: &AppState) -> Result<&Operator, AppError> {
     state.storage.as_ref().ok_or_else(|| {
-        AppError::BadRequest("storage backend is disabled; set STORAGE_BACKEND".into())
+        AppError::BadRequest(
+            "storage backend is disabled; set STORAGE_BACKEND=fs (or local) for dev, s3 for prod"
+                .into(),
+        )
     })
 }
 

@@ -1,0 +1,3 @@
+# Rust build artifacts (local cargo build; image uses its own target cache)
+backend/target/
+target/

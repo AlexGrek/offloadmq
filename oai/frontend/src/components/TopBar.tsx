@@ -1,7 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Bug, LogOut, Moon, Sun, User } from 'lucide-react'
+import { Activity, LogOut, Moon, Sun, User } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { useDebug } from '../contexts/DebugContext'
+import { useProgress } from '../contexts/ProgressContext'
+import { useWorkload } from '../contexts/WorkloadContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { Button } from './ui/button'
 import { cn } from '@/lib/utils'
@@ -9,8 +10,11 @@ import { cn } from '@/lib/utils'
 export function TopBar() {
   const { user, logout } = useAuth()
   const { theme, toggle } = useTheme()
-  const { enabled: debugEnabled, drawerOpen, cycleDebugUi } = useDebug()
+  const { drawerOpen, toggleDrawer, runningImageJobs } = useProgress()
+  const { runningChatTasks } = useWorkload()
   const navigate = useNavigate()
+
+  const runningCount = runningChatTasks.length + runningImageJobs.length
 
   function handleLogout() {
     logout()
@@ -26,27 +30,20 @@ export function TopBar() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={cycleDebugUi}
-          aria-pressed={debugEnabled}
-          aria-label={
-            !debugEnabled
-              ? 'Enable debug mode'
-              : drawerOpen
-                ? 'Disable debug mode'
-                : 'Open debug panel'
-          }
-          title={
-            !debugEnabled
-              ? 'Debug mode off'
-              : drawerOpen
-                ? 'Debug mode on — click to turn off'
-                : 'Debug on — click to show panel'
-          }
-          data-testid="debug-mode-toggle"
-          className={cn(debugEnabled && 'text-amber-600 dark:text-amber-400')}
+          onClick={toggleDrawer}
+          aria-pressed={drawerOpen}
+          aria-label={drawerOpen ? 'Close progress panel' : 'Open progress panel'}
+          title={drawerOpen ? 'Progress — click to close' : 'Progress — running jobs across chat and images'}
+          data-testid="progress-toggle"
+          className={cn(drawerOpen && 'text-violet-600 dark:text-violet-400')}
         >
-          <Bug className="h-4 w-4" />
-          <span className="ml-1.5 hidden sm:inline">Debug</span>
+          <Activity className="h-4 w-4" />
+          <span className="ml-1.5 hidden sm:inline">Progress</span>
+          {runningCount > 0 && (
+            <span className="ml-1.5 rounded-full bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-violet-700 dark:text-violet-300">
+              {runningCount}
+            </span>
+          )}
         </Button>
         <Button
           variant="ghost"

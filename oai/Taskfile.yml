@@ -17,6 +17,8 @@ vars:
     sh: git rev-list --count HEAD
   DATABASE_URL: postgres://oai:oai_dev_password@localhost:5432/oai
   ROOT_ADMIN_PASSWORD: "000000"
+  STORAGE_BACKEND: fs
+  STORAGE_FS_ROOT: ./.data/storage
 
 tasks:
   # ── Dev environment ──────────────────────────────────────────────────────────
@@ -36,7 +38,7 @@ tasks:
       trap cleanup EXIT
 
       echo "==> Starting backend..."
-      (cd backend && RUST_LOG=info DATABASE_URL={{.DATABASE_URL}} ROOT_ADMIN_PASSWORD={{.ROOT_ADMIN_PASSWORD}} SERVER_ADDRESS=0.0.0.0:{{.BACKEND_PORT}} cargo run) &
+      (cd backend && RUST_LOG=info DATABASE_URL={{.DATABASE_URL}} ROOT_ADMIN_PASSWORD={{.ROOT_ADMIN_PASSWORD}} SERVER_ADDRESS=0.0.0.0:{{.BACKEND_PORT}} STORAGE_BACKEND={{.STORAGE_BACKEND}} STORAGE_FS_ROOT={{.STORAGE_FS_ROOT}} cargo run) &
       BACKEND_PID=$!
 
       echo "==> Starting frontend dev server..."
@@ -51,6 +53,8 @@ tasks:
       DATABASE_URL: "{{.DATABASE_URL}}"
       ROOT_ADMIN_PASSWORD: "{{.ROOT_ADMIN_PASSWORD}}"
       SERVER_ADDRESS: "0.0.0.0:{{.BACKEND_PORT}}"
+      STORAGE_BACKEND: "{{.STORAGE_BACKEND}}"
+      STORAGE_FS_ROOT: "{{.STORAGE_FS_ROOT}}"
 
   dev:frontend:
     desc: Run Vite dev server

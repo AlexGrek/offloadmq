@@ -51,6 +51,8 @@ pub struct JobDetail {
     pub job: image_generation::ImageGenerationJob,
     pub files: Vec<image_generation::ImageFile>,
     pub events: Vec<image_generation::ImagePipelineEvent>,
+    pub offload_cap: Option<String>,
+    pub offload_task_id: Option<String>,
 }
 
 /// Placement metadata for a stored image — everything `store_image` needs that
@@ -343,7 +345,14 @@ async fn job_detail(
 ) -> Result<JobDetail, AppError> {
     let files = image_generation::list_job_files(&state.db, job.id).await?;
     let events = image_generation::list_pipeline_events(&state.db, job.id).await?;
-    Ok(JobDetail { job, files, events })
+    let offload = image_generation::get_offload_task_by_job(&state.db, job.id).await?;
+    Ok(JobDetail {
+        job,
+        files,
+        events,
+        offload_cap: offload.as_ref().map(|t| t.offload_cap.clone()),
+        offload_task_id: offload.map(|t| t.offload_task_id),
+    })
 }
 
 async fn collect_details(
@@ -532,7 +541,7 @@ async fn fetch_and_store_outputs(
         .ok_or_else(|| AppError::BadRequest("missing offload row".into()))?;
     let output_bucket = output_bucket_of(&offload)?;
     let images = collect_output_images(output.as_ref(), offload.last_poll_output.as_deref());
-    if images.is_empty() {
+    let Some(image) = images.last() else {
         record_event(
             state,
             job.id,
@@ -542,13 +551,24 @@ async fn fetch_and_store_outputs(
         )
         .await?;
         return Ok(());
-    }
+    };
 
     let client =
         offload_factory::image_client_from_settings(state, app_settings::get(&state.db).await?)?;
-    for (idx, image) in images.iter().enumerate() {
-        store_output_image(state, &client, user_id, job, &output_bucket, idx, image).await?;
+    if images.len() > 1 {
+        record_event(
+            state,
+            job.id,
+            "download.outputs",
+            "ok",
+            Some(&format!(
+                "offload returned {} images; storing last only",
+                images.len()
+            )),
+        )
+        .await?;
     }
+    store_output_image(state, &client, user_id, job, &output_bucket, 0, image).await?;
     image_generation::update_job_status(&state.db, job.id, "completed", None).await?;
     record_event(state, job.id, "job.finalize", "ok", Some("completed")).await?;
     Ok(())

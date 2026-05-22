@@ -1,15 +1,54 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronRight, ScrollText, Server } from 'lucide-react'
+import { changePassword } from '../api/auth'
 import { useAuth } from '../contexts/AuthContext'
 import { useAdminStatus } from '../hooks/useAdminStatus'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 export default function SettingsPage() {
-  const { user } = useAuth()
+  const { user, token } = useAuth()
   const { isAdmin } = useAdminStatus()
+
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
+
+  const hasPasswordAccount = user?.google_id == null
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (!token) return
+    setPasswordError('')
+    setPasswordSuccess(false)
+    if (newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New passwords do not match')
+      return
+    }
+    setChangingPassword(true)
+    try {
+      await changePassword(token, currentPassword, newPassword)
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setPasswordSuccess(true)
+    } catch (err: unknown) {
+      setPasswordError(err instanceof Error ? err.message : 'Failed to change password')
+    } finally {
+      setChangingPassword(false)
+    }
+  }
 
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString('en-US', {
@@ -55,22 +94,78 @@ export default function SettingsPage() {
               <CardTitle>Security</CardTitle>
               <CardDescription>Manage your password and authentication</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <Label>Current password</Label>
-                <Input type="password" placeholder="••••••••" disabled />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>New password</Label>
-                <Input type="password" placeholder="••••••••" disabled />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>Confirm new password</Label>
-                <Input type="password" placeholder="••••••••" disabled />
-              </div>
-              <Button disabled className="self-start">
-                Change password
-              </Button>
+            <CardContent>
+              {!hasPasswordAccount ? (
+                <p className="text-sm text-muted-foreground">
+                  This account uses an external sign-in provider; password cannot be changed here.
+                </p>
+              ) : (
+                <form
+                  className="flex flex-col gap-4"
+                  onSubmit={handleChangePassword}
+                  data-testid="change-password-form"
+                >
+                  {passwordError && (
+                    <Alert variant="destructive" data-testid="change-password-error">
+                      <AlertDescription>{passwordError}</AlertDescription>
+                    </Alert>
+                  )}
+                  {passwordSuccess && (
+                    <Alert data-testid="change-password-success">
+                      <AlertDescription>Password updated successfully.</AlertDescription>
+                    </Alert>
+                  )}
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="current-password">Current password</Label>
+                    <Input
+                      id="current-password"
+                      type="password"
+                      autoComplete="current-password"
+                      placeholder="••••••••"
+                      value={currentPassword}
+                      onChange={e => setCurrentPassword(e.target.value)}
+                      required
+                      data-testid="current-password-input"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="new-password">New password</Label>
+                    <Input
+                      id="new-password"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="••••••••"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      required
+                      minLength={6}
+                      data-testid="new-password-input"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="confirm-new-password">Confirm new password</Label>
+                    <Input
+                      id="confirm-new-password"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      required
+                      minLength={6}
+                      data-testid="confirm-new-password-input"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    className="self-start"
+                    disabled={changingPassword}
+                    data-testid="change-password-submit"
+                  >
+                    {changingPassword ? 'Updating…' : 'Change password'}
+                  </Button>
+                </form>
+              )}
             </CardContent>
           </Card>
 

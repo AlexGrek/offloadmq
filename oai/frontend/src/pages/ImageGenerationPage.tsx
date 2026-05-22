@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ImagePlus, Loader2, RefreshCw, Sparkles, Upload, Wand2, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ImagePlus,
+  Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCw,
+  Sparkles,
+  Upload,
+  Wand2,
+  X,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -20,10 +32,18 @@ import {
   uploadImage,
 } from '../api/images'
 import RescaleControls from '../components/imggen/RescaleControls'
+import { ImageJobHistorySidebar } from '../components/imggen/ImageJobHistorySidebar'
+import {
+  ToolDebugHeaderButton,
+  ToolDebugModal,
+  toolDebugReady,
+} from '../components/ToolDebugModal'
 import {
   MODE_DEFAULTS,
   capabilityLabel,
   filterCapabilitiesByWorkflow,
+  pipelineEventsWithoutPolls,
+  pipelineStatusLine,
   rescaleDataPrep,
   type ImgGenMode,
   type RescaleState,
@@ -66,6 +86,14 @@ export default function ImageGenerationPage() {
   const [selectedJob, setSelectedJob] = useState<ImageJobDetails | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  const [timelineOpen, setTimelineOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [debugOpen, setDebugOpen] = useState(false)
+  const [jobsLoading, setJobsLoading] = useState(true)
+
+  useEffect(() => {
+    setDebugOpen(false)
+  }, [selectedJob?.job_id])
 
   const capabilities = useMemo(
     () => filterCapabilitiesByWorkflow(allCapabilities, mode),
@@ -93,6 +121,7 @@ export default function ImageGenerationPage() {
 
   useEffect(() => {
     if (!token) return
+    setJobsLoading(true)
     ;(async () => {
       try {
         const settings = await getSettings(token)
@@ -107,6 +136,8 @@ export default function ImageGenerationPage() {
         setJobs(list)
       } catch (e) {
         setError((e as Error).message)
+      } finally {
+        setJobsLoading(false)
       }
       try {
         const caps = await listImgGenCapabilities(token)
@@ -293,15 +324,77 @@ export default function ImageGenerationPage() {
   const isRunning =
     displayStatus != null && !TERMINAL.has(displayStatus) && (submitting || polling || !!activeJobId)
 
+  const pipelineEvents = useMemo(
+    () => (selectedJob ? pipelineEventsWithoutPolls(selectedJob.events) : []),
+    [selectedJob],
+  )
+
+  const pipelineStatus = useMemo(() => {
+    if (!selectedJob || !displayStatus) return ''
+    return pipelineStatusLine(displayStatus, activePoll?.stage, selectedJob.events)
+  }, [selectedJob, displayStatus, activePoll?.stage])
+
+  useEffect(() => {
+    setTimelineOpen(false)
+  }, [selectedJob?.job_id])
+
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 gap-6 px-6 py-6" data-testid="image-generation-page">
-      <section className="min-w-0 flex-1 space-y-5">
-        <div>
-          <h1 className="font-display text-2xl font-bold">Image Generation</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Txt2Img and Img2Img via OffloadMQ Comfy workflows — same task shape as management sandbox apps.
-          </p>
+    <div className="flex min-h-0 flex-1 overflow-hidden bg-background" data-testid="image-generation-page">
+      <aside
+        className={cn(
+          'flex shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200',
+          sidebarOpen ? 'w-64' : 'w-0',
+        )}
+        data-testid="imggen-pipelines-sidebar"
+      >
+        <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
+          <span className="text-sm font-semibold text-sidebar-foreground">Pipelines</span>
         </div>
+        <ImageJobHistorySidebar
+          jobs={jobs}
+          activeJobId={activeJobId}
+          loading={jobsLoading}
+          onSelect={jobId => void selectJob(jobId)}
+        />
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setSidebarOpen(v => !v)}
+            title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+          >
+            {sidebarOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
+          </Button>
+          <h1 className="min-w-0 flex-1 truncate font-display text-sm font-semibold">
+            {selectedJob ? `Job ${selectedJob.job_id}` : 'Image Generation'}
+          </h1>
+          <ToolDebugHeaderButton
+            onClick={() => setDebugOpen(true)}
+            disabled={!selectedJob}
+            active={toolDebugReady(selectedJob?.offload_cap, selectedJob?.offload_task_id)}
+          />
+        </header>
+
+        <ToolDebugModal
+          open={debugOpen}
+          onOpenChange={setDebugOpen}
+          cap={selectedJob?.offload_cap}
+          taskId={selectedJob?.offload_task_id}
+          subject={selectedJob ? `Image job ${selectedJob.job_id}` : undefined}
+          disabledReason={
+            selectedJob && !toolDebugReady(selectedJob.offload_cap, selectedJob.offload_task_id)
+              ? 'No OffloadMQ task linked to this job yet.'
+              : !selectedJob
+                ? 'Select a job from the sidebar.'
+                : undefined
+          }
+        />
+
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl space-y-5 px-4 py-5 sm:px-6">
 
         <Card>
           <CardHeader>
@@ -528,10 +621,7 @@ export default function ImageGenerationPage() {
           <Card data-testid="imggen-job-detail">
             <CardHeader>
               <CardTitle>Job {selectedJob.job_id}</CardTitle>
-              <CardDescription>
-                {selectedJob.workflow} · {displayStatus}
-                {activePoll?.stage ? ` · ${activePoll.stage}` : ''}
-              </CardDescription>
+              <CardDescription>{selectedJob.workflow}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {selectedJob.input_image_id && (
@@ -549,33 +639,59 @@ export default function ImageGenerationPage() {
                   {selectedJob.error}
                 </p>
               )}
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Pipeline timeline</p>
-                <div className="rounded-lg border border-border p-3">
-                  {selectedJob.events.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No events yet.</p>
-                  ) : (
-                    <ol className="space-y-2">
-                      {selectedJob.events.map((event, idx) => (
-                        <li key={`${event.created_at}-${idx}`} className="flex gap-2 text-xs">
-                          <div className="mt-1.5 h-2 w-2 rounded-full bg-primary/70" />
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-medium">{event.step}</span>
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                                {event.state}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground">
-                                {new Date(event.created_at).toLocaleString()}
-                              </span>
+              <div className="space-y-2" data-testid="imggen-pipeline">
+                <button
+                  type="button"
+                  onClick={() => setTimelineOpen(v => !v)}
+                  className="flex w-full items-start gap-2 rounded-lg border border-border p-3 text-left hover:bg-muted/40 transition-colors"
+                  aria-expanded={timelineOpen}
+                  data-testid="imggen-pipeline-toggle"
+                >
+                  <ChevronDown
+                    className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform ${
+                      timelineOpen ? 'rotate-0' : '-rotate-90'
+                    }`}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <span className="text-xs font-medium text-muted-foreground">Pipeline</span>
+                    <p className="text-sm text-foreground" data-testid="imggen-pipeline-status">
+                      {pipelineStatus || displayStatus || 'Waiting…'}
+                    </p>
+                  </div>
+                </button>
+                {timelineOpen && (
+                  <div
+                    className="ml-6 rounded-lg border border-border p-3"
+                    data-testid="imggen-pipeline-timeline"
+                  >
+                    {pipelineEvents.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No pipeline steps yet.</p>
+                    ) : (
+                      <ol className="space-y-2">
+                        {pipelineEvents.map((event, idx) => (
+                          <li key={`${event.created_at}-${idx}`} className="flex gap-2 text-xs">
+                            <div className="mt-1.5 h-2 w-2 rounded-full bg-primary/70" />
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="font-medium">{event.step}</span>
+                                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                  {event.state}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {new Date(event.created_at).toLocaleString()}
+                                </span>
+                              </div>
+                              {event.details && (
+                                <p className="mt-0.5 text-muted-foreground">{event.details}</p>
+                              )}
                             </div>
-                            {event.details && <p className="mt-0.5 text-muted-foreground">{event.details}</p>}
-                          </div>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 {selectedJob.files
@@ -602,40 +718,9 @@ export default function ImageGenerationPage() {
             </CardContent>
           </Card>
         )}
-      </section>
-
-      <aside className="w-full max-w-sm space-y-4" data-testid="imggen-jobs-sidebar">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent jobs</CardTitle>
-            <CardDescription>Select a job to inspect pipeline state and outputs.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {jobs.length === 0 && <p className="text-xs text-muted-foreground">No jobs yet.</p>}
-            {jobs.map(job => (
-              <button
-                key={job.job_id}
-                type="button"
-                onClick={() => void selectJob(job.job_id)}
-                className={`w-full rounded-md border px-3 py-2 text-left text-xs hover:bg-muted ${
-                  activeJobId === job.job_id ? 'border-primary bg-muted/50' : 'border-border'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-medium">{job.prompt}</span>
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                    {job.workflow}
-                  </span>
-                </div>
-                <div className="mt-0.5 flex justify-between text-[11px] text-muted-foreground">
-                  <span className="truncate">{job.job_id}</span>
-                  <span>{job.status}</span>
-                </div>
-              </button>
-            ))}
-          </CardContent>
-        </Card>
-      </aside>
-    </main>
+          </div>
+        </main>
+      </div>
+    </div>
   )
 }

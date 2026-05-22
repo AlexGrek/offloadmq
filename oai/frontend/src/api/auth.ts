@@ -44,3 +44,22 @@ export function me(token: string) {
     headers: { Authorization: `Bearer ${token}` },
   })
 }
+
+export interface ChangePasswordResponse {
+  ok: boolean
+}
+
+export function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+) {
+  return request<ChangePasswordResponse>('/auth/change_password', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  })
+}

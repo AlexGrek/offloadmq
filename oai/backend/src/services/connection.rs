@@ -8,10 +8,12 @@ pub struct TokenProbe {
     pub error: Option<String>,
 }
 
-/// Probes a client API token against `/api/capabilities/online`.
+/// Probes a client API token against `POST /api/capabilities/online` (Task API auth:
+/// `apiKey` in JSON body, same as other `/api/*` routes).
 pub async fn probe_client_token(http: &Client, base_url: &str, token: &str) -> TokenProbe {
     let url = format!("{}/api/capabilities/online", base_url.trim_end_matches('/'));
-    let result = http.get(&url).header("X-API-Key", token).send().await;
+    let body = serde_json::json!({ "apiKey": token });
+    let result = http.post(&url).json(&body).send().await;
     classify(result, "Invalid client token")
 }
 

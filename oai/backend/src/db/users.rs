@@ -63,6 +63,20 @@ pub async fn create_admin(
 
 /// Overwrites the cached storage usage for a user. Callers pass a freshly
 /// computed total (see `image_generation::sum_user_stored_bytes`).
+pub async fn update_password_hash(
+    db: &DatabaseConnection,
+    user_id: i64,
+    password_hash: String,
+) -> Result<(), AppError> {
+    let model = ActiveModel {
+        id: ActiveValue::Set(user_id),
+        password_hash: ActiveValue::Set(Some(password_hash)),
+        ..Default::default()
+    };
+    model.update(db).await.map_err(AppError::Database)?;
+    Ok(())
+}
+
 pub async fn update_used_storage(
     db: &DatabaseConnection,
     user_id: i64,

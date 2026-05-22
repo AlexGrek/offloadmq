@@ -14,16 +14,38 @@ use crate::{
 pub type Chat = chats::Model;
 pub type ChatMessage = chat_messages::Model;
 
-pub async fn create_chat(db: &DatabaseConnection, id: i64, user_id: i64) -> Result<Chat, AppError> {
+pub async fn create_chat(
+    db: &DatabaseConnection,
+    id: i64,
+    user_id: i64,
+    system_prompt: &str,
+) -> Result<Chat, AppError> {
     let now = chrono::Utc::now().fixed_offset();
     let model = chats::ActiveModel {
         id: ActiveValue::Set(id),
         user_id: ActiveValue::Set(user_id),
         title: ActiveValue::Set(String::new()),
+        system_prompt: ActiveValue::Set(system_prompt.to_string()),
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
     };
     model.insert(db).await.map_err(AppError::Database)
+}
+
+pub async fn set_system_prompt(
+    db: &DatabaseConnection,
+    id: i64,
+    user_id: i64,
+    system_prompt: &str,
+) -> Result<Chat, AppError> {
+    let chat = get_chat(db, id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let now = chrono::Utc::now().fixed_offset();
+    let mut am: chats::ActiveModel = chat.into();
+    am.system_prompt = ActiveValue::Set(system_prompt.to_string());
+    am.updated_at = ActiveValue::Set(now);
+    am.update(db).await.map_err(AppError::Database)
 }
 
 pub async fn list_chats(db: &DatabaseConnection, user_id: i64) -> Result<Vec<Chat>, AppError> {

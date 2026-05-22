@@ -1,26 +1,19 @@
-export interface DebugExtraJob {
-  cap: string
-  id: string
-  label?: string
-  source?: string
-  key?: string
-}
-
-export async function fetchOffloadDebugYaml(
+export async function fetchOffloadPoll(
   token: string,
-  extra: DebugExtraJob[],
-): Promise<string> {
-  const res = await fetch('/api/debug/offload_status', {
+  cap: string,
+  id: string,
+): Promise<unknown> {
+  const res = await fetch('/api/debug/offload_poll', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ extra }),
+    body: JSON.stringify({ cap, id }),
   })
   if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(body || `HTTP ${res.status}`)
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
   }
-  return res.text()
+  return res.json()
 }

@@ -1,5 +1,6 @@
 pub mod app_settings;
 pub mod chats;
+pub mod user_system_prompts;
 pub mod entities;
 pub mod image_generation;
 pub mod image_worker_logs;

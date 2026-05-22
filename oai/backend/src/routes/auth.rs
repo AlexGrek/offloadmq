@@ -66,3 +66,41 @@ pub async fn me(
         .map(Json)
         .ok_or(AppError::NotFound)
 }
+
+#[derive(Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Serialize)]
+pub struct ChangePasswordResponse {
+    pub ok: bool,
+}
+
+pub async fn change_password(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Json(req): Json<ChangePasswordRequest>,
+) -> Result<Json<ChangePasswordResponse>, AppError> {
+    if req.new_password.len() < 6 {
+        return Err(AppError::BadRequest(
+            "New password must be at least 6 characters".into(),
+        ));
+    }
+    let user = users::find_by_id(&state.db, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let hash = user
+        .password_hash
+        .as_deref()
+        .ok_or(AppError::BadRequest(
+            "This account has no password set; sign in with your linked provider".into(),
+        ))?;
+    if !state.auth.verify_password(&req.current_password, hash)? {
+        return Err(AppError::Unauthorized);
+    }
+    let new_hash = state.auth.hash_password(&req.new_password)?;
+    users::update_password_hash(&state.db, user_id, new_hash).await?;
+    Ok(Json(ChangePasswordResponse { ok: true }))
+}

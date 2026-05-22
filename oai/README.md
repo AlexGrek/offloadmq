@@ -36,7 +36,9 @@ On first startup the backend creates a root admin if none exists:
 |-------|----------|
 | `root` | `000000` (override with `ROOT_ADMIN_PASSWORD`) |
 
-Copy `backend/.env.example` to `backend/.env` when running `cargo run` outside `task dev`.
+Copy `backend/.env.example` to `backend/.env` when running `cargo run` outside `task dev` (includes `STORAGE_BACKEND=fs` for local OpenDAL file storage under `backend/.data/storage`).
+
+To disable storage explicitly: `STORAGE_BACKEND=none`.
 
 If you already booted once with a random password, reset Postgres data: `task infra:destroy` then `task infra:up`.
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUp,
   ChevronDown,
@@ -15,17 +15,26 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useAuth } from '../contexts/AuthContext'
-import { useDebug } from '../contexts/DebugContext'
+import { useWorkload } from '../contexts/WorkloadContext'
+import {
+  ToolDebugHeaderButton,
+  ToolDebugModal,
+  toolDebugReady,
+} from '../components/ToolDebugModal'
 import { useWsChat, nextReqId } from '../hooks/useWsChat'
 import type { LlmCapabilityInfo, ServerEvent } from '../types/ws'
+import type { ChatTaskRecord } from '../contexts/WorkloadContext'
 import {
   listChats,
   createChat,
   deleteChat,
   getChatMessages,
+  updateChatSystemPrompt,
   type ChatSummary,
   type ChatMessageRecord,
 } from '../api/chats'
+import { SystemPromptBlock } from '../components/chat/SystemPromptBlock'
+import { SystemPromptStudio, DEFAULT_PROMPT } from '../components/chat/SystemPromptStudio'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,10 +64,11 @@ function normalizeStatus(status: string): MessageStatus {
   return 'complete'
 }
 
-function recordToMessage(r: ChatMessageRecord): Message {
+function recordToMessage(r: ChatMessageRecord): Message | null {
+  if (r.role !== 'user' && r.role !== 'assistant') return null
   return {
     id: r.id,
-    role: r.role as 'user' | 'assistant',
+    role: r.role,
     content: r.content,
     status: normalizeStatus(r.status),
   }
@@ -66,6 +76,43 @@ function recordToMessage(r: ChatMessageRecord): Message {
 
 function isMessagePending(msg: Message): boolean {
   return msg.role === 'assistant' && msg.status === 'thinking'
+}
+
+function pendingMessageId(reqId: string): string {
+  return `pending_${reqId}`
+}
+
+function inFlightToMessage(task: ChatTaskRecord): Message {
+  const streaming = Boolean(task.streamContent?.trim())
+  return {
+    id: pendingMessageId(task.reqId),
+    role: 'assistant',
+    content: task.streamContent ?? '',
+    status: 'thinking',
+    reqId: task.reqId,
+    statusText: streaming ? '' : (task.statusText ?? 'Thinking…'),
+  }
+}
+
+/** Append/replace in-flight assistant bubbles from WorkloadContext (survives chat switches). */
+function chatListStatusLabel(task: ChatTaskRecord | undefined): string | null {
+  if (!task) return null
+  if (task.streamContent?.trim()) return 'Generating…'
+  return task.statusText ?? 'In progress…'
+}
+
+function mergeInFlightMessages(base: Message[], running: ChatTaskRecord[]): Message[] {
+  const runningReqIds = new Set(running.map(t => t.reqId))
+  const next = base.filter(
+    m => m.status !== 'thinking' || (m.reqId != null && runningReqIds.has(m.reqId)),
+  )
+  for (const task of running) {
+    const row = inFlightToMessage(task)
+    const idx = next.findIndex(m => m.reqId === task.reqId)
+    if (idx >= 0) next[idx] = row
+    else next.push(row)
+  }
+  return next
 }
 
 // ── Status indicator ──────────────────────────────────────────────────────────
@@ -181,6 +228,7 @@ function ModelPicker({
 // ── Thinking bubble ───────────────────────────────────────────────────────────
 
 function ThinkingBubble({ statusText, content }: { statusText?: string; content?: string }) {
+  const streaming = Boolean(content?.trim())
   return (
     <div
       className="max-w-[80%] rounded-2xl rounded-bl-sm bg-muted px-4 py-2.5 text-sm"
@@ -188,12 +236,17 @@ function ThinkingBubble({ statusText, content }: { statusText?: string; content?
       aria-busy="true"
       aria-live="polite"
     >
-      {content ? (
-        <p className="mb-3 whitespace-pre-wrap leading-relaxed text-foreground">{content}</p>
+      {streaming ? (
+        <p
+          className="mb-3 whitespace-pre-wrap leading-relaxed text-foreground"
+          data-testid="message-streaming"
+        >
+          {content}
+        </p>
       ) : null}
       <div className="flex items-center gap-2 text-muted-foreground">
         <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
-        <span>{statusText || 'Thinking…'}</span>
+        {!streaming && <span>{statusText || 'Thinking…'}</span>}
       </div>
     </div>
   )
@@ -203,20 +256,53 @@ function ThinkingBubble({ statusText, content }: { statusText?: string; content?
 
 export default function ChatPage() {
   const { token } = useAuth()
-  const { registerJob, unregisterJob } = useDebug()
+  const {
+    chatTasks,
+    upsertChatTask,
+    appendChatWsEvent,
+    finishChatTask,
+    chatTasksForChat,
+    latestChatTaskForChat,
+    runningChatTasks,
+  } = useWorkload()
+
+  const inProgressByChatId = useMemo(() => {
+    const map = new Map<string, ChatTaskRecord>()
+    for (const t of runningChatTasks) {
+      map.set(t.chatId, t)
+    }
+    return map
+  }, [runningChatTasks])
   const ws = useWsChat(token)
 
   const [chats, setChats] = useState<ChatSummary[]>([])
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
+  const activeChatIdRef = useRef<string | null>(null)
+  const chatTasksRef = useRef(chatTasks)
+  activeChatIdRef.current = activeChatId
+  chatTasksRef.current = chatTasks
   const [messages, setMessages] = useState<Message[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [loadingChats, setLoadingChats] = useState(true)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT)
+  const [debugOpen, setDebugOpen] = useState(false)
 
-  // reqId → optimistic assistant message id
+  useEffect(() => {
+    setDebugOpen(false)
+  }, [activeChatId])
+
+  // reqId → assistant message id in the current messages list
   const reqToMsgId = useRef<Map<string, string>>(new Map())
+
+  function restoreReqMappings(msgs: Message[]) {
+    reqToMsgId.current.clear()
+    for (const m of msgs) {
+      if (m.reqId) reqToMsgId.current.set(m.reqId, m.id)
+    }
+  }
 
   // ── Load chats on mount ───────────────────────────────────────────────────
 
@@ -236,12 +322,66 @@ export default function ChatPage() {
       setMessages([])
       return
     }
+    let cancelled = false
     setLoadingMessages(true)
     getChatMessages(token, activeChatId)
-      .then(records => setMessages(records.map(recordToMessage)))
+      .then(records => {
+        if (cancelled) return
+        const running = chatTasksRef.current.filter(
+          t => t.chatId === activeChatId && !t.terminal,
+        )
+        const merged = mergeInFlightMessages(
+          records.map(recordToMessage).filter((m): m is Message => m != null),
+          running,
+        )
+        setMessages(merged)
+        restoreReqMappings(merged)
+      })
       .catch(console.error)
-      .finally(() => setLoadingMessages(false))
+      .finally(() => {
+        if (!cancelled) setLoadingMessages(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [activeChatId, token])
+
+  // Patch in-flight assistant rows while this chat is open (progress survives tab/chat switches).
+  useEffect(() => {
+    if (!activeChatId || loadingMessages) return
+    const running = chatTasksForChat(activeChatId)
+    setMessages(prev => {
+      const merged = mergeInFlightMessages(prev, running)
+      restoreReqMappings(merged)
+      return merged
+    })
+  }, [chatTasks, activeChatId, loadingMessages, chatTasksForChat])
+
+  const activeChat = chats.find(c => c.id === activeChatId)
+
+  useEffect(() => {
+    if (activeChat) {
+      setSystemPrompt(activeChat.system_prompt?.trim() || DEFAULT_PROMPT)
+    }
+  }, [activeChatId, activeChat?.system_prompt])
+
+  const applySystemPrompt = useCallback(
+    async (content: string) => {
+      if (!token) return
+      const text = content.trim() || DEFAULT_PROMPT
+      if (!activeChatId) {
+        const chat = await createChat(token, text)
+        setChats(prev => [chat, ...prev])
+        setActiveChatId(chat.id)
+        setSystemPrompt(chat.system_prompt)
+        return
+      }
+      const chat = await updateChatSystemPrompt(token, activeChatId, text)
+      setSystemPrompt(chat.system_prompt)
+      setChats(prev => prev.map(c => (c.id === chat.id ? chat : c)))
+    },
+    [token, activeChatId],
+  )
 
   // ── Auto-select first model; re-validate on capability list change ────────
 
@@ -255,68 +395,137 @@ export default function ChatPage() {
 
   useEffect(() => {
     return ws.subscribe((event: ServerEvent) => {
+      const reqId = 'req_id' in event ? event.req_id : undefined
+      if (reqId) appendChatWsEvent(reqId, event)
+
+      const task = reqId
+        ? chatTasksRef.current.find(t => t.reqId === reqId)
+        : undefined
+      const chatId = task?.chatId
+      const onActiveChat = chatId != null && chatId === activeChatIdRef.current
+
       switch (event.type) {
         case 'task:queued':
-          updateThinking(event.req_id, 'Queued…')
-          registerJob({
-            key: `chat:${event.req_id}`,
-            cap: event.cap,
-            id: event.id,
-            label: `chat ${event.req_id}`,
-            source: 'chat',
-          })
+          if (chatId) {
+            upsertChatTask({
+              reqId: event.req_id,
+              chatId,
+              cap: event.cap,
+              id: event.id,
+              status: 'queued',
+              statusText: 'Queued…',
+            })
+          }
+          if (onActiveChat) updateThinking(event.req_id, 'Queued…')
           break
         case 'task:progress': {
           const label =
             event.stage ? capitalize(event.stage.replace(/_/g, ' ')) :
             capitalize(event.status.replace(/_/g, ' '))
-          updateThinking(event.req_id, label + '…')
-          if (event.log) updateThinkingContent(event.req_id, event.log)
+          if (chatId) {
+            upsertChatTask({
+              reqId: event.req_id,
+              chatId,
+              cap: event.cap,
+              id: event.id,
+              status: event.status,
+              stage: event.stage,
+              statusText: event.log?.trim() ? undefined : label + '…',
+              streamContent: event.log?.trim() || task?.streamContent,
+            })
+          }
+          if (onActiveChat) {
+            updateThinking(event.req_id, event.log?.trim() ? '' : label + '…')
+            if (event.log?.trim()) updateThinkingContent(event.req_id, event.log)
+          }
           break
         }
-        case 'task:result':
-          unregisterJob(`chat:${event.req_id}`)
-          resolveThinking(event.req_id, event.text, 'complete')
+        case 'task:result': {
+          const text = event.text.trim() || event.log?.trim() || ''
+          if (onActiveChat) resolveThinking(event.req_id, text, 'complete')
+          else if (chatId && token) {
+            refreshChatMessages(chatId)
+          }
+          finishChatTask(event.req_id, 'completed', true)
           break
+        }
         case 'task:failed':
-          unregisterJob(`chat:${event.req_id}`)
-          resolveThinking(event.req_id, `⚠ ${event.error}`, 'failed')
+          if (onActiveChat) resolveThinking(event.req_id, `⚠ ${event.error}`, 'failed')
+          else if (chatId && token) refreshChatMessages(chatId)
+          finishChatTask(event.req_id, 'failed', true)
           break
         case 'error':
           if (event.req_id) {
-            unregisterJob(`chat:${event.req_id}`)
-            resolveThinking(event.req_id, `⚠ ${event.message}`, 'failed')
+            if (onActiveChat) resolveThinking(event.req_id, `⚠ ${event.message}`, 'failed')
+            else if (chatId && token) refreshChatMessages(chatId)
+            finishChatTask(event.req_id, 'failed', true)
           }
           break
       }
     })
-  }, [ws.subscribe, registerJob, unregisterJob]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ws.subscribe, token, upsertChatTask, appendChatWsEvent, finishChatTask]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const debugTask = latestChatTaskForChat(activeChatId)
+
+  function findMessageIndex(prev: Message[], reqId: string, msgId: string): number {
+    const byId = prev.findIndex(m => m.id === msgId)
+    if (byId >= 0) return byId
+    return prev.findIndex(m => m.reqId === reqId)
+  }
 
   function updateThinking(reqId: string, statusText: string) {
-    const msgId = reqToMsgId.current.get(reqId)
-    if (!msgId) return
-    setMessages(prev =>
-      prev.map(m => m.id === msgId ? { ...m, statusText } : m),
-    )
+    const msgId = reqToMsgId.current.get(reqId) ?? pendingMessageId(reqId)
+    setMessages(prev => {
+      const idx = findMessageIndex(prev, reqId, msgId)
+      if (idx < 0) return prev
+      return prev.map((m, i) => (i === idx ? { ...m, statusText } : m))
+    })
   }
 
   function updateThinkingContent(reqId: string, content: string) {
-    const msgId = reqToMsgId.current.get(reqId)
-    if (!msgId) return
-    setMessages(prev =>
-      prev.map(m => (m.id === msgId ? { ...m, content } : m)),
-    )
+    const msgId = reqToMsgId.current.get(reqId) ?? pendingMessageId(reqId)
+    setMessages(prev => {
+      const idx = findMessageIndex(prev, reqId, msgId)
+      if (idx < 0) return prev
+      return prev.map((m, i) => (i === idx ? { ...m, content } : m))
+    })
   }
 
   function resolveThinking(reqId: string, content: string, status: MessageStatus) {
-    const msgId = reqToMsgId.current.get(reqId)
-    if (!msgId) return
+    const msgId = reqToMsgId.current.get(reqId) ?? pendingMessageId(reqId)
     reqToMsgId.current.delete(reqId)
-    setMessages(prev =>
-      prev.map(m =>
-        m.id === msgId ? { ...m, content, status, statusText: undefined, reqId: undefined } : m,
-      ),
-    )
+    setMessages(prev => {
+      const idx = prev.findIndex(m => m.id === msgId || m.reqId === reqId)
+      if (idx < 0) {
+        return [
+          ...prev,
+          {
+            id: uid(),
+            role: 'assistant' as const,
+            content,
+            status,
+          },
+        ]
+      }
+      return prev.map((m, i) =>
+        i === idx ? { ...m, content, status, statusText: undefined, reqId: undefined } : m,
+      )
+    })
+  }
+
+  function refreshChatMessages(chatId: string) {
+    if (!token) return
+    getChatMessages(token, chatId)
+      .then(records => {
+        if (activeChatIdRef.current !== chatId) return
+        const merged = mergeInFlightMessages(
+          records.map(recordToMessage).filter((m): m is Message => m != null),
+          chatTasksForChat(chatId),
+        )
+        setMessages(merged)
+        restoreReqMappings(merged)
+      })
+      .catch(console.error)
   }
 
   // ── Scroll ────────────────────────────────────────────────────────────────
@@ -363,9 +572,10 @@ export default function ChatPage() {
   async function handleNewChat() {
     if (!token) return
     try {
-      const chat = await createChat(token)
+      const chat = await createChat(token, systemPrompt)
       setChats(prev => [chat, ...prev])
       setActiveChatId(chat.id)
+      setMessages([])
       setInput('')
     } catch (e) {
       console.error('failed to create chat', e)
@@ -412,6 +622,15 @@ export default function ChatPage() {
     setShowScrollBtn(false)
     reqToMsgId.current.set(reqId, assistantMsgId)
 
+    upsertChatTask({
+      reqId,
+      chatId: activeChatId,
+      cap: '',
+      id: '',
+      status: 'sending',
+      statusText: 'Sending…',
+    })
+
     // Update sidebar title optimistically after first message
     setChats(prev =>
       prev.map(c =>
@@ -422,7 +641,7 @@ export default function ChatPage() {
     )
 
     ws.send({ type: 'chat', req_id: reqId, capability: selectedModel, chat_id: activeChatId, content: text })
-  }, [input, selectedModel, ws, activeChatId])
+  }, [input, selectedModel, ws, activeChatId, upsertChatTask])
 
   function scrollToBottom() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -437,8 +656,8 @@ export default function ChatPage() {
     }
   }
 
-  const activeChat = chats.find(c => c.id === activeChatId)
   const canSend = !!input.trim() && !!selectedModel && ws.status === 'connected' && !!activeChatId
+  const showSystemStudio = !loadingMessages && (!activeChatId || messages.length === 0)
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -476,40 +695,73 @@ export default function ChatPage() {
               No chats yet
             </p>
           ) : (
-            chats.map(chat => (
-              <div
-                key={chat.id}
-                className={cn(
-                  'group/chat-item flex items-center rounded-lg transition-colors',
-                  chat.id === activeChatId
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'hover:bg-sidebar-accent/50 text-sidebar-foreground',
-                )}
-              >
-                <button
-                  onClick={() => setActiveChatId(chat.id)}
-                  data-testid={`chat-item-${chat.id}`}
-                  className="flex-1 text-left px-3 py-2 text-sm truncate min-w-0"
-                >
-                  {chat.title || 'New chat'}
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => handleDeleteChat(e, chat.id)}
-                  title="Delete chat"
-                  aria-label={`Delete chat ${chat.title || 'New chat'}`}
-                  data-testid={`delete-chat-${chat.id}`}
+            chats.map(chat => {
+              const runningTask = inProgressByChatId.get(chat.id)
+              const inProgress = runningTask != null
+              const statusLabel = chatListStatusLabel(runningTask)
+              return (
+                <div
+                  key={chat.id}
                   className={cn(
-                    'shrink-0 mr-1 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-all',
+                    'group/chat-item flex items-center rounded-lg transition-colors',
                     chat.id === activeChatId
-                      ? 'opacity-100 text-muted-foreground'
-                      : 'opacity-0 group-hover/chat-item:opacity-100',
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                      : 'hover:bg-sidebar-accent/50 text-sidebar-foreground',
+                    inProgress && chat.id !== activeChatId && 'ring-1 ring-amber-500/30',
                   )}
+                  data-in-progress={inProgress || undefined}
                 >
-                  <Trash2 className="size-3.5" />
-                </button>
-              </div>
-            ))
+                  <button
+                    type="button"
+                    onClick={() => setActiveChatId(chat.id)}
+                    data-testid={`chat-item-${chat.id}`}
+                    aria-busy={inProgress}
+                    className="flex flex-1 items-start gap-2 min-w-0 px-3 py-2 text-left"
+                  >
+                    {inProgress ? (
+                      <Loader2
+                        className="size-3.5 shrink-0 animate-spin text-amber-600 dark:text-amber-400 mt-0.5"
+                        aria-hidden
+                        data-testid={`chat-item-${chat.id}-loader`}
+                      />
+                    ) : null}
+                    <span
+                      className={cn(
+                        'flex min-w-0 flex-1 flex-col',
+                        statusLabel && 'gap-0.5',
+                      )}
+                    >
+                      <span className="truncate text-sm leading-tight">
+                        {chat.title || 'New chat'}
+                      </span>
+                      {statusLabel ? (
+                        <span
+                          className="truncate text-[10px] leading-tight text-muted-foreground"
+                          data-testid={`chat-item-${chat.id}-status`}
+                        >
+                          {statusLabel}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteChat(e, chat.id)}
+                    title="Delete chat"
+                    aria-label={`Delete chat ${chat.title || 'New chat'}`}
+                    data-testid={`delete-chat-${chat.id}`}
+                    className={cn(
+                      'shrink-0 mr-1 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-all',
+                      chat.id === activeChatId
+                        ? 'opacity-100 text-muted-foreground'
+                        : 'opacity-0 group-hover/chat-item:opacity-100',
+                    )}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              )
+            })
           )}
         </div>
       </aside>
@@ -530,8 +782,26 @@ export default function ChatPage() {
             {activeChat?.title || (activeChatId ? 'New chat' : 'Select a chat')}
           </span>
           <span className="flex-1" />
+          {activeChatId && (
+            <ToolDebugHeaderButton
+              onClick={() => setDebugOpen(true)}
+              active={toolDebugReady(debugTask?.cap, debugTask?.id)}
+            />
+          )}
           <WsStatusDot status={ws.status} />
         </header>
+
+        <ToolDebugModal
+          open={debugOpen}
+          onOpenChange={setDebugOpen}
+          cap={debugTask?.cap}
+          taskId={debugTask?.id}
+          wsEvents={debugTask?.wsEvents}
+          subject={activeChat?.title || 'New chat'}
+          disabledReason={
+            debugTask ? undefined : 'Send a message to capture OffloadMQ task ids.'
+          }
+        />
 
         {/* messages */}
         <div
@@ -540,24 +810,34 @@ export default function ChatPage() {
           className="relative flex-1 overflow-y-auto"
           data-testid="messages-area"
         >
-          {!activeChatId ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground select-none">
-              <p className="text-sm">No chat selected</p>
-              <Button variant="outline" size="sm" onClick={handleNewChat}>
-                <Pencil className="size-3.5 mr-1.5" />
-                New chat
-              </Button>
+          {!token ? null : showSystemStudio ? (
+            <div className="flex h-full flex-col items-center justify-center overflow-y-auto px-4 py-8">
+              <SystemPromptStudio
+                token={token}
+                value={systemPrompt}
+                onChange={setSystemPrompt}
+                onApply={applySystemPrompt}
+                compact={!!activeChatId}
+              />
+              {activeChatId && (
+                <p className="mt-6 max-w-md text-center text-xs text-muted-foreground">
+                  Send your first message below — the model will follow this system prompt.
+                </p>
+              )}
+              {!activeChatId && (
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => void handleNewChat()}>
+                  <Pencil className="mr-1.5 size-3.5" />
+                  New chat with this prompt
+                </Button>
+              )}
             </div>
           ) : loadingMessages ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex h-full items-center justify-center">
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
-          ) : messages.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground select-none">
-              Start a conversation
-            </div>
           ) : (
-            <div className="max-w-2xl mx-auto px-4 py-6 flex flex-col gap-5">
+            <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-6">
+              <SystemPromptBlock content={systemPrompt} />
               {messages.map(msg => (
                 <div
                   key={msg.id}

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
+    extract::DefaultBodyLimit,
     http::{
         header::{AUTHORIZATION, CONTENT_TYPE},
         Method,
@@ -15,7 +16,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{middleware, routes, state::AppState};
+use crate::{middleware, routes, services::image_processing, state::AppState};
 
 pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
     // All unmatched paths fall back to index.html for SPA client-side routing.
@@ -32,24 +33,50 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
 
     let authenticated = Router::new()
         .route("/api/me", get(routes::auth::me))
+        .route(
+            "/api/auth/change_password",
+            post(routes::auth::change_password),
+        )
         .route("/api/admin/am_i_admin", get(routes::admin::am_i_admin))
         .route("/api/ws/chat", get(crate::ws::chat::ws_chat))
         .route("/api/chats", get(routes::chats::list_chats))
         .route("/api/chats", post(routes::chats::create_chat))
         .route("/api/chats/{id}", axum::routing::delete(routes::chats::delete_chat))
+        .route(
+            "/api/chats/{id}/system-prompt",
+            axum::routing::patch(routes::chats::update_system_prompt),
+        )
         .route("/api/chats/{id}/messages", get(routes::chats::get_messages))
+        .route(
+            "/api/system-prompts",
+            get(routes::system_prompts::list_library),
+        )
+        .route(
+            "/api/system-prompts/use",
+            post(routes::system_prompts::record_use),
+        )
+        .route(
+            "/api/system-prompts/{id}",
+            axum::routing::delete(routes::system_prompts::delete_prompt),
+        )
+        .route(
+            "/api/system-prompts/{id}/star",
+            axum::routing::patch(routes::system_prompts::set_starred),
+        )
         .route("/api/files", get(routes::files::list_files))
-        .route("/api/images/upload", post(routes::images::upload_input_image))
+        .route(
+            "/api/images/upload",
+            post(routes::images::upload_input_image)
+                .layer(DefaultBodyLimit::max(image_processing::MAX_UPLOAD_BYTES)),
+        )
         .route("/api/images/jobs", post(routes::images::start_job))
         .route("/api/images/jobs", get(routes::images::list_jobs))
         .route("/api/images/capabilities", get(routes::images::list_imggen_capabilities))
         .route("/api/images/jobs/{id}", get(routes::images::get_job))
         .route("/api/images/jobs/{id}/poll", post(routes::images::poll_job))
         .route("/api/images/files/{id}", get(routes::images::get_image))
-        .route(
-            "/api/debug/offload_status",
-            post(routes::debug::offload_status),
-        )
+        .route("/api/progress/running", get(routes::progress::running_jobs))
+        .route("/api/debug/offload_poll", post(routes::debug::offload_poll))
         .layer(from_fn_with_state(state.clone(), middleware::jwt_auth_middleware));
 
     let admin = Router::new()

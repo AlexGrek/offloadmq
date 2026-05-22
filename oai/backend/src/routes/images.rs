@@ -66,6 +66,8 @@ pub struct JobDetailsResponse {
     pub seed: Option<i64>,
     pub input_image_id: Option<String>,
     pub error: Option<String>,
+    pub offload_cap: Option<String>,
+    pub offload_task_id: Option<String>,
     pub files: Vec<JobFile>,
     pub events: Vec<JobEvent>,
 }
@@ -197,7 +199,13 @@ pub async fn get_image(
 // ── Shared DTO mapping (also used by the admin routes) ──────────────────────
 
 pub fn job_details_response(detail: JobDetail) -> JobDetailsResponse {
-    let JobDetail { job, files, events } = detail;
+    let JobDetail {
+        job,
+        files,
+        events,
+        offload_cap,
+        offload_task_id,
+    } = detail;
     JobDetailsResponse {
         job_id: job.id.to_string(),
         status: job.status,
@@ -210,6 +218,8 @@ pub fn job_details_response(detail: JobDetail) -> JobDetailsResponse {
         seed: job.seed,
         input_image_id: job.input_image_id.map(|id| id.to_string()),
         error: job.error,
+        offload_cap,
+        offload_task_id,
         files: files.into_iter().map(map_job_file).collect(),
         events: events.into_iter().map(map_job_event).collect(),
     }

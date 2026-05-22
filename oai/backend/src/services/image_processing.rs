@@ -14,7 +14,8 @@ use crate::error::AppError;
 
 const MAX_IMAGE_EDGE: u32 = 1920;
 const JPEG_QUALITY: u8 = 88;
-const MAX_UPLOAD_BYTES: usize = 32 * 1024 * 1024;
+/// Max raw upload size (must match `DefaultBodyLimit` on `POST /api/images/upload`).
+pub const MAX_UPLOAD_BYTES: usize = 32 * 1024 * 1024;
 
 pub struct ProcessedImage {
     pub bytes: Vec<u8>,

@@ -1,6 +1,7 @@
 export interface ChatSummary {
   id: string
   title: string
+  system_prompt: string
   created_at: string
   updated_at: string
 }
@@ -35,8 +36,24 @@ export function listChats(token: string): Promise<ChatSummary[]> {
   return request('/api/chats', token)
 }
 
-export function createChat(token: string): Promise<ChatSummary> {
-  return request('/api/chats', token, { method: 'POST' })
+export function createChat(token: string, systemPrompt?: string): Promise<ChatSummary> {
+  return request('/api/chats', token, {
+    method: 'POST',
+    body: JSON.stringify(
+      systemPrompt?.trim() ? { system_prompt: systemPrompt.trim() } : {},
+    ),
+  })
+}
+
+export function updateChatSystemPrompt(
+  token: string,
+  chatId: string,
+  content: string,
+): Promise<ChatSummary> {
+  return request(`/api/chats/${chatId}/system-prompt`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ content }),
+  })
 }
 
 export function deleteChat(token: string, chatId: string): Promise<void> {

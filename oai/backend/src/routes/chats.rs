@@ -6,9 +6,14 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{db::chats, error::AppError, middleware::AuthenticatedUser, state::AppState};
+use crate::{
+    db::{chats, user_system_prompts},
+    error::AppError,
+    middleware::AuthenticatedUser,
+    state::AppState,
+};
 
 // ── Response types ────────────────────────────────────────────────────────────
 
@@ -16,8 +21,20 @@ use crate::{db::chats, error::AppError, middleware::AuthenticatedUser, state::Ap
 pub struct ChatResponse {
     pub id: String,
     pub title: String,
+    pub system_prompt: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateChatRequest {
+    #[serde(default)]
+    pub system_prompt: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateSystemPromptRequest {
+    pub content: String,
 }
 
 #[derive(Serialize)]
@@ -34,6 +51,7 @@ fn chat_to_response(c: chats::Chat) -> ChatResponse {
     ChatResponse {
         id: c.id.to_string(),
         title: c.title,
+        system_prompt: c.system_prompt,
         created_at: c.created_at.to_rfc3339(),
         updated_at: c.updated_at.to_rfc3339(),
     }
@@ -63,10 +81,34 @@ pub async fn list_chats(
 pub async fn create_chat(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
+    body: Option<Json<CreateChatRequest>>,
 ) -> Result<impl IntoResponse, AppError> {
+    let content = body
+        .as_ref()
+        .and_then(|b| b.system_prompt.as_deref())
+        .unwrap_or("");
+    let system_prompt = if content.trim().is_empty() {
+        "You are a helpful AI assistant.".to_string()
+    } else {
+        user_system_prompts::normalize_content(content)?
+    };
+    let _ = user_system_prompts::record_use(&state.db, || state.next_id(), user_id, &system_prompt).await?;
     let id = state.next_id();
-    let chat = chats::create_chat(&state.db, id, user_id).await?;
+    let chat = chats::create_chat(&state.db, id, user_id, &system_prompt).await?;
     Ok((StatusCode::CREATED, Json(chat_to_response(chat))))
+}
+
+pub async fn update_system_prompt(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(chat_id): Path<String>,
+    Json(req): Json<UpdateSystemPromptRequest>,
+) -> Result<Json<ChatResponse>, AppError> {
+    let id: i64 = chat_id.parse().map_err(|_| AppError::BadRequest("invalid chat id".into()))?;
+    let system_prompt = user_system_prompts::normalize_content(&req.content)?;
+    let _ = user_system_prompts::record_use(&state.db, || state.next_id(), user_id, &system_prompt).await?;
+    let chat = chats::set_system_prompt(&state.db, id, user_id, &system_prompt).await?;
+    Ok(Json(chat_to_response(chat)))
 }
 
 pub async fn delete_chat(

@@ -15,7 +15,8 @@ use crate::services::offload_factory;
 use crate::state::AppState;
 use crate::ws::events::ServerEvent;
 
-const POLL_INTERVAL: Duration = Duration::from_secs(2);
+/// Agent flushes streaming log to OffloadMQ about every 2s; poll slightly faster.
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_POLLS: u32 = 300; // 300 × 2s = 10 min hard deadline
 
 /// Everything the poll loop needs to persist the assistant reply and address
@@ -79,8 +80,6 @@ async fn run_chat(
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "chat not found".to_string())?;
-    let history = db_chats::get_messages(&state.db, chat_id).await.map_err(|e| e.to_string())?;
-
     let user_msg_id = state.next_id();
     db_chats::add_message(&state.db, user_msg_id, chat_id, "user", &content, "complete", None)
         .await
@@ -93,13 +92,17 @@ async fn run_chat(
         let _ = db_chats::touch_chat(&state.db, chat_id).await;
     }
 
-    // Ollama-format history (completed turns only) + the new user message.
-    let mut messages: Vec<ChatMessage> = history
-        .iter()
-        .filter(|m| m.status == "complete")
-        .map(|m| ChatMessage { role: m.role.clone(), content: m.content.clone() })
-        .collect();
-    messages.push(ChatMessage { role: "user".to_string(), content });
+    // Full persisted thread (including the message we just saved), chronological.
+    let stored = db_chats::get_messages(&state.db, chat_id).await.map_err(|e| e.to_string())?;
+    let messages = build_offload_chat_messages(&chat.system_prompt, &stored);
+    if messages.is_empty() {
+        return Err("no messages to send".to_string());
+    }
+    tracing::debug!(
+        chat_id,
+        offload_message_count = messages.len(),
+        "submitting chat task with full history"
+    );
 
     let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
     let task_id = client.submit_chat(&capability, messages).await.map_err(|e| e.to_string())?;
@@ -129,8 +132,10 @@ async fn poll_loop(
     tx: UnboundedSender<ServerEvent>,
     state: Arc<AppState>,
 ) {
-    for _ in 0..MAX_POLLS {
-        tokio::time::sleep(POLL_INTERVAL).await;
+    for i in 0..MAX_POLLS {
+        if i > 0 {
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
 
         let resp = match client.poll_task(&task_id).await {
             Ok(r) => r,
@@ -157,13 +162,14 @@ async fn poll_loop(
                 return;
             }
             status => {
+                let stream_log = progress_stream_text(&resp);
                 let sent = tx.send(ServerEvent::TaskProgress {
                     req_id: ctx.req_id.clone(),
                     cap: ctx.cap.clone(),
                     id: ctx.id.clone(),
                     status: status.to_string(),
                     stage: resp.stage,
-                    log: resp.log,
+                    log: stream_log,
                 });
                 if sent.is_err() {
                     return; // receiver dropped — WS is gone
@@ -237,6 +243,53 @@ fn send_error(tx: &UnboundedSender<ServerEvent>, req_id: &str, message: &str) {
     });
 }
 
+/// Ollama-style message list: optional system prompt, then user + assistant turns.
+fn build_offload_chat_messages(
+    system_prompt: &str,
+    records: &[db_chats::ChatMessage],
+) -> Vec<ChatMessage> {
+    let mut out = Vec::new();
+    let sys = system_prompt.trim();
+    if !sys.is_empty() {
+        out.push(ChatMessage {
+            role: "system".to_string(),
+            content: sys.to_string(),
+        });
+    }
+    out.extend(
+        records
+        .iter()
+        .filter(|m| matches!(m.role.as_str(), "user" | "assistant"))
+        .filter(|m| !m.content.trim().is_empty())
+        .filter(|m| match m.role.as_str() {
+            "user" => m.status == "complete",
+            // Include failed replies so the model still sees the full thread.
+            "assistant" => matches!(m.status.as_str(), "complete" | "failed"),
+            _ => false,
+        })
+        .map(|m| ChatMessage {
+            role: m.role.clone(),
+            content: m.content.clone(),
+        }),
+    );
+    out
+}
+
+/// Text to show while the task is still running: accumulated agent log, else partial output.
+fn progress_stream_text(resp: &crate::offload::PollResponse) -> Option<String> {
+    if let Some(log) = resp.log.as_ref() {
+        if !log.is_empty() {
+            return Some(log.clone());
+        }
+    }
+    let partial = extract_llm_text(&resp.output);
+    if partial.is_empty() {
+        None
+    } else {
+        Some(partial)
+    }
+}
+
 fn extract_llm_text(output: &Option<serde_json::Value>) -> String {
     output
         .as_ref()
@@ -247,20 +300,20 @@ fn extract_llm_text(output: &Option<serde_json::Value>) -> String {
 
 /// Matches offload-agent Ollama output and management-frontend `extractSandboxModelText`.
 fn extract_llm_text_from_value(v: &serde_json::Value) -> Option<&str> {
-    if let Some(s) = v.get("message")?.get("content")?.as_str() {
-        return Some(s);
-    }
-    if let Some(s) = v
-        .get("choices")?
-        .as_array()?
-        .first()?
-        .get("message")?
-        .get("content")?
-        .as_str()
-    {
-        return Some(s);
-    }
-    v.get("response").and_then(|r| r.as_str())
+    v.get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            v.get("choices")
+                .and_then(|c| c.as_array())
+                .and_then(|a| a.first())
+                .and_then(|c0| c0.get("message"))
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| v.get("response").and_then(|r| r.as_str()).filter(|s| !s.is_empty()))
 }
 
 fn extract_error_text(output: &Option<serde_json::Value>) -> String {
@@ -295,5 +348,143 @@ mod tests {
     fn extract_llm_text_missing_returns_empty() {
         assert_eq!(extract_llm_text(&None), "");
         assert_eq!(extract_llm_text(&Some(serde_json::json!({ "done": true }))), "");
+    }
+
+    #[test]
+    fn build_offload_chat_messages_full_thread() {
+        let records = vec![
+            db_chats::ChatMessage {
+                id: 1,
+                chat_id: 1,
+                role: "user".to_string(),
+                content: "hi".to_string(),
+                status: "complete".to_string(),
+                model: None,
+                created_at: chrono::Utc::now().fixed_offset(),
+            },
+            db_chats::ChatMessage {
+                id: 2,
+                chat_id: 1,
+                role: "assistant".to_string(),
+                content: "hello".to_string(),
+                status: "complete".to_string(),
+                model: Some("llm.qwen".to_string()),
+                created_at: chrono::Utc::now().fixed_offset(),
+            },
+            db_chats::ChatMessage {
+                id: 3,
+                chat_id: 1,
+                role: "user".to_string(),
+                content: "again".to_string(),
+                status: "complete".to_string(),
+                model: None,
+                created_at: chrono::Utc::now().fixed_offset(),
+            },
+        ];
+        let msgs = build_offload_chat_messages("Be concise.", &records);
+        assert_eq!(msgs.len(), 4);
+        assert_eq!(msgs[0].role, "system");
+        assert_eq!(msgs[1].content, "hi");
+        assert_eq!(msgs[2].content, "hello");
+        assert_eq!(msgs[3].content, "again");
+    }
+
+    #[test]
+    fn build_offload_chat_messages_includes_failed_assistant() {
+        let records = vec![
+            db_chats::ChatMessage {
+                id: 1,
+                chat_id: 1,
+                role: "user".to_string(),
+                content: "q".to_string(),
+                status: "complete".to_string(),
+                model: None,
+                created_at: chrono::Utc::now().fixed_offset(),
+            },
+            db_chats::ChatMessage {
+                id: 2,
+                chat_id: 1,
+                role: "assistant".to_string(),
+                content: "⚠ timeout".to_string(),
+                status: "failed".to_string(),
+                model: Some("llm.qwen".to_string()),
+                created_at: chrono::Utc::now().fixed_offset(),
+            },
+            db_chats::ChatMessage {
+                id: 3,
+                chat_id: 1,
+                role: "user".to_string(),
+                content: "retry".to_string(),
+                status: "complete".to_string(),
+                model: None,
+                created_at: chrono::Utc::now().fixed_offset(),
+            },
+        ];
+        let msgs = build_offload_chat_messages("", &records);
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[1].role, "assistant");
+        assert_eq!(msgs[1].content, "⚠ timeout");
+    }
+
+    #[test]
+    fn build_offload_chat_messages_skips_empty_and_non_dialog_roles() {
+        let records = vec![
+            db_chats::ChatMessage {
+                id: 1,
+                chat_id: 1,
+                role: "system".to_string(),
+                content: "you are helpful".to_string(),
+                status: "complete".to_string(),
+                model: None,
+                created_at: chrono::Utc::now().fixed_offset(),
+            },
+            db_chats::ChatMessage {
+                id: 2,
+                chat_id: 1,
+                role: "user".to_string(),
+                content: "   ".to_string(),
+                status: "complete".to_string(),
+                model: None,
+                created_at: chrono::Utc::now().fixed_offset(),
+            },
+            db_chats::ChatMessage {
+                id: 3,
+                chat_id: 1,
+                role: "user".to_string(),
+                content: "ok".to_string(),
+                status: "complete".to_string(),
+                model: None,
+                created_at: chrono::Utc::now().fixed_offset(),
+            },
+        ];
+        let msgs = build_offload_chat_messages("From chat column.", &records);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].role, "system");
+        assert_eq!(msgs[0].content, "From chat column.");
+        assert_eq!(msgs[1].content, "ok");
+    }
+
+    #[test]
+    fn progress_stream_text_prefers_log() {
+        let resp = crate::offload::PollResponse {
+            status: "running".to_string(),
+            stage: Some("running".to_string()),
+            output: None,
+            log: Some("partial tokens".to_string()),
+        };
+        assert_eq!(progress_stream_text(&resp).as_deref(), Some("partial tokens"));
+    }
+
+    #[test]
+    fn progress_stream_text_falls_back_to_output() {
+        let resp = crate::offload::PollResponse {
+            status: "running".to_string(),
+            stage: None,
+            output: Some(serde_json::json!({
+                "message": { "role": "assistant", "content": "hi" }
+            })),
+            log: None,
+        };
+        assert_eq!(progress_stream_text(&resp).as_deref(), Some("hi"));
     }
 }

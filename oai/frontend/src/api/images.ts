@@ -78,6 +78,8 @@ export interface ImageJobDetails {
   seed: number | null
   input_image_id: string | null
   error: string | null
+  offload_cap: string | null
+  offload_task_id: string | null
   files: ImageJobFile[]
   events: ImageJobEvent[]
 }
@@ -88,18 +90,16 @@ export interface ImgGenCapability {
   raw: string
 }
 
-function authHeaders(token: string): HeadersInit {
-  return { Authorization: `Bearer ${token}` }
-}
-
 async function request<T>(path: string, token: string, options?: RequestInit): Promise<T> {
+  const isFormData = options?.body instanceof FormData
+  const headers = new Headers(options?.headers)
+  headers.set('Authorization', `Bearer ${token}`)
+  if (!isFormData) {
+    headers.set('Content-Type', 'application/json')
+  }
   const res = await fetch(path, {
     ...options,
-    headers: {
-      ...authHeaders(token),
-      ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(options?.headers ?? {}),
-    },
+    headers,
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))

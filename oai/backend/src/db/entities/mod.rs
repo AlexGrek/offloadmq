@@ -1,6 +1,7 @@
 pub mod app_settings;
 pub mod chat_messages;
 pub mod chats;
+pub mod user_system_prompts;
 pub mod image_files;
 pub mod image_generation_jobs;
 pub mod image_offload_tasks;
