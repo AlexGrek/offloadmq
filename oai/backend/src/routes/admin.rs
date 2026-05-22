@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     db::{app_settings, image_generation, image_worker_logs, users},
     error::AppError,
     middleware::AuthenticatedUser,
-    routes::images::{self, JobDetailsResponse},
+    routes::images::{job_details_response, JobDetailsResponse},
+    services::{connection, image_jobs},
     state::AppState,
 };
 
@@ -142,112 +146,28 @@ pub async fn check_connection(
     AuthenticatedUser(_): AuthenticatedUser,
     Json(req): Json<CheckConnectionRequest>,
 ) -> Result<Json<CheckConnectionResponse>, AppError> {
-    let base = req.offloadmq_url.trim_end_matches('/');
-
-    let client_result = match req.client_api_token {
+    let client_token = match present_token(&req.client_api_token) {
+        Some(token) => Some(into_result(
+            connection::probe_client_token(&state.http, &req.offloadmq_url, token).await,
+        )),
         None => None,
-        Some(token) if token.is_empty() => None,
-        Some(token) => {
-            let url = format!("{base}/api/capabilities/online");
-            let result = state
-                .http
-                .get(&url)
-                .header("X-API-Key", &token)
-                .send()
-                .await;
-            Some(match result {
-                Ok(resp) if resp.status().is_success() => TokenCheckResult { ok: true, error: None },
-                Ok(resp) if resp.status() == 401 || resp.status() == 403 => {
-                    TokenCheckResult { ok: false, error: Some("Invalid client token".to_string()) }
-                }
-                Ok(resp) => TokenCheckResult {
-                    ok: false,
-                    error: Some(format!("Unexpected status {}", resp.status())),
-                },
-                Err(e) => TokenCheckResult { ok: false, error: Some(e.to_string()) },
-            })
-        }
+    };
+    let management_token = match present_token(&req.management_api_token) {
+        Some(token) => Some(into_result(
+            connection::probe_management_token(&state.http, &req.offloadmq_url, token).await,
+        )),
+        None => None,
     };
 
-    let management_result = match req.management_api_token {
-        None => None,
-        Some(token) if token.is_empty() => None,
-        Some(token) => {
-            let url = format!("{base}/management/version");
-            let result = state
-                .http
-                .get(&url)
-                .header("Authorization", format!("Bearer {token}"))
-                .send()
-                .await;
-            Some(match result {
-                Ok(resp) if resp.status().is_success() => TokenCheckResult { ok: true, error: None },
-                Ok(resp) if resp.status() == 401 || resp.status() == 403 => {
-                    TokenCheckResult { ok: false, error: Some("Invalid management token".to_string()) }
-                }
-                Ok(resp) => TokenCheckResult {
-                    ok: false,
-                    error: Some(format!("Unexpected status {}", resp.status())),
-                },
-                Err(e) => TokenCheckResult { ok: false, error: Some(e.to_string()) },
-            })
-        }
-    };
-
-    Ok(Json(CheckConnectionResponse {
-        client_token: client_result,
-        management_token: management_result,
-    }))
+    Ok(Json(CheckConnectionResponse { client_token, management_token }))
 }
 
 pub async fn admin_list_image_jobs(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(_): AuthenticatedUser,
 ) -> Result<Json<Vec<JobDetailsResponse>>, AppError> {
-    let jobs = image_generation::list_jobs_global(&state.db, 200).await?;
-    let mut out = Vec::with_capacity(jobs.len());
-    for job in jobs {
-        let files = image_generation::list_job_files(&state.db, job.id).await?;
-        let events = image_generation::list_pipeline_events(&state.db, job.id).await?;
-        out.push(JobDetailsResponse {
-            job_id: job.id.to_string(),
-            status: job.status,
-            prompt: job.prompt,
-            negative_prompt: job.negative_prompt,
-            capability: job.capability,
-            workflow: job.workflow,
-            width: job.width,
-            height: job.height,
-            seed: job.seed,
-            input_image_id: job.input_image_id.map(|id| id.to_string()),
-            error: job.error,
-            files: files
-                .into_iter()
-                .map(|f| images::JobFile {
-                    image_id: f.id.to_string(),
-                    direction: f.direction,
-                    source: f.source,
-                    filename: f.filename,
-                    content_type: f.content_type,
-                    width: f.stored_width,
-                    height: f.stored_height,
-                    size_bytes: f.stored_bytes,
-                    rescaled: f.rescaled,
-                    reencoded: f.reencoded,
-                })
-                .collect(),
-            events: events
-                .into_iter()
-                .map(|e| images::JobEvent {
-                    step: e.step,
-                    state: e.state,
-                    details: e.details,
-                    created_at: e.created_at.to_rfc3339(),
-                })
-                .collect(),
-        });
-    }
-    Ok(Json(out))
+    let details = image_jobs::list_all_job_details(&state, 200).await?;
+    Ok(Json(details.into_iter().map(job_details_response).collect()))
 }
 
 pub async fn admin_get_image_job(
@@ -255,49 +175,9 @@ pub async fn admin_get_image_job(
     AuthenticatedUser(_): AuthenticatedUser,
     Path(job_id): Path<String>,
 ) -> Result<Json<JobDetailsResponse>, AppError> {
-    let job_id = job_id.parse::<i64>().map_err(|_| AppError::BadRequest("invalid job id".into()))?;
-    let job = image_generation::get_job_global(&state.db, job_id)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    let files = image_generation::list_job_files(&state.db, job.id).await?;
-    let events = image_generation::list_pipeline_events(&state.db, job.id).await?;
-    Ok(Json(JobDetailsResponse {
-        job_id: job.id.to_string(),
-        status: job.status,
-        prompt: job.prompt,
-        negative_prompt: job.negative_prompt,
-        capability: job.capability,
-        workflow: job.workflow,
-        width: job.width,
-        height: job.height,
-        seed: job.seed,
-        input_image_id: job.input_image_id.map(|id| id.to_string()),
-        error: job.error,
-        files: files
-            .into_iter()
-            .map(|f| images::JobFile {
-                image_id: f.id.to_string(),
-                direction: f.direction,
-                source: f.source,
-                filename: f.filename,
-                content_type: f.content_type,
-                width: f.stored_width,
-                height: f.stored_height,
-                size_bytes: f.stored_bytes,
-                rescaled: f.rescaled,
-                reencoded: f.reencoded,
-            })
-            .collect(),
-        events: events
-            .into_iter()
-            .map(|e| images::JobEvent {
-                step: e.step,
-                state: e.state,
-                details: e.details,
-                created_at: e.created_at.to_rfc3339(),
-            })
-            .collect(),
-    }))
+    let job_id = parse_id(&job_id)?;
+    let detail = image_jobs::any_job_detail(&state, job_id).await?;
+    Ok(Json(job_details_response(detail)))
 }
 
 pub async fn admin_reconcile_image_job(
@@ -305,11 +185,8 @@ pub async fn admin_reconcile_image_job(
     AuthenticatedUser(_): AuthenticatedUser,
     Path(job_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let job_id = job_id.parse::<i64>().map_err(|_| AppError::BadRequest("invalid job id".into()))?;
-    let job = image_generation::get_job_global(&state.db, job_id)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    images::reconcile_job_outputs_if_missing(&state, &job, job.user_id).await?;
+    let job_id = parse_id(&job_id)?;
+    image_jobs::reconcile_job(&state, job_id).await?;
     Ok(Json(serde_json::json!({ "ok": true, "job_id": job_id.to_string() })))
 }
 
@@ -399,4 +276,20 @@ pub async fn admin_list_image_worker_logs(
             })
             .collect(),
     ))
+}
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+/// Returns the token only when it is present and non-empty; otherwise `None`
+/// (the field is simply omitted from the connection check).
+fn present_token(token: &Option<String>) -> Option<&str> {
+    token.as_deref().filter(|t| !t.is_empty())
+}
+
+fn into_result(probe: connection::TokenProbe) -> TokenCheckResult {
+    TokenCheckResult { ok: probe.ok, error: probe.error }
+}
+
+fn parse_id(value: &str) -> Result<i64, AppError> {
+    value.parse::<i64>().map_err(|_| AppError::BadRequest("invalid job id".into()))
 }

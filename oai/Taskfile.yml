@@ -86,6 +86,23 @@ tasks:
       done
       docker compose -f {{.COMPOSE_FILE}} down
 
+  # ── Integration tests ────────────────────────────────────────────────────
+
+  itest:install:
+    desc: Install Python itest dependencies via uv
+    dir: itests
+    cmd: uv sync
+
+  itest:
+    desc: Run integration tests (backend must be running on OAI_BASE_URL or localhost:3001)
+    dir: itests
+    cmd: uv run pytest {{.CLI_ARGS}}
+
+  itest:v:
+    desc: Run integration tests with verbose output
+    dir: itests
+    cmd: uv run pytest -v {{.CLI_ARGS}}
+
   # ── Build ─────────────────────────────────────────────────────────────────
 
   build:

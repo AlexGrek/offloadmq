@@ -116,19 +116,3 @@ pub async fn add_message(
     };
     msg.insert(db).await.map_err(AppError::Database)
 }
-
-pub async fn update_message_content(
-    db: &DatabaseConnection,
-    id: i64,
-    content: &str,
-    status: &str,
-) -> Result<(), AppError> {
-    let model = chat_messages::ActiveModel {
-        id: ActiveValue::Set(id),
-        content: ActiveValue::Set(content.to_string()),
-        status: ActiveValue::Set(status.to_string()),
-        ..Default::default()
-    };
-    model.update(db).await.map_err(AppError::Database)?;
-    Ok(())
-}

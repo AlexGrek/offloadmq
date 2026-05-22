@@ -15,9 +15,6 @@ use crate::{db::users, error::AppError, state::AppState};
 #[derive(Clone, Debug)]
 pub struct AuthenticatedUser(pub i64);
 
-#[derive(Clone, Debug)]
-pub struct OptionalJwtUser(pub Option<i64>);
-
 pub fn extract_jwt_token(parts: &Parts) -> Option<String> {
     parts
         .headers
@@ -79,19 +76,6 @@ pub async fn admin_auth_middleware(
     Ok(next.run(Request::from_parts(parts, body)).await)
 }
 
-pub async fn optional_jwt_middleware(
-    State(state): State<Arc<AppState>>,
-    req: Request<Body>,
-    next: Next,
-) -> Result<Response, AppError> {
-    let (mut parts, body) = req.into_parts();
-    let user = extract_jwt_token(&parts)
-        .and_then(|token| state.auth.decode_token(&token).ok())
-        .map(|claims| claims.sub);
-    parts.extensions.insert(OptionalJwtUser(user));
-    Ok(next.run(Request::from_parts(parts, body)).await)
-}
-
 impl<S: Send + Sync + 'static> FromRequestParts<S> for AuthenticatedUser {
     type Rejection = AppError;
 
@@ -101,17 +85,5 @@ impl<S: Send + Sync + 'static> FromRequestParts<S> for AuthenticatedUser {
             .get::<AuthenticatedUser>()
             .cloned()
             .ok_or(AppError::Unauthorized)
-    }
-}
-
-impl<S: Send + Sync + 'static> FromRequestParts<S> for OptionalJwtUser {
-    type Rejection = std::convert::Infallible;
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        Ok(parts
-            .extensions
-            .get::<OptionalJwtUser>()
-            .cloned()
-            .unwrap_or(OptionalJwtUser(None)))
     }
 }

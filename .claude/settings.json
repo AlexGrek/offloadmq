@@ -112,7 +112,9 @@
       "Bash(node --input-type=module)",
       "Bash(pkill -f \"vite\")",
       "Bash(mktemp -d)",
-      "Bash(mkdir -p /Users/vedmedik/dev/offloadmq/.claude/skills/oai-frontend)"
+      "Bash(mkdir -p /Users/vedmedik/dev/offloadmq/.claude/skills/oai-frontend)",
+      "Bash(uv sync *)",
+      "Bash(uv run *)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

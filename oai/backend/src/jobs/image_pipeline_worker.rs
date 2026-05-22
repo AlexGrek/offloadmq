@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use crate::{db::image_worker_logs, state::AppState};
+use crate::{db::image_worker_logs, services::image_jobs, state::AppState};
 
 const DEFAULT_TICK_SECS: u64 = 20;
 const DEFAULT_BATCH_SIZE: u64 = 20;
@@ -28,7 +28,7 @@ pub fn spawn(state: Arc<AppState>) {
             let started_s = started.to_rfc3339();
             let mut status = "ok".to_string();
             let mut error: Option<String> = None;
-            if let Err(e) = crate::routes::images::run_background_reconcile_pass(&state, batch_size).await {
+            if let Err(e) = image_jobs::run_background_reconcile_pass(&state, batch_size).await {
                 tracing::warn!("image pipeline worker pass failed: {e}");
                 status = "error".to_string();
                 error = Some(e.to_string());

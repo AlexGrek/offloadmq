@@ -310,6 +310,14 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 - React UI built with shadcn/ui components
 - Deployed at `oai.alexgr.space`; Docker image `grekodocker/oai`
 
+### Skills
+
+Skills provide domain-specific context for OAI work. They are activated automatically based on the work being done.
+
+**OAI Frontend** — React 19 + TypeScript SPA, shadcn/ui, Tailwind v4, routing, API clients, dark/light mode. See `.claude/skills/oai-frontend/SKILL.md`.
+
+**OAI Integration Tests** — Python integration tests (httpx + pytest-xdist) that run against the live OAI backend. One test file per route group, fixtures in conftest.py, no mocking. See `.claude/skills/oai-itests/SKILL.md`.
+
 ### Development Commands
 
 Uses [Go Task](https://taskfile.dev) (`task`) — no Makefile.

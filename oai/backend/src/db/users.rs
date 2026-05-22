@@ -22,17 +22,6 @@ pub async fn find_by_login(db: &DatabaseConnection, login: &str) -> Result<Optio
         .map_err(AppError::Database)
 }
 
-pub async fn find_by_google_id(
-    db: &DatabaseConnection,
-    google_id: &str,
-) -> Result<Option<User>, AppError> {
-    Entity::find()
-        .filter(Column::GoogleId.eq(google_id))
-        .one(db)
-        .await
-        .map_err(AppError::Database)
-}
-
 pub async fn create(
     db: &DatabaseConnection,
     id: i64,
@@ -68,20 +57,4 @@ pub async fn create_admin(
         is_admin: ActiveValue::Set(Some(true)),
     };
     model.insert(db).await.map_err(AppError::Database)
-}
-
-pub async fn set_google_id(
-    db: &DatabaseConnection,
-    user_id: i64,
-    google_id: &str,
-) -> Result<User, AppError> {
-    let user = Entity::find_by_id(user_id)
-        .one(db)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or(AppError::NotFound)?;
-
-    let mut active: ActiveModel = user.into();
-    active.google_id = ActiveValue::Set(Some(google_id.to_string()));
-    active.update(db).await.map_err(AppError::Database)
 }
