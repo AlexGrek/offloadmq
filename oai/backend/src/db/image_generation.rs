@@ -179,6 +179,24 @@ pub async fn create_offload_task(
     model.insert(db).await.map_err(AppError::Database)
 }
 
+/// Active image jobs for a user plus their linked OffloadMQ task rows (debug panel).
+pub async fn list_user_active_offload_tasks(
+    db: &DatabaseConnection,
+    user_id: i64,
+) -> Result<Vec<(ImageGenerationJob, ImageOffloadTask)>, AppError> {
+    let jobs = list_jobs(db, user_id, 64).await?;
+    let mut out = Vec::new();
+    for job in jobs {
+        if matches!(job.status.as_str(), "completed" | "failed" | "canceled") {
+            continue;
+        }
+        if let Some(task) = get_offload_task_by_job(db, job.id).await? {
+            out.push((job, task));
+        }
+    }
+    Ok(out)
+}
+
 pub async fn get_offload_task_by_job(
     db: &DatabaseConnection,
     job_id: i64,

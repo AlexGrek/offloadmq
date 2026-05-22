@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2, Send, ImagePlus, X, Square } from 'lucide-react';
+import { Trash2, Send, ImagePlus, X, Square, Loader } from 'lucide-react';
 import { stripCapabilityAttrs, extractSandboxModelText } from '../utils';
 import SandboxMarkdown from './SandboxMarkdown';
 import { useCapabilities } from '../hooks/useCapabilities';
@@ -238,18 +238,23 @@ const LlmChatApp = ({ apiKey, addDevEntry }) => {
           </div>
         ))}
         {isLoading && (
-          <div style={{ ...styles.bubble, ...styles.assistantBubble }}>
-            {streamingLog
-              ? (
-                <SandboxMarkdown
-                  tone="light"
-                  style={{ fontSize: '14px', animation: 'llm-breathe 1.8s ease-in-out infinite' }}
-                >
-                  {streamingLog}
-                </SandboxMarkdown>
-              )
-              : <div style={styles.typing}>{pollingStatus || 'Thinking…'}</div>
-            }
+          <div
+            style={{ ...styles.bubble, ...styles.assistantBubble }}
+            data-testid="llm-message-pending"
+            aria-busy="true"
+          >
+            {streamingLog ? (
+              <SandboxMarkdown
+                tone="light"
+                style={{ fontSize: '14px', animation: 'llm-breathe 1.8s ease-in-out infinite' }}
+              >
+                {streamingLog}
+              </SandboxMarkdown>
+            ) : null}
+            <div style={{ ...styles.pendingRow, marginTop: streamingLog ? 8 : 0 }}>
+              <Loader size={14} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} aria-hidden />
+              <span style={styles.typing}>{pollingStatus || 'Thinking…'}</span>
+            </div>
           </div>
         )}
         {error && <div style={styles.errorMsg}>{error}</div>}
@@ -417,6 +422,11 @@ const styles = {
     justifyContent: 'flex-end',
     marginTop: '6px',
     opacity: 0.75,
+  },
+  pendingRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
   },
   typing: {
     color: 'var(--muted)',

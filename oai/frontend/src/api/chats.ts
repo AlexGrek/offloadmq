@@ -9,7 +9,7 @@ export interface ChatMessageRecord {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
-  status: 'complete' | 'failed'
+  status: 'complete' | 'failed' | 'thinking' | 'pending'
   model: string | null
   created_at: string
 }

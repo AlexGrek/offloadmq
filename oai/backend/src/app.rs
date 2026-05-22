@@ -46,6 +46,10 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/images/jobs/{id}", get(routes::images::get_job))
         .route("/api/images/jobs/{id}/poll", post(routes::images::poll_job))
         .route("/api/images/files/{id}", get(routes::images::get_image))
+        .route(
+            "/api/debug/offload_status",
+            post(routes::debug::offload_status),
+        )
         .layer(from_fn_with_state(state.clone(), middleware::jwt_auth_middleware));
 
     let admin = Router::new()

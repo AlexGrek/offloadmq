@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useAuth } from '../contexts/AuthContext'
+import { useDebug } from '../contexts/DebugContext'
 import { useWsChat, nextReqId } from '../hooks/useWsChat'
 import type { LlmCapabilityInfo, ServerEvent } from '../types/ws'
 import {
@@ -48,13 +49,23 @@ function modelLabel(cap: LlmCapabilityInfo): string {
   return cap.base.replace(/^llm\./, '')
 }
 
+function normalizeStatus(status: string): MessageStatus {
+  if (status === 'thinking' || status === 'pending') return 'thinking'
+  if (status === 'failed') return 'failed'
+  return 'complete'
+}
+
 function recordToMessage(r: ChatMessageRecord): Message {
   return {
     id: r.id,
     role: r.role as 'user' | 'assistant',
     content: r.content,
-    status: r.status as MessageStatus,
+    status: normalizeStatus(r.status),
   }
+}
+
+function isMessagePending(msg: Message): boolean {
+  return msg.role === 'assistant' && msg.status === 'thinking'
 }
 
 // ── Status indicator ──────────────────────────────────────────────────────────
@@ -169,11 +180,21 @@ function ModelPicker({
 
 // ── Thinking bubble ───────────────────────────────────────────────────────────
 
-function ThinkingBubble({ statusText }: { statusText?: string }) {
+function ThinkingBubble({ statusText, content }: { statusText?: string; content?: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm bg-muted px-4 py-2.5 text-sm text-muted-foreground">
-      <Loader2 className="size-3.5 shrink-0 animate-spin" />
-      <span>{statusText || 'Thinking…'}</span>
+    <div
+      className="max-w-[80%] rounded-2xl rounded-bl-sm bg-muted px-4 py-2.5 text-sm"
+      data-testid="message-pending"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      {content ? (
+        <p className="mb-3 whitespace-pre-wrap leading-relaxed text-foreground">{content}</p>
+      ) : null}
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
+        <span>{statusText || 'Thinking…'}</span>
+      </div>
     </div>
   )
 }
@@ -182,6 +203,7 @@ function ThinkingBubble({ statusText }: { statusText?: string }) {
 
 export default function ChatPage() {
   const { token } = useAuth()
+  const { registerJob, unregisterJob } = useDebug()
   const ws = useWsChat(token)
 
   const [chats, setChats] = useState<ChatSummary[]>([])
@@ -236,32 +258,53 @@ export default function ChatPage() {
       switch (event.type) {
         case 'task:queued':
           updateThinking(event.req_id, 'Queued…')
+          registerJob({
+            key: `chat:${event.req_id}`,
+            cap: event.cap,
+            id: event.id,
+            label: `chat ${event.req_id}`,
+            source: 'chat',
+          })
           break
         case 'task:progress': {
           const label =
             event.stage ? capitalize(event.stage.replace(/_/g, ' ')) :
             capitalize(event.status.replace(/_/g, ' '))
           updateThinking(event.req_id, label + '…')
+          if (event.log) updateThinkingContent(event.req_id, event.log)
           break
         }
         case 'task:result':
+          unregisterJob(`chat:${event.req_id}`)
           resolveThinking(event.req_id, event.text, 'complete')
           break
         case 'task:failed':
+          unregisterJob(`chat:${event.req_id}`)
           resolveThinking(event.req_id, `⚠ ${event.error}`, 'failed')
           break
         case 'error':
-          if (event.req_id) resolveThinking(event.req_id, `⚠ ${event.message}`, 'failed')
+          if (event.req_id) {
+            unregisterJob(`chat:${event.req_id}`)
+            resolveThinking(event.req_id, `⚠ ${event.message}`, 'failed')
+          }
           break
       }
     })
-  }, [ws.subscribe]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ws.subscribe, registerJob, unregisterJob]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateThinking(reqId: string, statusText: string) {
     const msgId = reqToMsgId.current.get(reqId)
     if (!msgId) return
     setMessages(prev =>
       prev.map(m => m.id === msgId ? { ...m, statusText } : m),
+    )
+  }
+
+  function updateThinkingContent(reqId: string, content: string) {
+    const msgId = reqToMsgId.current.get(reqId)
+    if (!msgId) return
+    setMessages(prev =>
+      prev.map(m => (m.id === msgId ? { ...m, content } : m)),
     )
   }
 
@@ -521,8 +564,8 @@ export default function ChatPage() {
                   className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
                   data-testid={`message-${msg.id}`}
                 >
-                  {msg.role === 'assistant' && msg.status === 'thinking' ? (
-                    <ThinkingBubble statusText={msg.statusText} />
+                  {isMessagePending(msg) ? (
+                    <ThinkingBubble statusText={msg.statusText} content={msg.content} />
                   ) : (
                     <div
                       className={cn(

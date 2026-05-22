@@ -240,9 +240,27 @@ fn send_error(tx: &UnboundedSender<ServerEvent>, req_id: &str, message: &str) {
 fn extract_llm_text(output: &Option<serde_json::Value>) -> String {
     output
         .as_ref()
-        .and_then(|v| v.get("response").and_then(|r| r.as_str()))
-        .unwrap_or("")
+        .and_then(extract_llm_text_from_value)
+        .unwrap_or_default()
         .to_string()
+}
+
+/// Matches offload-agent Ollama output and management-frontend `extractSandboxModelText`.
+fn extract_llm_text_from_value(v: &serde_json::Value) -> Option<&str> {
+    if let Some(s) = v.get("message")?.get("content")?.as_str() {
+        return Some(s);
+    }
+    if let Some(s) = v
+        .get("choices")?
+        .as_array()?
+        .first()?
+        .get("message")?
+        .get("content")?
+        .as_str()
+    {
+        return Some(s);
+    }
+    v.get("response").and_then(|r| r.as_str())
 }
 
 fn extract_error_text(output: &Option<serde_json::Value>) -> String {
@@ -251,4 +269,31 @@ fn extract_error_text(output: &Option<serde_json::Value>) -> String {
         .and_then(|v| v.get("error").and_then(|e| e.as_str()).or_else(|| v.as_str()))
         .unwrap_or("Unknown error")
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_llm_text_ollama_message_content() {
+        let output = serde_json::json!({
+            "model": "qwen3:8b",
+            "message": { "role": "assistant", "content": "Hello from Ollama" },
+            "done": true
+        });
+        assert_eq!(extract_llm_text(&Some(output)), "Hello from Ollama");
+    }
+
+    #[test]
+    fn extract_llm_text_legacy_response_field() {
+        let output = serde_json::json!({ "response": "legacy text", "done": true });
+        assert_eq!(extract_llm_text(&Some(output)), "legacy text");
+    }
+
+    #[test]
+    fn extract_llm_text_missing_returns_empty() {
+        assert_eq!(extract_llm_text(&None), "");
+        assert_eq!(extract_llm_text(&Some(serde_json::json!({ "done": true }))), "");
+    }
 }

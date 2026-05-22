@@ -1,12 +1,15 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { LogOut, Moon, Sun, User } from 'lucide-react'
+import { Bug, LogOut, Moon, Sun, User } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useDebug } from '../contexts/DebugContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { Button } from './ui/button'
+import { cn } from '@/lib/utils'
 
 export function TopBar() {
   const { user, logout } = useAuth()
   const { theme, toggle } = useTheme()
+  const { enabled: debugEnabled, drawerOpen, cycleDebugUi } = useDebug()
   const navigate = useNavigate()
 
   function handleLogout() {
@@ -20,6 +23,31 @@ export function TopBar() {
         oai
       </Link>
       <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={cycleDebugUi}
+          aria-pressed={debugEnabled}
+          aria-label={
+            !debugEnabled
+              ? 'Enable debug mode'
+              : drawerOpen
+                ? 'Disable debug mode'
+                : 'Open debug panel'
+          }
+          title={
+            !debugEnabled
+              ? 'Debug mode off'
+              : drawerOpen
+                ? 'Debug mode on — click to turn off'
+                : 'Debug on — click to show panel'
+          }
+          data-testid="debug-mode-toggle"
+          className={cn(debugEnabled && 'text-amber-600 dark:text-amber-400')}
+        >
+          <Bug className="h-4 w-4" />
+          <span className="ml-1.5 hidden sm:inline">Debug</span>
+        </Button>
         <Button
           variant="ghost"
           size="sm"

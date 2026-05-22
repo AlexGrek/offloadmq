@@ -127,9 +127,14 @@ impl OffloadClient {
     }
 
     pub async fn poll_task(&self, task_id: &TaskId) -> Result<PollResponse, AppError> {
+        let raw = self.poll_task_raw(task_id).await?;
+        serde_json::from_value(raw).map_err(|e| AppError::ExternalService(e.to_string()))
+    }
+
+    /// Full OffloadMQ poll JSON — used by OAI debug mode.
+    pub async fn poll_task_raw(&self, task_id: &TaskId) -> Result<serde_json::Value, AppError> {
         let cap_encoded = urlencoding::encode(&task_id.cap);
-        let url =
-            format!("{}/api/task/poll/{}/{}", self.base_url, cap_encoded, task_id.id);
+        let url = format!("{}/api/task/poll/{}/{}", self.base_url, cap_encoded, task_id.id);
         let body = serde_json::json!({ "apiKey": self.api_key });
         let resp = self
             .http
