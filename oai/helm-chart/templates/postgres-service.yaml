@@ -1,0 +1,17 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oai.postgresHost" . }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app.kubernetes.io/component: postgres
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

@@ -1,0 +1,25 @@
+{{- if .Values.garage.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "oai.garageSvcName" . }}-config
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+data:
+  garage.toml: |
+    [garage]
+    metadata_dir = "/var/lib/garage/meta"
+    data_dir = "/var/lib/garage/data"
+    db_engine = "lmdb"
+    replication_factor = {{ .Values.garage.replicationFactor }}
+    rpc_bind_addr = "[::]:{{ .Values.garage.service.rpcPort }}"
+    rpc_public_addr = "{{ include "oai.garageSvcName" . }}-headless:{{ .Values.garage.service.rpcPort }}"
+    rpc_secret = "${GARAGE_RPC_SECRET}"
+
+    [s3_api]
+    s3_region = {{ .Values.garage.storage.region | quote }}
+    api_bind_addr = "[::]:{{ .Values.garage.service.s3Port }}"
+
+    [admin]
+    api_bind_addr = "[::]:{{ .Values.garage.service.adminPort }}"
+{{- end }}

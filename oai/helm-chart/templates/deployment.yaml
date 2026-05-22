@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "oai.fullname" . }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "oai.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oai.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: oai
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 3000
+          env:
+            - name: SERVER_ADDRESS
+              value: "0.0.0.0:3000"
+            - name: STATIC_DIR
+              value: {{ .Values.config.staticDir | quote }}
+            - name: RUST_LOG
+              value: {{ .Values.config.rustLog | quote }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "oai.fullname" . }}-secret
+                  key: database-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "oai.fullname" . }}-secret
+                  key: jwt-secret
+            {{- if .Values.garage.enabled }}
+            - name: STORAGE_BACKEND
+              value: "s3"
+            - name: STORAGE_S3_BUCKET
+              value: {{ .Values.garage.storage.bucket | quote }}
+            - name: STORAGE_S3_REGION
+              value: {{ .Values.garage.storage.region | quote }}
+            - name: STORAGE_S3_ENDPOINT
+              value: {{ printf "http://%s:%d" (include "oai.garageSvcName" .) (.Values.garage.service.s3Port | int) | quote }}
+            - name: STORAGE_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "oai.fullname" . }}-secret
+                  key: garage-access-key-id
+            - name: STORAGE_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "oai.fullname" . }}-secret
+                  key: garage-secret-access-key
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

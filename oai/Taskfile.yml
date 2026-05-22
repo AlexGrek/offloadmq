@@ -1,0 +1,184 @@
+version: '3'
+
+vars:
+  RELEASE: oai
+  NAMESPACE: oai
+  CHART: ./helm-chart
+  COMPOSE_FILE: ./docker-compose.dev.yml
+  IMAGE: grekodocker/oai
+  BUILDX_BUILDER: multiarch-builder
+  BUILDX_LOCAL_CACHE: ./.buildx-cache
+  BUILDX_LOCAL_CACHE_NEW: ./.buildx-cache-new
+  BACKEND_PORT: "3001"
+  FRONTEND_PORT: "5174"
+  GIT_HASH:
+    sh: git rev-parse --short HEAD
+  GIT_COMMITS:
+    sh: git rev-list --count HEAD
+  DATABASE_URL: postgres://oai:oai_dev_password@localhost:5432/oai
+  ROOT_ADMIN_PASSWORD: "000000"
+
+tasks:
+  # ── Dev environment ──────────────────────────────────────────────────────────
+
+  dev:
+    desc: Start Postgres, backend (fs storage), and frontend dev server
+    deps: [infra:up]
+    cmd: |
+      #!/usr/bin/env bash
+      set -e
+
+      cleanup() {
+        echo ""
+        echo "==> Shutting down backend..."
+        kill "$BACKEND_PID" 2>/dev/null || true
+      }
+      trap cleanup EXIT
+
+      echo "==> Starting backend..."
+      (cd backend && RUST_LOG=info DATABASE_URL={{.DATABASE_URL}} ROOT_ADMIN_PASSWORD={{.ROOT_ADMIN_PASSWORD}} SERVER_ADDRESS=0.0.0.0:{{.BACKEND_PORT}} cargo run) &
+      BACKEND_PID=$!
+
+      echo "==> Starting frontend dev server..."
+      (cd frontend && npm run dev)
+
+  dev:backend:
+    desc: Run backend only (infra must be running)
+    dir: backend
+    cmd: cargo run
+    env:
+      RUST_LOG: info
+      DATABASE_URL: "{{.DATABASE_URL}}"
+      ROOT_ADMIN_PASSWORD: "{{.ROOT_ADMIN_PASSWORD}}"
+      SERVER_ADDRESS: "0.0.0.0:{{.BACKEND_PORT}}"
+
+  dev:frontend:
+    desc: Run Vite dev server
+    dir: frontend
+    cmd: npm run dev
+
+  infra:up:
+    desc: Start Postgres + Garage via Docker Compose and wait until healthy
+    cmd: docker compose -f {{.COMPOSE_FILE}} up -d --wait
+
+  infra:down:
+    desc: Stop and remove infra containers (data volumes preserved)
+    cmd: docker compose -f {{.COMPOSE_FILE}} down
+
+  infra:destroy:
+    desc: Stop infra and DELETE all data volumes
+    cmd: docker compose -f {{.COMPOSE_FILE}} down -v
+
+  infra:logs:
+    desc: Tail logs from infra containers
+    cmd: docker compose -f {{.COMPOSE_FILE}} logs -f
+
+  kill:
+    desc: Kill backend (port {{.BACKEND_PORT}}) and frontend (port {{.FRONTEND_PORT}}), then stop infra
+    cmd: |
+      #!/usr/bin/env bash
+      for port in {{.BACKEND_PORT}} {{.FRONTEND_PORT}}; do
+        pids=$(lsof -ti TCP:$port -sTCP:LISTEN 2>/dev/null) || true
+        if [ -n "$pids" ]; then
+          echo "==> Killing port $port (pid $pids)"
+          kill $pids 2>/dev/null || true
+        fi
+      done
+      docker compose -f {{.COMPOSE_FILE}} down
+
+  # ── Build ─────────────────────────────────────────────────────────────────
+
+  build:
+    desc: Build frontend + backend release binary
+    deps: [build:frontend, build:backend]
+
+  build:backend:
+    desc: Build Rust backend (release)
+    dir: backend
+    cmd: cargo build --release
+
+  build:frontend:
+    desc: Build React frontend (production)
+    dir: frontend
+    env:
+      VITE_APP_VERSION: "{{.GIT_COMMITS}}"
+    cmd: npm run build
+
+  install:
+    desc: Install frontend npm dependencies
+    dir: frontend
+    cmd: npm install
+
+  # ── Docker ───────────────────────────────────────────────────────────────────
+
+  docker:build:
+    desc: Build frontend then build the Docker image (amd64) with local buildx cache
+    cmds:
+      - task: build:frontend
+      - mkdir -p {{.BUILDX_LOCAL_CACHE}}
+      - rm -rf {{.BUILDX_LOCAL_CACHE_NEW}}
+      - docker buildx build --builder {{.BUILDX_BUILDER}} --platform linux/amd64 --load
+          --cache-from=type=local,src={{.BUILDX_LOCAL_CACHE}}
+          --cache-to=type=local,dest={{.BUILDX_LOCAL_CACHE_NEW}},mode=max
+          -f Dockerfile
+          -t {{.IMAGE}}:{{.GIT_HASH}}
+          -t {{.IMAGE}}:latest
+          .
+      - rm -rf {{.BUILDX_LOCAL_CACHE}} && mv {{.BUILDX_LOCAL_CACHE_NEW}} {{.BUILDX_LOCAL_CACHE}}
+
+  docker:release:
+    desc: Build frontend then build + push Docker image to Docker Hub
+    cmds:
+      - task: build:frontend
+      - mkdir -p {{.BUILDX_LOCAL_CACHE}}
+      - rm -rf {{.BUILDX_LOCAL_CACHE_NEW}}
+      - docker buildx build --builder {{.BUILDX_BUILDER}} --platform linux/amd64 --push
+          --cache-from=type=local,src={{.BUILDX_LOCAL_CACHE}}
+          --cache-to=type=local,dest={{.BUILDX_LOCAL_CACHE_NEW}},mode=max
+          -f Dockerfile
+          -t {{.IMAGE}}:{{.GIT_HASH}}
+          -t {{.IMAGE}}:latest
+          .
+      - rm -rf {{.BUILDX_LOCAL_CACHE}} && mv {{.BUILDX_LOCAL_CACHE_NEW}} {{.BUILDX_LOCAL_CACHE}}
+
+  # ── Helm / Kubernetes ─────────────────────────────────────────────────────
+
+  deploy:
+    desc: Install or upgrade the Helm release pinned to current git hash
+    cmd: helm upgrade --install {{.RELEASE}} {{.CHART}} --namespace {{.NAMESPACE}} --create-namespace --set image.tag={{.GIT_HASH}}
+
+  undeploy:
+    desc: Uninstall the Helm release
+    cmd: helm uninstall {{.RELEASE}} --namespace {{.NAMESPACE}}
+
+  template:
+    desc: Render Helm templates locally without deploying
+    cmd: helm template {{.RELEASE}} {{.CHART}} --namespace {{.NAMESPACE}}
+
+  lint:
+    desc: Lint the Helm chart
+    cmd: helm lint {{.CHART}}
+
+  status:
+    desc: Show Helm release status
+    cmd: helm status {{.RELEASE}} --namespace {{.NAMESPACE}}
+
+  diff:
+    desc: Diff deployed vs local chart (requires helm-diff plugin)
+    cmd: helm diff upgrade {{.RELEASE}} {{.CHART}} --namespace {{.NAMESPACE}}
+
+  history:
+    desc: Show Helm release history
+    cmd: helm history {{.RELEASE}} --namespace {{.NAMESPACE}}
+
+  rollback:
+    desc: Rollback to previous revision
+    cmd: helm rollback {{.RELEASE}} --namespace {{.NAMESPACE}}
+
+  # ── Shortcut: build → push → deploy ─────────────────────────────────────
+
+  ship:
+    desc: Build frontend, push Docker image, deploy to cluster
+    cmds:
+      - task: docker:release
+      - task: deploy

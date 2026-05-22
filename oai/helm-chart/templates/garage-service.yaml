@@ -1,0 +1,41 @@
+{{- if .Values.garage.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oai.garageSvcName" . }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: garage
+spec:
+  type: ClusterIP
+  ports:
+    - name: s3
+      port: {{ .Values.garage.service.s3Port }}
+      targetPort: {{ .Values.garage.service.s3Port }}
+    - name: rpc
+      port: {{ .Values.garage.service.rpcPort }}
+      targetPort: {{ .Values.garage.service.rpcPort }}
+    - name: admin
+      port: {{ .Values.garage.service.adminPort }}
+      targetPort: {{ .Values.garage.service.adminPort }}
+  selector:
+    app.kubernetes.io/component: garage
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oai.garageSvcName" . }}-headless
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: garage
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: rpc
+      port: {{ .Values.garage.service.rpcPort }}
+  selector:
+    app.kubernetes.io/component: garage
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

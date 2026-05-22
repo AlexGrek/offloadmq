@@ -1,0 +1,74 @@
+{{- if .Values.garage.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "oai.garageSvcName" . }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: garage
+spec:
+  serviceName: {{ include "oai.garageSvcName" . }}-headless
+  replicas: {{ .Values.garage.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: garage
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: garage
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: garage
+          image: "{{ .Values.garage.image.repository }}:{{ .Values.garage.image.tag }}"
+          imagePullPolicy: {{ .Values.garage.image.pullPolicy }}
+          ports:
+            - name: s3
+              containerPort: {{ .Values.garage.service.s3Port }}
+            - name: rpc
+              containerPort: {{ .Values.garage.service.rpcPort }}
+            - name: admin
+              containerPort: {{ .Values.garage.service.adminPort }}
+          env:
+            - name: GARAGE_RPC_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "oai.fullname" . }}-secret
+                  key: garage-rpc-secret
+          volumeMounts:
+            - name: meta
+              mountPath: /var/lib/garage/meta
+            - name: data
+              mountPath: /var/lib/garage/data
+            - name: config
+              mountPath: /etc/garage.toml
+              subPath: garage.toml
+          resources:
+            {{- toYaml .Values.garage.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "oai.garageSvcName" . }}-config
+  volumeClaimTemplates:
+    - metadata:
+        name: meta
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.garage.persistence.storageClass }}
+        storageClassName: {{ .Values.garage.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.garage.persistence.metadataSize }}
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.garage.persistence.storageClass }}
+        storageClassName: {{ .Values.garage.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.garage.persistence.dataSize }}
+{{- end }}
