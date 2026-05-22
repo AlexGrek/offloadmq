@@ -9,6 +9,7 @@ import LandingPage from './pages/LandingPage'
 import DashboardPage from './pages/DashboardPage'
 import ChatPage from './pages/ChatPage'
 import ImageGenerationPage from './pages/ImageGenerationPage'
+import FilesPage from './pages/FilesPage'
 import SettingsPage from './pages/SettingsPage'
 import ServerConfigPage from './pages/ServerConfigPage'
 import ImageWorkerLogsPage from './pages/ImageWorkerLogsPage'
@@ -36,6 +37,7 @@ export default function App() {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="chat" element={<ChatPage />} />
             <Route path="images" element={<ImageGenerationPage />} />
+            <Route path="files" element={<FilesPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/server" element={<ServerConfigPage />} />
             <Route path="settings/worker-logs" element={<ImageWorkerLogsPage />} />
@@ -45,6 +47,7 @@ export default function App() {
           <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
           <Route path="/chat" element={<Navigate to="/app/chat" replace />} />
           <Route path="/images" element={<Navigate to="/app/images" replace />} />
+          <Route path="/files" element={<Navigate to="/app/files" replace />} />
           <Route path="/settings" element={<Navigate to="/app/settings" replace />} />
           <Route path="/settings/server" element={<Navigate to="/app/settings/server" replace />} />
           <Route path="/settings/worker-logs" element={<Navigate to="/app/settings/worker-logs" replace />} />

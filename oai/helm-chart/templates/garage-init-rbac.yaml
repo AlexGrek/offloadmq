@@ -1,0 +1,49 @@
+{{- if .Values.garage.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "oai.garageSvcName" . }}-init
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "oai.garageSvcName" . }}-init
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "oai.garageSvcName" . }}-init
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "oai.garageSvcName" . }}-init
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "oai.garageSvcName" . }}-init
+    namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    db::{app_settings, image_generation},
+    db::{app_settings, image_generation, users},
     error::AppError,
     offload::{
         image_tasks::{OffloadImageClient, OffloadPollResponse, OffloadTaskId},
@@ -222,6 +222,25 @@ pub async fn image_bytes(
         .ok_or(AppError::NotFound)?;
     let bytes = storage::read(op, &file.storage_path).await?;
     Ok((bytes, file.content_type))
+}
+
+/// A user's files plus the cached total used bytes from the users table —
+/// backs the read-only file browser.
+pub struct UserFileListing {
+    pub files: Vec<image_generation::ImageFile>,
+    pub used_bytes: i64,
+}
+
+pub async fn list_user_files(
+    state: &AppState,
+    user_id: i64,
+    limit: u64,
+) -> Result<UserFileListing, AppError> {
+    let files = image_generation::list_user_image_files(&state.db, user_id, limit).await?;
+    let user = users::find_by_id(&state.db, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(UserFileListing { files, used_bytes: user.used_storage_bytes })
 }
 
 pub async fn list_imggen_capabilities(state: &AppState) -> Result<Vec<CapabilityInfo>, AppError> {
@@ -606,8 +625,9 @@ async fn store_image(
     spec: StoredImageSpec<'_>,
     processed: &ProcessedImage,
 ) -> Result<image_generation::ImageFile, AppError> {
+    let user_id = spec.user_id;
     storage::write(storage::operator(state)?, spec.storage_path, processed.bytes.clone()).await?;
-    image_generation::create_image_file(
+    let file = image_generation::create_image_file(
         &state.db,
         image_generation::NewImageFileInput {
             id: spec.image_id,
@@ -632,7 +652,17 @@ async fn store_image(
             offload_file_uid: spec.offload_file_uid,
         },
     )
-    .await
+    .await?;
+    // Refresh the user's cached storage usage on every upload / offload download.
+    recalc_user_storage(state, user_id).await?;
+    Ok(file)
+}
+
+/// Recomputes a user's total stored bytes and writes it to the cached
+/// `users.used_storage_bytes` column.
+async fn recalc_user_storage(state: &AppState, user_id: i64) -> Result<(), AppError> {
+    let total = image_generation::sum_user_stored_bytes(&state.db, user_id).await?;
+    users::update_used_storage(&state.db, user_id, total).await
 }
 
 async fn reconcile_job_outputs_if_missing(

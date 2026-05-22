@@ -38,6 +38,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/chats", post(routes::chats::create_chat))
         .route("/api/chats/{id}", axum::routing::delete(routes::chats::delete_chat))
         .route("/api/chats/{id}/messages", get(routes::chats::get_messages))
+        .route("/api/files", get(routes::files::list_files))
         .route("/api/images/upload", post(routes::images::upload_input_image))
         .route("/api/images/jobs", post(routes::images::start_job))
         .route("/api/images/jobs", get(routes::images::list_jobs))

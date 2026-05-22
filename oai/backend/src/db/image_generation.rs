@@ -321,6 +321,38 @@ pub async fn get_job_global(
         .map_err(AppError::Database)
 }
 
+/// All files owned by a user, newest first — backs the user file browser.
+pub async fn list_user_image_files(
+    db: &DatabaseConnection,
+    user_id: i64,
+    limit: u64,
+) -> Result<Vec<ImageFile>, AppError> {
+    ImageFileEntity::find()
+        .filter(image_files::Column::UserId.eq(user_id))
+        .order_by_desc(image_files::Column::CreatedAt)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
+/// Sum of `stored_bytes` across all of a user's files — the source of truth for
+/// the cached `users.used_storage_bytes` value.
+pub async fn sum_user_stored_bytes(
+    db: &DatabaseConnection,
+    user_id: i64,
+) -> Result<i64, AppError> {
+    let sizes: Vec<i64> = ImageFileEntity::find()
+        .select_only()
+        .column(image_files::Column::StoredBytes)
+        .filter(image_files::Column::UserId.eq(user_id))
+        .into_tuple()
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    Ok(sizes.iter().sum())
+}
+
 pub async fn list_image_files_global(
     db: &DatabaseConnection,
     limit: u64,

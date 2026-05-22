@@ -23,6 +23,7 @@ spec:
         - name: garage
           image: "{{ .Values.garage.image.repository }}:{{ .Values.garage.image.tag }}"
           imagePullPolicy: {{ .Values.garage.image.pullPolicy }}
+          args: ["/garage", "server"]
           ports:
             - name: s3
               containerPort: {{ .Values.garage.service.s3Port }}
@@ -30,12 +31,6 @@ spec:
               containerPort: {{ .Values.garage.service.rpcPort }}
             - name: admin
               containerPort: {{ .Values.garage.service.adminPort }}
-          env:
-            - name: GARAGE_RPC_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "oai.fullname" . }}-secret
-                  key: garage-rpc-secret
           volumeMounts:
             - name: meta
               mountPath: /var/lib/garage/meta

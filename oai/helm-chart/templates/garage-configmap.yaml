@@ -1,25 +1,28 @@
 {{- if .Values.garage.enabled }}
+{{- $g := include "oai.garageSvcName" . }}
+{{- $rpcPublic := .Values.garage.rpcPublicAddr | default (printf "%s-0.%s-headless.%s.svc.cluster.local:%d" $g $g .Release.Namespace (.Values.garage.service.rpcPort | int)) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "oai.garageSvcName" . }}-config
+  name: {{ $g }}-config
   labels:
     {{- include "oai.labels" . | nindent 4 }}
 data:
   garage.toml: |
-    [garage]
     metadata_dir = "/var/lib/garage/meta"
     data_dir = "/var/lib/garage/data"
     db_engine = "lmdb"
     replication_factor = {{ .Values.garage.replicationFactor }}
     rpc_bind_addr = "[::]:{{ .Values.garage.service.rpcPort }}"
-    rpc_public_addr = "{{ include "oai.garageSvcName" . }}-headless:{{ .Values.garage.service.rpcPort }}"
-    rpc_secret = "${GARAGE_RPC_SECRET}"
+    rpc_public_addr = "{{ $rpcPublic }}"
+    rpc_secret = "{{ .Values.garage.rpcSecret }}"
 
     [s3_api]
     s3_region = {{ .Values.garage.storage.region | quote }}
     api_bind_addr = "[::]:{{ .Values.garage.service.s3Port }}"
+    root_domain = ".s3.garage"
 
     [admin]
+    admin_token = "{{ .Values.garage.rpcSecret }}"
     api_bind_addr = "[::]:{{ .Values.garage.service.adminPort }}"
 {{- end }}

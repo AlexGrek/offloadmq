@@ -9,12 +9,12 @@ service:
   type: ClusterIP
   port: 3000
 
+# No CPU requests/limits: the only untainted node (ubuntu-edge-1) has just 2 CPU,
+# so reserving CPU blocks scheduling. Memory is still bounded.
 resources:
   requests:
-    cpu: 100m
     memory: 64Mi
   limits:
-    cpu: 500m
     memory: 256Mi
 
 ingress:
@@ -47,10 +47,8 @@ postgres:
     storageClass: ""
   resources:
     requests:
-      cpu: 100m
       memory: 128Mi
     limits:
-      cpu: 500m
       memory: 512Mi
 
 garage:
@@ -69,16 +67,24 @@ garage:
     dataSize: 20Gi
     storageClass: ""
   replicationFactor: 1
-  rpcSecret: "change-me-in-production"
+  # Garage requires a 32-byte hex string (64 hex chars). Also used as the admin_token.
+  rpcSecret: "93f007feea2379a78f6e0ad47d6e5cbbbd2083ea0d9c89f6989f383a41b19309"
+  # Optional override for garage.toml rpc_public_addr
+  # (default: stateful pod-0 FQDN on the headless service).
+  rpcPublicAddr: ""
   storage:
     bucket: oai
     region: us-east-1
-    accessKeyId: ""
-    secretAccessKey: ""
+  # post-install/post-upgrade hook Job: assigns the cluster layout (v2 admin API),
+  # creates the bucket + an S3 key, and writes <release>-garage-creds (idempotent),
+  # which the app consumes for STORAGE_S3_ACCESS_KEY_ID / _SECRET_ACCESS_KEY.
+  init:
+    kubectlVersion: "1.30.4"
+    # Garage v2 layout capacity in bytes (logical weight for the layout algorithm).
+    nodeCapacityBytes: "21474836480"
+    accessKeyName: oai-key
   resources:
     requests:
-      cpu: 100m
       memory: 64Mi
     limits:
-      cpu: 500m
       memory: 256Mi

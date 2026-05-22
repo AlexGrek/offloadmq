@@ -1,0 +1,52 @@
+{{- if .Values.garage.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "oai.garageSvcName" . }}-init
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "oai.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "oai.garageSvcName" . }}-init
+      containers:
+        - name: garage-init
+          image: "alpine/k8s:{{ .Values.garage.init.kubectlVersion }}"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GARAGE_SVC
+              value: {{ include "oai.garageSvcName" . | quote }}
+            - name: NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: ADMIN_TOKEN
+              value: {{ .Values.garage.rpcSecret | quote }}
+            - name: ADMIN_PORT
+              value: {{ .Values.garage.service.adminPort | quote }}
+            - name: CREDS_SECRET
+              value: {{ printf "%s-garage-creds" (include "oai.fullname" .) | quote }}
+            - name: BUCKET_GLOBAL_ALIAS
+              value: {{ .Values.garage.storage.bucket | quote }}
+            - name: NODE_CAPACITY_BYTES
+              value: {{ .Values.garage.init.nodeCapacityBytes | quote }}
+            - name: ACCESS_KEY_NAME
+              value: {{ .Values.garage.init.accessKeyName | quote }}
+          command: ["/bin/sh", "/scripts/init.sh"]
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ include "oai.garageSvcName" . }}-init-script
+            defaultMode: 0755
+{{- end }}

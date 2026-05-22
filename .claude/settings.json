@@ -115,7 +115,11 @@
       "Bash(mkdir -p /Users/vedmedik/dev/offloadmq/.claude/skills/oai-frontend)",
       "Bash(uv sync *)",
       "Bash(uv run *)",
-      "Bash(RUST_LOG=info DATABASE_URL=\"postgres://oai:oai_dev_password@localhost:5432/oai\" ROOT_ADMIN_PASSWORD=\"000000\" SERVER_ADDRESS=\"0.0.0.0:3001\" cargo run)"
+      "Bash(RUST_LOG=info DATABASE_URL=\"postgres://oai:oai_dev_password@localhost:5432/oai\" ROOT_ADMIN_PASSWORD=\"000000\" SERVER_ADDRESS=\"0.0.0.0:3001\" cargo run)",
+      "Bash(task ship *)",
+      "WebFetch(domain:garagehq.deuxfleurs.fr)",
+      "Bash(openssl rand *)",
+      "Bash(task deploy *)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

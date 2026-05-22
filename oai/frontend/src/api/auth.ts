@@ -10,6 +10,7 @@ export interface User {
   login: string
   google_id: string | null
   created_at: string
+  used_storage_bytes: number
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {

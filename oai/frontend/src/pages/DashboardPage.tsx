@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Bot, ImagePlus } from 'lucide-react'
+import { Bot, FolderOpen, ImagePlus } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const apps = [
@@ -22,6 +22,16 @@ const apps = [
     gradient: 'from-emerald-500/20 to-cyan-500/20',
     iconBg: 'bg-emerald-500/20',
     iconColor: 'text-emerald-400',
+  },
+  {
+    id: 'files',
+    icon: FolderOpen,
+    title: 'My Files',
+    description: 'Browse your uploads and generated files',
+    href: '/app/files',
+    gradient: 'from-amber-500/20 to-orange-500/20',
+    iconBg: 'bg-amber-500/20',
+    iconColor: 'text-amber-400',
   },
 ] as const
 

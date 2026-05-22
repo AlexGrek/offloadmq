@@ -37,6 +37,7 @@ pub async fn create(
         created_at: ActiveValue::Set(Utc::now().into()),
         last_quotas_update_timestamp: ActiveValue::Set(None),
         is_admin: ActiveValue::Set(None),
+        used_storage_bytes: ActiveValue::Set(0),
     };
     model.insert(db).await.map_err(AppError::Database)
 }
@@ -55,6 +56,23 @@ pub async fn create_admin(
         created_at: ActiveValue::Set(Utc::now().into()),
         last_quotas_update_timestamp: ActiveValue::Set(None),
         is_admin: ActiveValue::Set(Some(true)),
+        used_storage_bytes: ActiveValue::Set(0),
     };
     model.insert(db).await.map_err(AppError::Database)
+}
+
+/// Overwrites the cached storage usage for a user. Callers pass a freshly
+/// computed total (see `image_generation::sum_user_stored_bytes`).
+pub async fn update_used_storage(
+    db: &DatabaseConnection,
+    user_id: i64,
+    used_storage_bytes: i64,
+) -> Result<(), AppError> {
+    let model = ActiveModel {
+        id: ActiveValue::Set(user_id),
+        used_storage_bytes: ActiveValue::Set(used_storage_bytes),
+        ..Default::default()
+    };
+    model.update(db).await.map_err(AppError::Database)?;
+    Ok(())
 }

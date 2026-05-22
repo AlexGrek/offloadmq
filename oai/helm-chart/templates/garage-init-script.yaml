@@ -1,0 +1,124 @@
+{{- if .Values.garage.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "oai.garageSvcName" . }}-init-script
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  init.sh: |
+    #!/bin/sh
+    set -e
+    apk add --no-cache jq >/dev/null
+
+    NAMESPACE="${NAMESPACE}"
+    ADMIN_TOKEN="${ADMIN_TOKEN}"
+    ADMIN_URL="http://${GARAGE_SVC}.${NAMESPACE}.svc.cluster.local:${ADMIN_PORT}"
+    SECRET_NAME="${CREDS_SECRET}"
+    BUCKET="${BUCKET_GLOBAL_ALIAS}"
+    KEY_NAME="${ACCESS_KEY_NAME}"
+    # printf converts scientific notation (e.g. 1.07e+11) to a plain integer
+    CAP=$(printf "%.0f" "${NODE_CAPACITY_BYTES}")
+
+    # --- Idempotency: skip if creds secret already holds a real access key id ---
+    echo "Checking existing secret ${SECRET_NAME}..."
+    EXISTING=$(kubectl get secret "$SECRET_NAME" -n "$NAMESPACE" \
+      -o jsonpath='{.data.garage-access-key-id}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    if [ -n "$EXISTING" ]; then
+      echo "Secret already has access key '${EXISTING}'. Nothing to do."
+      exit 0
+    fi
+
+    # --- Wait for Garage admin API (v2) and at least one node ---
+    echo "Waiting for Garage admin API at ${ADMIN_URL}..."
+    RETRIES=0
+    until STATUS=$(curl -sf -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+        "${ADMIN_URL}/v2/GetClusterStatus" 2>/dev/null) \
+        && [ "$(echo "$STATUS" | jq -r '.nodes | length')" -ge 1 ]; do
+      RETRIES=$((RETRIES+1))
+      [ "$RETRIES" -lt 120 ] || { echo "Timed out waiting for Garage GetClusterStatus"; exit 1; }
+      sleep 2
+    done
+    echo "Garage admin API is ready."
+
+    # --- Layout: assign storage role if the node has no role yet (Garage v2 API) ---
+    NODE_ID=$(echo "$STATUS" | jq -r '.nodes[0].id')
+    CUR_VER=$(echo "$STATUS" | jq -r '.layoutVersion // 0')
+    ROLE_TYPE=$(echo "$STATUS" | jq -r '.nodes[0].role | type')
+    if [ "$ROLE_TYPE" = "null" ]; then
+      echo "Applying initial cluster layout for node ${NODE_ID}..."
+      PAYLOAD=$(jq -n --arg id "$NODE_ID" --argjson cap "$CAP" \
+        '{($id): {"zone": "k8s", "capacity": $cap, "tags": []}}')
+      curl -sf -X POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+        -H "Content-Type: application/json" \
+        "${ADMIN_URL}/v2/UpdateClusterLayout" -d "$PAYLOAD" >/dev/null
+      NEXT_VER=$((CUR_VER + 1))
+      curl -sf -X POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+        -H "Content-Type: application/json" \
+        "${ADMIN_URL}/v2/ApplyClusterLayout" -d "{\"version\": ${NEXT_VER}}" >/dev/null
+      echo "Layout applied (version ${NEXT_VER})."
+      sleep 3
+    else
+      echo "Node already has a layout role (layoutVersion=${CUR_VER}), skipping layout assign."
+    fi
+
+    echo "Waiting for cluster health..."
+    RETRIES=0
+    until curl -sf -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+        "${ADMIN_URL}/v2/GetClusterHealth" 2>/dev/null | jq -e '.status == "healthy"' >/dev/null 2>&1; do
+      RETRIES=$((RETRIES+1))
+      [ "$RETRIES" -lt 120 ] || { echo "Timed out waiting for Garage GetClusterHealth=healthy"; exit 1; }
+      sleep 2
+    done
+
+    # --- Bucket ---
+    echo "Ensuring bucket '${BUCKET}' exists..."
+    curl -sf -X POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+      -H "Content-Type: application/json" \
+      "${ADMIN_URL}/v2/CreateBucket" \
+      -d "{\"globalAlias\":\"${BUCKET}\"}" >/dev/null 2>&1 || true
+
+    # --- API key: delete existing same-name key so we can recover the secret ---
+    echo "Checking for existing Garage key '${KEY_NAME}'..."
+    KEYS_JSON=$(curl -sf -H "Authorization: Bearer ${ADMIN_TOKEN}" "${ADMIN_URL}/v2/ListKeys" 2>/dev/null || echo "[]")
+    EXISTING_KEY_ID=$(echo "$KEYS_JSON" | jq -r --arg n "$KEY_NAME" '.[] | select(.name == $n) | .id' | head -1)
+    if [ -n "$EXISTING_KEY_ID" ] && [ "$EXISTING_KEY_ID" != "null" ]; then
+      echo "Deleting existing key id=${EXISTING_KEY_ID} to regenerate credentials..."
+      curl -sf -X POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+        "${ADMIN_URL}/v2/DeleteKey?id=${EXISTING_KEY_ID}" >/dev/null || true
+    fi
+
+    echo "Creating new API key..."
+    KEY_RESP=$(curl -sf -X POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+      -H "Content-Type: application/json" \
+      "${ADMIN_URL}/v2/CreateKey" \
+      -d "{\"name\":\"${KEY_NAME}\",\"neverExpires\":true,\"allow\":{\"createBucket\":false}}")
+    ACCESS=$(echo "$KEY_RESP" | jq -r '.accessKeyId')
+    SECRET_KEY=$(echo "$KEY_RESP" | jq -r '.secretAccessKey')
+    [ -n "$ACCESS" ] && [ "$ACCESS" != "null" ] || { echo "ERROR: no accessKeyId in response: $KEY_RESP"; exit 1; }
+    [ -n "$SECRET_KEY" ] && [ "$SECRET_KEY" != "null" ] || { echo "ERROR: no secretAccessKey in response: $KEY_RESP"; exit 1; }
+    echo "Key created: ${ACCESS}"
+
+    BUCKET_INFO=$(curl -sf -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+      "${ADMIN_URL}/v2/GetBucketInfo?globalAlias=${BUCKET}")
+    BUCKET_ID=$(echo "$BUCKET_INFO" | jq -r '.id')
+    [ -n "$BUCKET_ID" ] && [ "$BUCKET_ID" != "null" ] || { echo "ERROR: could not resolve bucket id for ${BUCKET}"; exit 1; }
+
+    ALLOW_PAYLOAD=$(jq -n --arg bid "$BUCKET_ID" --arg aid "$ACCESS" \
+      '{bucketId: $bid, accessKeyId: $aid, permissions: {read: true, write: true, owner: true}}')
+    curl -sf -X POST -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+      -H "Content-Type: application/json" \
+      "${ADMIN_URL}/v2/AllowBucketKey" -d "$ALLOW_PAYLOAD" >/dev/null
+    echo "Key granted access to bucket."
+
+    kubectl create secret generic "$SECRET_NAME" -n "$NAMESPACE" \
+      --from-literal=garage-access-key-id="$ACCESS" \
+      --from-literal=garage-secret-access-key="$SECRET_KEY" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo "Secret '${SECRET_NAME}' created/updated. Garage initialization complete."
+{{- end }}
