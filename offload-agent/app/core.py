@@ -12,7 +12,7 @@ from .config import *
 from .systeminfo import *
 from .models import *
 from .httphelpers import *
-from .transport import AgentTransport, HttpAgentTransport
+from .transport import AgentTransport, HttpAgentTransport, WebSocketAgentTransport
 from .capabilities import detect_capabilities, rescan_and_push
 from .exec.llm import *
 from .exec.tts import *
@@ -21,6 +21,7 @@ from .exec.shell import *
 from .exec.shellcmd import *
 from .exec.docker import *
 from .exec.imggen import execute_imggen_comfyui
+from .exec.musicgen import execute_musicgen_comfyui
 from .exec.custom import execute_custom_cap
 from .exec.onnx import execute_onnx
 from .exec.slavemode import execute_slavemode, merge_registration_caps
@@ -70,6 +71,29 @@ class AuthError(Exception):
     pass
 
 
+def _reauth_http_error_warrants_reregister(exc: requests.HTTPError) -> bool:
+    """True when /agent/auth failed with an authorization-style rejection (re-register).
+
+    Do not create a new agent record for HTTP 401 / ``authentication_error`` responses
+    or for non-403 failures (e.g. server errors).
+    """
+    resp = exc.response
+    if resp is None:
+        return False
+    if resp.status_code == 401:
+        return False
+    if resp.status_code != 403:
+        return False
+    try:
+        payload = resp.json()
+    except Exception:
+        return True
+    err = payload.get("error")
+    if isinstance(err, dict) and err.get("type") == "authentication_error":
+        return False
+    return True
+
+
 def poll_task(transport: AgentTransport) -> dict[str, Any] | None:
     """Poll server for a new task, return task_info or None."""
     try:
@@ -92,7 +116,9 @@ def _reauth_or_reregister(server_url: str) -> str | None:
     """Attempt to recover a valid JWT after a 403.
 
     Tries re-authentication first (JWT expired but agent still exists).
-    Falls back to re-registration if the agent record was deleted.
+    Falls back to re-registration only when /agent/auth rejects stored agent
+    credentials with an authorization-style 403, not for 401 / authentication_error
+    or transient/server errors.
     Returns a fresh JWT string, or None if all attempts fail.
     """
     cfg = load_config()
@@ -114,8 +140,21 @@ def _reauth_or_reregister(server_url: str) -> str | None:
         except requests.Timeout as e:
             logger.warning(f"Re-authentication timed out: {e}. Keeping existing credentials.")
             return None
+        except requests.HTTPError as e:
+            if not _reauth_http_error_warrants_reregister(e):
+                logger.warning(
+                    "Re-authentication failed: %s. Not re-registering (not an authorization rejection).",
+                    e,
+                )
+                return None
+            logger.warning(
+                "Re-authentication failed (stored agent rejected). Attempting re-registration..."
+            )
         except Exception as e:
-            logger.warning(f"Re-authentication failed: {e}. Attempting re-registration...")
+            logger.warning(
+                "Re-authentication failed: %s. Not re-registering.", e
+            )
+            return None
 
     if not api_key:
         logger.error("No API key in config — cannot re-register.")
@@ -223,6 +262,9 @@ def route_executor(cap: str) -> Callable[..., bool] | None:
     if cap.startswith("imggen."):
         return execute_imggen_comfyui
 
+    if cap.startswith("txt2music."):
+        return execute_musicgen_comfyui
+
     if cap.startswith("onnx."):
         return execute_onnx
 
@@ -252,9 +294,11 @@ def handle_task(transport: AgentTransport, task: dict[str, Any]) -> None:
     fetch_files = task_data.get("fetchFiles") or []
     file_buckets = task_data.get("file_bucket") or []
     output_bucket = task_data.get("output_bucket")
+    job_timeout: int = int(task_data.get("timeoutSecs") or 600)
+    data_preparation: dict[str, str] = task_data.get("dataPreparation") or {}
 
     logger.info(f"Received task: {task_id.to_wire()} with capability '{capability}'")
-    logger.info(f"Required files: {fetch_files}, buckets: {file_buckets}, output_bucket: {output_bucket}")
+    logger.info(f"Required files: {fetch_files}, buckets: {file_buckets}, output_bucket: {output_bucket}, timeout: {job_timeout}s")
 
     executor = route_executor(capability)
     if not executor:
@@ -283,6 +327,16 @@ def handle_task(transport: AgentTransport, task: dict[str, Any]) -> None:
         logger.error("File download failed; skipping task.")
         return
 
+    if data_preparation:
+        try:
+            from .exec.data_preparation import apply_data_preparation
+            apply_data_preparation(data_path, data_preparation)
+        except Exception as e:
+            logger.error(f"Data preparation failed: {e}")
+            report = make_failure_report(task_id, capability, str(e))
+            report_result(transport, report)
+            return
+
     try:
         report_progress(transport, log=None, stage="running", task_id=task_id)
     except TaskCancelled:
@@ -292,10 +346,10 @@ def handle_task(transport: AgentTransport, task: dict[str, Any]) -> None:
 
     # Execute task
     try:
-        if capability.startswith("imggen."):
-            executor(transport, task_id, capability, payload, data_path, output_bucket=output_bucket)
+        if capability.startswith("imggen.") or capability.startswith("txt2music."):
+            executor(transport, task_id, capability, payload, data_path, output_bucket=output_bucket, job_timeout=job_timeout)
         else:
-            executor(transport, task_id, capability, payload, data_path)
+            executor(transport, task_id, capability, payload, data_path, job_timeout=job_timeout)
     except TaskCancelled:
         # Fallback: executor didn't handle cancellation itself
         logger.info(f"Task {task_id.id} cancelled (unhandled by executor)")
@@ -369,8 +423,20 @@ def start_rescan_scheduler(busy_event: threading.Event, stop_event: threading.Ev
 # Main loop
 # -----------------------------------------
 
-def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | None = None) -> None:
-    transport: AgentTransport = HttpAgentTransport(server_url, jwt_token)
+def _build_transport(server_url: str, jwt_token: str, transport_type: str) -> AgentTransport:
+    """Construct the appropriate transport implementation."""
+    if transport_type == "websocket":
+        return WebSocketAgentTransport(server_url, jwt_token)
+    return HttpAgentTransport(server_url, jwt_token)
+
+
+def serve_tasks(
+    server_url: str,
+    jwt_token: str,
+    stop_event: threading.Event | None = None,
+    transport_type: str = "websocket",
+) -> None:
+    transport: AgentTransport = _build_transport(server_url, jwt_token, transport_type)
     auth_backoff = 10
     _stop = stop_event or threading.Event()
     busy_event = threading.Event()
@@ -402,7 +468,7 @@ def serve_tasks(server_url: str, jwt_token: str, stop_event: threading.Event | N
             logger.warning(f"Auth rejected — attempting recovery...")
             new_jwt = _reauth_or_reregister(server_url)
             if new_jwt:
-                transport = HttpAgentTransport(server_url, new_jwt)
+                transport = _build_transport(server_url, new_jwt, transport_type)
                 auth_backoff = 10
             else:
                 logger.error(f"Could not recover auth. Backing off for {auth_backoff}s...")

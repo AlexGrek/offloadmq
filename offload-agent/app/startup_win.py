@@ -40,13 +40,19 @@ def _build_startup_cmd(exe_path: str) -> str:
     Uses Start-Process to launch the exe detached (PowerShell exits immediately after
     spawning it), with an explicit WorkingDirectory so the exe finds its config file
     regardless of what CWD Windows assigns at login.
+
+    The `webui --agent-autostart` subcommand is required — without args the exe just
+    prints `--help` and exits. `--agent-autostart` honors the `autostart` config flag,
+    so the agent polling loop starts on login only if the user enabled it in the UI.
     """
     from pathlib import Path
     work_dir = str(Path(exe_path).parent)
     return (
         f'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command '
         f'"Start-Sleep -Seconds 10; '
-        f'Start-Process -FilePath \'{exe_path}\' -WorkingDirectory \'{work_dir}\'"'
+        f'Start-Process -FilePath \'{exe_path}\' '
+        f'-WorkingDirectory \'{work_dir}\' '
+        f'-ArgumentList \'webui\',\'--agent-autostart\'"'
     )
 
 

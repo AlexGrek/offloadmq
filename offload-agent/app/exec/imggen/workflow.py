@@ -63,8 +63,16 @@ def _find_workflows_dir() -> Path:
 WORKFLOWS_DIR = _find_workflows_dir()
 
 
-def load_workflow_template(workflow_name: str, task_type: str) -> tuple[dict[str, Any], dict[str, Any]]:
+def load_workflow_template(
+    workflow_name: str,
+    task_type: str,
+    namespace: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Load the workflow graph and its parameter mapping for the given task type.
+
+    If ``namespace`` is provided, the workflow is expected at
+    ``<workflows_dir>/<namespace>/<workflow_name>/``.  Otherwise it falls back to
+    the flat ``<workflows_dir>/<workflow_name>/`` layout used by imggen.
 
     Returns:
         (workflow_graph, param_map)
@@ -74,7 +82,11 @@ def load_workflow_template(workflow_name: str, task_type: str) -> tuple[dict[str
     task_type = _safe_path_component(task_type, "task_type")
 
     workflows_root = WORKFLOWS_DIR.resolve()
-    base = (WORKFLOWS_DIR / workflow_name).resolve()
+    if namespace:
+        namespace = _safe_path_component(namespace, "namespace")
+        base = (WORKFLOWS_DIR / namespace / workflow_name).resolve()
+    else:
+        base = (WORKFLOWS_DIR / workflow_name).resolve()
     graph_path = (base / f"{task_type}.json").resolve()
     params_path = (base / f"{task_type}.params.json").resolve()
 

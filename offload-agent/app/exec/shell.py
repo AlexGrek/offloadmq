@@ -30,7 +30,8 @@ def _drain_queue(q: "queue.Queue[str]") -> str:
 
 
 def execute_shell_bash(
-    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path,
+    job_timeout: int = 600,
 ) -> bool:
     logger.info(f"Executing shell.bash for task {task_id.dict()} in {data}")
     if isinstance(payload, str):
@@ -72,9 +73,15 @@ def execute_shell_bash(
 
         full_stdout_log = ""
         full_stderr_log = ""
+        deadline = time.monotonic() + job_timeout
 
         try:
             while process.poll() is None or not q_stdout.empty() or not q_stderr.empty():
+                if process.poll() is None and time.monotonic() > deadline:
+                    logger.warning(f"Task {task_id.id} exceeded timeout ({job_timeout}s), killing process")
+                    process.kill()
+                    process.wait()
+                    raise TimeoutError(f"Task exceeded timeout of {job_timeout}s")
                 try:
                     line = q_stdout.get_nowait()
                     full_stdout_log += line
@@ -143,6 +150,8 @@ def execute_shell_bash(
                 extra_output=output,
             )
 
+    except TimeoutError as e:
+        report = make_failure_report(task_id, capability, str(e))
     except Exception as e:
         output = {"error": str(e)}
         report = make_failure_report(task_id, capability, str(e), extra_output=output)

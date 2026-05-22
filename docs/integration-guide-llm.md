@@ -79,7 +79,7 @@ The same client API key is used for both the Task API and the Storage API.
 
 ### Task API — mostly camelCase
 
-Request fields: `apiKey`, `capability`, `urgent`, `restartable`, `payload`, `fetchFiles`, `file_bucket`, `output_bucket`
+Request fields: `apiKey`, `capability`, `urgent`, `restartable`, `timeoutSecs`, `payload`, `fetchFiles`, `file_bucket`, `output_bucket`
 
 Response fields: `id`, `status`, `createdAt`, `stage`, `output`, `log`, `typicalRuntimeSeconds`, `agentId`, `assignedAt`, `createdAt`
 
@@ -176,10 +176,12 @@ Content-Type: application/json
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `restartable` | boolean | `false` | Allow retry on a different agent if this one fails |
+| `timeoutSecs` | integer | `600` | Maximum seconds the agent may spend on this task. For LLM tasks this is the HTTP request timeout to Ollama — set higher for large models or long prompts. |
 | `fetchFiles` | object[] | `[]` | Send `[]` when unused (recommended for all clients; see [Recommended: `llm.*` task body with `file_bucket` (vision)](#recommended-llm-task-body-with-file_bucket-vision)) |
 | `file_bucket` | string[] | `[]` | Bucket UIDs containing input files (see Storage API) |
 | `artifacts` | object[] | `[]` | Send `[]` when unused (recommended alongside `fetchFiles`) |
 | `output_bucket` | string | `null` | Bucket UID for agent to upload output files into |
+| `dataPreparation` | object | `{}` | Map of glob mask → action applied to downloaded input files before the agent runs inference. Useful for vision tasks to normalise image size. Key: glob pattern (`"*"`, `"*.jpg"`). Value: `"scale/WxH"` (resize, e.g. `"scale/1024x1024"`) or `"transcode/FORMAT[key=val;…]"` (convert format, e.g. `"transcode/jpeg[quality=85]"`). Applied after all bucket and fetch-file downloads complete. |
 
 ### Payload Format (LLM)
 

@@ -20,6 +20,9 @@ from app.config import load_config, save_config
 
 WF_SAFE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
+# Namespaced capability prefixes — workflows live in a subdirectory with this name.
+_NAMESPACED_PREFIXES: tuple[str, ...] = ("txt2music",)
+
 STANDARD_TASK_TYPES = [
     "txt2img",
     "img2img",
@@ -29,6 +32,7 @@ STANDARD_TASK_TYPES = [
     "face_swap",
     "txt2video",
     "img2video",
+    "txt2music",
 ]
 
 
@@ -46,24 +50,44 @@ def list_workflows() -> List[Dict[str, Any]]:
     for entry in sorted(wdir.iterdir()):
         if not entry.is_dir() or not WF_SAFE_RE.match(entry.name):
             continue
+        # Namespace subdirectory — recurse one level.
+        if entry.name in _NAMESPACED_PREFIXES:
+            for child in sorted(entry.iterdir()):
+                if not child.is_dir() or not WF_SAFE_RE.match(child.name):
+                    continue
+                task_types = sorted(
+                    p.stem
+                    for p in child.glob("*.json")
+                    if not p.name.endswith(".params.json") and WF_SAFE_RE.match(p.stem)
+                )
+                result.append({"name": child.name, "namespace": entry.name, "task_types": task_types})
+            continue
         task_types = sorted(
             p.stem
             for p in entry.glob("*.json")
             if not p.name.endswith(".params.json") and WF_SAFE_RE.match(p.stem)
         )
-        result.append({"name": entry.name, "task_types": task_types})
+        result.append({"name": entry.name, "namespace": "", "task_types": task_types})
     return result
 
 
-def _resolve_workflow_graph_path(workflow_name: str, task_type: str) -> Path:
+def _resolve_workflow_graph_path(
+    workflow_name: str, task_type: str, namespace: str = ""
+) -> Path:
     wf = workflow_name.strip()
     tt = task_type.strip()
+    ns = namespace.strip()
     if not wf or not WF_SAFE_RE.match(wf):
         raise ValueError("invalid workflow_name")
     if not tt or not WF_SAFE_RE.match(tt):
         raise ValueError("invalid task_type")
+    if ns and not WF_SAFE_RE.match(ns):
+        raise ValueError("invalid namespace")
     root = workflows_dir().resolve()
-    base = (workflows_dir() / wf).resolve()
+    if ns:
+        base = (workflows_dir() / ns / wf).resolve()
+    else:
+        base = (workflows_dir() / wf).resolve()
     if not str(base).startswith(str(root)):
         raise ValueError("path traversal")
     graph_path = (base / f"{tt}.json").resolve()
@@ -181,6 +205,18 @@ _PARAM_UI_ROWS: Dict[str, List[Dict[str, str]]] = {
             "help": "payload.input_image (bucket file)",
         },
     ],
+    "txt2music": [
+        {"key": "tags", "label": "Style / genre tags", "help": "payload.tags"},
+        {"key": "lyrics", "label": "Lyrics", "help": "payload.lyrics"},
+        {"key": "bpm", "label": "BPM", "help": "payload.bpm"},
+        {"key": "duration", "label": "Duration (seconds)", "help": "payload.duration"},
+        {"key": "timesignature", "label": "Time signature", "help": "payload.timesignature"},
+        {"key": "language", "label": "Language", "help": "payload.language"},
+        {"key": "keyscale", "label": "Key / scale", "help": "payload.keyscale"},
+        {"key": "cfg_scale", "label": "CFG scale", "help": "payload.cfg_scale"},
+        {"key": "temperature", "label": "Temperature", "help": "payload.temperature"},
+        {"key": "seed", "label": "Random seed", "help": "payload.seed"},
+    ],
 }
 
 
@@ -282,8 +318,88 @@ def _validate_param_map(params: Any, graph: Dict[str, Any]) -> None:
                 )
 
 
+_AUDIO_TEXT_ENCODE_TYPES = {
+    "TextEncodeAceStepAudio1.5",
+    "TextEncodeAceStep",
+    "AceStepTextEncode",
+}
+_AUDIO_LATENT_TYPES = {
+    "EmptyAceStep1.5LatentAudio",
+    "EmptyAceStepLatentAudio",
+}
+_AUDIO_ENCODE_FIELD_MAP = {
+    "tags": "tags",
+    "lyrics": "lyrics",
+    "bpm": "bpm",
+    "duration": "duration",
+    "timesignature": "timesignature",
+    "language": "language",
+    "keyscale": "keyscale",
+    "cfg_scale": "cfg_scale",
+    "temperature": "temperature",
+    "top_p": "top_p",
+    "top_k": "top_k",
+    "min_p": "min_p",
+}
+
+
+def _guess_params_txt2music(workflow: Dict[str, Any]) -> Dict[str, Any]:
+    """Auto-detect param mappings for txt2music workflows (ACE Step / similar)."""
+    by_class: Dict[str, List[str]] = {}
+    for nid, node in workflow.items():
+        by_class.setdefault(node.get("class_type", ""), []).append(nid)
+
+    params: Dict[str, Any] = {}
+
+    # Seed: prefer PrimitiveInt node that feeds into sampler; fall back to sampler seed.
+    primitive_ints = by_class.get("PrimitiveInt", [])
+    if primitive_ints:
+        params["seed"] = [[primitive_ints[0], "value"]]
+    else:
+        for sampler_ct in ("KSampler", "KSamplerAdvanced"):
+            if sampler_ct in by_class:
+                params["seed"] = [[by_class[sampler_ct][0], "seed"]]
+                break
+
+    # Audio text encoder fields.
+    encode_nid: Optional[str] = None
+    for ct in _AUDIO_TEXT_ENCODE_TYPES:
+        if ct in by_class:
+            encode_nid = by_class[ct][0]
+            break
+    if encode_nid:
+        node_inputs = workflow[encode_nid].get("inputs", {})
+        for payload_key, node_key in _AUDIO_ENCODE_FIELD_MAP.items():
+            if node_key in node_inputs:
+                params[payload_key] = [[encode_nid, node_key]]
+
+    # Duration also sets seconds on the latent audio node.
+    for ct in _AUDIO_LATENT_TYPES:
+        if ct in by_class:
+            latent_nid = by_class[ct][0]
+            node_inputs = workflow[latent_nid].get("inputs", {})
+            if "seconds" in node_inputs:
+                if "duration" in params:
+                    # Append second target.
+                    params["duration"].append([latent_nid, "seconds"])
+                else:
+                    params["duration"] = [[latent_nid, "seconds"]]
+            break
+
+    # Steps from KSampler.
+    for sampler_ct in ("KSampler", "KSamplerAdvanced"):
+        if sampler_ct in by_class:
+            params["steps"] = [[by_class[sampler_ct][0], "steps"]]
+            break
+
+    return params
+
+
 def guess_params(workflow: Dict[str, Any], task_type: str) -> Dict[str, Any]:
     """Auto-detect param to node mappings from the Comfy API-format graph."""
+    if task_type == "txt2music":
+        return _guess_params_txt2music(workflow)
+
     _SAMPLER_TYPES = {"KSampler", "KSamplerAdvanced", "KSamplerSelect"}
     _LATENT_TYPES = {
         "EmptyLatentImage",
@@ -402,6 +518,20 @@ def guess_params(workflow: Dict[str, Any], task_type: str) -> Dict[str, Any]:
 
 def default_params(task_type: str) -> Dict[str, Any]:
     """Stub fallback for keys graph analysis could not resolve."""
+    if task_type == "txt2music":
+        return {
+            "seed":          [["FIXME_seed_node", "value"]],
+            "tags":          [["FIXME_text_encode_node", "tags"]],
+            "lyrics":        [["FIXME_text_encode_node", "lyrics"]],
+            "bpm":           [["FIXME_text_encode_node", "bpm"]],
+            "duration":      [["FIXME_text_encode_node", "duration"], ["FIXME_latent_node", "seconds"]],
+            "timesignature": [["FIXME_text_encode_node", "timesignature"]],
+            "language":      [["FIXME_text_encode_node", "language"]],
+            "keyscale":      [["FIXME_text_encode_node", "keyscale"]],
+            "cfg_scale":     [["FIXME_text_encode_node", "cfg_scale"]],
+            "temperature":   [["FIXME_text_encode_node", "temperature"]],
+            "steps":         [["FIXME_sampler_node", "steps"]],
+        }
     params: Dict[str, Any] = {
         "prompt": [["FIXME_prompt_node", "text"]],
         "negative": [["FIXME_negative_node", "text"]],
@@ -448,11 +578,13 @@ def register_comfy_routes(
     async def get_workflow_param_map(
         workflow_name: str = Query(""),
         task_type: str = Query(""),
+        namespace: str = Query(""),
     ):
         wf = workflow_name.strip()
         tt = task_type.strip()
+        ns = namespace.strip()
         try:
-            graph_path = _resolve_workflow_graph_path(wf, tt)
+            graph_path = _resolve_workflow_graph_path(wf, tt, ns)
         except ValueError as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
         params_path = graph_path.with_suffix(".params.json")
@@ -508,9 +640,10 @@ def register_comfy_routes(
         data = await request.json()
         wf = str(data.get("workflow_name", "")).strip()
         tt = str(data.get("task_type", "")).strip()
+        ns = str(data.get("namespace", "")).strip()
         params = data.get("params")
         try:
-            graph_path = _resolve_workflow_graph_path(wf, tt)
+            graph_path = _resolve_workflow_graph_path(wf, tt, ns)
         except ValueError as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
         if not graph_path.is_file():
@@ -531,7 +664,7 @@ def register_comfy_routes(
         params_path = graph_path.with_suffix(".params.json")
         with open(params_path, "w", encoding="utf-8") as f:
             json_module.dump(params, f, indent=2)
-        log(f"[imggen] Saved param map: {params_path}")
+        log(f"[comfy] Saved param map: {params_path}")
         start_scan()
         return JSONResponse({"ok": True})
 
@@ -540,8 +673,9 @@ def register_comfy_routes(
         data = await request.json()
         wf = str(data.get("workflow_name", "")).strip()
         tt = str(data.get("task_type", "")).strip()
+        ns = str(data.get("namespace", "")).strip()
         try:
-            graph_path = _resolve_workflow_graph_path(wf, tt)
+            graph_path = _resolve_workflow_graph_path(wf, tt, ns)
         except ValueError as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
         if not graph_path.is_file():
@@ -569,7 +703,7 @@ def register_comfy_routes(
         params_path = graph_path.with_suffix(".params.json")
         with open(params_path, "w", encoding="utf-8") as f:
             json_module.dump(merged, f, indent=2)
-        log(f"[imggen] Overwrote param map with auto-detect: {params_path}")
+        log(f"[comfy] Overwrote param map with auto-detect: {params_path}")
         start_scan()
         return JSONResponse({"ok": True, "params": merged})
 
@@ -578,23 +712,32 @@ def register_comfy_routes(
         request: Request,
         workflow_name: str = Form(""),
         task_type: str = Form(""),
+        namespace: str = Form(""),
         workflow_file: UploadFile = File(None),
     ):
         workflow_name = workflow_name.strip()
         task_type = task_type.strip()
+        namespace = namespace.strip()
 
         if not workflow_name or not WF_SAFE_RE.match(workflow_name):
             log(
-                "[imggen] ERROR: invalid workflow name -- use only letters, digits, hyphens, dots"
+                "[comfy] ERROR: invalid workflow name -- use only letters, digits, hyphens, dots"
             )
             return done(request)
         if not task_type or not WF_SAFE_RE.match(task_type):
-            log(f"[imggen] ERROR: invalid task type '{task_type}'")
+            log(f"[comfy] ERROR: invalid task type '{task_type}'")
+            return done(request)
+        if namespace and not WF_SAFE_RE.match(namespace):
+            log(f"[comfy] ERROR: invalid namespace '{namespace}'")
             return done(request)
 
-        wf_dir = (workflows_dir() / workflow_name).resolve()
-        if not str(wf_dir).startswith(str(workflows_dir().resolve())):
-            log("[imggen] ERROR: path traversal detected in workflow name")
+        root = workflows_dir().resolve()
+        if namespace:
+            wf_dir = (workflows_dir() / namespace / workflow_name).resolve()
+        else:
+            wf_dir = (workflows_dir() / workflow_name).resolve()
+        if not str(wf_dir).startswith(str(root)):
+            log("[comfy] ERROR: path traversal detected in workflow name")
             return done(request)
 
         wf_dir.mkdir(parents=True, exist_ok=True)
@@ -611,13 +754,13 @@ def register_comfy_routes(
             with open(json_path, "w", encoding="utf-8") as f:
                 json_module.dump(parsed, f, indent=2)
             saved_graph_from_upload = True
-            log(f"[imggen] Saved workflow JSON: {json_path}")
+            log(f"[comfy] Saved workflow JSON: {json_path}")
         else:
             if not json_path.exists():
                 with open(json_path, "w", encoding="utf-8") as f:
                     json_module.dump({}, f)
                 log(
-                    f"[imggen] Created empty workflow placeholder: {json_path} -- "
+                    f"[comfy] Created empty workflow placeholder: {json_path} -- "
                     "replace with ComfyUI API-format export"
                 )
 
@@ -635,7 +778,7 @@ def register_comfy_routes(
                 if isinstance(wf_graph, dict) and wf_graph:
                     guessed = guess_params(wf_graph, task_type)
             except Exception as e:
-                log(f"[imggen] Warning: could not auto-detect params ({e}), using stubs")
+                log(f"[comfy] Warning: could not auto-detect params ({e}), using stubs")
             stubs = default_params(task_type)
             merged = {**stubs, **guessed}
             with open(params_path, "w", encoding="utf-8") as f:
@@ -644,35 +787,48 @@ def register_comfy_routes(
             stub_keys = sorted(k for k in merged if k not in guessed)
             note = "after JSON upload" if saved_graph_from_upload else "new params file"
             log(
-                f"[imggen] Generated params mapping ({note}): {params_path} -- "
+                f"[comfy] Generated params mapping ({note}): {params_path} -- "
                 f"auto-detected: {detected or 'none'}, stubs: {stub_keys or 'none'}"
             )
 
         log(
-            f"[imggen] Workflow '{workflow_name}/{task_type}' added -- "
+            f"[comfy] Workflow '{workflow_name}/{task_type}' added -- "
             "rescan to register capability"
         )
         start_scan()
         return done(request)
 
     @app.post("/workflows/delete")
-    async def route_delete_workflow(request: Request, workflow_name: str = Form("")):
+    async def route_delete_workflow(
+        request: Request,
+        workflow_name: str = Form(""),
+        namespace: str = Form(""),
+    ):
         workflow_name = workflow_name.strip()
+        namespace = namespace.strip()
 
         if not workflow_name or not WF_SAFE_RE.match(workflow_name):
-            log("[imggen] ERROR: invalid workflow name in delete request")
+            log("[comfy] ERROR: invalid workflow name in delete request")
+            return done(request)
+        if namespace and not WF_SAFE_RE.match(namespace):
+            log("[comfy] ERROR: invalid namespace in delete request")
             return done(request)
 
-        wf_dir = (workflows_dir() / workflow_name).resolve()
-        if not str(wf_dir).startswith(str(workflows_dir().resolve())):
-            log("[imggen] ERROR: path traversal detected in delete request")
+        root = workflows_dir().resolve()
+        if namespace:
+            wf_dir = (workflows_dir() / namespace / workflow_name).resolve()
+        else:
+            wf_dir = (workflows_dir() / workflow_name).resolve()
+        if not str(wf_dir).startswith(str(root)):
+            log("[comfy] ERROR: path traversal detected in delete request")
             return done(request)
 
         if wf_dir.is_dir():
             shutil.rmtree(wf_dir)
-            log(f"[imggen] Deleted workflow '{workflow_name}'")
+            label = f"{namespace}/{workflow_name}" if namespace else workflow_name
+            log(f"[comfy] Deleted workflow '{label}'")
             start_scan()
         else:
-            log(f"[imggen] Workflow '{workflow_name}' not found -- nothing deleted")
+            log(f"[comfy] Workflow '{workflow_name}' not found -- nothing deleted")
 
         return done(request)

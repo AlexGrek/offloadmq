@@ -123,7 +123,8 @@ Client submits:
     "days": 5
   },
   "apiKey": "...",
-  "urgent": false
+  "urgent": false,
+  "timeoutSecs": 60
 }
 ```
 

@@ -78,10 +78,18 @@ try {
         throw "pdm is required (install with: python -m pip install --user pdm)"
     }
 
+    # When pdm is installed via pyapp, its launcher exposes its own runtime venv
+    # through VIRTUAL_ENV — pdm would then try to sync project deps into its own
+    # installation directory and fail with "Access is denied". Tell pdm to ignore
+    # any activated venv and resolve the project interpreter normally.
+    $env:PDM_IGNORE_ACTIVE_VENV = "1"
+
     # Build frontend
     Push-Location "frontend"
     npm ci
+    if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
     npm run build
+    if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
     Pop-Location
 
     # Install deps + pyinstaller

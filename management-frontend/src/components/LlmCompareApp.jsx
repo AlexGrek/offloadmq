@@ -10,6 +10,7 @@ import SandboxMarkdown from './SandboxMarkdown';
 import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
 import CircularProgress from './CircularProgress';
+import SpeechWidget from './SpeechWidget';
 
 /* ── helpers ─────────────────────────────────────────────── */
 
@@ -516,6 +517,9 @@ const LlmCompareApp = ({ apiKey, addDevEntry }) => {
                         <Timer size={10} />
                         {elapsed}
                       </span>
+                    )}
+                    {r.content && (
+                      <SpeechWidget text={r.content} apiKey={apiKey} addDevEntry={addDevEntry} />
                     )}
                     {r.content && (
                       <button onClick={() => copyContent(idx)} style={styles.iconBtn} title="Copy response">

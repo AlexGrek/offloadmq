@@ -387,6 +387,7 @@ def execute_custom_cap(
     capability: str,
     payload: Any,
     data_path: Path,
+    job_timeout: int = 600,
 ) -> bool:
     """Execute a custom capability — dispatches to type-specific executor."""
     logger.info(f"Executing custom cap for task {task_id.to_wire()} capability='{capability}'")

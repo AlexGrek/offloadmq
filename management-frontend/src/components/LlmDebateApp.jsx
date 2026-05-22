@@ -6,6 +6,7 @@ import SandboxMarkdown from './SandboxMarkdown';
 import { useCapabilities } from '../hooks/useCapabilities';
 import ModelSelector from './ModelSelector';
 import { useTaskPolling } from '../hooks/useTaskPolling';
+import SpeechWidget from './SpeechWidget';
 
 const DEFAULT_REFEREE_SYSTEM = `You are an impartial debate referee. You will be given a transcript of a debate between two participants labeled "Model A" and "Model B". Analyze the quality of their arguments, reasoning, and overall performance. Declare a winner with a brief justification.`;
 const DEFAULT_REFEREE_COMMAND = `The debate has concluded. Review the full transcript above and declare a winner. Be concise: state who won (Model A or Model B, or a draw) and why in 2–3 sentences.`;
@@ -441,14 +442,18 @@ const LlmDebateApp = ({ apiKey, addDevEntry }) => {
                 <span style={{ color: sideColor.REF, fontWeight: 700, fontSize: '12px' }}>
                   {sideName('REF')} — Verdict
                 </span>
+                <div style={{ marginLeft: 'auto' }}>
+                  <SpeechWidget text={msg.content} apiKey={apiKey} addDevEntry={addDevEntry} />
+                </div>
               </div>
               <SandboxMarkdown tone="light" style={{ fontSize: '13px' }}>{msg.content}</SandboxMarkdown>
             </div>
           ) : (
             <div key={i} style={{ ...styles.msgWrapper, justifyContent: msg.side === 'A' ? 'flex-start' : 'flex-end' }}>
               <div style={{ maxWidth: '76%' }}>
-                <div style={{ ...styles.msgLabel, color: sideColor[msg.side] }}>
-                  {sideName(msg.side)}
+                <div style={{ ...styles.msgLabel, color: sideColor[msg.side], display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                  <span>{sideName(msg.side)}</span>
+                  <SpeechWidget text={msg.content} apiKey={apiKey} addDevEntry={addDevEntry} />
                 </div>
                 <div style={{ ...styles.bubble, borderColor: sideColor[msg.side] + '50', background: msg.side === 'A' ? 'var(--chip-bg)' : 'rgba(16,185,129,0.07)' }}>
                   <SandboxMarkdown tone="light" style={{ fontSize: '13px' }}>{msg.content}</SandboxMarkdown>

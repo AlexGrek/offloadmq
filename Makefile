@@ -14,7 +14,7 @@ CONTAINER_RUNTIME := docker
 DL_API_KEY  ?=
 DL_BASE_URL ?= https://dl.alexgr.space
 
-.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all pre-pull-images wait-for-image-pull release-agent update-agent-on-this-linux update-agent-on-this-mac kill-agent-on-this-mac
+.PHONY: build build-multiplatform push install upgrade uninstall status template deploy deploy-multiplatform secrets secrets-force build-client rebuild-client build-frontend push-frontend clean-all rebuild-all pre-pull-images wait-for-image-pull release-agent release-micro-agent update-agent-on-this-linux update-agent-on-this-mac kill-agent-on-this-mac
 
 # Build container image (linux/amd64 only, pushed directly via buildx)
 build:
@@ -194,6 +194,10 @@ release-agent:
 	@if [ -z "$(DL_API_KEY)" ]; then echo "error: DL_API_KEY is not set"; exit 1; fi
 	DL_API_KEY=$(DL_API_KEY) DL_BASE_URL=$(DL_BASE_URL) ./scripts/release-agent.sh $(if $(VERSION),$(VERSION),)
 
+release-micro-agent:
+	@if [ -z "$(DL_API_KEY)" ]; then echo "error: DL_API_KEY is not set"; exit 1; fi
+	DL_API_KEY=$(DL_API_KEY) DL_BASE_URL=$(DL_BASE_URL) ./scripts/release-micro-agent.sh $(if $(VERSION),$(VERSION),)
+
 # Clean all build artifacts across the whole repo
 clean-all:
 	@echo "Cleaning Rust artifacts..."
@@ -259,6 +263,7 @@ release:
 	git tag release-$(RELEASE_AGENT_TAG_CALCULATED) &&  git push origin release-$(RELEASE_AGENT_TAG_CALCULATED)
 	@echo "Releasing $(APP_NAME) $(RELEASE_AGENT_TAG_CALCULATED) ..."
 	@$(MAKE) release-agent
+	@$(MAKE) release-micro-agent
 
 update-agent-on-this-linux:
 	@echo "Installing on this Linux machine..."

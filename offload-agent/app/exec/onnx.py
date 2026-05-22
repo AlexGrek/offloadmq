@@ -155,6 +155,7 @@ def execute_onnx(
     capability: str,
     payload: dict[str, Any],
     data: Path,
+    job_timeout: int = 600,
 ) -> bool:
     """Dispatch to the appropriate ONNX executor based on capability name."""
     if capability == "onnx.nudenet":

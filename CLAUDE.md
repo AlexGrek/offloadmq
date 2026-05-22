@@ -294,3 +294,111 @@ These are the hardcoded keys used for local development and testing. Use them di
 - **Agent**: Python 3 with requests, supports Ollama LLM integration
 - **Frontend**: React 19 with Vite, framer-motion, lucide-react
 - **Deployment**: Docker multi-stage build, Kubernetes via Helm
+
+---
+
+## OAI — Own AI Frontend (`oai/`)
+
+OAI is a standalone web application that gives end users access to AI capabilities (LLM chat, image generation/analysis) routed through OffloadMQ. It lives in [oai/](oai/) and has its own backend, frontend, Helm chart, and Docker image.
+
+### What it is
+
+- SPA web app — users log in, chat with LLMs over WebSocket, and submit image generation/analysis tasks
+- Stateless Rust/Axum backend; all state lives in PostgreSQL (users, sessions, quotas) and Garage/S3 (generated files)
+- Calls the OffloadMQ Client API to submit and poll tasks — OffloadMQ URI and credentials are admin-configurable at runtime
+- User accounts with per-user usage quotas
+- React UI built with shadcn/ui components
+- Deployed at `oai.alexgr.space`; Docker image `grekodocker/oai`
+
+### Development Commands
+
+Uses [Go Task](https://taskfile.dev) (`task`) — no Makefile.
+
+```bash
+# Start local infrastructure (Postgres + optional Garage S3)
+task infra:up
+
+# Install frontend deps, start backend (cargo run) + Vite dev server
+task install
+task dev
+
+# Production build (backend release binary + frontend dist)
+task build
+
+# Docker
+task docker:build    # Build image locally
+task docker:release  # Build and push to Docker Hub
+
+# Kubernetes / Helm
+task deploy          # helm upgrade --install
+task ship            # Full pipeline: build frontend → push Docker → deploy
+task undeploy
+task template        # Preview manifests
+task status
+task diff
+
+# Teardown
+task infra:down      # Stop infra, keep data
+task infra:destroy   # Stop infra, delete volumes
+task kill            # Kill ports 3000/5173 and stop infra
+```
+
+### Architecture
+
+**Backend** ([oai/backend/](oai/backend/)) — Rust + Axum 0.8, async Tokio, listens on `0.0.0.0:3000`
+
+- [oai/backend/src/app.rs](oai/backend/src/app.rs) — router + middleware setup
+- [oai/backend/src/state.rs](oai/backend/src/state.rs) — shared `AppState`: DB pool, auth, storage operator, snowflake ID generator
+- [oai/backend/src/routes/](oai/backend/src/routes/) — API handlers
+- [oai/backend/src/db/](oai/backend/src/db/) — SeaORM models + migrations (auto-run on startup)
+- [oai/backend/src/storage.rs](oai/backend/src/storage.rs) — OpenDAL operator (FS or S3/Garage)
+- Public routes: `/api/auth/register`, `/api/auth/login`, `/api/health`
+- Authenticated routes (JWT middleware): `/api/me`, WebSocket chat, task submission
+- Static assets (React build) served via `tower-http::ServeDir` with SPA fallback
+
+**Frontend** ([oai/frontend/](oai/frontend/)) — React 19 + React Router 7 + TypeScript + Vite + shadcn/ui
+
+- [oai/frontend/src/App.tsx](oai/frontend/src/App.tsx) — client-side router
+- [oai/frontend/src/pages/](oai/frontend/src/pages/) — LoginPage, RegisterPage, HomePage
+- [oai/frontend/src/contexts/AuthContext.tsx](oai/frontend/src/contexts/AuthContext.tsx) — global auth state; token stored in `localStorage` as `oai_token`
+- [oai/frontend/src/api/auth.ts](oai/frontend/src/api/auth.ts) — API client helpers
+- `/api` proxy to backend (Vite dev only)
+
+**Database** — PostgreSQL 17
+
+- SeaORM with migrations; schema in [oai/backend/src/db/migrator.rs](oai/backend/src/db/migrator.rs)
+- `users` table: `id` (snowflake i64), `login`, `password_hash`, `google_id`, `created_at`
+
+**Storage** — OpenDAL (FS or S3/Garage)
+
+- Configured via `STORAGE_BACKEND` (`fs` or `s3`); disabled if unset
+- Used for generated images and file analysis task inputs/outputs
+
+**Helm chart** — [oai/helm-chart/](oai/helm-chart/)
+
+- Deploys oai app + PostgreSQL StatefulSet + Garage S3 StatefulSet
+- Ingress: `oai.alexgr.space` via Traefik + cert-manager
+
+### Configuration (oai backend env vars)
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `JWT_SECRET` | Secret for signing user JWT tokens |
+| `SERVER_ADDRESS` | Bind address (default `0.0.0.0:3000`) |
+| `STATIC_DIR` | Path to built frontend assets (default `/app/static`) |
+| `OFFLOAD_MQ_URL` | OffloadMQ server base URL |
+| `OFFLOAD_MQ_CLIENT_KEY` | OffloadMQ client API key |
+| `STORAGE_BACKEND` | `fs`, `s3`, or unset (disabled) |
+| `STORAGE_FS_ROOT` | Root dir for filesystem storage backend |
+| `STORAGE_S3_ENDPOINT` | S3/Garage endpoint URL |
+| `STORAGE_S3_BUCKET` | S3 bucket name |
+| `STORAGE_S3_REGION` | S3 region |
+| `STORAGE_S3_ACCESS_KEY_ID` | S3 access key |
+| `STORAGE_S3_SECRET_ACCESS_KEY` | S3 secret key |
+
+### Docker / CI
+
+- [oai/Dockerfile](oai/Dockerfile) — multi-stage: Rust 1.91 builder → Debian bookworm-slim runtime; frontend `dist/` copied to `/app/static/`
+- [oai/docker-compose.dev.yml](oai/docker-compose.dev.yml) — local Postgres (port 5432, db/user/pass all `oai`/`oai`/`oai_dev_password`)
+- Image pushed to `grekodocker/oai` tagged with git commit hash

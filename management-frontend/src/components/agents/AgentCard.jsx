@@ -65,7 +65,9 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
                         <Chip><Cpu size={10} style={{ marginRight: 3 }} />{(a.capabilities || []).length}</Chip>
                         {a.appVersion && <Chip>{a.appVersion}</Chip>}
                         {a.systemInfo?.machineId && <Chip><Fingerprint size={10} style={{ marginRight: 3 }} />{a.systemInfo.machineId}</Chip>}
-                        {a.lastCommMethod === 'WebSocket' && <Chip variant="websocket">WebSocket</Chip>}
+                        {a.lastCommMethod === 'ws'
+                            ? <Chip variant="websocket">ws</Chip>
+                            : <Chip>http</Chip>}
                         <Chip><Clock size={10} style={{ marginRight: 3 }} />{relativeTime(a.lastContact)}</Chip>
                         {hasForceRescan && (
                             <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 5px', borderRadius: '4px', background: 'rgba(217,119,6,0.15)', border: '1px solid rgba(217,119,6,0.3)', color: '#f59e0b' }}>

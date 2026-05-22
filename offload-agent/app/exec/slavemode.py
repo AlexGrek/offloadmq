@@ -302,6 +302,7 @@ def execute_slavemode(
     capability: str,
     payload: dict[str, Any],
     data: Path,
+    job_timeout: int = 600,
 ) -> bool:
     if not _is_allowed(capability):
         msg = (

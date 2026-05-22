@@ -6,11 +6,12 @@ from ..transport import AgentTransport
 from .helpers import *
 from pathlib import Path
 
-KOKORO_API_URL = "http://192.168.0.191:4069/api/v1/audio/speech"  # adjust if needed
+KOKORO_API_URL = "https://localhost:8443/v1/audio/speech"  # adjust if needed
 KOKORO_API_KEY = "your-api-key-hehehe"  # set if you use KW_SECRET_API_KEY
 
 def execute_kokoro_tts(
-    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path,
+    job_timeout: int = 600,
 ) -> bool:
     """Send TTS request to Kokoro-Web API (OpenAI-compatible).
 
@@ -24,10 +25,16 @@ def execute_kokoro_tts(
         if isinstance(payload, str):
             # default voice/model if payload is just text
             payload = {
-                "model": "model_q8f16",
+                "model": "kokoro",
                 "voice": "af_heart",
                 "input": payload
             }
+        elif isinstance(payload, dict):
+            # Normalize legacy model names to Kokoro-FastAPI's OpenAI-compatible IDs
+            valid_models = {"kokoro", "tts-1", "tts-1-hd"}
+            if payload.get("model") not in valid_models:
+                payload = {**payload, "model": "kokoro"}
+            payload.setdefault("voice", "af_heart")
 
         # Check for cancellation before starting the (potentially slow) HTTP call.
         # TaskCancelled is raised here if the client already cancelled the task.
@@ -38,7 +45,7 @@ def execute_kokoro_tts(
         if KOKORO_API_KEY:
             headers["Authorization"] = f"Bearer {KOKORO_API_KEY}"
 
-        r = requests.post(KOKORO_API_URL, json=payload, headers=headers, timeout=3000)
+        r = requests.post(KOKORO_API_URL, json=payload, headers=headers, timeout=job_timeout, verify=False)
         r.raise_for_status()
 
         # Kokoro returns audio in binary; here we keep it raw

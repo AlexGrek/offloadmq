@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 def execute_shellcmd_bash(
-    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path,
+    job_timeout: int = 600,
 ) -> bool:
     logger.info(f"Executing shellcmd.bash for task {task_id.dict()} in {data}")
     if isinstance(payload, str):
@@ -38,8 +39,13 @@ def execute_shellcmd_bash(
             cwd=str(data),
         )
 
+        deadline = time.monotonic() + job_timeout
         try:
             while process.poll() is None:
+                if time.monotonic() > deadline:
+                    process.kill()
+                    process.wait()
+                    raise TimeoutError(f"Task exceeded timeout of {job_timeout}s")
                 report_progress(transport, log=None, stage="running", task_id=task_id)
                 time.sleep(2)
         except TaskCancelled:
@@ -67,6 +73,8 @@ def execute_shellcmd_bash(
                 stderr_out or f"Command failed with return code {return_code}",
                 extra_output=final_output,
             )
+    except TimeoutError as e:
+        report = make_failure_report(task_id, capability, str(e))
     except Exception as e:
         err_output: dict[str, str] = {"error": str(e)}
         report = make_failure_report(task_id, capability, str(e), extra_output=err_output)

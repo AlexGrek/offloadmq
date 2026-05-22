@@ -166,24 +166,29 @@ export function ComfyParamMapEditor({ state, run }) {
     return Object.keys(localParams).filter((k) => !sk.has(k))
   }, [localParams, standardKeys])
 
+  // wfName stores "namespace::name" so workflows with the same name but different
+  // namespaces are distinct entries in the select.
+  const selectedWf = useMemo(() => {
+    const wflows = state?.workflows || []
+    return wflows.find((x) => `${x.namespace}::${x.name}` === wfName) || null
+  }, [state?.workflows, wfName])
+
   const taskTypesForWf = useMemo(() => {
-    const wflows = state?.workflows
     const tall = state?.task_types
-    const w = (wflows || []).find((x) => x.name === wfName)
-    if (w?.task_types?.length) return w.task_types
+    if (selectedWf?.task_types?.length) return selectedWf.task_types
     return tall || []
-  }, [state?.workflows, state?.task_types, wfName])
+  }, [state?.task_types, selectedWf])
 
   const effectiveTaskType = useMemo(() => {
     if (!taskTypesForWf.length) return taskType
     return taskTypesForWf.includes(taskType) ? taskType : taskTypesForWf[0]
   }, [taskTypesForWf, taskType])
 
-  function onChangeWorkflow(name) {
-    setWfName(name)
+  function onChangeWorkflow(compositeKey) {
+    setWfName(compositeKey)
     const wflows = state?.workflows || []
     const tall = state?.task_types || []
-    const w = wflows.find((x) => x.name === name)
+    const w = wflows.find((x) => `${x.namespace}::${x.name}` === compositeKey)
     const ts = w?.task_types?.length ? w.task_types : tall
     if (ts.length > 0 && !ts.includes(taskType)) {
       setTaskType(ts[0])
@@ -192,13 +197,14 @@ export function ComfyParamMapEditor({ state, run }) {
 
   const loadParamMap = useCallback(async () => {
     setLoadErr(null)
-    if (!wfName.trim()) {
+    if (!wfName) {
       setLoadErr('Pick a workflow name.')
       return
     }
     const q = new URLSearchParams({
-      workflow_name: wfName.trim(),
+      workflow_name: selectedWf?.name ?? '',
       task_type: effectiveTaskType,
+      namespace: selectedWf?.namespace ?? '',
     })
     const r = await fetch(`/workflows/param-map?${q}`, { headers: JSON_ACCEPT })
     const data = await r.json()
@@ -209,7 +215,7 @@ export function ComfyParamMapEditor({ state, run }) {
     setStandardFields(data.standard_fields || [])
     setInputOptions(data.input_options || [])
     setLocalParams(JSON.parse(JSON.stringify(data.params || {})))
-  }, [wfName, effectiveTaskType])
+  }, [wfName, selectedWf, effectiveTaskType])
 
   function setFieldTargets(key, targets) {
     setLocalParams((p) => ({ ...p, [key]: targets }))
@@ -235,7 +241,8 @@ export function ComfyParamMapEditor({ state, run }) {
           Accept: 'application/json',
         },
         body: JSON.stringify({
-          workflow_name: wfName.trim(),
+          workflow_name: selectedWf?.name ?? '',
+          namespace: selectedWf?.namespace ?? '',
           task_type: effectiveTaskType,
           params,
         }),
@@ -263,7 +270,8 @@ export function ComfyParamMapEditor({ state, run }) {
           Accept: 'application/json',
         },
         body: JSON.stringify({
-          workflow_name: wfName.trim(),
+          workflow_name: selectedWf?.name ?? '',
+          namespace: selectedWf?.namespace ?? '',
           task_type: effectiveTaskType,
         }),
       })
@@ -313,14 +321,18 @@ export function ComfyParamMapEditor({ state, run }) {
           <select
             value={wfName}
             onChange={(e) => onChangeWorkflow(e.target.value)}
-            className="bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-200 min-w-[160px]"
+            className="bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-200 min-w-40"
           >
             <option value="">-- select --</option>
-            {(state?.workflows || []).map((w) => (
-              <option key={w.name} value={w.name}>
-                {w.name}
-              </option>
-            ))}
+            {(state?.workflows || []).map((w) => {
+              const key = `${w.namespace}::${w.name}`
+              const label = w.namespace ? `[${w.namespace}] ${w.name}` : w.name
+              return (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              )
+            })}
           </select>
         </div>
         <div>

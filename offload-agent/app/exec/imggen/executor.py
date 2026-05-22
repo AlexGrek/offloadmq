@@ -20,11 +20,12 @@ def execute_imggen_comfyui(
     payload: dict[str, Any],
     data_path: Path,
     output_bucket: str | None = None,
+    job_timeout: int = 600,
 ) -> bool:
     """Execute an imggen task via ComfyUI.
 
     capability format: imggen.<workflow-name>  (base, no brackets)
-    payload: see docs/imggen-api.md
+    payload: see docs/comfy-api.md
     """
     try:
         if not output_bucket:

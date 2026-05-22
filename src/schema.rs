@@ -325,8 +325,14 @@ pub struct TaskSubmissionRequest {
     /// The client must create this bucket before submitting the task and own it.
     #[serde(default, rename = "output_bucket")]
     pub output_bucket: Option<String>,
+    /// Maximum seconds the agent should spend executing this task.
+    /// Defaults to 600 (10 minutes) if not provided.
+    #[serde(default, rename = "timeoutSecs")]
+    pub timeout_secs: Option<u64>,
     #[serde(default)]
     pub artifacts: Vec<FileReference>,
+    #[serde(default)]
+    pub data_preparation: HashMap<String, String>,
     pub api_key: String,
 }
 

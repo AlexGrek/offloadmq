@@ -40,7 +40,8 @@ def _drain_queue(q: "queue.Queue[str]") -> str:
 
 
 def execute_docker_run(
-    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path,
+    job_timeout: int = 600,
 ) -> bool:
     """Execute a Docker container with streaming output and timeout support.
 
@@ -70,7 +71,7 @@ def execute_docker_run(
     image = payload.get("image")
     command = payload.get("command")
     env_vars = payload.get("env") or {}
-    timeout_sec = payload.get("timeout", 60)
+    timeout_sec = payload.get("timeout", job_timeout)
 
     # Validate required fields
     if not image:

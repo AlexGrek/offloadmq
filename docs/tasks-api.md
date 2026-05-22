@@ -89,6 +89,7 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
   },
   "urgent": false,
   "restartable": true,
+  "timeoutSecs": 300,
   "file_bucket": ["bucket-uid-1", "bucket-uid-2"],
   "output_bucket": "output-bucket-uid",
   "fetchFiles": [],
@@ -103,10 +104,21 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 | `payload` | object | Yes | Task-specific data (any valid JSON) — passed to agent as-is |
 | `urgent` | boolean | No (default: false) | If true, stored in-memory with 60s TTL; if false, persisted to DB |
 | `restartable` | boolean | No (default: false) | If true, task can be retried on another agent if it fails |
+| `timeoutSecs` | integer | No (default: 600) | Maximum seconds the agent may spend executing this task. Applies to all capability types: HTTP request timeout for `llm.*`, `tts.*`; wall-clock kill timeout for `shell.*`, `docker.*`; request timeout for custom and other capabilities. |
 | `file_bucket` | string[] | No | List of bucket UIDs containing input files. Agents can download from these buckets. |
 | `output_bucket` | string | No | UID of a bucket the agent should upload output files into. The client must create this bucket beforehand and own it. When provided, the agent uploads output files (e.g., images, video) directly to the bucket instead of embedding them as base64 in the task output. The client can then download them via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
 | `fetchFiles` | object[] | No | Advanced: HTTP fetch rules (see Advanced below). For a stable JSON shape, send **`[]`** when unused (management sandbox apps always do). |
 | `artifacts` | object[] | No | Advanced: Output artifact definitions (see Advanced below). Send **`[]`** when unused alongside empty `fetchFiles`. |
+| `dataPreparation` | object | No | Map of glob mask → action string, applied to downloaded input files before the executor runs. Key: glob pattern (`*` = all files, `*.jpg`, `video.*`). Value: one of the actions below. Applied after all `file_bucket` and `fetchFiles` downloads complete. |
+
+**`dataPreparation` action strings:**
+
+| Action | Example | Effect |
+|--------|---------|--------|
+| `scale/WxH` | `"scale/1920x1080"` | Resize to fit within W×H (keeps aspect ratio, LANCZOS) |
+| `scale/max[px=N,mp=N]` | `"scale/max[px=1920,mp=12]"` | Resize so every supplied constraint is satisfied: `px` = max pixels per side, `mp` = max megapixels total. Any non-empty subset of constraints is valid (e.g. `scale/max[px=1920]` or `scale/max[mp=12]`). Most restrictive wins; images already within all constraints are not touched. |
+| `transcode/FORMAT` | `"transcode/jpeg"` | Convert to target format, rename file |
+| `transcode/FORMAT[k=v;…]` | `"transcode/jpeg[quality=85]"` | Convert with options (`quality`, `optimize`, `lossless`) |
 
 For **`llm.*` tasks that use `file_bucket`** (vision / file analysis), follow the contract in [integration-guide-llm.md](integration-guide-llm.md) section **Recommended: `llm.*` task body with `file_bucket` (vision)** — chat-style `payload` with `stream` + `messages`, omit top-level `payload.model` (the offload agent sets `model` from `capability`).
 
@@ -1158,6 +1170,28 @@ Client Submission
 ---
 
 ## Examples
+
+### Task with `dataPreparation` — resize and transcode input files
+
+Submit a task that instructs the agent to scale all JPEGs to 1920×1080 and convert PNG files to WebP before running the executor:
+
+```json
+{
+  "apiKey": "your-client-api-key",
+  "capability": "onnx.nudenet",
+  "payload": { "threshold": 0.25 },
+  "file_bucket": ["bucket-uid-abc123"],
+  "dataPreparation": {
+    "*.jpg": "scale/1920x1080",
+    "*.jpeg": "scale/1920x1080",
+    "*.png": "transcode/webp[quality=85]"
+  }
+}
+```
+
+The agent downloads bucket files first, then applies each rule (first matching mask wins per file) before handing `data_path` to the executor. Non-image files and files with no matching mask are left untouched.
+
+---
 
 ### Python Client - Submit and Poll
 

@@ -141,6 +141,7 @@ Returns all registered agents (online and offline).
     "personalLoginToken": "abc-123-def-456",
     "registeredAt": "2026-03-17T10:00:00Z",
     "lastContact": "2026-03-18T14:30:22Z",
+    "lastCommMethod": "ws",
     "displayName": "Apple M3 Pro 16GB",
     "capabilities": ["llm.mistral", "vision[gpu;cuda12.1]"],
     "tier": 5,
@@ -168,6 +169,7 @@ Returns all registered agents (online and offline).
 | `personalLoginToken` | Secret token for agent login (reveals personal key here — guard carefully) |
 | `registeredAt` | ISO 8601 timestamp when agent registered |
 | `lastContact` | Last time agent polled for tasks (null if never contacted) |
+| `lastCommMethod` | Connection type used on most recent contact: `"ws"` (WebSocket) or `"http"` (HTTP polling) |
 | `displayName` | Human-readable name (max 50 chars). Set at registration; null if agent did not provide one. |
 | `capabilities` | List of capabilities with optional extended attributes in brackets |
 | `tier` | Performance tier (0-255, higher is better) |

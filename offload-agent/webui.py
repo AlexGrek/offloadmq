@@ -136,7 +136,9 @@ def _do_start(server: str, api_key: str, caps: List[str], display_name: Optional
         try:
             reg = register_agent(server, sorted(set(caps)), tier=5, capacity=1, api_key=api_key, display_name=display_name)
         except Exception as exc:
-            _log(f"[webui] ERROR: registration failed: {exc}")
+            msg = f"[webui] ERROR: registration failed: {exc}"
+            _log(msg)
+            print(msg, flush=True)
             return
         _log(f"[webui] Registered (agentId={reg.get('agentId')})")
 
@@ -144,7 +146,9 @@ def _do_start(server: str, api_key: str, caps: List[str], display_name: Optional
         try:
             auth = authenticate_agent(server, reg["agentId"], reg["key"])
         except Exception as exc:
-            _log(f"[webui] ERROR: authentication failed: {exc}")
+            msg = f"[webui] ERROR: authentication failed: {exc}"
+            _log(msg)
+            print(msg, flush=True)
             return
         jwt = auth["token"]
         _log("[webui] Authentication successful")
@@ -160,9 +164,10 @@ def _do_start(server: str, api_key: str, caps: List[str], display_name: Optional
         })
         save_config(cfg)
 
-        _log("[webui] Starting serve loop...")
+        transport_type: str = cfg.get("transport", "websocket")
+        _log(f"[webui] Starting serve loop (transport={transport_type})...")
         _stop_event.clear()
-        serve_tasks(server, jwt, stop_event=_stop_event)
+        serve_tasks(server, jwt, stop_event=_stop_event, transport_type=transport_type)
         _log("[webui] Serve loop exited")
     finally:
         agent_logger.removeHandler(handler)
@@ -409,6 +414,7 @@ def _build_api_state() -> Dict[str, Any]:
         "slavemode_all_caps": ALL_SLAVEMODE_CAPS,
         "slavemode_allowed": list(cfg.get(SLAVEMODE_CONFIG_KEY) or []),
         "onnx_models": _list_onnx_models(),
+        "transport": cfg.get("transport", "websocket"),
     }
 
 
@@ -436,13 +442,16 @@ async def api_state():
 
 
 @app.post("/config")
-async def save_connection(request: Request, server: str = Form(""), apiKey: str = Form(""), displayName: str = Form("")):
+async def save_connection(request: Request, server: str = Form(""), apiKey: str = Form(""), displayName: str = Form(""), transport: str = Form("")):
     cfg = load_config()
     if server.strip():
         cfg["server"] = server.strip()
     if apiKey.strip():
         cfg["apiKey"] = apiKey.strip()
     cfg["displayName"] = displayName.strip()[:50]
+    transport_val = transport.strip()
+    if transport_val in ("http", "websocket"):
+        cfg["transport"] = transport_val
     save_config(cfg)
     return _done(request)
 

@@ -80,6 +80,65 @@ export async function deleteBucket(uid, apiKey) {
   }
 }
 
+/** Strip MIME parameters (e.g. charset) and lower-case. */
+function stripMimeParams(ct) {
+  if (!ct || typeof ct !== 'string') return '';
+  return ct.split(';')[0].trim().toLowerCase();
+}
+
+/**
+ * Bucket file GET uses application/octet-stream; use task metadata so Blob
+ * type is a real image/* (avoids browsers saving downloads as .bin).
+ */
+function pickImageMime(responseContentType, metaContentType) {
+  const fromHeader = stripMimeParams(responseContentType);
+  if (fromHeader && fromHeader !== 'application/octet-stream') return fromHeader;
+  const fromMeta = stripMimeParams(metaContentType);
+  if (fromMeta && fromMeta !== 'application/octet-stream') return fromMeta;
+  return 'image/png';
+}
+
+/** Parse filename from Content-Disposition (attachment; filename="..."). */
+function parseAttachmentFilename(cd) {
+  if (!cd || typeof cd !== 'string') return null;
+  const star = cd.match(/filename\*=(?:UTF-8''|)([^;\s]+)/i);
+  if (star) {
+    const raw = star[1].trim().replace(/^"|"$/g, '');
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+  const quoted = cd.match(/filename="((?:\\.|[^"\\])*)"/i);
+  if (quoted) return quoted[1].replace(/\\"/g, '"');
+  const plain = cd.match(/filename=([^;\s]+)/i);
+  if (plain) return plain[1].trim().replace(/^"|"$/g, '');
+  return null;
+}
+
+function hasImageExtension(name) {
+  return /\.(png|jpe?g|webp|gif|bmp)$/i.test(name || '');
+}
+
+function extForMime(mime) {
+  const m = stripMimeParams(mime);
+  if (m === 'image/jpeg' || m === 'image/jpg') return '.jpg';
+  if (m === 'image/webp') return '.webp';
+  if (m === 'image/gif') return '.gif';
+  if (m === 'image/bmp') return '.bmp';
+  if (m === 'image/png') return '.png';
+  return '.png';
+}
+
+/** Ensure <a download> has a sensible name with an image extension. */
+function ensureDownloadFilename(name, mime) {
+  let n = (name || '').trim();
+  if (!n) n = 'generated';
+  if (hasImageExtension(n)) return n;
+  return n + extForMime(mime);
+}
+
 /**
  * Fetch images from storage bucket and convert to blob URLs.
  * Returns the images array with `blobUrl` added to each entry.
@@ -96,10 +155,14 @@ export async function fetchImageBlobs(images, apiKey, track) {
       const r = await fetch(`/api/storage/bucket/${img.bucket_uid}/file/${img.file_uid}`, {
         headers: { 'X-API-Key': apiKey },
       });
-      const blob = await r.blob();
+      const mime = pickImageMime(r.headers.get('content-type'), img.content_type);
+      const buf = await r.arrayBuffer();
+      const blob = new Blob([buf], { type: mime });
       const blobUrl = URL.createObjectURL(blob);
       track?.(blobUrl);
-      return { ...img, blobUrl };
+      const fromCd = parseAttachmentFilename(r.headers.get('content-disposition'));
+      const filename = ensureDownloadFilename(fromCd || img.filename, mime);
+      return { ...img, blobUrl, filename };
     } catch { return img; }
   }));
 }

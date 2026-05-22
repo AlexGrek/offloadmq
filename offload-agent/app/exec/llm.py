@@ -35,7 +35,8 @@ def _collect_image_attachments(data_path: Path) -> list[str]:
 
 
 def execute_llm_query(
-    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path
+    transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path,
+    job_timeout: int = 600,
 ) -> bool:
     """Send LLM request to local Ollama REST API (chat or generate style).
 
@@ -123,7 +124,7 @@ def execute_llm_query(
 
         from ..ollama import get_ollama_base_url
         chat_url = f"{get_ollama_base_url()}/api/chat"
-        logger.info(f"Sending to Ollama ({chat_url}), model={model_name}")
+        logger.info(f"Sending to Ollama ({chat_url}), model={model_name}, timeout={job_timeout}s")
 
         # Check if streaming is enabled
         is_streaming = api_payload.get("stream", False)
@@ -139,7 +140,7 @@ def execute_llm_query(
 
             # Make the request with streaming enabled
             r = requests.post(
-                chat_url, json=api_payload, stream=True, timeout=300
+                chat_url, json=api_payload, stream=True, timeout=job_timeout
             )
             r.raise_for_status()
 
@@ -217,7 +218,7 @@ def execute_llm_query(
         else:
             # Original non-streaming logic
             logger.info("Streaming is not enabled. Waiting for full response...")
-            r = requests.post(chat_url, json={**api_payload, "stream": False}, timeout=300)
+            r = requests.post(chat_url, json={**api_payload, "stream": False}, timeout=job_timeout)
             logger.info(f"Ollama response status: {r.status_code}")
             logger.info(f"Ollama response: {r.status_code}, {len(r.text)} bytes")
             r.raise_for_status()
