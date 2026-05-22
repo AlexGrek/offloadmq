@@ -99,6 +99,8 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/admin/images/events", get(routes::admin::admin_list_image_events))
         .route("/api/admin/images/offload_tasks", get(routes::admin::admin_list_image_offload_tasks))
         .route("/api/admin/images/worker_logs", get(routes::admin::admin_list_image_worker_logs))
+        .route("/api/admin/k8s/self/pod", get(routes::admin::admin_k8s_self_pod))
+        .route("/api/admin/k8s/self/logs", get(routes::admin::admin_k8s_self_logs))
         .layer(from_fn_with_state(state.clone(), middleware::admin_auth_middleware));
 
     Router::new()

@@ -85,3 +85,54 @@ export interface AdminImageWorkerLog {
 export function listImageWorkerLogs(token: string) {
   return adminRequest<AdminImageWorkerLog[]>('/images/worker_logs', token)
 }
+
+export type K8sComponent = 'app' | 'postgres' | 'garage'
+
+export interface K8sPodCondition {
+  condition_type: string
+  status: string
+  reason: string | null
+  message: string | null
+}
+
+export interface K8sContainerStatus {
+  name: string
+  ready: boolean
+  restart_count: number
+  state: unknown
+}
+
+export interface K8sPodStatus {
+  component: string
+  name: string
+  namespace: string
+  phase: string | null
+  pod_ip: string | null
+  host_ip: string | null
+  start_time: string | null
+  ready: boolean
+  conditions: K8sPodCondition[]
+  containers: K8sContainerStatus[]
+}
+
+export interface K8sPodLogs {
+  component: string
+  pod: string
+  namespace: string
+  container: string
+  tail_lines: number
+  content: string
+}
+
+export function getK8sPodStatus(token: string, component: K8sComponent) {
+  const qs = new URLSearchParams({ component })
+  return adminRequest<K8sPodStatus>(`/k8s/self/pod?${qs}`, token)
+}
+
+export function getK8sPodLogs(token: string, component: K8sComponent, tailLines = 100) {
+  const qs = new URLSearchParams({
+    component,
+    tail_lines: String(tailLines),
+  })
+  return adminRequest<K8sPodLogs>(`/k8s/self/logs?${qs}`, token)
+}

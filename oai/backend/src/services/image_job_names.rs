@@ -8,13 +8,18 @@ pub fn generate_display_name() -> String {
     Generator::default().next().expect("names generator yields a name")
 }
 
-/// Stored name, or a short prompt excerpt for jobs created before `display_name` existed.
+/// Stored slug (e.g. `rusty-nail`), or prompt excerpt for legacy rows without a slug.
 pub fn effective_display_name(job: &ImageGenerationJob) -> String {
     let stored = job.display_name.trim();
     if !stored.is_empty() {
         return stored.to_string();
     }
     prompt_excerpt(&job.prompt, 48)
+}
+
+/// User-facing label in progress UI and similar — always the prompt, not the slug.
+pub fn prompt_label(job: &ImageGenerationJob, max_len: usize) -> String {
+    prompt_excerpt(&job.prompt, max_len)
 }
 
 fn prompt_excerpt(prompt: &str, max_len: usize) -> String {

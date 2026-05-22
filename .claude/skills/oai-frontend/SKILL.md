@@ -233,6 +233,7 @@ OAI tools should feel **open and content-first**, not like nested admin panels. 
 - **Progress:** Global drawer from `TopBar` — not per-page panels.
 - **Debug:** Icon-only in page header → `ToolDebugModal` (OffloadMQ poll JSON only; no WebSocket event dump).
 - **Authenticated images:** `imageFileUrl(id, token)` appends `?token=` — `<img src>` cannot send `Authorization`.
+- **Model / capability:** Always a **select or picker** populated from OffloadMQ (`useWsChat` / `listImgGenCapabilities`). Never a free-text `<Input>` for capability strings. Submit only when the value is in the current list (`pickListedCapability` / `isListedCapability` in `src/lib/capability-picker.ts`).
 
 ### `data-testid` Attributes
 

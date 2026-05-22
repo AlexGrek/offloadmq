@@ -74,6 +74,9 @@ export function PipelineJobParamsPanel({ job }: PipelineJobParamsPanelProps) {
           {p.input_image_id && (
             <ParamRow label="Input image" value={p.input_image_id} />
           )}
+          {job.display_name.trim() ? (
+            <ParamRow label="Pipeline name" value={job.display_name.trim()} />
+          ) : null}
           <ParamRow label="Pipeline id" value={job.job_id} />
         </dl>
       )}

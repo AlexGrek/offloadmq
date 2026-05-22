@@ -48,3 +48,19 @@ class TestAdminSettingsAccess:
     def test_admin_image_files_requires_admin(self, client: httpx.Client, session_headers: dict):
         r = client.get("/api/admin/images/files", headers=session_headers)
         assert r.status_code == 403
+
+    def test_k8s_self_pod_requires_admin(self, client: httpx.Client, session_headers: dict):
+        r = client.get("/api/admin/k8s/self/pod", headers=session_headers)
+        assert r.status_code == 403
+
+    def test_k8s_self_logs_requires_admin(self, client: httpx.Client, session_headers: dict):
+        r = client.get("/api/admin/k8s/self/logs", headers=session_headers)
+        assert r.status_code == 403
+
+    def test_k8s_self_pod_no_token_returns_401(self, fresh_client: httpx.Client):
+        r = fresh_client.get("/api/admin/k8s/self/pod")
+        assert r.status_code == 401
+
+    def test_diagnostics_logs_requires_admin(self, client: httpx.Client, session_headers: dict):
+        r = client.get("/api/admin/k8s/self/logs?component=app&tail_lines=100", headers=session_headers)
+        assert r.status_code == 403

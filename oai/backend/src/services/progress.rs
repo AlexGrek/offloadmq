@@ -36,7 +36,7 @@ pub async fn list_running_image_jobs(
         .map(|(job, task)| RunningJobItem {
             key: format!("image:{}", job.id),
             source: "image".to_string(),
-            label: image_job_names::effective_display_name(&job),
+            label: image_job_names::prompt_label(&job, 48),
             status: task
                 .last_poll_status
                 .clone()

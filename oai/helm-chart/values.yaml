@@ -1,5 +1,11 @@
 replicaCount: 1
 
+# Dedicated SA for the app pod: get pods + pods/log in this namespace (use POD_NAME for self only).
+serviceAccount:
+  create: true
+  name: ""
+  automountServiceAccountToken: true
+
 image:
   repository: grekodocker/oai
   tag: latest  # overridden at deploy time via --set image.tag=<git-hash>

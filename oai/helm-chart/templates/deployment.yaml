@@ -21,6 +21,10 @@ spec:
       labels:
         {{- include "oai.selectorLabels" . | nindent 8 }}
     spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "oai.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      {{- end }}
       {{- if .Values.garage.enabled }}
       initContainers:
         - name: wait-garage-creds
@@ -68,6 +72,24 @@ spec:
                 secretKeyRef:
                   name: {{ include "oai.fullname" . }}-secret
                   key: jwt-secret
+            {{- if .Values.serviceAccount.create }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- if .Values.postgres.enabled }}
+            - name: POSTGRES_POD_NAME
+              value: {{ printf "%s-0" (include "oai.postgresHost" .) | quote }}
+            {{- end }}
+            {{- if .Values.garage.enabled }}
+            - name: GARAGE_POD_NAME
+              value: {{ printf "%s-0" (include "oai.garageSvcName" .) | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.garage.enabled }}
             - name: STORAGE_BACKEND
               value: "s3"

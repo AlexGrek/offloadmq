@@ -28,3 +28,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "oai.garageSvcName" -}}
 {{- printf "%s-garage" (include "oai.fullname" .) }}
 {{- end }}
+
+{{- define "oai.serviceAccountName" -}}
+{{- if .Values.serviceAccount.name }}
+{{- .Values.serviceAccount.name }}
+{{- else }}
+{{- include "oai.fullname" . }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,41 @@
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "oai.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "oai.fullname" . }}-logs
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+rules:
+  # App, Postgres, and Garage StatefulSet pods in this namespace (names from env).
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "oai.fullname" . }}-logs
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oai.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "oai.fullname" . }}-logs
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "oai.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

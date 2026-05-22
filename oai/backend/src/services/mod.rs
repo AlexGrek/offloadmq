@@ -1,5 +1,6 @@
 pub mod chat;
 pub mod connection;
+pub mod k8s_self;
 pub mod debug_offload;
 pub mod progress;
 pub mod image_jobs;

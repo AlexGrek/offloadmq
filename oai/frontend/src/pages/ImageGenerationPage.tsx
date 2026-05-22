@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ImageLightbox } from '@/components/ImageLightbox'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -51,7 +52,8 @@ import {
   applyPipelineParamsToNewForm,
   capabilityLabel,
   filterCapabilitiesByWorkflow,
-  jobDisplayName,
+  jobPromptTitle,
+  jobTechMeta,
   modelNameFromCapability,
   pipelineEventsWithoutPolls,
   pipelineStatusLine,
@@ -80,7 +82,7 @@ export default function ImageGenerationPage() {
   const [prompt, setPrompt] = useState(MODE_DEFAULTS.txt2img.prompt)
   const [negativePrompt, setNegativePrompt] = useState('')
   const [overrideNegative, setOverrideNegative] = useState(false)
-  const [capability, setCapability] = useState('imggen.flux')
+  const [capability, setCapability] = useState('')
   const [allCapabilities, setAllCapabilities] = useState<ImgGenCapability[]>([])
   const [width, setWidth] = useState(MODE_DEFAULTS.txt2img.width)
   const [height, setHeight] = useState(MODE_DEFAULTS.txt2img.height)
@@ -119,10 +121,10 @@ export default function ImageGenerationPage() {
 
   const canSubmit = useMemo(() => {
     if (!prompt.trim()) return false
-    if (!capability.trim().startsWith('imggen.')) return false
+    if (!capabilities.some(c => c.base === capability)) return false
     if (mode === 'img2img' && !uploadedInput) return false
     return true
-  }, [prompt, capability, mode, uploadedInput])
+  }, [prompt, capability, mode, uploadedInput, capabilities])
 
   const patchRescale = useCallback((patch: Partial<RescaleState>) => {
     setRescale(prev => ({ ...prev, ...patch }))
@@ -363,6 +365,7 @@ export default function ImageGenerationPage() {
         rescaleUserEditedRef,
       },
       previewUrl,
+      capabilities,
     )
     setActivePanel(IMGGEN_NEW_PANEL)
     setInfo('Pipeline parameters copied to New job. Adjust and submit when ready.')
@@ -472,7 +475,7 @@ export default function ImageGenerationPage() {
             {sidebarOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
           </Button>
           <h1 className="min-w-0 flex-1 truncate font-display text-sm font-semibold">
-            {viewingJob && selectedJob ? jobDisplayName(selectedJob) : 'New'}
+            {viewingJob && selectedJob ? jobPromptTitle(selectedJob.prompt, 56) : 'New'}
           </h1>
           <ToolDebugHeaderButton
             onClick={() => setDebugOpen(true)}
@@ -486,7 +489,7 @@ export default function ImageGenerationPage() {
           onOpenChange={setDebugOpen}
           cap={selectedJob?.offload_cap}
           taskId={selectedJob?.offload_task_id}
-          subject={selectedJob ? jobDisplayName(selectedJob) : undefined}
+          subject={selectedJob ? jobPromptTitle(selectedJob.prompt, 48) : undefined}
           disabledReason={
             selectedJob && !toolDebugReady(selectedJob.offload_cap, selectedJob.offload_task_id)
               ? 'No OffloadMQ task linked to this job yet.'
@@ -535,33 +538,28 @@ export default function ImageGenerationPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="capability">Model / capability</Label>
-                {capabilities.length > 0 ? (
-                  <select
-                    id="capability"
-                    value={capability}
-                    onChange={e => setCapability(e.target.value)}
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    data-testid="imggen-capability-select"
-                  >
-                    {capabilities.map(cap => (
+                <Label htmlFor="capability">Model</Label>
+                <select
+                  id="capability"
+                  value={capabilities.length > 0 ? capability : ''}
+                  onChange={e => setCapability(e.target.value)}
+                  disabled={capabilities.length === 0}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  data-testid="imggen-capability-select"
+                >
+                  {capabilities.length === 0 ? (
+                    <option value="">No models available</option>
+                  ) : (
+                    capabilities.map(cap => (
                       <option key={cap.raw} value={cap.base}>
                         {capabilityLabel(cap)}
                       </option>
-                    ))}
-                  </select>
-                ) : (
-                  <Input
-                    id="capability"
-                    value={capability}
-                    onChange={e => setCapability(e.target.value)}
-                    placeholder="imggen.flux"
-                    data-testid="imggen-capability"
-                  />
-                )}
+                    ))
+                  )}
+                </select>
                 {capabilities.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    No imggen agents online — enter a capability manually or start an agent.
+                    No image models online. Start an imggen agent or check OffloadMQ connection in Settings.
                   </p>
                 )}
               </div>
@@ -598,14 +596,27 @@ export default function ImageGenerationPage() {
                     )}
                   </div>
                   {(inputPreviewUrl || uploadedInput) && (
-                    <div className="relative w-full max-w-xs overflow-hidden rounded-lg bg-muted/30">
+                    <ImageLightbox
+                      src={
+                        uploadedInput
+                          ? imageFileUrl(uploadedInput.image_id, token)
+                          : inputPreviewUrl!
+                      }
+                      alt="Input preview"
+                      triggerClassName="relative block w-full max-w-xs overflow-hidden rounded-lg bg-muted/30"
+                      testId="imggen-input-preview"
+                    >
                       <img
-                        src={uploadedInput ? imageFileUrl(uploadedInput.image_id, token) : inputPreviewUrl!}
-                        alt="Input preview"
+                        src={
+                          uploadedInput
+                            ? imageFileUrl(uploadedInput.image_id, token)
+                            : inputPreviewUrl!
+                        }
+                        alt=""
+                        aria-hidden
                         className="max-h-48 w-full object-contain bg-muted/30"
-                        data-testid="imggen-input-preview"
                       />
-                    </div>
+                    </ImageLightbox>
                   )}
                   <RescaleControls
                     state={rescale}
@@ -724,9 +735,12 @@ export default function ImageGenerationPage() {
           ) : selectedJob?.job_id === viewedJobId ? (
           <Card data-testid="imggen-job-detail">
             <CardHeader className="space-y-2">
-              <CardTitle className="font-display text-lg tracking-tight">
-                {jobDisplayName(selectedJob)}
+              <CardTitle className="font-display text-lg tracking-tight leading-snug">
+                {jobPromptTitle(selectedJob.prompt, 120)}
               </CardTitle>
+              <p className="font-mono text-xs text-muted-foreground" data-testid="imggen-job-tech-meta">
+                {jobTechMeta(selectedJob)} · {selectedJob.job_id}
+              </p>
               <p className="text-sm text-muted-foreground capitalize">
                 {modelNameFromCapability(selectedJob.capability)} · {selectedJob.workflow} ·{' '}
                 {selectedJob.status.replace(/_/g, ' ')}
@@ -784,11 +798,19 @@ export default function ImageGenerationPage() {
               {selectedJob.input_image_id && (
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">Input</p>
-                  <img
+                  <ImageLightbox
                     src={imageFileUrl(selectedJob.input_image_id, token)}
                     alt="Job input"
-                    className="max-h-40 rounded-lg border border-border object-contain"
-                  />
+                    triggerClassName="block max-w-full"
+                    testId="imggen-job-input"
+                  >
+                    <img
+                      src={imageFileUrl(selectedJob.input_image_id, token)}
+                      alt=""
+                      aria-hidden
+                      className="max-h-40 rounded-lg border border-border object-contain"
+                    />
+                  </ImageLightbox>
                 </div>
               )}
               {!!selectedJob.error && (
@@ -854,22 +876,24 @@ export default function ImageGenerationPage() {
                 {selectedJob.files
                   .filter(f => f.direction === 'output')
                   .map(file => (
-                    <a
+                    <ImageLightbox
                       key={file.image_id}
-                      href={imageFileUrl(file.image_id, token)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group overflow-hidden rounded-lg border border-border"
+                      src={imageFileUrl(file.image_id, token)}
+                      alt={file.filename}
+                      caption={`${file.filename} — ${file.width}×${file.height}`}
+                      triggerClassName="group w-full overflow-hidden rounded-lg border border-border"
+                      testId={`imggen-output-${file.image_id}`}
                     >
                       <img
                         src={imageFileUrl(file.image_id, token)}
-                        alt={file.filename}
+                        alt=""
+                        aria-hidden
                         className="h-52 w-full object-cover transition-transform group-hover:scale-[1.02]"
                       />
                       <div className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
                         {file.filename} — {file.width}×{file.height}
                       </div>
-                    </a>
+                    </ImageLightbox>
                   ))}
               </div>
             </CardContent>

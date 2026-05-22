@@ -7,6 +7,7 @@ import type {
   ImageJobEvent,
   UploadedImage,
 } from '../api/images'
+import { pickListedCapability } from './capability-picker'
 
 export type ImgGenMode = 'txt2img' | 'img2img'
 
@@ -58,18 +59,29 @@ export function modelNameFromCapability(capability: string): string {
   return base || capability
 }
 
-export function jobDisplayName(job: Pick<ImageJobDetails, 'display_name' | 'prompt'>): string {
-  const name = job.display_name?.trim()
-  if (name) return name
-  return promptExcerpt(job.prompt, 48)
+/** User-facing title: prompt excerpt (never the generated slug). */
+export function jobPromptTitle(prompt: string, maxLen = 52): string {
+  return promptExcerpt(prompt, maxLen)
 }
 
-/** Short prompt line for pipeline sidebar cards. */
-export function pipelineCardPrompt(prompt: string, maxLen = 40): string {
-  const t = prompt.trim()
-  if (!t) return ''
-  if (t.length <= maxLen) return t
-  return `${t.slice(0, maxLen).trimEnd()}…`
+/** @deprecated Use jobPromptTitle — kept for call-site clarity during migration. */
+export function jobDisplayName(job: Pick<ImageJobDetails, 'prompt'>): string {
+  return jobPromptTitle(job.prompt, 48)
+}
+
+/** Generated slug (e.g. `rusty-nail`) for support / debug UI only. */
+export function jobPipelineSlug(job: Pick<ImageJobDetails, 'display_name'>): string | null {
+  const name = job.display_name?.trim()
+  return name || null
+}
+
+/** Compact tech meta: slug · model (slug omitted when empty). */
+export function jobTechMeta(
+  job: Pick<ImageJobDetails, 'display_name' | 'capability'>,
+): string {
+  const slug = jobPipelineSlug(job)
+  const model = modelNameFromCapability(job.capability)
+  return slug ? `${slug} · ${model}` : model
 }
 
 export function promptExcerpt(prompt: string, maxLen = 52): string {
@@ -182,6 +194,7 @@ export function applyPipelineParamsToNewForm(
   job: ImageJobDetails,
   handlers: ApplyPipelineToNewFormHandlers,
   imagePreviewUrl?: string | null,
+  availableCapabilities?: readonly { base: string }[],
 ): void {
   const p = pipelineParamsFromJob(job)
   const mode = p.workflow === 'img2img' ? 'img2img' : 'txt2img'
@@ -189,7 +202,10 @@ export function applyPipelineParamsToNewForm(
   handlers.setPrompt(p.prompt)
   handlers.setNegativePrompt(p.negative_prompt?.trim() ?? '')
   handlers.setOverrideNegative(!!p.override_negative)
-  handlers.setCapability(p.capability)
+  if (availableCapabilities?.length) {
+    const cap = pickListedCapability(p.capability, availableCapabilities)
+    if (cap) handlers.setCapability(cap)
+  }
   handlers.setWidth(p.width)
   handlers.setHeight(p.height)
   handlers.setSeed(p.seed != null ? String(p.seed) : '')

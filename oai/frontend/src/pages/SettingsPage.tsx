@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronRight, ScrollText, Server } from 'lucide-react'
+import { Activity, ChevronRight, ScrollText, Server } from 'lucide-react'
 import { changePassword } from '../api/auth'
 import { useAuth } from '../contexts/AuthContext'
 import { useAdminStatus } from '../hooks/useAdminStatus'
@@ -213,6 +213,24 @@ export default function SettingsPage() {
                       <p className="text-sm font-medium">Server Configuration</p>
                       <p className="text-xs text-muted-foreground">
                         OffloadMQ connection, model defaults, system settings
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
+                </Link>
+                <Link
+                  to="/app/settings/diagnostics"
+                  className="group flex items-center justify-between rounded-lg border border-border p-4 transition-colors hover:bg-muted/50"
+                  data-testid="settings-diagnostics-link"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-muted p-2">
+                      <Activity className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Diagnostics</p>
+                      <p className="text-xs text-muted-foreground">
+                        App, Postgres, and Garage pod status and logs
                       </p>
                     </div>
                   </div>

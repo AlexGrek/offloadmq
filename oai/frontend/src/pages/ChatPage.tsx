@@ -447,13 +447,14 @@ export default function ChatPage() {
 
   const handleModelSelect = useCallback(
     (model: string) => {
+      if (!modelListed(model, ws.capabilities)) return
       setSelectedModel(model)
       if (!token || !activeChatId) return
       updateChatLastModel(token, activeChatId, model)
         .then(chat => setChats(prev => prev.map(c => (c.id === chat.id ? chat : c))))
         .catch(console.error)
     },
-    [token, activeChatId],
+    [token, activeChatId, ws.capabilities],
   )
 
   // If capabilities refresh and current selection vanished, re-resolve for this chat.
@@ -611,6 +612,8 @@ export default function ChatPage() {
   /** When true, new content keeps the transcript pinned to the bottom. */
   const autoScrollRef = useRef(true)
   const lastScrollTopRef = useRef(0)
+  /** Ignore onScroll while we programmatically pin (DOM swaps reset scrollTop → false "scroll up"). */
+  const suppressScrollHandlerRef = useRef(false)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
 
   const BOTTOM_THRESHOLD_PX = 48
@@ -625,6 +628,7 @@ export default function ChatPage() {
   }
 
   function handleScroll() {
+    if (suppressScrollHandlerRef.current) return
     const el = scrollRef.current
     if (!el) return
     const { scrollTop } = el
@@ -645,36 +649,55 @@ export default function ChatPage() {
     return Math.max(0, el.scrollHeight - el.clientHeight)
   }
 
-  function scrollMessagesToBottom(behavior: ScrollBehavior = 'smooth') {
+  /** Pin transcript to the bottom sentinel (inside the scroll container only). */
+  function scrollTranscriptToEnd(behavior: ScrollBehavior = 'instant') {
     const el = scrollRef.current
-    if (!el) return
-    const top = maxScrollTop(el)
-    el.scrollTo({ top, behavior })
-    autoScrollRef.current = true
-    lastScrollTopRef.current = top
-    setShowScrollBtn(false)
+    const end = messagesEndRef.current
+    if (end) {
+      end.scrollIntoView({ block: 'end', behavior })
+    } else if (el) {
+      const top = maxScrollTop(el)
+      el.scrollTop = top
+    }
+    if (el) lastScrollTopRef.current = el.scrollTop
   }
 
-  function pinToBottomIfFollowing() {
+  function followTranscriptBottom(behavior: ScrollBehavior = 'instant') {
     if (!autoScrollRef.current) return
+    suppressScrollHandlerRef.current = true
+    scrollTranscriptToEnd(behavior)
+    requestAnimationFrame(() => {
+      scrollTranscriptToEnd('instant')
+      const el = scrollRef.current
+      if (el) lastScrollTopRef.current = el.scrollTop
+      setShowScrollBtn(false)
+      requestAnimationFrame(() => {
+        suppressScrollHandlerRef.current = false
+      })
+    })
+  }
+
+  function scrollMessagesToBottom(behavior: ScrollBehavior = 'smooth') {
+    autoScrollRef.current = true
+    suppressScrollHandlerRef.current = true
+    scrollTranscriptToEnd(behavior)
     const el = scrollRef.current
-    if (!el) return
-    const top = maxScrollTop(el)
-    if (top <= 0) return
-    el.scrollTop = top
-    lastScrollTopRef.current = top
+    if (el) lastScrollTopRef.current = el.scrollTop
+    setShowScrollBtn(false)
+    requestAnimationFrame(() => {
+      suppressScrollHandlerRef.current = false
+    })
   }
 
   useLayoutEffect(() => {
     if (showSystemStudio || loadingMessages) return
-    pinToBottomIfFollowing()
+    followTranscriptBottom('instant')
   }, [messages, isStreaming, showSystemStudio, loadingMessages])
 
   useEffect(() => {
     autoScrollRef.current = true
     setShowScrollBtn(false)
-    lastScrollTopRef.current = 0
-    requestAnimationFrame(() => scrollMessagesToBottom('instant'))
+    requestAnimationFrame(() => followTranscriptBottom('instant'))
   }, [activeChatId])
 
   // ── Textarea auto-resize ──────────────────────────────────────────────────
@@ -726,6 +749,7 @@ export default function ChatPage() {
   const send = useCallback(async () => {
     const text = input.trim()
     if (!text || !selectedModel || ws.status !== 'connected' || !activeChatId) return
+    if (!modelListed(selectedModel, ws.capabilities)) return
 
     const reqId = nextReqId('chat')
     const assistantMsgId = uid()
@@ -740,9 +764,10 @@ export default function ChatPage() {
       statusText: 'Sending…',
     }
 
+    autoScrollRef.current = true
+    suppressScrollHandlerRef.current = true
     setMessages(prev => [...prev, userMsg, thinkingMsg])
     setInput('')
-    autoScrollRef.current = true
     setShowScrollBtn(false)
     reqToMsgId.current.set(reqId, assistantMsgId)
 

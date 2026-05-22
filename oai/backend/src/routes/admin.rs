@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use crate::{
     error::AppError,
     middleware::AuthenticatedUser,
     routes::images::{job_details_response, JobDetailsResponse},
-    services::{connection, image_jobs},
+    services::{connection, image_jobs, k8s_self},
     state::AppState,
 };
 
@@ -255,6 +255,59 @@ pub async fn admin_list_image_offload_tasks(
             })
             .collect(),
     ))
+}
+
+#[derive(Deserialize)]
+pub struct K8sComponentQuery {
+    #[serde(default)]
+    pub component: k8s_self::K8sComponent,
+}
+
+#[derive(Deserialize)]
+pub struct SelfPodLogsQuery {
+    #[serde(default)]
+    pub component: k8s_self::K8sComponent,
+    #[serde(default = "default_log_tail_lines")]
+    pub tail_lines: u32,
+    pub container: Option<String>,
+    #[serde(default)]
+    pub previous: bool,
+    #[serde(default)]
+    pub timestamps: bool,
+}
+
+fn default_log_tail_lines() -> u32 {
+    500
+}
+
+pub async fn admin_k8s_self_pod(
+    AuthenticatedUser(_): AuthenticatedUser,
+    Query(q): Query<K8sComponentQuery>,
+) -> Result<Json<k8s_self::SelfPodStatusResponse>, AppError> {
+    let cluster = k8s_self::K8sClusterAccess::from_env()?;
+    let pod = cluster.resolve_pod(q.component)?;
+    let status = k8s_self::get_pod_status(&cluster, &pod).await?;
+    Ok(Json(status))
+}
+
+pub async fn admin_k8s_self_logs(
+    AuthenticatedUser(_): AuthenticatedUser,
+    Query(query): Query<SelfPodLogsQuery>,
+) -> Result<Json<k8s_self::SelfPodLogsResponse>, AppError> {
+    let cluster = k8s_self::K8sClusterAccess::from_env()?;
+    let pod = cluster.resolve_pod(query.component)?;
+    let logs = k8s_self::get_pod_logs(
+        &cluster,
+        &pod,
+        k8s_self::LogQuery {
+            tail_lines: query.tail_lines,
+            container: query.container,
+            previous: query.previous,
+            timestamps: query.timestamps,
+        },
+    )
+    .await?;
+    Ok(Json(logs))
 }
 
 pub async fn admin_list_image_worker_logs(

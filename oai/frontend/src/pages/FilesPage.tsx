@@ -3,6 +3,7 @@ import { FileText, HardDrive, ImageIcon, Lock, RefreshCw } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { listFiles } from '../api/files'
 import type { FileBrowserResponse, UserFile } from '../api/files'
+import { ImageLightbox } from '@/components/ImageLightbox'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -161,41 +162,74 @@ function SummaryStat({
 }
 
 function FileTile({ file, href }: { file: UserFile; href: string }) {
+  const meta = (
+    <div className="border-t border-border px-3 py-2">
+      <p className="truncate text-xs font-medium" title={file.filename}>
+        {file.is_image ? (
+          <ImageIcon className="mr-1 inline h-3 w-3 align-text-bottom text-muted-foreground" />
+        ) : null}
+        {file.filename}
+      </p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">
+        {file.width > 0 && file.height > 0 ? `${file.width}×${file.height} · ` : ''}
+        {formatBytes(file.size_bytes)}
+      </p>
+    </div>
+  )
+
+  const thumb = (
+    <div className="relative flex aspect-square items-center justify-center bg-muted/40">
+      {file.is_image ? (
+        <img
+          src={href}
+          alt=""
+          aria-hidden
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform group-hover:scale-[1.03]"
+        />
+      ) : (
+        <FileText className="h-10 w-10 text-muted-foreground" />
+      )}
+      <span className="absolute left-2 top-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] font-medium capitalize backdrop-blur">
+        {file.direction === 'output' ? 'Generated' : 'Upload'}
+      </span>
+    </div>
+  )
+
+  const tileClass =
+    'group flex flex-col overflow-hidden rounded-xl border border-border transition-all hover:shadow-md hover:border-border/60'
+
+  if (file.is_image) {
+    const caption =
+      file.width > 0 && file.height > 0
+        ? `${file.filename} — ${file.width}×${file.height}`
+        : file.filename
+    return (
+      <div className={tileClass} data-testid={`file-tile-${file.id}`}>
+        <ImageLightbox
+          src={href}
+          alt={file.filename}
+          caption={caption}
+          triggerClassName="w-full"
+          testId={`file-tile-${file.id}`}
+        >
+          {thumb}
+        </ImageLightbox>
+        {meta}
+      </div>
+    )
+  }
+
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="group flex flex-col overflow-hidden rounded-xl border border-border transition-all hover:shadow-md hover:border-border/60"
+      className={tileClass}
       data-testid={`file-tile-${file.id}`}
     >
-      <div className="relative flex aspect-square items-center justify-center bg-muted/40">
-        {file.is_image ? (
-          <img
-            src={href}
-            alt={file.filename}
-            loading="lazy"
-            className="h-full w-full object-cover transition-transform group-hover:scale-[1.03]"
-          />
-        ) : (
-          <FileText className="h-10 w-10 text-muted-foreground" />
-        )}
-        <span className="absolute left-2 top-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] font-medium capitalize backdrop-blur">
-          {file.direction === 'output' ? 'Generated' : 'Upload'}
-        </span>
-      </div>
-      <div className="border-t border-border px-3 py-2">
-        <p className="truncate text-xs font-medium" title={file.filename}>
-          {file.is_image ? (
-            <ImageIcon className="mr-1 inline h-3 w-3 align-text-bottom text-muted-foreground" />
-          ) : null}
-          {file.filename}
-        </p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
-          {file.width > 0 && file.height > 0 ? `${file.width}×${file.height} · ` : ''}
-          {formatBytes(file.size_bytes)}
-        </p>
-      </div>
+      {thumb}
+      {meta}
     </a>
   )
 }
