@@ -11,6 +11,7 @@ bcrypt = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 jsonwebtoken = "9"
+names = { version = "0.14", default-features = false }
 opendal = { version = "0.52", default-features = false, features = ["services-fs", "services-s3"] }
 sea-orm = { version = "1", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-chrono"] }
 sea-orm-migration = { version = "1", features = ["sqlx-postgres", "runtime-tokio-rustls"] }

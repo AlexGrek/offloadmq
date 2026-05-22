@@ -9,6 +9,30 @@ export interface UploadedImage {
   reencoded: boolean
 }
 
+export interface ImagePipelineRescaleParams {
+  enabled: boolean
+  mode: 'exact' | 'max'
+  width: number
+  height: number
+  px?: number | null
+  mp?: number | null
+}
+
+/** Full pipeline snapshot stored on each job and returned in job details. */
+export interface ImagePipelineParams {
+  capability: string
+  prompt: string
+  negative_prompt?: string | null
+  override_negative: boolean
+  width: number
+  height: number
+  seed?: number | null
+  workflow: 'txt2img' | 'img2img'
+  input_image_id?: string | null
+  data_preparation?: Record<string, string> | null
+  rescale?: ImagePipelineRescaleParams | null
+}
+
 export interface StartImageJobRequest {
   capability: string
   prompt: string
@@ -22,6 +46,8 @@ export interface StartImageJobRequest {
   input_image_id?: string | null
   /** OffloadMQ dataPreparation (glob → action), e.g. `{ "*": "scale/768x768" }`. */
   data_preparation?: Record<string, string> | null
+  /** UI rescale state at submit time (img2img). */
+  rescale?: ImagePipelineRescaleParams | null
 }
 
 export interface StartImageJobResponse {
@@ -68,6 +94,8 @@ export interface ImageJobFile {
 
 export interface ImageJobDetails {
   job_id: string
+  /** Human-readable name (e.g. `rusty-nail`). */
+  display_name: string
   status: string
   prompt: string
   negative_prompt: string | null
@@ -77,6 +105,7 @@ export interface ImageJobDetails {
   height: number
   seed: number | null
   input_image_id: string | null
+  pipeline_params: ImagePipelineParams
   error: string | null
   offload_cap: string | null
   offload_task_id: string | null

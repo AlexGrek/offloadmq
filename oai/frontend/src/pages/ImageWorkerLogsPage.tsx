@@ -169,7 +169,10 @@ export default function ImageWorkerLogsPage() {
   if (!isAdmin) return null
 
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8" data-testid="image-worker-logs-page">
+    <main
+      className="mx-auto min-h-0 w-full max-w-6xl flex-1 overflow-y-auto overscroll-contain px-6 py-8"
+      data-testid="image-worker-logs-page"
+    >
       <Link
         to="/app/settings"
         className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"

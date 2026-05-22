@@ -12,7 +12,10 @@ use crate::{
     db::image_generation,
     error::AppError,
     middleware::AuthenticatedUser,
-    services::image_jobs::{self, JobDetail, StartJobParams},
+    services::{
+        image_jobs::{self, JobDetail, StartJobParams},
+        image_pipeline_params::ImagePipelineParams,
+    },
     state::AppState,
 };
 
@@ -56,6 +59,7 @@ pub struct ImageRef {
 #[derive(Serialize)]
 pub struct JobDetailsResponse {
     pub job_id: String,
+    pub display_name: String,
     pub status: String,
     pub prompt: String,
     pub negative_prompt: Option<String>,
@@ -65,6 +69,7 @@ pub struct JobDetailsResponse {
     pub height: i32,
     pub seed: Option<i64>,
     pub input_image_id: Option<String>,
+    pub pipeline_params: ImagePipelineParams,
     pub error: Option<String>,
     pub offload_cap: Option<String>,
     pub offload_task_id: Option<String>,
@@ -231,8 +236,11 @@ pub fn job_details_response(detail: JobDetail) -> JobDetailsResponse {
         offload_cap,
         offload_task_id,
     } = detail;
+    let pipeline_params = image_jobs::pipeline_params_for_job(&job);
+    let display_name = image_jobs::display_name_for_job(&job);
     JobDetailsResponse {
         job_id: job.id.to_string(),
+        display_name,
         status: job.status,
         prompt: job.prompt,
         negative_prompt: job.negative_prompt,
@@ -242,6 +250,7 @@ pub fn job_details_response(detail: JobDetail) -> JobDetailsResponse {
         height: job.height,
         seed: job.seed,
         input_image_id: job.input_image_id.map(|id| id.to_string()),
+        pipeline_params,
         error: job.error,
         offload_cap,
         offload_task_id,

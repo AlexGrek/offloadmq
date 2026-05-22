@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: i64,
+    /// Human-readable name (e.g. `rusty-nail` from the `names` crate).
+    pub display_name: String,
     pub user_id: i64,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
@@ -19,6 +21,8 @@ pub struct Model {
     pub seed: Option<i64>,
     pub input_image_id: Option<i64>,
     pub error: Option<String>,
+    /// JSON snapshot of full pipeline parameters at job creation (`ImagePipelineParams`).
+    pub pipeline_params_json: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

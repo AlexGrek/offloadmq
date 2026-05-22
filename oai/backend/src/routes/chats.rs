@@ -22,6 +22,7 @@ pub struct ChatResponse {
     pub id: String,
     pub title: String,
     pub system_prompt: String,
+    pub last_model: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -30,6 +31,13 @@ pub struct ChatResponse {
 pub struct CreateChatRequest {
     #[serde(default)]
     pub system_prompt: Option<String>,
+    #[serde(default)]
+    pub last_model: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateLastModelRequest {
+    pub capability: String,
 }
 
 #[derive(Deserialize)]
@@ -52,6 +60,7 @@ fn chat_to_response(c: chats::Chat) -> ChatResponse {
         id: c.id.to_string(),
         title: c.title,
         system_prompt: c.system_prompt,
+        last_model: c.last_model,
         created_at: c.created_at.to_rfc3339(),
         updated_at: c.updated_at.to_rfc3339(),
     }
@@ -95,7 +104,32 @@ pub async fn create_chat(
     let _ = user_system_prompts::record_use(&state.db, || state.next_id(), user_id, &system_prompt).await?;
     let id = state.next_id();
     let chat = chats::create_chat(&state.db, id, user_id, &system_prompt).await?;
+    let chat = if let Some(ref model) = body.as_ref().and_then(|b| b.last_model.as_ref()) {
+        let cap = model.trim();
+        if cap.is_empty() {
+            chat
+        } else {
+            chats::set_last_model(&state.db, id, user_id, cap).await?
+        }
+    } else {
+        chat
+    };
     Ok((StatusCode::CREATED, Json(chat_to_response(chat))))
+}
+
+pub async fn update_last_model(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(chat_id): Path<String>,
+    Json(req): Json<UpdateLastModelRequest>,
+) -> Result<Json<ChatResponse>, AppError> {
+    let id: i64 = chat_id.parse().map_err(|_| AppError::BadRequest("invalid chat id".into()))?;
+    let cap = req.capability.trim();
+    if cap.is_empty() {
+        return Err(AppError::BadRequest("capability is required".into()));
+    }
+    let chat = chats::set_last_model(&state.db, id, user_id, cap).await?;
+    Ok(Json(chat_to_response(chat)))
 }
 
 pub async fn update_system_prompt(

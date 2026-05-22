@@ -4,6 +4,8 @@ export interface LlmCapabilityInfo {
   base: string    // "llm.mistral"
   tags: string[]  // ["7b", "quantized"]
   raw: string     // "llm.mistral[7b;quantized]"
+  online: boolean
+  last_available_at: string // RFC3339 — last time OffloadMQ reported this model online
 }
 
 // ── Server → Client ──────────────────────────────────────────────────────────

@@ -10,6 +10,10 @@ pub struct LlmCapabilityInfo {
     pub base: String,
     pub tags: Vec<String>,
     pub raw: String,
+    /// True when OffloadMQ reported this model online on the latest sync.
+    pub online: bool,
+    /// RFC3339 timestamp of the last time this model was seen online.
+    pub last_available_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,7 +72,13 @@ impl OffloadClient {
             .list_capabilities_with_prefix("llm.")
             .await?
             .into_iter()
-            .map(|c| LlmCapabilityInfo { base: c.base, tags: c.tags, raw: c.raw })
+            .map(|c| LlmCapabilityInfo {
+                base: c.base,
+                tags: c.tags,
+                raw: c.raw,
+                online: true,
+                last_available_at: chrono::Utc::now().to_rfc3339(),
+            })
             .collect())
     }
 

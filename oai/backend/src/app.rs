@@ -46,6 +46,10 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/chats/{id}/system-prompt",
             axum::routing::patch(routes::chats::update_system_prompt),
         )
+        .route(
+            "/api/chats/{id}/last-model",
+            axum::routing::patch(routes::chats::update_last_model),
+        )
         .route("/api/chats/{id}/messages", get(routes::chats::get_messages))
         .route(
             "/api/system-prompts",

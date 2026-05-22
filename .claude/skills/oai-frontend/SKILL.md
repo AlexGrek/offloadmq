@@ -51,16 +51,22 @@ oai/frontend/src/
 
   components/
     RequireAuth.tsx            # redirect to /login if not authenticated
-    AppShell.tsx               # authenticated layout: TopBar + <Outlet />
-    TopBar.tsx                 # shared top bar (logo, theme, account, sign out)
-    ui/                        # shadcn components: button, card, input, label, alert
+    AppShell.tsx               # h-dvh shell: TopBar + Outlet (overflow-hidden)
+    TopBar.tsx                 # logo, Progress drawer, theme, account
+    GlobalProgressDrawer.tsx   # global running jobs (chat + images)
+    ToolDebugModal.tsx         # per-tool OffloadMQ poll debug (modal, icon trigger)
+    chat/                      # SystemPromptStudio, SystemPromptBlock
+    imggen/                    # ImageJobHistorySidebar, RescaleControls
+    ui/                        # shadcn: button, card, input, dialog, label, alert
 
   pages/
     LandingPage.tsx            # public landing — non-interactive, see below
     LoginPage.tsx
     RegisterPage.tsx
     DashboardPage.tsx          # app home, app grid
-    ChatPage.tsx               # LLM chat UI (sidebar + messages)
+    ChatPage.tsx               # LLM chat (sidebar + transcript + pinned input)
+    ImageGenerationPage.tsx    # pipelines sidebar: New + jobs
+    FilesPage.tsx              # read-only file browser
     SettingsPage.tsx           # user settings + admin section
     ServerConfigPage.tsx       # admin-only server configuration
 ```
@@ -78,6 +84,8 @@ Public routes are top-level. Authenticated app routes live under `/app` and shar
 | `/register` | public | `RegisterPage` |
 | `/app/dashboard` | required | `DashboardPage` |
 | `/app/chat` | required | `ChatPage` |
+| `/app/images` | required | `ImageGenerationPage` |
+| `/app/files` | required | `FilesPage` |
 | `/app/settings` | required | `SettingsPage` |
 | `/app/settings/server` | required + admin | `ServerConfigPage` |
 
@@ -85,7 +93,10 @@ Legacy paths (`/dashboard`, `/chat`, `/settings`, …) redirect to `/app/*`.
 
 `RequireAuth` wraps `/app` and redirects to `/login` with a `from` state. Post-login/register default: `/app/dashboard`.
 
-**Layout rule:** Do not mount `<TopBar />` inside individual pages — it lives in `AppShell` only. Page content fills the flex area below the bar (`flex-1 min-h-0` for full-height pages like chat).
+**Layout rule:** Do not mount `<TopBar />` inside individual pages — it lives in `AppShell` only. The outlet area is `flex-1 min-h-0 overflow-hidden` — each page must declare how it scrolls:
+
+- **Full-height tools** (chat, images): page root `flex min-h-0 flex-1 overflow-hidden` with internal scroll panes.
+- **Document-style pages** (settings, dashboard, files, admin): page root `min-h-0 flex-1 overflow-y-auto overscroll-contain` on `<main>`.
 
 ---
 
@@ -148,17 +159,88 @@ All API clients are in `src/api/`. Add new endpoint groups as new files there.
 
 `ThemeContext` — `localStorage` key `oai_theme`, `.dark` on `<html>`, toggle in `TopBar`. Use semantic tokens (`text-foreground`, `bg-background`, …). Test both modes.
 
-### Mobile-First
+### Mobile-First (required)
 
-Default stack; `sm:`/`md:` for wider layouts. `min-h-dvh` on shell; chat uses `flex-1 min-h-0` inside shell.
+Design for **narrow viewports first**, then enhance at `sm:` / `md:` / `lg:`. Every full-height tool page must work on a phone without horizontal scroll or double-scroll traps.
+
+#### Layout shell
+
+- `AppShell`: `flex h-dvh min-h-0 flex-col overflow-hidden` — the app never scrolls as a whole; only designated panes scroll.
+- Outlet wrapper: `flex min-h-0 flex-1 basis-0 flex-col overflow-hidden`.
+- Tool pages (chat, images): root `flex min-h-0 flex-1 overflow-hidden` (do **not** rely on `h-full` alone without `min-h-0`).
+
+#### Independent scroll regions
+
+Each sidebar and main column is its own scroll context:
+
+```tsx
+// Column
+flex min-h-0 flex-1 basis-0 flex-col overflow-hidden
+// Scrollable list / transcript
+min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain
+// Pinned chrome (header, input, “New” row)
+shrink-0
+```
+
+- **Chat:** sidebar chat list scrolls alone; transcript scrolls alone; composer is **fixed below** the transcript (never inside the scroll area).
+- **Images:** sidebar “New” is `shrink-0` at top; job list scrolls below; main area scrolls independently.
+
+#### Touch targets
+
+- Primary actions on mobile: `min-h-11` (44px) minimum; full-width where it helps (`w-full sm:w-auto`).
+- Mode toggles / paired buttons: `flex-1` on mobile, intrinsic width from `sm:` up.
+- Icon-only header actions: `size="icon-sm"` with `aria-label` + `title` (e.g. debug bug icon).
+
+#### Spacing
+
+- Page content padding: `px-3 py-4` default, `sm:px-6 sm:py-5` on wider screens.
+- Prefer vertical rhythm (`gap-4` / `gap-5`) over boxing every block in a card.
+
+### Flat UI — less frames, fewer borders (required)
+
+OAI tools should feel **open and content-first**, not like nested admin panels. Default to flat sections; reserve visible frames for secondary or archival UI.
+
+#### Do
+
+- **Primary workflows** (chat composer, image “New job” form): plain `<section>` or stacked layout — **no** wrapping `Card` (shadcn `Card` adds `ring-1`).
+- Separate regions with **spacing**, **typography** (`font-display` headings), and light fills (`bg-muted/30`, `bg-muted/50`).
+- Keep **one** border where it carries meaning: shell dividers (`border-b border-border`), sidebar edge (`border-r`), pinned input top rule.
+- Form controls keep normal input borders (usability); decorative chrome around the whole form does not.
+- Upload / drop zones: `rounded-lg bg-muted/50` — not dashed `border-dashed` frames unless explicitly requested.
+- Image previews: soft background, no picture frame border unless needed for contrast.
+- Job/history sidebar tiles: subtle `ring-1` on list items is OK; avoid stacking card-in-card.
+
+#### Avoid
+
+- `Card` around an entire mobile-first form (use for **job detail / read-only summaries** only, e.g. completed pipeline view).
+- Extra nested boxes, double rings, or `border` on every subsection.
+- Putting the chat input inside the scrolling messages area.
+- Page-level scroll that moves sidebar and content together.
+
+#### Reference implementations
+
+| Surface | Pattern |
+|---------|---------|
+| Chat transcript + input | `ChatPage.tsx` — `basis-0` scroll pane; `border-t` on input footer only |
+| Image “New job” | `ImageGenerationPage.tsx` — `<section data-testid="imggen-new-panel">`, no Card |
+| Image job detail | `Card` OK — status, outputs, poll/cancel |
+| System prompt in thread | `SystemPromptBlock` — dashed accent is intentional, not a full panel frame |
+
+### Tool-specific UX rules
+
+- **Chat auto-scroll:** Pin to bottom only while user is at bottom; any scroll up disables follow; scrolling back to end re-enables. Use `scrollTop` on the transcript node, not `scrollIntoView` on ancestors.
+- **Images sidebar:** Pinned **New** entry (`IMGGEN_NEW_PANEL`); generation form state lives in page state and **persists** when viewing jobs; job rows show status/thumbnail, not prompts.
+- **Progress:** Global drawer from `TopBar` — not per-page panels.
+- **Debug:** Icon-only in page header → `ToolDebugModal` (OffloadMQ poll JSON only; no WebSocket event dump).
+- **Authenticated images:** `imageFileUrl(id, token)` appends `?token=` — `<img src>` cannot send `Authorization`.
 
 ### `data-testid` Attributes
 
-Add to forms, cards, primary buttons, errors, and key containers. Naming: `<page>-<element>` kebab-case. Chat delete: `delete-chat-{id}`.
+Add to forms, primary buttons, errors, and key containers. Naming: `<page>-<element>` kebab-case. Examples: `imggen-new-panel`, `chat-sidebar-list`, `messages-area`, `delete-chat-{id}`.
 
 ### Asking About Design Decisions
 
-Confirm non-obvious layout/navigation before implementing. Do not ask about standard shadcn variants or Tailwind usage.
+Confirm non-obvious layout/navigation before implementing. Do not ask about standard shadcn variants, touch-target sizes, or flat-vs-card choices — follow this doc.
 
 ---
 

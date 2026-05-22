@@ -39,7 +39,10 @@ export default function DashboardPage() {
   const { user } = useAuth()
 
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 p-6" data-testid="dashboard-page">
+    <main
+      className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-y-auto overscroll-contain p-6"
+      data-testid="dashboard-page"
+    >
         <div className="mb-8">
           <h1 className="font-display text-2xl font-bold">
             Welcome back{user?.login ? `, ${user.login}` : ''}

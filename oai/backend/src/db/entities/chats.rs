@@ -10,6 +10,7 @@ pub struct Model {
     pub title: String,
     #[sea_orm(column_type = "Text")]
     pub system_prompt: String,
+    pub last_model: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

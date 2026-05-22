@@ -3,12 +3,14 @@
 //! domain flow: capability listing, message persistence, task submission and
 //! the background poll loop that streams results back over the channel.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::db::chats as db_chats;
+use crate::db::llm_capabilities;
 use crate::error::AppError;
 use crate::offload::{ChatMessage, LlmCapabilityInfo, OffloadClient, TaskId};
 use crate::services::offload_factory;
@@ -45,7 +47,10 @@ pub async fn list_capabilities(
 
 async fn load_capabilities(state: &AppState) -> Result<Vec<LlmCapabilityInfo>, AppError> {
     let client = offload_factory::chat_client(state).await?;
-    client.list_llm_capabilities().await
+    let online = client.list_llm_capabilities().await?;
+    llm_capabilities::sync_online(&state.db, &online).await?;
+    let online_bases: HashSet<String> = online.iter().map(|c| c.base.clone()).collect();
+    llm_capabilities::list_for_display(&state.db, &online_bases).await
 }
 
 pub async fn chat(
@@ -81,7 +86,18 @@ async fn run_chat(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "chat not found".to_string())?;
     let user_msg_id = state.next_id();
-    db_chats::add_message(&state.db, user_msg_id, chat_id, "user", &content, "complete", None)
+    db_chats::add_message(
+        &state.db,
+        user_msg_id,
+        chat_id,
+        "user",
+        &content,
+        "complete",
+        Some(&capability),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let _ = db_chats::set_last_model(&state.db, chat_id, user_id, &capability)
         .await
         .map_err(|e| e.to_string())?;
 

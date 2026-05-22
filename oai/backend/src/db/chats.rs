@@ -26,10 +26,27 @@ pub async fn create_chat(
         user_id: ActiveValue::Set(user_id),
         title: ActiveValue::Set(String::new()),
         system_prompt: ActiveValue::Set(system_prompt.to_string()),
+        last_model: ActiveValue::Set(None),
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
     };
     model.insert(db).await.map_err(AppError::Database)
+}
+
+pub async fn set_last_model(
+    db: &DatabaseConnection,
+    id: i64,
+    user_id: i64,
+    last_model: &str,
+) -> Result<Chat, AppError> {
+    let chat = get_chat(db, id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let now = chrono::Utc::now().fixed_offset();
+    let mut am: chats::ActiveModel = chat.into();
+    am.last_model = ActiveValue::Set(Some(last_model.to_string()));
+    am.updated_at = ActiveValue::Set(now);
+    am.update(db).await.map_err(AppError::Database)
 }
 
 pub async fn set_system_prompt(

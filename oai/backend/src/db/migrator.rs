@@ -14,7 +14,222 @@ impl MigratorTrait for Migrator {
             Box::new(m20260522_000006_create_image_worker_logs::Migration),
             Box::new(m20260522_000007_add_user_used_storage::Migration),
             Box::new(m20260522_000008_chat_system_prompts::Migration),
+            Box::new(m20260522_000009_create_llm_capabilities::Migration),
+            Box::new(m20260522_000010_image_job_pipeline_params::Migration),
+            Box::new(m20260522_000011_image_job_display_name::Migration),
+            Box::new(m20260522_000012_chat_last_model::Migration),
         ]
+    }
+}
+
+mod m20260522_000012_chat_last_model {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260522_000012_chat_last_model"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(Chats::Table)
+                        .add_column(ColumnDef::new(Chats::LastModel).string().null())
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(Chats::Table)
+                        .drop_column(Chats::LastModel)
+                        .to_owned(),
+                )
+                .await
+        }
+    }
+
+    #[derive(Iden)]
+    enum Chats {
+        Table,
+        LastModel,
+    }
+}
+
+mod m20260522_000011_image_job_display_name {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260522_000011_image_job_display_name"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageGenerationJobs::Table)
+                        .add_column(
+                            ColumnDef::new(ImageGenerationJobs::DisplayName)
+                                .text()
+                                .not_null()
+                                .default(""),
+                        )
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageGenerationJobs::Table)
+                        .drop_column(ImageGenerationJobs::DisplayName)
+                        .to_owned(),
+                )
+                .await
+        }
+    }
+
+    #[derive(Iden)]
+    enum ImageGenerationJobs {
+        Table,
+        DisplayName,
+    }
+}
+
+mod m20260522_000010_image_job_pipeline_params {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260522_000010_image_job_pipeline_params"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageGenerationJobs::Table)
+                        .add_column(
+                            ColumnDef::new(ImageGenerationJobs::PipelineParamsJson)
+                                .text()
+                                .not_null()
+                                .default("{}"),
+                        )
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageGenerationJobs::Table)
+                        .drop_column(ImageGenerationJobs::PipelineParamsJson)
+                        .to_owned(),
+                )
+                .await
+        }
+    }
+
+    #[derive(Iden)]
+    enum ImageGenerationJobs {
+        Table,
+        PipelineParamsJson,
+    }
+}
+
+mod m20260522_000009_create_llm_capabilities {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260522_000009_create_llm_capabilities"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .create_table(
+                    Table::create()
+                        .table(LlmCapabilities::Table)
+                        .if_not_exists()
+                        .col(
+                            ColumnDef::new(LlmCapabilities::Base)
+                                .text()
+                                .not_null()
+                                .primary_key(),
+                        )
+                        .col(ColumnDef::new(LlmCapabilities::TagsJson).text().not_null())
+                        .col(ColumnDef::new(LlmCapabilities::Raw).text().not_null())
+                        .col(
+                            ColumnDef::new(LlmCapabilities::LastAvailableAt)
+                                .timestamp_with_time_zone()
+                                .not_null()
+                                .default(Expr::current_timestamp()),
+                        )
+                        .col(
+                            ColumnDef::new(LlmCapabilities::CreatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null()
+                                .default(Expr::current_timestamp()),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+
+            manager
+                .create_index(
+                    Index::create()
+                        .table(LlmCapabilities::Table)
+                        .name("idx_llm_capabilities_last_available_at")
+                        .col(LlmCapabilities::LastAvailableAt)
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .drop_table(Table::drop().table(LlmCapabilities::Table).to_owned())
+                .await
+        }
+    }
+
+    #[derive(Iden)]
+    enum LlmCapabilities {
+        Table,
+        Base,
+        TagsJson,
+        Raw,
+        LastAvailableAt,
+        CreatedAt,
     }
 }
 

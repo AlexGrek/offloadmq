@@ -20,6 +20,7 @@ pub type ImageOffloadTask = image_offload_tasks::Model;
 
 pub struct NewJobInput<'a> {
     pub id: i64,
+    pub display_name: &'a str,
     pub user_id: i64,
     pub prompt: &'a str,
     pub negative_prompt: Option<&'a str>,
@@ -29,6 +30,7 @@ pub struct NewJobInput<'a> {
     pub height: i32,
     pub seed: Option<i64>,
     pub input_image_id: Option<i64>,
+    pub pipeline_params_json: &'a str,
 }
 
 pub struct NewImageFileInput<'a> {
@@ -61,6 +63,7 @@ pub async fn create_job(
     let now = chrono::Utc::now().fixed_offset();
     let model = image_generation_jobs::ActiveModel {
         id: ActiveValue::Set(input.id),
+        display_name: ActiveValue::Set(input.display_name.to_string()),
         user_id: ActiveValue::Set(input.user_id),
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
@@ -74,6 +77,7 @@ pub async fn create_job(
         seed: ActiveValue::Set(input.seed),
         input_image_id: ActiveValue::Set(input.input_image_id),
         error: ActiveValue::Set(None),
+        pipeline_params_json: ActiveValue::Set(input.pipeline_params_json.to_string()),
     };
     model.insert(db).await.map_err(AppError::Database)
 }

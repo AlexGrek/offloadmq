@@ -7,6 +7,7 @@ import {
   PanelLeftOpen,
   RefreshCw,
   Square,
+  Pencil,
   Sparkles,
   Upload,
   Wand2,
@@ -39,6 +40,7 @@ import {
   ImageJobHistorySidebar,
   IMGGEN_NEW_PANEL,
 } from '../components/imggen/ImageJobHistorySidebar'
+import { PipelineJobParamsPanel } from '../components/imggen/PipelineJobParamsPanel'
 import {
   ToolDebugHeaderButton,
   ToolDebugModal,
@@ -46,8 +48,10 @@ import {
 } from '../components/ToolDebugModal'
 import {
   MODE_DEFAULTS,
+  applyPipelineParamsToNewForm,
   capabilityLabel,
   filterCapabilitiesByWorkflow,
+  jobDisplayName,
   modelNameFromCapability,
   pipelineEventsWithoutPolls,
   pipelineStatusLine,
@@ -55,6 +59,7 @@ import {
   type ImgGenMode,
   type RescaleState,
 } from '../lib/imggen'
+import type { ImagePipelineRescaleParams } from '../api/images'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 const POLL_MS = 5000
@@ -228,7 +233,16 @@ export default function ImageGenerationPage() {
       if (!token) return null
       const details = await getImageJob(token, jobId)
       setSelectedJob(details)
-      setJobs(prev => [details, ...prev.filter(j => j.job_id !== details.job_id)])
+      setJobs(prev => {
+        const idx = prev.findIndex(j => j.job_id === details.job_id)
+        if (idx >= 0) {
+          const next = [...prev]
+          next[idx] = details
+          return next
+        }
+        // Brand-new job (e.g. just submitted) — prepend once to match newest-first list.
+        return [details, ...prev]
+      })
       return details
     },
     [token],
@@ -290,6 +304,7 @@ export default function ImageGenerationPage() {
         workflow: mode,
         input_image_id: uploadedInput?.image_id ?? null,
         data_preparation: dataPrep,
+        rescale: rescaleForSubmit(),
       })
       setActivePanel(res.job_id)
       await refreshJob(res.job_id)
@@ -323,6 +338,47 @@ export default function ImageGenerationPage() {
   function selectNew() {
     setActivePanel(IMGGEN_NEW_PANEL)
     setError(null)
+  }
+
+  function editPromptFromJob() {
+    if (!selectedJob) return
+    const previewUrl =
+      selectedJob.input_image_id && token
+        ? imageFileUrl(selectedJob.input_image_id, token)
+        : null
+    applyPipelineParamsToNewForm(
+      selectedJob,
+      {
+        setMode,
+        setPrompt,
+        setNegativePrompt,
+        setOverrideNegative,
+        setCapability,
+        setWidth,
+        setHeight,
+        setSeed,
+        setRescale,
+        setUploadedInput,
+        setInputPreviewUrl,
+        rescaleUserEditedRef,
+      },
+      previewUrl,
+    )
+    setActivePanel(IMGGEN_NEW_PANEL)
+    setInfo('Pipeline parameters copied to New job. Adjust and submit when ready.')
+    setError(null)
+  }
+
+  function rescaleForSubmit(): ImagePipelineRescaleParams | null {
+    if (mode !== 'img2img') return null
+    return {
+      enabled: rescale.enabled,
+      mode: rescale.mode,
+      width: rescale.width,
+      height: rescale.height,
+      px: rescale.px === '' ? null : Number(rescale.px),
+      mp: rescale.mp === '' ? null : Number(rescale.mp),
+    }
   }
 
   async function selectJob(jobId: string) {
@@ -416,7 +472,7 @@ export default function ImageGenerationPage() {
             {sidebarOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
           </Button>
           <h1 className="min-w-0 flex-1 truncate font-display text-sm font-semibold">
-            {viewingJob && selectedJob ? `Job ${selectedJob.job_id}` : 'New'}
+            {viewingJob && selectedJob ? jobDisplayName(selectedJob) : 'New'}
           </h1>
           <ToolDebugHeaderButton
             onClick={() => setDebugOpen(true)}
@@ -430,7 +486,7 @@ export default function ImageGenerationPage() {
           onOpenChange={setDebugOpen}
           cap={selectedJob?.offload_cap}
           taskId={selectedJob?.offload_task_id}
-          subject={selectedJob ? `Image job ${selectedJob.job_id}` : undefined}
+          subject={selectedJob ? jobDisplayName(selectedJob) : undefined}
           disabledReason={
             selectedJob && !toolDebugReady(selectedJob.offload_cap, selectedJob.offload_task_id)
               ? 'No OffloadMQ task linked to this job yet.'
@@ -667,16 +723,33 @@ export default function ImageGenerationPage() {
             </div>
           ) : selectedJob?.job_id === viewedJobId ? (
           <Card data-testid="imggen-job-detail">
-            <CardHeader>
-              <CardTitle className="flex flex-wrap items-center gap-2">
-                <span>{modelNameFromCapability(selectedJob.capability)}</span>
-                <span className="text-sm font-normal text-muted-foreground capitalize">
-                  {selectedJob.workflow} · {selectedJob.status.replace(/_/g, ' ')}
-                </span>
+            <CardHeader className="space-y-2">
+              <CardTitle className="font-display text-lg tracking-tight">
+                {jobDisplayName(selectedJob)}
               </CardTitle>
+              <p className="text-sm text-muted-foreground capitalize">
+                {modelNameFromCapability(selectedJob.capability)} · {selectedJob.workflow} ·{' '}
+                {selectedJob.status.replace(/_/g, ' ')}
+              </p>
             </CardHeader>
             <CardContent className="space-y-4">
+              <section className="space-y-1.5" data-testid="imggen-job-prompt">
+                <h3 className="text-xs font-medium text-muted-foreground">Prompt</h3>
+                <p className="whitespace-pre-wrap text-sm text-foreground">{selectedJob.prompt.trim() || '—'}</p>
+              </section>
+
+              <PipelineJobParamsPanel job={selectedJob} />
+
               <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={editPromptFromJob}
+                  data-testid="imggen-edit-prompt"
+                >
+                  <Pencil className="mr-1 h-4 w-4" />
+                  Edit prompt
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"

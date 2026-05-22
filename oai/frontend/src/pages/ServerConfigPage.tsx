@@ -92,7 +92,10 @@ export default function ServerConfigPage() {
 
   if (adminLoading || dataLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center" data-testid="server-config-loading">
+      <div
+        className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto"
+        data-testid="server-config-loading"
+      >
         <div className="h-7 w-7 animate-spin rounded-full border-2 border-border border-t-foreground" />
       </div>
     )
@@ -101,7 +104,10 @@ export default function ServerConfigPage() {
   if (!isAdmin) return null
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-8" data-testid="server-config-page">
+    <main
+      className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto overscroll-contain px-6 py-8"
+      data-testid="server-config-page"
+    >
         <Link
           to="/app/settings"
           className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"

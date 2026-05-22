@@ -56,7 +56,10 @@ export default function FilesPage() {
   const withToken = (url: string) => `${url}?token=${encodeURIComponent(token ?? '')}`
 
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 p-6" data-testid="files-page">
+    <main
+      className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-y-auto overscroll-contain p-6"
+      data-testid="files-page"
+    >
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold">My Files</h1>

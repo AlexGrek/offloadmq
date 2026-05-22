@@ -16,7 +16,11 @@ use crate::{
         image_tasks::{OffloadImageClient, OffloadPollResponse, OffloadTaskId},
         CapabilityInfo, OffloadClient,
     },
-    services::{image_processing, image_processing::ProcessedImage, offload_factory, storage},
+    services::{
+        image_job_names,
+        image_pipeline_params::{self, ImagePipelineParams, RescaleParams},
+        image_processing, image_processing::ProcessedImage, offload_factory, storage,
+    },
     state::AppState,
 };
 
@@ -36,6 +40,9 @@ pub struct StartJobParams {
     pub input_image_id: Option<String>,
     /// OffloadMQ `dataPreparation` map (glob mask → action), applied to input bucket files.
     pub data_preparation: Option<HashMap<String, String>>,
+    /// UI rescale controls snapshot (img2img); stored in pipeline params for "edit prompt".
+    #[serde(default)]
+    pub rescale: Option<RescaleParams>,
 }
 
 /// Result of polling a job — domain data the route maps to its response DTO.
@@ -115,10 +122,16 @@ pub async fn start_job(
     validate_start_job(&req, &workflow)?;
 
     let job_id = state.next_id();
+    let display_name = image_job_names::generate_display_name();
+    let pipeline_params = build_pipeline_params(&req, &workflow, input_image_id);
+    let pipeline_params_json = pipeline_params
+        .to_json()
+        .map_err(|e| AppError::Internal(format!("pipeline params json: {e}")))?;
     image_generation::create_job(
         &state.db,
         image_generation::NewJobInput {
             id: job_id,
+            display_name: &display_name,
             user_id,
             prompt: req.prompt.trim(),
             negative_prompt: req.negative_prompt.as_deref(),
@@ -128,6 +141,7 @@ pub async fn start_job(
             height: req.height,
             seed: req.seed,
             input_image_id,
+            pipeline_params_json: &pipeline_params_json,
         },
     )
     .await?;
@@ -444,6 +458,34 @@ fn parse_input_image_id(req: &StartJobParams) -> Result<Option<i64>, AppError> {
         .as_deref()
         .map(|s| s.parse::<i64>().map_err(|_| AppError::BadRequest("invalid input_image_id".into())))
         .transpose()
+}
+
+fn build_pipeline_params(
+    req: &StartJobParams,
+    workflow: &str,
+    input_image_id: Option<i64>,
+) -> ImagePipelineParams {
+    ImagePipelineParams {
+        capability: req.capability.clone(),
+        prompt: req.prompt.trim().to_string(),
+        negative_prompt: req.negative_prompt.clone(),
+        override_negative: req.override_negative,
+        width: req.width,
+        height: req.height,
+        seed: req.seed,
+        workflow: workflow.to_string(),
+        input_image_id: input_image_id.map(|id| id.to_string()),
+        data_preparation: req.data_preparation.clone(),
+        rescale: req.rescale.clone(),
+    }
+}
+
+pub fn pipeline_params_for_job(job: &image_generation::ImageGenerationJob) -> ImagePipelineParams {
+    image_pipeline_params::parse_stored_pipeline_params(job)
+}
+
+pub fn display_name_for_job(job: &image_generation::ImageGenerationJob) -> String {
+    image_job_names::effective_display_name(job)
 }
 
 fn resolve_workflow(req: &StartJobParams) -> String {

@@ -24,6 +24,11 @@ import {
 } from '../components/ToolDebugModal'
 import { cancelOffloadTask } from '../api/tasks'
 import { useWsChat, nextReqId } from '../hooks/useWsChat'
+import {
+  firstSelectableModel,
+  sortCapabilitiesForPicker,
+  unavailableModelDotOpacity,
+} from '../lib/modelAvailability'
 import type { LlmCapabilityInfo, ServerEvent } from '../types/ws'
 import type { ChatTaskRecord } from '../contexts/WorkloadContext'
 import {
@@ -32,6 +37,7 @@ import {
   deleteChat,
   getChatMessages,
   updateChatSystemPrompt,
+  updateChatLastModel,
   type ChatSummary,
   type ChatMessageRecord,
 } from '../api/chats'
@@ -61,6 +67,27 @@ function modelLabel(cap: LlmCapabilityInfo): string {
   return cap.base.replace(/^llm\./, '')
 }
 
+function ModelAvailabilityDot({ cap }: { cap: LlmCapabilityInfo }) {
+  if (cap.online) {
+    return (
+      <span
+        className="size-2 shrink-0 rounded-full bg-emerald-500"
+        aria-hidden
+        data-testid="model-dot-online"
+      />
+    )
+  }
+  const opacity = unavailableModelDotOpacity(cap.last_available_at)
+  return (
+    <span
+      className="size-2 shrink-0 rounded-full bg-amber-400"
+      style={{ opacity }}
+      aria-hidden
+      data-testid="model-dot-offline"
+    />
+  )
+}
+
 function normalizeStatus(status: string): MessageStatus {
   if (status === 'thinking' || status === 'pending') return 'thinking'
   if (status === 'failed') return 'failed'
@@ -75,6 +102,27 @@ function recordToMessage(r: ChatMessageRecord): Message | null {
     content: r.content,
     status: normalizeStatus(r.status),
   }
+}
+
+function modelListed(
+  cap: string | null | undefined,
+  capabilities: LlmCapabilityInfo[],
+): boolean {
+  return !!cap && capabilities.some(c => c.base === cap)
+}
+
+/** Prefer chat's saved model, then last message with a model, then first online. */
+function resolveChatModel(
+  lastModel: string | null | undefined,
+  records: ChatMessageRecord[],
+  capabilities: LlmCapabilityInfo[],
+): string | null {
+  if (modelListed(lastModel, capabilities)) return lastModel!
+  for (let i = records.length - 1; i >= 0; i--) {
+    const m = records[i].model
+    if (modelListed(m, capabilities)) return m!
+  }
+  return firstSelectableModel(capabilities)
 }
 
 function isMessagePending(msg: Message): boolean {
@@ -146,15 +194,16 @@ function ModelPicker({
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  const selectedCap = capabilities.find(c => c.base === selected)
+  const sorted = sortCapabilitiesForPicker(capabilities)
+  const selectedCap = sorted.find(c => c.base === selected)
   const label =
     wsStatus === 'connecting' ? 'Connecting…' :
     wsStatus !== 'connected'  ? 'Offline' :
-    capabilities.length === 0 ? 'No models' :
+    sorted.length === 0 ? 'No models' :
     selectedCap               ? modelLabel(selectedCap) :
                                 'Pick model'
 
-  const canOpen = wsStatus === 'connected' && capabilities.length > 0
+  const canOpen = wsStatus === 'connected' && sorted.length > 0
 
   return (
     <div className="relative" ref={ref} data-testid="model-picker">
@@ -170,6 +219,7 @@ function ModelPicker({
             : 'text-muted-foreground cursor-default',
         )}
       >
+        {selectedCap && <ModelAvailabilityDot cap={selectedCap} />}
         <span className="max-w-30 truncate">{label}</span>
         {canOpen && <ChevronDown className={cn('size-3 transition-transform', open && 'rotate-180')} />}
       </button>
@@ -180,7 +230,7 @@ function ModelPicker({
           data-testid="model-picker-dropdown"
         >
           <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground border-b border-border mb-1">
-            <span>Available models</span>
+            <span>Models</span>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRefresh() }}
@@ -190,16 +240,20 @@ function ModelPicker({
               <RefreshCw className="size-3" />
             </button>
           </div>
-          {capabilities.map(cap => (
+          {sorted.map(cap => (
             <button
               key={cap.raw}
               type="button"
-              onClick={() => { onSelect(cap.base); setOpen(false) }}
+              disabled={!cap.online}
+              onClick={() => { if (cap.online) { onSelect(cap.base); setOpen(false) } }}
               className={cn(
-                'w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted transition-colors',
+                'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors',
+                cap.online ? 'hover:bg-muted cursor-pointer' : 'cursor-default opacity-80',
                 cap.base === selected && 'bg-muted font-medium',
               )}
+              data-testid={`model-option-${cap.base}`}
             >
+              <ModelAvailabilityDot cap={cap} />
               <span className="flex-1 truncate">{modelLabel(cap)}</span>
               {cap.tags.length > 0 && (
                 <span className="flex gap-1 shrink-0">
@@ -329,6 +383,9 @@ export default function ChatPage() {
         )
         setMessages(merged)
         restoreReqMappings(merged)
+        const chat = chats.find(c => c.id === activeChatId)
+        const model = resolveChatModel(chat?.last_model, records, ws.capabilities)
+        if (model) setSelectedModel(model)
       })
       .catch(console.error)
       .finally(() => {
@@ -337,7 +394,15 @@ export default function ChatPage() {
     return () => {
       cancelled = true
     }
-  }, [activeChatId, token])
+  }, [activeChatId, token, chats, ws.capabilities])
+
+  // Apply saved model immediately when switching chats (before messages finish loading).
+  useEffect(() => {
+    if (!activeChatId || ws.capabilities.length === 0) return
+    const chat = chats.find(c => c.id === activeChatId)
+    const model = resolveChatModel(chat?.last_model, [], ws.capabilities)
+    if (model) setSelectedModel(model)
+  }, [activeChatId, chats, ws.capabilities])
 
   // Patch in-flight assistant rows while this chat is open (progress survives tab/chat switches).
   useEffect(() => {
@@ -363,26 +428,42 @@ export default function ChatPage() {
       if (!token) return
       const text = content.trim() || DEFAULT_PROMPT
       if (!activeChatId) {
-        const chat = await createChat(token, text)
+        const chat = await createChat(token, {
+          systemPrompt: text,
+          lastModel: selectedModel,
+        })
         setChats(prev => [chat, ...prev])
         setActiveChatId(chat.id)
         setSystemPrompt(chat.system_prompt)
+        if (chat.last_model) setSelectedModel(chat.last_model)
         return
       }
       const chat = await updateChatSystemPrompt(token, activeChatId, text)
       setSystemPrompt(chat.system_prompt)
       setChats(prev => prev.map(c => (c.id === chat.id ? chat : c)))
     },
+    [token, activeChatId, selectedModel],
+  )
+
+  const handleModelSelect = useCallback(
+    (model: string) => {
+      setSelectedModel(model)
+      if (!token || !activeChatId) return
+      updateChatLastModel(token, activeChatId, model)
+        .then(chat => setChats(prev => prev.map(c => (c.id === chat.id ? chat : c))))
+        .catch(console.error)
+    },
     [token, activeChatId],
   )
 
-  // ── Auto-select first model; re-validate on capability list change ────────
-
+  // If capabilities refresh and current selection vanished, re-resolve for this chat.
   useEffect(() => {
-    if (ws.capabilities.length === 0) return
-    const valid = ws.capabilities.some(c => c.base === selectedModel)
-    if (!valid) setSelectedModel(ws.capabilities[0].base)
-  }, [ws.capabilities, selectedModel])
+    if (ws.capabilities.length === 0 || !activeChatId) return
+    if (modelListed(selectedModel, ws.capabilities)) return
+    const chat = chats.find(c => c.id === activeChatId)
+    const model = resolveChatModel(chat?.last_model, [], ws.capabilities)
+    if (model) setSelectedModel(model)
+  }, [ws.capabilities, activeChatId, chats, selectedModel])
 
   // ── Subscribe to WS events ────────────────────────────────────────────────
 
@@ -612,7 +693,10 @@ export default function ChatPage() {
   async function handleNewChat() {
     if (!token) return
     try {
-      const chat = await createChat(token, systemPrompt)
+      const chat = await createChat(token, {
+        systemPrompt,
+        lastModel: selectedModel,
+      })
       setChats(prev => [chat, ...prev])
       setActiveChatId(chat.id)
       setMessages([])
@@ -674,8 +758,12 @@ export default function ChatPage() {
     // Update sidebar title optimistically after first message
     setChats(prev =>
       prev.map(c =>
-        c.id === activeChatId && c.title === ''
-          ? { ...c, title: text.slice(0, 50) }
+        c.id === activeChatId
+          ? {
+              ...c,
+              ...(c.title === '' ? { title: text.slice(0, 50) } : {}),
+              last_model: selectedModel,
+            }
           : c,
       ),
     )
@@ -694,7 +782,11 @@ export default function ChatPage() {
     }
   }
 
-  const canSend = !!input.trim() && !!selectedModel && ws.status === 'connected' && !!activeChatId
+  const selectedModelOnline =
+    !!selectedModel &&
+    (ws.capabilities.find(c => c.base === selectedModel)?.online ?? false)
+  const canSend =
+    !!input.trim() && selectedModelOnline && ws.status === 'connected' && !!activeChatId
 
   const activeChatTask = latestChatTaskForChat(activeChatId)
   const isGenerating =
@@ -971,7 +1063,7 @@ export default function ChatPage() {
                 <ModelPicker
                   capabilities={ws.capabilities}
                   selected={selectedModel}
-                  onSelect={setSelectedModel}
+                  onSelect={handleModelSelect}
                   onRefresh={ws.refreshCapabilities}
                   wsStatus={ws.status}
                 />

@@ -59,7 +59,10 @@ export default function SettingsPage() {
     : '—'
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-8" data-testid="settings-page">
+    <main
+      className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto overscroll-contain px-6 py-8"
+      data-testid="settings-page"
+    >
         <h1 className="font-display mb-6 text-2xl font-bold">Settings</h1>
 
         <div className="flex flex-col gap-5">

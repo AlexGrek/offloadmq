@@ -1,4 +1,12 @@
-import type { ImageJobEvent, ImgGenCapability } from '../api/images'
+import type {
+  ImageJobDetails,
+  ImageJobFile,
+  ImagePipelineParams,
+  ImagePipelineRescaleParams,
+  ImgGenCapability,
+  ImageJobEvent,
+  UploadedImage,
+} from '../api/images'
 
 export type ImgGenMode = 'txt2img' | 'img2img'
 
@@ -50,6 +58,20 @@ export function modelNameFromCapability(capability: string): string {
   return base || capability
 }
 
+export function jobDisplayName(job: Pick<ImageJobDetails, 'display_name' | 'prompt'>): string {
+  const name = job.display_name?.trim()
+  if (name) return name
+  return promptExcerpt(job.prompt, 48)
+}
+
+/** Short prompt line for pipeline sidebar cards. */
+export function pipelineCardPrompt(prompt: string, maxLen = 40): string {
+  const t = prompt.trim()
+  if (!t) return ''
+  if (t.length <= maxLen) return t
+  return `${t.slice(0, maxLen).trimEnd()}…`
+}
+
 export function promptExcerpt(prompt: string, maxLen = 52): string {
   const t = prompt.trim()
   if (!t) return 'Untitled pipeline'
@@ -87,6 +109,105 @@ export function pipelineStatusLine(
     return last.details ? `${last.step}: ${last.details}` : `${last.step} (${last.state})`
   }
   return jobStatus
+}
+
+/** Build pipeline params from legacy job columns when `pipeline_params` is missing. */
+export function pipelineParamsFromJob(job: ImageJobDetails): ImagePipelineParams {
+  if (job.pipeline_params) return job.pipeline_params
+  return {
+    capability: job.capability,
+    prompt: job.prompt,
+    negative_prompt: job.negative_prompt,
+    override_negative: job.negative_prompt != null && job.negative_prompt.length > 0,
+    width: job.width,
+    height: job.height,
+    seed: job.seed,
+    workflow: job.workflow as ImgGenMode,
+    input_image_id: job.input_image_id,
+    data_preparation: null,
+    rescale:
+      job.workflow === 'img2img'
+        ? {
+            enabled: true,
+            mode: 'exact',
+            width: job.width,
+            height: job.height,
+          }
+        : null,
+  }
+}
+
+function rescaleFromParams(r: ImagePipelineRescaleParams | null | undefined): RescaleState {
+  if (!r) return { enabled: false, mode: 'exact', width: 768, height: 768, px: '', mp: '' }
+  return {
+    enabled: r.enabled,
+    mode: r.mode,
+    width: r.width,
+    height: r.height,
+    px: r.px ?? '',
+    mp: r.mp ?? '',
+  }
+}
+
+export function uploadedInputFromJobFile(file: ImageJobFile): UploadedImage {
+  return {
+    image_id: file.image_id,
+    filename: file.filename,
+    content_type: file.content_type,
+    width: file.width,
+    height: file.height,
+    size_bytes: file.size_bytes,
+    rescaled: file.rescaled,
+    reencoded: file.reencoded,
+  }
+}
+
+export interface ApplyPipelineToNewFormHandlers {
+  setMode: (mode: ImgGenMode) => void
+  setPrompt: (v: string) => void
+  setNegativePrompt: (v: string) => void
+  setOverrideNegative: (v: boolean) => void
+  setCapability: (v: string) => void
+  setWidth: (v: number) => void
+  setHeight: (v: number) => void
+  setSeed: (v: string) => void
+  setRescale: (v: RescaleState) => void
+  setUploadedInput: (v: UploadedImage | null) => void
+  setInputPreviewUrl: (v: string | null) => void
+  rescaleUserEditedRef: { current: boolean }
+}
+
+/** Copy a job's stored pipeline parameters into the New job form. */
+export function applyPipelineParamsToNewForm(
+  job: ImageJobDetails,
+  handlers: ApplyPipelineToNewFormHandlers,
+  imagePreviewUrl?: string | null,
+): void {
+  const p = pipelineParamsFromJob(job)
+  const mode = p.workflow === 'img2img' ? 'img2img' : 'txt2img'
+  handlers.setMode(mode)
+  handlers.setPrompt(p.prompt)
+  handlers.setNegativePrompt(p.negative_prompt?.trim() ?? '')
+  handlers.setOverrideNegative(!!p.override_negative)
+  handlers.setCapability(p.capability)
+  handlers.setWidth(p.width)
+  handlers.setHeight(p.height)
+  handlers.setSeed(p.seed != null ? String(p.seed) : '')
+  handlers.rescaleUserEditedRef.current = true
+  handlers.setRescale(rescaleFromParams(p.rescale))
+  if (mode === 'img2img' && p.input_image_id) {
+    const inputFile = job.files.find(f => f.direction === 'input')
+    if (inputFile) {
+      handlers.setUploadedInput(uploadedInputFromJobFile(inputFile))
+      handlers.setInputPreviewUrl(imagePreviewUrl ?? null)
+    } else {
+      handlers.setUploadedInput(null)
+      handlers.setInputPreviewUrl(null)
+    }
+  } else {
+    handlers.setUploadedInput(null)
+    handlers.setInputPreviewUrl(null)
+  }
 }
 
 export const MODE_DEFAULTS: Record<

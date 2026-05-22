@@ -5,6 +5,7 @@ use serde::Serialize;
 use crate::{
     db::image_generation,
     error::AppError,
+    services::image_job_names,
     state::AppState,
 };
 
@@ -35,7 +36,7 @@ pub async fn list_running_image_jobs(
         .map(|(job, task)| RunningJobItem {
             key: format!("image:{}", job.id),
             source: "image".to_string(),
-            label: format!("Image job {}", job.id),
+            label: image_job_names::effective_display_name(&job),
             status: task
                 .last_poll_status
                 .clone()

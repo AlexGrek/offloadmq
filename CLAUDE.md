@@ -316,6 +316,10 @@ Skills provide domain-specific context for OAI work. They are activated automati
 
 **OAI Frontend** — React 19 + TypeScript SPA, shadcn/ui, Tailwind v4, routing, API clients, dark/light mode. See `.claude/skills/oai-frontend/SKILL.md`.
 
+**OAI Chat** — LLM chat at `/app/chat`: WebSocket protocol, WorkloadContext in-flight tasks, system prompts, cancel, ToolDebug, OffloadMQ submit/poll. See `.claude/skills/oai-chat/SKILL.md`.
+
+**OAI Image** — Image generation at `/app/images`: txt2img/img2img, buckets, dataPreparation, job poll/cancel, pipeline worker, Progress drawer. See `.claude/skills/oai-img/SKILL.md`.
+
 **OAI Integration Tests** — Python integration tests (httpx + pytest-xdist) that run against the live OAI backend. One test file per route group, fixtures in conftest.py, no mocking. See `.claude/skills/oai-itests/SKILL.md`.
 
 **OAI DevOps** — Helm/Kubernetes deploy, Garage init job, Docker image publish, and troubleshooting (`garage-init` failures, `wait-garage-creds`, ImagePullBackOff). See `.claude/skills/oai-devops/SKILL.md`.

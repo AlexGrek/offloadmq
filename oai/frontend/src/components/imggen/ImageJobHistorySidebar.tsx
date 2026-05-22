@@ -1,7 +1,12 @@
 import { Loader2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { imageFileUrl, type ImageJobDetails } from '../../api/images'
-import { lastOutputImageId, modelNameFromCapability } from '../../lib/imggen'
+import {
+  jobDisplayName,
+  lastOutputImageId,
+  modelNameFromCapability,
+  pipelineCardPrompt,
+} from '../../lib/imggen'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 export const IMGGEN_NEW_PANEL = 'new' as const
@@ -102,14 +107,21 @@ export function ImageJobHistorySidebar({
 
                     <div className="relative z-10 flex min-h-[4.25rem] flex-col justify-center gap-0.5 px-3 py-2">
                       <div className="flex items-center justify-between gap-1.5">
-                        <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          {modelNameFromCapability(job.capability)}
+                        <span className="truncate text-xs font-semibold text-foreground">
+                          {jobDisplayName(job)}
                         </span>
                         <span className="shrink-0 rounded bg-foreground/8 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground dark:bg-foreground/12">
                           {job.workflow}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground">Job {job.job_id}</p>
+                      {pipelineCardPrompt(job.prompt) ? (
+                        <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                          {pipelineCardPrompt(job.prompt)}
+                        </p>
+                      ) : null}
+                      <span className="truncate text-[10px] text-muted-foreground/80">
+                        {modelNameFromCapability(job.capability)}
+                      </span>
                       {inProgress ? (
                         <span className="inline-flex w-fit items-center gap-1 text-[10px] text-muted-foreground">
                           <span className="size-1.5 animate-pulse rounded-full bg-primary/80" />
