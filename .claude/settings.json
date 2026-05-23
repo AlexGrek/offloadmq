@@ -125,7 +125,12 @@
       "Bash(OAI_BASE_URL=http://localhost:3001 uv run pytest tests/test_chats.py -q)",
       "Bash(task kill *)",
       "Bash(mkdir -p /Users/vedmedik/dev/offloadmq/.claude/skills/oai-backend)",
-      "Edit(/.claude/skills/oai-img/**)"
+      "Edit(/.claude/skills/oai-img/**)",
+      "Edit(/.claude/skills/agent-v2/**)",
+      "Bash(rm -f agent/src/offloadmq_agent/agent.py agent/src/offloadmq_agent/config.py)",
+      "Bash(rm -f ui-server/src/ui_server/state.py ui-server/src/ui_server/main.py)",
+      "Bash(rm -rf ui-server/frontend/src)",
+      "Bash(mkdir -p core/src/offloadmq_core)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

@@ -1,18 +1,12 @@
 [project]
 name = "offloadmq-ui-server"
 version = "2.0.0"
-description = "FastAPI UI server for OffloadMQ agent v2"
+description = "FastAPI UI server for OffloadMQ agent v2 (library, driven by core)"
 requires-python = ">=3.11"
 dependencies = [
     "offloadmq-agent",
     "fastapi>=0.111",
-    "uvicorn[standard]>=0.30",
-    "python-multipart>=0.0.9",
-    "aiofiles>=23.2",
 ]
-
-[project.scripts]
-omq-ui-server = "ui_server.main:main"
 
 [build-system]
 requires = ["hatchling"]

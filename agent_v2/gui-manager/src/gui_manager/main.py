@@ -1,19 +1,18 @@
 """
-GUI entry point — dual-mode launcher.
+GUI entry point — cross-platform desktop app.
 
-  omq-gui              → native OS window (pywebview) + embedded server
-  omq-gui --server     → headless HTTP server only (open in any browser)
+  omq-gui              → native OS window (pywebview) + embedded UI server + agent
+  omq-gui --server     → headless server only (open the URL in any browser)
+
+Both modes share the same core Orchestrator and the same FastAPI UI server.
 """
 from __future__ import annotations
 
 import argparse
 import socket
-import threading
 import time
 
-import uvicorn
-
-from ui_server.server import create_app
+from offloadmq_core import Orchestrator, run_blocking, run_in_thread
 
 
 def _find_free_port(preferred: int) -> int:
@@ -23,18 +22,7 @@ def _find_free_port(preferred: int) -> int:
             return preferred
         except OSError:
             s.bind(("127.0.0.1", 0))
-            return s.getsockname()[1]
-
-
-def _start_server_thread(port: int) -> threading.Thread:
-    app = create_app()
-
-    def _run() -> None:
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
-
-    t = threading.Thread(target=_run, daemon=True, name="ui-server")
-    t.start()
-    return t
+            return int(s.getsockname()[1])
 
 
 def _wait_for_server(port: int, timeout: float = 10.0) -> None:
@@ -48,46 +36,54 @@ def _wait_for_server(port: int, timeout: float = 10.0) -> None:
     raise RuntimeError(f"UI server did not start on port {port} within {timeout}s")
 
 
-def _run_gui(port: int) -> None:
-    import webview  # imported lazily — not available in server-only installs
+def _maybe_autostart(orch: Orchestrator) -> None:
+    if orch.get_settings().autostart:
+        try:
+            orch.start()
+        except RuntimeError:
+            pass  # not configured yet — user can start from the UI
+
+
+def _run_window(port: int) -> None:
+    import webview  # lazy — only needed in GUI mode
 
     webview.create_window(
         title="OffloadMQ Agent",
         url=f"http://127.0.0.1:{port}",
         width=1100,
-        height=720,
+        height=760,
         resizable=True,
-        min_size=(800, 500),
+        min_size=(820, 560),
     )
     webview.start()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="OffloadMQ Agent GUI")
+    parser = argparse.ArgumentParser(description="OffloadMQ Agent (GUI)")
     parser.add_argument(
-        "--server",
-        action="store_true",
-        help="Run in headless server mode (no window)",
+        "--server", action="store_true", help="Headless server mode (no window)"
     )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8090,
-        help="Port for the UI server (default: 8090)",
-    )
+    parser.add_argument("--port", type=int, default=8090, help="UI server port")
     args = parser.parse_args()
 
+    orch = Orchestrator()
     port = _find_free_port(args.port)
+    _maybe_autostart(orch)
 
     if args.server:
         print(f"OffloadMQ Agent UI → http://127.0.0.1:{port}")
-        # Blocking — keep the server alive.
-        app = create_app()
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
-    else:
-        _start_server_thread(port)
-        _wait_for_server(port)
-        _run_gui(port)
+        try:
+            run_blocking(orch, host="127.0.0.1", port=port)
+        finally:
+            orch.stop()
+        return
+
+    run_in_thread(orch, host="127.0.0.1", port=port)
+    _wait_for_server(port)
+    try:
+        _run_window(port)
+    finally:
+        orch.stop()
 
 
 if __name__ == "__main__":

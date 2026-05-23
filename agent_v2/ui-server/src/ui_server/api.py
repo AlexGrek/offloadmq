@@ -1,143 +1,93 @@
-"""FastAPI router — all /api/* endpoints."""
+"""REST API router factory — closes over the injected orchestrator."""
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from offloadmq_agent.agent import Agent
-from offloadmq_agent.capabilities import detect_capabilities
-from offloadmq_agent.config import AgentConfig, load_config, save_config
-
-from ui_server.state import agent_state
-
-router = APIRouter(prefix="/api")
+from ui_server.protocol import OrchestratorAPI
 
 
-# ------------------------------------------------------------------
-# Config
-# ------------------------------------------------------------------
+class SettingsPayload(BaseModel):
+    server: str | None = None
+    api_key: str | None = None
+    capabilities: list[str] | None = None
+    custom_caps: list[str] | None = None
+    tier: int | None = None
+    max_concurrent: int | None = None
+    autostart: bool | None = None
 
 
-class ConfigPayload(BaseModel):
-    server: str = ""
-    api_key: str = ""
-    capabilities: list[str] = []
-    custom_caps: list[str] = []
-    tier: int = 1
-    capacity: int = 4
-    autostart: bool = False
+def _dump(model: BaseModel) -> dict[str, Any]:
+    return model.model_dump(mode="json")
 
 
-@router.get("/config")
-async def get_config() -> dict[str, Any]:
-    cfg = load_config()
-    return cfg.model_dump()
+def create_router(orch: OrchestratorAPI) -> APIRouter:
+    router = APIRouter(prefix="/api")
 
+    # ------------------------------------------------------------------
+    # Settings
+    # ------------------------------------------------------------------
 
-@router.post("/config")
-async def post_config(payload: ConfigPayload) -> dict[str, Any]:
-    cfg = load_config()
-    cfg.server = payload.server
-    cfg.api_key = payload.api_key
-    cfg.capabilities = payload.capabilities
-    cfg.custom_caps = payload.custom_caps
-    cfg.tier = payload.tier
-    cfg.capacity = payload.capacity
-    cfg.autostart = payload.autostart
-    save_config(cfg)
-    return {"ok": True}
+    @router.get("/settings")
+    def get_settings() -> dict[str, Any]:
+        return _dump(orch.get_settings())
 
+    @router.post("/settings")
+    def post_settings(payload: SettingsPayload) -> dict[str, Any]:
+        fields = {k: v for k, v in payload.model_dump().items() if v is not None}
+        return _dump(orch.update_settings(**fields))
 
-# ------------------------------------------------------------------
-# Agent control
-# ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Capabilities
+    # ------------------------------------------------------------------
 
+    @router.get("/capabilities/detect")
+    def detect() -> dict[str, list[str]]:
+        return {"capabilities": orch.scan_capabilities()}
 
-@router.post("/agent/start")
-async def start_agent() -> dict[str, Any]:
-    async with agent_state._lock:
-        if agent_state.running:
-            return {"ok": True, "message": "already running"}
+    # ------------------------------------------------------------------
+    # Agent lifecycle
+    # ------------------------------------------------------------------
 
-        cfg = load_config()
-        if not cfg.is_configured:
-            raise HTTPException(status_code=400, detail="Agent is not configured")
+    @router.post("/agent/start")
+    def start() -> dict[str, Any]:
+        try:
+            orch.start()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return orch.status()
 
-        agent = Agent(cfg)
-        agent.set_log_handler(agent_state.append_log)
+    @router.post("/agent/stop")
+    def stop() -> dict[str, Any]:
+        orch.stop()
+        return orch.status()
 
-        async def _run() -> None:
-            agent_state.running = True
-            try:
-                await agent.start()
-            except Exception as exc:
-                agent_state.append_log(f"[agent] Fatal: {exc}")
-            finally:
-                agent_state.running = False
+    @router.get("/agent/status")
+    def status() -> dict[str, Any]:
+        return orch.status()
 
-        task = asyncio.create_task(_run())
-        agent_state._task = task
+    # ------------------------------------------------------------------
+    # Tasks
+    # ------------------------------------------------------------------
 
-    return {"ok": True}
+    @router.get("/tasks")
+    def list_tasks() -> dict[str, Any]:
+        return {"tasks": [_dump(t) for t in orch.list_tasks()]}
 
+    @router.get("/tasks/{task_id}")
+    def get_task(task_id: str) -> dict[str, Any]:
+        record = orch.get_task(task_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return _dump(record)
 
-@router.post("/agent/stop")
-async def stop_agent() -> dict[str, Any]:
-    async with agent_state._lock:
-        task = agent_state._task
-        if task and not task.done():
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
-        agent_state.running = False
-        agent_state._task = None
-    return {"ok": True}
+    @router.post("/tasks/{task_id}/cancel")
+    def cancel_task(task_id: str) -> dict[str, Any]:
+        ok = orch.cancel_task(task_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Task not active")
+        return {"ok": True}
 
-
-@router.get("/agent/status")
-async def agent_status() -> dict[str, Any]:
-    return agent_state.snapshot()
-
-
-@router.get("/agent/logs")
-async def agent_logs(since: int = 0) -> dict[str, Any]:
-    logs = list(agent_state.logs)
-    return {"logs": logs[since:], "total": len(logs)}
-
-
-# ------------------------------------------------------------------
-# Capabilities
-# ------------------------------------------------------------------
-
-
-@router.get("/capabilities/detect")
-async def capabilities_detect() -> dict[str, Any]:
-    caps = await detect_capabilities()
-    return {"capabilities": caps}
-
-
-# ------------------------------------------------------------------
-# WebSocket — live log stream
-# ------------------------------------------------------------------
-
-
-@router.websocket("/ws/logs")
-async def ws_logs(websocket: WebSocket) -> None:
-    await websocket.accept()
-    sent = 0
-    try:
-        while True:
-            logs = list(agent_state.logs)
-            if len(logs) > sent:
-                for line in logs[sent:]:
-                    await websocket.send_text(line)
-                sent = len(logs)
-            await asyncio.sleep(0.5)
-    except WebSocketDisconnect:
-        pass
+    return router

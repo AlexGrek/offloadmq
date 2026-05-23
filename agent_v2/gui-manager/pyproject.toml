@@ -1,10 +1,10 @@
 [project]
 name = "offloadmq-gui"
 version = "2.0.0"
-description = "GUI manager for OffloadMQ agent v2 (pywebview dual-mode)"
+description = "Cross-platform desktop GUI entry point for the OffloadMQ agent v2"
 requires-python = ">=3.11"
 dependencies = [
-    "offloadmq-ui-server",
+    "offloadmq-core",
     "pywebview>=5.0",
 ]
 
@@ -19,4 +19,4 @@ build-backend = "hatchling.build"
 packages = ["src/gui_manager"]
 
 [tool.uv.sources]
-offloadmq-ui-server = { workspace = true }
+offloadmq-core = { workspace = true }

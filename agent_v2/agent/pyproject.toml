@@ -1,16 +1,12 @@
 [project]
 name = "offloadmq-agent"
 version = "2.0.0"
-description = "Async OffloadMQ agent library"
+description = "Async OffloadMQ processing toolkit — client, executors, models"
 requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.10",
     "pydantic>=2.7",
-    "pydantic-settings>=2.3",
 ]
-
-[project.optional-dependencies]
-ollama = ["aiohttp>=3.10"]
 
 [build-system]
 requires = ["hatchling"]

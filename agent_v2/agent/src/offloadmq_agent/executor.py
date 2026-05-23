@@ -1,20 +1,20 @@
-"""Executor protocol and registry."""
+"""Executor protocol and registry.
+
+An executor is an async callable that takes a Task and an ExecContext and
+returns a TaskResult. Executors are registered by capability prefix.
+"""
 from __future__ import annotations
 
-from typing import Any, Callable, Coroutine, Protocol
+from typing import Callable, Protocol
 
+from offloadmq_agent.context import ExecContext
 from offloadmq_agent.models import Task, TaskResult
 
 
 class Executor(Protocol):
-    async def __call__(
-        self,
-        task: Task,
-        report_progress: Callable[[str, str], Coroutine[Any, Any, None]],
-    ) -> TaskResult: ...
+    async def __call__(self, task: Task, ctx: ExecContext) -> TaskResult: ...
 
 
-# Maps capability prefix → executor callable.
 _registry: dict[str, Executor] = {}
 
 
@@ -31,3 +31,7 @@ def find(capability: str) -> Executor | None:
         if capability == prefix or capability.startswith(prefix + "."):
             return executor
     return None
+
+
+def registered_prefixes() -> list[str]:
+    return sorted(_registry.keys())

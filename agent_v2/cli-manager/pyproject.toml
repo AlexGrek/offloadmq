@@ -1,16 +1,16 @@
 [project]
 name = "offloadmq-cli"
 version = "2.0.0"
-description = "CLI manager for OffloadMQ agent v2"
+description = "CLI entry point for the OffloadMQ agent v2"
 requires-python = ">=3.11"
 dependencies = [
-    "offloadmq-agent",
+    "offloadmq-core",
     "typer>=0.12",
     "rich>=13.7",
 ]
 
 [project.scripts]
-omq = "cli_manager.main:app"
+omq = "cli_manager.main:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -20,4 +20,4 @@ build-backend = "hatchling.build"
 packages = ["src/cli_manager"]
 
 [tool.uv.sources]
-offloadmq-agent = { workspace = true }
+offloadmq-core = { workspace = true }

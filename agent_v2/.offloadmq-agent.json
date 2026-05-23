@@ -1,0 +1,13 @@
+{
+  "server": "https://offloadmq.alexgr.space/",
+  "api_key": "607255d44ec303f6329daa41331ecdd73e38f16de248313ad2fafc352a4c8cfe",
+  "capabilities": [],
+  "custom_caps": [],
+  "tier": 1,
+  "max_concurrent": 1,
+  "autostart": false,
+  "agent_id": "",
+  "key": "",
+  "jwt_token": "",
+  "token_expires_in": 0
+}

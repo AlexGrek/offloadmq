@@ -1,0 +1,136 @@
+version: "3"
+
+vars:
+  FRONTEND: ui-server/frontend
+  PORT: '{{.PORT | default "8090"}}'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  # ----------------------------------------------------------------
+  # Setup
+  # ----------------------------------------------------------------
+
+  install:
+    desc: Sync the uv workspace and install frontend deps
+    cmds:
+      - uv sync
+      - task: frontend:install
+
+  frontend:install:
+    desc: Install frontend npm dependencies
+    dir: "{{.FRONTEND}}"
+    cmds:
+      - npm install
+
+  # ----------------------------------------------------------------
+  # Develop
+  # ----------------------------------------------------------------
+
+  dev:
+    desc: Run the web UI (backend) + Vite dev server together
+    deps: [dev:backend, dev:frontend]
+
+  dev:backend:
+    desc: Run the agent web UI on :{{.PORT}} (serves API, proxied by Vite)
+    cmds:
+      - uv run omq webui --port {{.PORT}}
+
+  dev:frontend:
+    desc: Run the Vite dev server (proxies /api to :{{.PORT}})
+    dir: "{{.FRONTEND}}"
+    cmds:
+      - npm run dev
+
+  serve:
+    desc: Run the agent headless (no UI)
+    cmds:
+      - uv run omq serve
+
+  gui:
+    desc: Launch the native desktop GUI
+    cmds:
+      - uv run omq-gui
+
+  gui:server:
+    desc: Launch the GUI backend in headless server mode
+    cmds:
+      - uv run omq-gui --server --port {{.PORT}}
+
+  # ----------------------------------------------------------------
+  # Quality
+  # ----------------------------------------------------------------
+
+  check:
+    desc: Run all checks (mypy + frontend typecheck)
+    cmds:
+      - task: typecheck
+      - task: frontend:lint
+
+  typecheck:
+    desc: mypy --strict over the Python packages
+    cmds:
+      - uv run --with mypy mypy agent/src core/src ui-server/src --ignore-missing-imports
+
+  frontend:lint:
+    desc: Type-check the frontend (tsc)
+    dir: "{{.FRONTEND}}"
+    cmds:
+      - npm run lint
+
+  # ----------------------------------------------------------------
+  # Build
+  # ----------------------------------------------------------------
+
+  build:
+    desc: Build the frontend bundle (required before packaging / serving)
+    deps: [frontend:build]
+
+  frontend:build:
+    desc: Production build of the React SPA → dist/
+    dir: "{{.FRONTEND}}"
+    cmds:
+      - npm run build
+
+  package:cli:
+    desc: Build a single-file CLI binary (PyInstaller)
+    deps: [frontend:build]
+    dir: cli-manager
+    cmds:
+      - >-
+        uv run --with pyinstaller pyinstaller --onefile --name omq
+        --add-data "../ui-server/frontend/dist:frontend/dist"
+        src/cli_manager/main.py
+
+  package:gui:
+    desc: Build a single-file GUI binary (PyInstaller)
+    deps: [frontend:build]
+    dir: gui-manager
+    cmds:
+      - >-
+        uv run --with pyinstaller pyinstaller --onefile --windowed --name omq-gui
+        --add-data "../ui-server/frontend/dist:frontend/dist"
+        src/gui_manager/main.py
+
+  # ----------------------------------------------------------------
+  # Clean
+  # ----------------------------------------------------------------
+
+  clean:
+    desc: Remove build artifacts (dist, PyInstaller output, caches)
+    cmds:
+      - rm -rf {{.FRONTEND}}/dist
+      - rm -rf cli-manager/build cli-manager/dist cli-manager/*.spec
+      - rm -rf gui-manager/build gui-manager/dist gui-manager/*.spec
+      - find . -type d -name __pycache__ -prune -exec rm -rf {} +
+
+  clean:all:
+    desc: Clean artifacts plus the venv and node_modules
+    deps: [clean]
+    cmds:
+      - rm -rf .venv
+      - rm -rf {{.FRONTEND}}/node_modules

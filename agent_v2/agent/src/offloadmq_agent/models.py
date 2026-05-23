@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from enum import StrEnum
 from typing import Any
 
@@ -8,9 +9,17 @@ from pydantic import BaseModel, Field
 
 class TaskStatus(StrEnum):
     PENDING = "pending"
-    ASSIGNED = "assigned"
+    RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class LogLevel(StrEnum):
+    INFO = "info"
+    PROGRESS = "progress"
+    WARN = "warn"
+    ERROR = "error"
 
 
 class Task(BaseModel):
@@ -27,6 +36,16 @@ class TaskResult(BaseModel):
     error: str | None = None
 
 
+class LogEntry(BaseModel):
+    """A single structured log line attached to a task."""
+
+    ts: float = Field(default_factory=time.time)
+    level: LogLevel = LogLevel.INFO
+    stage: str = ""
+    message: str = ""
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
 class AgentRegistration(BaseModel):
     agent_id: str
     key: str
@@ -35,10 +54,3 @@ class AgentRegistration(BaseModel):
 class AgentAuth(BaseModel):
     token: str
     expires_in: int
-
-
-class ProgressUpdate(BaseModel):
-    task_id: str
-    capability: str
-    stage: str
-    log: str
