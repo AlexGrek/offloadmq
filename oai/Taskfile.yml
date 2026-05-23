@@ -30,6 +30,16 @@ tasks:
       #!/usr/bin/env bash
       set -e
 
+      if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists vips; then
+        export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/share/pkgconfig:${PKG_CONFIG_PATH}"
+        echo "==> libvips detected: $(pkg-config --modversion vips)"
+      else
+        echo "ERROR: libvips is required but was not detected via pkg-config."
+        echo "  macOS:  brew install vips"
+        echo "  Linux:  apt-get install libvips-dev pkg-config"
+        exit 1
+      fi
+
       cleanup() {
         echo ""
         echo "==> Shutting down backend..."
@@ -47,7 +57,19 @@ tasks:
   dev:backend:
     desc: Run backend only (infra must be running)
     dir: backend
-    cmd: cargo run
+    cmd: |
+      #!/usr/bin/env bash
+      set -e
+      if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists vips; then
+        export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/share/pkgconfig:${PKG_CONFIG_PATH}"
+        echo "==> libvips detected: $(pkg-config --modversion vips)"
+      else
+        echo "ERROR: libvips is required but was not detected via pkg-config."
+        echo "  macOS:  brew install vips"
+        echo "  Linux:  apt-get install libvips-dev pkg-config"
+        exit 1
+      fi
+      cargo run
     env:
       RUST_LOG: info
       DATABASE_URL: "{{.DATABASE_URL}}"
@@ -116,7 +138,19 @@ tasks:
   build:backend:
     desc: Build Rust backend (release)
     dir: backend
-    cmd: cargo build --release
+    cmd: |
+      #!/usr/bin/env bash
+      set -e
+      if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists vips; then
+        export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/share/pkgconfig:${PKG_CONFIG_PATH}"
+        echo "==> libvips detected: $(pkg-config --modversion vips)"
+      else
+        echo "ERROR: libvips is required but was not detected via pkg-config."
+        echo "  macOS:  brew install vips"
+        echo "  Linux:  apt-get install libvips-dev pkg-config"
+        exit 1
+      fi
+      cargo build --release
 
   build:frontend:
     desc: Build React frontend (production)
@@ -126,6 +160,30 @@ tasks:
     cmd: npm run build
 
   install:
+    desc: Install frontend npm dependencies and ensure libvips is available
+    cmds:
+      - task: install:vips
+      - task: install:frontend
+
+  install:vips:
+    desc: Install libvips system dependency (required for image processing)
+    cmd: |
+      #!/usr/bin/env bash
+      echo "==> Ensuring libvips is installed (required for image processing)..."
+      if command -v brew >/dev/null 2>&1; then
+        brew install vips pkg-config 2>/dev/null || true
+      elif command -v apt-get >/dev/null 2>&1; then
+        apt-get update && apt-get install -y libvips-dev pkg-config
+      else
+        echo "Please install libvips + pkg-config manually, then re-run."
+      fi
+      if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists vips; then
+        echo "==> libvips OK: $(pkg-config --modversion vips)"
+      else
+        echo "WARNING: libvips not detected after install attempt. Build may fail."
+      fi
+
+  install:frontend:
     desc: Install frontend npm dependencies
     dir: frontend
     cmd: npm install

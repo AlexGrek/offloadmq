@@ -1,6 +1,8 @@
+import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
+  FolderOpen,
   ImagePlus,
   Loader2,
   PanelLeftClose,
@@ -16,7 +18,7 @@ import {
 import { cn } from '@/lib/utils'
 import { ImageLightbox } from '@/components/ImageLightbox'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '../contexts/AuthContext'
@@ -43,6 +45,7 @@ import {
 } from '../components/imggen/ImageJobHistorySidebar'
 import { PipelineJobParamsPanel } from '../components/imggen/PipelineJobParamsPanel'
 import { ImgGenModelPicker } from '../components/imggen/ImgGenModelPicker'
+import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import {
   ToolDebugHeaderButton,
   ToolDebugModal,
@@ -54,7 +57,7 @@ import {
   filterCapabilitiesByWorkflow,
   jobPromptTitle,
   jobTechMeta,
-  modelNameFromCapability,
+
   pipelineEventsWithoutPolls,
   pipelineStatusLine,
   rescaleDataPrep,
@@ -64,6 +67,16 @@ import {
 import type { ImagePipelineRescaleParams } from '../api/images'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
+
+const BURST_SPARKS = [
+  { x: -62, y: -28, delay: 0 },
+  { x: -38, y: -58, delay: 0.06 },
+  { x: 6, y: -70, delay: 0.03 },
+  { x: 50, y: -55, delay: 0.09 },
+  { x: 68, y: -18, delay: 0.02 },
+  { x: 58, y: 28, delay: 0.07 },
+  { x: -60, y: 25, delay: 0.04 },
+]
 const POLL_MS = 5000
 
 const DEFAULT_RESCALE: RescaleState = {
@@ -106,7 +119,9 @@ export default function ImageGenerationPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [debugOpen, setDebugOpen] = useState(false)
   const [jobsLoading, setJobsLoading] = useState(true)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [mediaRevision, setMediaRevision] = useState(0)
+  const [submitBurst, setSubmitBurst] = useState(false)
 
   const viewingJob = activePanel !== IMGGEN_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
@@ -487,6 +502,7 @@ export default function ImageGenerationPage() {
   }, [selectedJob?.job_id])
 
   return (
+    <>
     <div
       className="flex min-h-0 flex-1 overflow-hidden bg-background"
       data-testid="image-generation-page"
@@ -603,10 +619,10 @@ export default function ImageGenerationPage() {
               {mode === 'img2img' && (
                 <div className="space-y-3 sm:col-span-2" data-testid="imggen-input-section">
                   <Label>Input image</Label>
-                  <div className="flex flex-wrap items-start gap-4">
-                    <label className="inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-muted/50 px-4 py-3 text-sm transition-colors hover:bg-muted sm:w-auto sm:justify-start">
-                      <Upload className="h-4 w-4" />
-                      {uploading ? 'Uploading…' : 'Choose image'}
+                  <div className="flex flex-wrap items-start gap-2">
+                    <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+                      <Upload className="h-3.5 w-3.5" />
+                      {uploading ? 'Uploading…' : 'Upload'}
                       <input
                         type="file"
                         accept="image/*"
@@ -620,6 +636,17 @@ export default function ImageGenerationPage() {
                         data-testid="imggen-upload-input"
                       />
                     </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9"
+                      onClick={() => setPickerOpen(true)}
+                      data-testid="imggen-pick-from-library"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+                      From library
+                    </Button>
                     {uploadedInput && (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <span>
@@ -752,15 +779,58 @@ export default function ImageGenerationPage() {
               </div>
             </div>
 
-            <Button
-              className="min-h-11 w-full sm:w-auto"
-              onClick={() => void onSubmit()}
-              disabled={!canSubmit || submitting}
-              data-testid="imggen-submit-job"
-            >
-              {submitting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-              {mode === 'img2img' ? 'Edit Image' : 'Generate Image'}
-            </Button>
+            <div className="relative sm:w-auto">
+              <motion.div
+                className="sm:w-auto"
+                animate={submitBurst ? { scale: [1, 1.06, 0.97, 1] } : {}}
+                transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <Button
+                  className="relative min-h-11 w-full overflow-hidden sm:w-auto"
+                  onClick={() => {
+                    setSubmitBurst(true)
+                    window.setTimeout(() => setSubmitBurst(false), 900)
+                    void onSubmit()
+                  }}
+                  disabled={!canSubmit || submitting}
+                  data-testid="imggen-submit-job"
+                >
+                  <AnimatePresence>
+                    {submitBurst && (
+                      <motion.span
+                        key="shimmer"
+                        aria-hidden
+                        className="pointer-events-none absolute inset-y-0 left-0 w-1/2 skew-x-12"
+                        style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)' }}
+                        initial={{ x: '-100%' }}
+                        animate={{ x: '320%' }}
+                        transition={{ duration: 0.42, ease: 'easeInOut' }}
+                      />
+                    )}
+                  </AnimatePresence>
+                  {submitting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                  {mode === 'img2img' ? 'Edit Image' : 'Generate Image'}
+                </Button>
+              </motion.div>
+
+              <AnimatePresence>
+                {submitBurst &&
+                  BURST_SPARKS.map((p, i) => (
+                    <motion.span
+                      key={i}
+                      aria-hidden
+                      className="pointer-events-none absolute left-1/2 top-1/2 text-primary"
+                      style={{ fontSize: '11px', fontWeight: 700, lineHeight: 1, filter: 'drop-shadow(0 0 3px currentColor)' }}
+                      initial={{ x: 0, y: 0, opacity: 1, scale: 0 }}
+                      animate={{ x: p.x, y: p.y, opacity: 0, scale: 1.6 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.55, delay: p.delay, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      ✦
+                    </motion.span>
+                  ))}
+              </AnimatePresence>
+            </div>
 
             {info && activePanel === IMGGEN_NEW_PANEL && (
               <p className="text-xs text-muted-foreground">{info}</p>
@@ -778,27 +848,63 @@ export default function ImageGenerationPage() {
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : selectedJob?.job_id === viewedJobId ? (
-          <Card data-testid="imggen-job-detail">
-            <CardHeader className="space-y-2">
-              <CardTitle className="font-display text-lg tracking-tight leading-snug">
+          <Card data-testid="imggen-job-detail" className="overflow-hidden">
+
+            {/* ── Output images — full-bleed at top ── */}
+            {(() => {
+              const outputFiles = selectedJob.files.filter(f => f.direction === 'output')
+              if (outputFiles.length > 0) {
+                return (
+                  <div className={outputFiles.length > 1 ? 'grid grid-cols-2 gap-px bg-border' : undefined}>
+                    {outputFiles.map(file => (
+                      <ImageLightbox
+                        key={file.image_id}
+                        src={imageFileUrl(file.image_id, token, mediaRevision)}
+                        alt={file.filename}
+                        caption={`${file.filename} — ${file.width}×${file.height}`}
+                        triggerClassName="group block w-full overflow-hidden bg-muted/20"
+                        testId={`imggen-output-${file.image_id}`}
+                        actions={lightboxActions(file.image_id, file.filename, file.direction)}
+                      >
+                        <img
+                          src={imageFileUrl(file.image_id, token, mediaRevision)}
+                          alt=""
+                          aria-hidden
+                          className="w-full object-contain max-h-[70vh] transition-opacity group-hover:opacity-95"
+                        />
+                      </ImageLightbox>
+                    ))}
+                  </div>
+                )
+              }
+              if (isRunning) {
+                return (
+                  <div className="flex aspect-video w-full items-center justify-center bg-muted/30">
+                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                      <Loader2 className="size-10 animate-spin opacity-40" />
+                      <p className="text-sm font-medium capitalize">
+                        {activePoll?.stage ?? displayStatus ?? 'Generating…'}
+                      </p>
+                    </div>
+                  </div>
+                )
+              }
+              return null
+            })()}
+
+            {/* ── Compact title + meta ── */}
+            <div className="border-b border-border px-4 py-3 space-y-0.5">
+              <h2 className="font-display text-base font-semibold leading-snug">
                 {jobPromptTitle(selectedJob.prompt, 120)}
-              </CardTitle>
+              </h2>
               <p className="font-mono text-xs text-muted-foreground" data-testid="imggen-job-tech-meta">
-                {jobTechMeta(selectedJob)} · {selectedJob.job_id}
+                {jobTechMeta(selectedJob)} · {selectedJob.status.replace(/_/g, ' ')}
               </p>
-              <p className="text-sm text-muted-foreground capitalize">
-                {modelNameFromCapability(selectedJob.capability)} · {selectedJob.workflow} ·{' '}
-                {selectedJob.status.replace(/_/g, ' ')}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <section className="space-y-1.5" data-testid="imggen-job-prompt">
-                <h3 className="text-xs font-medium text-muted-foreground">Prompt</h3>
-                <p className="whitespace-pre-wrap text-sm text-foreground">{selectedJob.prompt.trim() || '—'}</p>
-              </section>
+            </div>
 
-              <PipelineJobParamsPanel job={selectedJob} />
+            <CardContent className="space-y-4 pt-4">
 
+              {/* ── Actions ── */}
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
@@ -839,35 +945,13 @@ export default function ImageGenerationPage() {
                 )}
               </div>
               {info && <p className="text-xs text-muted-foreground">{info}</p>}
-              {error && <p className="text-xs text-destructive">{error}</p>}
-              {selectedJob.input_image_id && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">Input</p>
-                  <ImageLightbox
-                    src={imageFileUrl(selectedJob.input_image_id, token, mediaRevision)}
-                    alt="Job input"
-                    triggerClassName="block max-w-full"
-                    testId="imggen-job-input"
-                    actions={lightboxActions(
-                      selectedJob.input_image_id,
-                      'Job input',
-                      'input',
-                    )}
-                  >
-                    <img
-                      src={imageFileUrl(selectedJob.input_image_id, token, mediaRevision)}
-                      alt=""
-                      aria-hidden
-                      className="max-h-40 rounded-lg border border-border object-contain"
-                    />
-                  </ImageLightbox>
-                </div>
-              )}
-              {!!selectedJob.error && (
+              {(error || selectedJob.error) && (
                 <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  {selectedJob.error}
+                  {error || selectedJob.error}
                 </p>
               )}
+
+              {/* ── Pipeline accordion ── */}
               <div className="space-y-2" data-testid="imggen-pipeline">
                 <button
                   type="button"
@@ -922,31 +1006,37 @@ export default function ImageGenerationPage() {
                   </div>
                 )}
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {selectedJob.files
-                  .filter(f => f.direction === 'output')
-                  .map(file => (
-                    <ImageLightbox
-                      key={file.image_id}
-                      src={imageFileUrl(file.image_id, token, mediaRevision)}
-                      alt={file.filename}
-                      caption={`${file.filename} — ${file.width}×${file.height}`}
-                      triggerClassName="group w-full overflow-hidden rounded-lg border border-border"
-                      testId={`imggen-output-${file.image_id}`}
-                      actions={lightboxActions(file.image_id, file.filename, file.direction)}
-                    >
-                      <img
-                        src={imageFileUrl(file.image_id, token, mediaRevision)}
-                        alt=""
-                        aria-hidden
-                        className="h-52 w-full object-cover transition-transform group-hover:scale-[1.02]"
-                      />
-                      <div className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-                        {file.filename} — {file.width}×{file.height}
-                      </div>
-                    </ImageLightbox>
-                  ))}
-              </div>
+
+              {/* ── Prompt ── */}
+              <section className="space-y-1.5" data-testid="imggen-job-prompt">
+                <h3 className="text-xs font-medium text-muted-foreground">Prompt</h3>
+                <p className="whitespace-pre-wrap text-sm text-foreground">{selectedJob.prompt.trim() || '—'}</p>
+              </section>
+
+              {/* ── Params ── */}
+              <PipelineJobParamsPanel job={selectedJob} />
+
+              {/* ── Input image ── */}
+              {selectedJob.input_image_id && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Input</p>
+                  <ImageLightbox
+                    src={imageFileUrl(selectedJob.input_image_id, token, mediaRevision)}
+                    alt="Job input"
+                    triggerClassName="block max-w-full"
+                    testId="imggen-job-input"
+                    actions={lightboxActions(selectedJob.input_image_id, 'Job input', 'input')}
+                  >
+                    <img
+                      src={imageFileUrl(selectedJob.input_image_id, token, mediaRevision)}
+                      alt=""
+                      aria-hidden
+                      className="max-h-40 rounded-lg border border-border object-contain"
+                    />
+                  </ImageLightbox>
+                </div>
+              )}
+
             </CardContent>
           </Card>
           ) : (
@@ -957,5 +1047,18 @@ export default function ImageGenerationPage() {
         </main>
       </div>
     </div>
+
+    {token && (
+      <ImagePickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={img => {
+          setUploadedInput(img)
+          setInputPreviewUrl(null)
+        }}
+        token={token}
+      />
+    )}
+    </>
   )
 }

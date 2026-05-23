@@ -1,12 +1,13 @@
-//! Pure image decoding/normalization. No DB, no storage, no network — just
-//! bytes in, normalized JPEG + metadata out. Kept side-effect free so it is
-//! trivially testable and reusable by both upload and download paths.
+//! Pure image decoding/normalization using libvips for memory-efficient processing of
+//! large inputs. No DB, no storage, no network — just bytes in, normalized JPEG + metadata out.
+//! libvips processes images in strips rather than loading the full decoded pixel buffer into RAM,
+//! preventing OOM kills when users upload large inputs (e.g. 48 MP camera shots).
 
-use std::io::Cursor;
+use std::{io::Cursor, sync::OnceLock};
 
-use image::{
-    codecs::jpeg::JpegEncoder, imageops::FilterType, metadata::Orientation, DynamicImage,
-    ExtendedColorType, GenericImageView, ImageEncoder, ImageFormat, ImageReader,
+use rs_vips::{
+    Vips, VipsImage,
+    voption::{Setter, VOption},
 };
 use sha2::{Digest, Sha256};
 
@@ -17,6 +18,26 @@ pub const THUMBNAIL_MAX_EDGE: u32 = 384;
 pub const JPEG_QUALITY: u8 = 90;
 /// Max raw upload size (must match `DefaultBodyLimit` on `POST /api/images/upload`).
 pub const MAX_UPLOAD_BYTES: usize = 32 * 1024 * 1024;
+
+static VIPS_INIT: OnceLock<Result<(), String>> = OnceLock::new();
+
+fn ensure_vips_initialized() -> Result<(), AppError> {
+    VIPS_INIT
+        .get_or_init(|| {
+            Vips::init("oai-backend").map_err(|e| format!("vips init failed: {e}"))?;
+            // Small internal cache — pod memory safety.
+            Vips::cache_set_max(64);
+            Vips::cache_set_max_mem(64 * 1024 * 1024);
+            Vips::cache_set_max_files(32);
+            // One libvips thread per operation; multiple requests can be in flight concurrently
+            // because each creates its own VipsImage objects.
+            Vips::concurrency_set(1);
+            Ok(())
+        })
+        .as_ref()
+        .map_err(|e| AppError::Internal(e.clone()))
+        .copied()
+}
 
 pub struct ProcessedImage {
     pub bytes: Vec<u8>,
@@ -50,12 +71,20 @@ pub fn process_generated_image(
     Ok(out)
 }
 
-/// Decodes arbitrary input, applies EXIF orientation, downscales to
-/// `MAX_IMAGE_EDGE`, encodes as JPEG (quality 90) when needed, and builds a thumbnail.
+/// Decodes arbitrary input via libvips, applies EXIF orientation, downscales to
+/// `MAX_IMAGE_EDGE` if needed, encodes as JPEG (quality 90), and builds a thumbnail.
+///
+/// libvips streams large images in tiles/strips — it never holds the full decoded
+/// pixel buffer in RAM, which prevents OOM kills on large inputs.
+///
+/// EXIF orientation is always baked into the pixel data and stripped from the output, so
+/// viewers never need to apply a rotation transform on the stored file.
 pub fn process_image(
     bytes: Vec<u8>,
-    content_type_hint: Option<String>,
+    _content_type_hint: Option<String>,
 ) -> Result<ProcessedImage, AppError> {
+    ensure_vips_initialized()?;
+
     if bytes.is_empty() {
         return Err(AppError::BadRequest("empty image".into()));
     }
@@ -63,33 +92,41 @@ pub fn process_image(
         return Err(AppError::BadRequest("image exceeds 32MB limit".into()));
     }
 
-    let input_format = detect_format(&bytes, content_type_hint.as_deref());
-    let orientation = orientation_from_exif(&bytes);
-    let mut img = decode_with_hint(&bytes, content_type_hint.as_deref())?;
-    img.apply_orientation(orientation.unwrap_or(Orientation::NoTransforms));
-    let (ow, oh) = img.dimensions();
-    let mut rescaled = false;
-    if ow.max(oh) > MAX_IMAGE_EDGE {
-        let scale = MAX_IMAGE_EDGE as f64 / (ow.max(oh) as f64);
-        let nw = ((ow as f64) * scale).round().max(1.0) as u32;
-        let nh = ((oh as f64) * scale).round().max(1.0) as u32;
-        img = DynamicImage::from(image::imageops::resize(&img, nw, nh, FilterType::Triangle));
-        rescaled = true;
-    }
-    let (sw, sh) = img.dimensions();
-    let orientation_applied = orientation
-        .filter(|o| *o != Orientation::NoTransforms)
-        .is_some();
-    let (encoded, reencoded) = encode_main_image(
-        &img,
-        &bytes,
-        input_format,
-        rescaled,
-        orientation_applied,
-    )?;
-    let sha256 = sha256_hex(&encoded);
+    let original_len = bytes.len();
+    // Record the original EXIF tag for metadata storage before decoding.
+    let exif_orientation_val = exif_orientation_int(&bytes);
 
-    let (thumbnail_bytes, thumbnail_width, thumbnail_height) = encode_thumbnail(&img)?;
+    // Format is auto-detected from magic bytes — content_type_hint is not needed.
+    let img = VipsImage::new_from_buffer(&bytes, "")
+        .map_err(|e| AppError::BadRequest(format!("decode image failed: {e}")))?;
+    // Apply EXIF rotation: bakes the transform into pixels and clears the orientation tag.
+    // Always called — even for orientation=1 (no-op) — so the output never relies on
+    // a viewer applying the EXIF rotation.
+    let img = img
+        .autorot()
+        .map_err(|e| AppError::Internal(format!("autorot failed: {e}")))?;
+
+    // Measure post-rotation dimensions.
+    let ow = img.get_width() as u32;
+    let oh = img.get_height() as u32;
+
+    let (img, rescaled) = if ow.max(oh) > MAX_IMAGE_EDGE {
+        let scale = (MAX_IMAGE_EDGE as f64) / (ow.max(oh) as f64);
+        let resized = img
+            .resize(scale)
+            .map_err(|e| AppError::Internal(format!("resize failed: {e}")))?;
+        (resized, true)
+    } else {
+        (img, false)
+    };
+
+    let sw = img.get_width() as u32;
+    let sh = img.get_height() as u32;
+
+    // Always encode through libvips: bakes orientation into pixels, strips all EXIF.
+    let encoded = vips_to_jpeg(&img, JPEG_QUALITY)?;
+    let sha256 = sha256_hex(&encoded);
+    let (thumbnail_bytes, thumbnail_width, thumbnail_height) = encode_thumbnail_vips(&img)?;
 
     Ok(ProcessedImage {
         bytes: encoded,
@@ -98,10 +135,10 @@ pub fn process_image(
         height: sh as i32,
         original_width: Some(ow as i32),
         original_height: Some(oh as i32),
-        original_bytes: Some(bytes.len() as i64),
+        original_bytes: Some(original_len as i64),
         rescaled,
-        reencoded,
-        exif_orientation: orientation_to_exif_int(orientation),
+        reencoded: true,
+        exif_orientation: exif_orientation_val,
         sha256,
         thumbnail_bytes,
         thumbnail_width,
@@ -119,8 +156,10 @@ pub fn ensure_jpeg_response(bytes: Vec<u8>, content_type: &str) -> Result<Vec<u8
 
 /// Build a thumbnail from an existing main JPEG on disk (backfill path).
 pub fn thumbnail_from_main_jpeg(bytes: &[u8]) -> Result<(Vec<u8>, i32, i32), AppError> {
-    let img = decode_with_hint(bytes, Some("image/jpeg"))?;
-    encode_thumbnail(&img)
+    ensure_vips_initialized()?;
+    let img = VipsImage::new_from_buffer(bytes, "")
+        .map_err(|e| AppError::BadRequest(format!("decode thumbnail source failed: {e}")))?;
+    encode_thumbnail_vips(&img)
 }
 
 pub fn is_jpeg_blob(bytes: &[u8], content_type: &str) -> bool {
@@ -131,82 +170,36 @@ pub fn is_jpeg_blob(bytes: &[u8], content_type: &str) -> bool {
     bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF
 }
 
-fn detect_format(bytes: &[u8], content_type_hint: Option<&str>) -> Option<ImageFormat> {
-    let from_hint = match content_type_hint.unwrap_or_default() {
-        "image/jpeg" | "image/jpg" => Some(ImageFormat::Jpeg),
-        "image/png" => Some(ImageFormat::Png),
-        "image/webp" => Some(ImageFormat::WebP),
-        _ => None,
-    };
-    from_hint.or_else(|| image::guess_format(bytes).ok())
+fn vips_to_jpeg(img: &VipsImage, quality: u8) -> Result<Vec<u8>, AppError> {
+    img.write_to_buffer_with_opts(
+        ".jpg",
+        VOption::new()
+            .set("q", i32::from(quality))
+            .set("strip", true),
+    )
+    .map_err(|e| AppError::Internal(format!("vips jpeg encode failed: {e}")))
 }
 
-fn encode_main_image(
-    img: &DynamicImage,
-    original_bytes: &[u8],
-    input_format: Option<ImageFormat>,
-    rescaled: bool,
-    orientation_applied: bool,
-) -> Result<(Vec<u8>, bool), AppError> {
-    let can_passthrough = input_format == Some(ImageFormat::Jpeg)
-        && !rescaled
-        && !orientation_applied
-        && is_jpeg_blob(original_bytes, "image/jpeg");
-    if can_passthrough {
-        return Ok((original_bytes.to_vec(), false));
+fn encode_thumbnail_vips(img: &VipsImage) -> Result<(Vec<u8>, i32, i32), AppError> {
+    let w = img.get_width() as u32;
+    let h = img.get_height() as u32;
+    if w.max(h) > THUMBNAIL_MAX_EDGE {
+        let scale = (THUMBNAIL_MAX_EDGE as f64) / (w.max(h) as f64);
+        let resized = img
+            .resize(scale)
+            .map_err(|e| AppError::Internal(format!("thumbnail resize failed: {e}")))?;
+        let tw = resized.get_width();
+        let th = resized.get_height();
+        let bytes = vips_to_jpeg(&resized, JPEG_QUALITY)?;
+        Ok((bytes, tw, th))
+    } else {
+        let bytes = vips_to_jpeg(img, JPEG_QUALITY)?;
+        Ok((bytes, w as i32, h as i32))
     }
-    Ok((encode_jpeg(img, JPEG_QUALITY)?, true))
 }
 
-fn encode_thumbnail(img: &DynamicImage) -> Result<(Vec<u8>, i32, i32), AppError> {
-    let (w, h) = img.dimensions();
-    let thumb = if w.max(h) > THUMBNAIL_MAX_EDGE {
-        let scale = THUMBNAIL_MAX_EDGE as f64 / (w.max(h) as f64);
-        let nw = ((w as f64) * scale).round().max(1.0) as u32;
-        let nh = ((h as f64) * scale).round().max(1.0) as u32;
-        DynamicImage::from(image::imageops::resize(img, nw, nh, FilterType::Triangle))
-    } else {
-        img.clone()
-    };
-    let (tw, th) = thumb.dimensions();
-    let bytes = encode_jpeg(&thumb, JPEG_QUALITY)?;
-    Ok((bytes, tw as i32, th as i32))
-}
-
-fn decode_with_hint(
-    bytes: &[u8],
-    content_type_hint: Option<&str>,
-) -> Result<DynamicImage, AppError> {
-    let format = match content_type_hint.unwrap_or_default() {
-        "image/jpeg" | "image/jpg" => Some(ImageFormat::Jpeg),
-        "image/png" => Some(ImageFormat::Png),
-        "image/webp" => Some(ImageFormat::WebP),
-        _ => None,
-    };
-    let mut reader = if let Some(fmt) = format {
-        ImageReader::with_format(Cursor::new(bytes), fmt)
-    } else {
-        ImageReader::new(Cursor::new(bytes))
-    };
-    reader = reader
-        .with_guessed_format()
-        .map_err(|e| AppError::BadRequest(format!("unsupported image: {e}")))?;
-    reader
-        .decode()
-        .map_err(|e| AppError::BadRequest(format!("decode image failed: {e}")))
-}
-
-fn encode_jpeg(img: &DynamicImage, quality: u8) -> Result<Vec<u8>, AppError> {
-    let rgb = img.to_rgb8();
-    let mut out = Vec::new();
-    let encoder = JpegEncoder::new_with_quality(&mut out, quality);
-    encoder
-        .write_image(rgb.as_raw(), rgb.width(), rgb.height(), ExtendedColorType::Rgb8)
-        .map_err(|e| AppError::Internal(format!("jpeg encode failed: {e}")))?;
-    Ok(out)
-}
-
-fn orientation_from_exif(bytes: &[u8]) -> Option<Orientation> {
+/// Returns the raw EXIF orientation tag value (1–8), or None if absent / unreadable.
+fn exif_orientation_int(bytes: &[u8]) -> Option<i32> {
     let mut cursor = Cursor::new(bytes);
     let exif = exif::Reader::new()
         .continue_on_error(true)
@@ -214,21 +207,7 @@ fn orientation_from_exif(bytes: &[u8]) -> Option<Orientation> {
         .ok()?;
     exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)
         .and_then(|f| f.value.get_uint(0))
-        .and_then(|v| u8::try_from(v).ok())
-        .and_then(Orientation::from_exif)
-}
-
-fn orientation_to_exif_int(orientation: Option<Orientation>) -> Option<i32> {
-    orientation.map(|o| match o {
-        Orientation::NoTransforms => 1,
-        Orientation::Rotate90 => 6,
-        Orientation::Rotate180 => 3,
-        Orientation::Rotate270 => 8,
-        Orientation::FlipHorizontal => 2,
-        Orientation::FlipVertical => 4,
-        Orientation::Rotate90FlipH => 5,
-        Orientation::Rotate270FlipH => 7,
-    })
+        .and_then(|v| i32::try_from(v).ok())
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -237,15 +216,10 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// Max chars for EXIF `ImageDescription` (viewers vary; stay conservative).
 const EXIF_DESCRIPTION_MAX_CHARS: usize = 2000;
 
 fn embed_prompt_exif(jpeg: &mut Vec<u8>, prompt: &str) -> Result<(), AppError> {
-    use little_exif::{
-        exif_tag::ExifTag,
-        filetype::FileExtension,
-        metadata::Metadata,
-    };
+    use little_exif::{exif_tag::ExifTag, filetype::FileExtension, metadata::Metadata};
 
     if !is_jpeg_blob(jpeg, "image/jpeg") {
         return Err(AppError::Internal(
@@ -258,7 +232,8 @@ fn embed_prompt_exif(jpeg: &mut Vec<u8>, prompt: &str) -> Result<(), AppError> {
     let _ = Metadata::clear_app13_segment(jpeg, file_type);
 
     let description = truncate_exif_text(prompt, EXIF_DESCRIPTION_MAX_CHARS);
-    let mut metadata = Metadata::new_from_vec(jpeg, file_type).unwrap_or_else(|_| Metadata::new());
+    let mut metadata =
+        Metadata::new_from_vec(jpeg, file_type).unwrap_or_else(|_| Metadata::new());
     metadata.set_tag(ExifTag::ImageDescription(description));
     metadata
         .write_to_vec(jpeg, file_type)
@@ -289,7 +264,7 @@ pub fn exif_image_description(jpeg: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{ImageBuffer, Rgb};
+    use image::{ExtendedColorType, ImageBuffer, ImageEncoder, Rgb};
 
     fn tiny_png() -> Vec<u8> {
         let img: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::from_fn(8, 8, |x, y| {

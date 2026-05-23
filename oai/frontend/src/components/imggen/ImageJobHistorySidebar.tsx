@@ -76,7 +76,7 @@ export function ImageJobHistorySidebar({
                     data-testid={`imggen-pipeline-item-${job.job_id}`}
                     className={cn(
                       'group/pipeline relative w-full overflow-hidden rounded-lg text-left transition-colors',
-                      'min-h-[4.25rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      'min-h-17 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       active
                         ? 'ring-2 ring-sidebar-primary shadow-sm'
                         : 'ring-1 ring-sidebar-border hover:ring-sidebar-accent',
@@ -89,10 +89,10 @@ export function ImageJobHistorySidebar({
                           src={bgUrl}
                           alt=""
                           aria-hidden
-                          className="absolute inset-0 h-full w-full scale-110 object-cover blur-md saturate-[0.85] dark:saturate-[0.7] dark:brightness-[0.55] brightness-[0.92]"
+                          className="absolute inset-0 h-full w-full scale-105 object-cover blur-[3px] saturate-[0.9] dark:saturate-[0.75] dark:brightness-[0.6] brightness-[0.95]"
                         />
                         <div
-                          className="absolute inset-0 bg-gradient-to-br from-background/88 via-background/78 to-background/92 dark:from-background/90 dark:via-background/82 dark:to-background/94"
+                          className="absolute inset-0 bg-linear-to-br from-background/72 via-background/55 to-background/76 dark:from-background/78 dark:via-background/62 dark:to-background/82"
                           aria-hidden
                         />
                       </>
@@ -106,7 +106,7 @@ export function ImageJobHistorySidebar({
                       />
                     )}
 
-                    <div className="relative z-10 flex min-h-[4.25rem] flex-col justify-center gap-0.5 px-3 py-2">
+                    <div className="relative z-10 flex min-h-17 flex-col justify-center gap-0.5 px-3 py-2">
                       <div className="flex items-start justify-between gap-1.5">
                         <p className="line-clamp-2 min-w-0 flex-1 text-xs font-semibold leading-snug text-foreground">
                           {jobPromptTitle(job.prompt, 72)}

@@ -1005,13 +1005,7 @@ async fn get_owned_input_file(
     image_id: i64,
     user_id: i64,
 ) -> Result<image_generation::ImageFile, AppError> {
-    let file = image_generation::get_image_file(&state.db, image_id, user_id)
+    image_generation::get_image_file(&state.db, image_id, user_id)
         .await?
-        .ok_or(AppError::NotFound)?;
-    if file.direction != "input" {
-        return Err(AppError::BadRequest(
-            "input_image_id must reference an input image".into(),
-        ));
-    }
-    Ok(file)
+        .ok_or(AppError::NotFound)
 }

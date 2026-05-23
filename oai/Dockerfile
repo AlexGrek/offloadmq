@@ -4,7 +4,7 @@
 ARG TARGETPLATFORM=linux/amd64
 FROM --platform=$TARGETPLATFORM rust:1.91-slim-bookworm AS builder
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y pkg-config libssl-dev libvips-dev && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY backend/Cargo.toml backend/Cargo.lock ./
@@ -20,7 +20,7 @@ RUN --mount=type=cache,id=oai-cargo-registry,target=/usr/local/cargo/registry \
     cp /app/.target-cache/release/oai-backend /app/oai-backend
 
 FROM --platform=$TARGETPLATFORM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates libvips42 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder /app/oai-backend ./oai-backend
