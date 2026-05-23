@@ -78,5 +78,9 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
     return TaskResult(
         task_id=task.id,
         status=TaskStatus.COMPLETED,
-        output={"text": full_text, "model": model},
+        output={
+            "model": model,
+            "message": {"role": "assistant", "content": full_text},
+            "done": True,
+        },
     )
