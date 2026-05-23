@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ArrowLeftRight,
   ChevronDown,
   Columns2,
   FolderOpen,
@@ -81,7 +82,7 @@ const BURST_SPARKS = [
 const POLL_MS = 5000
 
 const DEFAULT_RESCALE: RescaleState = {
-  enabled: true,
+  enabled: false,
   mode: 'exact',
   width: 768,
   height: 768,
@@ -725,19 +726,6 @@ export default function ImageGenerationPage() {
                       />
                     </ImageLightbox>
                   )}
-                  <RescaleControls
-                    state={rescale}
-                    onChange={patch => {
-                      if ('width' in patch || 'height' in patch || 'mode' in patch) {
-                        rescaleUserEditedRef.current = true
-                      }
-                      if ('mode' in patch && patch.mode === 'exact') {
-                        rescaleUserEditedRef.current = false
-                      }
-                      patchRescale(patch)
-                    }}
-                    label="Rescale input image before workflow"
-                  />
                 </div>
               )}
 
@@ -782,37 +770,120 @@ export default function ImageGenerationPage() {
                 )}
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="width">Width</Label>
-                <Input
-                  id="width"
-                  type="number"
-                  value={width}
-                  onChange={e => {
-                    if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
-                    setWidth(Number(e.target.value) || 1024)
-                  }}
-                  data-testid="imggen-width"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="height">Height</Label>
-                <Input
-                  id="height"
-                  type="number"
-                  value={height}
-                  onChange={e => {
-                    if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
-                    setHeight(Number(e.target.value) || 1024)
-                  }}
-                  data-testid="imggen-height"
-                />
+              <div className="space-y-2 sm:col-span-2" data-testid="imggen-dimensions">
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <Label htmlFor="width">Width</Label>
+                    <Input
+                      id="width"
+                      type="number"
+                      value={width}
+                      onChange={e => {
+                        if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                        setWidth(Number(e.target.value) || 1024)
+                      }}
+                      data-testid="imggen-width"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="mb-0.5 shrink-0"
+                    onClick={() => {
+                      if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                      setWidth(height)
+                      setHeight(width)
+                    }}
+                    title="Swap width and height"
+                    data-testid="imggen-swap-dims"
+                  >
+                    <ArrowLeftRight className="size-4" />
+                  </Button>
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <Label htmlFor="height">Height</Label>
+                    <Input
+                      id="height"
+                      type="number"
+                      value={height}
+                      onChange={e => {
+                        if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                        setHeight(Number(e.target.value) || 1024)
+                      }}
+                      data-testid="imggen-height"
+                    />
+                  </div>
+                  {mode === 'img2img' && uploadedInput && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mb-0.5 shrink-0 text-xs"
+                      onClick={() => {
+                        if (rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                        setWidth(uploadedInput.width)
+                        setHeight(uploadedInput.height)
+                      }}
+                      title={`Use input dimensions: ${uploadedInput.width}×${uploadedInput.height}`}
+                      data-testid="imggen-copy-from-input"
+                    >
+                      <ImagePlus className="mr-1 size-3.5" />
+                      Input
+                    </Button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {([
+                    [512, 512], [768, 768], [1024, 1024], [1024, 768], [768, 1024],
+                  ] as [number, number][]).map(([w, h]) => (
+                    <button
+                      key={`${w}x${h}`}
+                      type="button"
+                      onClick={() => {
+                        if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                        setWidth(w)
+                        setHeight(h)
+                      }}
+                      className={cn(
+                        'h-7 rounded-md border border-input bg-background px-2 text-xs transition-colors hover:bg-muted/50',
+                        width === w && height === h && 'border-primary bg-primary/10 text-primary',
+                      )}
+                      data-testid={`imggen-preset-${w}x${h}`}
+                    >
+                      {w}×{h}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="seed">Seed (optional)</Label>
                 <Input id="seed" value={seed} onChange={e => setSeed(e.target.value)} placeholder="empty = random" />
               </div>
             </div>
+
+            {mode === 'img2img' && (
+              <details className="group" data-testid="imggen-advanced">
+                <summary className="flex cursor-pointer select-none list-none items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
+                  <ChevronDown className="size-3 -rotate-90 transition-transform group-open:rotate-0" />
+                  Offload rescaling
+                </summary>
+                <div className="mt-2">
+                  <RescaleControls
+                    state={rescale}
+                    onChange={patch => {
+                      if ('width' in patch || 'height' in patch || 'mode' in patch) {
+                        rescaleUserEditedRef.current = true
+                      }
+                      if ('mode' in patch && patch.mode === 'exact') {
+                        rescaleUserEditedRef.current = false
+                      }
+                      patchRescale(patch)
+                    }}
+                    label="Rescale before workflow"
+                  />
+                </div>
+              </details>
+            )}
 
             <div className="relative sm:w-auto">
               <motion.div

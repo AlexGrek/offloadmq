@@ -240,6 +240,6 @@ export const MODE_DEFAULTS: Record<
     prompt: 'turn this into an oil painting',
     width: 768,
     height: 768,
-    rescale: { enabled: true, mode: 'exact', width: 768, height: 768 },
+    rescale: { enabled: false, mode: 'exact', width: 768, height: 768 },
   },
 }
