@@ -52,12 +52,14 @@ tasks:
       - uv run omq serve
 
   gui:
-    desc: Launch the native desktop GUI
+    desc: Build frontend then launch the native desktop GUI
+    deps: [frontend:build]
     cmds:
       - uv run omq-gui
 
   gui:server:
-    desc: Launch the GUI backend in headless server mode
+    desc: Build frontend then launch the GUI backend in headless server mode
+    deps: [frontend:build]
     cmds:
       - uv run omq-gui --server --port {{.PORT}}
 

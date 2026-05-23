@@ -55,7 +55,6 @@ export interface Settings {
   display_name: string;
   capabilities: string[];
   custom_caps: string[];
-  tier: number;
   max_concurrent: number;
   autostart: boolean;
   webui_port: number;

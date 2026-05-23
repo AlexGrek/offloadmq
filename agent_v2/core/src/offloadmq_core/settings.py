@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-SETTINGS_FILE = Path(".offloadmq-agent.json")
+SETTINGS_FILE = Path.home() / ".offloadmq-agent.json"
 
 
 class Settings(BaseModel):
@@ -16,7 +16,6 @@ class Settings(BaseModel):
     display_name: str = ""
     capabilities: list[str] = []
     custom_caps: list[str] = []
-    tier: int = 1
     max_concurrent: int = 1
     autostart: bool = False
     webui_port: int = 8090
@@ -47,7 +46,7 @@ class Settings(BaseModel):
     def _strip(cls, v: Any) -> Any:
         return v.strip() if isinstance(v, str) else v
 
-    @field_validator("max_concurrent", "tier", "webui_port", mode="before")
+    @field_validator("max_concurrent", "webui_port", mode="before")
     @classmethod
     def _min_one(cls, v: Any) -> Any:
         try:

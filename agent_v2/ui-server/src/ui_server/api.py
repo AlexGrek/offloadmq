@@ -15,7 +15,6 @@ class SettingsPayload(BaseModel):
     display_name: str | None = None
     capabilities: list[str] | None = None
     custom_caps: list[str] | None = None
-    tier: int | None = None
     max_concurrent: int | None = None
     autostart: bool | None = None
     webui_port: int | None = None

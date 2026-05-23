@@ -20,7 +20,6 @@ const EMPTY: Settings = {
   display_name: "",
   capabilities: [],
   custom_caps: [],
-  tier: 1,
   max_concurrent: 1,
   autostart: false,
   webui_port: 8090,
@@ -57,7 +56,6 @@ export function SettingsPage() {
         api_key: cfg.api_key,
         capabilities: cfg.capabilities,
         custom_caps: cfg.custom_caps,
-        tier: cfg.tier,
         max_concurrent: cfg.max_concurrent,
         autostart: cfg.autostart,
       });
@@ -111,27 +109,15 @@ export function SettingsPage() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="tier">Tier</Label>
-            <Input
-              id="tier"
-              type="number"
-              min={1}
-              value={cfg.tier}
-              onChange={(e) => set("tier", Number(e.target.value))}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="threads">Max concurrent (threads)</Label>
-            <Input
-              id="threads"
-              type="number"
-              min={1}
-              value={cfg.max_concurrent}
-              onChange={(e) => set("max_concurrent", Number(e.target.value))}
-            />
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="threads">Max concurrent tasks</Label>
+          <Input
+            id="threads"
+            type="number"
+            min={1}
+            value={cfg.max_concurrent}
+            onChange={(e) => set("max_concurrent", Number(e.target.value))}
+          />
         </div>
 
         <div className="space-y-2">

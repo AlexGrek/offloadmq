@@ -1,11 +1,31 @@
 {
   "server": "https://offloadmq.alexgr.space/",
   "api_key": "607255d44ec303f6329daa41331ecdd73e38f16de248313ad2fafc352a4c8cfe",
+  "display_name": "",
+  "transport": "http",
   "capabilities": [],
   "custom_caps": [],
   "tier": 1,
   "max_concurrent": 1,
   "autostart": false,
+  "webui_port": 8090,
+  "regular_disabled_caps": [
+    "debug.echo",
+    "llm.moondream[vision;size:1.6Gb]"
+  ],
+  "sensitive_allowed_caps": [],
+  "slavemode_allowed_caps": [
+    "slavemode.ollama-delete",
+    "slavemode.ollama-list",
+    "slavemode.ollama-pull",
+    "slavemode.onnx-models-delete",
+    "slavemode.onnx-models-list",
+    "slavemode.onnx-models-prepare"
+  ],
+  "comfyui_url": "http://127.0.0.1:8188",
+  "win_startup_enabled": false,
+  "mac_startup_enabled": false,
+  "onnx_slavemode_initialized": true,
   "agent_id": "",
   "key": "",
   "jwt_token": "",

@@ -213,7 +213,7 @@ class Orchestrator:
         detected = self._last_detected or await detect_capabilities(self._log)
         caps = self._registration_caps(settings, detected)
         sysinfo = collect_system_info()
-        tier = settings.tier or calculate_tier(sysinfo)
+        tier = calculate_tier(sysinfo)
         await client.update_agent_info(
             caps,
             tier,
@@ -238,7 +238,7 @@ class Orchestrator:
             detected = await detect_capabilities(self._log)
             caps = self._registration_caps(settings, detected)
             sysinfo = collect_system_info()
-            tier = settings.tier or calculate_tier(sysinfo)
+            tier = calculate_tier(sysinfo)
             reg = await OffloadMQClient.register(
                 settings.server,
                 settings.api_key,
@@ -369,7 +369,7 @@ class Orchestrator:
         detected = await detect_capabilities(self._log)
         caps = self._registration_caps(settings, detected)
         sysinfo = collect_system_info()
-        tier = settings.tier or calculate_tier(sysinfo)
+        tier = calculate_tier(sysinfo)
 
         registration = await OffloadMQClient.register(
             settings.server,

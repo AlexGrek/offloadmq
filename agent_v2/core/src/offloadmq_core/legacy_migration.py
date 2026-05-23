@@ -29,7 +29,6 @@ def map_legacy_config(raw: dict[str, Any]) -> Settings:
         display_name=str(raw.get("displayName", raw.get("display_name", ""))).strip(),
         capabilities=[c for c in caps if not c.startswith("custom.")],
         custom_caps=custom or _list_field(raw, "custom-caps", "custom_caps"),
-        tier=int(raw.get("tier") or 1),
         max_concurrent=int(raw.get("capacity", raw.get("max_concurrent", 1)) or 1),
         autostart=bool(raw.get("autostart", False)),
         webui_port=int(raw.get("webuiPort", raw.get("webui_port", 8090)) or 8090),
