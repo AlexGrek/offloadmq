@@ -1,7 +1,6 @@
 """Async HTTP client for the OffloadMQ agent API."""
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import aiohttp
@@ -11,7 +10,6 @@ from offloadmq_agent.models import (
     AgentRegistration,
     Task,
     TaskResult,
-    TaskStatus,
 )
 
 
@@ -33,10 +31,6 @@ class OffloadMQClient:
     async def _session(self) -> aiohttp.ClientSession:
         return aiohttp.ClientSession(headers=self._headers(), timeout=self._timeout)
 
-    # ------------------------------------------------------------------
-    # Registration / Auth (static methods — no token needed)
-    # ------------------------------------------------------------------
-
     @staticmethod
     async def register(
         server: str,
@@ -44,14 +38,23 @@ class OffloadMQClient:
         capabilities: list[str],
         tier: int,
         capacity: int,
+        *,
+        display_name: str = "",
+        system_info: dict[str, Any] | None = None,
+        app_version: str = "2.0.0",
     ) -> AgentRegistration:
         url = f"{server.rstrip('/')}/private/agent/register"
-        payload = {
+        payload: dict[str, Any] = {
             "apiKey": api_key,
             "capabilities": capabilities,
             "tier": tier,
             "capacity": capacity,
+            "appVersion": app_version,
         }
+        if system_info is not None:
+            payload["systemInfo"] = system_info
+        if display_name:
+            payload["displayName"] = display_name[:50]
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as resp:
                 if resp.status != 200:
@@ -72,25 +75,30 @@ class OffloadMQClient:
                 data: dict[str, Any] = await resp.json()
                 return AgentAuth(token=data["token"], expires_in=data["expiresIn"])
 
-    # ------------------------------------------------------------------
-    # Task lifecycle
-    # ------------------------------------------------------------------
+    async def _parse_poll(self, resp: aiohttp.ClientResponse) -> Task | None:
+        if resp.status == 204:
+            return None
+        if resp.status != 200:
+            text = await resp.text()
+            raise OffloadMQError(f"Poll failed ({resp.status}): {text}")
+        raw = await resp.json()
+        if raw is None:
+            return None
+        return Task.from_poll(raw)
 
     async def poll(self, capabilities: list[str]) -> Task | None:
         url = f"{self._server}/private/agent/task/poll"
         async with await self._session() as session:
             async with session.get(url, params={"caps": ",".join(capabilities)}) as resp:
-                if resp.status == 204:
-                    return None
-                if resp.status != 200:
-                    text = await resp.text()
-                    raise OffloadMQError(f"Poll failed ({resp.status}): {text}")
-                data: dict[str, Any] = await resp.json()
-                return Task(
-                    id=data["taskId"],
-                    capability=data["capability"],
-                    payload=data.get("payload", {}),
-                )
+                return await self._parse_poll(resp)
+
+    async def poll_urgent(self, capabilities: list[str]) -> Task | None:
+        url = f"{self._server}/private/agent/task/poll_urgent"
+        async with await self._session() as session:
+            async with session.get(
+                url, params={"caps": ",".join(capabilities)}
+            ) as resp:
+                return await self._parse_poll(resp)
 
     async def take(self, capability: str, task_id: str) -> bool:
         url = f"{self._server}/private/agent/take/{capability}/{task_id}"
@@ -109,40 +117,45 @@ class OffloadMQClient:
         async with await self._session() as session:
             async with session.post(url, json={"stage": stage, "log": log}) as resp:
                 if resp.status not in (200, 204):
-                    pass  # progress failures are non-fatal
+                    pass
+
+    async def update_agent_info(
+        self,
+        capabilities: list[str],
+        tier: int,
+        capacity: int,
+        *,
+        display_name: str = "",
+        system_info: dict[str, Any] | None = None,
+        app_version: str = "2.0.0",
+    ) -> None:
+        url = f"{self._server}/private/agent/info/update"
+        body: dict[str, Any] = {
+            "capabilities": capabilities,
+            "tier": tier,
+            "capacity": capacity,
+            "appVersion": app_version,
+        }
+        if system_info is not None:
+            body["systemInfo"] = system_info
+        if display_name:
+            body["displayName"] = display_name[:50]
+        async with await self._session() as session:
+            async with session.post(url, json=body) as resp:
+                if resp.status not in (200, 204):
+                    text = await resp.text()
+                    raise OffloadMQError(f"Update info failed ({resp.status}): {text}")
 
     async def resolve(self, capability: str, result: TaskResult) -> None:
+        from offloadmq_agent.result_convert import task_result_to_wire
+
         url = f"{self._server}/private/agent/task/resolve/{capability}/{result.task_id}"
-        payload: dict[str, Any] = {
-            "status": result.status.value,
-            "output": result.output,
-        }
-        if result.error:
-            payload["error"] = result.error
+        payload = task_result_to_wire(result.task_id, capability, result)
         async with await self._session() as session:
             async with session.post(url, json=payload) as resp:
                 if resp.status not in (200, 204):
                     text = await resp.text()
                     raise OffloadMQError(f"Resolve failed ({resp.status}): {text}")
-
-    async def poll_urgent(self, capabilities: list[str]) -> Task | None:
-        url = f"{self._server}/private/agent/task/poll_urgent"
-        async with await self._session() as session:
-            async with session.get(url, params={"caps": ",".join(capabilities)}) as resp:
-                if resp.status == 204:
-                    return None
-                if resp.status != 200:
-                    return None
-                data: dict[str, Any] = await resp.json()
-                return Task(
-                    id=data["taskId"],
-                    capability=data["capability"],
-                    payload=data.get("payload", {}),
-                )
-
-    # ------------------------------------------------------------------
-    # Token refresh
-    # ------------------------------------------------------------------
 
     def update_token(self, jwt_token: str) -> None:
         self._jwt_token = jwt_token

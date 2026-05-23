@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "offloadmq-agent",
     "fastapi>=0.111",
+    "python-multipart>=0.0.9",
 ]
 
 [build-system]

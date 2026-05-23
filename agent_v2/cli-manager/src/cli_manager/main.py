@@ -151,6 +151,27 @@ def config_show() -> None:
     console.print_json(_orch().get_settings().model_dump_json(indent=2))
 
 
+@config_app.command("import-legacy")
+def config_import_legacy(
+    legacy_path: Optional[str] = typer.Option(
+        None, "--from", help="Path to legacy ~/.offload-agent.json"
+    ),
+    merge: bool = typer.Option(True, "--merge/--replace"),
+) -> None:
+    """Import settings from legacy offload-agent config."""
+    from pathlib import Path
+
+    from offloadmq_core.legacy_migration import LEGACY_CONFIG, import_legacy_config
+
+    src = Path(legacy_path) if legacy_path else LEGACY_CONFIG
+    try:
+        cfg = import_legacy_config(legacy_path=src, merge=merge)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]Imported[/green] → {cfg.server or '(no server)'}")
+
+
 @config_app.command("set")
 def config_set(
     server: Optional[str] = typer.Option(None, "--server", "-s"),

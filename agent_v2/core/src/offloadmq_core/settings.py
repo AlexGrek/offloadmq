@@ -1,28 +1,42 @@
-"""Settings JSON management — owned by core.
-
-The settings file lives in the current working directory. Core is the single
-authority for loading and persisting it; everything else goes through the
-orchestrator.
-"""
+"""Settings JSON management — owned by core."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 SETTINGS_FILE = Path(".offloadmq-agent.json")
+TransportMode = Literal["http", "websocket"]
 
 
 class Settings(BaseModel):
     server: str = ""
     api_key: str = ""
+    display_name: str = ""
+    transport: TransportMode = "http"
     capabilities: list[str] = []
     custom_caps: list[str] = []
     tier: int = 1
-    max_concurrent: int = 1  # parallel executor threads, 1 by default
+    max_concurrent: int = 1
     autostart: bool = False
+    webui_port: int = 8090
+
+    # Tiered capability policy (v2-native names).
+    regular_disabled_caps: list[str] = Field(default_factory=list)
+    sensitive_allowed_caps: list[str] = Field(default_factory=list)
+    slavemode_allowed_caps: list[str] = Field(default_factory=list)
+
+    # ComfyUI / workflows
+    comfyui_url: str = "http://127.0.0.1:8188"
+
+    # OS integration flags (persisted; platform modules apply changes).
+    win_startup_enabled: bool = False
+    mac_startup_enabled: bool = False
+
+    # Internal flags
+    onnx_slavemode_initialized: bool = False
 
     # Credentials populated after registration (not user-edited).
     agent_id: str = ""
@@ -30,18 +44,25 @@ class Settings(BaseModel):
     jwt_token: str = ""
     token_expires_in: int = 0
 
-    @field_validator("server", "api_key", mode="before")
+    @field_validator("server", "api_key", "display_name", "comfyui_url", mode="before")
     @classmethod
     def _strip(cls, v: Any) -> Any:
         return v.strip() if isinstance(v, str) else v
 
-    @field_validator("max_concurrent", "tier", mode="before")
+    @field_validator("max_concurrent", "tier", "webui_port", mode="before")
     @classmethod
     def _min_one(cls, v: Any) -> Any:
         try:
             return max(1, int(v))
         except (TypeError, ValueError):
             return 1
+
+    @field_validator("transport", mode="before")
+    @classmethod
+    def _transport(cls, v: Any) -> Any:
+        if v in ("http", "websocket"):
+            return v
+        return "http"
 
     @property
     def is_configured(self) -> bool:

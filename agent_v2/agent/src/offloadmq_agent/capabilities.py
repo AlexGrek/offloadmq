@@ -1,49 +1,22 @@
-"""Runtime capability detection (async)."""
+"""Runtime capability detection (async entry point)."""
 from __future__ import annotations
 
 import asyncio
-import shutil
-from typing import Any
+from typing import Callable
 
-import aiohttp
+from offloadmq_agent.cap_policy import classify_capabilities, compute_registration_caps
+from offloadmq_agent.capabilities_sync import detect_capabilities as detect_capabilities_sync
 
-
-async def _check_ollama(base_url: str = "http://localhost:11434") -> list[str]:
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{base_url}/api/tags", timeout=aiohttp.ClientTimeout(total=3)) as resp:
-                if resp.status != 200:
-                    return []
-                data: dict[str, Any] = await resp.json()
-                caps = []
-                for model in data.get("models", []):
-                    name: str = model.get("name", "")
-                    if name:
-                        base = name.split(":")[0]
-                        caps.append(f"llm.{base}")
-                return caps
-    except Exception:
-        return []
+__all__ = [
+    "detect_capabilities",
+    "detect_capabilities_sync",
+    "classify_capabilities",
+    "compute_registration_caps",
+]
 
 
-async def _check_shell() -> list[str]:
-    caps = []
-    if shutil.which("bash"):
-        caps.append("shell.bash")
-    if shutil.which("sh"):
-        caps.append("shell.sh")
-    return caps
-
-
-async def detect_capabilities() -> list[str]:
+async def detect_capabilities(
+    log_fn: Callable[[str], None] | None = None,
+) -> list[str]:
     """Probe the local environment and return available capability strings."""
-    results = await asyncio.gather(
-        _check_ollama(),
-        _check_shell(),
-        return_exceptions=True,
-    )
-    caps: list[str] = ["debug.echo"]
-    for result in results:
-        if isinstance(result, list):
-            caps.extend(result)
-    return caps
+    return await asyncio.to_thread(detect_capabilities_sync, log_fn)

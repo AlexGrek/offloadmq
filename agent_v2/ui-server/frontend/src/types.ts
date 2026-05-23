@@ -44,20 +44,50 @@ export interface AgentStatus {
   capabilities: string[];
   maxConcurrent: number;
   activeTasks: number;
+  transport?: string;
+  displayName?: string;
+  sysinfo?: Record<string, unknown>;
+  scanning?: boolean;
 }
 
 export interface Settings {
   server: string;
   api_key: string;
+  display_name: string;
+  transport: "http" | "websocket";
   capabilities: string[];
   custom_caps: string[];
   tier: number;
   max_concurrent: number;
   autostart: boolean;
+  webui_port: number;
+  regular_disabled_caps: string[];
+  sensitive_allowed_caps: string[];
+  slavemode_allowed_caps: string[];
+  comfyui_url: string;
+  win_startup_enabled: boolean;
+  mac_startup_enabled: boolean;
   agent_id: string;
   key: string;
   jwt_token: string;
   token_expires_in: number;
+}
+
+export interface TierCaps {
+  regular: string[];
+  sensitive: string[];
+  unknown: string[];
+  regularDisabled: string[];
+  sensitiveAllowed: string[];
+  slavemodeAllowed: string[];
+  slavemodeAll: string[];
+}
+
+export interface CapabilitiesState {
+  caps: string[];
+  sysinfo: Record<string, unknown>;
+  scanning: boolean;
+  tierCaps: TierCaps;
 }
 
 export const TERMINAL_STATUSES: TaskStatus[] = [

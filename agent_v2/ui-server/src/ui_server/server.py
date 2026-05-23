@@ -22,6 +22,18 @@ def create_app(orchestrator: OrchestratorAPI) -> FastAPI:
     app = FastAPI(title="OffloadMQ Agent UI", version="2.0.0")
     app.include_router(create_router(orchestrator))
 
+    @app.on_event("startup")
+    async def _on_startup() -> None:
+        if hasattr(orchestrator, "start_background_scan"):
+            orchestrator.start_background_scan()
+        settings = orchestrator.get_settings()
+        autostart = getattr(settings, "autostart", False)
+        if autostart and hasattr(orchestrator, "start"):
+            try:
+                orchestrator.start()
+            except RuntimeError:
+                pass
+
     static = _static_dir()
     if static.exists():
         # html=True gives SPA fallback (unmatched paths → index.html).

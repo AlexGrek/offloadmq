@@ -94,6 +94,19 @@ export function TaskDetailPage() {
             </CardContent>
           </Card>
 
+          {Object.keys(task.payload).length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Payload</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <pre className="bg-muted overflow-x-auto rounded-md p-3 text-xs">
+                  {JSON.stringify(task.payload, null, 2)}
+                </pre>
+              </CardContent>
+            </Card>
+          ) : null}
+
           {task.error ? (
             <Card>
               <CardHeader>

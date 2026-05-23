@@ -1,23 +1,16 @@
-"""Parallel executor pool.
-
-Each task runs in its own OS thread (bounded by `max_workers`, default 1).
-Inside the worker thread we drive the async executor with `asyncio.run`, so the
-agent library stays fully async while core gets real thread-level parallelism.
-"""
+"""Parallel executor pool."""
 from __future__ import annotations
 
 import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable
+from typing import Any, Callable
 
 from offloadmq_agent.context import ExecContext, TaskCancelled
 from offloadmq_agent.executor import Executor
 from offloadmq_agent.models import LogEntry, Task, TaskResult, TaskStatus
 
-# Called from the worker thread when the task reaches a terminal state.
 DoneCallback = Callable[[Task, TaskResult], None]
-# Called from the worker thread for every structured log entry.
 LogCallback = Callable[[str, LogEntry], None]
 
 
@@ -40,17 +33,25 @@ class ExecutorPool:
         cancel_event: threading.Event,
         on_log: LogCallback,
         on_done: DoneCallback,
+        *,
+        progress_reporter: Callable[[str, str, str], None] | None = None,
+        agent_transport: Any | None = None,
+        legacy_transport: Any | None = None,
     ) -> None:
+        transport = agent_transport if agent_transport is not None else legacy_transport
         self._pool.submit(
-            self._run, task, executor, cancel_event, on_log, on_done
+            self._run,
+            task,
+            executor,
+            cancel_event,
+            on_log,
+            on_done,
+            progress_reporter,
+            transport,
         )
 
     def shutdown(self, wait: bool = True) -> None:
         self._pool.shutdown(wait=wait, cancel_futures=True)
-
-    # ------------------------------------------------------------------
-    # Worker thread body
-    # ------------------------------------------------------------------
 
     def _run(
         self,
@@ -59,10 +60,14 @@ class ExecutorPool:
         cancel_event: threading.Event,
         on_log: LogCallback,
         on_done: DoneCallback,
+        progress_reporter: Callable[[str, str, str], None] | None,
+        agent_transport: Any | None,
     ) -> None:
         ctx = ExecContext(
             log_sink=lambda entry: on_log(task.id, entry),
             cancel_event=cancel_event,
+            progress_reporter=progress_reporter,
+            agent_transport=agent_transport,
         )
         try:
             result = asyncio.run(executor(task, ctx))
@@ -72,7 +77,7 @@ class ExecutorPool:
                 status=TaskStatus.CANCELLED,
                 error="Cancelled by user",
             )
-        except Exception as exc:  # noqa: BLE001 — must never crash the worker
+        except Exception as exc:  # noqa: BLE001
             result = TaskResult(
                 task_id=task.id,
                 status=TaskStatus.FAILED,
