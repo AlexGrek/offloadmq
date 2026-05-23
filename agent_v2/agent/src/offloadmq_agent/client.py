@@ -86,6 +86,14 @@ class OffloadMQClient:
             return None
         return Task.from_poll(raw)
 
+    async def ping(self) -> None:
+        url = f"{self._server}/private/agent/ping"
+        async with await self._session() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise OffloadMQError(f"Ping failed ({resp.status}): {text}")
+
     async def poll(self, capabilities: list[str]) -> Task | None:
         url = f"{self._server}/private/agent/task/poll"
         async with await self._session() as session:

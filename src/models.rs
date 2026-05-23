@@ -198,13 +198,17 @@ pub struct Agent {
 
 impl Agent {
     const ONLINE_TIMEOUT_SECS: i64 = 120;
+
+    /// Last activity timestamp for stale-agent cleanup. Falls back to
+    /// `registered_at` for legacy records that predate `last_contact` on register.
+    pub fn last_activity_at(&self) -> DateTime<Utc> {
+        self.last_contact.unwrap_or(self.registered_at)
+    }
+
     pub fn is_online(&self) -> bool {
-        if let Some(last) = self.last_contact {
-            let now = Utc::now();
-            now.signed_duration_since(last) <= TimeDelta::seconds(Self::ONLINE_TIMEOUT_SECS)
-        } else {
-            false
-        }
+        let now = Utc::now();
+        now.signed_duration_since(self.last_activity_at())
+            <= TimeDelta::seconds(Self::ONLINE_TIMEOUT_SECS)
     }
 }
 
@@ -219,7 +223,7 @@ impl From<AgentRegistrationRequest> for Agent {
             uid_short: short,   // Default to empty string
             registered_at: now, // Current timestamp
             personal_login_token: Uuid::new_v4().into(),
-            last_contact: None,
+            last_contact: Some(now),
             last_comm_method: CommunicationMethod::Http,
             capabilities: request.capabilities,
             tier: request.tier,

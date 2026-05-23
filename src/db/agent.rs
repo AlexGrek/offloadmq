@@ -216,16 +216,13 @@ impl CachedAgentStorage {
             .list_all_agents()
             .into_iter()
             .filter_map(|agent| {
-                if let Some(last_contact) = agent.last_contact {
-                    let age_secs = now.signed_duration_since(last_contact).num_seconds();
-                    if age_secs > ttl_secs {
-                        Some(agent.uid)
-                    } else {
-                        None
-                    }
-                } else {
-                    // Agents with no last_contact are considered stale
+                let age_secs = now
+                    .signed_duration_since(agent.last_activity_at())
+                    .num_seconds();
+                if age_secs > ttl_secs {
                     Some(agent.uid)
+                } else {
+                    None
                 }
             })
             .collect();

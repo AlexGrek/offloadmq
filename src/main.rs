@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{Json, Router, extract::{DefaultBodyLimit, State}, middleware::from_fn_with_state, routing::*};
 use log::info;
 use offloadmq::{
-    api::agent::{auth_agent, register_agent, update_agent_info, websocket_handler},
+    api::agent::{agent_ping, auth_agent, register_agent, update_agent_info, websocket_handler},
     db::app_storage::AppStorage,
     preferences::init_config,
     state::AppState,
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest(
             "/private/agent",
             Router::new()
-                .route("/ping", get(health_check))
+                .route("/ping", get(agent_ping))
                 .route("/info/update", post(update_agent_info))
                 .route(
                     "/task/poll_urgent",

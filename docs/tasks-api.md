@@ -714,6 +714,30 @@ Update agent capabilities, tier, or system info.
 
 ---
 
+### Heartbeat Ping
+
+```
+GET /private/agent/ping
+Authorization: Bearer <JWT>
+```
+
+Lightweight liveness check that updates `last_contact` without fetching tasks. Use this when the agent is at full capacity and cannot poll — agents with no contact for > 120s are treated as offline for scheduling.
+
+**Response** (200 OK)
+
+```json
+{
+  "status": "ok"
+}
+```
+
+**Notes**
+
+- Updates `last_contact` timestamp
+- Agents should ping at least every 60 seconds while busy at full capacity
+
+---
+
 ### Poll Urgent Tasks
 
 ```
@@ -766,7 +790,7 @@ null
 **Notes**
 
 - Urgent tasks have 60s TTL; if not picked up, they're auto-expired
-- Updates `last_contact` timestamp (agents offline > 120s are removed)
+- Updates `last_contact` timestamp (agents with no contact for > 120s are treated as offline for scheduling but remain registered)
 - Returns `null` if no urgent tasks matching your capabilities exist
 
 ---

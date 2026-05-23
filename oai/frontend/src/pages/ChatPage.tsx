@@ -235,14 +235,14 @@ function ModelPicker({
       <AnimatePresence>
       {open && (
         <motion.div
-          className="absolute bottom-full mb-1 left-0 z-50 min-w-45 rounded-xl border border-border bg-popover shadow-md py-1 text-sm"
+          className="absolute bottom-full mb-1 left-0 z-50 min-w-45 overflow-hidden rounded-xl border border-border bg-popover shadow-md text-sm"
           data-testid="model-picker-dropdown"
           initial={{ opacity: 0, y: 6, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 6, scale: 0.96 }}
           transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground border-b border-border mb-1">
+          <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
             <span>Models</span>
             <button
               type="button"
@@ -253,35 +253,40 @@ function ModelPicker({
               <RefreshCw className="size-3" />
             </button>
           </div>
-          {sorted.map(cap => (
-            <button
-              key={cap.raw}
-              type="button"
-              disabled={!cap.online}
-              onClick={() => { if (cap.online) { onSelect(cap.base); setOpen(false) } }}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors',
-                cap.online ? 'hover:bg-muted cursor-pointer' : 'cursor-default opacity-80',
-                cap.base === selected && 'bg-muted font-medium',
-              )}
-              data-testid={`model-option-${cap.base}`}
-            >
-              <ModelAvailabilityDot cap={cap} />
-              <span className="flex-1 truncate">{modelLabel(cap)}</span>
-              {cap.tags.length > 0 && (
-                <span className="flex gap-1 shrink-0">
-                  {cap.tags.map(t => (
-                    <span
-                      key={t}
-                      className="rounded px-1 py-0.5 text-[10px] font-medium bg-accent text-accent-foreground"
-                    >
-                      {t}
-                    </span>
-                  ))}
-                </span>
-              )}
-            </button>
-          ))}
+          <div
+            className="max-h-[min(50vh,16rem)] overflow-y-auto overscroll-contain py-1"
+            data-testid="model-picker-list"
+          >
+            {sorted.map(cap => (
+              <button
+                key={cap.raw}
+                type="button"
+                disabled={!cap.online}
+                onClick={() => { if (cap.online) { onSelect(cap.base); setOpen(false) } }}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors',
+                  cap.online ? 'hover:bg-muted cursor-pointer' : 'cursor-default opacity-80',
+                  cap.base === selected && 'bg-muted font-medium',
+                )}
+                data-testid={`model-option-${cap.base}`}
+              >
+                <ModelAvailabilityDot cap={cap} />
+                <span className="flex-1 truncate">{modelLabel(cap)}</span>
+                {cap.tags.length > 0 && (
+                  <span className="flex gap-1 shrink-0">
+                    {cap.tags.map(t => (
+                      <span
+                        key={t}
+                        className="rounded px-1 py-0.5 text-[10px] font-medium bg-accent text-accent-foreground"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </motion.div>
       )}
       </AnimatePresence>

@@ -23,6 +23,14 @@ use crate::{
     state::AppState,
 };
 
+pub async fn agent_ping(
+    AuthenticatedAgent(agent): AuthenticatedAgent,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    service::do_agent_ping(agent, &state, CommunicationMethod::Http).await?;
+    Ok(Json(json!({"status": "ok"})))
+}
+
 pub async fn fetch_task_urgent_handler(
     AuthenticatedAgent(agent): AuthenticatedAgent,
     State(app_state): State<Arc<AppState>>,
@@ -60,7 +68,7 @@ pub async fn auth_agent(
     State(state): State<Arc<AppState>>,
     Json(request): Json<schema::AgentLoginRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let resp = service::do_auth_agent(request, &state)?;
+    let resp = service::do_auth_agent(request, &state).await?;
     Ok(Json(resp))
 }
 
@@ -494,7 +502,15 @@ async fn ws_route_get(
             ))
         }
         // /private/agent/ping
-        ["private", "agent", "ping"] => Ok((200, json!({"status": "ok"}))),
+        ["private", "agent", "ping"] => {
+            service::do_agent_ping(
+                _agent.clone(),
+                state,
+                CommunicationMethod::WebSocket,
+            )
+            .await?;
+            Ok((200, json!({"status": "ok"})))
+        }
         // /private/agent/task/poll (alias for poll_task)
         ["private", "agent", "task", "poll"] => {
             let task = service::poll_non_urgent(

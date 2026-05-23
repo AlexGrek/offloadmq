@@ -22,6 +22,19 @@ use crate::{
     utils::base_capability,
 };
 
+pub async fn do_agent_ping(
+    agent: Agent,
+    state: &Arc<AppState>,
+    comm_method: CommunicationMethod,
+) -> Result<(), AppError> {
+    state
+        .storage
+        .agents
+        .update_agent_last_contact(agent, comm_method)
+        .await?;
+    Ok(())
+}
+
 pub async fn poll_urgent(
     agent: Agent,
     state: &Arc<AppState>,
@@ -113,7 +126,7 @@ pub async fn do_register_agent(
     })
 }
 
-pub fn do_auth_agent(
+pub async fn do_auth_agent(
     req: AgentLoginRequest,
     state: &Arc<AppState>,
 ) -> Result<AgentLoginResponse, AppError> {
@@ -126,7 +139,12 @@ pub fn do_auth_agent(
     if agent.personal_login_token != req.key {
         return Err(mk_auth_err());
     }
-    let (token, expires_in) = state.auth.create_token(&agent.uid)?;
+    state
+        .storage
+        .agents
+        .update_agent_last_contact(agent, CommunicationMethod::Http)
+        .await?;
+    let (token, expires_in) = state.auth.create_token(&req.agent_id)?;
     Ok(AgentLoginResponse { token, expires_in })
 }
 

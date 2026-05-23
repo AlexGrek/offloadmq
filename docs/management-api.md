@@ -168,7 +168,7 @@ Returns all registered agents (online and offline).
 | `uidShort` | Last 6 chars of UID (used in logs) |
 | `personalLoginToken` | Secret token for agent login (reveals personal key here — guard carefully) |
 | `registeredAt` | ISO 8601 timestamp when agent registered |
-| `lastContact` | Last time agent polled for tasks (null if never contacted) |
+| `lastContact` | Last time the agent contacted the server (set at registration/login; updated on poll, progress, resolve, and info update). Null only on legacy records. |
 | `lastCommMethod` | Connection type used on most recent contact: `"ws"` (WebSocket) or `"http"` (HTTP polling) |
 | `displayName` | Human-readable name (max 50 chars). Set at registration; null if agent did not provide one. |
 | `capabilities` | List of capabilities with optional extended attributes in brackets |
@@ -206,9 +206,8 @@ Same structure as `/agents/list`, but filtered to online agents only.
 
 **Notes**
 
-- Online threshold: `lastContact` is within 120 seconds of now
+- Online threshold: last activity (`lastContact`, or `registeredAt` for legacy records) is within 120 seconds of now
 - Useful for determining which agents can immediately accept work
-- Agents with `lastContact: null` are never considered online
 
 ---
 
@@ -785,7 +784,7 @@ Authorization: Bearer <token>
 
 Immediately runs the stale agents cleanup job (same logic as the background task that runs every 16–22 hours).
 
-Removes agents that have not been contacted for longer than `STALE_AGENTS_TTL_DAYS` (default: 7 days). Agents with no `lastContact` timestamp are also considered stale and will be deleted.
+Removes agents that have not been contacted for longer than `STALE_AGENTS_TTL_DAYS` (default: 7 days). Inactivity is measured from `lastContact`, or from `registeredAt` for legacy records with no `lastContact`.
 
 **Response** (200 OK)
 
@@ -804,8 +803,7 @@ Removes agents that have not been contacted for longer than `STALE_AGENTS_TTL_DA
 **Notes**
 
 - Safe to call at any time — only deletes agents that have exceeded the inactivity TTL
-- Agent inactivity is measured from `lastContact` timestamp
-- Agents with `lastContact: null` (never contacted) are considered stale
+- Agent inactivity is measured from `lastContact`, falling back to `registeredAt` when `lastContact` is null (legacy records)
 - Deleted agents cannot re-register with their original credentials
 - TTL is controlled by `STALE_AGENTS_TTL_DAYS` env var
 - Cleanup interval is randomized between `STALE_AGENTS_CLEANUP_INTERVAL_MIN_HOURS` and `STALE_AGENTS_CLEANUP_INTERVAL_MAX_HOURS` env vars

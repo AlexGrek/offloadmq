@@ -99,10 +99,10 @@ export function ImgGenModelPicker({
 
       {open && (
         <div
-          className="absolute top-full mt-1 left-0 z-50 min-w-full rounded-xl border border-border bg-popover shadow-md py-1 text-sm"
+          className="absolute top-full mt-1 left-0 z-50 min-w-full overflow-hidden rounded-xl border border-border bg-popover shadow-md text-sm"
           data-testid="imggen-model-picker-dropdown"
         >
-          <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground border-b border-border mb-1">
+          <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
             <span>Models</span>
             <button
               type="button"
@@ -113,34 +113,39 @@ export function ImgGenModelPicker({
               <RefreshCw className="size-3" />
             </button>
           </div>
-          {sorted.map(cap => (
-            <button
-              key={cap.raw}
-              type="button"
-              onClick={() => { onSelect(cap.base); setOpen(false) }}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer',
-                cap.base === selected && 'bg-muted font-medium',
-                !cap.online && 'opacity-70',
-              )}
-              data-testid={`imggen-model-option-${cap.base}`}
-            >
-              <AvailabilityDot cap={cap} />
-              <span className="flex-1 truncate">{capLabel(cap)}</span>
-              {cap.tags.length > 0 && (
-                <span className="flex gap-1 shrink-0">
-                  {cap.tags.map(t => (
-                    <span
-                      key={t}
-                      className="rounded px-1 py-0.5 text-[10px] font-medium bg-accent text-accent-foreground"
-                    >
-                      {t}
-                    </span>
-                  ))}
-                </span>
-              )}
-            </button>
-          ))}
+          <div
+            className="max-h-[min(50vh,16rem)] overflow-y-auto overscroll-contain py-1"
+            data-testid="imggen-model-picker-list"
+          >
+            {sorted.map(cap => (
+              <button
+                key={cap.raw}
+                type="button"
+                onClick={() => { onSelect(cap.base); setOpen(false) }}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer',
+                  cap.base === selected && 'bg-muted font-medium',
+                  !cap.online && 'opacity-70',
+                )}
+                data-testid={`imggen-model-option-${cap.base}`}
+              >
+                <AvailabilityDot cap={cap} />
+                <span className="flex-1 truncate">{capLabel(cap)}</span>
+                {cap.tags.length > 0 && (
+                  <span className="flex gap-1 shrink-0">
+                    {cap.tags.map(t => (
+                      <span
+                        key={t}
+                        className="rounded px-1 py-0.5 text-[10px] font-medium bg-accent text-accent-foreground"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_REFRESH_MARGIN = 300
 _POLL_INTERVAL = 2.0
+_PING_INTERVAL = 60.0
 _RESCAN_INTERVALS = [30, 120, 300]
 _RESCAN_STEADY = 900
 APP_VERSION = "2.0.0"
@@ -76,6 +77,7 @@ class Orchestrator:
         self._online = False
         self._status_message = "stopped"
         self._last_detected: list[str] = []
+        self._last_ping_at = 0.0
 
     def _log(self, msg: str) -> None:
         self._logs.append(msg)
@@ -463,6 +465,7 @@ class Orchestrator:
                 caps = self._registration_caps(settings, self._last_detected)
 
                 if self._store.active_count() >= settings.max_concurrent:
+                    await self._maybe_ping()
                     await self._idle()
                     continue
 
@@ -487,6 +490,19 @@ class Orchestrator:
 
     async def _idle(self) -> None:
         await asyncio.sleep(_POLL_INTERVAL)
+
+    async def _maybe_ping(self) -> None:
+        now = time.monotonic()
+        if now - self._last_ping_at < _PING_INTERVAL:
+            return
+        client = self._client
+        if client is None:
+            return
+        try:
+            await client.ping()
+            self._last_ping_at = now
+        except OffloadMQError as exc:
+            logger.warning("heartbeat ping failed: %s", exc)
 
     async def _maybe_refresh(self, expires_in: int) -> int:
         if expires_in - int(time.time()) > _TOKEN_REFRESH_MARGIN:
