@@ -44,7 +44,6 @@ export interface AgentStatus {
   capabilities: string[];
   maxConcurrent: number;
   activeTasks: number;
-  transport?: string;
   displayName?: string;
   sysinfo?: Record<string, unknown>;
   scanning?: boolean;
@@ -54,7 +53,6 @@ export interface Settings {
   server: string;
   api_key: string;
   display_name: string;
-  transport: "http" | "websocket";
   capabilities: string[];
   custom_caps: string[];
   tier: number;

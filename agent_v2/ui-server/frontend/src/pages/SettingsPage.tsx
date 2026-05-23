@@ -18,7 +18,6 @@ const EMPTY: Settings = {
   server: "",
   api_key: "",
   display_name: "",
-  transport: "http",
   capabilities: [],
   custom_caps: [],
   tier: 1,

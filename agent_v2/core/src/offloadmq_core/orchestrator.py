@@ -321,7 +321,6 @@ class Orchestrator:
                 "capabilities": settings.all_capabilities,
                 "maxConcurrent": settings.max_concurrent,
                 "activeTasks": self._store.active_count(),
-                "transport": settings.transport,
                 "displayName": settings.display_name,
                 "sysinfo": snap.get("sysinfo", {}),
                 "scanning": snap.get("scanning", False),

@@ -11,6 +11,7 @@
 | `sensitive-allowed-caps` | `sensitive_allowed_caps` |
 | `slavemode-allowed-caps` | `slavemode_allowed_caps` |
 | `capacity` | `max_concurrent` |
+| `transport` | *(dropped — v2 uses HTTP polling only)* |
 
 Import:
 
@@ -42,4 +43,4 @@ All other capability families (`docker.*`, `imggen.*`, `txt2music.*`, `onnx.*`, 
 - [x] System info, updater, OS startup, systemd install
 - [x] Raw JSON config editor
 - [x] Global agent log tail
-- [ ] WebSocket transport (setting stored; HTTP client only today)
+- [x] HTTP polling only (no WebSocket transport in v2)

@@ -170,7 +170,7 @@ Single object both entry points drive. Settings, task store, executor pool, poll
 
 | File | Purpose |
 |---|---|
-| `settings.py` | `Settings` in `.offloadmq-agent.json` — server, api_key, display_name, transport, tier policy, comfy URL, OS flags, webui_port, credentials |
+| `settings.py` | `Settings` in `.offloadmq-agent.json` — server, api_key, display_name, tier policy, comfy URL, OS flags, webui_port, credentials |
 | `legacy_migration.py` | Map `~/.offload-agent.json` → v2 settings |
 | `task_store.py` | In-memory tasks + logs; terminal cap 200 |
 | `executor_pool.py` | `ThreadPoolExecutor`; `asyncio.run(executor)` per task |
@@ -192,7 +192,7 @@ caller thread          orchestrator.start() → spawns:
 
 - Poller respects `max_concurrent`; passes `SyncAgentTransport` as `ctx.agent_transport`.
 - `client.resolve` uses wire `TaskResultReport` shape via `result_convert`.
-- JWT refresh 300s before expiry. **HTTP polling only** (`transport` setting stored; WebSocket not implemented yet).
+- JWT refresh 300s before expiry. **HTTP polling only** (no WebSocket transport).
 
 ### Orchestrator API (implements `OrchestratorAPI`)
 
@@ -236,7 +236,7 @@ Stack: React 19 · Vite 6 · react-router 7 · Tailwind v4 · shadcn/ui · TypeS
 |---|---|
 | `/` | Dashboard |
 | `/tasks`, `/tasks/:id` | Tasks + detail (payload, structured logs, cancel) |
-| `/connection` | Server, API key, display name, transport |
+| `/connection` | Server, API key, display name |
 | `/capabilities` | Tiered caps + rescan/restart |
 | `/slavemode` | Slavemode allow-list |
 | `/custom` | Custom cap YAML editor |

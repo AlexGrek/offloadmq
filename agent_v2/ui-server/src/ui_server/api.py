@@ -13,7 +13,6 @@ class SettingsPayload(BaseModel):
     server: str | None = None
     api_key: str | None = None
     display_name: str | None = None
-    transport: str | None = None
     capabilities: list[str] | None = None
     custom_caps: list[str] | None = None
     tier: int | None = None

@@ -57,22 +57,6 @@ export function ConnectionPage() {
               onChange={(e) => setForm({ ...form, display_name: e.target.value })}
             />
           </div>
-          <div className="space-y-2">
-            <Label>Transport</Label>
-            <select
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-              value={form.transport ?? "http"}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  transport: e.target.value as Settings["transport"],
-                })
-              }
-            >
-              <option value="http">HTTP</option>
-              <option value="websocket">WebSocket (legacy)</option>
-            </select>
-          </div>
           <div className="flex gap-2">
             <Button onClick={save}>Save</Button>
             <Button variant="outline" onClick={register}>

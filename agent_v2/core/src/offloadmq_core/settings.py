@@ -3,19 +3,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 SETTINGS_FILE = Path(".offloadmq-agent.json")
-TransportMode = Literal["http", "websocket"]
 
 
 class Settings(BaseModel):
     server: str = ""
     api_key: str = ""
     display_name: str = ""
-    transport: TransportMode = "http"
     capabilities: list[str] = []
     custom_caps: list[str] = []
     tier: int = 1
@@ -56,13 +54,6 @@ class Settings(BaseModel):
             return max(1, int(v))
         except (TypeError, ValueError):
             return 1
-
-    @field_validator("transport", mode="before")
-    @classmethod
-    def _transport(cls, v: Any) -> Any:
-        if v in ("http", "websocket"):
-            return v
-        return "http"
 
     @property
     def is_configured(self) -> bool:

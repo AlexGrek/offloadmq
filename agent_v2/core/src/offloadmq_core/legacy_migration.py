@@ -20,10 +20,6 @@ def _list_field(raw: dict[str, Any], *keys: str) -> list[str]:
 
 def map_legacy_config(raw: dict[str, Any]) -> Settings:
     """Map legacy config dict to v2 Settings (does not persist)."""
-    transport = raw.get("transport", "http")
-    if transport not in ("http", "websocket"):
-        transport = "http"
-
     caps = _list_field(raw, "capabilities")
     custom = [c for c in caps if c.startswith("custom.")]
 
@@ -31,7 +27,6 @@ def map_legacy_config(raw: dict[str, Any]) -> Settings:
         server=str(raw.get("server", "")).strip(),
         api_key=str(raw.get("apiKey", raw.get("api_key", ""))).strip(),
         display_name=str(raw.get("displayName", raw.get("display_name", ""))).strip(),
-        transport=transport,  # type: ignore[arg-type]
         capabilities=[c for c in caps if not c.startswith("custom.")],
         custom_caps=custom or _list_field(raw, "custom-caps", "custom_caps"),
         tier=int(raw.get("tier") or 1),
