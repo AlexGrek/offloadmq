@@ -100,19 +100,55 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ comfyui_url }),
     }),
+  addComfyWorkflow: (p: {
+    workflow_name: string;
+    task_type: string;
+    namespace: string;
+    graph_json: string;
+  }) =>
+    request<{ ok: boolean }>("/comfy/workflows/add", {
+      method: "POST",
+      body: JSON.stringify(p),
+    }),
+  deleteComfyWorkflow: (workflow_name: string, namespace: string) =>
+    request<{ ok: boolean }>("/comfy/workflows/delete", {
+      method: "POST",
+      body: JSON.stringify({ workflow_name, namespace }),
+    }),
+  autodetectComfyParamMap: (p: {
+    workflow_name: string;
+    task_type: string;
+    namespace: string;
+    param_map_json: string;
+  }) =>
+    request<{ ok: boolean; paramMap: Record<string, unknown> }>(
+      "/comfy/workflows/param-map/autodetect",
+      { method: "POST", body: JSON.stringify(p) }
+    ),
 
   getSystemInfo: () =>
     request<{ sysinfo: Record<string, unknown> }>("/system/info"),
-  checkUpdate: () => request<Record<string, unknown>>("/update/check"),
-  downloadUpdate: () =>
-    request<Record<string, unknown>>("/update/download", { method: "POST" }),
+  getStartupStatus: () =>
+    request<{
+      platform: string;
+      mac_enabled: boolean;
+      win_enabled: boolean;
+      systemd_installed: boolean;
+    }>("/system/startup-status"),
   setWinStartup: (enable: boolean) =>
     request<Settings>(`/system/win-startup?enable=${enable}`, { method: "POST" }),
   setMacStartup: (enable: boolean) =>
     request<Settings>(`/system/mac-startup?enable=${enable}`, { method: "POST" }),
   installSystemd: (host = "0.0.0.0", port = 8090) =>
-    request<Record<string, string>>(
+    request<{ ok: boolean; message?: string }>(
       `/system/install-systemd?host=${host}&port=${port}`,
       { method: "POST" }
     ),
+  uninstallSystemd: () =>
+    request<{ ok: boolean; message?: string }>("/system/uninstall-systemd", {
+      method: "POST",
+    }),
+  checkUpdate: () => request<Record<string, unknown>>("/update/check"),
+  downloadUpdate: () =>
+    request<Record<string, unknown>>("/update/download", { method: "POST" }),
 };

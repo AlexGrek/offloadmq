@@ -43,6 +43,19 @@ APP_VERSION = "2.0.0"
 
 
 class Orchestrator:
+    # Fields that, when changed while online, require pushing fresh info to the server.
+    _SERVER_FACING = {
+        "capabilities",
+        "custom_caps",
+        "display_name",
+        "max_concurrent",
+        "regular_disabled_caps",
+        "sensitive_allowed_caps",
+        "slavemode_allowed_caps",
+    }
+    # Fields that require a full re-registration when changed while running.
+    _CONNECTION_FIELDS = {"server", "api_key"}
+
     def __init__(self, settings_path: Path = SETTINGS_FILE) -> None:
         self._settings_path = settings_path
         self._settings = load_settings(settings_path)
@@ -111,10 +124,51 @@ class Orchestrator:
 
     def save_raw_settings_json(self, text: str) -> Settings:
         cfg = Settings.model_validate_json(text)
+        before = self.get_settings()
         with self._lock:
             self._settings = cfg
             save_settings(cfg, self._settings_path)
-            return cfg.model_copy(deep=True)
+            after = cfg.model_copy(deep=True)
+        self._apply_live(before, after)
+        return after
+
+    def apply_settings(self, **fields: Any) -> Settings:
+        """User-facing settings update: persist, then apply live to the running agent."""
+        before = self.get_settings()
+        after = self.update_settings(**fields)
+        self._apply_live(before, after)
+        return after
+
+    def _apply_live(self, before: Settings, after: Settings) -> None:
+        changed = {
+            name
+            for name in type(after).model_fields
+            if getattr(before, name) != getattr(after, name)
+        }
+        if not changed:
+            return
+        if "max_concurrent" in changed:
+            self._resize_pool(after.max_concurrent)
+        if changed & self._CONNECTION_FIELDS and self.is_running():
+            self._reconnect()
+            return
+        if changed & self._SERVER_FACING and self._online:
+            self.push_capabilities_to_server()
+
+    def _resize_pool(self, max_workers: int) -> None:
+        with self._lock:
+            old = self._pool
+            if old is None:
+                return
+            self._pool = ExecutorPool(max_workers=max_workers)
+        old.shutdown(wait=False)
+
+    def _reconnect(self) -> None:
+        if not self.is_running():
+            return
+        self._log("[settings] connection changed — reconnecting")
+        self.stop()
+        self.start()
 
     # ==================================================================
     # Capabilities / scan
@@ -194,10 +248,7 @@ class Orchestrator:
             fields["sensitive_allowed_caps"] = sensitive_allowed
         if slavemode_allowed is not None:
             fields["slavemode_allowed_caps"] = slavemode_allowed
-        settings = self.update_settings(**fields)
-        if self._online:
-            self.push_capabilities_to_server()
-        return settings
+        return self.apply_settings(**fields)
 
     def push_capabilities_to_server(self) -> None:
         loop = self._loop
@@ -404,13 +455,12 @@ class Orchestrator:
     async def _poll_loop(self, token_expires_in: int) -> None:
         client = self._client
         assert client is not None
-        settings = self.get_settings()
-        caps = self._registration_caps(settings, self._last_detected)
 
         while not self._stop.is_set():
             try:
                 token_expires_in = await self._maybe_refresh(token_expires_in)
-                caps = self._registration_caps(self.get_settings(), self._last_detected)
+                settings = self.get_settings()
+                caps = self._registration_caps(settings, self._last_detected)
 
                 if self._store.active_count() >= settings.max_concurrent:
                     await self._idle()

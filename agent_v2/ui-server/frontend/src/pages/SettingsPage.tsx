@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Save, Search } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SaveIndicator } from "@/components/SaveIndicator";
+import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import type { Settings } from "@/types";
 
 const EMPTY: Settings = {
@@ -37,43 +39,32 @@ const EMPTY: Settings = {
 
 export function SettingsPage() {
   const [cfg, setCfg] = useState<Settings>(EMPTY);
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [detecting, setDetecting] = useState(false);
+
+  const { schedule, flush, status } = useDebouncedSave<Partial<Settings>>(
+    (patch) => api.saveSettings(patch)
+  );
 
   useEffect(() => {
     api.getSettings().then(setCfg).catch(() => {});
   }, []);
 
-  const set = <K extends keyof Settings>(k: K, v: Settings[K]) =>
-    setCfg((p) => ({ ...p, [k]: v }));
+  const edit = (patch: Partial<Settings>) => {
+    setCfg((prev) => ({ ...prev, ...patch }));
+    schedule(patch);
+  };
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      const updated = await api.saveSettings({
-        server: cfg.server,
-        api_key: cfg.api_key,
-        capabilities: cfg.capabilities,
-        custom_caps: cfg.custom_caps,
-        max_concurrent: cfg.max_concurrent,
-        autostart: cfg.autostart,
-      });
-      setCfg(updated);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
+  const editNow = (patch: Partial<Settings>) => {
+    setCfg((prev) => ({ ...prev, ...patch }));
+    schedule(patch);
+    flush();
   };
 
   const detect = async () => {
     setDetecting(true);
     try {
       const { capabilities } = await api.detectCapabilities();
-      set("capabilities", capabilities);
+      editNow({ capabilities });
     } finally {
       setDetecting(false);
     }
@@ -81,11 +72,14 @@ export function SettingsPage() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Configuration</CardTitle>
-        <CardDescription>
-          Connection, capabilities and concurrency for this agent.
-        </CardDescription>
+      <CardHeader className="flex-row items-start justify-between">
+        <div className="space-y-1.5">
+          <CardTitle>Configuration</CardTitle>
+          <CardDescription>
+            Connection, capabilities and concurrency for this agent.
+          </CardDescription>
+        </div>
+        <SaveIndicator status={status} />
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="space-y-2">
@@ -93,7 +87,9 @@ export function SettingsPage() {
           <Input
             id="server"
             value={cfg.server}
-            onChange={(e) => set("server", e.target.value)}
+            onChange={(e) => edit({ server: e.target.value })}
+            onBlur={flush}
+            onKeyDown={(e) => e.key === "Enter" && flush()}
             placeholder="http://your-server:3069"
           />
         </div>
@@ -104,7 +100,9 @@ export function SettingsPage() {
             id="apiKey"
             type="password"
             value={cfg.api_key}
-            onChange={(e) => set("api_key", e.target.value)}
+            onChange={(e) => edit({ api_key: e.target.value })}
+            onBlur={flush}
+            onKeyDown={(e) => e.key === "Enter" && flush()}
             placeholder="ak_live_..."
           />
         </div>
@@ -116,7 +114,9 @@ export function SettingsPage() {
             type="number"
             min={1}
             value={cfg.max_concurrent}
-            onChange={(e) => set("max_concurrent", Number(e.target.value))}
+            onChange={(e) => edit({ max_concurrent: Number(e.target.value) })}
+            onBlur={flush}
+            onKeyDown={(e) => e.key === "Enter" && flush()}
           />
         </div>
 
@@ -137,14 +137,14 @@ export function SettingsPage() {
             id="caps"
             value={cfg.capabilities.join(", ")}
             onChange={(e) =>
-              set(
-                "capabilities",
-                e.target.value
+              edit({
+                capabilities: e.target.value
                   .split(",")
                   .map((s) => s.trim())
-                  .filter(Boolean)
-              )
+                  .filter(Boolean),
+              })
             }
+            onBlur={flush}
             placeholder="debug.echo, llm.mistral, shell.bash"
           />
         </div>
@@ -155,14 +155,14 @@ export function SettingsPage() {
             id="custom"
             value={cfg.custom_caps.join(", ")}
             onChange={(e) =>
-              set(
-                "custom_caps",
-                e.target.value
+              edit({
+                custom_caps: e.target.value
                   .split(",")
                   .map((s) => s.trim())
-                  .filter(Boolean)
-              )
+                  .filter(Boolean),
+              })
             }
+            onBlur={flush}
             placeholder="my.custom.cap"
           />
         </div>
@@ -171,15 +171,10 @@ export function SettingsPage() {
           <input
             type="checkbox"
             checked={cfg.autostart}
-            onChange={(e) => set("autostart", e.target.checked)}
+            onChange={(e) => editNow({ autostart: e.target.checked })}
           />
           Auto-start agent on launch
         </label>
-
-        <Button onClick={save} disabled={saving}>
-          {saving ? <Loader2 className="animate-spin" /> : <Save />}
-          {saved ? "Saved!" : "Save"}
-        </Button>
       </CardContent>
     </Card>
   );

@@ -5,6 +5,136 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SaveIndicator } from "@/components/SaveIndicator";
+import { useDebouncedSave } from "@/hooks/useDebouncedSave";
+
+type StartupStatus = {
+  platform: string;
+  mac_enabled: boolean;
+  win_enabled: boolean;
+  systemd_installed: boolean;
+};
+
+function StartupCard() {
+  const [status, setStatus] = useState<StartupStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const load = () =>
+    api.getStartupStatus().then(setStatus).catch(() => setStatus(null));
+
+  useEffect(() => { load(); }, []);
+
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const r = await fn();
+      if (r && typeof r === "object" && "message" in r) {
+        setMessage((r as { message?: string }).message ?? "");
+      }
+      await load();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!status) return null;
+
+  const { platform } = status;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">OS startup</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {platform === "darwin" && (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">macOS LaunchAgent</p>
+              <p className="text-xs text-muted-foreground">
+                Runs omq-gui at login via ~/Library/LaunchAgents
+              </p>
+            </div>
+            <Button
+              variant={status.mac_enabled ? "default" : "outline"}
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                act(() => api.setMacStartup(!status.mac_enabled))
+              }
+            >
+              {status.mac_enabled ? "Enabled" : "Disabled"}
+            </Button>
+          </div>
+        )}
+
+        {platform === "win32" && (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Windows startup</p>
+              <p className="text-xs text-muted-foreground">
+                Runs omq-gui at login via HKCU registry
+              </p>
+            </div>
+            <Button
+              variant={status.win_enabled ? "default" : "outline"}
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                act(() => api.setWinStartup(!status.win_enabled))
+              }
+            >
+              {status.win_enabled ? "Enabled" : "Disabled"}
+            </Button>
+          </div>
+        )}
+
+        {platform === "linux" && (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">systemd user service</p>
+              <p className="text-xs text-muted-foreground">
+                ~/.config/systemd/user/offloadmq-agent.service
+              </p>
+            </div>
+            {status.systemd_installed ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => act(api.uninstallSystemd)}
+              >
+                Uninstall
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => act(api.installSystemd)}
+              >
+                Install
+              </Button>
+            )}
+          </div>
+        )}
+
+        {platform !== "darwin" && platform !== "win32" && platform !== "linux" && (
+          <p className="text-sm text-muted-foreground">
+            Startup management is not supported on this platform ({platform}).
+          </p>
+        )}
+
+        {message && (
+          <p className="text-xs text-muted-foreground">{message}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export function SystemPage() {
   const [sysinfo, setSysinfo] = useState<Record<string, unknown>>({});
@@ -12,12 +142,20 @@ export function SystemPage() {
     null
   );
   const [port, setPort] = useState(8090);
-  const [message, setMessage] = useState("");
+
+  const { schedule, flush, status } = useDebouncedSave<number>((next) =>
+    api.saveSettings({ webui_port: next })
+  );
 
   useEffect(() => {
     api.getSystemInfo().then((r) => setSysinfo(r.sysinfo));
     api.getSettings().then((s) => setPort(s.webui_port ?? 8090));
   }, []);
+
+  const editPort = (next: number) => {
+    setPort(next);
+    schedule(next);
+  };
 
   const checkUpdate = async () => {
     setUpdateInfo(await api.checkUpdate());
@@ -57,69 +195,22 @@ export function SystemPage() {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Web UI port</CardTitle>
+          <SaveIndicator status={status} />
         </CardHeader>
-        <CardContent className="flex gap-2 items-end">
-          <div className="space-y-2 flex-1">
-            <Label>Port (restart required)</Label>
-            <Input
-              type="number"
-              value={port}
-              onChange={(e) => setPort(Number(e.target.value))}
-            />
-          </div>
-          <Button
-            onClick={async () => {
-              await api.saveSettings({ webui_port: port });
-              setMessage("Saved — restart webui to apply");
-            }}
-          >
-            Save
-          </Button>
-        </CardContent>
-        {message && <p className="text-sm text-muted-foreground px-6 pb-4">{message}</p>}
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">OS startup</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={() => api.setWinStartup(true).then(() => setMessage("Windows startup enabled"))}
-          >
-            Win startup on
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => api.setWinStartup(false)}
-          >
-            Win startup off
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => api.setMacStartup(true).then(() => setMessage("macOS LaunchAgent enabled"))}
-          >
-            macOS startup on
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => api.setMacStartup(false)}
-          >
-            macOS startup off
-          </Button>
-          <Button
-            variant="outline"
-            onClick={async () => {
-              const r = await api.installSystemd();
-              setMessage(r.message ?? JSON.stringify(r));
-            }}
-          >
-            Install systemd (Linux)
-          </Button>
+        <CardContent className="space-y-2">
+          <Label>Port (restart the web UI to bind a new port)</Label>
+          <Input
+            type="number"
+            value={port}
+            onChange={(e) => editPort(Number(e.target.value))}
+            onBlur={flush}
+            onKeyDown={(e) => e.key === "Enter" && flush()}
+          />
         </CardContent>
       </Card>
+      <StartupCard />
     </div>
   );
 }

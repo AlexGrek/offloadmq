@@ -43,7 +43,7 @@ class OffloadMQClient:
         system_info: dict[str, Any] | None = None,
         app_version: str = "2.0.0",
     ) -> AgentRegistration:
-        url = f"{server.rstrip('/')}/private/agent/register"
+        url = f"{server.rstrip('/')}/agent/register"
         payload: dict[str, Any] = {
             "apiKey": api_key,
             "capabilities": capabilities,
@@ -65,7 +65,7 @@ class OffloadMQClient:
 
     @staticmethod
     async def authenticate(server: str, agent_id: str, key: str) -> AgentAuth:
-        url = f"{server.rstrip('/')}/private/agent/authenticate"
+        url = f"{server.rstrip('/')}/agent/auth"
         payload = {"agentId": agent_id, "key": key}
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as resp:

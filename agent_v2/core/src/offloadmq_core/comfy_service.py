@@ -37,7 +37,7 @@ STANDARD_TASK_TYPES = [
 
 
 def workflows_dir() -> Path:
-    from app.exec.imggen.workflow import _find_workflows_dir
+    from offloadmq_agent.exec.imggen.workflow import _find_workflows_dir
 
     return _find_workflows_dir()
 

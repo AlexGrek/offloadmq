@@ -3,6 +3,8 @@ import { useCallback, useState } from "react";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SaveIndicator } from "@/components/SaveIndicator";
+import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import { usePoll } from "@/hooks/usePoll";
 import type { CapabilitiesState } from "@/types";
 
@@ -54,6 +56,19 @@ export function CapabilitiesPage() {
     new Set()
   );
 
+  const { schedule, status } = useDebouncedSave<{
+    regular: Set<string>;
+    sensitive: Set<string>;
+  }>(
+    ({ regular, sensitive }) =>
+      api.saveCapabilityPolicy({
+        regular_disabled: [...regular],
+        sensitive_allowed: [...sensitive],
+        slavemode_allowed: state?.tierCaps.slavemodeAllowed ?? [],
+      }),
+    200
+  );
+
   const load = useCallback(async () => {
     const s = await api.getCapabilitiesState();
     setState(s);
@@ -63,17 +78,8 @@ export function CapabilitiesPage() {
 
   usePoll(load, 3000);
 
-  const save = async () => {
-    await api.saveCapabilityPolicy({
-      regular_disabled: [...regularDisabled],
-      sensitive_allowed: [...sensitiveAllowed],
-      slavemode_allowed: state?.tierCaps.slavemodeAllowed ?? [],
-    });
-    await load();
-  };
-
-  const rescan = async (restart: boolean) => {
-    await api.rescanCapabilities(restart);
+  const rescan = async () => {
+    await api.rescanCapabilities(false);
     await load();
   };
 
@@ -84,6 +90,7 @@ export function CapabilitiesPage() {
       const next = new Set(prev);
       if (next.has(cap)) next.delete(cap);
       else next.add(cap);
+      schedule({ regular: next, sensitive: sensitiveAllowed });
       return next;
     });
   };
@@ -93,6 +100,7 @@ export function CapabilitiesPage() {
       const next = new Set(prev);
       if (next.has(cap)) next.delete(cap);
       else next.add(cap);
+      schedule({ regular: regularDisabled, sensitive: next });
       return next;
     });
   };
@@ -101,14 +109,11 @@ export function CapabilitiesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Capabilities</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => rescan(false)}>
+        <div className="flex items-center gap-2">
+          <SaveIndicator status={status} />
+          <Button variant="outline" onClick={rescan}>
             Rescan
           </Button>
-          <Button variant="outline" onClick={() => rescan(true)}>
-            Rescan + restart
-          </Button>
-          <Button onClick={save}>Save policy</Button>
         </div>
       </div>
       {state.scanning && (

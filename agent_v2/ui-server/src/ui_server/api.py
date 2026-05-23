@@ -85,7 +85,7 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
     @router.post("/settings")
     def post_settings(payload: SettingsPayload) -> dict[str, Any]:
         fields = {k: v for k, v in payload.model_dump().items() if v is not None}
-        return _dump(orch.update_settings(**fields))
+        return _dump(orch.apply_settings(**fields))
 
     @router.get("/config/raw")
     def get_raw_config() -> dict[str, str]:
@@ -227,7 +227,7 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
 
     @router.post("/comfy/url")
     def comfy_url(payload: ComfyUrlPayload) -> dict[str, Any]:
-        return _dump(orch.update_settings(comfyui_url=payload.comfyui_url.strip()))
+        return _dump(orch.apply_settings(comfyui_url=payload.comfyui_url.strip()))
 
     @router.post("/comfy/workflows/add")
     def comfy_add_workflow(payload: WorkflowAddPayload) -> dict[str, Any]:
@@ -356,30 +356,51 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
         result["log"] = lines
         return result
 
+    @router.get("/system/startup-status")
+    def startup_status() -> dict[str, Any]:
+        import sys
+        from offloadmq_core import startup_mac, startup_win
+        from offloadmq_core.systemd_service import is_installed
+
+        return {
+            "platform": sys.platform,
+            "mac_enabled": startup_mac.enabled(),
+            "win_enabled": startup_win.enabled(),
+            "systemd_installed": is_installed(),
+        }
+
     @router.post("/system/win-startup")
     def win_startup(enable: bool = Query(...)) -> dict[str, Any]:
+        import logging
         from offloadmq_core import startup_win
 
         if not startup_win.available():
             raise HTTPException(status_code=400, detail="Windows startup not available")
-        startup_win.set_enabled(enable, lambda _m: None)
-        settings = orch.update_settings(win_startup_enabled=enable, autostart=enable or False)
+        startup_win.set_enabled(enable, logging.getLogger(__name__).info)
+        settings = orch.update_settings(win_startup_enabled=enable, autostart=enable)
         return _dump(settings)
 
     @router.post("/system/mac-startup")
     def mac_startup(enable: bool = Query(...)) -> dict[str, Any]:
+        import logging
         from offloadmq_core import startup_mac
 
         if not startup_mac.available():
             raise HTTPException(status_code=400, detail="macOS LaunchAgent not available")
-        startup_mac.set_enabled(enable, lambda _m: None)
-        settings = orch.update_settings(mac_startup_enabled=enable, autostart=enable or False)
+        startup_mac.set_enabled(enable, logging.getLogger(__name__).info)
+        settings = orch.update_settings(mac_startup_enabled=enable, autostart=enable)
         return _dump(settings)
 
     @router.post("/system/install-systemd")
-    def install_systemd(host: str = "0.0.0.0", port: int = 8090) -> dict[str, str]:
+    def install_systemd(host: str = "0.0.0.0", port: int = 8090) -> dict[str, Any]:
         from offloadmq_core.systemd_service import install_systemd_unit
 
         return install_systemd_unit(host=host, port=port)
+
+    @router.post("/system/uninstall-systemd")
+    def uninstall_systemd() -> dict[str, Any]:
+        from offloadmq_core.systemd_service import uninstall_systemd_unit
+
+        return uninstall_systemd_unit()
 
     return router

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-SETTINGS_FILE = Path(".offloadmq-agent.json")
+SETTINGS_FILE = Path.home() / ".offloadmq-agent.json"
 
 
 def load_agent_settings() -> dict[str, Any]:

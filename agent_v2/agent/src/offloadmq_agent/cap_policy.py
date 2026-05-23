@@ -94,24 +94,6 @@ def _apply_default_onnx_slavemode(
     return True
 
 
-def _migrate_legacy_config(
-    cfg: dict[str, Any],
-    detected_clean: list[str],
-    log_fn: Callable[[str], None] | None = None,
-) -> None:
-    saved = cfg.get("capabilities", [])
-    saved_set = set(strip_slavemode_caps(list(saved) if isinstance(saved, list) else []))
-    classified = classify_capabilities(detected_clean)
-    detected_regular = set(classified["regular"])
-    detected_sensitive = set(classified["sensitive"])
-    sensitive_allowed = [c for c in detected_sensitive if c in saved_set]
-    regular_disabled = [c for c in detected_regular if c not in saved_set]
-    cfg["sensitive_allowed_caps"] = sorted(sensitive_allowed)
-    cfg["regular_disabled_caps"] = sorted(regular_disabled)
-    if log_fn:
-        log_fn("[caps] Migrated legacy config to tier-based format")
-
-
 def compute_registration_caps(
     cfg: dict[str, Any],
     detected: list[str],
@@ -120,20 +102,13 @@ def compute_registration_caps(
     detected_clean = strip_slavemode_caps(list(detected))
     detected_set = set(detected_clean)
 
-    changed = _apply_default_ollama_slavemode(cfg, detected_clean, log_fn)
-    changed = _apply_default_onnx_slavemode(cfg, detected_clean, log_fn) or changed
+    _apply_default_ollama_slavemode(cfg, detected_clean, log_fn)
+    _apply_default_onnx_slavemode(cfg, detected_clean, log_fn)
 
     classified = classify_capabilities(detected_clean)
     detected_regular = set(classified["regular"])
     detected_sensitive = set(classified["sensitive"])
     detected_unknown = set(classified["unknown"])
-
-    caps_field = cfg.get("capabilities")
-    if isinstance(caps_field, list) and not _cfg_list(
-        cfg, "sensitive_allowed_caps", "sensitive-allowed-caps"
-    ):
-        _migrate_legacy_config(cfg, detected_clean, log_fn)
-        changed = True
 
     sensitive_allowed = set(
         _cfg_list(cfg, "sensitive_allowed_caps", "sensitive-allowed-caps")

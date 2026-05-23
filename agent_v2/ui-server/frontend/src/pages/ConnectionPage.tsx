@@ -5,21 +5,28 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SaveIndicator } from "@/components/SaveIndicator";
+import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import type { Settings } from "@/types";
 
 export function ConnectionPage() {
   const [form, setForm] = useState<Partial<Settings>>({});
-  const [saved, setSaved] = useState(false);
   const [registerId, setRegisterId] = useState("");
+
+  const { schedule, flush, status } = useDebouncedSave<Partial<Settings>>(
+    (patch) => api.saveSettings(patch)
+  );
 
   useEffect(() => {
     api.getSettings().then(setForm);
   }, []);
 
-  const save = async () => {
-    await api.saveSettings(form);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const edit = (patch: Partial<Settings>) => {
+    setForm((prev) => {
+      const next = { ...prev, ...patch };
+      schedule(next);
+      return next;
+    });
   };
 
   const register = async () => {
@@ -31,15 +38,18 @@ export function ConnectionPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Connection</h1>
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between">
           <CardTitle>Server</CardTitle>
+          <SaveIndicator status={status} />
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label>Server URL</Label>
             <Input
               value={form.server ?? ""}
-              onChange={(e) => setForm({ ...form, server: e.target.value })}
+              onChange={(e) => edit({ server: e.target.value })}
+              onBlur={flush}
+              onKeyDown={(e) => e.key === "Enter" && flush()}
             />
           </div>
           <div className="space-y-2">
@@ -47,22 +57,24 @@ export function ConnectionPage() {
             <Input
               type="password"
               value={form.api_key ?? ""}
-              onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+              onChange={(e) => edit({ api_key: e.target.value })}
+              onBlur={flush}
+              onKeyDown={(e) => e.key === "Enter" && flush()}
             />
           </div>
           <div className="space-y-2">
             <Label>Display name</Label>
             <Input
               value={form.display_name ?? ""}
-              onChange={(e) => setForm({ ...form, display_name: e.target.value })}
+              onChange={(e) => edit({ display_name: e.target.value })}
+              onBlur={flush}
+              onKeyDown={(e) => e.key === "Enter" && flush()}
             />
           </div>
-          <div className="flex gap-2">
-            <Button onClick={save}>Save</Button>
+          <div className="flex items-center gap-2">
             <Button variant="outline" onClick={register}>
               Register
             </Button>
-            {saved && <span className="text-sm text-green-500">Saved</span>}
             {registerId && (
               <span className="text-sm text-muted-foreground">
                 Registered: {registerId}

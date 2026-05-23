@@ -33,17 +33,19 @@ def enabled(log: Callable[[str], None] | None = None) -> bool:
     return value is not None
 
 
+def _get_exe_path() -> str | None:
+    """Return the binary to register for autostart, or None if not resolvable."""
+    if getattr(sys, "frozen", False):
+        return sys.executable
+    import shutil
+    return shutil.which("omq-gui") or shutil.which("omq-gui.exe")
+
+
 def _build_startup_cmd(exe_path: str) -> str:
-    """
-    Build the registry Run command for Windows startup.
+    """Build the registry Run command for Windows startup.
 
-    Uses Start-Process to launch the exe detached (PowerShell exits immediately after
-    spawning it), with an explicit WorkingDirectory so the exe finds its config file
-    regardless of what CWD Windows assigns at login.
-
-    The `webui --agent-autostart` subcommand is required — without args the exe just
-    prints `--help` and exits. `--agent-autostart` honors the `autostart` config flag,
-    so the agent polling loop starts on login only if the user enabled it in the UI.
+    Uses Start-Process to launch omq-gui detached with an explicit WorkingDirectory.
+    A 10-second sleep lets network/user-profile init finish before the app starts.
     """
     from pathlib import Path
     work_dir = str(Path(exe_path).parent)
@@ -51,21 +53,22 @@ def _build_startup_cmd(exe_path: str) -> str:
         f'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command '
         f'"Start-Sleep -Seconds 10; '
         f'Start-Process -FilePath \'{exe_path}\' '
-        f'-WorkingDirectory \'{work_dir}\' '
-        f'-ArgumentList \'webui\',\'--agent-autostart\'"'
+        f'-WorkingDirectory \'{work_dir}\'"'
     )
 
 
 def set_enabled(enable: bool, log: Callable[[str], None]) -> None:
     if sys.platform == "win32":
         import winreg
-        frozen = getattr(sys, "frozen", False)
-        exe_path = sys.executable
-        log(f"[startup] sys.executable={exe_path!r}  frozen={frozen}")
+        exe_path = _get_exe_path()
+        log(f"[startup] exe={exe_path!r}  frozen={getattr(sys, 'frozen', False)}")
+        if enable and not exe_path:
+            log("[startup] ERROR: omq-gui not found in PATH; startup not configured")
+            return
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
                 if enable:
-                    cmd = _build_startup_cmd(exe_path)
+                    cmd = _build_startup_cmd(exe_path)  # type: ignore[arg-type]
                     winreg.SetValueEx(key, _WIN_REG_NAME, 0, winreg.REG_SZ, cmd)
                     log(f"[startup] Wrote registry value: {cmd}")
                 else:

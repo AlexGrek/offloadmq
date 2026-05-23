@@ -55,15 +55,25 @@ def _build_plist(exe_path: str) -> str:
 """
 
 
+def _get_exe_path() -> str | None:
+    """Return the binary to register for autostart, or None if not resolvable."""
+    if getattr(sys, "frozen", False):
+        return sys.executable
+    import shutil
+    return shutil.which("omq-gui")
+
+
 def set_enabled(enable: bool, log: Callable[[str], None]) -> None:
     if not available():
         return
     import subprocess
-    frozen = getattr(sys, "frozen", False)
-    exe_path = sys.executable
-    log(f"[startup] sys.executable={exe_path!r}  frozen={frozen}")
+    exe_path = _get_exe_path()
+    log(f"[startup] exe={exe_path!r}  frozen={getattr(sys, 'frozen', False)}")
+    if enable and not exe_path:
+        log("[startup] ERROR: omq-gui not found in PATH; startup not configured")
+        return
     if enable:
-        plist = _build_plist(exe_path)
+        plist = _build_plist(exe_path)  # type: ignore[arg-type]
         os.makedirs(os.path.dirname(_PLIST_PATH), exist_ok=True)
         os.makedirs(_LOG_DIR, exist_ok=True)
         Path(_PLIST_PATH).write_text(plist)
