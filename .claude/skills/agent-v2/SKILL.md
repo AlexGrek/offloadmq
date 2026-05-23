@@ -13,11 +13,13 @@ Root: `agent_v2/` — a **uv workspace** with five subprojects. Two are build
 ```
 agent_v2/
 ├── pyproject.toml              ← workspace root (no Python code)
-├── agent/                      ← offloadmq-agent   (lib) async processing toolkit
+├── agent/                      ← offloadmq-agent   (lib) async toolkit + executors
 ├── core/                       ← offloadmq-core    (lib) orchestration
 ├── ui-server/                  ← offloadmq-ui-server (lib) FastAPI + React SPA
 ├── cli-manager/                ← offloadmq-cli     (TARGET) `omq`
-└── gui-manager/                ← offloadmq-gui     (TARGET) `omq-gui`
+├── gui-manager/                ← offloadmq-gui     (TARGET) `omq-gui`
+├── tests/                      ← unit tests (cap_policy, etc.)
+└── docs/agent-v2-migration.md  ← legacy import + field mapping (repo root)
 ```
 
 ### Dependency graph (acyclic, one-directional)
@@ -46,9 +48,13 @@ uv run omq serve                           # CLI: headless agent
 uv run omq webui --start                   # CLI: web dashboard + agent
 uv run omq-gui                             # GUI: native window
 uv run omq-gui --server                    # GUI: headless server mode
+uv run omq config import-legacy            # import ~/.offload-agent.json → v2
 
 # type-check (mandatory before commit — keep it green)
 uv run --with mypy mypy agent/src core/src ui-server/src --ignore-missing-imports
+
+# tests
+uv run --with pytest pytest tests/ -q
 
 # frontend
 cd ui-server/frontend && npm install && npm run build
@@ -56,22 +62,60 @@ cd ui-server/frontend && npm install && npm run build
 
 ---
 
-## 1. `agent/` — offloadmq-agent (async toolkit)
+## 1. `agent/` — offloadmq-agent (toolkit + executors)
 
-Pure async processing toolkit. **No orchestration, no settings, no UI.** aiohttp.
+Processing toolkit used by core. **No orchestration, no UI.** Poll/register via
+aiohttp; routed executors use sync `requests` inside worker threads.
+
+### Core modules
 
 | File | Purpose |
 |---|---|
-| `models.py` | Pydantic v2: `Task`, `TaskResult`, `TaskStatus` (pending/running/completed/failed/cancelled), `LogEntry`, `LogLevel`, `AgentRegistration`, `AgentAuth` |
-| `context.py` | `ExecContext` (structured-log sink + cooperative cancel) and `TaskCancelled` |
-| `client.py` | `OffloadMQClient` — async aiohttp wrapper (register/authenticate/poll/take/report_progress/resolve) |
-| `executor.py` | `Executor` protocol, `@register("prefix")`, `find(capability)`, `registered_prefixes()` |
-| `capabilities.py` | `async detect_capabilities()` — probes Ollama + shell, always includes `debug.echo` |
-| `exec/debug.py` | `debug.*` — echoes payload (honors `payload.delay`, cancellable) |
-| `exec/shell.py` | `shell.*` — subprocess; polls `ctx.cancelled` and kills on cancel |
-| `exec/llm.py` | `llm.*` — Ollama streaming; stops on `ctx.cancelled` |
+| `models.py` | `Task` (includes `server_task` from poll), `TaskResult`, `TaskStatus`, `LogEntry`, registration DTOs |
+| `wire.py` | Server wire types: `TaskId`, `TaskResultReport`, `TaskProgressReport` |
+| `context.py` | `ExecContext` — structured logs, cooperative cancel, `agent_transport` |
+| `client.py` | `OffloadMQClient` — register/auth, poll (urgent + normal), take, progress, **wire-format resolve** |
+| `executor.py` | `@register("prefix")`, `find()`, `registered_prefixes()` |
+| `capabilities.py` | Async wrapper over `capabilities_sync.detect_capabilities()` |
+| `capabilities_sync.py` | Full runtime probes (Ollama, docker, ComfyUI, custom, ONNX, …) |
+| `cap_policy.py` | 3-tier policy: `compute_registration_caps()`, `classify_capabilities()` |
+| `slavemode_policy.py` | Slavemode allow-list merge |
+| `pipeline.py` | Full task pipeline: bucket download, data prep, routed executor, capture result |
+| `transport_sync.py` | `SyncAgentTransport` — sync HTTP for executors (buckets, resolve wire) |
+| `transport_exec.py` | `CaptureTransport` — forwards I/O, captures `TaskResultReport`, maps progress to ctx |
+| `result_convert.py` | `TaskResult` ↔ wire report conversion |
+| `rescan.py` | `rescan_and_push()` for slavemode |
+| `settings_util.py` | Read `.offloadmq-agent.json` from CWD (no core import) |
+| `custom_caps.py`, `onnx_models.py`, `ollama.py` | Supporting runtime for custom/onnx/llm detection |
+| `systeminfo.py`, `tier.py` | Hardware info + auto-tier |
 
-### Executor contract
+### Executors
+
+**Native async** (return `TaskResult` directly; preferred for new work):
+
+| Prefix | Module |
+|---|---|
+| `debug` | `exec/debug.py` |
+| `shell` | `exec/shell.py` |
+| `llm` | `exec/llm.py` |
+
+**Routed pipeline** (sync legacy-style handlers on worker thread via `exec/routed.py`):
+
+| Prefix | Module(s) |
+|---|---|
+| `docker` | `exec/docker.py` |
+| `imggen` | `exec/imggen/` |
+| `txt2music` | `exec/musicgen/` |
+| `onnx` | `exec/onnx.py` |
+| `custom` | `exec/custom.py` |
+| `slavemode` | `exec/slavemode.py` |
+| `tts` | `exec/tts.py` (`tts.kokoro`) |
+| `shellcmd` | `exec/shellcmd.py` (`shellcmd.bash`) |
+
+Registration: `exec/__init__.py` imports native modules + calls `register_routed_executors()`.
+Routing table: `exec/route.py`. Shared reporting: `exec/reporting.py`.
+
+### Executor contract (native async)
 
 ```python
 from offloadmq_agent import register, ExecContext
@@ -80,184 +124,202 @@ from offloadmq_agent.models import Task, TaskResult, TaskStatus
 @register("mytype")
 async def execute_mytype(task: Task, ctx: ExecContext) -> TaskResult:
     await ctx.progress("stage", "human message", key="structured-value")
-    ctx.raise_if_cancelled()          # or check `ctx.cancelled`
+    ctx.raise_if_cancelled()
     return TaskResult(task_id=task.id, status=TaskStatus.COMPLETED, output={...})
 ```
 
-- Lookup is prefix-based: `"mytype.sub"` matches `@register("mytype")`.
-- **Import the module** in `exec/__init__.py` to activate registration.
-- Logs are **structured** (`LogEntry`: ts, level, stage, message, data) — never
-  print; always go through `ctx.progress/info/warn/error`.
-- Cancellation is **cooperative**: long-running executors must poll
-  `ctx.cancelled` (subprocess/streaming loops) so the UI cancel button works.
-- Never raise out of an executor for expected failures — return
-  `TaskResult(status=FAILED, error=...)`. `TaskCancelled` → CANCELLED.
+- Prefix lookup: `"mytype.sub"` matches `@register("mytype")`.
+- **Never** `print` for task output — use `ctx.progress/info/warn/error`.
+- Cooperative cancel: poll `ctx.cancelled` in long loops.
+- Expected failures → `TaskResult(status=FAILED, error=...)`. `TaskCancelled` → CANCELLED.
+
+### Routed executor contract (ported sync)
+
+Legacy-shaped handlers:
+
+```python
+def execute_foo(
+    transport: AgentTransport,
+    task_id: TaskId,
+    capability: str,
+    payload: dict,
+    data: Path,
+    job_timeout: int = 600,
+    output_bucket: str | None = None,  # imggen/txt2music only
+) -> bool: ...
+```
+
+`pipeline.run_routed_task()` wraps them: builds `CaptureTransport`, runs downloads/data prep,
+converts captured `TaskResultReport` → `TaskResult`. Orchestrator resolves via wire format.
+
+### Capability tiers (registration policy)
+
+| Tier | Config key | Model |
+|---|---|---|
+| Regular (opt-out) | `regular_disabled_caps` | Enabled if detected unless listed |
+| Sensitive (opt-in) | `sensitive_allowed_caps` | `docker.*`, `shell.*`, `shellcmd.*` |
+| Slavemode (opt-in) | `slavemode_allowed_caps` | `slavemode.*` control caps |
+
+`compute_registration_caps(cfg, detected)` in `cap_policy.py` applies policy + merges slavemode.
 
 ---
 
 ## 2. `core/` — offloadmq-core (orchestration)
 
-The single object both entry points drive. Owns settings, the task store, the
-threaded executor pool and the polling loop.
+Single object both entry points drive. Settings, task store, executor pool, poller.
 
 | File | Purpose |
 |---|---|
-| `settings.py` | `Settings` model + `load_settings`/`save_settings`. File: `.offloadmq-agent.json` in CWD. Key field: `max_concurrent` (thread limit, **default 1**) |
-| `task_store.py` | `TaskStore` (thread-safe) + `TaskRecord`. In-memory only — **cleared on restart**. Holds active + terminal tasks with full structured logs. Caps terminal history at 200 |
-| `executor_pool.py` | `ExecutorPool` — `ThreadPoolExecutor(max_workers=max_concurrent)`; each worker runs `asyncio.run(executor(task, ctx))` |
-| `orchestrator.py` | `Orchestrator` — the public API (see below) |
-| `webui.py` | `run_blocking()` / `run_in_thread()` / `build_server()` — builds the FastAPI app via `ui_server.create_app(self)` and runs uvicorn |
+| `settings.py` | `Settings` in `.offloadmq-agent.json` — server, api_key, display_name, transport, tier policy, comfy URL, OS flags, webui_port, credentials |
+| `legacy_migration.py` | Map `~/.offload-agent.json` → v2 settings |
+| `task_store.py` | In-memory tasks + logs; terminal cap 200 |
+| `executor_pool.py` | `ThreadPoolExecutor`; `asyncio.run(executor)` per task |
+| `orchestrator.py` | Lifecycle, urgent+normal poll, progress forward, cap push, background rescan |
+| `agent_log.py` | Ring buffer for UI log tail |
+| `scan_state.py` | Background scan state for capabilities UI |
+| `webui.py` | uvicorn lifecycle |
+| `custom_caps_service.py`, `comfy_service.py`, `updater.py`, `startup_win/mac.py`, `systemd_service.py` | UI-backed ops |
 
 ### Threading model
 
 ```
 caller thread          orchestrator.start() → spawns:
-  poller thread        own asyncio loop: register → auth → poll loop → dispatch
-  pool worker × N      asyncio.run(executor) per task   (N = max_concurrent)
-  ui-server thread     uvicorn (GUI mode) or blocking (server mode)
+  poller thread        asyncio loop: register → auth → poll (urgent first) → dispatch
+  pool worker × N      asyncio.run(executor) per task
+  rescan thread        stepped capability rescan + push
+  ui-server thread     uvicorn (GUI) or blocking (server mode)
 ```
 
-- The poller only takes a task while `store.active_count() < max_concurrent` —
-  the agent never hoards more work than it can run.
-- Pool workers report results back to the server by scheduling `client.resolve`
-  onto the poller loop via `asyncio.run_coroutine_threadsafe`.
-- JWT auto-refreshes 300s before expiry. **No WebSocket** — HTTP polling only.
+- Poller respects `max_concurrent`; passes `SyncAgentTransport` as `ctx.agent_transport`.
+- `client.resolve` uses wire `TaskResultReport` shape via `result_convert`.
+- JWT refresh 300s before expiry. **HTTP polling only** (`transport` setting stored; WebSocket not implemented yet).
 
-### Orchestrator public API (also the `OrchestratorAPI` surface)
+### Orchestrator API (implements `OrchestratorAPI`)
 
 ```python
-orch = Orchestrator()                         # loads settings from CWD
-orch.get_settings() / update_settings(**f)    # settings (persisted)
-orch.scan_capabilities() -> list[str]         # sync wrapper over detect_capabilities
-orch.register() -> str                        # register+auth, store creds (standalone)
-orch.start() / stop() / is_running()          # lifecycle (start is non-blocking)
-orch.status() -> dict                         # running/online/message/agentId/...
-orch.list_tasks() -> list[TaskRecord]
-orch.get_task(id) -> TaskRecord | None        # includes full logs
-orch.cancel_task(id) -> bool                  # sets the cooperative cancel flag
+orch.get_settings() / update_settings(**fields)
+orch.get_raw_settings_json() / save_raw_settings_json(text)
+orch.scan_capabilities() / get_scan_state() / start_background_scan()
+orch.rescan(restart_if_changed=False) / update_capability_policy(...)
+orch.register() / start() / stop() / status() / get_agent_logs(n)
+orch.list_tasks() / get_task(id) / cancel_task(id)
 ```
 
 ---
 
-## 3. `ui-server/` — offloadmq-ui-server (FastAPI + React)
+## 3. `ui-server/` — FastAPI + React
 
-A **library** (no console script). Core drives it. `create_app(orchestrator)`
-injects the orchestrator into the routes.
+Library only. `create_app(orchestrator)` injects orchestrator into routes.
 
 | File | Purpose |
 |---|---|
-| `protocol.py` | `OrchestratorAPI` Protocol — the contract core must satisfy. Lives here (consumer side) to keep `core → ui_server` one-directional. `list_tasks` returns `Sequence[BaseModel]` (covariant — don't change to `list`) |
-| `api.py` | `create_router(orch)` — closure-based `APIRouter(prefix="/api")` |
-| `server.py` | `create_app(orch)` — mounts router + serves React `frontend/dist` (SPA fallback via `StaticFiles(html=True)`, `sys._MEIPASS` aware) |
+| `protocol.py` | `OrchestratorAPI` Protocol |
+| `api.py` | All `/api/*` routes (see below) |
+| `server.py` | SPA mount + startup autostart/background scan |
 
-### REST routes (all under `/api`)
+### REST routes (under `/api`)
 
-| Method | Path | Description |
-|---|---|---|
-| GET/POST | `/settings` | Get / patch settings (`SettingsPayload`, only non-null fields applied) |
-| GET | `/capabilities/detect` | Run capability scan |
-| POST | `/agent/start` · `/agent/stop` | Lifecycle (400 if unconfigured) |
-| GET | `/agent/status` | Status dict |
-| GET | `/tasks` | `{tasks: [...]}` — all records |
-| GET | `/tasks/{id}` | One record with full structured logs (404 if missing) |
-| POST | `/tasks/{id}/cancel` | Request cancel (404 if not active) |
+**Core:** `/settings`, `/config/raw`, `/capabilities/detect`, `/capabilities/state`,
+`/capabilities/rescan`, `/capabilities/policy`, `/agent/start|stop|status|logs|register`,
+`/tasks`, `/tasks/{id}`, `/tasks/{id}/cancel`
 
-### React frontend (`ui-server/frontend/`)
+**Parity:** `/custom/*`, `/comfy/*`, `/system/info`, `/system/win-startup`, `/system/mac-startup`,
+`/system/install-systemd`, `/update/check`, `/update/download`
 
-Stack: **React 19 · Vite 6 · react-router 7 (library mode) · Tailwind v4 ·
-shadcn/ui (new-york) · lucide-react · TypeScript**.
+### React frontend
 
-- `@/*` path alias → `src/*` (in `vite.config.ts` + `tsconfig.app.json`).
-- Tailwind v4 via `@tailwindcss/vite`; theme in `src/index.css` (`@theme inline`
-  + CSS vars, dark by default on `<html class="dark">`). No tailwind.config.js.
-- shadcn components in `src/components/ui/` (button, card, badge, input, label,
-  tabs, table, dialog, separator). `cn()` in `src/lib/utils.ts`. Add more with
-  `npx shadcn@latest add <name>` (`components.json` is configured).
-- Routing in `src/App.tsx` with `<Routes>`; `BrowserRouter` in `main.tsx`.
-  `src/components/Layout.tsx` is the nav shell (`<Outlet/>`).
-- API client: `src/api/client.ts` (typed). Types: `src/types.ts`.
-- Polling: `src/hooks/usePoll.ts` (interval fetch). **No WebSocket** — the UI
-  polls `/api/tasks` + `/api/agent/status` every ~2s.
-- Pages: `DashboardPage` (status + start/stop + counts + active list),
-  `TasksPage` (in-progress + history tables, cancel), `TaskDetailPage`
-  (structured log rows + output + cancel), `SettingsPage` (form + auto-detect).
-- `npm run build` runs `tsc -b && vite build` → `dist/` (served by Python).
+Stack: React 19 · Vite 6 · react-router 7 · Tailwind v4 · shadcn/ui · TypeScript.
+
+**Routes** (`App.tsx` + `Layout.tsx`):
+
+| Path | Page |
+|---|---|
+| `/` | Dashboard |
+| `/tasks`, `/tasks/:id` | Tasks + detail (payload, structured logs, cancel) |
+| `/connection` | Server, API key, display name, transport |
+| `/capabilities` | Tiered caps + rescan/restart |
+| `/slavemode` | Slavemode allow-list |
+| `/custom` | Custom cap YAML editor |
+| `/comfy` | ComfyUI URL + workflow list |
+| `/system` | Sysinfo, updater, webui port, OS startup |
+| `/logs` | Global agent log tail |
+| `/config` | Raw JSON editor |
+| `/settings` | Quick settings form |
+
+Poll via `usePoll.ts` (~1.5–2s). API client: `src/api/client.ts`, types: `src/types.ts`.
 
 ---
 
-## 4. `cli-manager/` — offloadmq-cli (TARGET, `omq`)
-
-Typer + Rich. Mirrors the old agent CLI; drives `core.Orchestrator`.
+## 4. `cli-manager/` — `omq`
 
 ```
-omq serve                      Headless poll loop (blocks; Ctrl-C to stop)
-omq webui [--start] [-p PORT]  Web dashboard (run_blocking); --start also runs agent
-omq register                   Register + store credentials
-omq capabilities               Scan and print capabilities
-omq status                     Settings/status table
-omq config show | set ...      --server --api-key --tier --max-concurrent --autostart
+omq serve
+omq webui [--start] [-p PORT]
+omq register
+omq capabilities
+omq status
+omq config show | set ...
+omq config import-legacy [--from PATH] [--merge/--replace]
 ```
-
-`serve`/`webui` honor `settings.autostart`. Entry point: `cli_manager.main:main`.
 
 ---
 
-## 5. `gui-manager/` — offloadmq-gui (TARGET, `omq-gui`)
-
-pywebview cross-platform desktop launcher over the same core + ui-server.
+## 5. `gui-manager/` — `omq-gui`
 
 ```
-omq-gui              free-port → run_in_thread(ui-server) → wait → pywebview window
-omq-gui --server     run_blocking(ui-server) — headless, open in a browser
-omq-gui --port N     override port (auto-falls-back to a free one)
+omq-gui              pywebview + daemon ui-server
+omq-gui --server     blocking uvicorn
+omq-gui --port N
 ```
 
-- pywebview runs on the **main thread**; the UI server on a daemon thread.
-- Honors `settings.autostart` (starts the agent before opening the window).
-- Use standard `fetch()` to `/api/*` — identical in window and server modes; do
-  NOT use the `window.pywebview.api` bridge (breaks in server mode).
+Use `fetch('/api/*')` only — not `window.pywebview.api`.
 
 ---
 
 ## Conventions
 
 ### Python
-- 3.11+, `from __future__ import annotations`, built-in generics, `pathlib`.
-- **mypy strict** is configured on agent/core/ui-server — keep it green.
-- All agent I/O is async; never create a module-level `ClientSession`.
-- Settings: always `get_settings()` fresh; mutate via `update_settings(**fields)`
-  (only non-None fields applied; persisted automatically).
-- Threads: daemon only; `threading.Event` for cancel/stop; never let an
-  exception escape a pool worker (the pool wraps everything into a `TaskResult`).
+- 3.11+, `from __future__ import annotations`.
+- **mypy strict** on agent/core/ui-server — keep green.
+- No module-level `aiohttp.ClientSession` in agent.
+- Settings: mutate via `orch.update_settings(**fields)` (core owns persistence).
+- Daemon threads only; pool workers must not leak exceptions.
 
 ### Frontend
-- Components are shadcn-style: `data-slot`, `cn()`, cva variants. Match existing.
-- Keep the API client typed against `src/types.ts` (mirror Python models).
-- Poll for live data; no WebSocket until the backend grows one.
+- shadcn patterns: `data-slot`, `cn()`, cva.
+- Typed API client; poll for live data.
+
+### Legacy offload-agent
+- v2 is **self-contained** — do not require `offload-agent/` on `PYTHONPATH`.
+- Ported code lives under `offloadmq_agent/exec/` and related agent modules.
+- Field mapping: see `docs/agent-v2-migration.md`.
 
 ---
 
 ## Extension Recipes
 
-### New executor
-1. `agent/src/offloadmq_agent/exec/mytype.py` with `@register("mytype")`.
-2. Import it in `exec/__init__.py`.
-3. Poll `ctx.cancelled` if it can run long; emit structured `ctx.progress`.
-4. Add a probe in `capabilities.py` if it needs runtime detection.
+### New native async executor
+1. `exec/mytype.py` with `@register("mytype")`.
+2. Import in `exec/__init__.py` (before routed registration if prefix could overlap).
+3. Add probe in `capabilities_sync.py` if runtime-detected.
+4. Policy: regular vs sensitive in `cap_policy.py` if needed.
+
+### New routed (sync) executor
+1. Add handler in `exec/mytype.py` (legacy signature + `reporting` helpers).
+2. Register route in `exec/route.py`.
+3. Add prefix to `register_routed_executors()` in `exec/routed.py`.
 
 ### New API route + UI
-1. Add a method to `Orchestrator` and to `OrchestratorAPI` (protocol.py).
-2. Add the route in `ui_server/api.py` (`create_router`).
-3. Add a typed call in `frontend/src/api/client.ts` + types in `types.ts`.
-4. Wire UI in a page under `frontend/src/pages/` (+ route in `App.tsx`).
+1. Method on `Orchestrator` + `OrchestratorAPI`.
+2. Route in `ui_server/api.py`.
+3. `frontend/src/api/client.ts` + `types.ts` + page + `App.tsx` route.
 
-### PyInstaller packaging (per target)
+### PyInstaller packaging
 ```bash
-cd ui-server/frontend && npm run build      # 1. frontend
-cd ../../cli-manager                        # or gui-manager
+cd ui-server/frontend && npm run build
+cd ../../cli-manager   # or gui-manager
 pyinstaller --onefile \
   --add-data "../ui-server/frontend/dist:frontend/dist" \
   src/cli_manager/main.py
 ```
 `server.py` resolves `dist/` from `sys._MEIPASS` at runtime.
-```
