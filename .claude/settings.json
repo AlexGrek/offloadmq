@@ -124,7 +124,8 @@
       "Bash(RUST_LOG=info DATABASE_URL=postgres://oai:oai_dev_password@localhost:5432/oai ROOT_ADMIN_PASSWORD=000000 SERVER_ADDRESS=0.0.0.0:3001 cargo run)",
       "Bash(OAI_BASE_URL=http://localhost:3001 uv run pytest tests/test_chats.py -q)",
       "Bash(task kill *)",
-      "Bash(mkdir -p /Users/vedmedik/dev/offloadmq/.claude/skills/oai-backend)"
+      "Bash(mkdir -p /Users/vedmedik/dev/offloadmq/.claude/skills/oai-backend)",
+      "Edit(/.claude/skills/oai-img/**)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

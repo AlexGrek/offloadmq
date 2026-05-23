@@ -1,0 +1,22 @@
+[project]
+name = "offloadmq-gui"
+version = "2.0.0"
+description = "GUI manager for OffloadMQ agent v2 (pywebview dual-mode)"
+requires-python = ">=3.11"
+dependencies = [
+    "offloadmq-ui-server",
+    "pywebview>=5.0",
+]
+
+[project.scripts]
+omq-gui = "gui_manager.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gui_manager"]
+
+[tool.uv.sources]
+offloadmq-ui-server = { workspace = true }

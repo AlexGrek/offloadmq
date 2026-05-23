@@ -28,19 +28,19 @@ Image file endpoints accept the query token because browsers do not send `Author
 
 ## Image processing (server-side)
 
-Every stored image is normalized on ingest (upload or OffloadMQ output download):
+Every stored image is normalized on ingest (upload or OffloadMQ output download) via **libvips** (`rs-vips` crate). libvips processes images in tiles/strips rather than loading the full decoded pixel buffer into RAM, preventing OOM kills on large inputs (e.g. 48 MP camera shots).
 
 | Rule | Value |
 |------|--------|
 | Output format | JPEG (`image/jpeg`) |
 | JPEG quality | 90 |
 | Max edge (full image) | 1920 px (downscale if larger) |
-| EXIF orientation | Applied on decode |
+| EXIF orientation | Baked into pixels via `vips_autorot`; EXIF stripped from output |
 | Thumbnail | Always created; max edge 384 px, JPEG quality 90 |
 
-Non-JPEG uploads (PNG, WebP, etc.) are transcoded. JPEG inputs are kept as-is when no resize or orientation fix is required.
+All inputs (JPEG, PNG, WebP, …) are decoded and re-encoded through libvips. The EXIF orientation transform is always applied to the pixel data and the orientation tag is removed from the output, so no viewer needs to apply a rotation to display the file correctly.
 
-**Generated outputs** (OffloadMQ download path) are always normalized the same way, then the job **prompt** is written to EXIF `ImageDescription` (UTF-8, truncated to 2000 characters). User uploads do not get prompt metadata.
+**Generated outputs** (OffloadMQ download path) are normalized the same way, then the job **prompt** is written to EXIF `ImageDescription` (UTF-8, truncated to 2000 characters). User uploads do not get prompt metadata.
 
 **On download**, `GET /api/images/files/{id}` returns JPEG bytes. Legacy non-JPEG blobs in storage are transcoded on read.
 
@@ -108,7 +108,7 @@ Optional metadata from the multipart part:
 | `width` / `height` | Stored dimensions after orientation + rescale |
 | `size_bytes` | Stored main JPEG size (thumbnail stored separately) |
 | `rescaled` | `true` if longest edge was reduced to 1920 |
-| `reencoded` | `false` only when original JPEG was kept unchanged |
+| `reencoded` | Always `true` — all images are normalized through libvips |
 
 ### Example
 
