@@ -79,7 +79,7 @@ The same client API key is used for both the Task API and the Storage API.
 
 ### Task API — mostly camelCase
 
-Request fields: `apiKey`, `capability`, `urgent`, `restartable`, `timeoutSecs`, `payload`, `fetchFiles`, `file_bucket`, `output_bucket`
+Request fields: `apiKey`, `capability`, `urgent`, `restartable`, `timeoutSecs`, `maxWaitSecs`, `runtimeSecs`, `payload`, `fetchFiles`, `file_bucket`, `output_bucket`
 
 Response fields: `id`, `status`, `createdAt`, `stage`, `output`, `log`, `typicalRuntimeSeconds`, `agentId`, `assignedAt`, `createdAt`
 
@@ -176,7 +176,9 @@ Content-Type: application/json
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `restartable` | boolean | `false` | Allow retry on a different agent if this one fails |
-| `timeoutSecs` | integer | `600` | Maximum seconds the agent may spend on this task. For LLM tasks this is the HTTP request timeout to Ollama — set higher for large models or long prompts. |
+| `timeoutSecs` | integer | none | Total wall-clock timeout in seconds from **task creation**, covering both the wait-for-agent phase and execution. When this deadline passes the server cancels the task (HTTP 499 to the agent) regardless of how much of that time was spent waiting. For LLM tasks the agent also uses this value as its HTTP request timeout to Ollama — increase for large models or long prompts. No server-side deadline if omitted. |
+| `maxWaitSecs` | integer | 60 (urgent) / none (persistent) | Maximum seconds to wait for an agent before failing the task. Once an agent picks up the task this field has no further effect. |
+| `runtimeSecs` | integer | `timeoutSecs` or ~600 | Maximum seconds the agent may spend executing this task (after pickup, excluding wait time). The server passes this value through unchanged and never enforces it — the agent applies it as its HTTP request timeout to Ollama (and kill timer for other capabilities). Takes precedence over `timeoutSecs` for agent-side limiting. Set this when you want a tight execution budget that is independent of the global `timeoutSecs` deadline. |
 | `fetchFiles` | object[] | `[]` | Send `[]` when unused (recommended for all clients; see [Recommended: `llm.*` task body with `file_bucket` (vision)](#recommended-llm-task-body-with-file_bucket-vision)) |
 | `file_bucket` | string[] | `[]` | Bucket UIDs containing input files (see Storage API) |
 | `artifacts` | object[] | `[]` | Send `[]` when unused (recommended alongside `fetchFiles`) |
@@ -958,17 +960,48 @@ Wait and retry, or check if the agent node is running.
 
 ## Timing and Retry Guidance
 
+### Three timeout knobs
+
+| Field | Enforced by | What it covers |
+|-------|------------|----------------|
+| `timeoutSecs` | Server | Total time from creation (wait + execution) |
+| `maxWaitSecs` | Server | Wait-for-agent phase only |
+| `runtimeSecs` | Agent | Execution phase only (after pickup) |
+
+Agent execution timeout precedence: **`runtimeSecs` → `timeoutSecs` → agent default (~600 s)**.
+
+### Global wall-clock timeout (`timeoutSecs`)
+
+`timeoutSecs` starts counting from the moment the task is **created**, not from when an agent picks it up. Wait time is included.
+
+**Example:** `timeoutSecs: 10800` (3 hours). If the task waits 5 minutes for an agent, the agent has at most 2 h 55 min left before the server cancels it.
+
+When the deadline fires:
+- **Unassigned task** → immediately marked `failed`, no execution.
+- **Assigned/running task** → status set to `cancelRequested`; agent receives HTTP **499** on its next progress or resolve call and stops gracefully (partial output is saved).
+
+If `timeoutSecs` is not set the server applies **no deadline**; agents fall back to their own internal defaults.
+
+### Agent pickup deadline (`maxWaitSecs`)
+
+`maxWaitSecs` limits only the wait-for-agent phase. If no agent claims the task within this window the task fails without ever being executed.
+
+- Blocking / urgent tasks: default **60 s** (existing behavior).
+- Persistent tasks: default **no limit** — queue indefinitely.
+
 ### Blocking requests
 
-- Maximum wait time: **60 seconds**
-- If no agent picks up the task within 60 s, the server returns an error and the task is purged from the urgent queue
+- Maximum HTTP connection wait: **60 seconds** (`maxWaitSecs` controls when the server gives up on finding an agent)
+- If no agent picks up the task within the wait deadline the server returns 503 and the task is purged from the urgent queue
 - `503` before the connection is established means no agent is online right now; retry after a delay
 - Actual LLM inference on a GPU typically completes in 3–30 seconds for common models
 - For models requiring more than 60 s (long context, slow hardware), use the non-blocking path instead
 
 ### Non-blocking requests (persistent, `urgent: false`)
 
-- No TTL — tasks survive server restarts and queue indefinitely
+- Default: no TTL — tasks survive server restarts and queue indefinitely
+- Set `maxWaitSecs` to fail fast if no agent is available within a window
+- Set `timeoutSecs` to enforce a hard overall deadline (includes wait time)
 - Typical agent polling frequency: every 5–10 seconds
 - After submission, expect an `assigned` or `starting` status within 5–15 seconds if an agent is available
 - Poll more aggressively (every 1–2 s) after `starting`, then ease to 2–5 s during `running`
@@ -976,7 +1009,7 @@ Wait and retry, or check if the agent node is running.
 
 ### Non-blocking requests (urgent, `urgent: true` submitted to `/submit`)
 
-- 60 second TTL in-memory
+- Default wait TTL: 60 s in-memory (override with `maxWaitSecs`)
 - Poll the returned task ID; if you receive a 404 before completion, the task expired
 - Use persistent (`urgent: false`) if there is any risk of the agent being busy for more than 60 s
 

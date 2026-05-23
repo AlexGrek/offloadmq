@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
+  Columns2,
   FolderOpen,
   ImagePlus,
   Loader2,
@@ -122,6 +123,7 @@ export default function ImageGenerationPage() {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [mediaRevision, setMediaRevision] = useState(0)
   const [submitBurst, setSubmitBurst] = useState(false)
+  const [compareMode, setCompareMode] = useState(false)
 
   const viewingJob = activePanel !== IMGGEN_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
@@ -299,7 +301,7 @@ export default function ImageGenerationPage() {
   }, [viewedJobId, refreshJob])
 
   const lightboxActions = useCallback(
-    (imageId: string, filename: string, direction: string) =>
+    (imageId: string, filename: string, direction: string, onSendToImg2Img?: () => void) =>
       token
         ? {
             imageId,
@@ -307,10 +309,29 @@ export default function ImageGenerationPage() {
             direction,
             token,
             onDeleted: onImageMutated,
+            onSendToImg2Img,
           }
         : undefined,
     [token, onImageMutated],
   )
+
+  function sendToImg2Img(file: { image_id: string; filename: string; content_type: string; width: number; height: number; size_bytes: number; rescaled: boolean; reencoded: boolean }) {
+    switchMode('img2img')
+    setUploadedInput({
+      image_id: file.image_id,
+      filename: file.filename,
+      content_type: file.content_type,
+      width: file.width,
+      height: file.height,
+      size_bytes: file.size_bytes,
+      rescaled: file.rescaled,
+      reencoded: file.reencoded,
+    })
+    setInputPreviewUrl(null)
+    setActivePanel(IMGGEN_NEW_PANEL)
+    setInfo(`Input set to "${file.filename}" (${file.width}×${file.height}). Adjust settings and submit.`)
+    setError(null)
+  }
 
   const runPoll = useCallback(
     async (jobId: string) => {
@@ -357,19 +378,22 @@ export default function ImageGenerationPage() {
     setInfo('Submitting image generation task to OffloadMQ.')
     const dataPrep = mode === 'img2img' ? rescaleDataPrep(rescale.enabled, rescale) : null
     try {
-      const res = await startImageJob(token, {
-        capability: capability.trim(),
-        prompt: prompt.trim(),
-        negative_prompt: overrideNegative ? negativePrompt.trim() || null : null,
-        override_negative: overrideNegative,
-        width,
-        height,
-        seed: seed.trim() ? Number(seed) : null,
-        workflow: mode,
-        input_image_id: uploadedInput?.image_id ?? null,
-        data_preparation: dataPrep,
-        rescale: rescaleForSubmit(),
-      })
+      const [res] = await Promise.all([
+        startImageJob(token, {
+          capability: capability.trim(),
+          prompt: prompt.trim(),
+          negative_prompt: overrideNegative ? negativePrompt.trim() || null : null,
+          override_negative: overrideNegative,
+          width,
+          height,
+          seed: seed.trim() ? Number(seed) : null,
+          workflow: mode,
+          input_image_id: uploadedInput?.image_id ?? null,
+          data_preparation: dataPrep,
+          rescale: rescaleForSubmit(),
+        }),
+        new Promise<void>(resolve => window.setTimeout(resolve, 600)),
+      ])
       setActivePanel(res.job_id)
       await refreshJob(res.job_id)
       setActivePoll({ job_id: res.job_id, status: res.status, stage: null, error: null, output_images: [] })
@@ -497,8 +521,19 @@ export default function ImageGenerationPage() {
     return pipelineStatusLine(displayStatus, activePoll?.stage, selectedJob.events)
   }, [selectedJob, displayStatus, activePoll?.stage])
 
+  const outputFiles = useMemo(
+    () => (selectedJob ? selectedJob.files.filter(f => f.direction === 'output') : []),
+    [selectedJob],
+  )
+
+  const canCompare =
+    selectedJob?.workflow === 'img2img' &&
+    Boolean(selectedJob?.input_image_id) &&
+    outputFiles.length > 0
+
   useEffect(() => {
     setTimelineOpen(false)
+    setCompareMode(false)
   }, [selectedJob?.job_id])
 
   return (
@@ -843,54 +878,105 @@ export default function ImageGenerationPage() {
         )}
 
         {viewingJob && (
-          jobDetailLoading ? (
+          <motion.div
+            key={activePanel}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          >
+          {jobDetailLoading ? (
             <div className="flex min-h-[40vh] items-center justify-center">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : selectedJob?.job_id === viewedJobId ? (
           <Card data-testid="imggen-job-detail" className="overflow-hidden">
 
-            {/* ── Output images — full-bleed at top ── */}
-            {(() => {
-              const outputFiles = selectedJob.files.filter(f => f.direction === 'output')
-              if (outputFiles.length > 0) {
-                return (
-                  <div className={outputFiles.length > 1 ? 'grid grid-cols-2 gap-px bg-border' : undefined}>
-                    {outputFiles.map(file => (
-                      <ImageLightbox
-                        key={file.image_id}
+            {/* ── Output / compare area — full-bleed at top ── */}
+            {compareMode && canCompare ? (
+              <div className="grid grid-cols-2 gap-px bg-border" data-testid="imggen-compare-view">
+                <div className="relative overflow-hidden bg-muted/10">
+                  <span className="absolute left-2 top-2 z-10 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
+                    Before
+                  </span>
+                  <ImageLightbox
+                    src={imageFileUrl(selectedJob.input_image_id!, token, mediaRevision)}
+                    alt="Input"
+                    triggerClassName="group block w-full overflow-hidden"
+                    testId="imggen-compare-input"
+                    actions={lightboxActions(selectedJob.input_image_id!, 'Input', 'input')}
+                  >
+                    <img
+                      src={imageFileUrl(selectedJob.input_image_id!, token, mediaRevision)}
+                      alt=""
+                      aria-hidden
+                      className="w-full object-contain max-h-[40dvh] sm:max-h-[65vh] transition-opacity group-hover:opacity-95"
+                    />
+                  </ImageLightbox>
+                </div>
+                <div className="relative overflow-hidden bg-muted/10">
+                  <span className="absolute left-2 top-2 z-10 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
+                    After
+                  </span>
+                  {outputFiles.map(file => (
+                    <ImageLightbox
+                      key={file.image_id}
+                      src={imageFileUrl(file.image_id, token, mediaRevision)}
+                      alt={file.filename}
+                      triggerClassName="group block w-full overflow-hidden"
+                      testId={`imggen-compare-output-${file.image_id}`}
+                      actions={lightboxActions(
+                        file.image_id,
+                        file.filename,
+                        file.direction,
+                        () => sendToImg2Img(file),
+                      )}
+                    >
+                      <img
                         src={imageFileUrl(file.image_id, token, mediaRevision)}
-                        alt={file.filename}
-                        caption={`${file.filename} — ${file.width}×${file.height}`}
-                        triggerClassName="group block w-full overflow-hidden bg-muted/20"
-                        testId={`imggen-output-${file.image_id}`}
-                        actions={lightboxActions(file.image_id, file.filename, file.direction)}
-                      >
-                        <img
-                          src={imageFileUrl(file.image_id, token, mediaRevision)}
-                          alt=""
-                          aria-hidden
-                          className="w-full object-contain max-h-[70vh] transition-opacity group-hover:opacity-95"
-                        />
-                      </ImageLightbox>
-                    ))}
-                  </div>
-                )
-              }
-              if (isRunning) {
-                return (
-                  <div className="flex aspect-video w-full items-center justify-center bg-muted/30">
-                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                      <Loader2 className="size-10 animate-spin opacity-40" />
-                      <p className="text-sm font-medium capitalize">
-                        {activePoll?.stage ?? displayStatus ?? 'Generating…'}
-                      </p>
-                    </div>
-                  </div>
-                )
-              }
-              return null
-            })()}
+                        alt=""
+                        aria-hidden
+                        className="w-full object-contain max-h-[40dvh] sm:max-h-[65vh] transition-opacity group-hover:opacity-95"
+                      />
+                    </ImageLightbox>
+                  ))}
+                </div>
+              </div>
+            ) : outputFiles.length > 0 ? (
+              <div className={outputFiles.length > 1 ? 'grid grid-cols-2 gap-px bg-border' : undefined}>
+                {outputFiles.map(file => (
+                  <ImageLightbox
+                    key={file.image_id}
+                    src={imageFileUrl(file.image_id, token, mediaRevision)}
+                    alt={file.filename}
+                    caption={`${file.filename} — ${file.width}×${file.height}`}
+                    triggerClassName="group block w-full overflow-hidden bg-muted/20"
+                    testId={`imggen-output-${file.image_id}`}
+                    actions={lightboxActions(
+                      file.image_id,
+                      file.filename,
+                      file.direction,
+                      () => sendToImg2Img(file),
+                    )}
+                  >
+                    <img
+                      src={imageFileUrl(file.image_id, token, mediaRevision)}
+                      alt=""
+                      aria-hidden
+                      className="w-full object-contain max-h-[70vh] transition-opacity group-hover:opacity-95"
+                    />
+                  </ImageLightbox>
+                ))}
+              </div>
+            ) : isRunning ? (
+              <div className="flex aspect-video w-full items-center justify-center bg-muted/30">
+                <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                  <Loader2 className="size-10 animate-spin opacity-40" />
+                  <p className="text-sm font-medium capitalize">
+                    {activePoll?.stage ?? displayStatus ?? 'Generating…'}
+                  </p>
+                </div>
+              </div>
+            ) : null}
 
             {/* ── Compact title + meta ── */}
             <div className="border-b border-border px-4 py-3 space-y-0.5">
@@ -942,6 +1028,18 @@ export default function ImageGenerationPage() {
                     <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                     Auto-polling every {POLL_MS / 1000}s…
                   </span>
+                )}
+                {canCompare && (
+                  <Button
+                    type="button"
+                    variant={compareMode ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setCompareMode(v => !v)}
+                    data-testid="imggen-compare-toggle"
+                  >
+                    <Columns2 className="mr-1 h-4 w-4" />
+                    {compareMode ? 'Result' : 'Compare'}
+                  </Button>
                 )}
               </div>
               {info && <p className="text-xs text-muted-foreground">{info}</p>}
@@ -1016,14 +1114,16 @@ export default function ImageGenerationPage() {
               {/* ── Params ── */}
               <PipelineJobParamsPanel job={selectedJob} />
 
-              {/* ── Input image ── */}
+              {/* ── Input image (compact param row) ── */}
               {selectedJob.input_image_id && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">Input</p>
+                <div className="flex items-center gap-3">
+                  <span className="w-24 shrink-0 text-xs font-medium text-muted-foreground">
+                    Input image
+                  </span>
                   <ImageLightbox
                     src={imageFileUrl(selectedJob.input_image_id, token, mediaRevision)}
                     alt="Job input"
-                    triggerClassName="block max-w-full"
+                    triggerClassName="block shrink-0"
                     testId="imggen-job-input"
                     actions={lightboxActions(selectedJob.input_image_id, 'Job input', 'input')}
                   >
@@ -1031,7 +1131,7 @@ export default function ImageGenerationPage() {
                       src={imageFileUrl(selectedJob.input_image_id, token, mediaRevision)}
                       alt=""
                       aria-hidden
-                      className="max-h-40 rounded-lg border border-border object-contain"
+                      className="h-14 w-14 rounded-md object-cover bg-muted/40"
                     />
                   </ImageLightbox>
                 </div>
@@ -1041,7 +1141,8 @@ export default function ImageGenerationPage() {
           </Card>
           ) : (
             <p className="text-center text-sm text-muted-foreground">Could not load this job.</p>
-          )
+          )}
+          </motion.div>
         )}
           </div>
         </main>

@@ -9,6 +9,19 @@ import { SaveIndicator } from "@/components/SaveIndicator";
 import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import type { Settings } from "@/types";
 
+function computeDefaultName(sysinfo: Record<string, unknown>): string {
+  let cpu = ((sysinfo.cpuModel as string) || (sysinfo.cpuArch as string) || "")
+    .replace(/\(R\)/g, "")
+    .replace(/\(TM\)/g, "")
+    .replace(/ CPU/g, "")
+    .trim();
+  if (cpu.includes(" @ ")) cpu = cpu.slice(0, cpu.indexOf(" @ "));
+  cpu = cpu.replace(/\s+/g, " ").trim();
+  const ramGb = (sysinfo.totalMemoryGb as number) ?? 0;
+  const name = cpu ? `${cpu} ${ramGb}GB` : `${ramGb}GB`;
+  return name.slice(0, 50);
+}
+
 export function ConnectionPage() {
   const [form, setForm] = useState<Partial<Settings>>({});
   const [registerId, setRegisterId] = useState("");
@@ -18,7 +31,22 @@ export function ConnectionPage() {
   );
 
   useEffect(() => {
-    api.getSettings().then(setForm);
+    api.getSettings().then((settings) => {
+      if (!settings.display_name) {
+        api.getSystemInfo().then(({ sysinfo }) => {
+          const defaultName = computeDefaultName(sysinfo);
+          if (defaultName) {
+            const patched = { ...settings, display_name: defaultName };
+            setForm(patched);
+            schedule(patched);
+          } else {
+            setForm(settings);
+          }
+        });
+      } else {
+        setForm(settings);
+      }
+    });
   }, []);
 
   const edit = (patch: Partial<Settings>) => {
@@ -63,12 +91,15 @@ export function ConnectionPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Display name</Label>
+            <Label>Machine name</Label>
             <Input
               value={form.display_name ?? ""}
-              onChange={(e) => edit({ display_name: e.target.value })}
+              onChange={(e) =>
+                edit({ display_name: e.target.value.slice(0, 50) })
+              }
               onBlur={flush}
               onKeyDown={(e) => e.key === "Enter" && flush()}
+              maxLength={50}
             />
           </div>
           <div className="flex items-center gap-2">

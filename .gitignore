@@ -12,4 +12,4 @@ ansible/inventory/hosts.yml
 offload-agent-macos-*
 oai/.buildx-cache/*
 agent_v2/ui-server/frontend/node_modules
-agent_v2/ui-server/frontend/dist
+**/frontend/dist

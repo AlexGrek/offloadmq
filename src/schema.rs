@@ -6,7 +6,6 @@
 
 use std::{collections::HashMap, fmt::Display};
 
-use chrono::Duration;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value; // Using Value for flexible payloads
 
@@ -27,8 +26,6 @@ pub enum TaskStatus {
     Pending,
     /// The task is in the queue, waiting for an available agent.
     Queued,
-    /// The task is locked for a specific agent, but this agent did not picked it up yet
-    Pinned(String),
     /// The task has been assigned to an agent and transferred to the agent
     Assigned,
     /// Agent is preparing the task for execution
@@ -43,15 +40,22 @@ pub enum TaskStatus {
     CancelRequested,
     /// The task was cancelled by a client.
     Canceled,
-    /// Task is restartable and is returned to the queue
-    FailedRetryPending,
-    /// Task is delayed after failure
-    FailedRetryDelayed,
 }
 
 impl Default for TaskStatus {
     fn default() -> Self {
         Self::Pending
+    }
+}
+
+impl TaskStatus {
+    /// Terminal states: the task has reached its final status and will not
+    /// transition again. Used to decide archiving and to guard cancellation.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Canceled
+        )
     }
 }
 
@@ -62,18 +66,6 @@ pub enum TaskResultStatus {
     Success(f64),
     Failure(String, f64),
     NotExecuted(String),
-}
-
-/// Task retry on failure policy
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskRetryConfiguration {
-    /// Can retry run on the same node, if true - it can, if false - another node is required
-    pub retry_on_same_node: bool,
-    /// Maximun retries count, setting it to 0 makes it actually non-restartable
-    pub max_retries: u64,
-    /// Retry delay: how much time should pass before another retry
-    pub retry_delay: Duration,
 }
 
 //=============================================================================
@@ -325,10 +317,32 @@ pub struct TaskSubmissionRequest {
     /// The client must create this bucket before submitting the task and own it.
     #[serde(default, rename = "output_bucket")]
     pub output_bucket: Option<String>,
-    /// Maximum seconds the agent should spend executing this task.
-    /// Defaults to 600 (10 minutes) if not provided.
+    /// Total wall-clock timeout in seconds, measured from task creation.
+    /// Covers both the time spent waiting for an agent and the actual execution
+    /// time. When this deadline is reached, the server sends a stop signal
+    /// (HTTP 499) to any agent currently executing the task and marks the task
+    /// as failed. If not set, the server enforces no deadline; agents may still
+    /// apply their own internal timeout defaults (typically 600 s).
     #[serde(default, rename = "timeoutSecs")]
     pub timeout_secs: Option<u64>,
+    /// Maximum seconds to wait for an agent to pick up this task before failing
+    /// it with no-agent-available. Only the wait phase is checked; once an agent
+    /// claims the task this field has no further effect.
+    /// For urgent tasks the server default is 60 s regardless of this field.
+    /// For persistent tasks the default is no wait limit (queue indefinitely).
+    /// If `timeoutSecs` is also set the effective wait limit is
+    /// `min(maxWaitSecs, timeoutSecs)`.
+    #[serde(default, rename = "maxWaitSecs")]
+    pub max_wait_secs: Option<u64>,
+    /// Maximum seconds the agent is allowed to spend **executing** this task
+    /// (i.e. after it has been picked up, excluding wait time).
+    /// The server passes this value to the agent unchanged and does not enforce
+    /// it — enforcement is the agent's responsibility (HTTP timeout for `llm.*`,
+    /// kill timer for `shell.*`, `docker.*`, etc.).
+    /// Takes precedence over `timeoutSecs` for agent-side execution limiting.
+    /// If not set, agents fall back to `timeoutSecs` or their own defaults.
+    #[serde(default, rename = "runtimeSecs")]
+    pub runtime_secs: Option<u64>,
     #[serde(default)]
     pub artifacts: Vec<FileReference>,
     #[serde(default)]

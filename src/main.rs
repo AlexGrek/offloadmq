@@ -419,6 +419,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Background: maintain persistent (non-urgent) task state every 30 s.
+    // - Unassigned tasks past maxWaitSecs or timeoutSecs are moved to Failed.
+    // - Assigned tasks past timeoutSecs are set to CancelRequested so the
+    //   executing agent receives HTTP 499 on its next progress/resolve call.
+    // - CancelRequested tasks unacknowledged past the grace window are failed.
+    // - Tasks held by an offline, silent agent are recovered (failed).
+    {
+        // How long to wait after requesting cancel before presuming the agent
+        // is dead and force-failing the task.
+        const CANCEL_ACK_GRACE_SECS: i64 = 120;
+        // How long a task may go untouched by an offline agent before it is
+        // treated as orphaned. Long enough not to disturb legitimately running
+        // tasks that report progress infrequently.
+        const ORPHAN_SILENCE_SECS: i64 = 30 * 60;
+
+        let state = shared_state.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                match state.storage.tasks.expire_timed_out_unassigned() {
+                    Ok(n) if n > 0 => {
+                        info!("Task timeout: failed {} unassigned task(s) past wait/total deadline", n);
+                    }
+                    Err(e) => log::warn!("Task timeout check (unassigned) error: {}", e),
+                    _ => {}
+                }
+                match state.storage.tasks.cancel_timed_out_assigned() {
+                    Ok(n) if n > 0 => {
+                        info!("Task timeout: sent cancel signal to {} assigned task(s) past total deadline", n);
+                    }
+                    Err(e) => log::warn!("Task timeout check (assigned) error: {}", e),
+                    _ => {}
+                }
+                match state.storage.tasks.fail_stale_cancel_requested(CANCEL_ACK_GRACE_SECS) {
+                    Ok(n) if n > 0 => {
+                        info!("Task cleanup: failed {} cancel-requested task(s) the agent never acknowledged", n);
+                    }
+                    Err(e) => log::warn!("Cancel-requested escalation error: {}", e),
+                    _ => {}
+                }
+                let agents = &state.storage.agents;
+                match state.storage.tasks.recover_orphaned_assigned(
+                    ORPHAN_SILENCE_SECS,
+                    |agent_id| agents.get_agent(agent_id).map(|a| a.is_online()).unwrap_or(false),
+                ) {
+                    Ok(n) if n > 0 => {
+                        info!("Task cleanup: recovered {} orphaned task(s) from offline agents", n);
+                    }
+                    Err(e) => log::warn!("Orphan recovery error: {}", e),
+                    _ => {}
+                }
+            }
+        });
+    }
+
     axum::serve(listener, app).await?;
 
     Ok(())

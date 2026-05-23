@@ -21,15 +21,17 @@ pub struct UnassignedTask {
 
 impl UnassignedTask {
     pub fn assign_to(&self, agent_id: &str) -> AssignedTask {
+        let now = Utc::now();
         AssignedTask {
             id: self.id.clone(),
             data: self.data.clone(),
             agent_id: agent_id.to_string(),
             created_at: self.created_at.clone(),
-            assigned_at: Utc::now(),
+            assigned_at: now,
             status: TaskStatus::Assigned,
+            last_update_at: Some(now),
             history: vec![TaskEvent {
-                timestamp: Utc::now(),
+                timestamp: now,
                 description: format!("Assigned to {agent_id}"),
             }],
             ..AssignedTask::default()
@@ -49,16 +51,18 @@ impl UnassignedTask {
     }
 
     pub fn into_assigned(self, agent_id: &str) -> AssignedTask {
+        let now = Utc::now();
         AssignedTask {
             id: self.id,
             data: self.data,
             agent_id: agent_id.to_string(),
             created_at: self.created_at,
-            assigned_at: Utc::now(),
+            assigned_at: now,
             status: TaskStatus::Assigned,
             log: None,
+            last_update_at: Some(now),
             history: vec![TaskEvent {
-                timestamp: Utc::now(),
+                timestamp: now,
                 description: format!("Assigned to {agent_id}"),
             }],
             ..AssignedTask::default()
@@ -103,6 +107,18 @@ pub struct AssignedTask {
     pub stage: Option<String>,
     #[serde(default)]
     pub typical_runtime_seconds: Option<std::time::Duration>,
+    /// When the task entered `CancelRequested`. Drives escalation to `Failed`
+    /// if the agent never acknowledges the cancel signal.
+    #[serde(default)]
+    pub cancel_requested_at: Option<DateTime<Utc>>,
+    /// When the task reached a terminal status. Used as the archive retention
+    /// clock so results are kept for the full window after completion.
+    #[serde(default)]
+    pub finished_at: Option<DateTime<Utc>>,
+    /// Last time the agent touched this task (assignment, progress, or report).
+    /// Drives orphan recovery when the assigned agent goes silent and offline.
+    #[serde(default)]
+    pub last_update_at: Option<DateTime<Utc>>,
 }
 
 impl AssignedTask {
@@ -110,8 +126,14 @@ impl AssignedTask {
         if self.status == new_status {
             return;
         }
+        let now = Utc::now();
+        match &new_status {
+            TaskStatus::CancelRequested => self.cancel_requested_at = Some(now),
+            s if s.is_terminal() => self.finished_at = Some(now),
+            _ => {}
+        }
         self.history.push(TaskEvent {
-            timestamp: Utc::now(),
+            timestamp: now,
             description: format!("Status set to {:?}", new_status),
         });
         self.status = new_status;

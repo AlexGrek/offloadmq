@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { Download, Star, Trash2, X } from 'lucide-react'
+import { Download, ImagePlus, Star, Trash2, X } from 'lucide-react'
 import {
   deleteImage,
   getImageStarred,
@@ -23,6 +23,7 @@ export type ImageLightboxActions = {
   token: string
   onDeleted?: () => void | Promise<void>
   onStarredChange?: (starred: boolean) => void
+  onSendToImg2Img?: () => void
 }
 
 export type ImageLightboxProps = {
@@ -174,6 +175,22 @@ export function ImageLightbox({
               className="mt-4 flex flex-wrap items-center justify-center gap-2 rounded-xl bg-background/90 px-3 py-3 backdrop-blur sm:gap-3"
               data-testid={testId ? `${testId}-lightbox-actions` : 'image-lightbox-actions'}
             >
+            {actions.onSendToImg2Img ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="min-h-11 gap-1.5"
+                onClick={() => {
+                  actions.onSendToImg2Img!()
+                  setOpen(false)
+                }}
+                data-testid={testId ? `${testId}-send-to-img2img` : 'image-lightbox-send-to-img2img'}
+              >
+                <ImagePlus className="size-4" />
+                Use in Img2Img
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="secondary"

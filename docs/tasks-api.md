@@ -104,7 +104,9 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 | `payload` | object | Yes | Task-specific data (any valid JSON) — passed to agent as-is |
 | `urgent` | boolean | No (default: false) | If true, stored in-memory with 60s TTL; if false, persisted to DB |
 | `restartable` | boolean | No (default: false) | If true, task can be retried on another agent if it fails |
-| `timeoutSecs` | integer | No (default: 600) | Maximum seconds the agent may spend executing this task. Applies to all capability types: HTTP request timeout for `llm.*`, `tts.*`; wall-clock kill timeout for `shell.*`, `docker.*`; request timeout for custom and other capabilities. |
+| `timeoutSecs` | integer | No | Total wall-clock timeout in seconds, measured from task **creation** (not from when the agent picks it up). Covers both the wait-for-agent phase and the execution phase. When this deadline is reached the server sends a stop signal (HTTP 499) to any executing agent and marks the task failed. No server-side deadline if omitted; agents fall back to `runtimeSecs` or their own defaults (~600 s). |
+| `maxWaitSecs` | integer | No | Maximum seconds to wait for an agent to pick up the task. If no agent claims the task within this window the task fails immediately with no execution. For urgent tasks the default is 60 s; for persistent tasks the default is no wait limit. If `timeoutSecs` is also set the effective wait limit is `min(maxWaitSecs, timeoutSecs)`. |
+| `runtimeSecs` | integer | No | Maximum seconds the agent may spend **executing** this task (after pickup, excluding wait time). Passed through to the agent unchanged — the server never enforces it. Agents use this as their local kill timer (HTTP timeout for `llm.*`, `tts.*`; process kill for `shell.*`, `docker.*`; etc.). If not set, agents fall back to `timeoutSecs` or their own defaults (~600 s). |
 | `file_bucket` | string[] | No | List of bucket UIDs containing input files. Agents can download from these buckets. |
 | `output_bucket` | string | No | UID of a bucket the agent should upload output files into. The client must create this bucket beforehand and own it. When provided, the agent uploads output files (e.g., images, video) directly to the bucket instead of embedding them as base64 in the task output. The client can then download them via `GET /api/storage/bucket/{uid}/file/{file_uid}`. |
 | `fetchFiles` | object[] | No | Advanced: HTTP fetch rules (see Advanced below). For a stable JSON shape, send **`[]`** when unused (management sandbox apps always do). |
@@ -167,8 +169,9 @@ Regular task response:
 
 **Notes**
 
-- Urgent tasks block agents' polling for up to 60 seconds, then auto-expire
-- Regular tasks persist in Sled DB indefinitely until completed/failed/archived
+- Urgent tasks wait for an agent for up to `maxWaitSecs` (default 60 s), then auto-expire
+- Regular tasks persist in Sled DB indefinitely unless `maxWaitSecs` or `timeoutSecs` is set
+- `timeoutSecs` is a wall-clock deadline from creation; it includes wait time, not just execution time
 - File buckets can only be used if they exist and are owned by your API key
 - Servers validate bucket ownership on submission
 
@@ -220,10 +223,12 @@ Or on failure:
 
 **Behavior**
 
-- HTTP connection remains open until task completes or 60s timeout (whichever comes first)
+- HTTP connection remains open until task completes or 60 s timeout (whichever comes first)
 - Server uses internal `tokio::sync::watch` channel to notify waiting client
 - If task completes before timeout, client gets result immediately
-- If timeout expires, task continues executing but client receives timeout error
+- If the HTTP connection times out, the task continues executing; poll `POST /api/task/poll/{cap}/{id}` for results
+- `maxWaitSecs` controls how long the server waits for an agent before returning 503; defaults to 60 s for urgent tasks
+- `timeoutSecs` sets a global wall-clock deadline from creation; if it expires while the agent is running, the server cancels the task (HTTP 499 to the agent)
 - Useful for request-response patterns (LLM inference, OCR, etc.)
 
 **Error responses**
@@ -1092,12 +1097,61 @@ Content-Length: 1234567
 
 ---
 
+## Timeout Behavior
+
+OffloadMQ provides three independent per-task timeout knobs. Two are enforced by the server; one is enforced by the agent.
+
+| Field | Enforced by | Covers |
+|-------|------------|--------|
+| `timeoutSecs` | **Server** | Total wall-clock time from creation (wait + execution) |
+| `maxWaitSecs` | **Server** | Wait-for-agent phase only |
+| `runtimeSecs` | **Agent** | Execution phase only (after pickup) |
+
+### `timeoutSecs` — global wall-clock deadline (server-enforced)
+
+Measured from **task creation**, covering both the wait-for-agent phase and execution.
+
+| Phase | What happens when deadline passes |
+|-------|-----------------------------------|
+| Unassigned (waiting for agent) | Task immediately moved to `failed` |
+| Assigned / running | Task set to `cancelRequested`; agent receives HTTP **499** on its next progress or resolve call and should stop gracefully |
+
+**Example:** A task with `timeoutSecs: 10800` (3 hours) is picked up after 5 minutes. The agent has at most 2 h 55 min left before the server cancels it, because the 5 min wait counts against the 3 h total.
+
+If `timeoutSecs` is not set the server enforces **no deadline**; agents fall back to `runtimeSecs` or their own internal defaults.
+
+### `maxWaitSecs` — pickup deadline (server-enforced)
+
+Limits only the **wait-for-agent** phase. If no agent claims the task within this window the task fails immediately, without ever being executed.
+
+- For **urgent** tasks the default is 60 s (existing behavior).
+- For **persistent** tasks the default is no limit.
+- If both `maxWaitSecs` and `timeoutSecs` are set, the effective wait limit is `min(maxWaitSecs, timeoutSecs)`.
+
+### `runtimeSecs` — execution time limit (agent-enforced)
+
+Limits only the **execution** phase (time after the agent picks up the task). The server passes this value through to the agent without inspecting or enforcing it. Agents apply it as their local kill timer:
+
+- `llm.*`, `tts.*` — HTTP request timeout to Ollama / Kokoro
+- `shell.*`, `docker.*` — wall-clock process kill timeout
+- `onnx.*`, `imggen.*` — execution deadline
+
+**Precedence for agent execution timeout:** `runtimeSecs` → `timeoutSecs` → agent default (~600 s).
+
+Use `runtimeSecs` when you want to bound only execution time without coupling it to the global `timeoutSecs` deadline. For example, a task with `timeoutSecs: 10800` (3 h global) and `runtimeSecs: 300` (5 min execution) will fail fast at the agent if the model doesn't respond in 5 minutes, but the server's 3 h watchdog is still in effect.
+
+### Cancel signal mechanics
+
+When the server decides to stop a running task (either via explicit cancel or timeout expiry) it sets the task status to `cancelRequested`. The executing agent detects this when it makes its next `POST /private/agent/task/progress/{cap}/{id}` or `POST /private/agent/task/resolve/{cap}/{id}` call — the server returns **499 Client Closed Request**. The agent then performs its capability-specific cleanup (SIGKILL for shell, close stream for LLM, etc.) and reports partial output. See [Agent Cancellation Behavior](#agent-cancellation-behavior) for the full protocol.
+
+---
+
 ## Task Lifecycle
 
 ```
 Client Submission
      ↓
-[Urgent] ──────────────────────→  In-Memory Queue (60s TTL)
+[Urgent] ──────────────────────→  In-Memory Queue (maxWaitSecs TTL, default 60s)
                                         ↓
 [Regular] ──────────────────────→  Persistent DB
      ↓                                  ↓
@@ -1133,7 +1187,9 @@ Client Submission
 | `running` | Agent reports success (POST /resolve) | `completed` | Result available in `output` |
 | `running` | Agent reports failure (POST /resolve) | `failed` | Error details in `output` |
 | `queued` | Client cancels (POST /cancel) | `canceled` | Removed from queue immediately |
+| `queued` | `maxWaitSecs` or `timeoutSecs` expires | `failed` | Server-enforced deadline; no execution occurred |
 | `assigned` \| `starting` \| `running` | Client cancels (POST /cancel) | `cancelRequested` | Agent should stop work |
+| `assigned` \| `starting` \| `running` | `timeoutSecs` from creation expires | `cancelRequested` | Server sends HTTP 499 to agent on next progress/resolve |
 | `completed` \| `failed` | 7 days pass | (archived) | No longer pollable (404) |
 
 ---

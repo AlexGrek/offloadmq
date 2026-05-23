@@ -125,7 +125,11 @@ pub async fn report_non_urgent_task<'a>(
     };
 
     let is_cancel_requested = got.status == TaskStatus::CancelRequested;
-    if !is_cancel_requested {
+    if is_cancel_requested {
+        // Agent acknowledged the cancel signal — move to the terminal Canceled
+        // state (keeping whatever partial output the agent reported).
+        got.change_status(TaskStatus::Canceled);
+    } else {
         got.change_status(if success {
             TaskStatus::Completed
         } else {
@@ -171,6 +175,7 @@ pub async fn update_non_urgent_task<'a>(
         .ok_or(AppError::NotFound(report.id.to_string()))?;
     let is_cancel_requested = got.status == TaskStatus::CancelRequested;
     got.append_log(report.log_update);
+    got.last_update_at = Some(Utc::now());
     if report.stage.is_some() {
         got.stage = report.stage
     }
@@ -229,7 +234,14 @@ pub async fn submit_urgent_task(
             task.id.cap
         )));
     }
-    let state = store.add_task(task.clone(), 60).await?;
+    // Pending TTL: how long to wait for an agent to pick up before giving up.
+    // max_wait_secs takes precedence; fall back to 60 s for urgent tasks.
+    let pending_ttl_secs = task.data.max_wait_secs.map(|s| s as i64).unwrap_or(60);
+    // Global deadline: absolute moment when the overall timeout_secs fires.
+    let global_deadline = task.data.timeout_secs.map(|ts| {
+        task.created_at + chrono::TimeDelta::seconds(ts as i64)
+    });
+    let state = store.add_task(task.clone(), pending_ttl_secs, global_deadline).await?;
 
     let mut rx = state.notify.subscribe();
 

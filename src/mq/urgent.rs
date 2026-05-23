@@ -25,7 +25,12 @@ pub struct UrgentTaskEntry {
     /// Last time the task saw activity — set on assignment and on every progress
     /// update. Used to expire in-flight tasks whose agent has gone silent.
     pub last_update: DateTime<Utc>,
+    /// How long to wait for an agent to pick up the task (pending phase TTL).
     pub ttl: TimeDelta,
+    /// Absolute deadline computed from `timeoutSecs`. When this moment is reached
+    /// the task is failed regardless of agent activity, and any in-flight
+    /// assigned task is marked `CancelRequested` so the agent receives HTTP 499.
+    pub global_deadline: Option<DateTime<Utc>>,
 }
 
 pub struct UrgentTaskStore {
@@ -81,6 +86,7 @@ impl UrgentTaskStore {
         &self,
         task: UnassignedTask,
         ttl_secs: i64,
+        global_deadline: Option<DateTime<Utc>>,
     ) -> anyhow::Result<Arc<TaskState>> {
         let (tx, _) = watch::channel(TaskStatus::Pending);
         let state = Arc::new(TaskState {
@@ -95,6 +101,7 @@ impl UrgentTaskStore {
             created_at: Utc::now(),
             last_update: Utc::now(),
             ttl: TimeDelta::seconds(ttl_secs),
+            global_deadline,
         };
 
         self.tasks
@@ -208,26 +215,45 @@ impl UrgentTaskStore {
     pub async fn expire_tasks(&self) {
         let now = Utc::now();
         let mut tasks = self.tasks.write().await;
-        let mut to_remove = vec![];
+        // (task_id, global_deadline_was_the_trigger)
+        let mut to_remove: Vec<(TaskId, bool)> = vec![];
         for (id, entry) in tasks.iter() {
             let status = entry.state.status.read().await.clone();
+            let global_expired = entry.global_deadline.map_or(false, |d| now >= d);
             let expired = match status {
                 // Already terminal — the waiting submitter will remove it.
                 TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Canceled => false,
-                // Never picked up: expire relative to creation time.
-                TaskStatus::Pending => now - entry.created_at > entry.ttl,
+                // Never picked up: expire when pending TTL or global deadline passes.
+                TaskStatus::Pending => now - entry.created_at > entry.ttl || global_expired,
                 // Picked up but in-flight: expire when the assigned agent has
                 // gone silent (no progress / no resolution) for longer than the
-                // TTL. Without this an agent that dies after pickup would leave
-                // the blocking client waiting forever.
-                _ => now - entry.last_update > entry.ttl,
+                // TTL, OR when the global wall-clock deadline passes.
+                _ => now - entry.last_update > entry.ttl || global_expired,
             };
             if expired {
-                to_remove.push(id.clone());
+                to_remove.push((id.clone(), global_expired));
             }
         }
 
-        for id in to_remove {
+        for (id, global_expired) in to_remove {
+            // When the global deadline fires on an in-flight task, mark the
+            // assigned record as CancelRequested so the agent gets HTTP 499 on
+            // its next progress or resolve call.
+            if global_expired {
+                if let Some(entry) = tasks.get_mut(&id) {
+                    if let Some(ref mut assigned) = entry.assigned_task {
+                        if !matches!(
+                            assigned.status,
+                            TaskStatus::Completed
+                                | TaskStatus::Failed
+                                | TaskStatus::CancelRequested
+                                | TaskStatus::Canceled
+                        ) {
+                            assigned.change_status(TaskStatus::CancelRequested);
+                        }
+                    }
+                }
+            }
             if let Some(entry) = tasks.get(&id) {
                 let mut status = entry.state.status.write().await;
                 if *status != TaskStatus::Completed && *status != TaskStatus::Failed {
