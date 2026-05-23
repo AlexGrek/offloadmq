@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUp,
@@ -231,10 +232,15 @@ function ModelPicker({
         {canOpen && <ChevronDown className={cn('size-3 transition-transform', open && 'rotate-180')} />}
       </button>
 
+      <AnimatePresence>
       {open && (
-        <div
+        <motion.div
           className="absolute bottom-full mb-1 left-0 z-50 min-w-45 rounded-xl border border-border bg-popover shadow-md py-1 text-sm"
           data-testid="model-picker-dropdown"
+          initial={{ opacity: 0, y: 6, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 6, scale: 0.96 }}
+          transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
         >
           <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground border-b border-border mb-1">
             <span>Models</span>
@@ -276,8 +282,9 @@ function ModelPicker({
               )}
             </button>
           ))}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -299,7 +306,16 @@ function ThinkingBubble({ statusText, content }: { statusText?: string; content?
         </div>
       ) : null}
       <div className="flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
+        <span className="flex items-center gap-0.75" aria-hidden>
+          {[0, 1, 2].map(i => (
+            <motion.span
+              key={i}
+              className="block size-1.5 rounded-full bg-current"
+              animate={{ y: [0, -3, 0] }}
+              transition={{ duration: 0.55, repeat: Infinity, delay: i * 0.14, ease: 'easeInOut' }}
+            />
+          ))}
+        </span>
         {!streaming && <span>{statusText || 'Thinking…'}</span>}
       </div>
     </div>
@@ -1021,10 +1037,13 @@ export default function ChatPage() {
             <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
               <SystemPromptBlock content={systemPrompt} />
               {messages.map(msg => (
-                <div
+                <motion.div
                   key={msg.id}
                   className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
                   data-testid={`message-${msg.id}`}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
                 >
                   {isMessagePending(msg) ? (
                     <ThinkingBubble statusText={msg.statusText} content={msg.content} />
@@ -1047,7 +1066,7 @@ export default function ChatPage() {
                       </MarkdownContent>
                     </div>
                   )}
-                </div>
+                </motion.div>
               ))}
               <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />
             </div>
@@ -1113,13 +1132,14 @@ export default function ChatPage() {
                 <span className="flex-1" />
 
                 {isGenerating ? (
-                  <button
+                  <motion.button
                     type="button"
                     onClick={() => void handleCancel()}
                     disabled={!canCancelTask}
                     aria-label="Cancel"
                     data-testid="chat-cancel-btn"
                     title={canCancelTask ? 'Cancel response' : 'Waiting for task id…'}
+                    whileTap={canCancelTask ? { scale: 0.85 } : undefined}
                     className={cn(
                       'size-7 rounded-full flex items-center justify-center shrink-0 transition-colors',
                       canCancelTask
@@ -1128,13 +1148,14 @@ export default function ChatPage() {
                     )}
                   >
                     <Square className="size-3.5 fill-current" />
-                  </button>
+                  </motion.button>
                 ) : (
-                  <button
+                  <motion.button
                     onClick={send}
                     disabled={!canSend}
                     aria-label="Send"
                     data-testid="send-btn"
+                    whileTap={canSend ? { scale: 0.85 } : undefined}
                     className={cn(
                       'size-7 rounded-full flex items-center justify-center shrink-0 transition-colors',
                       canSend
@@ -1143,7 +1164,7 @@ export default function ChatPage() {
                     )}
                   >
                     <ArrowUp className="size-4" />
-                  </button>
+                  </motion.button>
                 )}
               </div>
             </div>

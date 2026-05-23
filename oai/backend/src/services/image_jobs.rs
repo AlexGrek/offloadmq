@@ -510,7 +510,7 @@ pub async fn run_background_reconcile_pass(
     let jobs = image_generation::list_jobs_for_background_worker(&state.db, batch_size).await?;
     for job in jobs {
         let outcome = match job.status.as_str() {
-            "created" | "submitted" | "pending" | "running" => {
+            "created" | "submitted" | "pending" | "running" | "cancelRequested" => {
                 ("worker.poll", background_poll_once(state, &job).await)
             }
             "completed" => (

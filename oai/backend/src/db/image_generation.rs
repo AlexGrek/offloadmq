@@ -350,6 +350,7 @@ pub async fn list_jobs_for_background_worker(
                 .add(image_generation_jobs::Column::Status.eq("submitted"))
                 .add(image_generation_jobs::Column::Status.eq("pending"))
                 .add(image_generation_jobs::Column::Status.eq("running"))
+                .add(image_generation_jobs::Column::Status.eq("cancelRequested"))
                 .add(image_generation_jobs::Column::Status.eq("completed")),
         )
         .order_by_asc(image_generation_jobs::Column::UpdatedAt)
