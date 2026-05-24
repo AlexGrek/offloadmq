@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, FileText, HardDrive, ImageIcon, RefreshCw } from 'lucide-react'
+import { FileText, HardDrive, ImageIcon, RefreshCw } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { listFiles } from '../api/files'
 import type { CleanupFilesScope, FileBrowserResponse, UserFile } from '../api/files'
-import { FilesCleanupDialog } from '../components/files/FilesCleanupDialog'
+import { FilesCleanupMenu } from '../components/files/FilesCleanupMenu'
 import { imageFileUrl, imageThumbnailUrl } from '../api/images'
 import { ImageLightbox } from '@/components/ImageLightbox'
 import { Card, CardContent } from '@/components/ui/card'
@@ -34,7 +34,6 @@ export default function FilesPage() {
   const [filter, setFilter] = useState<DirectionFilter>('all')
   const [query, setQuery] = useState('')
   const [mediaRevision, setMediaRevision] = useState(0)
-  const [cleanupOpen, setCleanupOpen] = useState(false)
   const [info, setInfo] = useState<string | null>(null)
 
   const load = useCallback(() => {
@@ -76,15 +75,16 @@ export default function FilesPage() {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCleanupOpen(true)}
-            data-testid="files-cleanup-open"
-          >
-            Cleanup
-            <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-60" />
-          </Button>
+          <FilesCleanupMenu
+            token={token}
+            onCompleted={(res, scope) => {
+              const skipped =
+                res.skipped_starred > 0 ? ` (${res.skipped_starred} starred kept)` : ''
+              setInfo(`Deleted ${res.deleted_count} ${SCOPE_LABELS[scope]}${skipped}.`)
+              setError(null)
+              load()
+            }}
+          />
           <Button
             variant="ghost"
             size="sm"
@@ -97,19 +97,6 @@ export default function FilesPage() {
           </Button>
         </div>
       </div>
-
-      <FilesCleanupDialog
-        open={cleanupOpen}
-        onOpenChange={setCleanupOpen}
-        token={token}
-        onCompleted={(res, scope) => {
-          const skipped =
-            res.skipped_starred > 0 ? ` (${res.skipped_starred} starred kept)` : ''
-          setInfo(`Deleted ${res.deleted_count} ${SCOPE_LABELS[scope]}${skipped}.`)
-          setError(null)
-          load()
-        }}
-      />
 
       {/* Storage summary */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="files-summary">
