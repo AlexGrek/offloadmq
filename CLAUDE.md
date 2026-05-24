@@ -219,8 +219,7 @@ For urgent tasks, resolution triggers the watch channel to unblock the waiting c
 ### Storage Layer
 
 - **Sled DB** ([src/db/](src/db/)) - Embedded key-value store for persistent data
-- **LRU Cache** - In-memory agent cache with 120s online timeout
-- Agent storage: [src/db/agent.rs](src/db/agent.rs)
+- Agent storage: [src/db/agent.rs](src/db/agent.rs) (Sled-backed; online if last contact within 120s)
 - Task storage: [src/db/persistent_task_storage.rs](src/db/persistent_task_storage.rs)
 - Urgent queue: [src/mq/urgent.rs](src/mq/urgent.rs)
 - Bucket metadata: [src/db/bucket_storage.rs](src/db/bucket_storage.rs)

@@ -1,9 +1,9 @@
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc};
 
 use crate::{
     config::StorageConfig,
     db::{
-        agent::CachedAgentStorage,
+        agent::AgentStorage,
         apikeys::ApiKeysStorage,
         bucket_storage::BucketStorage,
         persistent_task_storage::TaskStorage,
@@ -17,7 +17,7 @@ use crate::{
 // Composite storage for agents, tasks, keys, file buckets, heuristics, and service messages
 #[derive(Clone)]
 pub struct AppStorage {
-    pub agents: Arc<CachedAgentStorage>,
+    pub agents: Arc<AgentStorage>,
     pub tasks: Arc<TaskStorage>,
     pub client_keys: Arc<ApiKeysStorage>,
     pub buckets: Arc<BucketStorage>,
@@ -27,16 +27,7 @@ pub struct AppStorage {
 }
 
 impl AppStorage {
-    /// Create a new AppStorage with default TTL of 120 seconds
     pub fn new(base_path: &str, storage_config: &StorageConfig) -> anyhow::Result<Self> {
-        Self::with_ttl(base_path, Duration::from_secs(120), storage_config)
-    }
-
-    pub fn with_ttl(
-        base_path: &str,
-        cache_ttl: Duration,
-        storage_config: &StorageConfig,
-    ) -> anyhow::Result<Self> {
         let mut agents_path = PathBuf::from(base_path);
         agents_path.push("agents");
 
@@ -55,14 +46,9 @@ impl AppStorage {
         let mut service_messages_path = PathBuf::from(base_path);
         service_messages_path.push("service_messages");
 
-        // Create base directory
         std::fs::create_dir_all(base_path)?;
 
-        let agents = Arc::new(CachedAgentStorage::new(
-            agents_path.to_str().unwrap(),
-            cache_ttl,
-            cache_ttl,
-        )?);
+        let agents = Arc::new(AgentStorage::new(agents_path.to_str().unwrap())?);
 
         let tasks = Arc::new(TaskStorage::open(tasks_path.to_str().unwrap())?);
         let client_keys = Arc::new(ApiKeysStorage::open(client_keys_path.to_str().unwrap())?);
@@ -82,21 +68,11 @@ impl AppStorage {
         })
     }
 
-    /// Get cache statistics for agents
-    pub fn get_agent_cache_stats(&self) -> (usize, usize) {
-        let agent_count = self.agents.agent_cache.read().unwrap().len();
-        let token_count = self.agents.token_cache.read().unwrap().len();
-        (agent_count, token_count)
-    }
-
-    /// Cleanup expired entries from caches
-    pub fn cleanup_expired(&self) {
-        self.agents.agent_cache.write().unwrap().iter();
-        self.agents.token_cache.write().unwrap().iter();
+    pub fn agent_count(&self) -> usize {
+        self.agents.agent_count()
     }
 }
 
-// Convenience methods that delegate to the underlying storages
 impl AppStorage {
     pub async fn create_agent(&self, agent: &mut Agent) -> sled::Result<()> {
         self.agents.create_agent(agent).await

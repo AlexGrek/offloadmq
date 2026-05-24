@@ -486,24 +486,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 // Utility handlers
 async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {
-    let stats = state.storage.get_agent_cache_stats();
     Json(json!({
         "status": "healthy",
-        "cached_agents": stats.0,
-        "cached_tokens": stats.1,
+        "agents": state.storage.agent_count(),
         "timestamp": chrono::Utc::now()
     }))
 }
 
 async fn get_stats(State(state): State<Arc<AppState>>) -> Json<Value> {
-    state.storage.cleanup_expired();
-    let stats = state.storage.get_agent_cache_stats();
-
     Json(json!({
-        "cache_stats": {
-            "agents": stats.0,
-            "tokens": stats.1
-        },
+        "agents": state.storage.agent_count(),
         "storage_paths": {
             "agents": "./data/agents",
             "tasks": "./data/tasks"

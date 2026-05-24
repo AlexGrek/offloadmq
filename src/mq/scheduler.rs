@@ -2,7 +2,7 @@ use chrono::Utc;
 use log::debug;
 
 use crate::{
-    db::{agent::CachedAgentStorage, persistent_task_storage::TaskStorage, heuristic_storage::HeuristicStorage},
+    db::{agent::AgentStorage, persistent_task_storage::TaskStorage, heuristic_storage::HeuristicStorage},
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
     mq::{urgent::UrgentTaskStore, heuristic::HeuristicRecord, types::UrgentSubmitOutcome},
@@ -22,7 +22,7 @@ pub async fn find_assignable_non_urgent_tasks_with_capabilities_for_tier(
     store: &TaskStorage,
     caps: &Vec<String>,
     tier: u8,
-    agents: &CachedAgentStorage,
+    agents: &AgentStorage,
     agent_uid: &str,
 ) -> Result<Vec<UnassignedTask>, AppError> {
     let all = store.list_unassigned_with_caps(caps)?;
@@ -199,7 +199,7 @@ pub async fn update_non_urgent_task<'a>(
 
 pub async fn has_potential_agents_for(
     cap: &std::string::String,
-    agents: &CachedAgentStorage,
+    agents: &AgentStorage,
 ) -> bool {
     for agent in agents.list_all_agents() {
         if agent.capabilities.iter().any(|c| base_capability(c) == cap.as_str()) && agent.is_online() {
@@ -211,7 +211,7 @@ pub async fn has_potential_agents_for(
 
 pub async fn all_online_agents_for(
     cap: &std::string::String,
-    agents: &CachedAgentStorage,
+    agents: &AgentStorage,
 ) -> Vec<Agent> {
     let mut collection = vec![];
     for agent in agents.list_all_agents() {
@@ -225,7 +225,7 @@ pub async fn all_online_agents_for(
 
 pub async fn submit_urgent_task(
     store: &UrgentTaskStore,
-    agents: &CachedAgentStorage,
+    agents: &AgentStorage,
     task: UnassignedTask,
 ) -> Result<UrgentSubmitOutcome, AppError> {
     if !has_potential_agents_for(&task.id.cap, agents).await {
