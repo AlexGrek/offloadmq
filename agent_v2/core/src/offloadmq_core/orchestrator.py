@@ -41,6 +41,11 @@ _PING_INTERVAL = 60.0
 _RESCAN_INTERVALS = [30, 120, 300]
 _RESCAN_STEADY = 900
 APP_VERSION = "2.0.0"
+_MAX_CONSECUTIVE_AUTH_FAILURES = 3
+
+
+class _ReregistrationNeeded(Exception):
+    """Raised by _poll_loop when repeated auth failures indicate stale credentials."""
 
 
 class Orchestrator:
@@ -404,7 +409,16 @@ class Orchestrator:
         self._loop = loop
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(self._run())
+            while not self._stop.is_set():
+                try:
+                    loop.run_until_complete(self._run())
+                    break  # clean exit
+                except _ReregistrationNeeded:
+                    logger.warning("repeated auth failures — clearing saved credentials and re-registering")
+                    with self._lock:
+                        self._online = False
+                    self._set_message("re-registering")
+                    self.update_settings(agent_id="", key="", jwt_token="", token_expires_in=0)
         except Exception as exc:  # noqa: BLE001
             logger.exception("poller crashed")
             self._set_message(f"crashed: {exc}")
@@ -424,31 +438,62 @@ class Orchestrator:
         sysinfo = collect_system_info()
         tier = calculate_tier(sysinfo)
 
-        registration = await OffloadMQClient.register(
-            settings.server,
-            settings.api_key,
-            caps,
-            tier,
-            settings.max_concurrent,
-            display_name=settings.display_name,
-            system_info=sysinfo,
-            app_version=APP_VERSION,
-        )
-        auth = await OffloadMQClient.authenticate(
-            settings.server, registration.agent_id, registration.key
-        )
-        self.update_settings(
-            agent_id=registration.agent_id,
-            key=registration.key,
-            jwt_token=auth.token,
-            token_expires_in=auth.expires_in,
-            capabilities=[c for c in caps if not c.startswith("slavemode.")],
-        )
+        # Reuse saved credentials when available — avoids accumulating ghost agents.
+        auth: AgentAuth | None = None
+        if settings.agent_id and settings.key:
+            try:
+                self._set_message("authenticating")
+                auth = await OffloadMQClient.authenticate(
+                    settings.server, settings.agent_id, settings.key
+                )
+            except OffloadMQError:
+                logger.warning("saved agent credentials rejected — registering fresh agent")
+                auth = None
+
+        if auth is None:
+            registration = await OffloadMQClient.register(
+                settings.server,
+                settings.api_key,
+                caps,
+                tier,
+                settings.max_concurrent,
+                display_name=settings.display_name,
+                system_info=sysinfo,
+                app_version=APP_VERSION,
+            )
+            auth = await OffloadMQClient.authenticate(
+                settings.server, registration.agent_id, registration.key
+            )
+            self.update_settings(
+                agent_id=registration.agent_id,
+                key=registration.key,
+                jwt_token=auth.token,
+                token_expires_in=auth.expires_in,
+                capabilities=[c for c in caps if not c.startswith("slavemode.")],
+            )
+        else:
+            self.update_settings(
+                jwt_token=auth.token,
+                token_expires_in=auth.expires_in,
+                capabilities=[c for c in caps if not c.startswith("slavemode.")],
+            )
+
         with self._lock:
             self._last_detected = detected
 
         self._client = OffloadMQClient(settings.server, auth.token)
         self._sync_transport = SyncAgentTransport(settings.server, auth.token)
+
+        # Push current capabilities/tier to server (always required when reusing saved credentials).
+        await self._client.update_agent_info(
+            caps,
+            tier,
+            settings.max_concurrent,
+            display_name=settings.display_name or "",
+            system_info=sysinfo,
+            app_version=APP_VERSION,
+        )
+
         with self._lock:
             self._online = True
         self._set_message("polling")
@@ -457,6 +502,7 @@ class Orchestrator:
     async def _poll_loop(self, token_expires_in: int) -> None:
         client = self._client
         assert client is not None
+        consecutive_auth_failures = 0
 
         while not self._stop.is_set():
             try:
@@ -473,17 +519,33 @@ class Orchestrator:
                 if task is None:
                     task = await client.poll(caps)
                 if task is None:
+                    consecutive_auth_failures = 0  # successful 204 response — auth is valid
                     await self._idle()
                     continue
 
+                consecutive_auth_failures = 0
                 if not await client.take(task.capability, task.id):
                     continue
 
                 self._dispatch(task)
             except OffloadMQError as exc:
+                exc_str = str(exc)
+                if "(403)" in exc_str or "(401)" in exc_str:
+                    consecutive_auth_failures += 1
+                    logger.warning(
+                        "auth failure %d/%d: %s",
+                        consecutive_auth_failures,
+                        _MAX_CONSECUTIVE_AUTH_FAILURES,
+                        exc,
+                    )
+                    if consecutive_auth_failures >= _MAX_CONSECUTIVE_AUTH_FAILURES:
+                        raise _ReregistrationNeeded("repeated auth failures") from exc
+                else:
+                    consecutive_auth_failures = 0
                 self._set_message(f"offloadmq error: {exc}")
                 await asyncio.sleep(5)
             except Exception as exc:  # noqa: BLE001
+                consecutive_auth_failures = 0
                 logger.exception("poll loop error")
                 self._set_message(f"error: {exc}")
                 await asyncio.sleep(5)
