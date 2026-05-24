@@ -387,6 +387,63 @@ Clears all tasks from both in-memory and persistent storage. **Destructive opera
 
 ---
 
+### Cancel Task
+
+```
+POST /management/tasks/cancel/{cap}/{id}
+Authorization: Bearer <token>
+```
+
+Cancel any task in the system (urgent or regular, queued or in-flight). Unlike the client cancel endpoint, this bypasses API-key ownership checks and requires only the management token.
+
+**Path parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cap` | string | Task capability / queue name (URL-encoded if it contains special characters) |
+| `id` | string | Task ID |
+
+**No request body.**
+
+**Response** (200 OK)
+
+Queued / unassigned task (removed immediately):
+
+```json
+{
+  "id": { "cap": "llm.mistral", "id": "01ARZ3NDE4V2XTGZUVY7" },
+  "status": "canceled",
+  "message": "Task cancelled (was queued)"
+}
+```
+
+Assigned / running task (cancel signal sent to agent):
+
+```json
+{
+  "id": { "cap": "llm.mistral", "id": "01ARZ3NDE4V2XTGZUVY7" },
+  "status": "cancelRequested",
+  "message": "Cancellation requested"
+}
+```
+
+**Error responses**
+
+| Status | Reason |
+|--------|--------|
+| `404` | Task not found |
+| `409` | Task already completed, failed, canceled, or cancel already requested |
+| `500` | Server error |
+
+**Notes**
+
+- Works for both **urgent** (in-memory) and **regular** (persisted) tasks
+- In-flight tasks move to `cancelRequested`; agents receive HTTP 499 on the next progress/resolve call and should stop work
+- Queued tasks are canceled immediately and move to terminal `canceled` state
+- Same semantics as `POST /api/task/cancel/{cap}/{id}` with management override, but no client API key in the body
+
+---
+
 ## Client API Keys
 
 ### List Client API Keys
@@ -1047,6 +1104,18 @@ curl -X GET "$BASE/management/tasks/list" \
       "regular_assigned": (.regular.assigned | length),
       "regular_unassigned": (.regular.unassigned | length)
     }'
+```
+
+### cURL - Cancel a Task
+
+```bash
+MGMT_TOKEN="my-management-token"
+BASE="http://localhost:3069"
+CAP="llm.mistral"
+TASK_ID="01ARZ3NDE4V2XTGZUVY7"
+
+curl -X POST "$BASE/management/tasks/cancel/$(python3 -c "import urllib.parse; print(urllib.parse.quote('$CAP'))")/$TASK_ID" \
+  -H "Authorization: Bearer $MGMT_TOKEN" | jq .
 ```
 
 ---

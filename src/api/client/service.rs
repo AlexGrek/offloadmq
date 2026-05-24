@@ -207,14 +207,49 @@ pub async fn do_poll_task_status(
     Err(AppError::NotFound(task_id.to_string()))
 }
 
-pub fn do_cancel_task(
+pub async fn do_cancel_task(
     state: &Arc<AppState>,
     task_id: TaskId,
     api_key: &str,
     skip_owner: bool,
 ) -> Result<CancelOutcome, AppError> {
+    if let Ok(outcome) = cancel_regular_task(state, &task_id, api_key, skip_owner) {
+        return Ok(outcome);
+    }
+
+    match state.urgent.cancel_task(&task_id).await {
+        Ok(TaskStatus::CancelRequested) => {
+            info!("Urgent task {} cancel requested (was assigned)", task_id);
+            Ok(CancelOutcome {
+                id: task_id,
+                status: "cancelRequested".into(),
+                message: "Cancellation requested".into(),
+            })
+        }
+        Ok(TaskStatus::Canceled) => {
+            info!("Urgent task {} cancelled (was unassigned)", task_id);
+            Ok(CancelOutcome {
+                id: task_id,
+                status: "canceled".into(),
+                message: "Task cancelled (was queued)".into(),
+            })
+        }
+        Ok(_) => Err(AppError::Internal(anyhow::anyhow!(
+            "unexpected status from urgent cancel for {}",
+            task_id
+        ))),
+        Err(e) => Err(e),
+    }
+}
+
+fn cancel_regular_task(
+    state: &Arc<AppState>,
+    task_id: &TaskId,
+    api_key: &str,
+    skip_owner: bool,
+) -> Result<CancelOutcome, AppError> {
     // Check assigned tasks first
-    if let Some(mut task) = state.storage.tasks.get_assigned(&task_id)? {
+    if let Some(mut task) = state.storage.tasks.get_assigned(task_id)? {
         if !skip_owner && task.data.api_key != api_key {
             return Err(AppError::NotFound(task_id.to_string()));
         }
@@ -237,7 +272,7 @@ pub fn do_cancel_task(
         state.storage.tasks.update_assigned(&task)?;
         info!("Task {} cancel requested (was assigned)", task_id);
         return Ok(CancelOutcome {
-            id: task_id,
+            id: task_id.clone(),
             status: "cancelRequested".into(),
             message: "Cancellation requested".into(),
         });
@@ -245,17 +280,17 @@ pub fn do_cancel_task(
 
     // Check unassigned tasks — remove from queue and create an assigned record
     // in Canceled state so the client can still poll it
-    if let Some(unassigned) = state.storage.tasks.get_unassigned(&task_id)? {
+    if let Some(unassigned) = state.storage.tasks.get_unassigned(task_id)? {
         if !skip_owner && unassigned.data.api_key != api_key {
             return Err(AppError::NotFound(task_id.to_string()));
         }
-        state.storage.tasks.remove_unassigned(&task_id)?;
+        state.storage.tasks.remove_unassigned(task_id)?;
         let mut assigned = unassigned.into_assigned("(cancelled)");
         assigned.change_status(TaskStatus::Canceled);
         state.storage.tasks.update_assigned(&assigned)?;
         info!("Task {} cancelled (was unassigned)", task_id);
         return Ok(CancelOutcome {
-            id: task_id,
+            id: task_id.clone(),
             status: "canceled".into(),
             message: "Task cancelled (was queued)".into(),
         });

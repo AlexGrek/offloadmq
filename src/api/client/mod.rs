@@ -66,7 +66,7 @@ pub async fn cancel_task(
     Json(req): Json<ApiKeyRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let task_id = TaskId::from_url(id, cap)?;
-    let resp = service::do_cancel_task(&app_state, task_id, &req.api_key, mgmt.is_active())?;
+    let resp = service::do_cancel_task(&app_state, task_id, &req.api_key, mgmt.is_active()).await?;
     Ok(Json(resp))
 }
 

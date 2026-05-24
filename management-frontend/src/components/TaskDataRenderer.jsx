@@ -70,74 +70,112 @@ function StatusBadge({ status }) {
 
 function PayloadPreview({ payload }) {
   const [open, setOpen] = useState(false);
+  const [showJson, setShowJson] = useState(false);
   if (!payload) return null;
 
-  // LLM chat format — render messages nicely
-  if (payload.messages && Array.isArray(payload.messages)) {
+  const fullJson = payloadJson(payload);
+  const isLlmMessages = payload.messages && Array.isArray(payload.messages);
+
+  const jsonBlock = (
+    <pre style={{
+      margin: 0, fontSize: '0.78rem', background: 'var(--code-bg)', padding: '8px 10px',
+      borderRadius: '8px', overflowX: 'auto', maxHeight: '420px', overflowY: 'auto',
+      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+    }}>
+      {fullJson}
+    </pre>
+  );
+
+  // LLM chat format — readable messages, or full JSON on demand
+  if (isLlmMessages) {
     const lastUser = [...payload.messages].reverse().find(m => m.role === 'user');
     const previewText = typeof lastUser?.content === 'string'
       ? lastUser.content
       : JSON.stringify(lastUser?.content);
+    const imageCount = payload.messages.reduce((n, m) => n + (m.images?.length || 0), 0);
 
     return (
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px' }}>Payload</span>
-          <button className="btn" style={{ padding: '1px 8px', fontSize: '0.74rem', borderRadius: '8px' }}
-            onClick={() => setOpen(s => !s)}>
-            {open ? 'Hide' : `${payload.messages.length} messages`}
+          <CopyTextButton text={fullJson} label="Copy full payload" title="Copy complete payload JSON (includes base64 images)" />
+          <button
+            type="button"
+            className="btn"
+            style={{ padding: '1px 8px', fontSize: '0.74rem', borderRadius: '8px' }}
+            onClick={() => setShowJson(s => !s)}
+          >
+            {showJson ? 'Messages view' : 'JSON view'}
           </button>
         </div>
-        {!open && (
-          <div style={{ fontSize: '0.82rem', color: 'var(--muted)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '480px' }}>
-            {previewText?.slice(0, 140) || '(no content)'}
-          </div>
-        )}
-        {open && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {payload.messages.map((msg, i) => {
-              const roleColor = msg.role === 'user' ? '#3b82f6' : msg.role === 'assistant' ? '#22c55e' : '#94a3b8';
-              return (
-                <div key={i} style={{
-                  padding: '8px 10px', borderRadius: '10px', fontSize: '0.82rem',
-                  background: `${roleColor}0f`,
-                  borderLeft: `3px solid ${roleColor}`,
-                }}>
-                  <div style={{ fontWeight: 700, marginBottom: '4px', fontSize: '0.70rem', textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--muted)' }}>
-                    {msg.role}
-                    {msg.images?.length > 0 && <span style={{ marginLeft: '8px', fontWeight: 400 }}>📎 {msg.images.length} image(s)</span>}
-                  </div>
-                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2)}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {showJson ? jsonBlock : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+              <button
+                type="button"
+                className="btn"
+                style={{ padding: '1px 8px', fontSize: '0.74rem', borderRadius: '8px' }}
+                onClick={() => setOpen(s => !s)}
+              >
+                {open ? 'Hide' : `${payload.messages.length} message${payload.messages.length !== 1 ? 's' : ''}${imageCount ? ` · ${imageCount} image${imageCount !== 1 ? 's' : ''}` : ''}`}
+              </button>
+            </div>
+            {!open && (
+              <div style={{ fontSize: '0.82rem', color: 'var(--muted)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '480px' }}>
+                {previewText?.slice(0, 140) || '(no content)'}
+              </div>
+            )}
+            {open && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {payload.messages.map((msg, i) => {
+                  const roleColor = msg.role === 'user' ? '#3b82f6' : msg.role === 'assistant' ? '#22c55e' : '#94a3b8';
+                  return (
+                    <div key={i} style={{
+                      padding: '8px 10px', borderRadius: '10px', fontSize: '0.82rem',
+                      background: `${roleColor}0f`,
+                      borderLeft: `3px solid ${roleColor}`,
+                    }}>
+                      <div style={{ fontWeight: 700, marginBottom: '4px', fontSize: '0.70rem', textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--muted)' }}>
+                        {msg.role}
+                        {msg.images?.length > 0 && (
+                          <span style={{ marginLeft: '8px', fontWeight: 400 }}>
+                            {msg.images.length} image{msg.images.length !== 1 ? 's' : ''} (base64 in full payload)
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
     );
   }
 
   // Generic payload
-  const str = JSON.stringify(payload, null, 2);
-  const isLong = str.length > 300;
+  const isLong = fullJson.length > 300;
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.4px' }}>Payload</span>
+        <CopyTextButton text={fullJson} label="Copy full payload" />
         {isLong && (
-          <button className="btn" style={{ padding: '1px 8px', fontSize: '0.74rem', borderRadius: '8px' }}
-            onClick={() => setOpen(s => !s)}>
+          <button
+            type="button"
+            className="btn"
+            style={{ padding: '1px 8px', fontSize: '0.74rem', borderRadius: '8px' }}
+            onClick={() => setOpen(s => !s)}
+          >
             {open ? 'Hide' : 'Show'}
           </button>
         )}
       </div>
-      {(!isLong || open) && (
-        <pre style={{ margin: 0, fontSize: '0.78rem', background: 'var(--code-bg)', padding: '8px 10px', borderRadius: '8px', overflowX: 'auto' }}>
-          {str}
-        </pre>
-      )}
+      {(!isLong || open) && jsonBlock}
     </div>
   );
 }
@@ -190,9 +228,32 @@ function HistorySection({ history }) {
   );
 }
 
-function TaskCard({ task, isAssigned }) {
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'canceled']);
+
+function canCancelTask(status) {
+  if (!status) return true;
+  return !TERMINAL_STATUSES.has(status) && status !== 'cancelRequested';
+}
+
+function TaskCard({ task, isAssigned, onCancel }) {
   const [expanded, setExpanded] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const { id, agentId, assignedAt, createdAt, data, status, stage, log, result, history } = task;
+  const cap = data?.capability || id?.cap;
+  const cancelable = onCancel && id?.id && cap && canCancelTask(status);
+
+  const handleCancel = async (e) => {
+    e.stopPropagation();
+    if (!cancelable || canceling) return;
+    setCanceling(true);
+    try {
+      await onCancel(cap, id.id);
+    } catch (err) {
+      alert(`Failed to cancel task: ${err.message || err}`);
+    } finally {
+      setCanceling(false);
+    }
+  };
 
   return (
     <li className="card">
@@ -228,6 +289,13 @@ function TaskCard({ task, isAssigned }) {
 
       {expanded && (
         <div style={{ padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid var(--border)' }}>
+          {cancelable && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={handleCancel} disabled={canceling}>
+                {canceling ? 'Canceling…' : 'Cancel task'}
+              </button>
+            </div>
+          )}
           {/* Metadata grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
             {[
@@ -269,7 +337,7 @@ function TaskCard({ task, isAssigned }) {
   );
 }
 
-function TaskGroup({ title, tasks, isAssigned }) {
+function TaskGroup({ title, tasks, isAssigned, onCancel }) {
   if (!tasks || tasks.length === 0) return null;
   return (
     <div style={{ marginBottom: '4px' }}>
@@ -277,13 +345,13 @@ function TaskGroup({ title, tasks, isAssigned }) {
         {title} <span style={{ fontWeight: 400 }}>({tasks.length})</span>
       </div>
       <ul className="list">
-        {tasks.map(task => <TaskCard key={task.id?.id} task={task} isAssigned={isAssigned} />)}
+        {tasks.map(task => <TaskCard key={task.id?.id} task={task} isAssigned={isAssigned} onCancel={onCancel} />)}
       </ul>
     </div>
   );
 }
 
-function CategorySection({ name, category }) {
+function CategorySection({ name, category, onCancel }) {
   const total = (category?.assigned?.length || 0) + (category?.unassigned?.length || 0);
   if (total === 0) return null;
   return (
@@ -293,14 +361,14 @@ function CategorySection({ name, category }) {
         <span className="chip">{total} task{total !== 1 ? 's' : ''}</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <TaskGroup title="Assigned" tasks={category?.assigned} isAssigned={true} />
-        <TaskGroup title="Unassigned" tasks={category?.unassigned} isAssigned={false} />
+        <TaskGroup title="Assigned" tasks={category?.assigned} isAssigned={true} onCancel={onCancel} />
+        <TaskGroup title="Unassigned" tasks={category?.unassigned} isAssigned={false} onCancel={onCancel} />
       </div>
     </div>
   );
 }
 
-const TaskDataRenderer = ({ data }) => {
+const TaskDataRenderer = ({ data, onCancel }) => {
   if (!data) return <div style={{ color: 'var(--muted)', fontStyle: 'italic' }}>No data.</div>;
 
   const total = Object.values(data).reduce((sum, cat) =>
@@ -311,7 +379,7 @@ const TaskDataRenderer = ({ data }) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
       {Object.keys(data).map(cat => (
-        <CategorySection key={cat} name={cat} category={data[cat]} />
+        <CategorySection key={cat} name={cat} category={data[cat]} onCancel={onCancel} />
       ))}
     </div>
   );

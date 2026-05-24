@@ -250,7 +250,10 @@ pub async fn submit_urgent_task(
         rx.changed().await.unwrap();
         let status = rx.borrow().clone();
 
-        if status == TaskStatus::Completed || status == TaskStatus::Failed {
+        if status == TaskStatus::Completed
+            || status == TaskStatus::Failed
+            || status == TaskStatus::Canceled
+        {
             if let Some(assigned_task) = store.get_assigned_task(&task.id).await {
                 store.remove_task(&task.id).await;
                 return Ok(UrgentSubmitOutcome::Completed(assigned_task));

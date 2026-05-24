@@ -145,6 +145,15 @@ pub async fn reset_tasks(
     Ok(Json(json!({"result": "Reset successful"})))
 }
 
+pub async fn cancel_task(
+    State(state): State<Arc<AppState>>,
+    Path((cap, id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, AppError> {
+    let task_id = schema::TaskId::from_url(id, cap)?;
+    let resp = crate::api::client::service::do_cancel_task(&state, task_id, "", true).await?;
+    Ok(Json(resp))
+}
+
 pub async fn reset_agents(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {

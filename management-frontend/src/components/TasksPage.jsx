@@ -69,6 +69,12 @@ function TasksPage() {
         }
     }, [load]);
 
+    const handleCancel = useCallback(async (cap, taskId) => {
+        const url = `/management/tasks/cancel/${encodeURIComponent(cap)}/${encodeURIComponent(taskId)}`;
+        await apiFetch(url, { method: "POST" });
+        await load();
+    }, [load]);
+
     useEffect(() => { load(); }, [load]);
 
     return (
@@ -90,7 +96,7 @@ function TasksPage() {
             {loading ? (
                 <div className="loader" aria-busy="true">Loading…</div>
             ) : (
-                <TaskDataRenderer data={sortTaskCategories(newOnly ? filterUnassigned(data) : data)} />
+                <TaskDataRenderer data={sortTaskCategories(newOnly ? filterUnassigned(data) : data)} onCancel={handleCancel} />
             )}
         </div>
     );

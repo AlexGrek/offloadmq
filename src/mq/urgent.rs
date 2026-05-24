@@ -289,4 +289,47 @@ impl UrgentTaskStore {
             tasks.shift_remove(task_id);
         }
     }
+
+    /// Cancel an urgent task (queued or in-flight). Returns `Canceled` when the
+    /// task was still waiting for an agent, `CancelRequested` when an agent
+    /// already holds it.
+    pub async fn cancel_task(&self, task_id: &TaskId) -> Result<TaskStatus, AppError> {
+        let mut tasks = self.tasks.write().await;
+        let entry = tasks
+            .get_mut(task_id)
+            .ok_or_else(|| AppError::NotFound(task_id.to_string()))?;
+
+        if let Some(ref mut assigned) = entry.assigned_task {
+            match assigned.status {
+                TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Canceled => {
+                    return Err(AppError::Conflict(format!(
+                        "Task {} is already in terminal state {:?}",
+                        task_id, assigned.status
+                    )));
+                }
+                TaskStatus::CancelRequested => {
+                    return Err(AppError::Conflict(format!(
+                        "Task {} is already cancel-requested",
+                        task_id
+                    )));
+                }
+                _ => {
+                    assigned.change_status(TaskStatus::CancelRequested);
+                    return Ok(TaskStatus::CancelRequested);
+                }
+            }
+        }
+
+        // Still pending in the urgent queue — materialize a canceled assignment
+        // and wake any blocking submitter.
+        let mut assigned = entry.task.clone().into_assigned("(cancelled)");
+        assigned.change_status(TaskStatus::Canceled);
+        entry.assigned_task = Some(assigned);
+        {
+            let mut status = entry.state.status.write().await;
+            *status = TaskStatus::Canceled;
+            let _ = entry.state.notify.send(TaskStatus::Canceled);
+        }
+        Ok(TaskStatus::Canceled)
+    }
 }
