@@ -1,6 +1,37 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Clock } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, Copy, Check } from 'lucide-react';
 import ColorDot from './ColorDot';
+
+function payloadJson(value) {
+  return JSON.stringify(value, null, 2);
+}
+
+function CopyTextButton({ text, label = 'Copy', title }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className="btn"
+      style={{ padding: '1px 8px', fontSize: '0.74rem', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+      onClick={handleCopy}
+      title={title || label}
+    >
+      {copied ? <Check size={12} color="#22c55e" /> : <Copy size={12} />}
+      {copied ? 'Copied' : label}
+    </button>
+  );
+}
 
 const STATUS_CONFIG = {
   completed:   { label: 'Completed',   color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
