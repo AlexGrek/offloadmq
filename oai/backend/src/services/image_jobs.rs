@@ -466,6 +466,84 @@ pub async fn set_image_starred(
     }
 }
 
+/// Result of a bulk file-browser cleanup pass.
+pub struct CleanupFilesResult {
+    pub deleted_count: u64,
+    pub skipped_starred: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CleanupFilesScope {
+    Uploads,
+    Generated,
+    All,
+}
+
+impl CleanupFilesScope {
+    pub fn parse(s: &str) -> Result<Self, AppError> {
+        match s {
+            "uploads" => Ok(Self::Uploads),
+            "generated" => Ok(Self::Generated),
+            "all" => Ok(Self::All),
+            _ => Err(AppError::BadRequest(
+                "scope must be uploads, generated, or all".into(),
+            )),
+        }
+    }
+
+    fn matches(&self, direction: &str) -> bool {
+        match self {
+            Self::Uploads => direction == "input",
+            Self::Generated => direction == "output",
+            Self::All => true,
+        }
+    }
+}
+
+/// Deletes storage blobs, starred copy, and the DB row for any user-owned image file.
+async fn remove_user_file_record(
+    state: &AppState,
+    user_id: i64,
+    file: &image_generation::ImageFile,
+) -> Result<(), AppError> {
+    purge_stored_image(state, file).await?;
+    let op = storage::operator(state)?;
+    storage::delete(op, &image_paths::starred_image_path(user_id, file.id)).await?;
+    image_generation::delete_image_file(&state.db, file.id, user_id).await?;
+    Ok(())
+}
+
+/// Bulk delete for the file browser (uploads, generated, or all).
+pub async fn cleanup_user_files(
+    state: &AppState,
+    user_id: i64,
+    scope: CleanupFilesScope,
+    keep_starred: bool,
+) -> Result<CleanupFilesResult, AppError> {
+    storage::operator(state)?;
+    let files = image_generation::list_user_image_files(&state.db, user_id, 10_000).await?;
+    let mut deleted_count = 0u64;
+    let mut skipped_starred = 0u64;
+    for file in files {
+        if !scope.matches(&file.direction) {
+            continue;
+        }
+        if keep_starred && image_is_starred(state, user_id, file.id).await? {
+            skipped_starred += 1;
+            continue;
+        }
+        remove_user_file_record(state, user_id, &file).await?;
+        deleted_count += 1;
+    }
+    if deleted_count > 0 {
+        recalc_user_storage(state, user_id).await?;
+    }
+    Ok(CleanupFilesResult {
+        deleted_count,
+        skipped_starred,
+    })
+}
+
 /// Deletes storage blobs and the DB row for a user-owned generated output image.
 pub async fn remove_user_image(
     state: &AppState,
@@ -480,10 +558,7 @@ pub async fn remove_user_image(
             "only generated output images can be deleted".into(),
         ));
     }
-    purge_stored_image(state, &file).await?;
-    let op = storage::operator(state)?;
-    storage::delete(op, &image_paths::starred_image_path(user_id, image_id)).await?;
-    image_generation::delete_image_file(&state.db, image_id, user_id).await?;
+    remove_user_file_record(state, user_id, &file).await?;
     recalc_user_storage(state, user_id).await?;
     Ok(())
 }

@@ -43,7 +43,33 @@ async function request<T>(path: string, token: string, options?: RequestInit): P
   return res.json() as Promise<T>
 }
 
-/** Lists all of the current user's files plus a storage summary (read-only). */
+export type CleanupFilesScope = 'uploads' | 'generated' | 'all'
+
+export interface CleanupFilesRequest {
+  scope: CleanupFilesScope
+  keep_starred?: boolean
+}
+
+export interface CleanupFilesResponse {
+  deleted_count: number
+  skipped_starred: number
+}
+
+/** Lists all of the current user's files plus a storage summary. */
 export function listFiles(token: string): Promise<FileBrowserResponse> {
   return request('/api/files', token)
+}
+
+/** Bulk-delete files by scope; optionally skip starred images. */
+export function cleanupFiles(
+  token: string,
+  body: CleanupFilesRequest,
+): Promise<CleanupFilesResponse> {
+  return request('/api/files/cleanup', token, {
+    method: 'POST',
+    body: JSON.stringify({
+      scope: body.scope,
+      keep_starred: body.keep_starred ?? true,
+    }),
+  })
 }

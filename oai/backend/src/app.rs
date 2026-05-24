@@ -68,6 +68,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             axum::routing::patch(routes::system_prompts::set_starred),
         )
         .route("/api/files", get(routes::files::list_files))
+        .route("/api/files/cleanup", post(routes::files::cleanup_files))
         .route(
             "/api/images/upload",
             post(routes::images::upload_input_image)

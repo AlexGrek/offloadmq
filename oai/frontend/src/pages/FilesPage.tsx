@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { FileText, HardDrive, ImageIcon, Lock, RefreshCw } from 'lucide-react'
+import { ChevronDown, FileText, HardDrive, ImageIcon, RefreshCw } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { listFiles } from '../api/files'
-import type { FileBrowserResponse, UserFile } from '../api/files'
+import type { CleanupFilesScope, FileBrowserResponse, UserFile } from '../api/files'
+import { FilesCleanupDialog } from '../components/files/FilesCleanupDialog'
 import { imageFileUrl, imageThumbnailUrl } from '../api/images'
 import { ImageLightbox } from '@/components/ImageLightbox'
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,6 +11,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 type DirectionFilter = 'all' | 'input' | 'output'
+
+const SCOPE_LABELS: Record<CleanupFilesScope, string> = {
+  uploads: 'upload(s)',
+  generated: 'generated file(s)',
+  all: 'file(s)',
+}
 
 function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return '0 B'
@@ -27,6 +34,8 @@ export default function FilesPage() {
   const [filter, setFilter] = useState<DirectionFilter>('all')
   const [query, setQuery] = useState('')
   const [mediaRevision, setMediaRevision] = useState(0)
+  const [cleanupOpen, setCleanupOpen] = useState(false)
+  const [info, setInfo] = useState<string | null>(null)
 
   const load = useCallback(() => {
     if (!token) return
@@ -62,22 +71,45 @@ export default function FilesPage() {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold">My Files</h1>
-          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Lock className="h-3.5 w-3.5" />
-            Read-only — files are created automatically by your tasks.
+          <p className="mt-1 text-sm text-muted-foreground">
+            Files are created by image tasks. Use cleanup to remove uploads or generated outputs.
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={load}
-          disabled={loading}
-          data-testid="files-refresh"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          <span className="ml-1.5 hidden sm:inline">Refresh</span>
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCleanupOpen(true)}
+            data-testid="files-cleanup-open"
+          >
+            Cleanup
+            <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-60" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={load}
+            disabled={loading}
+            data-testid="files-refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <span className="ml-1.5 hidden sm:inline">Refresh</span>
+          </Button>
+        </div>
       </div>
+
+      <FilesCleanupDialog
+        open={cleanupOpen}
+        onOpenChange={setCleanupOpen}
+        token={token}
+        onCompleted={(res, scope) => {
+          const skipped =
+            res.skipped_starred > 0 ? ` (${res.skipped_starred} starred kept)` : ''
+          setInfo(`Deleted ${res.deleted_count} ${SCOPE_LABELS[scope]}${skipped}.`)
+          setError(null)
+          load()
+        }}
+      />
 
       {/* Storage summary */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="files-summary">
@@ -110,6 +142,15 @@ export default function FilesPage() {
           data-testid="files-search"
         />
       </div>
+
+      {info && (
+        <div
+          className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground"
+          data-testid="files-info"
+        >
+          {info}
+        </div>
+      )}
 
       {error && (
         <div

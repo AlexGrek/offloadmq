@@ -1,15 +1,12 @@
-//! Read-only file browser for the authenticated user.
+//! File browser for the authenticated user (list + bulk cleanup).
 //!
-//! RBAC: every query is scoped to the caller's `user_id`, so a user can only
-//! ever see their own files. This surface is intentionally read-only — there are
-//! no upload/delete handlers here (no "pushes"). File *content* is served by the
-//! existing `GET /api/images/files/{id}` endpoint, which enforces the same
-//! ownership check.
+//! RBAC: every query is scoped to the caller's `user_id`. File bytes are served by
+//! `GET /api/images/files/{id}` with the same ownership check.
 
 use std::sync::Arc;
 
 use axum::{extract::State, Json};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     db::image_generation, error::AppError, middleware::AuthenticatedUser,
@@ -53,6 +50,37 @@ pub struct StorageSummary {
 pub struct FileBrowserResponse {
     pub files: Vec<UserFile>,
     pub summary: StorageSummary,
+}
+
+#[derive(Deserialize)]
+pub struct CleanupFilesRequest {
+    /// `uploads` (input), `generated` (output), or `all`.
+    pub scope: String,
+    #[serde(default = "default_keep_starred")]
+    pub keep_starred: bool,
+}
+
+fn default_keep_starred() -> bool {
+    true
+}
+
+#[derive(Serialize)]
+pub struct CleanupFilesResponse {
+    pub deleted_count: u64,
+    pub skipped_starred: u64,
+}
+
+pub async fn cleanup_files(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Json(req): Json<CleanupFilesRequest>,
+) -> Result<Json<CleanupFilesResponse>, AppError> {
+    let scope = image_jobs::CleanupFilesScope::parse(&req.scope)?;
+    let out = image_jobs::cleanup_user_files(&state, user_id, scope, req.keep_starred).await?;
+    Ok(Json(CleanupFilesResponse {
+        deleted_count: out.deleted_count,
+        skipped_starred: out.skipped_starred,
+    }))
 }
 
 pub async fn list_files(
