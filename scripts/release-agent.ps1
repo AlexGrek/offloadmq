@@ -95,6 +95,10 @@ try {
     & uv sync
     if ($LASTEXITCODE -ne 0) { throw "uv sync failed" }
 
+    # Stamp the CLI version so `omq --version` reports the release version
+    Set-Content -Path "cli-manager\src\cli_manager\_version.py" `
+        -Value "__version__ = `"$Version`""
+
     # Build CLI (omq.exe) — Windows uses ; as add-data separator
     Push-Location "cli-manager"
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "dist", "build", "*.spec"

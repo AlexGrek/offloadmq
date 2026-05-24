@@ -101,6 +101,10 @@ else
   echo "→ Syncing uv workspace..."
   ( cd "${AGENT_DIR}" && uv sync )
 
+  echo "→ Stamping CLI version ${VERSION}..."
+  printf '__version__ = "%s"\n' "${VERSION}" \
+    > "${AGENT_DIR}/cli-manager/src/cli_manager/_version.py"
+
   echo "→ Building CLI (omq)..."
   ( cd "${AGENT_DIR}/cli-manager" && rm -rf build dist ./*.spec && \
     uv run --with pyinstaller pyinstaller --onefile --name omq \

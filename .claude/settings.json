@@ -135,7 +135,8 @@
       "Bash(sed -n '555,575p' /Users/vedmedik/dev/offloadmq/oai/backend/src/services/image_jobs.rs)",
       "Bash(command -v uv)",
       "Bash(command -v task)",
-      "Bash(sed -n '188,200p' /Users/vedmedik/dev/offloadmq/Makefile)"
+      "Bash(sed -n '188,200p' /Users/vedmedik/dev/offloadmq/Makefile)",
+      "Bash(task --list)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

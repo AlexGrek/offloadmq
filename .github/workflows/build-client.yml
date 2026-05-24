@@ -51,6 +51,12 @@ jobs:
         working-directory: agent_v2
         run: uv run --with mypy mypy agent/src core/src ui-server/src --ignore-missing-imports
 
+      - name: Stamp CLI version
+        working-directory: agent_v2/cli-manager
+        run: |
+          printf '__version__ = "%s"\n' "${GITHUB_REF_NAME#release-}" \
+            > src/cli_manager/_version.py
+
       - name: Build CLI executable (omq)
         working-directory: agent_v2/cli-manager
         run: |

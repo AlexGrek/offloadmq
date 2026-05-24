@@ -14,8 +14,52 @@ from rich.table import Table
 
 from offloadmq_core import Orchestrator, run_blocking
 
+from cli_manager._version import __version__ as _BAKED_VERSION
+
 app = typer.Typer(name="omq", help="OffloadMQ agent v2 CLI", no_args_is_help=True)
 console = Console()
+
+#: Sentinel meaning the release tooling did not stamp a version (dev build).
+_DEV_SENTINEL = "0.0.0.dev0"
+
+
+def _resolve_version() -> str:
+    """Return the CLI version.
+
+    Prefers the value stamped into ``_version.py`` by the release tooling;
+    in an unstamped dev build, falls back to the installed package metadata.
+    """
+    if _BAKED_VERSION and _BAKED_VERSION != _DEV_SENTINEL:
+        return _BAKED_VERSION
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            return version("offloadmq-cli")
+        except PackageNotFoundError:
+            return _BAKED_VERSION
+    except Exception:  # noqa: BLE001
+        return _BAKED_VERSION
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        console.print(_resolve_version())
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="Show the omq version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """OffloadMQ agent v2 CLI."""
 
 
 def _orch() -> Orchestrator:

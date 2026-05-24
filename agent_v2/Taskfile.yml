@@ -119,6 +119,87 @@ tasks:
         src/gui_manager/main.py
 
   # ----------------------------------------------------------------
+  # Upgrade (this machine)
+  # ----------------------------------------------------------------
+  # Download the latest released binary from dl.alexgr.space for the running
+  # platform, replace the installed binary in place, and restart the agent via
+  # whatever autostart mechanism that platform uses:
+  #   linux   -> omq      (CLI)  via systemd --user offloadmq-agent.service
+  #   mac     -> omq-gui  (GUI)  via LaunchAgent com.offloadmq.agent
+  #   windows -> omq-gui  (GUI)  via HKCU Run key "OffloadAgent"
+  # Override the source with DL_BASE_URL / DL_BUCKET env vars.
+
+  upgrade-client-on-this-linux:
+    desc: Pull the latest omq (CLI) from dl.alexgr.space and restart the systemd --user service
+    platforms: [linux]
+    cmds:
+      - |
+        set -eu
+        BASE="${DL_BASE_URL:-https://dl.alexgr.space}"
+        BUCKET="${DL_BUCKET:-offload-agent}"
+        case "$(uname -m)" in
+          x86_64|amd64) A=amd64 ;;
+          aarch64|arm64) A=arm64 ;;
+          *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+        esac
+        FILE="omq-linux-$A"
+        URL="$BASE/rs/$BUCKET/latest/linux-$A/$FILE"
+        DEST="$(command -v omq || echo "$HOME/.local/bin/omq")"
+        echo "Downloading $URL"
+        TMP="$(mktemp)"
+        curl -fL "$URL" -o "$TMP"
+        chmod +x "$TMP"
+        echo "Stopping offloadmq-agent.service (user) ..."
+        systemctl --user stop offloadmq-agent.service 2>/dev/null || true
+        mkdir -p "$(dirname "$DEST")"
+        if [ -w "$(dirname "$DEST")" ]; then mv -f "$TMP" "$DEST"; else sudo mv -f "$TMP" "$DEST"; fi
+        echo "Installed -> $DEST"
+        systemctl --user start offloadmq-agent.service 2>/dev/null \
+          || echo "(service not installed; start manually: omq webui --start)"
+        "$DEST" status || true
+
+  upgrade-client-on-this-mac:
+    desc: Pull the latest omq-gui (GUI) from dl.alexgr.space and relaunch the LaunchAgent
+    platforms: [darwin]
+    cmds:
+      - |
+        set -eu
+        BASE="${DL_BASE_URL:-https://dl.alexgr.space}"
+        BUCKET="${DL_BUCKET:-offload-agent}"
+        case "$(uname -m)" in
+          x86_64) A=amd64 ;;
+          arm64) A=arm64 ;;
+          *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+        esac
+        FILE="omq-gui-darwin-$A"
+        URL="$BASE/rs/$BUCKET/latest/darwin-$A/$FILE"
+        DEST="$(command -v omq-gui || echo "$HOME/.local/bin/omq-gui")"
+        PLIST="$HOME/Library/LaunchAgents/com.offloadmq.agent.plist"
+        echo "Downloading $URL"
+        TMP="$(mktemp)"
+        curl -fL "$URL" -o "$TMP"
+        chmod +x "$TMP"
+        echo "Stopping omq-gui ..."
+        if [ -f "$PLIST" ]; then launchctl unload "$PLIST" 2>/dev/null || true; fi
+        pkill -f omq-gui 2>/dev/null || true
+        mkdir -p "$(dirname "$DEST")"
+        if [ -w "$(dirname "$DEST")" ]; then mv -f "$TMP" "$DEST"; else sudo mv -f "$TMP" "$DEST"; fi
+        xattr -d com.apple.quarantine "$DEST" 2>/dev/null || true
+        echo "Installed -> $DEST"
+        if [ -f "$PLIST" ]; then
+          launchctl load "$PLIST" 2>/dev/null || true
+          echo "Relaunched via LaunchAgent."
+        else
+          echo "(no LaunchAgent configured; start omq-gui manually)"
+        fi
+
+  upgrade-client-on-this-windows:
+    desc: Pull the latest omq-gui.exe (GUI) from dl.alexgr.space and relaunch via the HKCU Run key
+    platforms: [windows]
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/upgrade-client-on-this-windows.ps1
+
+  # ----------------------------------------------------------------
   # Clean
   # ----------------------------------------------------------------
 
