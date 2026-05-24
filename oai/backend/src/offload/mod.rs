@@ -179,7 +179,10 @@ impl OffloadClient {
             },
             "fetchFiles": [],
             "file_bucket": [bucket_uid],
-            "artifacts": []
+            "artifacts": [],
+            "timeoutSecs": 24 * 3600u64,
+            "maxWaitSecs": 24 * 3600u64,
+            "runtimeSecs": 15 * 60u64
         });
         let resp = self
             .http

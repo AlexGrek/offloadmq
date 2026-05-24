@@ -147,6 +147,9 @@ impl OffloadImageClient {
             "urgent": false,
             "payload": payload,
             "output_bucket": output_bucket_uid,
+            "timeoutSecs": 24 * 3600u64,
+            "maxWaitSecs": 24 * 3600u64,
+            "runtimeSecs": 2 * 3600u64
         });
         if let Some(input_bucket) = input_bucket_uid {
             body["file_bucket"] = serde_json::json!([input_bucket]);
