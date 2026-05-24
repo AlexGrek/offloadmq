@@ -19,7 +19,35 @@ use crate::ws::events::ServerEvent;
 
 /// Agent flushes streaming log to OffloadMQ about every 2s; poll slightly faster.
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
-const MAX_POLLS: u32 = 300; // 300 × 2s = 10 min hard deadline
+
+const DEFAULT_MAX_WAIT_SECS_ONLINE: u32 = 5 * 60;       // 5 min — model is up, don't queue forever
+const DEFAULT_MAX_WAIT_SECS_OFFLINE: u32 = 24 * 3600;   // 24 h — model offline, wait for it to come back
+const DEFAULT_RUNTIME_SECS: u32 = 15 * 60;              // 15 min
+
+/// Apply per-chat defaults when the user left a field unset, then derive a poll
+/// deadline the loop will honour.  Returns `None` only when every value is still
+/// unset after applying defaults (shouldn't happen given the constants above).
+fn resolve_timeouts(
+    model_online: bool,
+    timeout_secs: Option<u32>,
+    max_wait_secs: Option<u32>,
+    runtime_secs: Option<u32>,
+) -> (Option<u32>, Option<u32>, Option<u32>, Option<u64>) {
+    let wait = Some(max_wait_secs.unwrap_or(if model_online {
+        DEFAULT_MAX_WAIT_SECS_ONLINE
+    } else {
+        DEFAULT_MAX_WAIT_SECS_OFFLINE
+    }));
+    let runtime = Some(runtime_secs.unwrap_or(DEFAULT_RUNTIME_SECS));
+
+    let deadline = if let Some(t) = timeout_secs {
+        Some(t as u64)
+    } else {
+        Some(wait.unwrap() as u64 + runtime.unwrap() as u64)
+    };
+
+    (timeout_secs, wait, runtime, deadline)
+}
 
 /// Everything the poll loop needs to persist the assistant reply and address
 /// events back to the originating request.
@@ -57,6 +85,7 @@ pub async fn chat(
     capability: String,
     chat_id_str: String,
     content: String,
+    model_online: bool,
     timeout_secs: Option<u32>,
     max_wait_secs: Option<u32>,
     runtime_secs: Option<u32>,
@@ -64,7 +93,7 @@ pub async fn chat(
     state: &Arc<AppState>,
     user_id: i64,
 ) {
-    if let Err(message) = run_chat(&req_id, capability, chat_id_str, content, timeout_secs, max_wait_secs, runtime_secs, tx, state, user_id).await
+    if let Err(message) = run_chat(&req_id, capability, chat_id_str, content, model_online, timeout_secs, max_wait_secs, runtime_secs, tx, state, user_id).await
     {
         send_error(tx, &req_id, &message);
     }
@@ -77,6 +106,7 @@ async fn run_chat(
     capability: String,
     chat_id_str: String,
     content: String,
+    model_online: bool,
     timeout_secs: Option<u32>,
     max_wait_secs: Option<u32>,
     runtime_secs: Option<u32>,
@@ -125,8 +155,10 @@ async fn run_chat(
         "submitting chat task with full history"
     );
 
+    let (eff_timeout, eff_wait, eff_runtime, deadline) =
+        resolve_timeouts(model_online, timeout_secs, max_wait_secs, runtime_secs);
     let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
-    let task_id = client.submit_chat(&capability, messages, timeout_secs, max_wait_secs, runtime_secs).await.map_err(|e| e.to_string())?;
+    let task_id = client.submit_chat(&capability, messages, eff_timeout, eff_wait, eff_runtime).await.map_err(|e| e.to_string())?;
 
     // Persist the assistant reply as `pending` up front, carrying the offload
     // task id. This is the authoritative record: the live poll loop below
@@ -156,7 +188,7 @@ async fn run_chat(
         chat_id,
         assistant_msg_id,
     };
-    tokio::spawn(poll_loop(ctx, task_id, client, tx.clone(), state.clone()));
+    tokio::spawn(poll_loop(ctx, task_id, client, tx.clone(), state.clone(), deadline));
     Ok(())
 }
 
@@ -166,10 +198,22 @@ async fn poll_loop(
     client: OffloadClient,
     tx: UnboundedSender<ServerEvent>,
     state: Arc<AppState>,
+    deadline_secs: Option<u64>,
 ) {
-    for i in 0..MAX_POLLS {
-        if i > 0 {
+    let started_at = tokio::time::Instant::now();
+    let mut first = true;
+    loop {
+        if !first {
             tokio::time::sleep(POLL_INTERVAL).await;
+        }
+        first = false;
+
+        if let Some(limit) = deadline_secs {
+            if started_at.elapsed().as_secs() >= limit {
+                let _ = client.cancel_task(&task_id).await;
+                finish_failure(&state, &tx, &ctx, "Task timed out waiting for result".to_string(), None).await;
+                return;
+            }
         }
 
         let resp = match client.poll_task(&task_id).await {
@@ -224,9 +268,6 @@ async fn poll_loop(
             }
         }
     }
-
-    let _ = client.cancel_task(&task_id).await;
-    finish_failure(&state, &tx, &ctx, "Task timed out waiting for result".to_string(), None).await;
 }
 
 /// Finalizes the pending assistant reply (idempotent) and notifies the client.

@@ -64,6 +64,7 @@ pub enum ClientCommand {
         capability: String,
         chat_id: String,
         content: String,
+        model_online: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         timeout_secs: Option<u32>,
         #[serde(skip_serializing_if = "Option::is_none")]

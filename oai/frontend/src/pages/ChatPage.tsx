@@ -888,12 +888,14 @@ export default function ChatPage() {
     )
 
     const entry = chatTimeoutMap.get(activeChatId)
+    const modelOnline = ws.capabilities.find(c => c.base === selectedModel)?.online ?? false
     ws.send({
       type: 'chat',
       req_id: reqId,
       capability: selectedModel,
       chat_id: activeChatId,
       content: text,
+      model_online: modelOnline,
       ...(entry?.timeoutSecs != null && { timeout_secs: entry.timeoutSecs }),
       ...(entry?.maxWaitSecs != null && { max_wait_secs: entry.maxWaitSecs }),
       ...(entry?.runtimeSecs != null && { runtime_secs: entry.runtimeSecs }),
