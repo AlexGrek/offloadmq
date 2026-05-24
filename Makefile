@@ -186,7 +186,7 @@ build-client:
 rebuild-client:
 	cd offload-agent && make rebuild
 
-# Build and upload offload-agent for the current platform to dl.alexgr.space
+# Build and upload agent_v2 (omq CLI + omq-gui GUI) for the current platform to dl.alexgr.space
 # Version is auto-detected from latest release-* tag + commit count (e.g. v0.3.260)
 # Override: make release-agent VERSION=v0.3.260
 # Requires: DL_API_KEY (set in ~/.zshrc or pass inline: make release-agent DL_API_KEY=dlk_...)

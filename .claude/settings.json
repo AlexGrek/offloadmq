@@ -132,7 +132,10 @@
       "Bash(rm -rf ui-server/frontend/src)",
       "Bash(mkdir -p core/src/offloadmq_core)",
       "Bash(sed -n '380,400p' /Users/vedmedik/dev/offloadmq/oai/backend/src/services/image_jobs.rs)",
-      "Bash(sed -n '555,575p' /Users/vedmedik/dev/offloadmq/oai/backend/src/services/image_jobs.rs)"
+      "Bash(sed -n '555,575p' /Users/vedmedik/dev/offloadmq/oai/backend/src/services/image_jobs.rs)",
+      "Bash(command -v uv)",
+      "Bash(command -v task)",
+      "Bash(sed -n '188,200p' /Users/vedmedik/dev/offloadmq/Makefile)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Build and release offload-agent to dl.alexgr.space
+# Build and release agent_v2 to dl.alexgr.space
+#
+# Builds and uploads TWO targets for the current platform:
+#   - CLI  (omq)      → omq-<os>-<arch>
+#   - GUI  (omq-gui)  → omq-gui-<os>-<arch>
+# Both land in the same bucket / os_arch slot, distinguished by filename.
 #
 # Usage:
 #   ./scripts/release-agent.sh [version]
@@ -7,12 +12,13 @@
 # If version is omitted it is auto-computed: major.minor from the latest
 # release-* tag + current commit count as the build number.
 # Example: latest tag release-v0.3.250, 260 commits → v0.3.260
-# Falls back to v0.1.<count> when no release tag exists.
+# Falls back to v0.3.<count> when no release tag exists.
 #
 # Environment variables:
 #   DL_API_KEY    (required) API key with release-create and release-write:offload-agent scopes
 #   DL_BUCKET     Release bucket name (default: offload-agent)
 #   DL_BASE_URL   Server base URL (default: https://dl.alexgr.space)
+#   SKIP_BUILD    Set to 1 to reuse already-built binaries (CI uploads built artifacts)
 #
 # Examples:
 #   DL_API_KEY=dlk_... ./scripts/release-agent.sh
@@ -21,7 +27,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-AGENT_DIR="${REPO_ROOT}/offload-agent"
+AGENT_DIR="${REPO_ROOT}/agent_v2"
 BASE_URL="${DL_BASE_URL:-https://dl.alexgr.space}"
 BUCKET="${DL_BUCKET:-offload-agent}"
 
@@ -33,7 +39,7 @@ fi
 # ── Version auto-detection ─────────────────────────────────────────────────────
 # Takes major.minor from the latest release-* tag and replaces the build number
 # with the current commit count.  Example: release-v0.3.250 + 260 commits → v0.3.260
-# Falls back to v0.1.<count> when no release tag exists yet.
+# Falls back to v0.3.<count> when no release tag exists yet.
 
 detect_version() {
   bash "${REPO_ROOT}/scripts/compute-agent-version.sh" "${REPO_ROOT}"
@@ -59,37 +65,70 @@ case "$ARCH" in
 esac
 
 OS_ARCH="${OS_TAG}-${ARCH_TAG}"
-BINARY_NAME="offload-agent-${OS_ARCH}"
+
+# target name → (dist binary, uploaded filename)
+CLI_DIST="${AGENT_DIR}/cli-manager/dist/omq"
+GUI_DIST="${AGENT_DIR}/gui-manager/dist/omq-gui"
+CLI_NAME="omq-${OS_ARCH}"
+GUI_NAME="omq-gui-${OS_ARCH}"
 
 echo "Platform: ${OS_ARCH}"
 echo "Version:  ${VERSION}"
 echo "Bucket:   ${BUCKET}"
+echo "Targets:  ${CLI_NAME}, ${GUI_NAME}"
 echo ""
 
 # ── Build ──────────────────────────────────────────────────────────────────────
 
-DIST_BINARY="${AGENT_DIR}/dist/offload-agent"
-RENAMED_BINARY="${AGENT_DIR}/dist/${BINARY_NAME}"
+FRONTEND_DIST="${AGENT_DIR}/ui-server/frontend/dist"
 
 if [[ "${SKIP_BUILD:-}" == "1" ]]; then
   echo "→ Skipping build (SKIP_BUILD=1)..."
-  if [[ ! -f "$DIST_BINARY" && ! -f "$RENAMED_BINARY" ]]; then
-    echo "error: SKIP_BUILD=1 but no binary found at ${DIST_BINARY}" >&2
+  for f in "$CLI_DIST" "$GUI_DIST"; do
+    if [[ ! -f "$f" ]]; then
+      echo "error: SKIP_BUILD=1 but no binary found at ${f}" >&2
+      exit 1
+    fi
+  done
+else
+  echo "→ Building frontend bundle..."
+  ( cd "${AGENT_DIR}/ui-server/frontend" && npm ci && npm run build )
+  if [[ ! -d "$FRONTEND_DIST" ]]; then
+    echo "error: frontend dist not found at ${FRONTEND_DIST}" >&2
     exit 1
   fi
-else
-  echo "→ Building offload-agent..."
-  make -C "${AGENT_DIR}" rebuild VERSION="${VERSION}" OFFLOAD_AGENT_VERSION="${VERSION}"
-  if [[ ! -f "$DIST_BINARY" ]]; then
-    echo "error: expected binary not found at ${DIST_BINARY}" >&2
+
+  echo "→ Syncing uv workspace..."
+  ( cd "${AGENT_DIR}" && uv sync )
+
+  echo "→ Building CLI (omq)..."
+  ( cd "${AGENT_DIR}/cli-manager" && rm -rf build dist ./*.spec && \
+    uv run --with pyinstaller pyinstaller --onefile --name omq \
+      --add-data "../ui-server/frontend/dist:frontend/dist" \
+      src/cli_manager/main.py )
+  if [[ ! -f "$CLI_DIST" ]]; then
+    echo "error: expected CLI binary not found at ${CLI_DIST}" >&2
+    exit 1
+  fi
+
+  echo "→ Building GUI (omq-gui)..."
+  ( cd "${AGENT_DIR}/gui-manager" && rm -rf build dist ./*.spec && \
+    uv run --with pyinstaller pyinstaller --onefile --windowed --name omq-gui \
+      --add-data "../ui-server/frontend/dist:frontend/dist" \
+      src/gui_manager/main.py )
+  if [[ ! -f "$GUI_DIST" ]]; then
+    echo "error: expected GUI binary not found at ${GUI_DIST}" >&2
     exit 1
   fi
 fi
 
-if [[ ! -f "$RENAMED_BINARY" ]]; then
-  cp "$DIST_BINARY" "$RENAMED_BINARY"
-fi
-echo "→ Binary: ${RENAMED_BINARY}"
+# rename with platform suffix for upload
+CLI_RENAMED="${AGENT_DIR}/cli-manager/dist/${CLI_NAME}"
+GUI_RENAMED="${AGENT_DIR}/gui-manager/dist/${GUI_NAME}"
+cp -f "$CLI_DIST" "$CLI_RENAMED"
+cp -f "$GUI_DIST" "$GUI_RENAMED"
+echo "→ CLI binary: ${CLI_RENAMED}"
+echo "→ GUI binary: ${GUI_RENAMED}"
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
@@ -115,24 +154,30 @@ curl -sS \
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
 
-echo "→ Uploading ${BINARY_NAME} as ${VERSION}..."
+upload_target() {
+  local file="$1" filename="$2"
+  echo "→ Uploading ${filename} as ${VERSION}..."
+  local http_status
+  http_status=$(curl -sS --write-out "%{http_code}" -o /tmp/dl_upload_resp \
+    -X POST "${BASE_URL}/api/v1/release/${BUCKET}/upload" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -F "version=${VERSION}" \
+    -F "os_arch=${OS_ARCH}" \
+    -F "file=@${file};filename=${filename}")
 
-HTTP_STATUS=$(curl -sS --write-out "%{http_code}" -o /tmp/dl_upload_resp \
-  -X POST "${BASE_URL}/api/v1/release/${BUCKET}/upload" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -F "version=${VERSION}" \
-  -F "os_arch=${OS_ARCH}" \
-  -F "file=@${RENAMED_BINARY};filename=${BINARY_NAME}")
+  if [[ "$http_status" != "201" ]]; then
+    echo "error: upload failed for ${filename} (HTTP ${http_status})" >&2
+    cat /tmp/dl_upload_resp >&2
+    exit 1
+  fi
+  echo "  Latest: ${BASE_URL}/rs/${BUCKET}/latest/${OS_ARCH}/${filename}"
+}
 
-if [[ "$HTTP_STATUS" != "201" ]]; then
-  echo "error: upload failed (HTTP ${HTTP_STATUS})" >&2
-  cat /tmp/dl_upload_resp >&2
-  exit 1
-fi
+upload_target "$CLI_RENAMED" "$CLI_NAME"
+upload_target "$GUI_RENAMED" "$GUI_NAME"
 
 echo ""
-echo "Released ${BUCKET} ${VERSION} for ${OS_ARCH}"
-echo "  Latest:  ${BASE_URL}/rs/${BUCKET}/latest/${OS_ARCH}/${BINARY_NAME}"
+echo "Released ${BUCKET} ${VERSION} for ${OS_ARCH} (CLI + GUI)"
 echo "  Landing: ${BASE_URL}/r/${BUCKET}"
 
 # Release notes (macOS only, upload once per version)

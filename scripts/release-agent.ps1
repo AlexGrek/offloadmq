@@ -1,4 +1,9 @@
-# Build and release offload-agent to dl.alexgr.space (Windows)
+# Build and release agent_v2 to dl.alexgr.space (Windows)
+#
+# Builds and uploads TWO targets for Windows:
+#   - CLI  (omq)      -> omq-windows-<arch>.exe
+#   - GUI  (omq-gui)  -> omq-gui-windows-<arch>.exe
+# Both land in the same bucket / os_arch slot, distinguished by filename.
 #
 # Usage:
 #   .\scripts\release-agent.ps1 [version]
@@ -6,7 +11,7 @@
 # If version is omitted it is auto-computed: major.minor from the latest
 # release-* tag + current commit count as the build number.
 # Example: latest tag release-v0.3.250, 260 commits -> v0.3.260
-# Falls back to v0.1.<count> when no release tag exists.
+# Falls back to v0.3.<count> when no release tag exists.
 #
 # Environment variables:
 #   DL_API_KEY    (required) API key with release-create and release-write:offload-agent scopes
@@ -27,7 +32,7 @@ $ErrorActionPreference = "Stop"
 $BaseUrl  = if ($env:DL_BASE_URL) { $env:DL_BASE_URL } else { "https://dl.alexgr.space" }
 $Bucket   = if ($env:DL_BUCKET)   { $env:DL_BUCKET   } else { "offload-agent" }
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$AgentDir = Join-Path $RepoRoot "offload-agent"
+$AgentDir = Join-Path $RepoRoot "agent_v2"
 
 if (-not $env:DL_API_KEY) {
     Write-Error "error: DL_API_KEY is not set"
@@ -58,72 +63,79 @@ $ArchTag = switch ($Arch) {
     default { Write-Error "Unsupported architecture: $Arch"; exit 1 }
 }
 
-$OsArch    = "windows-$ArchTag"
-$BinaryExt = ".exe"
-$BinaryName = "offload-agent-${OsArch}${BinaryExt}"
+$OsArch  = "windows-$ArchTag"
+$CliName = "omq-${OsArch}.exe"
+$GuiName = "omq-gui-${OsArch}.exe"
 
 Write-Host "Platform: $OsArch"
 Write-Host "Version:  $Version"
 Write-Host "Bucket:   $Bucket"
+Write-Host "Targets:  $CliName, $GuiName"
 Write-Host ""
 
 # ── Build ──────────────────────────────────────────────────────────────────────
 
-Write-Host "-> Building offload-agent..."
+$UvExe = Get-Command uv -ErrorAction SilentlyContinue
+if (-not $UvExe) {
+    Write-Error "uv is required (install from https://docs.astral.sh/uv/)"
+    exit 1
+}
 
 Push-Location $AgentDir
 try {
-    $PdmExe = Get-Command pdm -ErrorAction SilentlyContinue
-    if (-not $PdmExe) {
-        throw "pdm is required (install with: python -m pip install --user pdm)"
-    }
-
-    # When pdm is installed via pyapp, its launcher exposes its own runtime venv
-    # through VIRTUAL_ENV — pdm would then try to sync project deps into its own
-    # installation directory and fail with "Access is denied". Tell pdm to ignore
-    # any activated venv and resolve the project interpreter normally.
-    $env:PDM_IGNORE_ACTIVE_VENV = "1"
-
-    # Build frontend
-    Push-Location "frontend"
+    # Build frontend bundle
+    Push-Location "ui-server/frontend"
     npm ci
     if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
     npm run build
     if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
     Pop-Location
 
-    # Install deps + pyinstaller
-    & pdm sync --group dev --group build
-    if ($LASTEXITCODE -ne 0) { throw "pdm sync failed" }
+    # Sync workspace
+    & uv sync
+    if ($LASTEXITCODE -ne 0) { throw "uv sync failed" }
 
-    # Inject version into _version.py so it's bundled correctly
-    Set-Content -Path "app\_version.py" -Value "APP_VERSION = '$Version'"
-
-    # Clean stale build artifacts so PyInstaller always picks up current source
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "dist", "build"
-
-    # Build single-file exe (Windows uses ; as add-data separator)
-    & pdm run pyinstaller `
+    # Build CLI (omq.exe) — Windows uses ; as add-data separator
+    Push-Location "cli-manager"
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "dist", "build", "*.spec"
+    & uv run --with pyinstaller pyinstaller `
         --onefile `
-        --name offload-agent `
-        "--add-data=app;app" `
-        "--add-data=webui.py;." `
-        "--add-data=webui_comfy.py;." `
-        "--add-data=frontend/dist;frontend/dist" `
-        offload-agent.py
+        --name omq `
+        "--add-data=../ui-server/frontend/dist;frontend/dist" `
+        src/cli_manager/main.py
+    if ($LASTEXITCODE -ne 0) { throw "pyinstaller (omq) failed" }
+    Pop-Location
+
+    # Build GUI (omq-gui.exe)
+    Push-Location "gui-manager"
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "dist", "build", "*.spec"
+    & uv run --with pyinstaller pyinstaller `
+        --onefile `
+        --windowed `
+        --name omq-gui `
+        "--add-data=../ui-server/frontend/dist;frontend/dist" `
+        src/gui_manager/main.py
+    if ($LASTEXITCODE -ne 0) { throw "pyinstaller (omq-gui) failed" }
+    Pop-Location
 } finally {
     Pop-Location
 }
 
-$DistBinary = Join-Path $AgentDir "dist\offload-agent.exe"
-if (-not (Test-Path $DistBinary)) {
-    Write-Error "error: expected binary not found at $DistBinary"
-    exit 1
+$CliDist = Join-Path $AgentDir "cli-manager\dist\omq.exe"
+$GuiDist = Join-Path $AgentDir "gui-manager\dist\omq-gui.exe"
+foreach ($f in @($CliDist, $GuiDist)) {
+    if (-not (Test-Path $f)) {
+        Write-Error "error: expected binary not found at $f"
+        exit 1
+    }
 }
 
-$RenamedBinary = Join-Path $AgentDir "dist\$BinaryName"
-Copy-Item $DistBinary $RenamedBinary -Force
-Write-Host "-> Binary: $RenamedBinary"
+$CliRenamed = Join-Path $AgentDir "cli-manager\dist\$CliName"
+$GuiRenamed = Join-Path $AgentDir "gui-manager\dist\$GuiName"
+Copy-Item $CliDist $CliRenamed -Force
+Copy-Item $GuiDist $GuiRenamed -Force
+Write-Host "-> CLI binary: $CliRenamed"
+Write-Host "-> GUI binary: $GuiRenamed"
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
@@ -156,48 +168,48 @@ try {
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
 
-Write-Host "-> Uploading $BinaryName as $Version..."
+function Invoke-Upload {
+    param([string]$File, [string]$FileName)
 
-# PowerShell's Invoke-RestMethod handles multipart via -Form (PS 7+)
-# Fall back to curl.exe on older versions
-if ($PSVersionTable.PSVersion.Major -ge 7) {
-    $Form = @{
-        version  = $Version
-        os_arch  = $OsArch
-        file     = Get-Item $RenamedBinary
-    }
-    $Resp = Invoke-RestMethod `
-        -Method Post `
-        -Uri "${BaseUrl}/api/v1/release/${Bucket}/upload" `
-        -Headers @{ Authorization = "Bearer $Token" } `
-        -Form $Form
+    Write-Host "-> Uploading $FileName as $Version..."
 
-    Write-Host ""
-    Write-Host "Released $Bucket $Version for $OsArch"
-    Write-Host "  Latest:  ${BaseUrl}/rs/${Bucket}/latest/${OsArch}/${BinaryName}"
-    Write-Host "  Landing: ${BaseUrl}/r/${Bucket}"
-} else {
-    # curl.exe is bundled with Windows 10 1803+
-    $StatusFile = [System.IO.Path]::GetTempFileName()
-    $RespFile   = [System.IO.Path]::GetTempFileName()
+    if ($PSVersionTable.PSVersion.Major -ge 7) {
+        $Form = @{
+            version  = $Version
+            os_arch  = $OsArch
+            file     = Get-Item $File
+        }
+        Invoke-RestMethod `
+            -Method Post `
+            -Uri "${BaseUrl}/api/v1/release/${Bucket}/upload" `
+            -Headers @{ Authorization = "Bearer $Token" } `
+            -Form $Form | Out-Null
+    } else {
+        # curl.exe is bundled with Windows 10 1803+
+        $StatusFile = [System.IO.Path]::GetTempFileName()
+        $RespFile   = [System.IO.Path]::GetTempFileName()
 
-    curl.exe -sS --write-out "%{http_code}" -o $RespFile `
-        -X POST "${BaseUrl}/api/v1/release/${Bucket}/upload" `
-        -H "Authorization: Bearer $Token" `
-        -F "version=$Version" `
-        -F "os_arch=$OsArch" `
-        -F "file=@${RenamedBinary};filename=${BinaryName}" `
-        | Out-File $StatusFile -Encoding ascii
+        curl.exe -sS --write-out "%{http_code}" -o $RespFile `
+            -X POST "${BaseUrl}/api/v1/release/${Bucket}/upload" `
+            -H "Authorization: Bearer $Token" `
+            -F "version=$Version" `
+            -F "os_arch=$OsArch" `
+            -F "file=@${File};filename=${FileName}" `
+            | Out-File $StatusFile -Encoding ascii
 
-    $Status = (Get-Content $StatusFile).Trim()
-    if ($Status -ne "201") {
-        Write-Error "error: upload failed (HTTP $Status)"
-        Get-Content $RespFile | Write-Error
-        exit 1
+        $Status = (Get-Content $StatusFile).Trim()
+        if ($Status -ne "201") {
+            Get-Content $RespFile | Write-Error
+            throw "upload failed for $FileName (HTTP $Status)"
+        }
     }
 
-    Write-Host ""
-    Write-Host "Released $Bucket $Version for $OsArch"
-    Write-Host "  Latest:  ${BaseUrl}/rs/${Bucket}/latest/${OsArch}/${BinaryName}"
-    Write-Host "  Landing: ${BaseUrl}/r/${Bucket}"
+    Write-Host "  Latest: ${BaseUrl}/rs/${Bucket}/latest/${OsArch}/${FileName}"
 }
+
+Invoke-Upload -File $CliRenamed -FileName $CliName
+Invoke-Upload -File $GuiRenamed -FileName $GuiName
+
+Write-Host ""
+Write-Host "Released $Bucket $Version for $OsArch (CLI + GUI)"
+Write-Host "  Landing: ${BaseUrl}/r/${Bucket}"
