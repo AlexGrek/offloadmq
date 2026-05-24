@@ -105,6 +105,7 @@ pub async fn jwt_auth_middleware_agent(
     let (mut parts, body) = req.into_parts();
 
     let path = parts.uri.path();
+    let method = parts.method.clone();
 
     if path == "/register" || path == "/login" {
         let req = Request::from_parts(parts, body);
@@ -119,7 +120,14 @@ pub async fn jwt_auth_middleware_agent(
     let token =
         auth_header.and_then(|header| header.strip_prefix("Bearer ").map(|s| s.to_string()));
 
-    let token = token.ok_or(AppError::Authorization("Unauthorized".to_string()))?;
+    let token = token.ok_or_else(|| {
+        log::warn!(
+            "Agent auth rejected: missing/invalid bearer token for {} {}",
+            method,
+            path
+        );
+        AppError::Authorization("Unauthorized".to_string())
+    })?;
 
     match app_state.auth.decode_token(&token) {
         Ok(claims) => {
@@ -132,14 +140,23 @@ pub async fn jwt_auth_middleware_agent(
                     parts.extensions.insert(u);
                     ()
                 }
-                _ => return Err(AppError::Authorization("Agent not found".to_string())),
+                _ => {
+                    log::warn!(
+                        "Agent auth rejected: token subject '{}' not found for {} {} (known_agents={})",
+                        claims.sub,
+                        method,
+                        path,
+                        app_state.storage.agent_count()
+                    );
+                    return Err(AppError::Authorization("Agent not found".to_string()));
+                }
             }
 
             let req = Request::from_parts(parts, body);
             Ok(next.run(req).await)
         }
         Err(e) => {
-            log::warn!("JWT validation failed: {}", e);
+            log::warn!("JWT validation failed for {} {}: {}", method, path, e);
             Err(AppError::Authorization("JWT token invalid".to_string()))
         }
     }

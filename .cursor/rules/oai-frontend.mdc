@@ -1,0 +1,12 @@
+---
+description: OAI frontend SPA — read oai-frontend skill before editing
+globs: oai/frontend/**
+alwaysApply: false
+---
+
+Before editing, read `.claude/skills/oai-frontend/SKILL.md`.
+
+If the file is chat-specific, also read `.claude/skills/oai-chat/SKILL.md`.
+If the file is image-specific (imggen, ImageGenerationPage, ProgressContext), also read `.claude/skills/oai-img/SKILL.md`.
+
+See CLAUDE.md § OAI → Skills for the full activation matrix.

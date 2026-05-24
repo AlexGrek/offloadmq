@@ -1,6 +1,10 @@
 ---
 name: oai-itests
-description: Writing, modifying, or debugging Python integration tests for the OAI backend. Activate when work involves oai/itests/, pytest fixtures, or adding test coverage for OAI API routes.
+description: >-
+  Writing, modifying, or debugging Python integration tests for the OAI backend.
+  Use when working on oai/itests/**, pytest fixtures, conftest.py, or adding test
+  coverage for OAI API routes. Stack with oai-chat, oai-img, or oai-backend for the
+  feature under test.
 ---
 
 # OAI Integration Tests (oai/itests)

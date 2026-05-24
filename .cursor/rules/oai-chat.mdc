@@ -1,0 +1,9 @@
+---
+description: OAI LLM chat feature — read oai-chat skill before editing
+globs: oai/frontend/src/pages/ChatPage.tsx,oai/frontend/src/hooks/useWsChat.ts,oai/frontend/src/types/ws.ts,oai/frontend/src/contexts/WorkloadContext.tsx,oai/frontend/src/api/chats.ts,oai/frontend/src/api/systemPrompts.ts,oai/frontend/src/components/chat/**,oai/backend/src/ws/**,oai/backend/src/services/chat.rs,oai/backend/src/routes/chats.rs,oai/backend/src/routes/system_prompts.rs,oai/backend/src/routes/tasks.rs,oai/backend/src/routes/debug.rs,oai/backend/src/db/chats.rs,oai/backend/src/db/user_system_prompts.rs,oai/backend/src/jobs/chat_worker.rs
+alwaysApply: false
+---
+
+Before editing, read `.claude/skills/oai-chat/SKILL.md` and `.claude/skills/oai-frontend/SKILL.md` (frontend) or `.claude/skills/oai-backend/SKILL.md` (backend).
+
+See CLAUDE.md § OAI → Skills → oai-chat file patterns.

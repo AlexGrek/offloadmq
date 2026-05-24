@@ -2,8 +2,9 @@
 name: oai-devops
 description: >-
   Deploy, upgrade, and troubleshoot OAI on Kubernetes (Helm, Garage S3, Postgres,
-  Docker). Use when fixing oai namespace pods, garage-init failures, ImagePullBackOff,
-  Init:0/1 wait-garage-creds, helm upgrade, task deploy/ship, or oai.alexgr.space outages.
+  Docker). Use when working on oai/helm-chart/**, oai/Dockerfile, oai/docker-compose*.yml,
+  oai/Taskfile.yml deploy tasks, garage-init failures, ImagePullBackOff, wait-garage-creds,
+  helm upgrade, task deploy/ship, or oai.alexgr.space outages.
 ---
 
 # OAI DevOps — Deploy & Troubleshoot

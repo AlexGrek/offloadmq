@@ -423,6 +423,12 @@ class Orchestrator:
             logger.exception("poller crashed")
             self._set_message(f"crashed: {exc}")
         finally:
+            client = self._client
+            if client is not None:
+                try:
+                    loop.run_until_complete(client.close())
+                except Exception:  # noqa: BLE001
+                    logger.debug("failed to close client session cleanly")
             loop.close()
             self._loop = None
             with self._lock:
@@ -529,8 +535,7 @@ class Orchestrator:
 
                 self._dispatch(task)
             except OffloadMQError as exc:
-                exc_str = str(exc)
-                if "(403)" in exc_str or "(401)" in exc_str:
+                if exc.status in (401, 403):
                     consecutive_auth_failures += 1
                     logger.warning(
                         "auth failure %d/%d: %s",

@@ -1,0 +1,9 @@
+---
+description: OAI deploy/Helm/Docker — read oai-devops skill before editing
+globs: oai/helm-chart/**,oai/Dockerfile,oai/docker-compose*.yml,oai/Taskfile.yml
+alwaysApply: false
+---
+
+Before editing, read `.claude/skills/oai-devops/SKILL.md`.
+
+See CLAUDE.md § OAI → Skills.

@@ -1,0 +1,12 @@
+---
+description: OAI Rust backend — read oai-backend skill before editing
+globs: oai/backend/**
+alwaysApply: false
+---
+
+Before editing, read `.claude/skills/oai-backend/SKILL.md`.
+
+If the file matches chat patterns (ws/, chat.rs, chats.rs, system_prompts.rs), also read `.claude/skills/oai-chat/SKILL.md`.
+If the file matches image patterns (image_jobs.rs, routes/images.rs, image_pipeline_worker.rs), also read `.claude/skills/oai-img/SKILL.md`.
+
+See CLAUDE.md § OAI → Skills for the full activation matrix.

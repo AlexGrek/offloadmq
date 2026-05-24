@@ -3,8 +3,9 @@ name: oai-img
 description: >-
   OAI image generation — ImageGenerationPage, txt2img/img2img, upload/buckets,
   dataPreparation rescale, job poll/cancel, pipeline events, background worker,
-  ProgressContext, ToolDebug, imggen.* OffloadMQ tasks. Use when working on oai
-  image routes, image_jobs service, imggen UI, or image pipeline debugging.
+  ProgressContext, ToolDebug, imggen.* OffloadMQ tasks. Use when working on
+  oai/frontend imggen files, oai/backend image routes/services/jobs (image_jobs.rs,
+  routes/images.rs, image_pipeline_worker), or image pipeline debugging.
 ---
 
 # OAI Image Generation — Engineering Context

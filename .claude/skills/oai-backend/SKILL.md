@@ -1,6 +1,9 @@
 ---
 name: oai-backend
-description: Senior Rust engineer context for the OAI backend. Use when working on oai/backend — routes, services, WebSocket chat, image pipeline, DB migrations, middleware, OffloadMQ integration, or background workers.
+description: >-
+  Senior Rust engineer context for the OAI backend. Use when working on oai/backend/**
+  — routes, services, DB migrations, middleware, OffloadMQ integration, or background
+  workers. Stack with oai-chat or oai-img when editing feature-specific backend files.
 ---
 
 # OAI Backend — Engineering Context

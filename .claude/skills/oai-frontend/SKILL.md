@@ -1,6 +1,9 @@
 ---
 name: oai-frontend
-description: Frontend engineer context for the OAI web app. Use when working on oai/frontend — pages, components, routing, API clients, styling, or adding new UI features to the AI workspace.
+description: >-
+  Frontend engineer context for the OAI web app. Use when working on oai/frontend/**
+  — pages, components, routing, API clients, styling, AppShell layout, or adding
+  new UI features. Stack with oai-chat or oai-img when editing feature-specific files.
 ---
 
 # OAI Frontend — Engineering Context

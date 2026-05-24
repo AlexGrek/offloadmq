@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::{debug, info};
+use log::{debug, info, warn};
 use rand::seq::IndexedRandom;
 
 use crate::{
@@ -135,8 +135,20 @@ pub async fn do_auth_agent(
         .storage
         .agents
         .get_agent(&req.agent_id)
-        .ok_or_else(|| mk_auth_err())?;
+        .ok_or_else(|| {
+            warn!(
+                "Agent auth rejected: unknown agent_id '{}' (known_agents={})",
+                req.agent_id,
+                state.storage.agent_count()
+            );
+            mk_auth_err()
+        })?;
     if agent.personal_login_token != req.key {
+        warn!(
+            "Agent auth rejected: incorrect key for agent_id '{}' (uid_short={})",
+            req.agent_id,
+            agent.uid_short
+        );
         return Err(mk_auth_err());
     }
     state
@@ -363,6 +375,7 @@ pub async fn update_task_progress(
 
 pub(crate) fn validate_api_key(keys: &[String], key: &str) -> Result<(), AppError> {
     if !keys.iter().any(|item| item == key) {
+        warn!("Agent registration rejected: incorrect API key");
         return Err(AppError::Authorization("Incorrect API key".to_string()));
     }
     Ok(())

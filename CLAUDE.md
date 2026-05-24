@@ -311,19 +311,52 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 
 ### Skills
 
-Skills provide domain-specific context for OAI work. They are activated automatically based on the work being done.
+Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read every matching skill below** — load the most specific skill(s) first, then parent skills. Do not implement until relevant skill(s) are loaded.
 
-**OAI Frontend** — React 19 + TypeScript SPA, shadcn/ui, Tailwind v4, routing, API clients, dark/light mode. See `.claude/skills/oai-frontend/SKILL.md`.
+#### Activation matrix
 
-**OAI Chat** — LLM chat at `/app/chat`: WebSocket protocol, WorkloadContext in-flight tasks, system prompts, cancel, ToolDebug, OffloadMQ submit/poll. See `.claude/skills/oai-chat/SKILL.md`.
+| Skill | Skill file | Read when touching |
+|-------|------------|-------------------|
+| **oai-devops** | `.claude/skills/oai-devops/SKILL.md` | `oai/helm-chart/**`, `oai/Dockerfile`, `oai/docker-compose*.yml`, `oai/Taskfile.yml` (deploy/docker/infra tasks) |
+| **oai-itests** | `.claude/skills/oai-itests/SKILL.md` | `oai/itests/**` |
+| **oai-chat** | `.claude/skills/oai-chat/SKILL.md` | Chat feature files (patterns below) |
+| **oai-img** | `.claude/skills/oai-img/SKILL.md` | Image feature files (patterns below) |
+| **oai-backend** | `.claude/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |
+| **oai-frontend** | `.claude/skills/oai-frontend/SKILL.md` | Any `oai/frontend/**` file, or cross-cutting SPA work |
 
-**OAI Image** — Image generation at `/app/images`: txt2img/img2img, buckets, dataPreparation, job poll/cancel, pipeline worker, Progress drawer. See `.claude/skills/oai-img/SKILL.md`.
+#### Stacking rules
 
-**OAI Backend** — Rust/Axum backend: routes, services, WebSocket chat, image pipeline, DB migrations (SeaORM), middleware, OffloadMQ client, background workers. See `.claude/skills/oai-backend/SKILL.md`.
+1. **Feature + parent** — chat work → `oai-chat` + `oai-frontend` and/or `oai-backend`; image work → `oai-img` + `oai-frontend` and/or `oai-backend`.
+2. **Feature wins on overlap** — files listed under `oai-chat` or `oai-img` use that feature skill first; still read `oai-backend` / `oai-frontend` for shared patterns (AppState, routing, layout).
+3. **DevOps** — Helm/Docker/deploy-only changes → `oai-devops` (skip feature skills unless app code changes too).
+4. **Tests** — `oai/itests/**` → `oai-itests` plus the skill for the route/feature under test.
 
-**OAI Integration Tests** — Python integration tests (httpx + pytest-xdist) that run against the live OAI backend. One test file per route group, fixtures in conftest.py, no mocking. See `.claude/skills/oai-itests/SKILL.md`.
+#### oai-chat — file patterns
 
-**OAI DevOps** — Helm/Kubernetes deploy, Garage init job, Docker image publish, and troubleshooting (`garage-init` failures, `wait-garage-creds`, ImagePullBackOff). See `.claude/skills/oai-devops/SKILL.md`.
+Paths are relative to `oai/`.
+
+**Frontend:** `frontend/src/pages/ChatPage.tsx`, `frontend/src/hooks/useWsChat.ts`, `frontend/src/types/ws.ts`, `frontend/src/contexts/WorkloadContext.tsx`, `frontend/src/api/chats.ts`, `frontend/src/api/systemPrompts.ts`, `frontend/src/api/tasks.ts`, `frontend/src/api/debug.ts`, `frontend/src/components/chat/**`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (chat rows)
+
+**Backend:** `backend/src/ws/**`, `backend/src/services/chat.rs`, `backend/src/routes/chats.rs`, `backend/src/routes/system_prompts.rs`, `backend/src/routes/tasks.rs`, `backend/src/routes/debug.rs`, `backend/src/db/chats.rs`, `backend/src/db/user_system_prompts.rs`, `backend/src/db/llm_capabilities.rs`, `backend/src/jobs/chat_worker.rs`, `backend/src/jobs/llm_capability_cleanup_worker.rs`
+
+#### oai-img — file patterns
+
+Paths are relative to `oai/`.
+
+**Frontend:** `frontend/src/pages/ImageGenerationPage.tsx`, `frontend/src/pages/ImageWorkerLogsPage.tsx`, `frontend/src/pages/FilesPage.tsx`, `frontend/src/components/imggen/**`, `frontend/src/lib/imggen.ts`, `frontend/src/api/images.ts`, `frontend/src/hooks/useRunningImageJobs.ts`, `frontend/src/contexts/ProgressContext.tsx`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (image rows)
+
+**Backend:** `backend/src/routes/images.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/services/image_jobs.rs`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
+
+#### Skill summaries
+
+- **oai-frontend** — React 19 + TypeScript SPA, shadcn/ui, Tailwind v4, routing, API clients, dark/light mode, AppShell layout.
+- **oai-chat** — LLM chat at `/app/chat`: WebSocket protocol, WorkloadContext, system prompts, cancel, ToolDebug, OffloadMQ submit/poll.
+- **oai-img** — Image generation at `/app/images`: txt2img/img2img, buckets, dataPreparation, job poll/cancel, pipeline worker, Progress drawer.
+- **oai-backend** — Rust/Axum backend: routes, services, DB migrations (SeaORM), middleware, OffloadMQ client, background workers.
+- **oai-itests** — Python integration tests (httpx + pytest-xdist) against the live backend; one test file per route group; no mocking.
+- **oai-devops** — Helm/Kubernetes deploy, Garage init job, Docker publish, troubleshooting (`garage-init`, `wait-garage-creds`, ImagePullBackOff).
+
+In Cursor, `.cursor/rules/oai-*.mdc` mirrors this matrix and auto-applies when matching files are open.
 
 ### Development Commands
 

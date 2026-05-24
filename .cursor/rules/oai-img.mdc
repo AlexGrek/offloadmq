@@ -1,0 +1,9 @@
+---
+description: OAI image generation — read oai-img skill before editing
+globs: oai/frontend/src/pages/ImageGenerationPage.tsx,oai/frontend/src/pages/ImageWorkerLogsPage.tsx,oai/frontend/src/pages/FilesPage.tsx,oai/frontend/src/components/imggen/**,oai/frontend/src/lib/imggen.ts,oai/frontend/src/api/images.ts,oai/frontend/src/hooks/useRunningImageJobs.ts,oai/frontend/src/contexts/ProgressContext.tsx,oai/backend/src/routes/images.rs,oai/backend/src/routes/progress.rs,oai/backend/src/routes/files.rs,oai/backend/src/services/image_jobs.rs,oai/backend/src/services/image_processing.rs,oai/backend/src/services/image_pipeline_params.rs,oai/backend/src/services/progress.rs,oai/backend/src/db/image_generation.rs,oai/backend/src/db/image_worker_logs.rs,oai/backend/src/offload/image_tasks.rs,oai/backend/src/jobs/image_pipeline_worker.rs
+alwaysApply: false
+---
+
+Before editing, read `.claude/skills/oai-img/SKILL.md` and `.claude/skills/oai-frontend/SKILL.md` (frontend) or `.claude/skills/oai-backend/SKILL.md` (backend).
+
+See CLAUDE.md § OAI → Skills → oai-img file patterns.

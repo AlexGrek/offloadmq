@@ -3,8 +3,9 @@ name: oai-chat
 description: >-
   OAI LLM chat feature — ChatPage, WebSocket protocol, WorkloadContext in-flight
   tasks, system prompts, cancel/stop, ToolDebug offload poll, markdown messages,
-  OffloadMQ submit/poll backend. Use when working on oai chat UI, ws/chat, chat
-  routes, streaming progress, sidebar loaders, or debugging chat tasks.
+  OffloadMQ submit/poll backend. Use when working on oai/frontend chat files
+  (ChatPage, useWsChat, WorkloadContext, components/chat), oai/backend/src/ws/**,
+  services/chat.rs, routes/chats.rs, routes/system_prompts.rs, or debugging chat tasks.
 ---
 
 # OAI Chat — Engineering Context

@@ -1,0 +1,11 @@
+---
+description: OAI integration tests — read oai-itests skill before editing
+globs: oai/itests/**
+alwaysApply: false
+---
+
+Before editing, read `.claude/skills/oai-itests/SKILL.md`.
+
+Also read the skill for the feature under test (`oai-chat`, `oai-img`, or `oai-backend`).
+
+See CLAUDE.md § OAI → Skills.
