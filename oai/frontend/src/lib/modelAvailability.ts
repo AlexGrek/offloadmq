@@ -1,5 +1,10 @@
 import type { LlmCapabilityInfo } from '../types/ws'
 
+/** Human-readable model name with the `llm.` prefix stripped. */
+export function modelLabel(cap: LlmCapabilityInfo): string {
+  return cap.base.replace(/^llm\./, '')
+}
+
 /** Matches backend `llm_capabilities::STALE_AFTER` (3 days). */
 export const MODEL_UNAVAILABLE_FADE_MS = 3 * 24 * 60 * 60 * 1000
 

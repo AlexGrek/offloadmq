@@ -1,40 +1,11 @@
-import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import {
-  AlertCircle,
-  ArrowUp,
-  ChevronDown,
-  Clock,
-  Loader2,
-  Square,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Trash2,
-  Wifi,
-  WifiOff,
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useWorkload } from '../contexts/WorkloadContext'
-import {
-  ToolDebugHeaderButton,
-  ToolDebugModal,
-  toolDebugReady,
-} from '../components/ToolDebugModal'
+import { ToolDebugModal, toolDebugReady } from '../components/ToolDebugModal'
 import { cancelOffloadTask } from '../api/tasks'
 import { useWsChat, nextReqId } from '../hooks/useWsChat'
-import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
-import {
-  firstSelectableModel,
-  sortCapabilitiesForPicker,
-  unavailableModelDotOpacity,
-} from '../lib/modelAvailability'
-import type { LlmCapabilityInfo, ServerEvent } from '../types/ws'
-import type { ChatTaskRecord } from '../contexts/WorkloadContext'
+import { useTranscriptScroll } from '../hooks/useTranscriptScroll'
+import type { ServerEvent } from '../types/ws'
 import {
   listChats,
   createChat,
@@ -43,329 +14,31 @@ import {
   updateChatSystemPrompt,
   updateChatLastModel,
   type ChatSummary,
-  type ChatMessageRecord,
 } from '../api/chats'
-import { MarkdownContent } from '../components/MarkdownContent'
-import { SystemPromptBlock } from '../components/chat/SystemPromptBlock'
-import { SystemPromptStudio, DEFAULT_PROMPT } from '../components/chat/SystemPromptStudio'
+import { DEFAULT_PROMPT } from '../components/chat/SystemPromptStudio'
 import {
   ChatTimeoutDrawer,
   type ChatTimeoutSettings,
   DEFAULT_TIMEOUT_SETTINGS,
 } from '../components/chat/ChatTimeoutDrawer'
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-type MessageStatus = 'complete' | 'thinking' | 'failed'
+import { ChatSidebar } from '../components/chat/ChatSidebar'
+import { ChatHeader } from '../components/chat/ChatHeader'
+import { ChatTranscript } from '../components/chat/ChatTranscript'
+import { ChatComposer } from '../components/chat/ChatComposer'
+import {
+  capitalize,
+  isMessagePending,
+  mergeInFlightMessages,
+  modelListed,
+  pendingMessageId,
+  recordToMessage,
+  resolveChatModel,
+  uid,
+  type Message,
+  type MessageStatus,
+} from '../lib/chat/messages'
 
 type ChatTimeoutEntry = ChatTimeoutSettings & { timeoutUserSet: boolean }
-
-type Message = {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  status: MessageStatus
-  reqId?: string
-  statusText?: string
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-let _uid = 1
-function uid() { return `local_${_uid++}` }
-
-function modelLabel(cap: LlmCapabilityInfo): string {
-  return cap.base.replace(/^llm\./, '')
-}
-
-function ModelAvailabilityDot({ cap }: { cap: LlmCapabilityInfo }) {
-  if (cap.online) {
-    return (
-      <span
-        className="size-2 shrink-0 rounded-full bg-emerald-500"
-        aria-hidden
-        data-testid="model-dot-online"
-      />
-    )
-  }
-  const opacity = unavailableModelDotOpacity(cap.last_available_at)
-  return (
-    <span
-      className="size-2 shrink-0 rounded-full bg-amber-400"
-      style={{ opacity }}
-      aria-hidden
-      data-testid="model-dot-offline"
-    />
-  )
-}
-
-function normalizeStatus(status: string): MessageStatus {
-  if (status === 'thinking' || status === 'pending') return 'thinking'
-  if (status === 'failed') return 'failed'
-  return 'complete'
-}
-
-function recordToMessage(r: ChatMessageRecord): Message | null {
-  if (r.role !== 'user' && r.role !== 'assistant') return null
-  return {
-    id: r.id,
-    role: r.role,
-    content: r.content,
-    status: normalizeStatus(r.status),
-  }
-}
-
-function modelListed(
-  cap: string | null | undefined,
-  capabilities: LlmCapabilityInfo[],
-): boolean {
-  return !!cap && capabilities.some(c => c.base === cap)
-}
-
-/** Prefer chat's saved model, then last message with a model, then first online. */
-function resolveChatModel(
-  lastModel: string | null | undefined,
-  records: ChatMessageRecord[],
-  capabilities: LlmCapabilityInfo[],
-): string | null {
-  if (modelListed(lastModel, capabilities)) return lastModel!
-  for (let i = records.length - 1; i >= 0; i--) {
-    const m = records[i].model
-    if (modelListed(m, capabilities)) return m!
-  }
-  return firstSelectableModel(capabilities)
-}
-
-function isMessagePending(msg: Message): boolean {
-  return msg.role === 'assistant' && msg.status === 'thinking'
-}
-
-function pendingMessageId(reqId: string): string {
-  return `pending_${reqId}`
-}
-
-function inFlightToMessage(task: ChatTaskRecord): Message {
-  const streaming = Boolean(task.streamContent?.trim())
-  return {
-    id: pendingMessageId(task.reqId),
-    role: 'assistant',
-    content: task.streamContent ?? '',
-    status: 'thinking',
-    reqId: task.reqId,
-    statusText: streaming ? '' : (task.statusText ?? 'Thinking…'),
-  }
-}
-
-function mergeInFlightMessages(base: Message[], running: ChatTaskRecord[]): Message[] {
-  const runningReqIds = new Set(running.map(t => t.reqId))
-  const hasRunning = running.length > 0
-  const next = base.filter(m => {
-    if (m.status !== 'thinking') return true
-    // Optimistic bubbles carry a reqId: keep only while their task is running.
-    if (m.reqId != null) return runningReqIds.has(m.reqId)
-    // REST-backed pending replies (no reqId) are real DB rows the background
-    // worker will finalize — keep them on reload so the in-flight reply survives a
-    // disconnect/restart, but drop when a live optimistic bubble already covers it.
-    return !hasRunning
-  })
-  for (const task of running) {
-    const row = inFlightToMessage(task)
-    const idx = next.findIndex(m => m.reqId === task.reqId)
-    if (idx >= 0) next[idx] = row
-    else next.push(row)
-  }
-  return next
-}
-
-// ── Status indicator ──────────────────────────────────────────────────────────
-
-function WsStatusDot({ status }: { status: string }) {
-  if (status === 'connected') return <Wifi className="size-3.5 text-emerald-500" />
-  if (status === 'connecting') return <Loader2 className="size-3.5 text-amber-500 animate-spin" />
-  return <WifiOff className="size-3.5 text-muted-foreground" />
-}
-
-// ── Model picker ──────────────────────────────────────────────────────────────
-
-function ModelPicker({
-  capabilities,
-  selected,
-  onSelect,
-  onRefresh,
-  wsStatus,
-  capabilitiesStatus,
-  capabilitiesError,
-}: {
-  capabilities: LlmCapabilityInfo[]
-  selected: string | null
-  onSelect: (base: string) => void
-  onRefresh: () => void
-  wsStatus: string
-  capabilitiesStatus: CapabilitiesStatus
-  capabilitiesError: string | null
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  const sorted = sortCapabilitiesForPicker(capabilities)
-  const selectedCap = sorted.find(c => c.base === selected)
-  const modelsLoading = wsStatus === 'connected' && capabilitiesStatus === 'loading'
-  const modelsError = wsStatus === 'connected' && capabilitiesStatus === 'error'
-  const label =
-    wsStatus === 'connecting' ? 'Connecting…' :
-    wsStatus !== 'connected'  ? 'Offline' :
-    modelsLoading ? 'Loading models…' :
-    modelsError ? (capabilitiesError ?? 'Failed to load models') :
-    sorted.length === 0 ? 'No models' :
-    selectedCap               ? modelLabel(selectedCap) :
-                                'Pick model'
-
-  const canOpen = wsStatus === 'connected' && capabilitiesStatus === 'ready' && sorted.length > 0
-  const triggerDisabled =
-    wsStatus !== 'connected' || modelsLoading || (capabilitiesStatus === 'ready' && sorted.length === 0)
-
-  return (
-    <div className="relative" ref={ref} data-testid="model-picker">
-      <button
-        type="button"
-        onClick={() => {
-          if (modelsError) {
-            onRefresh()
-            return
-          }
-          if (canOpen) setOpen(v => !v)
-        }}
-        disabled={triggerDisabled}
-        data-testid="model-picker-trigger"
-        title={modelsError ? capabilitiesError ?? undefined : undefined}
-        className={cn(
-          'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors max-w-48',
-          modelsError
-            ? 'text-destructive hover:bg-destructive/10 cursor-pointer'
-            : canOpen || modelsError
-              ? 'text-foreground hover:bg-muted cursor-pointer'
-              : 'text-muted-foreground cursor-default',
-        )}
-      >
-        {modelsLoading && (
-          <Loader2 className="size-3 shrink-0 animate-spin" data-testid="model-picker-loading" />
-        )}
-        {modelsError && (
-          <AlertCircle className="size-3 shrink-0" data-testid="model-picker-error" />
-        )}
-        {!modelsLoading && !modelsError && selectedCap && (
-          <ModelAvailabilityDot cap={selectedCap} />
-        )}
-        <span className="truncate">{label}</span>
-        {canOpen && <ChevronDown className={cn('size-3 shrink-0 transition-transform', open && 'rotate-180')} />}
-        {modelsError && (
-          <RefreshCw className="size-3 shrink-0 opacity-70" aria-hidden />
-        )}
-      </button>
-
-      <AnimatePresence>
-      {open && (
-        <motion.div
-          className="absolute bottom-full mb-1 left-0 z-50 min-w-45 overflow-hidden rounded-xl border border-border bg-popover shadow-md text-sm"
-          data-testid="model-picker-dropdown"
-          initial={{ opacity: 0, y: 6, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 6, scale: 0.96 }}
-          transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
-            <span>Models</span>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onRefresh() }}
-              title="Refresh"
-              className="hover:text-foreground transition-colors"
-            >
-              <RefreshCw className="size-3" />
-            </button>
-          </div>
-          <div
-            className="max-h-[min(50vh,16rem)] overflow-y-auto overscroll-contain py-1"
-            data-testid="model-picker-list"
-          >
-            {sorted.map(cap => (
-              <button
-                key={cap.raw}
-                type="button"
-                onClick={() => { onSelect(cap.base); setOpen(false) }}
-                className={cn(
-                  'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer',
-                  cap.base === selected && 'bg-muted font-medium',
-                )}
-                data-testid={`model-option-${cap.base}`}
-              >
-                <ModelAvailabilityDot cap={cap} />
-                <span className="flex-1 truncate">{modelLabel(cap)}</span>
-                {cap.tags.length > 0 && (
-                  <span className="flex gap-1 shrink-0">
-                    {cap.tags.map(t => (
-                      <span
-                        key={t}
-                        className="rounded px-1 py-0.5 text-[10px] font-medium bg-accent text-accent-foreground"
-                      >
-                        {t}
-                      </span>
-                    ))}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </motion.div>
-      )}
-      </AnimatePresence>
-    </div>
-  )
-}
-
-// ── Thinking bubble ───────────────────────────────────────────────────────────
-
-function ThinkingBubble({ statusText, content }: { statusText?: string; content?: string }) {
-  const streaming = Boolean(content?.trim())
-  return (
-    <div
-      className="max-w-[80%] rounded-2xl rounded-bl-sm bg-muted px-4 py-2.5 text-sm"
-      data-testid="message-pending"
-      aria-busy="true"
-      aria-live="polite"
-    >
-      {streaming ? (
-        <div className="mb-3" data-testid="message-streaming">
-          <MarkdownContent>{content!}</MarkdownContent>
-        </div>
-      ) : null}
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <span className="flex items-center gap-0.75" aria-hidden>
-          {[0, 1, 2].map(i => (
-            <motion.span
-              key={i}
-              className="block size-1.5 rounded-full bg-current"
-              animate={{ y: [0, -3, 0] }}
-              transition={{ duration: 0.55, repeat: Infinity, delay: i * 0.14, ease: 'easeInOut' }}
-            />
-          ))}
-        </span>
-        {!streaming && <span>{statusText || 'Thinking…'}</span>}
-      </div>
-    </div>
-  )
-}
-
-// ── Main component ────────────────────────────────────────────────────────────
 
 export default function ChatPage() {
   const { token } = useAuth()
@@ -379,13 +52,10 @@ export default function ChatPage() {
     runningChatTasks,
   } = useWorkload()
 
-  const inProgressByChatId = useMemo(() => {
-    const map = new Map<string, ChatTaskRecord>()
-    for (const t of runningChatTasks) {
-      map.set(t.chatId, t)
-    }
-    return map
-  }, [runningChatTasks])
+  const runningChatIds = useMemo(
+    () => new Set(runningChatTasks.map(t => t.chatId)),
+    [runningChatTasks],
+  )
   const ws = useWsChat(token)
 
   const [chats, setChats] = useState<ChatSummary[]>([])
@@ -702,111 +372,12 @@ export default function ChatPage() {
 
   const showSystemStudio = !loadingMessages && (!activeChatId || messages.length === 0)
 
-  // ── Scroll ────────────────────────────────────────────────────────────────
-
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  /** When true, new content keeps the transcript pinned to the bottom. */
-  const autoScrollRef = useRef(true)
-  const lastScrollTopRef = useRef(0)
-  /** Ignore onScroll while we programmatically pin (DOM swaps reset scrollTop → false "scroll up"). */
-  const suppressScrollHandlerRef = useRef(false)
-  const [showScrollBtn, setShowScrollBtn] = useState(false)
-
-  const BOTTOM_THRESHOLD_PX = 48
-
-  const isStreaming = useMemo(
-    () => messages.some(m => isMessagePending(m)),
-    [messages],
-  )
-
-  function distanceFromBottom(el: HTMLDivElement): number {
-    return el.scrollHeight - el.scrollTop - el.clientHeight
-  }
-
-  function handleScroll() {
-    if (suppressScrollHandlerRef.current) return
-    const el = scrollRef.current
-    if (!el) return
-    const { scrollTop } = el
-    const dist = distanceFromBottom(el)
-
-    // Any upward scroll disables follow; reaching the end re-enables it.
-    if (scrollTop < lastScrollTopRef.current - 1) {
-      autoScrollRef.current = false
-    } else if (dist <= BOTTOM_THRESHOLD_PX) {
-      autoScrollRef.current = true
-    }
-
-    lastScrollTopRef.current = scrollTop
-    setShowScrollBtn(!autoScrollRef.current)
-  }
-
-  function maxScrollTop(el: HTMLDivElement): number {
-    return Math.max(0, el.scrollHeight - el.clientHeight)
-  }
-
-  /** Pin transcript to the bottom sentinel (inside the scroll container only). */
-  function scrollTranscriptToEnd(behavior: ScrollBehavior = 'instant') {
-    const el = scrollRef.current
-    const end = messagesEndRef.current
-    if (end) {
-      end.scrollIntoView({ block: 'end', behavior })
-    } else if (el) {
-      const top = maxScrollTop(el)
-      el.scrollTop = top
-    }
-    if (el) lastScrollTopRef.current = el.scrollTop
-  }
-
-  function followTranscriptBottom(behavior: ScrollBehavior = 'instant') {
-    if (!autoScrollRef.current) return
-    suppressScrollHandlerRef.current = true
-    scrollTranscriptToEnd(behavior)
-    requestAnimationFrame(() => {
-      scrollTranscriptToEnd('instant')
-      const el = scrollRef.current
-      if (el) lastScrollTopRef.current = el.scrollTop
-      setShowScrollBtn(false)
-      requestAnimationFrame(() => {
-        suppressScrollHandlerRef.current = false
-      })
-    })
-  }
-
-  function scrollMessagesToBottom(behavior: ScrollBehavior = 'smooth') {
-    autoScrollRef.current = true
-    suppressScrollHandlerRef.current = true
-    scrollTranscriptToEnd(behavior)
-    const el = scrollRef.current
-    if (el) lastScrollTopRef.current = el.scrollTop
-    setShowScrollBtn(false)
-    requestAnimationFrame(() => {
-      suppressScrollHandlerRef.current = false
-    })
-  }
-
-  useLayoutEffect(() => {
-    if (showSystemStudio || loadingMessages) return
-    followTranscriptBottom('instant')
-  }, [messages, isStreaming, showSystemStudio, loadingMessages])
-
-  useEffect(() => {
-    autoScrollRef.current = true
-    setShowScrollBtn(false)
-    requestAnimationFrame(() => followTranscriptBottom('instant'))
-  }, [activeChatId])
-
-  // ── Textarea auto-resize ──────────────────────────────────────────────────
-
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px'
-  }, [input])
+  const scroll = useTranscriptScroll({
+    messages,
+    showSystemStudio,
+    loadingMessages,
+    activeChatId,
+  })
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -860,10 +431,8 @@ export default function ChatPage() {
       statusText: 'Sending…',
     }
 
-    autoScrollRef.current = true
-    suppressScrollHandlerRef.current = true
+    scroll.pinForOutgoing()
     setMessages(prev => [...prev, userMsg, thinkingMsg])
-    setShowScrollBtn(false)
     reqToMsgId.current.set(reqId, assistantMsgId)
 
     upsertChatTask({
@@ -898,7 +467,7 @@ export default function ChatPage() {
       ...(entry?.maxWaitSecs != null && { max_wait_secs: entry.maxWaitSecs }),
       ...(entry?.runtimeSecs != null && { runtime_secs: entry.runtimeSecs }),
     })
-  }, [selectedModel, ws, activeChatId, upsertChatTask, chatTimeoutMap])
+  }, [selectedModel, ws, activeChatId, upsertChatTask, chatTimeoutMap, scroll])
 
   const send = useCallback(() => {
     const text = input.trim()
@@ -924,17 +493,6 @@ export default function ChatPage() {
     setMessages((prev: Message[]) => prev.filter((_: Message, i: number) => i !== lastFailedIdx))
     sendWithText(lastUserContent)
   }, [messages, sendWithText])
-
-  function scrollToBottom() {
-    scrollMessagesToBottom('smooth')
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      send()
-    }
-  }
 
   const canSend =
     !!input.trim() &&
@@ -979,129 +537,29 @@ export default function ChatPage() {
       className="flex min-h-0 flex-1 overflow-hidden bg-background"
       data-testid="chat-page"
     >
-      {/* ── Sidebar: fixed header + independently scrollable chat list ── */}
-      <aside
-        className={cn(
-          'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar',
-          'transition-[width] duration-200',
-          sidebarOpen ? 'w-64' : 'w-0',
-        )}
-        data-testid="chat-sidebar"
-      >
-        <div className="flex items-center justify-between px-3 h-11 border-b border-border shrink-0">
-          <span className="text-sm font-semibold text-sidebar-foreground">Chats</span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={handleNewChat}
-            title="New chat"
-            data-testid="new-chat-btn"
-          >
-            <Pencil />
-          </Button>
-        </div>
-
-        <div
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 px-1"
-          data-testid="chat-sidebar-list"
-        >
-          {loadingChats ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="size-4 animate-spin text-muted-foreground" />
-            </div>
-          ) : chats.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4 px-3">
-              No chats yet
-            </p>
-          ) : (
-            chats.map(chat => {
-              const inProgress = inProgressByChatId.has(chat.id)
-              return (
-                <div
-                  key={chat.id}
-                  className={cn(
-                    'group/chat-item flex items-center rounded-lg transition-colors',
-                    chat.id === activeChatId
-                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                      : 'hover:bg-sidebar-accent/50 text-sidebar-foreground',
-                  )}
-                  data-in-progress={inProgress || undefined}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setActiveChatId(chat.id)}
-                    data-testid={`chat-item-${chat.id}`}
-                    aria-busy={inProgress}
-                    className="flex flex-1 items-center gap-2 min-w-0 px-3 py-2 text-left"
-                  >
-                    {inProgress ? (
-                      <Loader2
-                        className="size-3.5 shrink-0 animate-spin text-muted-foreground"
-                        aria-hidden
-                        data-testid={`chat-item-${chat.id}-loader`}
-                      />
-                    ) : null}
-                    <span className="truncate text-sm leading-tight min-w-0 flex-1">
-                      {chat.title || 'New chat'}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => handleDeleteChat(e, chat.id)}
-                    title="Delete chat"
-                    aria-label={`Delete chat ${chat.title || 'New chat'}`}
-                    data-testid={`delete-chat-${chat.id}`}
-                    className={cn(
-                      'shrink-0 mr-1 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-all',
-                      chat.id === activeChatId
-                        ? 'opacity-100 text-muted-foreground'
-                        : 'opacity-0 group-hover/chat-item:opacity-100',
-                    )}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-              )
-            })
-          )}
-        </div>
-      </aside>
+      <ChatSidebar
+        open={sidebarOpen}
+        chats={chats}
+        activeChatId={activeChatId}
+        loading={loadingChats}
+        runningChatIds={runningChatIds}
+        onSelectChat={setActiveChatId}
+        onNewChat={handleNewChat}
+        onDeleteChat={handleDeleteChat}
+      />
 
       {/* ── Main: header + scrollable transcript + fixed input ── */}
       <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden">
-        {/* topbar */}
-        <header className="flex items-center gap-2 px-3 h-11 border-b border-border shrink-0">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setSidebarOpen(v => !v)}
-            title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
-          >
-            {sidebarOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
-          </Button>
-          <span className="text-sm font-medium text-muted-foreground truncate">
-            {activeChat?.title || (activeChatId ? 'New chat' : 'Select a chat')}
-          </span>
-          <span className="flex-1" />
-          {activeChatId && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setTimeoutDrawerOpen((v: boolean) => !v)}
-                title="Timing settings"
-                data-testid="timeout-settings-btn"
-              >
-                <Clock />
-              </Button>
-              <ToolDebugHeaderButton
-                onClick={() => setDebugOpen(true)}
-                active={toolDebugReady(debugTask?.cap, debugTask?.id)}
-              />
-            </>
-          )}
-          <WsStatusDot status={ws.status} />
-        </header>
+        <ChatHeader
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen(v => !v)}
+          title={activeChat?.title || (activeChatId ? 'New chat' : 'Select a chat')}
+          hasActiveChat={!!activeChatId}
+          onOpenTimeout={() => setTimeoutDrawerOpen(v => !v)}
+          onOpenDebug={() => setDebugOpen(true)}
+          debugActive={toolDebugReady(debugTask?.cap, debugTask?.id)}
+          wsStatus={ws.status}
+        />
 
         <ToolDebugModal
           open={debugOpen}
@@ -1121,201 +579,44 @@ export default function ChatPage() {
           onChange={updateChatTimeout}
         />
 
-        {/* messages — only this region scrolls */}
-        <div
-          ref={scrollRef}
-          onScroll={handleScroll}
-          onWheel={e => {
-            if (e.deltaY < 0) autoScrollRef.current = false
-          }}
-          className="relative min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
-          data-testid="messages-area"
-        >
-          {!token ? null : showSystemStudio ? (
-            <div className="flex flex-col items-center px-4 py-8">
-              <SystemPromptStudio
-                token={token}
-                value={systemPrompt}
-                onChange={setSystemPrompt}
-                onApply={applySystemPrompt}
-                compact={!!activeChatId}
-              />
-              {activeChatId && (
-                <p className="mt-6 max-w-md text-center text-xs text-muted-foreground">
-                  Send your first message below — the model will follow this system prompt.
-                </p>
-              )}
-              {!activeChatId && (
-                <Button variant="outline" size="sm" className="mt-4" onClick={() => void handleNewChat()}>
-                  <Pencil className="mr-1.5 size-3.5" />
-                  New chat with this prompt
-                </Button>
-              )}
-              <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />
-            </div>
-          ) : loadingMessages ? (
-            <div className="flex min-h-[50vh] items-center justify-center">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
-              <SystemPromptBlock content={systemPrompt} />
-              {messages.map((msg: Message, idx: number) => (
-                <motion.div
-                  key={msg.id}
-                  className={cn('flex flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}
-                  data-testid={`message-${msg.id}`}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  {isMessagePending(msg) ? (
-                    <ThinkingBubble statusText={msg.statusText} content={msg.content} />
-                  ) : (
-                    <div
-                      className={cn(
-                        'max-w-[80%] rounded-2xl px-4 py-2.5',
-                        msg.role === 'user'
-                          ? 'bg-primary text-primary-foreground rounded-br-sm'
-                          : msg.status === 'failed'
-                            ? 'bg-destructive/10 text-destructive rounded-bl-sm'
-                            : 'bg-muted text-foreground rounded-bl-sm',
-                      )}
-                    >
-                      <MarkdownContent
-                        tone={msg.role === 'user' ? 'inverted' : 'default'}
-                        className={msg.status === 'failed' ? 'text-destructive' : undefined}
-                      >
-                        {msg.content}
-                      </MarkdownContent>
-                    </div>
-                  )}
-                  {idx === messages.length - 1 && canRetry && (
-                    <button
-                      type="button"
-                      onClick={retry}
-                      data-testid="retry-btn"
-                      className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <RefreshCw className="size-3" />
-                      Retry
-                    </button>
-                  )}
-                </motion.div>
-              ))}
-              <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />
-            </div>
-          )}
+        <ChatTranscript
+          scrollRef={scroll.scrollRef}
+          messagesEndRef={scroll.messagesEndRef}
+          onScroll={scroll.handleScroll}
+          onWheel={scroll.handleWheel}
+          showScrollBtn={scroll.showScrollBtn}
+          onScrollToBottom={() => scroll.scrollToBottom('smooth')}
+          token={token}
+          showSystemStudio={showSystemStudio}
+          loadingMessages={loadingMessages}
+          hasActiveChat={!!activeChatId}
+          systemPrompt={systemPrompt}
+          onSystemPromptChange={setSystemPrompt}
+          onApplySystemPrompt={applySystemPrompt}
+          onNewChat={handleNewChat}
+          messages={messages}
+          canRetry={canRetry}
+          onRetry={retry}
+        />
 
-          {showScrollBtn && (
-            <div className="sticky bottom-4 flex justify-center pointer-events-none">
-              <Button
-                size="icon-sm"
-                variant="outline"
-                onClick={scrollToBottom}
-                title="Scroll to bottom"
-                className="pointer-events-auto shadow-md"
-              >
-                <ArrowUp className="rotate-180" />
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* ── Input — pinned below transcript ── */}
-        <div className="shrink-0 border-t border-border bg-background px-4 pb-4 pt-2">
-          <div className="max-w-2xl mx-auto">
-            <div
-              className="group/input-group rounded-2xl border border-input bg-background shadow-sm transition-[border-color,box-shadow] duration-150 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"
-              data-testid="chat-input-box"
-            >
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  !activeChatId ? 'Select or create a chat first' :
-                  ws.status === 'connected' ? 'Message…' : 'Connecting…'
-                }
-                disabled={ws.status !== 'connected' || !activeChatId}
-                rows={1}
-                data-testid="chat-input"
-                className="block w-full resize-none bg-transparent px-3 pt-3 pb-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50"
-                style={{ minHeight: '44px', maxHeight: '200px' }}
-              />
-
-              <div className="flex items-center gap-2 px-2 pb-2">
-                <Button
-                  variant="outline"
-                  size="icon-xs"
-                  title="Attach"
-                  className="rounded-full shrink-0"
-                  disabled
-                >
-                  <Plus />
-                </Button>
-
-                <ModelPicker
-                  capabilities={ws.capabilities}
-                  selected={selectedModel}
-                  onSelect={handleModelSelect}
-                  onRefresh={ws.refreshCapabilities}
-                  wsStatus={ws.status}
-                  capabilitiesStatus={ws.capabilitiesStatus}
-                  capabilitiesError={ws.capabilitiesError}
-                />
-
-                <span className="flex-1" />
-
-                {isGenerating ? (
-                  <motion.button
-                    type="button"
-                    onClick={() => void handleCancel()}
-                    disabled={!canCancelTask}
-                    aria-label="Cancel"
-                    data-testid="chat-cancel-btn"
-                    title={canCancelTask ? 'Cancel response' : 'Waiting for task id…'}
-                    whileTap={canCancelTask ? { scale: 0.85 } : undefined}
-                    className={cn(
-                      'size-7 rounded-full flex items-center justify-center shrink-0 transition-colors',
-                      canCancelTask
-                        ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                        : 'bg-muted text-muted-foreground cursor-not-allowed',
-                    )}
-                  >
-                    <Square className="size-3.5 fill-current" />
-                  </motion.button>
-                ) : (
-                  <motion.button
-                    onClick={send}
-                    disabled={!canSend}
-                    aria-label="Send"
-                    data-testid="send-btn"
-                    whileTap={canSend ? { scale: 0.85 } : undefined}
-                    className={cn(
-                      'size-7 rounded-full flex items-center justify-center shrink-0 transition-colors',
-                      canSend
-                        ? 'bg-foreground text-background hover:bg-foreground/80'
-                        : 'bg-muted text-muted-foreground cursor-not-allowed',
-                    )}
-                  >
-                    <ArrowUp className="size-4" />
-                  </motion.button>
-                )}
-              </div>
-            </div>
-
-            <p className="text-center text-xs text-muted-foreground mt-2 select-none">
-              Shift+Enter for new line · Enter to send
-            </p>
-          </div>
-        </div>
+        <ChatComposer
+          value={input}
+          onChange={setInput}
+          onSend={send}
+          wsStatus={ws.status}
+          hasActiveChat={!!activeChatId}
+          capabilities={ws.capabilities}
+          selectedModel={selectedModel}
+          onModelSelect={handleModelSelect}
+          onRefreshCapabilities={ws.refreshCapabilities}
+          capabilitiesStatus={ws.capabilitiesStatus}
+          capabilitiesError={ws.capabilitiesError}
+          isGenerating={isGenerating}
+          canSend={canSend}
+          canCancelTask={canCancelTask}
+          onCancel={() => void handleCancel()}
+        />
       </div>
     </div>
   )
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1)
 }
