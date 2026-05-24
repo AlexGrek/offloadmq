@@ -59,6 +59,17 @@ pub enum ServerEvent {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientCommand {
     ListCapabilities { req_id: String },
-    Chat { req_id: String, capability: String, chat_id: String, content: String },
+    Chat {
+        req_id: String,
+        capability: String,
+        chat_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout_secs: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_wait_secs: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        runtime_secs: Option<u32>,
+    },
     Ping,
 }

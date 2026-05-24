@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowUp,
   ChevronDown,
+  Clock,
   Loader2,
   Square,
   PanelLeftClose,
@@ -47,10 +48,17 @@ import {
 import { MarkdownContent } from '../components/MarkdownContent'
 import { SystemPromptBlock } from '../components/chat/SystemPromptBlock'
 import { SystemPromptStudio, DEFAULT_PROMPT } from '../components/chat/SystemPromptStudio'
+import {
+  ChatTimeoutDrawer,
+  type ChatTimeoutSettings,
+  DEFAULT_TIMEOUT_SETTINGS,
+} from '../components/chat/ChatTimeoutDrawer'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type MessageStatus = 'complete' | 'thinking' | 'failed'
+
+type ChatTimeoutEntry = ChatTimeoutSettings & { timeoutUserSet: boolean }
 
 type Message = {
   id: string
@@ -293,11 +301,9 @@ function ModelPicker({
               <button
                 key={cap.raw}
                 type="button"
-                disabled={!cap.online}
-                onClick={() => { if (cap.online) { onSelect(cap.base); setOpen(false) } }}
+                onClick={() => { onSelect(cap.base); setOpen(false) }}
                 className={cn(
-                  'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors',
-                  cap.online ? 'hover:bg-muted cursor-pointer' : 'cursor-default opacity-80',
+                  'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer',
                   cap.base === selected && 'bg-muted font-medium',
                 )}
                 data-testid={`model-option-${cap.base}`}
@@ -396,10 +402,31 @@ export default function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT)
   const [debugOpen, setDebugOpen] = useState(false)
+  const [timeoutDrawerOpen, setTimeoutDrawerOpen] = useState(false)
+  const [chatTimeoutMap, setChatTimeoutMap] = useState<Map<string, ChatTimeoutEntry>>(new Map())
 
   useEffect(() => {
     setDebugOpen(false)
+    setTimeoutDrawerOpen(false)
   }, [activeChatId])
+
+  function updateChatTimeout(key: keyof ChatTimeoutSettings, value: number | null) {
+    if (!activeChatId) return
+    setChatTimeoutMap((prev: Map<string, ChatTimeoutEntry>) => {
+      const next = new Map(prev)
+      const cur: ChatTimeoutEntry = next.get(activeChatId) ?? { ...DEFAULT_TIMEOUT_SETTINGS, timeoutUserSet: false }
+      const updated: ChatTimeoutEntry = { ...cur, [key]: value }
+      if (key === 'timeoutSecs') {
+        updated.timeoutUserSet = value !== null
+      } else if (!cur.timeoutUserSet) {
+        const wait = key === 'maxWaitSecs' ? value : cur.maxWaitSecs
+        const runtime = key === 'runtimeSecs' ? value : cur.runtimeSecs
+        if (wait !== null && runtime !== null) updated.timeoutSecs = wait + runtime
+      }
+      next.set(activeChatId, updated)
+      return next
+    })
+  }
 
   // reqId → assistant message id in the current messages list
   const reqToMsgId = useRef<Map<string, string>>(new Map())
@@ -816,8 +843,7 @@ export default function ChatPage() {
     }
   }
 
-  const send = useCallback(async () => {
-    const text = input.trim()
+  const sendWithText = useCallback((text: string) => {
     if (!text || !selectedModel || ws.status !== 'connected' || !activeChatId) return
     if (!modelListed(selectedModel, ws.capabilities)) return
 
@@ -837,7 +863,6 @@ export default function ChatPage() {
     autoScrollRef.current = true
     suppressScrollHandlerRef.current = true
     setMessages(prev => [...prev, userMsg, thinkingMsg])
-    setInput('')
     setShowScrollBtn(false)
     reqToMsgId.current.set(reqId, assistantMsgId)
 
@@ -850,7 +875,6 @@ export default function ChatPage() {
       statusText: 'Sending…',
     })
 
-    // Update sidebar title optimistically after first message
     setChats(prev =>
       prev.map(c =>
         c.id === activeChatId
@@ -863,8 +887,43 @@ export default function ChatPage() {
       ),
     )
 
-    ws.send({ type: 'chat', req_id: reqId, capability: selectedModel, chat_id: activeChatId, content: text })
-  }, [input, selectedModel, ws, activeChatId, upsertChatTask])
+    const entry = chatTimeoutMap.get(activeChatId)
+    ws.send({
+      type: 'chat',
+      req_id: reqId,
+      capability: selectedModel,
+      chat_id: activeChatId,
+      content: text,
+      ...(entry?.timeoutSecs != null && { timeout_secs: entry.timeoutSecs }),
+      ...(entry?.maxWaitSecs != null && { max_wait_secs: entry.maxWaitSecs }),
+      ...(entry?.runtimeSecs != null && { runtime_secs: entry.runtimeSecs }),
+    })
+  }, [selectedModel, ws, activeChatId, upsertChatTask, chatTimeoutMap])
+
+  const send = useCallback(() => {
+    const text = input.trim()
+    if (!text) return
+    setInput('')
+    sendWithText(text)
+  }, [input, sendWithText])
+
+  const retry = useCallback(() => {
+    let lastFailedIdx = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant' && messages[i].status === 'failed') {
+        lastFailedIdx = i
+        break
+      }
+    }
+    if (lastFailedIdx < 0) return
+    let lastUserContent: string | undefined
+    for (let i = lastFailedIdx - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') { lastUserContent = messages[i].content; break }
+    }
+    if (!lastUserContent) return
+    setMessages((prev: Message[]) => prev.filter((_: Message, i: number) => i !== lastFailedIdx))
+    sendWithText(lastUserContent)
+  }, [messages, sendWithText])
 
   function scrollToBottom() {
     scrollMessagesToBottom('smooth')
@@ -877,12 +936,9 @@ export default function ChatPage() {
     }
   }
 
-  const selectedModelOnline =
-    !!selectedModel &&
-    (ws.capabilities.find(c => c.base === selectedModel)?.online ?? false)
   const canSend =
     !!input.trim() &&
-    selectedModelOnline &&
+    modelListed(selectedModel, ws.capabilities) &&
     ws.status === 'connected' &&
     ws.capabilitiesStatus === 'ready' &&
     !!activeChatId
@@ -890,8 +946,17 @@ export default function ChatPage() {
   const activeChatTask = latestChatTaskForChat(activeChatId)
   const isGenerating =
     (activeChatTask != null && !activeChatTask.terminal) ||
-    messages.some(m => isMessagePending(m))
+    messages.some((m: Message) => isMessagePending(m))
   const canCancelTask = !!(activeChatTask?.cap && activeChatTask?.id)
+
+  const lastMsg = messages.at(-1)
+  const canRetry =
+    !isGenerating &&
+    lastMsg?.role === 'assistant' &&
+    lastMsg?.status === 'failed' &&
+    modelListed(selectedModel, ws.capabilities) &&
+    ws.status === 'connected' &&
+    !!activeChatId
 
   const handleCancel = useCallback(async () => {
     if (!token || !activeChatTask?.cap || !activeChatTask.id) return
@@ -1019,10 +1084,21 @@ export default function ChatPage() {
           </span>
           <span className="flex-1" />
           {activeChatId && (
-            <ToolDebugHeaderButton
-              onClick={() => setDebugOpen(true)}
-              active={toolDebugReady(debugTask?.cap, debugTask?.id)}
-            />
+            <>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setTimeoutDrawerOpen((v: boolean) => !v)}
+                title="Timing settings"
+                data-testid="timeout-settings-btn"
+              >
+                <Clock />
+              </Button>
+              <ToolDebugHeaderButton
+                onClick={() => setDebugOpen(true)}
+                active={toolDebugReady(debugTask?.cap, debugTask?.id)}
+              />
+            </>
           )}
           <WsStatusDot status={ws.status} />
         </header>
@@ -1036,6 +1112,13 @@ export default function ChatPage() {
           disabledReason={
             debugTask ? undefined : 'Send a message to capture OffloadMQ task ids.'
           }
+        />
+
+        <ChatTimeoutDrawer
+          open={timeoutDrawerOpen}
+          onClose={() => setTimeoutDrawerOpen(false)}
+          settings={chatTimeoutMap.get(activeChatId ?? '') ?? DEFAULT_TIMEOUT_SETTINGS}
+          onChange={updateChatTimeout}
         />
 
         {/* messages — only this region scrolls */}
@@ -1077,10 +1160,10 @@ export default function ChatPage() {
           ) : (
             <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
               <SystemPromptBlock content={systemPrompt} />
-              {messages.map(msg => (
+              {messages.map((msg: Message, idx: number) => (
                 <motion.div
                   key={msg.id}
-                  className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
+                  className={cn('flex flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}
                   data-testid={`message-${msg.id}`}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -1106,6 +1189,17 @@ export default function ChatPage() {
                         {msg.content}
                       </MarkdownContent>
                     </div>
+                  )}
+                  {idx === messages.length - 1 && canRetry && (
+                    <button
+                      type="button"
+                      onClick={retry}
+                      data-testid="retry-btn"
+                      className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <RefreshCw className="size-3" />
+                      Retry
+                    </button>
                   )}
                 </motion.div>
               ))}

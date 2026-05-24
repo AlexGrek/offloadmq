@@ -110,9 +110,12 @@ impl OffloadClient {
         &self,
         capability: &str,
         messages: Vec<ChatMessage>,
+        timeout_secs: Option<u32>,
+        max_wait_secs: Option<u32>,
+        runtime_secs: Option<u32>,
     ) -> Result<TaskId, AppError> {
         let url = format!("{}/api/task/submit", self.base_url);
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "apiKey": self.api_key,
             "capability": capability,
             "urgent": false,
@@ -125,6 +128,15 @@ impl OffloadClient {
             "file_bucket": [],
             "artifacts": []
         });
+        if let Some(v) = timeout_secs {
+            body["timeoutSecs"] = serde_json::Value::Number(v.into());
+        }
+        if let Some(v) = max_wait_secs {
+            body["maxWaitSecs"] = serde_json::Value::Number(v.into());
+        }
+        if let Some(v) = runtime_secs {
+            body["runtimeSecs"] = serde_json::Value::Number(v.into());
+        }
         let resp = self
             .http
             .post(&url)

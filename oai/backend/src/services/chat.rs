@@ -57,11 +57,14 @@ pub async fn chat(
     capability: String,
     chat_id_str: String,
     content: String,
+    timeout_secs: Option<u32>,
+    max_wait_secs: Option<u32>,
+    runtime_secs: Option<u32>,
     tx: &UnboundedSender<ServerEvent>,
     state: &Arc<AppState>,
     user_id: i64,
 ) {
-    if let Err(message) = run_chat(&req_id, capability, chat_id_str, content, tx, state, user_id).await
+    if let Err(message) = run_chat(&req_id, capability, chat_id_str, content, timeout_secs, max_wait_secs, runtime_secs, tx, state, user_id).await
     {
         send_error(tx, &req_id, &message);
     }
@@ -74,6 +77,9 @@ async fn run_chat(
     capability: String,
     chat_id_str: String,
     content: String,
+    timeout_secs: Option<u32>,
+    max_wait_secs: Option<u32>,
+    runtime_secs: Option<u32>,
     tx: &UnboundedSender<ServerEvent>,
     state: &Arc<AppState>,
     user_id: i64,
@@ -120,7 +126,7 @@ async fn run_chat(
     );
 
     let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
-    let task_id = client.submit_chat(&capability, messages).await.map_err(|e| e.to_string())?;
+    let task_id = client.submit_chat(&capability, messages, timeout_secs, max_wait_secs, runtime_secs).await.map_err(|e| e.to_string())?;
 
     // Persist the assistant reply as `pending` up front, carrying the offload
     // task id. This is the authoritative record: the live poll loop below
@@ -219,6 +225,7 @@ async fn poll_loop(
         }
     }
 
+    let _ = client.cancel_task(&task_id).await;
     finish_failure(&state, &tx, &ctx, "Task timed out waiting for result".to_string(), None).await;
 }
 
@@ -333,6 +340,7 @@ async fn reconcile_pending_message(
             let _ = client.cancel_task(&task_id).await;
         }
         _ if aged_out => {
+            let _ = client.cancel_task(&task_id).await;
             db_chats::finalize_message(
                 &state.db,
                 msg.id,
