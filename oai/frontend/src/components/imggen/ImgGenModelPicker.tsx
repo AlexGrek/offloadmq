@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, RefreshCw } from 'lucide-react'
+import { AlertCircle, ChevronDown, Loader2, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import type { CapabilitiesStatus } from '../../lib/capabilitiesStatus'
 import {
   sortCapabilitiesForPicker,
   unavailableModelDotOpacity,
@@ -44,6 +45,8 @@ interface ImgGenModelPickerProps {
   selected: string
   onSelect: (base: string) => void
   onRefresh: () => void
+  capabilitiesStatus: CapabilitiesStatus
+  capabilitiesError: string | null
 }
 
 export function ImgGenModelPicker({
@@ -51,6 +54,8 @@ export function ImgGenModelPicker({
   selected,
   onSelect,
   onRefresh,
+  capabilitiesStatus,
+  capabilitiesError,
 }: ImgGenModelPickerProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -69,31 +74,57 @@ export function ImgGenModelPicker({
   ) as unknown as ImgGenCapability[]
 
   const selectedCap = sorted.find(c => c.base === selected)
+  const modelsLoading = capabilitiesStatus === 'loading'
+  const modelsError = capabilitiesStatus === 'error'
   const label =
+    modelsLoading ? 'Loading models…' :
+    modelsError ? (capabilitiesError ?? 'Failed to load models') :
     sorted.length === 0 ? 'No models' :
     selectedCap         ? capLabel(selectedCap) :
                           'Pick model'
 
-  const canOpen = sorted.length > 0
+  const canOpen = capabilitiesStatus === 'ready' && sorted.length > 0
+  const triggerDisabled =
+    modelsLoading || (capabilitiesStatus === 'ready' && sorted.length === 0)
 
   return (
     <div className="relative" ref={ref} data-testid="imggen-model-picker">
       <button
         type="button"
-        onClick={() => canOpen && setOpen(v => !v)}
-        disabled={!canOpen}
+        onClick={() => {
+          if (modelsError) {
+            onRefresh()
+            return
+          }
+          if (canOpen) setOpen(v => !v)
+        }}
+        disabled={triggerDisabled}
         data-testid="imggen-model-picker-trigger"
+        title={modelsError ? capabilitiesError ?? undefined : undefined}
         className={cn(
           'flex h-9 w-full items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm transition-colors',
-          canOpen
-            ? 'text-foreground hover:bg-muted/50 cursor-pointer'
-            : 'text-muted-foreground cursor-default opacity-60',
+          modelsError
+            ? 'border-destructive/40 text-destructive hover:bg-destructive/10 cursor-pointer'
+            : canOpen
+              ? 'text-foreground hover:bg-muted/50 cursor-pointer'
+              : 'text-muted-foreground cursor-default opacity-60',
         )}
       >
-        {selectedCap && <AvailabilityDot cap={selectedCap} />}
+        {modelsLoading && (
+          <Loader2 className="size-3.5 shrink-0 animate-spin" data-testid="imggen-model-picker-loading" />
+        )}
+        {modelsError && (
+          <AlertCircle className="size-3.5 shrink-0" data-testid="imggen-model-picker-error" />
+        )}
+        {!modelsLoading && !modelsError && selectedCap && (
+          <AvailabilityDot cap={selectedCap} />
+        )}
         <span className="flex-1 truncate text-left">{label}</span>
         {canOpen && (
           <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        )}
+        {modelsError && (
+          <RefreshCw className="size-3.5 shrink-0 opacity-70" aria-hidden />
         )}
       </button>
 

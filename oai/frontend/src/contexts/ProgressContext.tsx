@@ -10,7 +10,7 @@ import {
 } from 'react'
 import { useAuth } from './AuthContext'
 import { useRunningImageJobs } from '../hooks/useRunningImageJobs'
-import { pollImageJob } from '../api/images'
+import { cancelImageJob, pollImageJob } from '../api/images'
 import type { RunningJobItem } from '../api/progress'
 
 const BACKGROUND_POLL_MS = 5000
@@ -46,6 +46,9 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       if (jobs.length === 0) return
       for (const job of jobs) {
         try {
+          if (job.status === 'cancelRequested') {
+            await cancelImageJob(token, job.job_id)
+          }
           await pollImageJob(token, job.job_id)
         } catch {
           // non-fatal

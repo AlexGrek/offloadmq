@@ -11,6 +11,7 @@ import {
   PanelLeftOpen,
   RefreshCw,
   Square,
+  Trash2,
   Pencil,
   Sparkles,
   Upload,
@@ -32,6 +33,7 @@ import {
   listImgGenCapabilities,
   listImageJobs,
   cancelImageJob,
+  deleteImageJob,
   pollImageJob,
   startImageJob,
   type ImgGenCapability,
@@ -66,6 +68,7 @@ import {
   type ImgGenMode,
   type RescaleState,
 } from '../lib/imggen'
+import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import type { ImagePipelineRescaleParams } from '../api/images'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
@@ -99,6 +102,8 @@ export default function ImageGenerationPage() {
   const [overrideNegative, setOverrideNegative] = useState(false)
   const [capability, setCapability] = useState('')
   const [allCapabilities, setAllCapabilities] = useState<ImgGenCapability[]>([])
+  const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('idle')
+  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
   const [width, setWidth] = useState(MODE_DEFAULTS.txt2img.width)
   const [height, setHeight] = useState(MODE_DEFAULTS.txt2img.height)
   const [seed, setSeed] = useState('')
@@ -120,6 +125,7 @@ export default function ImageGenerationPage() {
   const [timelineOpen, setTimelineOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [debugOpen, setDebugOpen] = useState(false)
+  const [deletingJob, setDeletingJob] = useState(false)
   const [jobsLoading, setJobsLoading] = useState(true)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [mediaRevision, setMediaRevision] = useState(0)
@@ -139,11 +145,12 @@ export default function ImageGenerationPage() {
   )
 
   const canSubmit = useMemo(() => {
+    if (capabilitiesStatus !== 'ready') return false
     if (!prompt.trim()) return false
     if (!capability) return false
     if (mode === 'img2img' && !uploadedInput) return false
     return true
-  }, [prompt, capability, mode, uploadedInput])
+  }, [prompt, capability, mode, uploadedInput, capabilitiesStatus])
 
   const patchRescale = useCallback((patch: Partial<RescaleState>) => {
     setRescale(prev => ({ ...prev, ...patch }))
@@ -157,8 +164,29 @@ export default function ImageGenerationPage() {
     }
   }, [width, height, rescale.mode, mode])
 
-  useEffect(() => {
+  const loadCapabilities = useCallback(async () => {
     if (!token) return
+    setCapabilitiesStatus('loading')
+    setCapabilitiesError(null)
+    try {
+      const caps = await listImgGenCapabilities(token)
+      setAllCapabilities(caps)
+      setCapabilitiesStatus('ready')
+    } catch (e) {
+      setCapabilitiesStatus('error')
+      setCapabilitiesError(
+        e instanceof Error ? e.message : 'Failed to load models',
+      )
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!token) {
+      setAllCapabilities([])
+      setCapabilitiesStatus('idle')
+      setCapabilitiesError(null)
+      return
+    }
     setJobsLoading(true)
     ;(async () => {
       try {
@@ -177,24 +205,13 @@ export default function ImageGenerationPage() {
       } finally {
         setJobsLoading(false)
       }
-      try {
-        const caps = await listImgGenCapabilities(token)
-        setAllCapabilities(caps)
-      } catch {
-        // non-fatal
-      }
+      await loadCapabilities()
     })()
-  }, [token])
+  }, [token, loadCapabilities])
 
-  const refreshCapabilities = useCallback(async () => {
-    if (!token) return
-    try {
-      const caps = await listImgGenCapabilities(token)
-      setAllCapabilities(caps)
-    } catch {
-      // non-fatal
-    }
-  }, [token])
+  const refreshCapabilities = useCallback(() => {
+    void loadCapabilities()
+  }, [loadCapabilities])
 
   const capabilityInitialized = useRef(false)
 
@@ -352,6 +369,36 @@ export default function ImageGenerationPage() {
     },
     [token, refreshJob],
   )
+
+  async function onDeleteJob(jobId: string) {
+    if (!token) return
+    setDeletingJob(true)
+    setError(null)
+    try {
+      await deleteImageJob(token, jobId)
+      setDebugOpen(false)
+      setJobs(prev => {
+        const next = prev.filter(j => j.job_id !== jobId)
+        if (activePanel === jobId) {
+          if (next.length > 0) {
+            setActivePanel(next[0].job_id)
+            void refreshJob(next[0].job_id)
+          } else {
+            selectNew()
+            setSelectedJob(null)
+            setActivePoll(null)
+          }
+        }
+        return next
+      })
+      setInfo('Pipeline removed.')
+      void refreshRunningImageJobs()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setDeletingJob(false)
+    }
+  }
 
   async function onCancelJob(jobId: string) {
     if (!token) return
@@ -577,6 +624,25 @@ export default function ImageGenerationPage() {
           <h1 className="min-w-0 flex-1 truncate font-display text-sm font-semibold">
             {viewingJob && selectedJob ? jobPromptTitle(selectedJob.prompt, 56) : 'New'}
           </h1>
+          {viewingJob && selectedJob && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => void onDeleteJob(selectedJob.job_id)}
+              disabled={deletingJob}
+              title="Delete pipeline"
+              aria-label="Delete pipeline"
+              data-testid="imggen-delete-job"
+              className="text-muted-foreground hover:text-destructive"
+            >
+              {deletingJob ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+            </Button>
+          )}
           <ToolDebugHeaderButton
             onClick={() => setDebugOpen(true)}
             disabled={!viewingJob || !selectedJob}
@@ -644,8 +710,10 @@ export default function ImageGenerationPage() {
                   selected={capability}
                   onSelect={setCapability}
                   onRefresh={refreshCapabilities}
+                  capabilitiesStatus={capabilitiesStatus}
+                  capabilitiesError={capabilitiesError}
                 />
-                {allCapabilities.length === 0 && (
+                {capabilitiesStatus === 'ready' && capabilities.length === 0 && (
                   <p className="text-xs text-muted-foreground">
                     No image models found. Start an imggen agent or check OffloadMQ connection in Settings.
                   </p>
@@ -1087,7 +1155,6 @@ export default function ImageGenerationPage() {
                     variant="destructive"
                     size="sm"
                     onClick={() => viewedJobId && void onCancelJob(viewedJobId)}
-                    disabled={!selectedJob.offload_task_id}
                     data-testid="imggen-cancel-job"
                   >
                     <Square className="mr-1 h-4 w-4 fill-current" />

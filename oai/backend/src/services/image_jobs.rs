@@ -195,11 +195,33 @@ pub async fn start_job(
     )
     .await?;
 
-    if let Some(id) = input_image_id {
-        image_generation::set_image_file_job(&state.db, id, user_id, job_id).await?;
+    // Only re-link freshly uploaded inputs (job_id == None).
+    // Generated outputs already have a job_id; re-linking them would move them
+    // out of their original job's file list and into this job's output gallery.
+    if let Some(input) = &input {
+        if input.job_id.is_none() {
+            image_generation::set_image_file_job(&state.db, input.id, user_id, job_id).await?;
+        }
     }
 
     Ok(job_id)
+}
+
+/// Removes a pipeline from history: deletes job-linked storage files, then the job row.
+pub async fn delete_job(state: &AppState, user_id: i64, job_id: i64) -> Result<(), AppError> {
+    image_generation::get_job(&state.db, job_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let files = image_generation::list_job_files(&state.db, job_id).await?;
+    for file in files {
+        let _ = purge_stored_image(state, &file).await;
+        image_generation::delete_image_file(&state.db, file.id, user_id).await?;
+    }
+
+    image_generation::delete_job(&state.db, job_id, user_id).await?;
+    recalc_user_storage(state, user_id).await?;
+    Ok(())
 }
 
 pub async fn cancel_job(state: &AppState, user_id: i64, job_id: i64) -> Result<CancelJobOutcome, AppError> {
@@ -212,16 +234,34 @@ pub async fn cancel_job(state: &AppState, user_id: i64, job_id: i64) -> Result<C
             job.status
         )));
     }
-    let task = image_generation::get_offload_task_by_job(&state.db, job.id)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("job has no offload task yet".into()))?;
-    let client = offload_factory::image_client(state).await?;
-    let resp = client
-        .cancel_task(&OffloadTaskId {
-            cap: task.offload_cap.clone(),
-            id: task.offload_task_id.clone(),
-        })
-        .await?;
+    let Some(task) = image_generation::get_offload_task_by_job(&state.db, job.id).await? else {
+        let message = "Canceled before OffloadMQ task was created";
+        image_generation::update_job_status(&state.db, job.id, "canceled", Some(message)).await?;
+        record_event(state, job.id, "job.cancel", "ok", Some(message)).await?;
+        return Ok(CancelJobOutcome {
+            job_id: job.id,
+            offload_cap: String::new(),
+            offload_task_id: String::new(),
+            status: "canceled".to_string(),
+            message: message.to_string(),
+        });
+    };
+    let resp = match send_offload_cancel(state, &task.offload_cap, &task.offload_task_id).await {
+        Ok(r) => r,
+        Err(e) => {
+            if let Some(reason) = offload_task_missing_message(&e) {
+                mark_poll_unreachable(state, job.id, &reason).await?;
+                return Ok(CancelJobOutcome {
+                    job_id: job.id,
+                    offload_cap: task.offload_cap,
+                    offload_task_id: task.offload_task_id,
+                    status: "failed".to_string(),
+                    message: reason,
+                });
+            }
+            return Err(e);
+        }
+    };
     image_generation::update_job_status(&state.db, job.id, &resp.status, None).await?;
     record_event(
         state,
@@ -270,7 +310,24 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
         });
     }
 
-    let poll = poll_and_persist(state, &task).await?;
+    let poll = match poll_and_persist(state, &task).await {
+        Ok(p) => p,
+        Err(e) => {
+            if let Some(reason) = offload_task_missing_message(&e) {
+                mark_poll_unreachable(state, job.id, &reason).await?;
+                let job = image_generation::get_job(&state.db, job.id, user_id)
+                    .await?
+                    .ok_or(AppError::NotFound)?;
+                return Ok(PolledJob {
+                    output_files: output_files(state, job.id).await?,
+                    status: job.status,
+                    stage: None,
+                    error: job.error,
+                });
+            }
+            return Err(e);
+        }
+    };
     record_event(state, job.id, "offload.poll", "ok", Some(&poll_summary(&poll))).await?;
     match poll.status.as_str() {
         "completed" => fetch_and_store_outputs(state, user_id, &job, poll.output).await?,
@@ -683,6 +740,78 @@ fn is_terminal(status: &str) -> bool {
     matches!(status, "completed" | "failed" | "canceled")
 }
 
+const OFFLOAD_TASK_MISSING: &str =
+    "OffloadMQ task not found (likely deleted or archived on the server)";
+
+/// OffloadMQ no longer has this task (404/410 or equivalent not-found response).
+fn offload_task_missing_message(err: &AppError) -> Option<String> {
+    let AppError::ExternalService(msg) = err else {
+        return None;
+    };
+    if let Some(rest) = msg.strip_prefix("POLL_HTTP_") {
+        if offload_http_is_task_missing(rest) {
+            return Some(offload_missing_detail(rest, OFFLOAD_TASK_MISSING));
+        }
+    }
+    if let Some(rest) = msg.strip_prefix("CANCEL_HTTP_") {
+        if offload_http_is_task_missing(rest) {
+            return Some(offload_missing_detail(rest, OFFLOAD_TASK_MISSING));
+        }
+    }
+    if offload_message_indicates_missing(msg) {
+        return Some(OFFLOAD_TASK_MISSING.to_string());
+    }
+    None
+}
+
+fn offload_http_is_task_missing(rest: &str) -> bool {
+    matches!(
+        rest.split_once(':').map(|(code, _)| code),
+        Some("404") | Some("410")
+    )
+}
+
+fn offload_missing_detail(rest: &str, fallback: &str) -> String {
+    let body = rest.split_once(':').map(|(_, b)| b).unwrap_or("");
+    if body.is_empty() {
+        return fallback.to_string();
+    }
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
+        if let Some(err) = v.get("error") {
+            let is_not_found = err.get("type").and_then(|t| t.as_str()) == Some("not_found");
+            if is_not_found {
+                if let Some(m) = err.get("message").and_then(|m| m.as_str()).filter(|s| !s.is_empty()) {
+                    return m.to_string();
+                }
+                return fallback.to_string();
+            }
+        }
+        if let Some(m) = v.get("message").and_then(|m| m.as_str()).filter(|s| !s.is_empty()) {
+            return m.to_string();
+        }
+    }
+    let trimmed = body.trim();
+    if trimmed.len() > 240 {
+        format!("{fallback} ({})", &trimmed[..240])
+    } else {
+        format!("{fallback} ({trimmed})")
+    }
+}
+
+fn offload_message_indicates_missing(msg: &str) -> bool {
+    let lower = msg.to_ascii_lowercase();
+    lower.contains("not found")
+        || lower.contains("not_found")
+        || (lower.contains("poll failed:") || lower.contains("cancel failed:"))
+            && (lower.contains("404") || lower.contains("not found") || lower.contains("not_found"))
+}
+
+async fn mark_poll_unreachable(state: &AppState, job_id: i64, reason: &str) -> Result<(), AppError> {
+    image_generation::update_job_status(&state.db, job_id, "failed", Some(reason)).await?;
+    record_event(state, job_id, "offload.poll", "error", Some(reason)).await?;
+    record_event(state, job_id, "job.finalize", "error", Some(reason)).await
+}
+
 fn poll_summary(poll: &OffloadPollResponse) -> String {
     format!("status={} stage={}", poll.status, poll.stage.clone().unwrap_or_default())
 }
@@ -728,14 +857,61 @@ async fn mark_failed(
     record_event(state, job_id, "job.finalize", "error", Some(err)).await
 }
 
+async fn send_offload_cancel(
+    state: &AppState,
+    cap: &str,
+    id: &str,
+) -> Result<crate::offload::CancelTaskResponse, AppError> {
+    let client = offload_factory::image_client(state).await?;
+    client
+        .cancel_task(&OffloadTaskId {
+            cap: cap.to_string(),
+            id: id.to_string(),
+        })
+        .await
+}
+
 async fn background_poll_once(
     state: &AppState,
     job: &image_generation::ImageGenerationJob,
 ) -> Result<(), AppError> {
-    let task = image_generation::get_offload_task_by_job(&state.db, job.id)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("job has no offload task".into()))?;
-    let poll = poll_and_persist(state, &task).await?;
+    let Some(task) = image_generation::get_offload_task_by_job(&state.db, job.id).await? else {
+        if !is_terminal(&job.status) {
+            mark_poll_unreachable(state, job.id, OFFLOAD_TASK_MISSING).await?;
+        }
+        return Ok(());
+    };
+    if job.status == "cancelRequested" {
+        match send_offload_cancel(state, &task.offload_cap, &task.offload_task_id).await {
+            Ok(_) => {
+                record_event(
+                    state,
+                    job.id,
+                    "worker.offload.cancel",
+                    "ok",
+                    Some("re-send cancel for in-flight job"),
+                )
+                .await?;
+            }
+            Err(e) => {
+                if let Some(reason) = offload_task_missing_message(&e) {
+                    mark_poll_unreachable(state, job.id, &reason).await?;
+                    return Ok(());
+                }
+                return Err(e);
+            }
+        }
+    }
+    let poll = match poll_and_persist(state, &task).await {
+        Ok(p) => p,
+        Err(e) => {
+            if let Some(reason) = offload_task_missing_message(&e) {
+                mark_poll_unreachable(state, job.id, &reason).await?;
+                return Ok(());
+            }
+            return Err(e);
+        }
+    };
     let _ = record_event(state, job.id, "worker.offload.poll", "ok", Some(&poll_summary(&poll))).await;
     match poll.status.as_str() {
         "completed" => fetch_and_store_outputs(state, job.user_id, job, poll.output).await?,

@@ -191,8 +191,9 @@ impl OffloadImageClient {
             .await
             .map_err(|e| AppError::ExternalService(e.to_string()))?;
         if !resp.status().is_success() {
+            let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::ExternalService(format!("poll failed: {text}")));
+            return Err(AppError::ExternalService(format!("POLL_HTTP_{status}:{text}")));
         }
         resp.json()
             .await

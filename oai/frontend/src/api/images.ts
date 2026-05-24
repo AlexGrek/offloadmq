@@ -173,6 +173,17 @@ export function getImageJob(token: string, jobId: string): Promise<ImageJobDetai
   return request(`/api/images/jobs/${jobId}`, token)
 }
 
+export async function deleteImageJob(token: string, jobId: string): Promise<void> {
+  const res = await fetch(`/api/images/jobs/${encodeURIComponent(jobId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
+  }
+}
+
 /** Bust browser cache for thumbnails after delete or storage changes. */
 export function withImageCacheRevision(url: string, revision?: number): string {
   if (!revision) return url

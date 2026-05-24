@@ -110,6 +110,23 @@ pub async fn list_jobs(
         .map_err(AppError::Database)
 }
 
+pub async fn delete_job(
+    db: &DatabaseConnection,
+    job_id: i64,
+    user_id: i64,
+) -> Result<(), AppError> {
+    let result = ImageGenerationJobEntity::delete_many()
+        .filter(image_generation_jobs::Column::Id.eq(job_id))
+        .filter(image_generation_jobs::Column::UserId.eq(user_id))
+        .exec(db)
+        .await
+        .map_err(AppError::Database)?;
+    if result.rows_affected == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
+}
+
 pub async fn update_job_status(
     db: &DatabaseConnection,
     job_id: i64,

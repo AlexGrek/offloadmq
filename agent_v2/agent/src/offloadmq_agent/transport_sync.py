@@ -88,7 +88,13 @@ class SyncAgentTransport:
             files={"file": (filename, content, content_type)},
             timeout=timeout,
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            body = resp.text[:500].strip()
+            raise requests.HTTPError(
+                f"Bucket upload failed (HTTP {resp.status_code}) bucket={bucket_uid} "
+                f"file={filename} size={len(content)}: {body}",
+                response=resp,
+            )
         data = resp.json()
         return str(data["file_uid"])
 

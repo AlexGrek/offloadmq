@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import type { ClientCommand, LlmCapabilityInfo, ServerEvent } from '../types/ws'
+
+export type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 
 export type WsStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 
 export interface WsChatHandle {
   status: WsStatus
   capabilities: LlmCapabilityInfo[]
+  capabilitiesStatus: CapabilitiesStatus
+  capabilitiesError: string | null
   send: (cmd: ClientCommand) => void
   subscribe: (handler: (event: ServerEvent) => void) => () => void
   refreshCapabilities: () => void
@@ -26,8 +31,11 @@ export function nextReqId(prefix = 'r'): string {
 export function useWsChat(token: string | null): WsChatHandle {
   const [status, setStatus] = useState<WsStatus>('disconnected')
   const [capabilities, setCapabilities] = useState<LlmCapabilityInfo[]>([])
+  const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('idle')
+  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
+  const pendingCapsReq = useRef<string | null>(null)
   const handlersRef = useRef(new Set<(event: ServerEvent) => void>())
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const retryDelay = useRef(1500)
@@ -47,9 +55,16 @@ export function useWsChat(token: string | null): WsChatHandle {
     return () => { handlersRef.current.delete(handler) }
   }, [])
 
-  const refreshCapabilities = useCallback(() => {
-    send({ type: 'list_capabilities', req_id: nextReqId('caps') })
+  const requestCapabilities = useCallback((reqId: string) => {
+    pendingCapsReq.current = reqId
+    setCapabilitiesStatus('loading')
+    setCapabilitiesError(null)
+    send({ type: 'list_capabilities', req_id: reqId })
   }, [send])
+
+  const refreshCapabilities = useCallback(() => {
+    requestCapabilities(nextReqId('caps'))
+  }, [requestCapabilities])
 
   useEffect(() => {
     if (!token) return
@@ -69,6 +84,9 @@ export function useWsChat(token: string | null): WsChatHandle {
         if (destroyed.current) { ws.close(); return }
         setStatus('connected')
         retryDelay.current = 1500
+        pendingCapsReq.current = 'init'
+        setCapabilitiesStatus('loading')
+        setCapabilitiesError(null)
         ws.send(JSON.stringify({ type: 'list_capabilities', req_id: 'init' }))
       }
 
@@ -78,7 +96,18 @@ export function useWsChat(token: string | null): WsChatHandle {
         catch { return }
 
         if (event.type === 'capabilities') {
+          pendingCapsReq.current = null
           setCapabilities(event.capabilities)
+          setCapabilitiesStatus('ready')
+          setCapabilitiesError(null)
+        } else if (
+          event.type === 'error' &&
+          event.req_id != null &&
+          event.req_id === pendingCapsReq.current
+        ) {
+          pendingCapsReq.current = null
+          setCapabilitiesStatus('error')
+          setCapabilitiesError(event.message)
         }
         handlersRef.current.forEach(h => h(event))
       }
@@ -102,8 +131,19 @@ export function useWsChat(token: string | null): WsChatHandle {
       wsRef.current?.close()
       setStatus('disconnected')
       setCapabilities([])
+      setCapabilitiesStatus('idle')
+      setCapabilitiesError(null)
+      pendingCapsReq.current = null
     }
   }, [token])
 
-  return { status, capabilities, send, subscribe, refreshCapabilities }
+  return {
+    status,
+    capabilities,
+    capabilitiesStatus,
+    capabilitiesError,
+    send,
+    subscribe,
+    refreshCapabilities,
+  }
 }

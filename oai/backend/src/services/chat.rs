@@ -191,6 +191,7 @@ async fn poll_loop(
                 return;
             }
             "cancelRequested" => {
+                let _ = client.cancel_task(&task_id).await;
                 let stream_log = progress_stream_text(&resp);
                 // Ignore send errors: if the WS is gone we keep polling so the
                 // reply is still persisted (the background worker is the backstop
@@ -327,6 +328,9 @@ async fn reconcile_pending_message(
         }
         "canceled" => {
             db_chats::finalize_message(&state.db, msg.id, "Task was canceled", "failed").await?;
+        }
+        "cancelRequested" => {
+            let _ = client.cancel_task(&task_id).await;
         }
         _ if aged_out => {
             db_chats::finalize_message(

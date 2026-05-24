@@ -20,6 +20,7 @@ import {
   type K8sPodLogs,
   type K8sPodStatus,
 } from '../api/admin'
+import { AnsiLogPre } from '@/components/AnsiLogPre'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -247,12 +248,7 @@ export default function DiagnosticsPage() {
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : logs?.content ? (
-              <pre
-                className="max-h-[min(60vh,32rem)] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-foreground sm:text-xs"
-                data-testid="diagnostics-log-content"
-              >
-                {logs.content}
-              </pre>
+              <AnsiLogPre content={logs.content} data-testid="diagnostics-log-content" />
             ) : (
               <p className="py-8 text-center text-sm text-muted-foreground">No log output.</p>
             )}

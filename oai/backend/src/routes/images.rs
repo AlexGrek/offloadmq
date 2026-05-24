@@ -167,6 +167,16 @@ pub struct CancelJobResponse {
     pub offload_task_id: String,
 }
 
+pub async fn delete_job(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(job_id_str): Path<String>,
+) -> Result<StatusCode, AppError> {
+    let job_id = parse_id(&job_id_str, "job_id")?;
+    image_jobs::delete_job(&state, user_id, job_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn cancel_job(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,

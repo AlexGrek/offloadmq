@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
+  AlertCircle,
   ArrowUp,
   ChevronDown,
   Loader2,
@@ -25,6 +26,7 @@ import {
 } from '../components/ToolDebugModal'
 import { cancelOffloadTask } from '../api/tasks'
 import { useWsChat, nextReqId } from '../hooks/useWsChat'
+import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import {
   firstSelectableModel,
   sortCapabilitiesForPicker,
@@ -183,12 +185,16 @@ function ModelPicker({
   onSelect,
   onRefresh,
   wsStatus,
+  capabilitiesStatus,
+  capabilitiesError,
 }: {
   capabilities: LlmCapabilityInfo[]
   selected: string | null
   onSelect: (base: string) => void
   onRefresh: () => void
   wsStatus: string
+  capabilitiesStatus: CapabilitiesStatus
+  capabilitiesError: string | null
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -204,32 +210,58 @@ function ModelPicker({
 
   const sorted = sortCapabilitiesForPicker(capabilities)
   const selectedCap = sorted.find(c => c.base === selected)
+  const modelsLoading = wsStatus === 'connected' && capabilitiesStatus === 'loading'
+  const modelsError = wsStatus === 'connected' && capabilitiesStatus === 'error'
   const label =
     wsStatus === 'connecting' ? 'Connecting…' :
     wsStatus !== 'connected'  ? 'Offline' :
+    modelsLoading ? 'Loading models…' :
+    modelsError ? (capabilitiesError ?? 'Failed to load models') :
     sorted.length === 0 ? 'No models' :
     selectedCap               ? modelLabel(selectedCap) :
                                 'Pick model'
 
-  const canOpen = wsStatus === 'connected' && sorted.length > 0
+  const canOpen = wsStatus === 'connected' && capabilitiesStatus === 'ready' && sorted.length > 0
+  const triggerDisabled =
+    wsStatus !== 'connected' || modelsLoading || (capabilitiesStatus === 'ready' && sorted.length === 0)
 
   return (
     <div className="relative" ref={ref} data-testid="model-picker">
       <button
         type="button"
-        onClick={() => canOpen && setOpen(v => !v)}
-        disabled={!canOpen}
+        onClick={() => {
+          if (modelsError) {
+            onRefresh()
+            return
+          }
+          if (canOpen) setOpen(v => !v)
+        }}
+        disabled={triggerDisabled}
         data-testid="model-picker-trigger"
+        title={modelsError ? capabilitiesError ?? undefined : undefined}
         className={cn(
-          'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
-          canOpen
-            ? 'text-foreground hover:bg-muted cursor-pointer'
-            : 'text-muted-foreground cursor-default',
+          'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors max-w-48',
+          modelsError
+            ? 'text-destructive hover:bg-destructive/10 cursor-pointer'
+            : canOpen || modelsError
+              ? 'text-foreground hover:bg-muted cursor-pointer'
+              : 'text-muted-foreground cursor-default',
         )}
       >
-        {selectedCap && <ModelAvailabilityDot cap={selectedCap} />}
-        <span className="max-w-30 truncate">{label}</span>
-        {canOpen && <ChevronDown className={cn('size-3 transition-transform', open && 'rotate-180')} />}
+        {modelsLoading && (
+          <Loader2 className="size-3 shrink-0 animate-spin" data-testid="model-picker-loading" />
+        )}
+        {modelsError && (
+          <AlertCircle className="size-3 shrink-0" data-testid="model-picker-error" />
+        )}
+        {!modelsLoading && !modelsError && selectedCap && (
+          <ModelAvailabilityDot cap={selectedCap} />
+        )}
+        <span className="truncate">{label}</span>
+        {canOpen && <ChevronDown className={cn('size-3 shrink-0 transition-transform', open && 'rotate-180')} />}
+        {modelsError && (
+          <RefreshCw className="size-3 shrink-0 opacity-70" aria-hidden />
+        )}
       </button>
 
       <AnimatePresence>
@@ -849,7 +881,11 @@ export default function ChatPage() {
     !!selectedModel &&
     (ws.capabilities.find(c => c.base === selectedModel)?.online ?? false)
   const canSend =
-    !!input.trim() && selectedModelOnline && ws.status === 'connected' && !!activeChatId
+    !!input.trim() &&
+    selectedModelOnline &&
+    ws.status === 'connected' &&
+    ws.capabilitiesStatus === 'ready' &&
+    !!activeChatId
 
   const activeChatTask = latestChatTaskForChat(activeChatId)
   const isGenerating =
@@ -1132,6 +1168,8 @@ export default function ChatPage() {
                   onSelect={handleModelSelect}
                   onRefresh={ws.refreshCapabilities}
                   wsStatus={ws.status}
+                  capabilitiesStatus={ws.capabilitiesStatus}
+                  capabilitiesError={ws.capabilitiesError}
                 />
 
                 <span className="flex-1" />

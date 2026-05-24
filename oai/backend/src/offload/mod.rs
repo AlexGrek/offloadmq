@@ -167,8 +167,9 @@ impl OffloadClient {
             .await
             .map_err(|e| AppError::ExternalService(e.to_string()))?;
         if !resp.status().is_success() {
+            let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::ExternalService(format!("poll failed: {text}")));
+            return Err(AppError::ExternalService(format!("POLL_HTTP_{status}:{text}")));
         }
         resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))
     }
@@ -194,9 +195,25 @@ pub(crate) async fn post_cancel(
         .send()
         .await
         .map_err(|e| AppError::ExternalService(e.to_string()))?;
-    if !resp.status().is_success() {
+    if resp.status().as_u16() == 409 {
         let text = resp.text().await.unwrap_or_default();
-        return Err(AppError::ExternalService(format!("cancel failed: {text}")));
+        return Ok(CancelTaskResponse {
+            id: CancelTaskId {
+                cap: cap.to_string(),
+                id: id.to_string(),
+            },
+            status: "cancelRequested".to_string(),
+            message: if text.is_empty() {
+                "Cancellation already requested".to_string()
+            } else {
+                text
+            },
+        });
+    }
+    if !resp.status().is_success() {
+        let status = resp.status().as_u16();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AppError::ExternalService(format!("CANCEL_HTTP_{status}:{text}")));
     }
     resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))
 }
