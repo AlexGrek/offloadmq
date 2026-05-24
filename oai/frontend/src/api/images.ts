@@ -165,6 +165,10 @@ export function cancelImageJob(token: string, jobId: string): Promise<CancelImag
   return request(`/api/images/jobs/${jobId}/cancel`, token, { method: 'POST' })
 }
 
+export function retryImageJob(token: string, jobId: string): Promise<StartImageJobResponse> {
+  return request(`/api/images/jobs/${jobId}/retry`, token, { method: 'POST' })
+}
+
 export function listImageJobs(token: string): Promise<ImageJobDetails[]> {
   return request('/api/images/jobs', token)
 }

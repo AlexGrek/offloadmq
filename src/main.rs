@@ -88,6 +88,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,
+                ))
+                .layer(DefaultBodyLimit::max(
+                    shared_state.config.storage.bucket_size_bytes as usize,
                 )),
         )
         .nest(

@@ -107,6 +107,39 @@ pub async fn upload_input_image(
     .await
 }
 
+/// Re-submit a failed or canceled job using its stored `pipeline_params`.
+pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i64, AppError> {
+    let job = image_generation::get_job(&state.db, job_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if !matches!(job.status.as_str(), "failed" | "canceled") {
+        return Err(AppError::BadRequest(format!(
+            "only failed or canceled jobs can be retried (status={})",
+            job.status
+        )));
+    }
+    let params = image_pipeline_params::parse_stored_pipeline_params(&job);
+    let start = start_params_from_pipeline(&params);
+    let new_id = start_job(state, user_id, start).await?;
+    record_event(
+        state,
+        job_id,
+        "job.retry",
+        "ok",
+        Some(&format!("new_job_id={new_id}")),
+    )
+    .await?;
+    record_event(
+        state,
+        new_id,
+        "job.retried_from",
+        "ok",
+        Some(&format!("source_job_id={job_id}")),
+    )
+    .await?;
+    Ok(new_id)
+}
+
 pub async fn start_job(
     state: &AppState,
     user_id: i64,
@@ -640,6 +673,22 @@ fn parse_input_image_id(req: &StartJobParams) -> Result<Option<i64>, AppError> {
         .as_deref()
         .map(|s| s.parse::<i64>().map_err(|_| AppError::BadRequest("invalid input_image_id".into())))
         .transpose()
+}
+
+fn start_params_from_pipeline(p: &ImagePipelineParams) -> StartJobParams {
+    StartJobParams {
+        capability: p.capability.clone(),
+        prompt: p.prompt.clone(),
+        negative_prompt: p.negative_prompt.clone(),
+        override_negative: p.override_negative,
+        width: p.width,
+        height: p.height,
+        seed: p.seed,
+        workflow: Some(p.workflow.clone()),
+        input_image_id: p.input_image_id.clone(),
+        data_preparation: p.data_preparation.clone(),
+        rescale: p.rescale.clone(),
+    }
 }
 
 fn build_pipeline_params(

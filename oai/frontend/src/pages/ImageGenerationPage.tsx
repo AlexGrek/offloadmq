@@ -10,6 +10,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
+  RotateCcw,
   Square,
   Trash2,
   Pencil,
@@ -35,6 +36,7 @@ import {
   cancelImageJob,
   deleteImageJob,
   pollImageJob,
+  retryImageJob,
   startImageJob,
   type ImgGenCapability,
   type ImageJobDetails,
@@ -114,6 +116,7 @@ export default function ImageGenerationPage() {
   const [inputPreviewUrl, setInputPreviewUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const [polling, setPolling] = useState(false)
   const [activePanel, setActivePanel] = useState<string>(IMGGEN_NEW_PANEL)
   const [activePoll, setActivePoll] = useState<PollImageJobResponse | null>(null)
@@ -400,6 +403,33 @@ export default function ImageGenerationPage() {
     }
   }
 
+  async function onRetryJob(jobId: string) {
+    if (!token) return
+    setRetrying(true)
+    setError(null)
+    try {
+      const res = await retryImageJob(token, jobId)
+      const list = await listImageJobs(token)
+      setJobs(list)
+      setActivePanel(res.job_id)
+      await refreshJob(res.job_id)
+      setActivePoll({
+        job_id: res.job_id,
+        status: res.status,
+        stage: null,
+        error: null,
+        output_images: [],
+      })
+      setInfo(`Retry submitted as job ${res.job_id}. Polling for results…`)
+      void refreshRunningImageJobs()
+      void runPoll(res.job_id)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   async function onCancelJob(jobId: string) {
     if (!token) return
     setError(null)
@@ -558,6 +588,10 @@ export default function ImageGenerationPage() {
       : undefined
   const isRunning =
     viewingJob && displayStatus != null && !TERMINAL.has(displayStatus)
+  const canRetryJob =
+    viewingJob &&
+    selectedJob != null &&
+    (selectedJob.status === 'failed' || selectedJob.status === 'canceled')
 
   const pipelineEvents = useMemo(
     () => (selectedJob ? pipelineEventsWithoutPolls(selectedJob.events) : []),
@@ -1140,6 +1174,22 @@ export default function ImageGenerationPage() {
                   <Pencil className="mr-1 h-4 w-4" />
                   Edit prompt
                 </Button>
+                {canRetryJob && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => viewedJobId && void onRetryJob(viewedJobId)}
+                    disabled={!viewedJobId || retrying}
+                    data-testid="imggen-retry-job"
+                  >
+                    {retrying ? (
+                      <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="mr-1 h-4 w-4" />
+                    )}
+                    Retry
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

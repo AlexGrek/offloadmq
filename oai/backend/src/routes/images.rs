@@ -193,6 +193,22 @@ pub async fn cancel_job(
     }))
 }
 
+pub async fn retry_job(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(job_id_str): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let job_id = parse_id(&job_id_str, "job_id")?;
+    let new_id = image_jobs::retry_job(&state, user_id, job_id).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(StartJobResponse {
+            job_id: new_id.to_string(),
+            status: "submitted".into(),
+        }),
+    ))
+}
+
 pub async fn get_job(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
