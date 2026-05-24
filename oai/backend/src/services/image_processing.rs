@@ -63,9 +63,16 @@ pub fn process_generated_image(
     content_type_hint: Option<String>,
     prompt: &str,
 ) -> Result<ProcessedImage, AppError> {
+    let trimmed = prompt.trim();
     let mut out = process_image(bytes, content_type_hint)?;
-    if !prompt.trim().is_empty() {
-        embed_prompt_exif(&mut out.bytes, prompt.trim())?;
+    if !trimmed.is_empty() {
+        embed_prompt_exif(&mut out.bytes, trimmed)?;
+        // Confirm little_exif wrote a readable ImageDescription tag (kamadak-exif reader).
+        if exif_image_description(&out.bytes).is_none() {
+            return Err(AppError::Internal(
+                "EXIF ImageDescription missing after embed".into(),
+            ));
+        }
         out.sha256 = sha256_hex(&out.bytes);
     }
     Ok(out)
