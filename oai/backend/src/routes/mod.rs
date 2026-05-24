@@ -3,6 +3,7 @@ pub mod auth;
 pub mod chats;
 pub mod system_prompts;
 pub mod debug;
+pub mod describe;
 pub mod progress;
 pub mod tasks;
 pub mod files;

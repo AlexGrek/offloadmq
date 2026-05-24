@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Bot, FolderOpen, ImagePlus } from 'lucide-react'
+import { Bot, Eye, FolderOpen, ImagePlus } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const apps = [
@@ -22,6 +22,16 @@ const apps = [
     gradient: 'from-emerald-500/20 to-cyan-500/20',
     iconBg: 'bg-emerald-500/20',
     iconColor: 'text-emerald-400',
+  },
+  {
+    id: 'describe',
+    icon: Eye,
+    title: 'Describe Image',
+    description: 'Analyze images with vision AI',
+    href: '/app/describe',
+    gradient: 'from-sky-500/20 to-cyan-500/20',
+    iconBg: 'bg-sky-500/20',
+    iconColor: 'text-sky-400',
   },
   {
     id: 'files',

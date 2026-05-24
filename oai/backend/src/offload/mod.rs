@@ -149,6 +149,50 @@ impl OffloadClient {
         Ok(TaskId { cap, id })
     }
 
+    pub async fn submit_vision_task(
+        &self,
+        capability: &str,
+        messages: Vec<serde_json::Value>,
+        bucket_uid: &str,
+    ) -> Result<TaskId, AppError> {
+        let url = format!("{}/api/task/submit", self.base_url);
+        let body = serde_json::json!({
+            "apiKey": self.api_key,
+            "capability": capability,
+            "urgent": false,
+            "restartable": false,
+            "payload": {
+                "stream": false,
+                "messages": messages
+            },
+            "fetchFiles": [],
+            "file_bucket": [bucket_uid],
+            "artifacts": []
+        });
+        let resp = self
+            .http
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(e.to_string()))?;
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("submit failed: {text}")));
+        }
+        let val: serde_json::Value =
+            resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))?;
+        let cap = val["id"]["cap"]
+            .as_str()
+            .ok_or_else(|| AppError::ExternalService("missing id.cap in submit response".into()))?
+            .to_string();
+        let id = val["id"]["id"]
+            .as_str()
+            .ok_or_else(|| AppError::ExternalService("missing id.id in submit response".into()))?
+            .to_string();
+        Ok(TaskId { cap, id })
+    }
+
     pub async fn poll_task(&self, task_id: &TaskId) -> Result<PollResponse, AppError> {
         let raw = self.poll_task_raw(task_id).await?;
         serde_json::from_value(raw).map_err(|e| AppError::ExternalService(e.to_string()))

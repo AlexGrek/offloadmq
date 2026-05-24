@@ -102,6 +102,16 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             post(routes::tasks::cancel_offload_task),
         )
         .route("/api/debug/offload_poll", post(routes::debug::offload_poll))
+        .route(
+            "/api/describe/capabilities",
+            get(routes::describe::list_capabilities),
+        )
+        .route(
+            "/api/describe/submit",
+            post(routes::describe::submit)
+                .layer(DefaultBodyLimit::max(image_processing::MAX_UPLOAD_BYTES)),
+        )
+        .route("/api/describe/poll", post(routes::describe::poll))
         .layer(from_fn_with_state(state.clone(), middleware::jwt_auth_middleware));
 
     let admin = Router::new()
