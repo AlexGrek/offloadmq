@@ -219,6 +219,7 @@ impl TaskStorage {
             }
             let mut assigned = task.into_assigned("(timeout)");
             assigned.change_status(TaskStatus::Failed);
+            assigned.stage = None;
             self.update_assigned(&assigned)?;
             count += 1;
             info!(
@@ -304,6 +305,7 @@ impl TaskStorage {
         let count = stuck.len();
         for mut task in stuck {
             task.change_status(TaskStatus::Failed);
+            task.stage = None;
             self.update_assigned(&task)?;
             info!(
                 "Task {} cancel-requested but never acknowledged, marked failed",
@@ -353,6 +355,7 @@ impl TaskStorage {
         for mut task in orphaned {
             let agent_id = task.agent_id.clone();
             task.change_status(TaskStatus::Failed);
+            task.stage = None;
             task.append_log(Some(format!(
                 "\n[server] Task failed: agent {} went offline and stopped reporting",
                 agent_id

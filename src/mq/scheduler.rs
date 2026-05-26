@@ -145,6 +145,7 @@ pub async fn report_non_urgent_task<'a>(
             TaskStatus::Failed
         });
     }
+    got.stage = None;
     got.result = report.output;
     store.update_assigned(&got)?;
 

@@ -159,6 +159,7 @@ impl UrgentTaskStore {
             ))?;
             let is_cancel_requested = task.status == TaskStatus::CancelRequested;
             task.result = Some(payload);
+            task.stage = None;
             if !is_cancel_requested {
                 task.change_status(if success {
                     TaskStatus::Completed
