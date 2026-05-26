@@ -60,16 +60,17 @@ export function useTranscriptScroll(opts: {
     if (e.deltaY < 0) autoScrollRef.current = false
   }, [])
 
-  /** Pin transcript to the bottom sentinel (inside the scroll container only). */
+  /** Pin transcript to the bottom by scrolling the container only — never ancestors. */
   function scrollTranscriptToEnd(behavior: ScrollBehavior = 'instant') {
     const el = scrollRef.current
-    const end = messagesEndRef.current
-    if (end) {
-      end.scrollIntoView({ block: 'end', behavior })
-    } else if (el) {
-      el.scrollTop = maxScrollTop(el)
+    if (!el) return
+    const top = maxScrollTop(el)
+    if (behavior === 'smooth') {
+      el.scrollTo({ top, behavior: 'smooth' })
+    } else {
+      el.scrollTop = top
     }
-    if (el) lastScrollTopRef.current = el.scrollTop
+    lastScrollTopRef.current = el.scrollTop
   }
 
   function followTranscriptBottom(behavior: ScrollBehavior = 'instant') {
@@ -104,6 +105,11 @@ export function useTranscriptScroll(opts: {
   const pinForOutgoing = useCallback(() => {
     autoScrollRef.current = true
     suppressScrollHandlerRef.current = true
+    const el = scrollRef.current
+    // Seed lastScrollTop with the current value so any scroll events that fire
+    // during the DOM swap aren't misread as an upward scroll (which would
+    // disable follow-mode and leave the transcript stranded at the top).
+    if (el) lastScrollTopRef.current = el.scrollTop
     setShowScrollBtn(false)
   }, [])
 
