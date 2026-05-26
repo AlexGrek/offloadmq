@@ -21,7 +21,342 @@ impl MigratorTrait for Migrator {
             Box::new(m20260522_000013_chat_message_offload_fields::Migration),
             Box::new(m20260522_000014_image_file_thumbnails::Migration),
             Box::new(m20260522_000015_create_imggen_capabilities::Migration),
+            Box::new(m20260522_000016_create_image_analysis_jobs::Migration),
+            Box::new(m20260522_000017_create_tts_jobs::Migration),
+            Box::new(m20260522_000018_create_generation_parameters::Migration),
         ]
+    }
+}
+
+mod m20260522_000018_create_generation_parameters {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260522_000018_create_generation_parameters"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .create_table(
+                    Table::create()
+                        .table(GenerationParameters::Table)
+                        .if_not_exists()
+                        .col(
+                            ColumnDef::new(GenerationParameters::Id)
+                                .big_integer()
+                                .not_null()
+                                .primary_key(),
+                        )
+                        .col(
+                            ColumnDef::new(GenerationParameters::UserId)
+                                .big_integer()
+                                .not_null(),
+                        )
+                        .col(ColumnDef::new(GenerationParameters::Filename).text().not_null())
+                        .col(ColumnDef::new(GenerationParameters::Source).text().not_null())
+                        .col(
+                            ColumnDef::new(GenerationParameters::Parameters)
+                                .json_binary()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(GenerationParameters::CreatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null()
+                                .default(Expr::current_timestamp()),
+                        )
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(
+                                    GenerationParameters::Table,
+                                    GenerationParameters::UserId,
+                                )
+                                .to(Users::Table, Users::Id)
+                                .on_delete(ForeignKeyAction::Cascade),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+
+            manager
+                .create_index(
+                    Index::create()
+                        .table(GenerationParameters::Table)
+                        .name("uq_generation_parameters_user_filename")
+                        .col(GenerationParameters::UserId)
+                        .col(GenerationParameters::Filename)
+                        .unique()
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .drop_table(Table::drop().table(GenerationParameters::Table).to_owned())
+                .await
+        }
+    }
+
+    #[derive(Iden)]
+    enum Users {
+        Table,
+        Id,
+    }
+
+    #[derive(Iden)]
+    enum GenerationParameters {
+        Table,
+        Id,
+        UserId,
+        Filename,
+        Source,
+        Parameters,
+        CreatedAt,
+    }
+}
+
+mod m20260522_000017_create_tts_jobs {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260522_000017_create_tts_jobs"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .create_table(
+                    Table::create()
+                        .table(TtsJobs::Table)
+                        .if_not_exists()
+                        .col(
+                            ColumnDef::new(TtsJobs::Id)
+                                .big_integer()
+                                .not_null()
+                                .primary_key(),
+                        )
+                        .col(ColumnDef::new(TtsJobs::UserId).big_integer().not_null())
+                        .col(
+                            ColumnDef::new(TtsJobs::CreatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null()
+                                .default(Expr::current_timestamp()),
+                        )
+                        .col(
+                            ColumnDef::new(TtsJobs::UpdatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null()
+                                .default(Expr::current_timestamp()),
+                        )
+                        .col(
+                            ColumnDef::new(TtsJobs::Status)
+                                .text()
+                                .not_null()
+                                .default("created"),
+                        )
+                        .col(ColumnDef::new(TtsJobs::Text).text().not_null())
+                        .col(ColumnDef::new(TtsJobs::Capability).text().not_null())
+                        .col(ColumnDef::new(TtsJobs::Voice).text().not_null())
+                        .col(ColumnDef::new(TtsJobs::Model).text().not_null())
+                        .col(ColumnDef::new(TtsJobs::OffloadCap).text().null())
+                        .col(ColumnDef::new(TtsJobs::OffloadTaskId).text().null())
+                        .col(ColumnDef::new(TtsJobs::AudioStoragePath).text().null())
+                        .col(ColumnDef::new(TtsJobs::AudioContentType).text().null())
+                        .col(ColumnDef::new(TtsJobs::AudioSizeBytes).big_integer().null())
+                        .col(ColumnDef::new(TtsJobs::Stage).text().null())
+                        .col(ColumnDef::new(TtsJobs::Error).text().null())
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(TtsJobs::Table, TtsJobs::UserId)
+                                .to(Users::Table, Users::Id)
+                                .on_delete(ForeignKeyAction::Cascade),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+
+            manager
+                .create_index(
+                    Index::create()
+                        .table(TtsJobs::Table)
+                        .name("idx_tts_jobs_user_id")
+                        .col(TtsJobs::UserId)
+                        .to_owned(),
+                )
+                .await?;
+
+            manager
+                .create_index(
+                    Index::create()
+                        .table(TtsJobs::Table)
+                        .name("idx_tts_jobs_status")
+                        .col(TtsJobs::Status)
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .drop_table(Table::drop().table(TtsJobs::Table).to_owned())
+                .await
+        }
+    }
+
+    #[derive(Iden)]
+    enum Users {
+        Table,
+        Id,
+    }
+
+    #[derive(Iden)]
+    enum TtsJobs {
+        Table,
+        Id,
+        UserId,
+        CreatedAt,
+        UpdatedAt,
+        Status,
+        Text,
+        Capability,
+        Voice,
+        Model,
+        OffloadCap,
+        OffloadTaskId,
+        AudioStoragePath,
+        AudioContentType,
+        AudioSizeBytes,
+        Stage,
+        Error,
+    }
+}
+
+mod m20260522_000016_create_image_analysis_jobs {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260522_000016_create_image_analysis_jobs"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .create_table(
+                    Table::create()
+                        .table(ImageAnalysisJobs::Table)
+                        .if_not_exists()
+                        .col(
+                            ColumnDef::new(ImageAnalysisJobs::Id)
+                                .big_integer()
+                                .not_null()
+                                .primary_key(),
+                        )
+                        .col(ColumnDef::new(ImageAnalysisJobs::UserId).big_integer().not_null())
+                        .col(
+                            ColumnDef::new(ImageAnalysisJobs::CreatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null()
+                                .default(Expr::current_timestamp()),
+                        )
+                        .col(
+                            ColumnDef::new(ImageAnalysisJobs::UpdatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null()
+                                .default(Expr::current_timestamp()),
+                        )
+                        .col(
+                            ColumnDef::new(ImageAnalysisJobs::Status)
+                                .text()
+                                .not_null()
+                                .default("created"),
+                        )
+                        .col(ColumnDef::new(ImageAnalysisJobs::Prompt).text().not_null())
+                        .col(ColumnDef::new(ImageAnalysisJobs::Capability).text().not_null())
+                        .col(ColumnDef::new(ImageAnalysisJobs::InputImageId).big_integer().null())
+                        .col(ColumnDef::new(ImageAnalysisJobs::OffloadCap).text().null())
+                        .col(ColumnDef::new(ImageAnalysisJobs::OffloadTaskId).text().null())
+                        .col(ColumnDef::new(ImageAnalysisJobs::OffloadBucketUid).text().null())
+                        .col(ColumnDef::new(ImageAnalysisJobs::Result).text().null())
+                        .col(ColumnDef::new(ImageAnalysisJobs::Stage).text().null())
+                        .col(ColumnDef::new(ImageAnalysisJobs::Error).text().null())
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(ImageAnalysisJobs::Table, ImageAnalysisJobs::UserId)
+                                .to(Users::Table, Users::Id)
+                                .on_delete(ForeignKeyAction::Cascade),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+
+            manager
+                .create_index(
+                    Index::create()
+                        .table(ImageAnalysisJobs::Table)
+                        .name("idx_image_analysis_jobs_user_id")
+                        .col(ImageAnalysisJobs::UserId)
+                        .to_owned(),
+                )
+                .await?;
+
+            manager
+                .create_index(
+                    Index::create()
+                        .table(ImageAnalysisJobs::Table)
+                        .name("idx_image_analysis_jobs_status")
+                        .col(ImageAnalysisJobs::Status)
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .drop_table(Table::drop().table(ImageAnalysisJobs::Table).to_owned())
+                .await
+        }
+    }
+
+    #[derive(Iden)]
+    enum Users {
+        Table,
+        Id,
+    }
+
+    #[derive(Iden)]
+    enum ImageAnalysisJobs {
+        Table,
+        Id,
+        UserId,
+        CreatedAt,
+        UpdatedAt,
+        Status,
+        Prompt,
+        Capability,
+        InputImageId,
+        OffloadCap,
+        OffloadTaskId,
+        OffloadBucketUid,
+        Result,
+        Stage,
+        Error,
     }
 }
 

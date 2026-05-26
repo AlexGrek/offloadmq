@@ -9,3 +9,4 @@ pub mod tasks;
 pub mod files;
 pub mod health;
 pub mod images;
+pub mod tts;

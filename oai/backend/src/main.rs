@@ -46,8 +46,10 @@ async fn main() -> Result<()> {
     let http = reqwest::Client::new();
     let state = Arc::new(AppState { db, auth, snowflake, storage, http });
     jobs::image_pipeline_worker::spawn(state.clone());
+    jobs::image_analysis_worker::spawn(state.clone());
     jobs::llm_capability_cleanup_worker::spawn(state.clone());
     jobs::chat_worker::spawn(state.clone());
+    jobs::tts_worker::spawn(state.clone());
 
     let app = app::create_app(state, &static_dir);
     let listener = tokio::net::TcpListener::bind(&addr).await?;

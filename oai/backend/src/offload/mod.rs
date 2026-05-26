@@ -208,6 +208,58 @@ impl OffloadClient {
         Ok(TaskId { cap, id })
     }
 
+    /// Submit a non-urgent `tts.*` task. Payload follows the kokoro contract:
+    /// `{ model, voice, input }` → response contains `audio_data_base64` +
+    /// `content_type`.
+    pub async fn submit_tts_task(
+        &self,
+        capability: &str,
+        model: &str,
+        voice: &str,
+        text: &str,
+    ) -> Result<TaskId, AppError> {
+        let url = format!("{}/api/task/submit", self.base_url);
+        let body = serde_json::json!({
+            "apiKey": self.api_key,
+            "capability": capability,
+            "urgent": false,
+            "restartable": false,
+            "payload": {
+                "model": model,
+                "voice": voice,
+                "input": text,
+            },
+            "fetchFiles": [],
+            "file_bucket": [],
+            "artifacts": [],
+            "timeoutSecs": 24 * 3600u64,
+            "maxWaitSecs": 24 * 3600u64,
+            "runtimeSecs": 10 * 60u64
+        });
+        let resp = self
+            .http
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(e.to_string()))?;
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("submit failed: {text}")));
+        }
+        let val: serde_json::Value =
+            resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))?;
+        let cap = val["id"]["cap"]
+            .as_str()
+            .ok_or_else(|| AppError::ExternalService("missing id.cap in submit response".into()))?
+            .to_string();
+        let id = val["id"]["id"]
+            .as_str()
+            .ok_or_else(|| AppError::ExternalService("missing id.id in submit response".into()))?
+            .to_string();
+        Ok(TaskId { cap, id })
+    }
+
     pub async fn poll_task(&self, task_id: &TaskId) -> Result<PollResponse, AppError> {
         let raw = self.poll_task_raw(task_id).await?;
         serde_json::from_value(raw).map_err(|e| AppError::ExternalService(e.to_string()))

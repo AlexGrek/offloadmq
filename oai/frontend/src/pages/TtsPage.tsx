@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Copy,
-  Eye,
-  ImageUp,
+  Download,
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -11,68 +9,85 @@ import {
   RotateCcw,
   Square,
   Trash2,
-  X,
+  Volume2,
 } from 'lucide-react'
 import {
-  cancelDescribeJob,
-  deleteDescribeJob,
-  getDescribeJob,
-  listDescribeCapabilities,
-  listDescribeJobs,
-  pollDescribeJob,
-  retryDescribeJob,
-  startDescribeJob,
-  type DescribeCapability,
-  type DescribeJob,
-} from '../api/describe'
-import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
+  cancelTtsJob,
+  deleteTtsJob,
+  getTtsJob,
+  listTtsCapabilities,
+  listTtsJobs,
+  pollTtsJob,
+  retryTtsJob,
+  startTtsJob,
+  ttsAudioUrl,
+  type TtsCapability,
+  type TtsJob,
+} from '../api/tts'
 import { Button } from '../components/ui/button'
 import { Label } from '../components/ui/label'
-import { MarkdownContent } from '../components/MarkdownContent'
-import {
-  DESCRIBE_NEW_PANEL,
-  DescribeHistorySidebar,
-} from '../components/describe/DescribeHistorySidebar'
+import { TtsHistorySidebar, TTS_NEW_PANEL } from '../components/tts/TtsHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { cn } from '../lib/utils'
 
-const DEFAULT_PROMPT = 'Describe this image in detail'
+const DEFAULT_TEXT = 'Hello from OAI. This is a text-to-speech test.'
 const POLL_INTERVAL_MS = 3000
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 
-function capLabel(cap: DescribeCapability): string {
-  const model = cap.base.replace(/^llm\./, '')
-  const extra = cap.tags.filter(t => t.toLowerCase() !== 'vision').join(', ')
-  return extra ? `${model} [${extra}]` : model
+function modelLabel(cap: string): string {
+  return cap.replace(/^tts\./, '')
 }
 
-function jobTitle(prompt: string, limit = 56): string {
-  const trimmed = prompt.trim()
-  if (!trimmed) return 'Analysis'
+function jobTitle(text: string, limit = 56): string {
+  const trimmed = text.trim()
+  if (!trimmed) return 'Speech'
   if (trimmed.length <= limit) return trimmed
   return `${trimmed.slice(0, limit - 1).trimEnd()}…`
 }
 
-export default function DescribeImagePage() {
+function audioExt(contentType: string | null): string {
+  if (!contentType) return 'wav'
+  if (contentType.includes('mpeg')) return 'mp3'
+  if (contentType.includes('ogg')) return 'ogg'
+  if (contentType.includes('flac')) return 'flac'
+  if (contentType.includes('aac')) return 'aac'
+  return 'wav'
+}
+
+/** Mirror of `sanitize_filename_slug` in services/tts.rs: alnum + `-` only;
+ *  everything else collapses into a single `_`; trimmed; max 50 chars. */
+function sanitizeFilenameSlug(input: string, maxChars = 50): string {
+  let out = ''
+  let prevUnderscore = false
+  for (const ch of input) {
+    if (out.length >= maxChars) break
+    if (/[A-Za-z0-9-]/.test(ch)) {
+      out += ch
+      prevUnderscore = false
+    } else if (!prevUnderscore) {
+      out += '_'
+      prevUnderscore = true
+    }
+  }
+  const trimmed = out.replace(/^_+|_+$/g, '')
+  return trimmed || 'speech'
+}
+
+export default function TtsPage() {
   const { token } = useAuth()
 
-  const [capabilities, setCapabilities] = useState<DescribeCapability[]>([])
+  const [capabilities, setCapabilities] = useState<TtsCapability[]>([])
   const [capsLoading, setCapsLoading] = useState(true)
   const [capsError, setCapsError] = useState<string | null>(null)
 
   const [selectedCap, setSelectedCap] = useState('')
-  const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
+  const [selectedVoice, setSelectedVoice] = useState('')
+  const [text, setText] = useState(DEFAULT_TEXT)
 
-  const [uploadedInput, setUploadedInput] = useState<UploadedImage | null>(null)
-  const previewUrlRef = useRef<string | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
-
-  const [jobs, setJobs] = useState<DescribeJob[]>([])
+  const [jobs, setJobs] = useState<TtsJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
-  const [activePanel, setActivePanel] = useState<string>(DESCRIBE_NEW_PANEL)
-  const [selectedJob, setSelectedJob] = useState<DescribeJob | null>(null)
+  const [activePanel, setActivePanel] = useState<string>(TTS_NEW_PANEL)
+  const [selectedJob, setSelectedJob] = useState<TtsJob | null>(null)
   const [jobDetailLoading, setJobDetailLoading] = useState(false)
 
   const [submitting, setSubmitting] = useState(false)
@@ -81,17 +96,21 @@ export default function DescribeImagePage() {
   const [deleting, setDeleting] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const viewingJob = activePanel !== DESCRIBE_NEW_PANEL
+  const viewingJob = activePanel !== TTS_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
+
+  const voicesForSelected = useMemo<string[]>(() => {
+    const cap = capabilities.find(c => c.base === selectedCap)
+    return cap?.voices ?? []
+  }, [capabilities, selectedCap])
 
   const loadCapabilities = useCallback(() => {
     if (!token) return
     setCapsLoading(true)
     setCapsError(null)
-    listDescribeCapabilities(token)
+    listTtsCapabilities(token)
       .then(data => {
         setCapabilities(data.capabilities)
         setSelectedCap(prev => {
@@ -106,7 +125,7 @@ export default function DescribeImagePage() {
   const loadJobs = useCallback(async () => {
     if (!token) return
     try {
-      const list = await listDescribeJobs(token)
+      const list = await listTtsJobs(token)
       setJobs(list)
     } catch (e) {
       setError((e as Error).message)
@@ -120,16 +139,16 @@ export default function DescribeImagePage() {
     void loadJobs()
   }, [loadCapabilities, loadJobs])
 
+  // Keep voice in sync with the available list for the chosen capability.
   useEffect(() => {
-    return () => {
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
-    }
-  }, [])
+    if (voicesForSelected.length === 0) return
+    setSelectedVoice(prev => (prev && voicesForSelected.includes(prev) ? prev : voicesForSelected[0]))
+  }, [voicesForSelected])
 
   const refreshJob = useCallback(
     async (jobId: string) => {
       if (!token) return null
-      const job = await getDescribeJob(token, jobId)
+      const job = await getTtsJob(token, jobId)
       setSelectedJob(job)
       setJobs(prev => {
         const idx = prev.findIndex(j => j.job_id === job.job_id)
@@ -146,7 +165,7 @@ export default function DescribeImagePage() {
   )
 
   function selectNew() {
-    setActivePanel(DESCRIBE_NEW_PANEL)
+    setActivePanel(TTS_NEW_PANEL)
     setError(null)
   }
 
@@ -164,47 +183,22 @@ export default function DescribeImagePage() {
     }
   }
 
-  function clearInput() {
-    setUploadedInput(null)
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current)
-      previewUrlRef.current = null
-    }
-    setImagePreview(null)
-  }
-
-  async function onUpload(file: File) {
-    if (!token) return
-    setError(null)
-    setUploading(true)
-    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
-    const preview = URL.createObjectURL(file)
-    previewUrlRef.current = preview
-    setImagePreview(preview)
-    try {
-      const img = await uploadImage(token, file)
-      setUploadedInput(img)
-    } catch (e) {
-      setError((e as Error).message)
-      clearInput()
-    } finally {
-      setUploading(false)
-    }
-  }
-
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!token || !uploadedInput || !selectedCap || submitting) return
+    if (!token || !selectedCap || !selectedVoice || submitting) return
+    if (!text.trim()) {
+      setError('Enter some text to synthesize.')
+      return
+    }
     setError(null)
     setSubmitting(true)
     try {
-      const res = await startDescribeJob(token, {
+      const res = await startTtsJob(token, {
         capability: selectedCap,
-        prompt: prompt.trim() || DEFAULT_PROMPT,
-        image_id: uploadedInput.image_id,
+        voice: selectedVoice,
+        text: text.trim(),
       })
       setActivePanel(res.job_id)
-      clearInput()
       await refreshJob(res.job_id)
     } catch (err) {
       setError((err as Error).message)
@@ -218,7 +212,7 @@ export default function DescribeImagePage() {
     setPolling(true)
     setError(null)
     try {
-      const job = await pollDescribeJob(token, jobId)
+      const job = await pollTtsJob(token, jobId)
       setSelectedJob(job)
       setJobs(prev => prev.map(j => (j.job_id === job.job_id ? job : j)))
     } catch (e) {
@@ -233,7 +227,7 @@ export default function DescribeImagePage() {
     setCanceling(true)
     setError(null)
     try {
-      await cancelDescribeJob(token, jobId)
+      await cancelTtsJob(token, jobId)
       await refreshJob(jobId)
     } catch (e) {
       setError((e as Error).message)
@@ -247,7 +241,7 @@ export default function DescribeImagePage() {
     setRetrying(true)
     setError(null)
     try {
-      const res = await retryDescribeJob(token, jobId)
+      const res = await retryTtsJob(token, jobId)
       setActivePanel(res.job_id)
       await refreshJob(res.job_id)
       await loadJobs()
@@ -263,7 +257,7 @@ export default function DescribeImagePage() {
     setDeleting(true)
     setError(null)
     try {
-      await deleteDescribeJob(token, jobId)
+      await deleteTtsJob(token, jobId)
       setJobs(prev => {
         const next = prev.filter(j => j.job_id !== jobId)
         if (next.length > 0) {
@@ -293,54 +287,48 @@ export default function DescribeImagePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, viewedJobId, selectedJob?.status])
 
-  function handleCopy() {
-    if (!selectedJob?.result) return
-    void navigator.clipboard.writeText(selectedJob.result).then(() => {
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1800)
-    })
-  }
-
-  function editPromptFromJob() {
+  function editFromJob() {
     if (!selectedJob) return
-    setPrompt(selectedJob.prompt)
-    if (
-      selectedJob.capability &&
-      capabilities.some(c => c.base === selectedJob.capability)
-    ) {
+    setText(selectedJob.text)
+    if (selectedJob.capability && capabilities.some(c => c.base === selectedJob.capability)) {
       setSelectedCap(selectedJob.capability)
     }
-    setActivePanel(DESCRIBE_NEW_PANEL)
+    if (selectedJob.voice) setSelectedVoice(selectedJob.voice)
+    setActivePanel(TTS_NEW_PANEL)
   }
 
   const canSubmit = useMemo(
-    () => Boolean(uploadedInput && selectedCap && !submitting && !uploading),
-    [uploadedInput, selectedCap, submitting, uploading],
+    () => Boolean(selectedCap && selectedVoice && text.trim() && !submitting),
+    [selectedCap, selectedVoice, text, submitting],
   )
 
   const status = selectedJob?.status
   const isRunning = status != null && !TERMINAL.has(status)
   const canRetry = status === 'failed' || status === 'canceled'
+  const downloadName = useMemo(() => {
+    if (!selectedJob) return 'audio.wav'
+    const slug = sanitizeFilenameSlug(selectedJob.text)
+    return `${slug}-${selectedJob.job_id}.${audioExt(selectedJob.audio_content_type)}`
+  }, [selectedJob])
 
   return (
     <div
       className="flex min-h-0 flex-1 overflow-hidden bg-background"
-      data-testid="describe-page"
+      data-testid="tts-page"
     >
       <aside
         className={cn(
           'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200',
           sidebarOpen ? 'w-64' : 'w-0',
         )}
-        data-testid="describe-sidebar"
+        data-testid="tts-sidebar"
       >
         <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
-          <span className="text-sm font-semibold text-sidebar-foreground">Analyses</span>
+          <span className="text-sm font-semibold text-sidebar-foreground">Speech</span>
         </div>
-        <DescribeHistorySidebar
+        <TtsHistorySidebar
           jobs={jobs}
           activePanel={activePanel}
-          token={token}
           loading={jobsLoading}
           onSelectNew={selectNew}
           onSelectJob={jobId => void selectJob(jobId)}
@@ -358,7 +346,7 @@ export default function DescribeImagePage() {
             {sidebarOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
           </Button>
           <h1 className="min-w-0 flex-1 truncate font-display text-sm font-semibold">
-            {viewingJob && selectedJob ? jobTitle(selectedJob.prompt) : 'New analysis'}
+            {viewingJob && selectedJob ? jobTitle(selectedJob.text) : 'New speech'}
           </h1>
           {viewingJob && selectedJob && (
             <Button
@@ -367,9 +355,9 @@ export default function DescribeImagePage() {
               size="icon-sm"
               onClick={() => void onDelete(selectedJob.job_id)}
               disabled={deleting}
-              title="Delete analysis"
-              aria-label="Delete analysis"
-              data-testid="describe-delete-job"
+              title="Delete speech"
+              aria-label="Delete speech"
+              data-testid="tts-delete-job"
               className="text-muted-foreground hover:text-destructive"
             >
               {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
@@ -379,29 +367,29 @@ export default function DescribeImagePage() {
 
         <main className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-2xl space-y-5 px-3 py-4 sm:px-6 sm:py-5">
-            {activePanel === DESCRIBE_NEW_PANEL && (
-              <section data-testid="describe-new-panel" className="flex flex-col gap-5">
+            {activePanel === TTS_NEW_PANEL && (
+              <section data-testid="tts-new-panel" className="flex flex-col gap-5">
                 <header className="space-y-1">
                   <h2 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
-                    <Eye className="h-4 w-4 text-sky-400" />
-                    New Analysis
+                    <Volume2 className="h-4 w-4 text-violet-400" />
+                    New Speech
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Upload an image, choose a vision model, and run a description in the background.
+                    Choose a model and voice, then type text to synthesize as audio.
                   </p>
                 </header>
 
                 <form onSubmit={e => void onSubmit(e)} className="space-y-5">
                   {/* Model selector */}
-                  <div className="space-y-1.5" data-testid="describe-capability-select">
+                  <div className="space-y-1.5" data-testid="tts-capability-select">
                     <div className="flex items-center justify-between gap-2">
-                      <Label htmlFor="describe-cap">Model</Label>
+                      <Label htmlFor="tts-cap">Model</Label>
                       <button
                         type="button"
                         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                         onClick={loadCapabilities}
                         disabled={capsLoading}
-                        data-testid="describe-refresh-caps"
+                        data-testid="tts-refresh-caps"
                       >
                         <RefreshCw className={cn('size-3', capsLoading && 'animate-spin')} />
                         Refresh
@@ -415,111 +403,65 @@ export default function DescribeImagePage() {
                       </div>
                     ) : capabilities.length === 0 ? (
                       <p className="text-xs text-muted-foreground">
-                        No vision models found. Start a vision-capable LLM agent or check OffloadMQ
-                        connection in Settings.
+                        No TTS models online. Start a `tts.*` agent (e.g., kokoro) or check the
+                        OffloadMQ connection in Settings.
                       </p>
                     ) : (
                       <select
-                        id="describe-cap"
+                        id="tts-cap"
                         value={selectedCap}
                         onChange={e => setSelectedCap(e.target.value)}
                         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        data-testid="describe-cap-select"
+                        data-testid="tts-cap-select"
                       >
                         {capabilities.map(c => (
                           <option key={c.base} value={c.base}>
-                            {capLabel(c)}
+                            {modelLabel(c.base)}
                           </option>
                         ))}
                       </select>
                     )}
                   </div>
 
-                  {/* Image upload */}
-                  <div className="space-y-1.5" data-testid="describe-image-upload">
-                    <Label>Image</Label>
-                    {imagePreview ? (
-                      <div className="relative inline-block">
-                        <img
-                          src={imagePreview}
-                          alt="Selected"
-                          className="max-h-64 max-w-full rounded-lg border border-border object-contain"
-                          data-testid="describe-image-preview"
-                        />
-                        <button
-                          type="button"
-                          className="absolute right-1.5 top-1.5 rounded-md bg-background/80 p-1 text-foreground backdrop-blur hover:bg-background transition-colors"
-                          onClick={clearInput}
-                          aria-label="Remove image"
-                          data-testid="describe-remove-image"
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                        {uploading && (
-                          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/60 backdrop-blur-sm">
-                            <Loader2 className="size-5 animate-spin text-muted-foreground" />
-                          </div>
-                        )}
-                        <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            disabled={uploading}
-                            onChange={e => {
-                              const file = e.target.files?.[0]
-                              if (file) void onUpload(file)
-                              e.target.value = ''
-                            }}
-                          />
-                          Change image
-                        </label>
-                      </div>
+                  {/* Voice selector */}
+                  <div className="space-y-1.5" data-testid="tts-voice-select">
+                    <Label htmlFor="tts-voice">Voice</Label>
+                    {voicesForSelected.length === 0 ? (
+                      <input
+                        id="tts-voice"
+                        type="text"
+                        value={selectedVoice}
+                        onChange={e => setSelectedVoice(e.target.value)}
+                        placeholder="e.g., af_heart"
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
                     ) : (
-                      <label
-                        className={cn(
-                          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/30 px-6 py-10 text-muted-foreground transition-colors hover:bg-muted/50',
-                          dragOver && 'border-primary bg-primary/5',
-                        )}
-                        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-                        onDragLeave={() => setDragOver(false)}
-                        onDrop={e => {
-                          e.preventDefault()
-                          setDragOver(false)
-                          const file = e.dataTransfer.files[0]
-                          if (file?.type.startsWith('image/')) void onUpload(file)
-                        }}
-                        data-testid="describe-drop-zone"
+                      <select
+                        id="tts-voice"
+                        value={selectedVoice}
+                        onChange={e => setSelectedVoice(e.target.value)}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <ImageUp className="size-8 text-muted-foreground/60" />
-                        <span className="text-sm font-medium">Click or drag an image here</span>
-                        <span className="text-xs">PNG, JPEG, WebP, GIF…</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          disabled={uploading}
-                          onChange={e => {
-                            const file = e.target.files?.[0]
-                            if (file) void onUpload(file)
-                            e.target.value = ''
-                          }}
-                        />
-                      </label>
+                        {voicesForSelected.map(v => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
                     )}
                   </div>
 
-                  {/* Prompt */}
-                  <div className="space-y-1.5" data-testid="describe-prompt">
-                    <Label htmlFor="describe-prompt-input">Prompt</Label>
+                  {/* Text */}
+                  <div className="space-y-1.5" data-testid="tts-text">
+                    <Label htmlFor="tts-text-input">Text</Label>
                     <textarea
-                      id="describe-prompt-input"
-                      value={prompt}
-                      onChange={e => setPrompt(e.target.value)}
-                      rows={2}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      placeholder={DEFAULT_PROMPT}
-                      data-testid="describe-prompt-input"
+                      id="tts-text-input"
+                      value={text}
+                      onChange={e => setText(e.target.value)}
+                      rows={6}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="Type something to synthesize…"
+                      data-testid="tts-text-input"
                     />
                   </div>
 
@@ -528,7 +470,7 @@ export default function DescribeImagePage() {
                     type="submit"
                     disabled={!canSubmit}
                     className="w-full"
-                    data-testid="describe-submit"
+                    data-testid="tts-submit"
                   >
                     {submitting ? (
                       <>
@@ -537,14 +479,14 @@ export default function DescribeImagePage() {
                       </>
                     ) : (
                       <>
-                        <Eye className="mr-2 size-4" />
-                        Analyze
+                        <Volume2 className="mr-2 size-4" />
+                        Synthesize
                       </>
                     )}
                   </Button>
 
                   {error && (
-                    <p className="text-xs text-destructive" data-testid="describe-error">
+                    <p className="text-xs text-destructive" data-testid="tts-error">
                       {error}
                     </p>
                   )}
@@ -553,46 +495,29 @@ export default function DescribeImagePage() {
             )}
 
             {viewingJob && (
-              <section data-testid="describe-job-detail" className="space-y-4">
+              <section data-testid="tts-job-detail" className="space-y-4">
                 {jobDetailLoading && !selectedJob ? (
                   <div className="flex min-h-[40vh] items-center justify-center">
                     <Loader2 className="size-6 animate-spin text-muted-foreground" />
                   </div>
                 ) : selectedJob && selectedJob.job_id === viewedJobId ? (
                   <>
-                    {/* Image */}
-                    {selectedJob.input_image_id && (
-                      <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
-                        <img
-                          src={imageFileUrl(selectedJob.input_image_id, token)}
-                          alt="Analyzed"
-                          className="max-h-[60vh] w-full object-contain"
-                          data-testid="describe-job-image"
-                        />
-                      </div>
-                    )}
-
                     {/* Meta */}
                     <div className="space-y-0.5">
                       <h2 className="font-display text-base font-semibold leading-snug">
-                        {jobTitle(selectedJob.prompt, 200)}
+                        {jobTitle(selectedJob.text, 200)}
                       </h2>
                       <p className="font-mono text-xs text-muted-foreground">
-                        {selectedJob.capability.replace(/^llm\./, '')} ·{' '}
+                        {modelLabel(selectedJob.capability)} · {selectedJob.voice} ·{' '}
                         {selectedJob.status.replace(/_/g, ' ')}
                       </p>
                     </div>
 
                     {/* Actions */}
                     <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={editPromptFromJob}
-                        data-testid="describe-edit-prompt"
-                      >
+                      <Button variant="outline" size="sm" onClick={editFromJob} data-testid="tts-edit">
                         <Pencil className="mr-1 h-4 w-4" />
-                        Edit prompt
+                        Edit
                       </Button>
                       {canRetry && (
                         <Button
@@ -600,7 +525,7 @@ export default function DescribeImagePage() {
                           size="sm"
                           onClick={() => void onRetry(selectedJob.job_id)}
                           disabled={retrying}
-                          data-testid="describe-retry-job"
+                          data-testid="tts-retry-job"
                         >
                           {retrying ? (
                             <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -615,7 +540,7 @@ export default function DescribeImagePage() {
                         size="sm"
                         onClick={() => void onPollNow(selectedJob.job_id)}
                         disabled={polling}
-                        data-testid="describe-poll-job"
+                        data-testid="tts-poll-job"
                       >
                         {polling ? (
                           <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -630,7 +555,7 @@ export default function DescribeImagePage() {
                           size="sm"
                           onClick={() => void onCancel(selectedJob.job_id)}
                           disabled={canceling}
-                          data-testid="describe-cancel-job"
+                          data-testid="tts-cancel-job"
                         >
                           {canceling ? (
                             <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -654,34 +579,42 @@ export default function DescribeImagePage() {
                       </p>
                     )}
 
-                    {/* Prompt */}
+                    {/* Text */}
                     <section className="space-y-1.5">
-                      <h3 className="text-xs font-medium text-muted-foreground">Prompt</h3>
-                      <p className="whitespace-pre-wrap text-sm text-foreground">
-                        {selectedJob.prompt.trim() || '—'}
+                      <h3 className="text-xs font-medium text-muted-foreground">Text</h3>
+                      <p className="whitespace-pre-wrap rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-foreground">
+                        {selectedJob.text.trim() || '—'}
                       </p>
                     </section>
 
-                    {/* Result / pending / error */}
-                    {selectedJob.result ? (
-                      <section className="space-y-2" data-testid="describe-result">
+                    {/* Audio / pending / error */}
+                    {selectedJob.status === 'completed' && selectedJob.audio_content_type ? (
+                      <section className="space-y-2" data-testid="tts-result">
                         <div className="flex items-center justify-between">
-                          <h3 className="text-xs font-medium text-muted-foreground">Result</h3>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 gap-1.5 text-xs"
-                            onClick={handleCopy}
-                            data-testid="describe-copy"
+                          <h3 className="text-xs font-medium text-muted-foreground">Audio</h3>
+                          <a
+                            href={ttsAudioUrl(selectedJob.job_id, token)}
+                            download={downloadName}
+                            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            data-testid="tts-download"
                           >
-                            <Copy className="size-3.5" />
-                            {copied ? 'Copied!' : 'Copy'}
-                          </Button>
+                            <Download className="size-3.5" />
+                            Download
+                          </a>
                         </div>
-                        <div className="rounded-xl border border-border bg-muted/30 px-4 py-4">
-                          <MarkdownContent>{selectedJob.result}</MarkdownContent>
-                        </div>
+                        <audio
+                          key={selectedJob.job_id}
+                          controls
+                          src={ttsAudioUrl(selectedJob.job_id, token)}
+                          className="w-full"
+                          data-testid="tts-audio-player"
+                        />
+                        {selectedJob.audio_size_bytes != null && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {selectedJob.audio_content_type} ·{' '}
+                            {(selectedJob.audio_size_bytes / 1024).toFixed(1)} KB
+                          </p>
+                        )}
                       </section>
                     ) : selectedJob.status === 'failed' ? (
                       <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -698,7 +631,7 @@ export default function DescribeImagePage() {
                   </>
                 ) : (
                   <p className="text-center text-sm text-muted-foreground">
-                    Could not load this analysis.
+                    Could not load this speech.
                   </p>
                 )}
               </section>

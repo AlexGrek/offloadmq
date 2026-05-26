@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    db::{app_settings, image_generation, imggen_capabilities, users},
+    db::{app_settings, generation_parameters, image_generation, imggen_capabilities, users},
     error::AppError,
     offload::{
         image_tasks::{OffloadImageClient, OffloadPollResponse, OffloadTaskId},
@@ -1158,12 +1158,54 @@ async fn store_output_image(
         &processed,
     )
     .await?;
+    if let Err(e) = record_image_generation_parameters(state, user_id, job, &filename).await {
+        tracing::warn!(
+            "failed to record generation parameters for image {image_id}: {e}"
+        );
+    }
     record_event(
         state,
         job.id,
         "download.image.store",
         "ok",
         Some(&format!("image_id={} file_uid={}", image_id, file_uid)),
+    )
+    .await
+}
+
+async fn record_image_generation_parameters(
+    state: &AppState,
+    user_id: i64,
+    job: &image_generation::ImageGenerationJob,
+    filename: &str,
+) -> Result<(), AppError> {
+    let pipeline = pipeline_params_for_job(job);
+    let pipeline_value = serde_json::to_value(&pipeline)
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let parameters = serde_json::json!({
+        "source": "image",
+        "job_id": job.id.to_string(),
+        "display_name": job.display_name,
+        "prompt": job.prompt,
+        "negative_prompt": job.negative_prompt,
+        "capability": job.capability,
+        "workflow": job.workflow,
+        "width": job.width,
+        "height": job.height,
+        "seed": job.seed,
+        "input_image_id": job.input_image_id.map(|i| i.to_string()),
+        "pipeline_params": pipeline_value,
+        "created_at": job.created_at.to_rfc3339(),
+    });
+    generation_parameters::upsert(
+        &state.db,
+        generation_parameters::UpsertInput {
+            id: state.next_id(),
+            user_id,
+            filename,
+            source: "image",
+            parameters,
+        },
     )
     .await
 }

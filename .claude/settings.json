@@ -144,7 +144,8 @@
       "Bash(sed -n '/pub struct UnassignedTask/,/^}/p' src/models.rs)",
       "Bash(sed -n '/pub struct AssignedTask/,/^}/p' src/models.rs)",
       "Bash(sed -n '233,246p' src/api/agent/mod.rs)",
-      "Bash(sed -n '/pub async fn resolve_task/,/^}/p' src/api/agent/service.rs)"
+      "Bash(sed -n '/pub async fn resolve_task/,/^}/p' src/api/agent/service.rs)",
+      "Bash(mkdir -p /Users/vedmedik/dev/offloadmq/.claude/skills/oai-new-feature)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

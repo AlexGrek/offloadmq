@@ -68,6 +68,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             axum::routing::patch(routes::system_prompts::set_starred),
         )
         .route("/api/files", get(routes::files::list_files))
+        .route("/api/files/properties", get(routes::files::get_file_properties))
         .route("/api/files/cleanup", post(routes::files::cleanup_files))
         .route(
             "/api/images/upload",
@@ -106,12 +107,26 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/describe/capabilities",
             get(routes::describe::list_capabilities),
         )
+        .route("/api/describe/jobs", post(routes::describe::start_job))
+        .route("/api/describe/jobs", get(routes::describe::list_jobs))
         .route(
-            "/api/describe/submit",
-            post(routes::describe::submit)
-                .layer(DefaultBodyLimit::max(image_processing::MAX_UPLOAD_BYTES)),
+            "/api/describe/jobs/{id}",
+            get(routes::describe::get_job).delete(routes::describe::delete_job),
         )
-        .route("/api/describe/poll", post(routes::describe::poll))
+        .route("/api/describe/jobs/{id}/poll", post(routes::describe::poll_job))
+        .route("/api/describe/jobs/{id}/cancel", post(routes::describe::cancel_job))
+        .route("/api/describe/jobs/{id}/retry", post(routes::describe::retry_job))
+        .route("/api/tts/capabilities", get(routes::tts::list_capabilities))
+        .route("/api/tts/jobs", post(routes::tts::start_job))
+        .route("/api/tts/jobs", get(routes::tts::list_jobs))
+        .route(
+            "/api/tts/jobs/{id}",
+            get(routes::tts::get_job).delete(routes::tts::delete_job),
+        )
+        .route("/api/tts/jobs/{id}/poll", post(routes::tts::poll_job))
+        .route("/api/tts/jobs/{id}/cancel", post(routes::tts::cancel_job))
+        .route("/api/tts/jobs/{id}/retry", post(routes::tts::retry_job))
+        .route("/api/tts/jobs/{id}/audio", get(routes::tts::get_audio))
         .layer(from_fn_with_state(state.clone(), middleware::jwt_auth_middleware));
 
     let admin = Router::new()

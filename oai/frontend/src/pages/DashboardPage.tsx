@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Bot, Eye, FolderOpen, ImagePlus } from 'lucide-react'
+import { Bot, Eye, FolderOpen, ImagePlus, Volume2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const apps = [
@@ -32,6 +32,16 @@ const apps = [
     gradient: 'from-sky-500/20 to-cyan-500/20',
     iconBg: 'bg-sky-500/20',
     iconColor: 'text-sky-400',
+  },
+  {
+    id: 'tts',
+    icon: Volume2,
+    title: 'Text to Speech',
+    description: 'Synthesize text as audio with Kokoro and other TTS models',
+    href: '/app/tts',
+    gradient: 'from-violet-500/20 to-fuchsia-500/20',
+    iconBg: 'bg-violet-500/20',
+    iconColor: 'text-violet-400',
   },
   {
     id: 'files',

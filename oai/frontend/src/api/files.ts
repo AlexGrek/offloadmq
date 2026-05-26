@@ -1,5 +1,7 @@
 export interface UserFile {
   id: string
+  /** `"image"` (image_files) or `"audio"` (synthesized tts_jobs). */
+  kind: 'image' | 'audio'
   direction: string
   source: string
   filename: string
@@ -13,6 +15,7 @@ export interface UserFile {
   url: string
   thumbnail_url: string
   is_image: boolean
+  is_audio: boolean
 }
 
 export interface StorageSummary {
@@ -58,6 +61,32 @@ export interface CleanupFilesResponse {
 /** Lists all of the current user's files plus a storage summary. */
 export function listFiles(token: string): Promise<FileBrowserResponse> {
   return request('/api/files', token)
+}
+
+export interface FileProperties {
+  filename: string
+  /** `"image"` or `"audio"`. */
+  source: string
+  parameters: Record<string, unknown>
+  created_at: string
+}
+
+/** Look up the generation parameters recorded for a file by filename.
+ *  Returns `null` when no parameters row exists (uploads, or pre-feature files). */
+export async function getFileProperties(
+  token: string,
+  filename: string,
+): Promise<FileProperties | null> {
+  const path = `/api/files/properties?filename=${encodeURIComponent(filename)}`
+  const res = await fetch(path, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
+  }
+  return (await res.json()) as FileProperties
 }
 
 /** Bulk-delete files by scope; optionally skip starred images. */
