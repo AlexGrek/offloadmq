@@ -5,7 +5,10 @@ use std::sync::Arc;
 use axum::{
     Json,
     body::Body,
-    extract::{Multipart, Path, Query, State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    extract::{
+        Multipart, Path, Query, State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
+    },
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -52,7 +55,8 @@ pub async fn update_agent_info(
     State(state): State<Arc<AppState>>,
     Json(info): Json<schema::AgentUpdateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let resp = service::do_update_agent_info(agent, info, &state, CommunicationMethod::Http).await?;
+    let resp =
+        service::do_update_agent_info(agent, info, &state, CommunicationMethod::Http).await?;
     Ok(Json(resp))
 }
 
@@ -101,7 +105,8 @@ pub async fn download_bucket_file(
     // Use only the base filename in Content-Disposition (RFC 6266 — path
     // separators don't belong in the filename parameter).  Agents use the
     // original_name from the bucket stat response to reconstruct the full path.
-    let base_name = file.original_name
+    let base_name = file
+        .original_name
         .rsplit('/')
         .next()
         .unwrap_or(&file.original_name);
@@ -275,7 +280,14 @@ pub async fn post_task_resolution(
     if report.id != task_id {
         return Err(AppError::BadRequest(id));
     }
-    service::resolve_task(agent, task_id, report, &app_state, CommunicationMethod::Http).await?;
+    service::resolve_task(
+        agent,
+        task_id,
+        report,
+        &app_state,
+        CommunicationMethod::Http,
+    )
+    .await?;
     Ok(Json(json!({"message": "task report confirmed"})))
 }
 
@@ -289,7 +301,14 @@ pub async fn post_task_progress_update(
     if update.id != task_id {
         return Err(AppError::BadRequest(id));
     }
-    service::update_task_progress(agent, task_id, update, &app_state, CommunicationMethod::Http).await?;
+    service::update_task_progress(
+        agent,
+        task_id,
+        update,
+        &app_state,
+        CommunicationMethod::Http,
+    )
+    .await?;
     Ok(Json(json!({"message": "task update confirmed"})))
 }
 
@@ -312,10 +331,12 @@ pub async fn websocket_handler(
         .get_agent(&claims.sub)
         .ok_or_else(|| AppError::Authorization("Agent not found".to_string()))?;
     info!("Agent {} connected via WebSocket", agent.uid_short);
-    if let Err(e) = app_state.storage.agents.update_agent_last_contact(
-        agent.clone(),
-        CommunicationMethod::WebSocket,
-    ).await {
+    if let Err(e) = app_state
+        .storage
+        .agents
+        .update_agent_last_contact(agent.clone(), CommunicationMethod::WebSocket)
+        .await
+    {
         warn!(
             "Failed to update agent last contact on WebSocket connect: {}",
             e
@@ -362,22 +383,15 @@ async fn ws_dispatch(
     match action {
         // ── Poll ─────────────────────────────────────────────────
         "poll_task" => {
-            let task = service::poll_non_urgent(
-                agent.clone(),
-                state,
-                CommunicationMethod::WebSocket,
-            )
-            .await?;
+            let task =
+                service::poll_non_urgent(agent.clone(), state, CommunicationMethod::WebSocket)
+                    .await?;
             Ok((200, serde_json::to_value(task).unwrap_or(json!(null))))
         }
 
         "poll_task_urgent" => {
-            let task = service::poll_urgent(
-                agent.clone(),
-                state,
-                CommunicationMethod::WebSocket,
-            )
-            .await?;
+            let task =
+                service::poll_urgent(agent.clone(), state, CommunicationMethod::WebSocket).await?;
             Ok((200, serde_json::to_value(task).unwrap_or(json!(null))))
         }
 
@@ -398,10 +412,8 @@ async fn ws_dispatch(
 
         // ── Resolve ──────────────────────────────────────────────
         "resolve_task" => {
-            let report: schema::TaskResultReport =
-                serde_json::from_value(params.clone()).map_err(|e| {
-                    AppError::BadRequest(format!("invalid resolve_task params: {e}"))
-                })?;
+            let report: schema::TaskResultReport = serde_json::from_value(params.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid resolve_task params: {e}")))?;
             let task_id = report.id.clone();
             service::resolve_task(
                 agent.clone(),
@@ -439,12 +451,10 @@ async fn ws_dispatch(
             let bucket_uid = params["bucket_uid"]
                 .as_str()
                 .ok_or_else(|| AppError::BadRequest("missing params.bucket_uid".into()))?;
-            let filename = params["filename"]
-                .as_str()
-                .unwrap_or("output")
-                .to_string();
-            let data = upload_data
-                .ok_or_else(|| AppError::BadRequest("missing binary frame after upload_file".into()))?;
+            let filename = params["filename"].as_str().unwrap_or("output").to_string();
+            let data = upload_data.ok_or_else(|| {
+                AppError::BadRequest("missing binary frame after upload_file".into())
+            })?;
 
             let mut bucket = state
                 .storage
@@ -552,22 +562,14 @@ async fn ws_route_get(
         }
         // /private/agent/ping
         ["private", "agent", "ping"] => {
-            service::do_agent_ping(
-                _agent.clone(),
-                state,
-                CommunicationMethod::WebSocket,
-            )
-            .await?;
+            service::do_agent_ping(_agent.clone(), state, CommunicationMethod::WebSocket).await?;
             Ok((200, json!({"status": "ok"})))
         }
         // /private/agent/task/poll (alias for poll_task)
         ["private", "agent", "task", "poll"] => {
-            let task = service::poll_non_urgent(
-                _agent.clone(),
-                state,
-                CommunicationMethod::WebSocket,
-            )
-            .await?;
+            let task =
+                service::poll_non_urgent(_agent.clone(), state, CommunicationMethod::WebSocket)
+                    .await?;
             Ok((200, serde_json::to_value(task).unwrap_or(json!(null))))
         }
         _ => Err(AppError::NotFound(format!(
@@ -588,16 +590,15 @@ async fn ws_route_post(
     match segs.as_slice() {
         // /private/agent/info/update
         ["private", "agent", "info", "update"] => {
-            let req: schema::AgentUpdateRequest =
-                serde_json::from_value(body).map_err(|e| {
-                    AppError::BadRequest(format!("invalid AgentUpdateRequest: {e}"))
-                })?;
+            let req: schema::AgentUpdateRequest = serde_json::from_value(body)
+                .map_err(|e| AppError::BadRequest(format!("invalid AgentUpdateRequest: {e}")))?;
             let resp = service::do_update_agent_info(
                 agent.clone(),
                 req,
                 state,
                 CommunicationMethod::WebSocket,
-            ).await?;
+            )
+            .await?;
             Ok((200, serde_json::to_value(resp).unwrap_or(json!(null))))
         }
         _ => Err(AppError::NotFound(format!(
@@ -607,11 +608,7 @@ async fn ws_route_post(
     }
 }
 
-async fn handle_agent_websocket(
-    socket: WebSocket,
-    agent: Agent,
-    app_state: Arc<AppState>,
-) {
+async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<AppState>) {
     let (sender, mut receiver) = socket.split();
     let sender = Arc::new(tokio::sync::Mutex::new(sender));
     let agent_id = agent.uid_short.clone();
@@ -674,18 +671,9 @@ async fn handle_agent_websocket(
                     }
                 };
 
-                let req_id = parsed["req_id"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
-                let action = parsed["action"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
-                let params = parsed
-                    .get("params")
-                    .cloned()
-                    .unwrap_or(json!({}));
+                let req_id = parsed["req_id"].as_str().unwrap_or("").to_string();
+                let action = parsed["action"].as_str().unwrap_or("").to_string();
+                let params = parsed.get("params").cloned().unwrap_or(json!({}));
 
                 if action.is_empty() {
                     continue;
@@ -698,8 +686,7 @@ async fn handle_agent_websocket(
                         Some(Ok(other)) => {
                             warn!(
                                 "Expected binary frame for upload_file from agent {}, got {:?}",
-                                agent_id,
-                                other
+                                agent_id, other
                             );
                             let err_msg = ws_err(
                                 &req_id,
@@ -723,26 +710,19 @@ async fn handle_agent_websocket(
                     None
                 };
 
-                let response_text = match ws_dispatch(
-                    &action,
-                    &params,
-                    &agent,
-                    &app_state,
-                    upload_data,
-                )
-                .await
-                {
-                    Ok((status, data)) => ws_ok(&req_id, status, data),
-                    Err(e) => {
-                        if e.should_log() {
-                            warn!(
-                                "WS dispatch error for agent {} action {}: {}",
-                                agent_id, action, e
-                            );
+                let response_text =
+                    match ws_dispatch(&action, &params, &agent, &app_state, upload_data).await {
+                        Ok((status, data)) => ws_ok(&req_id, status, data),
+                        Err(e) => {
+                            if e.should_log() {
+                                warn!(
+                                    "WS dispatch error for agent {} action {}: {}",
+                                    agent_id, action, e
+                                );
+                            }
+                            ws_err(&req_id, &e)
                         }
-                        ws_err(&req_id, &e)
-                    }
-                };
+                    };
 
                 let mut tx = sender.lock().await;
                 if tx.send(Message::Text(response_text.into())).await.is_err() {

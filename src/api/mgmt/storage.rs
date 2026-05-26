@@ -44,8 +44,7 @@ pub async fn list_all_buckets(
         });
 
         let obj = entry.as_object_mut().unwrap();
-        *obj.get_mut("bucket_count").unwrap() =
-            json!(obj["bucket_count"].as_u64().unwrap() + 1);
+        *obj.get_mut("bucket_count").unwrap() = json!(obj["bucket_count"].as_u64().unwrap() + 1);
         *obj.get_mut("total_files").unwrap() =
             json!(obj["total_files"].as_u64().unwrap() + bucket.files.len() as u64);
         *obj.get_mut("total_bytes").unwrap() =
@@ -87,11 +86,14 @@ pub async fn get_quotas(
         let total_bytes: u64 = buckets.iter().map(|b| b.used_bytes).sum();
         let total_files: u64 = buckets.iter().map(|b| b.files.len() as u64).sum();
         let mut map = HashMap::new();
-        map.insert(key, json!({
-            "bucket_count": buckets.len(),
-            "total_bytes":  total_bytes,
-            "total_files":  total_files,
-        }));
+        map.insert(
+            key,
+            json!({
+                "bucket_count": buckets.len(),
+                "total_bytes":  total_bytes,
+                "total_files":  total_files,
+            }),
+        );
         map
     } else {
         let all_buckets = state.storage.buckets.list_all_buckets();
@@ -104,11 +106,14 @@ pub async fn get_quotas(
         }
         map.into_iter()
             .map(|(k, (count, bytes, files))| {
-                (k, json!({
-                    "bucket_count": count,
-                    "total_bytes":  bytes,
-                    "total_files":  files,
-                }))
+                (
+                    k,
+                    json!({
+                        "bucket_count": count,
+                        "total_bytes":  bytes,
+                        "total_files":  files,
+                    }),
+                )
             })
             .collect()
     };
@@ -156,12 +161,24 @@ pub async fn delete_key_buckets(
 
     for bucket in &buckets {
         if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
-            log::warn!("Management: failed to delete bucket files {}: {}", bucket.uid, e);
+            log::warn!(
+                "Management: failed to delete bucket files {}: {}",
+                bucket.uid,
+                e
+            );
         }
-        state.storage.buckets.delete_bucket(&bucket.uid, &api_key).await?;
+        state
+            .storage
+            .buckets
+            .delete_bucket(&bucket.uid, &api_key)
+            .await?;
     }
 
-    info!("Management: deleted {} bucket(s) for key ...{}", count, &api_key[api_key.len().saturating_sub(6)..]);
+    info!(
+        "Management: deleted {} bucket(s) for key ...{}",
+        count,
+        &api_key[api_key.len().saturating_sub(6)..]
+    );
     Ok(Json(json!({ "api_key": api_key, "deleted_count": count })))
 }
 
@@ -176,14 +193,30 @@ pub async fn trigger_storage_cleanup(
 
     for bucket in &expired {
         if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
-            log::warn!("Management: cleanup failed to delete bucket files {}: {}", bucket.uid, e);
+            log::warn!(
+                "Management: cleanup failed to delete bucket files {}: {}",
+                bucket.uid,
+                e
+            );
         }
-        if let Err(e) = state.storage.buckets.delete_bucket(&bucket.uid, &bucket.api_key).await {
-            log::warn!("Management: cleanup failed to delete bucket metadata {}: {}", bucket.uid, e);
+        if let Err(e) = state
+            .storage
+            .buckets
+            .delete_bucket(&bucket.uid, &bucket.api_key)
+            .await
+        {
+            log::warn!(
+                "Management: cleanup failed to delete bucket metadata {}: {}",
+                bucket.uid,
+                e
+            );
         }
     }
 
-    info!("Management: storage cleanup triggered, purged {} expired bucket(s)", count);
+    info!(
+        "Management: storage cleanup triggered, purged {} expired bucket(s)",
+        count
+    );
     Ok(Json(json!({ "deleted_count": count })))
 }
 
@@ -197,10 +230,23 @@ pub async fn purge_all_buckets(
 
     for bucket in &all_buckets {
         if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
-            log::warn!("Management: failed to delete bucket files {}: {}", bucket.uid, e);
+            log::warn!(
+                "Management: failed to delete bucket files {}: {}",
+                bucket.uid,
+                e
+            );
         }
-        if let Err(e) = state.storage.buckets.delete_bucket(&bucket.uid, &bucket.api_key).await {
-            log::warn!("Management: failed to delete bucket metadata {}: {}", bucket.uid, e);
+        if let Err(e) = state
+            .storage
+            .buckets
+            .delete_bucket(&bucket.uid, &bucket.api_key)
+            .await
+        {
+            log::warn!(
+                "Management: failed to delete bucket metadata {}: {}",
+                bucket.uid,
+                e
+            );
         }
     }
 

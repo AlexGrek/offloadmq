@@ -59,8 +59,11 @@ impl AppError {
     /// Usable by any transport adapter (HTTP, WebSocket, gRPC) without framework imports.
     pub fn status_code_number(&self) -> u16 {
         match self {
-            AppError::Database(_) | AppError::Internal(_) | AppError::Serialization(_)
-            | AppError::Io(_) | AppError::BcryptError(_) => 500,
+            AppError::Database(_)
+            | AppError::Internal(_)
+            | AppError::Serialization(_)
+            | AppError::Io(_)
+            | AppError::BcryptError(_) => 500,
             AppError::Authentication(_) | AppError::Jwt(_) => 401,
             AppError::Authorization(_) => 403,
             AppError::Validation(_) | AppError::BadRequest(_) | AppError::Parse(_) => 400,
@@ -251,8 +254,14 @@ mod tests {
         assert_eq!(AppError::not_found("t").status_code_number(), 404);
         assert_eq!(AppError::conflict("t").status_code_number(), 409);
         assert_eq!(AppError::bad_request("t").status_code_number(), 400);
-        assert_eq!(AppError::SchedulingImpossible("t".into()).status_code_number(), 503);
-        assert_eq!(AppError::ClientClosedRequest("t".into()).status_code_number(), 499);
+        assert_eq!(
+            AppError::SchedulingImpossible("t".into()).status_code_number(),
+            503
+        );
+        assert_eq!(
+            AppError::ClientClosedRequest("t".into()).status_code_number(),
+            499
+        );
     }
 
     #[test]
@@ -262,7 +271,14 @@ mod tests {
         let error_obj = json.get("error").expect("missing error key");
         assert_eq!(error_obj.get("type").unwrap(), "not_found");
         assert_eq!(error_obj.get("status").unwrap(), 404);
-        assert!(error_obj.get("message").unwrap().as_str().unwrap().contains("thing"));
+        assert!(
+            error_obj
+                .get("message")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains("thing")
+        );
     }
 
     #[test]

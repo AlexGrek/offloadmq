@@ -7,8 +7,8 @@ use crate::{
         agent_log_storage::AgentLogStorage,
         apikeys::ApiKeysStorage,
         bucket_storage::BucketStorage,
-        persistent_task_storage::TaskStorage,
         heuristic_storage::HeuristicStorage,
+        persistent_task_storage::TaskStorage,
         service_message_storage::ServiceMessageStorage,
     },
     models::Agent,
@@ -60,7 +60,9 @@ impl AppStorage {
         let buckets = Arc::new(BucketStorage::open(buckets_path.to_str().unwrap())?);
         let file_store = Arc::new(FileStore::new(storage_config)?);
         let heuristics = Arc::new(HeuristicStorage::open(heuristics_path.to_str().unwrap())?);
-        let service_messages = Arc::new(ServiceMessageStorage::open(service_messages_path.to_str().unwrap())?);
+        let service_messages = Arc::new(ServiceMessageStorage::open(
+            service_messages_path.to_str().unwrap(),
+        )?);
         let agent_logs = Arc::new(AgentLogStorage::open(agent_logs_path.to_str().unwrap())?);
 
         Ok(Self {

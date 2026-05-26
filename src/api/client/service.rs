@@ -11,7 +11,7 @@ use crate::{
     models::{AssignedTask, UnassignedTask},
     mq::{scheduler::submit_urgent_task, types::UrgentSubmitOutcome},
     schema::{TaskId, TaskStatus, TaskStatusResponse, TaskSubmissionRequest},
-    state::AppState,
+    state::{AppState, StreamEvent, TaskLifecycleEvent, TaskQueueKind},
     utils::base_capability,
 };
 
@@ -48,7 +48,9 @@ pub async fn record_task_in_buckets(state: &AppState, task_id: &str, file_bucket
         if let Err(e) = state.storage.buckets.add_task(bucket_uid, task_id).await {
             log::warn!(
                 "Failed to record task {} in bucket {}: {}",
-                task_id, bucket_uid, e
+                task_id,
+                bucket_uid,
+                e
             );
         }
     }
@@ -76,8 +78,7 @@ pub fn validate_file_buckets(
         if bucket.rm_after_task && !bucket.tasks.is_empty() {
             return Err(AppError::Conflict(format!(
                 "Bucket {} has rm_after_task set and has already been used by task {}",
-                bucket_uid,
-                bucket.tasks[0],
+                bucket_uid, bucket.tasks[0],
             )));
         }
     }
@@ -107,7 +108,10 @@ pub async fn do_submit_task_blocking(
     skip_owner: bool,
 ) -> Result<UrgentSubmitOutcome, AppError> {
     if !skip_owner {
-        state.storage.client_keys.verify_key(&req.api_key, &req.capability)?;
+        state
+            .storage
+            .client_keys
+            .verify_key(&req.api_key, &req.capability)?;
     }
     if !req.urgent {
         return Err(AppError::BadRequest(
@@ -129,7 +133,9 @@ pub async fn do_submit_task_blocking(
         created_at: Utc::now(),
     };
     info!("New urgent task: {:?}", task);
-    submit_urgent_task(&state.urgent, &state.storage.agents, task).await
+    let outcome = submit_urgent_task(&state.urgent, &state.storage.agents, task).await?;
+    emit_urgent_expired_if_needed(state, &outcome);
+    Ok(outcome)
 }
 
 pub async fn do_submit_task(
@@ -138,7 +144,10 @@ pub async fn do_submit_task(
     skip_owner: bool,
 ) -> Result<SubmitOutcome, AppError> {
     if !skip_owner {
-        state.storage.client_keys.verify_key(&req.api_key, &req.capability)?;
+        state
+            .storage
+            .client_keys
+            .verify_key(&req.api_key, &req.capability)?;
     }
     let urgent = req.urgent;
     let file_bucket = req.file_bucket.clone();
@@ -158,6 +167,7 @@ pub async fn do_submit_task(
     info!("New unassigned task: {:?}", task);
     if urgent {
         let outcome = submit_urgent_task(&state.urgent, &state.storage.agents, task).await?;
+        emit_urgent_expired_if_needed(state, &outcome);
         Ok(SubmitOutcome::Urgent(outcome))
     } else {
         let id = task.id.clone();
@@ -214,12 +224,36 @@ pub async fn do_cancel_task(
     skip_owner: bool,
 ) -> Result<CancelOutcome, AppError> {
     if let Ok(outcome) = cancel_regular_task(state, &task_id, api_key, skip_owner) {
+        emit_task_lifecycle(
+            state,
+            TaskLifecycleEvent {
+                task_id: task_id.clone(),
+                queue: TaskQueueKind::Regular,
+                action: "cancel".to_string(),
+                agent_id: None,
+                status: cancel_status_from_str(&outcome.status),
+                result_status: None,
+                stage: None,
+            },
+        );
         return Ok(outcome);
     }
 
     match state.urgent.cancel_task(&task_id).await {
         Ok(TaskStatus::CancelRequested) => {
             info!("Urgent task {} cancel requested (was assigned)", task_id);
+            emit_task_lifecycle(
+                state,
+                TaskLifecycleEvent {
+                    task_id: task_id.clone(),
+                    queue: TaskQueueKind::Urgent,
+                    action: "cancel".to_string(),
+                    agent_id: None,
+                    status: Some(TaskStatus::CancelRequested),
+                    result_status: None,
+                    stage: None,
+                },
+            );
             Ok(CancelOutcome {
                 id: task_id,
                 status: "cancelRequested".into(),
@@ -228,6 +262,18 @@ pub async fn do_cancel_task(
         }
         Ok(TaskStatus::Canceled) => {
             info!("Urgent task {} cancelled (was unassigned)", task_id);
+            emit_task_lifecycle(
+                state,
+                TaskLifecycleEvent {
+                    task_id: task_id.clone(),
+                    queue: TaskQueueKind::Urgent,
+                    action: "cancel".to_string(),
+                    agent_id: None,
+                    status: Some(TaskStatus::Canceled),
+                    result_status: None,
+                    stage: None,
+                },
+            );
             Ok(CancelOutcome {
                 id: task_id,
                 status: "canceled".into(),
@@ -326,9 +372,42 @@ pub fn do_capabilities_online(
             .client_keys
             .find_active(api_key)?
             .ok_or_else(|| AppError::Authorization("API key not found".to_string()))?;
-        capabilities.retain(|el| {
-            ApiKeysStorage::has_capability(&key.capabilities, base_capability(el))
-        });
+        capabilities
+            .retain(|el| ApiKeysStorage::has_capability(&key.capabilities, base_capability(el)));
     }
     Ok(capabilities)
+}
+
+fn emit_task_lifecycle(state: &Arc<AppState>, event: TaskLifecycleEvent) {
+    let _ = state
+        .channels
+        .stream_tx
+        .send(StreamEvent::TaskLifecycle(event));
+}
+
+fn cancel_status_from_str(status: &str) -> Option<TaskStatus> {
+    match status {
+        "cancelRequested" => Some(TaskStatus::CancelRequested),
+        "canceled" => Some(TaskStatus::Canceled),
+        _ => None,
+    }
+}
+
+fn emit_urgent_expired_if_needed(state: &Arc<AppState>, outcome: &UrgentSubmitOutcome) {
+    if let UrgentSubmitOutcome::CompletedPartial { id, status, .. } = outcome {
+        if *status == TaskStatus::Failed {
+            emit_task_lifecycle(
+                state,
+                TaskLifecycleEvent {
+                    task_id: id.clone(),
+                    queue: TaskQueueKind::Urgent,
+                    action: "expired".to_string(),
+                    agent_id: None,
+                    status: Some(TaskStatus::Failed),
+                    result_status: None,
+                    stage: None,
+                },
+            );
+        }
+    }
 }

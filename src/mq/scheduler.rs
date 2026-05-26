@@ -2,10 +2,13 @@ use chrono::Utc;
 use log::debug;
 
 use crate::{
-    db::{agent::AgentStorage, persistent_task_storage::TaskStorage, heuristic_storage::HeuristicStorage},
+    db::{
+        agent::AgentStorage, heuristic_storage::HeuristicStorage,
+        persistent_task_storage::TaskStorage,
+    },
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
-    mq::{urgent::UrgentTaskStore, heuristic::HeuristicRecord, types::UrgentSubmitOutcome},
+    mq::{heuristic::HeuristicRecord, types::UrgentSubmitOutcome, urgent::UrgentTaskStore},
     schema::{TaskId, TaskResultReport, TaskResultStatus, TaskStatus, TaskUpdate},
     utils::base_capability,
 };
@@ -29,7 +32,13 @@ pub async fn find_assignable_non_urgent_tasks_with_capabilities_for_tier(
     let mut collected = vec![];
     debug!("Total jobs available: {} (our tier is {})", all.len(), tier);
     for task in all {
-        if let Some(runner) = task.data.payload.get("runner").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        if let Some(runner) = task
+            .data
+            .payload
+            .get("runner")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
             if runner != agent_uid {
                 continue;
             }
@@ -183,7 +192,12 @@ pub async fn update_non_urgent_task<'a>(
         if let Some(new_status) = report.status {
             match new_status {
                 TaskStatus::Starting | TaskStatus::Running => got.change_status(new_status),
-                _ => return Err(AppError::BadRequest(format!("Status {:?} cannot be set via progress update", new_status))),
+                _ => {
+                    return Err(AppError::BadRequest(format!(
+                        "Status {:?} cannot be set via progress update",
+                        new_status
+                    )));
+                }
             }
         }
     }
@@ -197,25 +211,29 @@ pub async fn update_non_urgent_task<'a>(
     Ok(())
 }
 
-pub async fn has_potential_agents_for(
-    cap: &std::string::String,
-    agents: &AgentStorage,
-) -> bool {
+pub async fn has_potential_agents_for(cap: &std::string::String, agents: &AgentStorage) -> bool {
     for agent in agents.list_all_agents() {
-        if agent.capabilities.iter().any(|c| base_capability(c) == cap.as_str()) && agent.is_online() {
+        if agent
+            .capabilities
+            .iter()
+            .any(|c| base_capability(c) == cap.as_str())
+            && agent.is_online()
+        {
             return true;
         }
     }
     return false;
 }
 
-pub async fn all_online_agents_for(
-    cap: &std::string::String,
-    agents: &AgentStorage,
-) -> Vec<Agent> {
+pub async fn all_online_agents_for(cap: &std::string::String, agents: &AgentStorage) -> Vec<Agent> {
     let mut collection = vec![];
     for agent in agents.list_all_agents() {
-        if agent.capabilities.iter().any(|c| base_capability(c) == cap.as_str()) && agent.is_online() {
+        if agent
+            .capabilities
+            .iter()
+            .any(|c| base_capability(c) == cap.as_str())
+            && agent.is_online()
+        {
             collection.push(agent);
         }
     }
@@ -238,10 +256,13 @@ pub async fn submit_urgent_task(
     // max_wait_secs takes precedence; fall back to 60 s for urgent tasks.
     let pending_ttl_secs = task.data.max_wait_secs.map(|s| s as i64).unwrap_or(60);
     // Global deadline: absolute moment when the overall timeout_secs fires.
-    let global_deadline = task.data.timeout_secs.map(|ts| {
-        task.created_at + chrono::TimeDelta::seconds(ts as i64)
-    });
-    let state = store.add_task(task.clone(), pending_ttl_secs, global_deadline).await?;
+    let global_deadline = task
+        .data
+        .timeout_secs
+        .map(|ts| task.created_at + chrono::TimeDelta::seconds(ts as i64));
+    let state = store
+        .add_task(task.clone(), pending_ttl_secs, global_deadline)
+        .await?;
 
     let mut rx = state.notify.subscribe();
 

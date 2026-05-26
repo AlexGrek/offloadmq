@@ -29,10 +29,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    db::bucket_storage::FileMeta,
-    error::AppError,
-    middleware::StorageApiKey,
-    state::AppState,
+    db::bucket_storage::FileMeta, error::AppError, middleware::StorageApiKey, state::AppState,
 };
 use anyhow;
 
@@ -98,8 +95,16 @@ pub async fn create_bucket(
             current, cfg.max_buckets_per_key
         )));
     }
-    let bucket = state.storage.buckets.create_bucket(&api_key, params.rm_after_task).await?;
-    info!("Created bucket {} for key ...{}", bucket.uid, &api_key[api_key.len().saturating_sub(6)..]);
+    let bucket = state
+        .storage
+        .buckets
+        .create_bucket(&api_key, params.rm_after_task)
+        .await?;
+    info!(
+        "Created bucket {} for key ...{}",
+        bucket.uid,
+        &api_key[api_key.len().saturating_sub(6)..]
+    );
     Ok((
         StatusCode::CREATED,
         Json(json!({
@@ -255,7 +260,8 @@ pub async fn download_file(
         .await
         .map_err(AppError::Internal)?;
 
-    let base_name = file_meta.original_name
+    let base_name = file_meta
+        .original_name
         .rsplit('/')
         .next()
         .unwrap_or(&file_meta.original_name);
@@ -371,7 +377,10 @@ fn sanitize_upload_path(name: &str) -> String {
 
     if is_absolute {
         // Strip the system path prefix; keep only the final filename component.
-        name.rsplit(['/', '\\']).next().unwrap_or("unnamed").to_string()
+        name.rsplit(['/', '\\'])
+            .next()
+            .unwrap_or("unnamed")
+            .to_string()
     } else {
         // Relative path — normalise separators and remove unsafe components.
         let normalized = name.replace('\\', "/");
@@ -399,7 +408,9 @@ fn require_own_bucket(
         .ok_or_else(|| AppError::NotFound(format!("Bucket {} not found", bucket_uid)))?;
 
     if bucket.api_key != api_key {
-        return Err(AppError::Authorization("Bucket not owned by this key".to_string()));
+        return Err(AppError::Authorization(
+            "Bucket not owned by this key".to_string(),
+        ));
     }
     Ok(bucket)
 }

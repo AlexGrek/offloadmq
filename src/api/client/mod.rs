@@ -34,15 +34,13 @@ pub async fn submit_task(
 ) -> Result<impl IntoResponse, AppError> {
     match service::do_submit_task(&app_state, req, mgmt.is_active()).await? {
         service::SubmitOutcome::Urgent(outcome) => Ok(urgent_outcome_to_response(outcome)),
-        service::SubmitOutcome::Queued { id, capability } => {
-            Ok(Json(json!({
-                "id": id,
-                "capability": capability,
-                "status": "queued",
-                "message": "Added to tasks queue"
-            }))
-            .into_response())
-        }
+        service::SubmitOutcome::Queued { id, capability } => Ok(Json(json!({
+            "id": id,
+            "capability": capability,
+            "status": "queued",
+            "message": "Added to tasks queue"
+        }))
+        .into_response()),
     }
 }
 
@@ -92,8 +90,10 @@ pub async fn capabilities_online_ext(
 fn urgent_outcome_to_response(outcome: UrgentSubmitOutcome) -> axum::response::Response {
     match outcome {
         UrgentSubmitOutcome::Completed(task) => Json(task).into_response(),
-        UrgentSubmitOutcome::CompletedPartial { id, status, message } => {
-            Json(json!({"id": id, "status": status, "message": message})).into_response()
-        }
+        UrgentSubmitOutcome::CompletedPartial {
+            id,
+            status,
+            message,
+        } => Json(json!({"id": id, "status": status, "message": message})).into_response(),
     }
 }

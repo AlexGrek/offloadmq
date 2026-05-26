@@ -5,18 +5,25 @@ use std::{collections::HashSet, env, sync::Arc};
 
 use axum::{
     Json,
-    extract::{Path, Query, State},
-    response::IntoResponse,
+    extract::{
+        Path, Query, State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
+    },
+    response::{
+        IntoResponse,
+        sse::{Event, Sse},
+    },
 };
 use serde::Deserialize;
 use serde_json::json;
+use std::convert::Infallible;
 use tracing::info;
 
 use crate::{
     error::AppError,
     models::{Agent, ClientApiKey},
     schema::{self},
-    state::AppState,
+    state::{AppState, StreamEvent},
     utils::base_capability,
 };
 
@@ -188,6 +195,116 @@ pub async fn list_service_messages(
     })))
 }
 
+pub async fn stream_service_messages_ws(
+    State(state): State<Arc<AppState>>,
+    ws: WebSocketUpgrade,
+) -> Result<impl IntoResponse, AppError> {
+    Ok(ws.on_upgrade(move |socket| handle_service_messages_ws(socket, state)))
+}
+
+pub async fn stream_task_lifecycle_ws(
+    State(state): State<Arc<AppState>>,
+    ws: WebSocketUpgrade,
+) -> Result<impl IntoResponse, AppError> {
+    Ok(ws.on_upgrade(move |socket| handle_task_lifecycle_ws(socket, state)))
+}
+
+pub async fn stream_task_lifecycle_sse(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let rx = state.subscribe_stream();
+    let stream = futures::stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(StreamEvent::TaskLifecycle(event)) => {
+                    if let Ok(payload) = serde_json::to_string(&event) {
+                        let ev = Event::default().event("taskLifecycle").data(payload);
+                        return Some((Ok::<Event, Infallible>(ev), rx));
+                    }
+                }
+                Ok(StreamEvent::ServiceMessage(_)) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+    Ok(Sse::new(stream))
+}
+
+async fn handle_service_messages_ws(socket: WebSocket, state: Arc<AppState>) {
+    use futures::{SinkExt, StreamExt};
+
+    let (mut sender, mut receiver) = socket.split();
+    let mut events = state.subscribe_stream();
+
+    loop {
+        tokio::select! {
+            event = events.recv() => {
+                match event {
+                    Ok(StreamEvent::ServiceMessage(msg)) => {
+                        if let Ok(payload) = serde_json::to_string(&msg) {
+                            if sender.send(Message::Text(payload.into())).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    Ok(StreamEvent::TaskLifecycle(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break;
+                    }
+                }
+            }
+            incoming = receiver.next() => {
+                match incoming {
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) => break,
+                }
+            }
+        }
+    }
+}
+
+async fn handle_task_lifecycle_ws(socket: WebSocket, state: Arc<AppState>) {
+    use futures::{SinkExt, StreamExt};
+
+    let (mut sender, mut receiver) = socket.split();
+    let mut events = state.subscribe_stream();
+
+    loop {
+        tokio::select! {
+            event = events.recv() => {
+                match event {
+                    Ok(StreamEvent::TaskLifecycle(event)) => {
+                        if let Ok(payload) = serde_json::to_string(&event) {
+                            if sender.send(Message::Text(payload.into())).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    Ok(StreamEvent::ServiceMessage(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break;
+                    }
+                }
+            }
+            incoming = receiver.next() => {
+                match incoming {
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) => break,
+                }
+            }
+        }
+    }
+}
+
 pub async fn trigger_heuristics_cleanup(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -299,11 +416,7 @@ pub async fn trigger_stale_agents_cleanup(
 ) -> Result<impl IntoResponse, AppError> {
     let ttl_days = state.config.stale_agents.ttl_days;
 
-    let deleted = state
-        .storage
-        .agents
-        .cleanup_stale_agents(ttl_days)
-        .await?;
+    let deleted = state.storage.agents.cleanup_stale_agents(ttl_days).await?;
 
     info!(
         "Management: stale agents cleanup triggered, deleted {} agent(s)",

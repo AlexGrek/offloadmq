@@ -71,10 +71,21 @@ impl UrgentTaskStore {
                 if item.1.assigned_task.is_some() {
                     return false;
                 }
-                if !caps.iter().any(|c| base_capability(c) == item.1.task.id.cap.as_str()) {
+                if !caps
+                    .iter()
+                    .any(|c| base_capability(c) == item.1.task.id.cap.as_str())
+                {
                     return false;
                 }
-                if let Some(runner) = item.1.task.data.payload.get("runner").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                if let Some(runner) = item
+                    .1
+                    .task
+                    .data
+                    .payload
+                    .get("runner")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                {
                     return runner == agent_uid;
                 }
                 true
@@ -195,8 +206,15 @@ impl UrgentTaskStore {
             if !is_cancel_requested {
                 if let Some(new_status) = status {
                     match new_status {
-                        TaskStatus::Starting | TaskStatus::Running => task.change_status(new_status),
-                        _ => return Err(AppError::BadRequest(format!("Status {:?} cannot be set via progress update", new_status))),
+                        TaskStatus::Starting | TaskStatus::Running => {
+                            task.change_status(new_status)
+                        }
+                        _ => {
+                            return Err(AppError::BadRequest(format!(
+                                "Status {:?} cannot be set via progress update",
+                                new_status
+                            )));
+                        }
                     }
                 }
             }

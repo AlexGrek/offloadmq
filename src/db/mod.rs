@@ -1,8 +1,8 @@
-pub mod persistent_task_storage;
 pub mod agent;
+pub mod agent_log_storage;
 pub mod apikeys;
 pub mod app_storage;
 pub mod bucket_storage;
 pub mod heuristic_storage;
+pub mod persistent_task_storage;
 pub mod service_message_storage;
-pub mod agent_log_storage;

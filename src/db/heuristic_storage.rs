@@ -68,15 +68,21 @@ impl HeuristicStorage {
 
         // Write to capability index: "capability|runner_id|record_id"
         let cap_key = record.make_key();
-        self.heuristics_by_cap.insert(cap_key.as_bytes(), bytes.clone())?;
+        self.heuristics_by_cap
+            .insert(cap_key.as_bytes(), bytes.clone())?;
 
         // Write to runner index: "runner_id|capability|record_id"
-        let runner_key = format!("{}|{}|{}", record.runner_id, record.capability, record.record_id);
-        self.heuristics_by_runner.insert(runner_key.as_bytes(), bytes.clone())?;
+        let runner_key = format!(
+            "{}|{}|{}",
+            record.runner_id, record.capability, record.record_id
+        );
+        self.heuristics_by_runner
+            .insert(runner_key.as_bytes(), bytes.clone())?;
 
         // Write to machine index: "machine_id|capability|record_id" (only if machine_id present)
         if let Some(machine_key) = record.make_machine_key() {
-            self.heuristics_by_machine.insert(machine_key.as_bytes(), bytes)?;
+            self.heuristics_by_machine
+                .insert(machine_key.as_bytes(), bytes)?;
         }
 
         Ok(())
@@ -208,7 +214,12 @@ impl HeuristicStorage {
     // ========== Cleanup Operations ==========
 
     /// Delete a heuristic record by its composite keys across all three index trees
-    fn delete_record(&self, cap_key: &str, runner_key: &str, machine_key: Option<&str>) -> Result<()> {
+    fn delete_record(
+        &self,
+        cap_key: &str,
+        runner_key: &str,
+        machine_key: Option<&str>,
+    ) -> Result<()> {
         self.heuristics_by_cap.remove(cap_key.as_bytes())?;
         self.heuristics_by_runner.remove(runner_key.as_bytes())?;
         if let Some(mk) = machine_key {
@@ -221,7 +232,11 @@ impl HeuristicStorage {
     /// 1. Delete records older than the specified TTL
     /// 2. For each (runner, capability) pair, keep only the most recent max_records records
     /// 3. For each (machine, capability) pair, keep only the most recent max_records records
-    pub fn cleanup(&self, ttl_days: u32, max_records_per_runner_cap: u32) -> Result<(usize, usize)> {
+    pub fn cleanup(
+        &self,
+        ttl_days: u32,
+        max_records_per_runner_cap: u32,
+    ) -> Result<(usize, usize)> {
         let cutoff_date = Utc::now() - Duration::days(ttl_days as i64);
         let mut deleted_by_age = 0;
         let mut deleted_by_limit = 0;
@@ -234,7 +249,10 @@ impl HeuristicStorage {
             if record.completed_at < cutoff_date {
                 keys_to_delete.push((
                     String::from_utf8_lossy(&key).to_string(),
-                    format!("{}|{}|{}", record.runner_id, record.capability, record.record_id),
+                    format!(
+                        "{}|{}|{}",
+                        record.runner_id, record.capability, record.record_id
+                    ),
                     record.make_machine_key(),
                 ));
             }
@@ -246,14 +264,19 @@ impl HeuristicStorage {
         }
 
         // Delete by limit (runner): for each (runner, capability), keep only the newest max_records
-        let mut runner_cap_records: HashMap<(String, String), Vec<(String, String, Option<String>, HeuristicRecord)>> =
-            HashMap::new();
+        let mut runner_cap_records: HashMap<
+            (String, String),
+            Vec<(String, String, Option<String>, HeuristicRecord)>,
+        > = HashMap::new();
 
         for item in self.heuristics_by_cap.iter() {
             let (key, bytes) = item?;
             let record: HeuristicRecord = rmp_serde::from_slice(&bytes)?;
             let cap_key = String::from_utf8_lossy(&key).to_string();
-            let runner_key = format!("{}|{}|{}", record.runner_id, record.capability, record.record_id);
+            let runner_key = format!(
+                "{}|{}|{}",
+                record.runner_id, record.capability, record.record_id
+            );
             let machine_key = record.make_machine_key();
             let key_tuple = (record.runner_id.clone(), record.capability.clone());
 
@@ -472,7 +495,10 @@ impl HeuristicStorage {
     ) -> Result<Option<std::time::Duration>> {
         let machine_records = self.query_by_machine_and_capability(machine_id, capability)?;
         let all_records = self.query_by_capability(capability)?;
-        Ok(crate::mq::heuristic::estimate_duration(&machine_records, &all_records))
+        Ok(crate::mq::heuristic::estimate_duration(
+            &machine_records,
+            &all_records,
+        ))
     }
 
     // ========== Internal Helpers ==========

@@ -1,15 +1,21 @@
 use std::sync::Arc;
 
-use axum::{Json, Router, extract::{DefaultBodyLimit, State}, middleware::from_fn_with_state, routing::*};
-use log::info;
+use axum::{
+    Json, Router,
+    extract::{DefaultBodyLimit, State},
+    middleware::from_fn_with_state,
+    routing::*,
+};
+use log::{info, warn};
 use offloadmq::{
     api::agent::{agent_ping, auth_agent, register_agent, update_agent_info, websocket_handler},
     db::app_storage::AppStorage,
     preferences::init_config,
-    state::AppState,
+    state::{AppChannels, AppState, DbWriteRequest, StreamEvent},
 };
 use offloadmq::{middleware::auth::Auth, *};
 use serde_json::{Value, json};
+use tokio::sync::{mpsc, watch};
 use tokio::{net::TcpListener, time};
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -36,8 +42,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Failed to initialize storage");
 
     let auth = Auth::new(config.jwt_secret.as_bytes());
-    let app_state = AppState::new(app_storage, config.clone(), auth);
+    let (channels, workers) = AppChannels::new();
+    let app_state = AppState::new(app_storage, config.clone(), auth, channels);
     let shared_state = Arc::new(app_state);
+    tokio::spawn(run_db_write_worker(
+        shared_state.clone(),
+        workers.db_write_rx,
+        workers.shutdown_rx,
+    ));
     shared_state
         .storage
         .client_keys
@@ -73,10 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/task/progress/{cap}/{id}",
                     post(api::agent::post_task_progress_update),
                 )
-                .route(
-                    "/bucket/{bucket_uid}/stat",
-                    get(api::agent::bucket_stat),
-                )
+                .route("/bucket/{bucket_uid}/stat", get(api::agent::bucket_stat))
                 .route(
                     "/bucket/{bucket_uid}/file/{file_uid}",
                     get(api::agent::download_bucket_file),
@@ -130,10 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     get(api::mgmt::storage::list_all_buckets)
                         .delete(api::mgmt::storage::purge_all_buckets),
                 )
-                .route(
-                    "/storage/quotas",
-                    get(api::mgmt::storage::get_quotas),
-                )
+                .route("/storage/quotas", get(api::mgmt::storage::get_quotas))
                 .route(
                     "/storage/bucket/{bucket_uid}",
                     delete(api::mgmt::storage::delete_bucket),
@@ -170,9 +176,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/agents/cleanup/trigger",
                     post(api::mgmt::trigger_stale_agents_cleanup),
                 )
+                .route("/service_logs", get(api::mgmt::list_service_messages))
                 .route(
-                    "/service_logs",
-                    get(api::mgmt::list_service_messages),
+                    "/service_logs/stream/ws",
+                    get(api::mgmt::stream_service_messages_ws),
+                )
+                .route("/tasks/stream/ws", get(api::mgmt::stream_task_lifecycle_ws))
+                .route(
+                    "/tasks/stream/sse",
+                    get(api::mgmt::stream_task_lifecycle_sse),
                 )
                 .route(
                     "/agent_logs/by_severity",
@@ -205,10 +217,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/task/submit_blocking",
                     post(api::client::submit_task_blocking),
                 )
-                .route(
-                    "/task/cancel/{cap}/{id}",
-                    post(api::client::cancel_task),
-                )
+                .route("/task/cancel/{cap}/{id}", post(api::client::cancel_task))
                 .route(
                     "/capabilities/online",
                     post(api::client::capabilities_online),
@@ -277,9 +286,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let state = shared_state.clone();
         tokio::spawn(async move {
             let mut interval = time::interval(time::Duration::from_secs(120));
+            let mut shutdown = state.subscribe_shutdown();
             loop {
-                interval.tick().await;
-                state.storage.agents.log_online_agents();
+                tokio::select! {
+                    _ = shutdown.changed() => {
+                        if *shutdown.borrow() {
+                            break;
+                        }
+                    }
+                    _ = interval.tick() => {
+                        state.storage.agents.log_online_agents();
+                    }
+                }
             }
         });
     }
@@ -290,42 +308,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(async move {
             let interval_secs = 3 * 60 * 60; // 3 hours
             let mut interval = time::interval(time::Duration::from_secs(interval_secs));
+            let mut shutdown = state.subscribe_shutdown();
             loop {
-                interval.tick().await;
-                let ttl = state.config.storage.bucket_ttl_minutes;
-                let expired = state.storage.buckets.list_expired_buckets(ttl);
-                if expired.is_empty() {
-                    continue;
-                }
-                info!("Storage cleanup: purging {} expired bucket(s)", expired.len());
-                let mut deleted = 0usize;
-                let mut errors = 0usize;
-                for bucket in &expired {
-                    let mut ok = true;
-                    if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
-                        log::warn!("Failed to delete bucket files {}: {}", bucket.uid, e);
-                        ok = false;
+                tokio::select! {
+                    _ = shutdown.changed() => {
+                        if *shutdown.borrow() {
+                            break;
+                        }
                     }
-                    if let Err(e) = state
-                        .storage
-                        .buckets
-                        .delete_bucket(&bucket.uid, &bucket.api_key)
-                        .await
-                    {
-                        log::warn!("Failed to delete bucket metadata {}: {}", bucket.uid, e);
-                        ok = false;
+                    _ = interval.tick() => {
+                        let ttl = state.config.storage.bucket_ttl_minutes;
+                        let expired = state.storage.buckets.list_expired_buckets(ttl);
+                        if expired.is_empty() {
+                            continue;
+                        }
+                        info!("Storage cleanup: purging {} expired bucket(s)", expired.len());
+                        let mut deleted = 0usize;
+                        let mut errors = 0usize;
+                        for bucket in &expired {
+                            let mut ok = true;
+                            if let Err(e) = state.storage.file_store.delete_bucket(&bucket.uid).await {
+                                log::warn!("Failed to delete bucket files {}: {}", bucket.uid, e);
+                                ok = false;
+                            }
+                            if let Err(e) = state
+                                .storage
+                                .buckets
+                                .delete_bucket(&bucket.uid, &bucket.api_key)
+                                .await
+                            {
+                                log::warn!("Failed to delete bucket metadata {}: {}", bucket.uid, e);
+                                ok = false;
+                            }
+                            if ok { deleted += 1; } else { errors += 1; }
+                        }
+                        enqueue_service_message(
+                            &state,
+                            "bg",
+                            "storage-cleanup-job",
+                            serde_json::json!({
+                                "expired_found": expired.len(),
+                                "deleted": deleted,
+                                "errors": errors,
+                            }),
+                        ).await;
                     }
-                    if ok { deleted += 1; } else { errors += 1; }
                 }
-                let _ = state.storage.service_messages.push(
-                    "bg",
-                    "storage-cleanup-job",
-                    serde_json::json!({
-                        "expired_found": expired.len(),
-                        "deleted": deleted,
-                        "errors": errors,
-                    }),
-                );
             }
         });
     }
@@ -335,6 +363,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let state = shared_state.clone();
         tokio::spawn(async move {
             let mut first_run = true;
+            let mut shutdown = state.subscribe_shutdown();
             loop {
                 // On first run, clean up immediately
                 if !first_run {
@@ -349,9 +378,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         rng.random_range(min_hours..=max_hours)
                     };
                     let sleep_secs = random_hours * 60 * 60;
-                    time::sleep(time::Duration::from_secs(sleep_secs)).await;
+                    tokio::select! {
+                        _ = shutdown.changed() => {
+                            if *shutdown.borrow() {
+                                break;
+                            }
+                        }
+                        _ = time::sleep(time::Duration::from_secs(sleep_secs)) => {}
+                    }
                 }
                 first_run = false;
+
+                if *shutdown.borrow() {
+                    break;
+                }
 
                 let ttl_days = state.config.heuristics.ttl_days;
                 let max_records = state.config.heuristics.max_records_per_runner_cap;
@@ -364,7 +404,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 deleted_by_age, deleted_by_limit, ttl_days, max_records
                             );
                         }
-                        let _ = state.storage.service_messages.push(
+                        enqueue_service_message(
+                            &state,
                             "bg",
                             "heuristics-cleanup-job",
                             serde_json::json!({
@@ -373,15 +414,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "ttl_days": ttl_days,
                                 "max_records_per_runner_cap": max_records,
                             }),
-                        );
+                        )
+                        .await;
                     }
                     Err(e) => {
                         log::warn!("Heuristics cleanup failed: {}", e);
-                        let _ = state.storage.service_messages.push(
+                        enqueue_service_message(
+                            &state,
                             "bg",
                             "heuristics-cleanup-job",
                             serde_json::json!({ "error": e.to_string() }),
-                        );
+                        )
+                        .await;
                     }
                 }
             }
@@ -393,6 +437,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let state = shared_state.clone();
         tokio::spawn(async move {
             let mut first_run = true;
+            let mut shutdown = state.subscribe_shutdown();
             loop {
                 // On first run, clean up immediately
                 if !first_run {
@@ -407,9 +452,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         rng.random_range(min_hours..=max_hours)
                     };
                     let sleep_secs = random_hours * 60 * 60;
-                    time::sleep(time::Duration::from_secs(sleep_secs)).await;
+                    tokio::select! {
+                        _ = shutdown.changed() => {
+                            if *shutdown.borrow() {
+                                break;
+                            }
+                        }
+                        _ = time::sleep(time::Duration::from_secs(sleep_secs)) => {}
+                    }
                 }
                 first_run = false;
+                if *shutdown.borrow() {
+                    break;
+                }
 
                 let ttl_days = state.config.stale_agents.ttl_days;
 
@@ -421,22 +476,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 deleted, ttl_days
                             );
                         }
-                        let _ = state.storage.service_messages.push(
+                        enqueue_service_message(
+                            &state,
                             "bg",
                             "stale-agents-cleanup-job",
                             serde_json::json!({
                                 "deleted": deleted,
                                 "ttl_days": ttl_days,
                             }),
-                        );
+                        )
+                        .await;
                     }
                     Err(e) => {
                         log::warn!("Stale agents cleanup failed: {}", e);
-                        let _ = state.storage.service_messages.push(
+                        enqueue_service_message(
+                            &state,
                             "bg",
                             "stale-agents-cleanup-job",
                             serde_json::json!({ "error": e.to_string() }),
-                        );
+                        )
+                        .await;
                     }
                 }
             }
@@ -500,45 +559,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let state = shared_state.clone();
         tokio::spawn(async move {
             let mut interval = time::interval(time::Duration::from_secs(30));
+            let mut shutdown = state.subscribe_shutdown();
             loop {
-                interval.tick().await;
-                match state.storage.tasks.expire_timed_out_unassigned() {
-                    Ok(n) if n > 0 => {
-                        info!("Task timeout: failed {} unassigned task(s) past wait/total deadline", n);
+                tokio::select! {
+                    _ = shutdown.changed() => {
+                        if *shutdown.borrow() {
+                            break;
+                        }
                     }
-                    Err(e) => log::warn!("Task timeout check (unassigned) error: {}", e),
-                    _ => {}
-                }
-                match state.storage.tasks.cancel_timed_out_assigned() {
-                    Ok(n) if n > 0 => {
-                        info!("Task timeout: sent cancel signal to {} assigned task(s) past total deadline", n);
+                    _ = interval.tick() => {
+                        match state.storage.tasks.expire_timed_out_unassigned() {
+                            Ok(n) if n > 0 => {
+                                info!("Task timeout: failed {} unassigned task(s) past wait/total deadline", n);
+                            }
+                            Err(e) => log::warn!("Task timeout check (unassigned) error: {}", e),
+                            _ => {}
+                        }
+                        match state.storage.tasks.cancel_timed_out_assigned() {
+                            Ok(n) if n > 0 => {
+                                info!("Task timeout: sent cancel signal to {} assigned task(s) past total deadline", n);
+                            }
+                            Err(e) => log::warn!("Task timeout check (assigned) error: {}", e),
+                            _ => {}
+                        }
+                        match state.storage.tasks.fail_stale_cancel_requested(CANCEL_ACK_GRACE_SECS) {
+                            Ok(n) if n > 0 => {
+                                info!("Task cleanup: failed {} cancel-requested task(s) the agent never acknowledged", n);
+                            }
+                            Err(e) => log::warn!("Cancel-requested escalation error: {}", e),
+                            _ => {}
+                        }
+                        let agents = &state.storage.agents;
+                        match state.storage.tasks.recover_orphaned_assigned(
+                            ORPHAN_SILENCE_SECS,
+                            |agent_id| agents.get_agent(agent_id).map(|a| a.is_online()).unwrap_or(false),
+                        ) {
+                            Ok(n) if n > 0 => {
+                                info!("Task cleanup: recovered {} orphaned task(s) from offline agents", n);
+                            }
+                            Err(e) => log::warn!("Orphan recovery error: {}", e),
+                            _ => {}
+                        }
                     }
-                    Err(e) => log::warn!("Task timeout check (assigned) error: {}", e),
-                    _ => {}
-                }
-                match state.storage.tasks.fail_stale_cancel_requested(CANCEL_ACK_GRACE_SECS) {
-                    Ok(n) if n > 0 => {
-                        info!("Task cleanup: failed {} cancel-requested task(s) the agent never acknowledged", n);
-                    }
-                    Err(e) => log::warn!("Cancel-requested escalation error: {}", e),
-                    _ => {}
-                }
-                let agents = &state.storage.agents;
-                match state.storage.tasks.recover_orphaned_assigned(
-                    ORPHAN_SILENCE_SECS,
-                    |agent_id| agents.get_agent(agent_id).map(|a| a.is_online()).unwrap_or(false),
-                ) {
-                    Ok(n) if n > 0 => {
-                        info!("Task cleanup: recovered {} orphaned task(s) from offline agents", n);
-                    }
-                    Err(e) => log::warn!("Orphan recovery error: {}", e),
-                    _ => {}
                 }
             }
         });
     }
 
-    axum::serve(listener, app).await?;
+    let shutdown_state = shared_state.clone();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                info!("Shutdown requested, signaling workers");
+                let _ = shutdown_state.channels.shutdown_tx.send(true);
+            }
+        })
+        .await?;
 
     Ok(())
 }
@@ -560,4 +636,57 @@ async fn get_stats(State(state): State<Arc<AppState>>) -> Json<Value> {
             "tasks": "./data/tasks"
         }
     }))
+}
+
+async fn enqueue_service_message(state: &Arc<AppState>, class: &str, kind: &str, content: Value) {
+    if let Err(e) = state
+        .channels
+        .db_write_tx
+        .send(DbWriteRequest::ServiceMessage {
+            class: class.to_string(),
+            kind: kind.to_string(),
+            content,
+        })
+        .await
+    {
+        warn!("Failed to enqueue service message {}: {}", kind, e);
+    }
+}
+
+async fn run_db_write_worker(
+    state: Arc<AppState>,
+    mut rx: mpsc::Receiver<DbWriteRequest>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => {
+                if *shutdown.borrow() {
+                    info!("DB write worker shutting down");
+                    break;
+                }
+            }
+            req = rx.recv() => {
+                let Some(req) = req else {
+                    info!("DB write queue closed, worker exiting");
+                    break;
+                };
+                match req {
+                    DbWriteRequest::ServiceMessage { class, kind, content } => {
+                        match state.storage.service_messages.push(&class, &kind, content) {
+                            Ok(message) => {
+                                let _ = state
+                                    .channels
+                                    .stream_tx
+                                    .send(StreamEvent::ServiceMessage(message));
+                            }
+                            Err(e) => {
+                                warn!("Failed to persist service message {}: {}", kind, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
