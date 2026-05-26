@@ -13,6 +13,33 @@ Sandbox apps are interactive demo/test widgets embedded in the management fronte
 
 ---
 
+## Local backend via OffloadMock
+
+`offloadmock/` (repo root) is a FastAPI mock of the OffloadMQ server you can run
+locally as a backend for the frontend instead of the real Rust server. Full docs:
+[offloadmock/DOCS.md](../../../offloadmock/DOCS.md).
+
+```bash
+cd offloadmock && task run     # http://127.0.0.1:3069
+# point the frontend's API/proxy at http://127.0.0.1:3069
+# keys: client=client_secret_key_123  mgmt=this-is-for-testing-management-tokens
+```
+
+**Good for** developing/testing: request/response **shapes** & camelCase fidelity,
+the **error envelope** (Dev tab error rows), **`X-API-Key` vs body** auth,
+**capability discovery** (`useCapabilities` / `/capabilities/list/online_ext` —
+register an agent to populate it), and the **StorageBucketApp** full CRUD
+round-trip (create/upload/stat/hash/download/delete).
+
+**Not good for** anything needing a **task result**: the mock **does not execute
+tasks**. `submit` returns a `queued` envelope but never completes; `poll` returns
+`404`; `submit_blocking` returns `503`/a `failed` stub. So BashApp, LlmApp,
+PipelineApp, Txt2ImgApp, PdfAnalyzerApp, TtsApp, etc. will submit and poll
+correctly (good for exercising the submit→poll wiring and DevPanel logging) but
+won't render real output. Use the real server for end-to-end result testing.
+
+---
+
 ## File Map
 
 | File | Purpose |

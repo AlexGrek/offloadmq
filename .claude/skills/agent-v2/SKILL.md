@@ -60,6 +60,29 @@ uv run --with pytest pytest tests/ -q
 cd ui-server/frontend && npm install && npm run build
 ```
 
+### Local testing against OffloadMock
+
+`offloadmock/` (repo root) is a FastAPI mock of the OffloadMQ server. Use it to
+run/develop the agent **without** the real Rust server — it implements the full
+agent API (register, auth, ping, info/update, poll, take/resolve/progress,
+buckets) with exact schemas. **The queue is always empty (no task execution)**,
+so the agent registers, authenticates, pushes capabilities, and polls forever
+getting `200 null` — ideal for testing the poll loop, registration, capability
+policy, and connection/UI flows. Full docs + endpoint reference:
+[offloadmock/DOCS.md](../../../offloadmock/DOCS.md).
+
+```bash
+cd offloadmock && task run            # mock on http://127.0.0.1:3069
+# then, from agent_v2/:
+uv run omq config set --server http://127.0.0.1:3069 \
+  --api-key ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
+uv run omq register && uv run omq serve
+```
+
+⚠️ The agent rewrites `~/.offloadmq-agent.json` on shutdown — back it up first
+and restore it **after** stopping the agent. To exercise task execution end to
+end you still need the real server (the mock will never assign a task).
+
 ---
 
 ## 1. `agent/` — offloadmq-agent (toolkit + executors)

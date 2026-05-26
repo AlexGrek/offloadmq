@@ -136,7 +136,15 @@
       "Bash(command -v uv)",
       "Bash(command -v task)",
       "Bash(sed -n '188,200p' /Users/vedmedik/dev/offloadmq/Makefile)",
-      "Bash(task --list)"
+      "Bash(task --list)",
+      "Bash(./venv/bin/pip install *)",
+      "Bash(PORT=3069 HOST=127.0.0.1 ./venv/bin/python -m offloadmock.main)",
+      "Bash(if [ -f ~/.offloadmq-agent.json ]; then echo \"EXISTS\"; cp ~/.offloadmq-agent.json /tmp/offloadmq-agent.backup.json && echo \"backed up to /tmp/offloadmq-agent.backup.json\"; else echo \"NO_EXISTING_CONFIG\"; fi)",
+      "Bash(./../offloadmock/venv/bin/python -m json.tool)",
+      "Bash(sed -n '/pub struct UnassignedTask/,/^}/p' src/models.rs)",
+      "Bash(sed -n '/pub struct AssignedTask/,/^}/p' src/models.rs)",
+      "Bash(sed -n '233,246p' src/api/agent/mod.rs)",
+      "Bash(sed -n '/pub async fn resolve_task/,/^}/p' src/api/agent/service.rs)"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",
@@ -144,7 +152,8 @@
       "/Users/vedmedik/.offload-agent/skills",
       "/Users/vedmedik/Library/LaunchAgents",
       "/tmp",
-      "/Users/vedmedik/dev/offloadmq/oai/frontend/@/components/ui"
+      "/Users/vedmedik/dev/offloadmq/oai/frontend/@/components/ui",
+      "/Users/vedmedik"
     ]
   }
 }
