@@ -184,8 +184,8 @@ tasks:
         pkill -f omq-gui 2>/dev/null || true
         mkdir -p "$(dirname "$DEST")"
         if [ -w "$(dirname "$DEST")" ]; then mv -f "$TMP" "$DEST"; else sudo mv -f "$TMP" "$DEST"; fi
-        xattr -d com.apple.quarantine "$DEST" 2>/dev/null || true
-        echo "Installed -> $DEST"
+        xattr -cr "$DEST" 2>/dev/null || true
+        echo "Installed -> $DEST (Gatekeeper quarantine stripped)"
         if [ -f "$PLIST" ]; then
           launchctl load "$PLIST" 2>/dev/null || true
           echo "Relaunched via LaunchAgent."
