@@ -1,4 +1,21 @@
-"""Orchestrator — the single object both CLI and GUI drive."""
+"""Orchestrator — the single object both CLI and GUI drive.
+
+Design contract
+---------------
+
+The orchestrator's job is to keep the agent *always connected*. Once
+``start()`` is called, the only thing that should stop the agent talking to the
+server is ``stop()``. Anything else — DNS hiccups, expired tokens, the server
+restarting, the API key being rotated server-side — is a transient condition
+that the supervisor recovers from with exponential backoff.
+
+Every failure along the way (connection, auth, registration, poll, resolve,
+executor crash, …) is recorded in an in-memory :class:`ErrorPool` with a
+severity. The moment the supervisor secures a fresh authenticated session, the
+pool is flushed to the server's ``/private/agent/logs`` endpoint, so an
+operator looking at the management UI can see *why* the agent was offline
+without having to SSH into the machine.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -6,8 +23,9 @@ import itertools
 import logging
 import threading
 import time
+import traceback
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from offloadmq_agent.cap_policy import classify_capabilities, compute_registration_caps
 from offloadmq_agent.capabilities import detect_capabilities
@@ -28,6 +46,7 @@ from offloadmq_agent.systeminfo import calculate_tier, collect_system_info
 from offloadmq_agent.transport_sync import SyncAgentTransport
 
 from offloadmq_core.agent_log import AgentLogBuffer
+from offloadmq_core.error_pool import ErrorPool, PendingLog, Severity
 from offloadmq_core.executor_pool import ExecutorPool
 from offloadmq_core.scan_state import ScanState
 from offloadmq_core.settings import SETTINGS_FILE, Settings, load_settings, save_settings
@@ -43,9 +62,21 @@ _RESCAN_STEADY = 900
 APP_VERSION = "2.0.0"
 _MAX_CONSECUTIVE_AUTH_FAILURES = 3
 
+# Reconnect backoff: 2 → 4 → 8 → … capped at 60s. Reset on a successful auth.
+_RECONNECT_BACKOFF_BASE = 2.0
+_RECONNECT_BACKOFF_CAP = 60.0
 
-class _ReregistrationNeeded(Exception):
-    """Raised by _poll_loop when repeated auth failures indicate stale credentials."""
+
+class _SessionEnded(Exception):
+    """Raised internally to signal the current session must restart.
+
+    The exception carries a hint on whether saved credentials should be
+    discarded (forcing a fresh ``register`` call) before reconnecting.
+    """
+
+    def __init__(self, message: str, *, reregister: bool = False) -> None:
+        super().__init__(message)
+        self.reregister = reregister
 
 
 class Orchestrator:
@@ -69,6 +100,7 @@ class Orchestrator:
         self._lock = threading.Lock()
         self._logs = AgentLogBuffer()
         self._scan = ScanState()
+        self._errors = ErrorPool()
 
         self._pool: ExecutorPool | None = None
         self._client: OffloadMQClient | None = None
@@ -84,9 +116,105 @@ class Orchestrator:
         self._last_detected: list[str] = []
         self._last_ping_at = 0.0
 
+    # ==================================================================
+    # Local logging + error pool
+    # ==================================================================
+
     def _log(self, msg: str) -> None:
         self._logs.append(msg)
         logger.info(msg)
+
+    def _record_error(
+        self,
+        severity: Severity,
+        text: str,
+        *,
+        exc: BaseException | None = None,
+    ) -> None:
+        """Stash an error for the server and surface it in the local log.
+
+        If a client session is already authenticated, fire off the log
+        immediately; otherwise it stays in the pool until reconnect.
+        """
+        full = text
+        if exc is not None:
+            # `exc` formatting is best-effort — we never want recording an
+            # error to itself raise.
+            try:
+                tb = "".join(traceback.format_exception_only(type(exc), exc)).strip()
+                full = f"{text}: {tb}" if text else tb
+            except Exception:  # noqa: BLE001
+                full = f"{text}: {exc!r}"
+        self._logs.append(f"[{severity}] {full}")
+        logger.log(
+            logging.CRITICAL if severity == "CRITICAL"
+            else logging.ERROR if severity == "ERROR"
+            else logging.INFO,
+            "%s",
+            full,
+        )
+        self._errors.push(severity, full)
+        # Opportunistic immediate flush when we're already online.
+        loop = self._loop
+        client = self._client
+        if self._online and loop is not None and loop.is_running() and client is not None:
+            asyncio.run_coroutine_threadsafe(self._flush_error_pool(client), loop)
+
+    def _flush_error_pool_dropped_summary(self, dropped: int) -> PendingLog | None:
+        if dropped <= 0:
+            return None
+        return PendingLog(
+            severity="ERROR",
+            text=f"error pool overflowed: {dropped} earlier entries dropped",
+        )
+
+    async def _flush_error_pool(self, client: OffloadMQClient) -> None:
+        """Send everything in the pool. Items that fail to send go back."""
+        items, dropped = self._errors.drain()
+        if not items and dropped == 0:
+            return
+        summary = self._flush_error_pool_dropped_summary(dropped)
+        to_send: list[PendingLog] = ([summary] if summary else []) + items
+
+        settings = self.get_settings()
+        agent_id = settings.agent_id or None
+        agent_name = settings.display_name or None
+        machine_fp: str | None = None
+        try:
+            sysinfo = collect_system_info()
+            machine_fp = sysinfo.get("machineId") or None
+        except Exception:  # noqa: BLE001
+            machine_fp = None
+
+        unsent: list[PendingLog] = []
+        for entry in to_send:
+            try:
+                await client.submit_log(
+                    entry.severity,
+                    entry.render(),
+                    agent_id=agent_id,
+                    agent_name=agent_name,
+                    machine_fingerprint=machine_fp,
+                )
+            except OffloadMQError as exc:
+                logger.warning("log flush failed (will retry): %s", exc)
+                # Whatever was not yet sent stays in the pool. Don't keep
+                # retrying inside this call — the next successful op will
+                # trigger another flush.
+                idx = to_send.index(entry)
+                unsent = to_send[idx:]
+                break
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("log flush hit unexpected error: %s", exc)
+                idx = to_send.index(entry)
+                unsent = to_send[idx:]
+                break
+        if unsent:
+            self._errors.restore(unsent)
+
+    # ==================================================================
+    # Capability policy helpers
+    # ==================================================================
 
     def _settings_as_policy_dict(self, settings: Settings) -> dict[str, Any]:
         return settings.model_dump()
@@ -157,7 +285,13 @@ class Orchestrator:
         if "max_concurrent" in changed:
             self._resize_pool(after.max_concurrent)
         if changed & self._CONNECTION_FIELDS and self.is_running():
-            self._reconnect()
+            # Connection settings changed → drop the current session; the
+            # supervisor reconnects with the new values automatically.
+            self._record_error(
+                "INFO",
+                "[settings] server or api_key changed — cycling connection",
+            )
+            self._cycle_session()
             return
         if changed & self._SERVER_FACING and self._online:
             self.push_capabilities_to_server()
@@ -170,12 +304,21 @@ class Orchestrator:
             self._pool = ExecutorPool(max_workers=max_workers)
         old.shutdown(wait=False)
 
-    def _reconnect(self) -> None:
-        if not self.is_running():
-            return
-        self._log("[settings] connection changed — reconnecting")
-        self.stop()
-        self.start()
+    def _cycle_session(self) -> None:
+        """Force the current session to end so the supervisor reconnects.
+
+        Unlike ``stop()`` this leaves ``_running`` True — the supervisor loop
+        keeps looping and picks up the new settings on the next iteration.
+        """
+        with self._lock:
+            self._online = False
+            self._status_message = "reconnecting"
+        # Closing the underlying aiohttp session causes any in-flight or
+        # subsequent calls to fail, which the supervisor catches.
+        loop = self._loop
+        client = self._client
+        if loop is not None and loop.is_running() and client is not None:
+            asyncio.run_coroutine_threadsafe(client.close(), loop)
 
     # ==================================================================
     # Capabilities / scan
@@ -211,7 +354,7 @@ class Orchestrator:
                 caps = detect_capabilities_sync(self._log)
                 info = collect_system_info()
             except Exception as exc:  # noqa: BLE001
-                self._log(f"[scan] error: {exc}")
+                self._record_error("ERROR", "[scan] background scan failed", exc=exc)
                 caps, info = [], {}
             self._scan.set_result(caps, info)
             with self._lock:
@@ -234,8 +377,8 @@ class Orchestrator:
             "restarted": False,
         }
         if restart_if_changed and changed and was_running:
-            self.stop()
-            self.start()
+            # No longer a full stop/start — just cycle the live session.
+            self._cycle_session()
             result["restarted"] = True
         elif self._online and self._client is not None:
             self.push_capabilities_to_server()
@@ -267,24 +410,29 @@ class Orchestrator:
         client = self._client
         if client is None:
             return
-        settings = self.get_settings()
-        detected = self._last_detected or await detect_capabilities(self._log)
-        caps = self._registration_caps(settings, detected)
-        sysinfo = collect_system_info()
-        tier = calculate_tier(sysinfo)
-        await client.update_agent_info(
-            caps,
-            tier,
-            settings.max_concurrent,
-            display_name=settings.display_name,
-            system_info=sysinfo,
-            app_version=APP_VERSION,
-        )
-        self.update_settings(capabilities=[c for c in caps if not c.startswith("slavemode.")])
-        self._log(f"[caps] Pushed {len(caps)} capabilities to server")
+        try:
+            settings = self.get_settings()
+            detected = self._last_detected or await detect_capabilities(self._log)
+            caps = self._registration_caps(settings, detected)
+            sysinfo = collect_system_info()
+            tier = calculate_tier(sysinfo)
+            await client.update_agent_info(
+                caps,
+                tier,
+                settings.max_concurrent,
+                display_name=settings.display_name,
+                system_info=sysinfo,
+                app_version=APP_VERSION,
+            )
+            self.update_settings(capabilities=[c for c in caps if not c.startswith("slavemode.")])
+            self._log(f"[caps] Pushed {len(caps)} capabilities to server")
+        except OffloadMQError as exc:
+            self._record_error("ERROR", "[caps] push failed", exc=exc)
+        except Exception as exc:  # noqa: BLE001
+            self._record_error("ERROR", "[caps] push hit unexpected error", exc=exc)
 
     # ==================================================================
-    # Registration
+    # Registration (one-shot, used by `omq register`)
     # ==================================================================
 
     def register(self) -> str:
@@ -342,7 +490,7 @@ class Orchestrator:
             self._status_message = "starting"
             self.start_background_scan()
             self._poller = threading.Thread(
-                target=self._poller_main, name="omq-poller", daemon=True
+                target=self._supervisor_main, name="omq-supervisor", daemon=True
             )
             self._poller.start()
             self._rescan_thread = threading.Thread(
@@ -359,6 +507,11 @@ class Orchestrator:
             self._running = False
             self._online = False
             self._status_message = "stopped"
+        # Wake the supervisor out of any sleep / aiohttp call.
+        loop = self._loop
+        client = self._client
+        if loop is not None and loop.is_running() and client is not None:
+            asyncio.run_coroutine_threadsafe(client.close(), loop)
         if pool is not None:
             pool.shutdown(wait=False)
 
@@ -382,10 +535,21 @@ class Orchestrator:
                 "displayName": settings.display_name,
                 "sysinfo": snap.get("sysinfo", {}),
                 "scanning": snap.get("scanning", False),
+                "errorPool": len(self._errors),
             }
 
     def get_agent_logs(self, n: int = 100) -> list[str]:
         return self._logs.tail(n)
+
+    def get_error_pool_snapshot(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "severity": item.severity,
+                "text": item.text,
+                "capturedAt": item.captured_at.isoformat(),
+            }
+            for item in self._errors.snapshot()
+        ]
 
     # ==================================================================
     # Task queries
@@ -401,27 +565,65 @@ class Orchestrator:
         return self._store.request_cancel(task_id)
 
     # ==================================================================
-    # Polling thread
+    # Supervisor: stays alive across reconnects forever
     # ==================================================================
 
-    def _poller_main(self) -> None:
+    def _supervisor_main(self) -> None:
+        """Owning thread for the agent's network loop.
+
+        Loops until ``stop()`` is called. Each iteration tries to bring up a
+        single connected session via :meth:`_run_session`; if that returns or
+        raises for any reason other than ``stop``, the supervisor sleeps with
+        exponential backoff and tries again. The loop body itself is wrapped
+        so even a programming error in our own code cannot terminate the
+        supervisor.
+        """
         loop = asyncio.new_event_loop()
         self._loop = loop
         asyncio.set_event_loop(loop)
+
+        attempt = 0
         try:
             while not self._stop.is_set():
                 try:
-                    loop.run_until_complete(self._run())
-                    break  # clean exit
-                except _ReregistrationNeeded:
-                    logger.warning("repeated auth failures — clearing saved credentials and re-registering")
-                    with self._lock:
-                        self._online = False
-                    self._set_message("re-registering")
-                    self.update_settings(agent_id="", key="", jwt_token="", token_expires_in=0)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("poller crashed")
-            self._set_message(f"crashed: {exc}")
+                    loop.run_until_complete(self._run_session())
+                    # Clean session exit (e.g. _cycle_session) → reconnect immediately.
+                    attempt = 0
+                except _SessionEnded as ended:
+                    if ended.reregister:
+                        self._record_error(
+                            "ERROR",
+                            "[supervisor] discarding saved credentials, will re-register",
+                        )
+                        self.update_settings(
+                            agent_id="", key="", jwt_token="", token_expires_in=0
+                        )
+                    # Don't count "cycle" as a backoff trigger.
+                    attempt = 0
+                except OffloadMQError as exc:
+                    status = exc.status or 0
+                    sev: Severity = "ERROR" if status == 0 or status >= 500 else "CRITICAL"
+                    self._record_error(sev, "[supervisor] server error", exc=exc)
+                    attempt += 1
+                except Exception as exc:  # noqa: BLE001
+                    self._record_error(
+                        "CRITICAL", "[supervisor] unexpected error", exc=exc
+                    )
+                    attempt += 1
+
+                with self._lock:
+                    self._online = False
+                    self._client = None
+                    self._sync_transport = None
+
+                if self._stop.is_set():
+                    break
+
+                delay = self._backoff_seconds(attempt)
+                self._set_message(f"reconnecting in {delay:.0f}s")
+                # Interruptible wait — stop() and _cycle_session() both wake us.
+                if self._stop.wait(delay):
+                    break
         finally:
             client = self._client
             if client is not None:
@@ -434,17 +636,76 @@ class Orchestrator:
             with self._lock:
                 self._running = False
                 self._online = False
+                self._client = None
+                self._sync_transport = None
+                self._status_message = "stopped"
 
-    async def _run(self) -> None:
+    @staticmethod
+    def _backoff_seconds(attempt: int) -> float:
+        if attempt <= 0:
+            return 0.0
+        delay = _RECONNECT_BACKOFF_BASE * (2 ** (attempt - 1))
+        return min(delay, _RECONNECT_BACKOFF_CAP)
+
+    async def _run_session(self) -> None:
+        """Bring up a connected session and run the poll loop inside it.
+
+        Returns normally if the session ends cleanly (e.g. settings cycle).
+        Raises :class:`_SessionEnded` when we need the supervisor to take an
+        explicit action (like clearing credentials) before reconnecting.
+        """
         settings = self.get_settings()
-        self._set_message("registering")
+        if not settings.is_configured:
+            # Misconfigured — wait and let the user fix settings live.
+            self._record_error(
+                "ERROR", "[supervisor] agent is not configured (server/api_key missing)"
+            )
+            await asyncio.sleep(5)
+            return
 
+        try:
+            client, auth_token, auth_expires_in = await self._connect(settings)
+        except OffloadMQError as exc:
+            # Authentication-class errors: forget creds so the next attempt
+            # registers fresh. Anything else: just retry with the same creds.
+            if exc.status in (401, 403):
+                raise _SessionEnded(str(exc), reregister=True) from exc
+            self._record_error(
+                "ERROR" if (exc.status is None or exc.status >= 500) else "CRITICAL",
+                "[connect] failed",
+                exc=exc,
+            )
+            raise
+
+        with self._lock:
+            self._client = client
+            self._sync_transport = SyncAgentTransport(settings.server, auth_token)
+            self._online = True
+        self._set_message("polling")
+        self._record_error("INFO", "[supervisor] agent online")
+
+        # Flush anything that piled up while we were disconnected.
+        await self._flush_error_pool(client)
+
+        try:
+            await self._poll_loop(client, auth_expires_in)
+        finally:
+            # _poll_loop owns the connection's lifetime; close on the way out.
+            try:
+                await client.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def _connect(
+        self, settings: Settings
+    ) -> tuple[OffloadMQClient, str, int]:
+        """Register/auth and push current capabilities. Raises on hard failure."""
+        self._set_message("registering")
         detected = await detect_capabilities(self._log)
         caps = self._registration_caps(settings, detected)
         sysinfo = collect_system_info()
         tier = calculate_tier(sysinfo)
 
-        # Reuse saved credentials when available — avoids accumulating ghost agents.
         auth: AgentAuth | None = None
         if settings.agent_id and settings.key:
             try:
@@ -452,9 +713,17 @@ class Orchestrator:
                 auth = await OffloadMQClient.authenticate(
                     settings.server, settings.agent_id, settings.key
                 )
-            except OffloadMQError:
-                logger.warning("saved agent credentials rejected — registering fresh agent")
-                auth = None
+            except OffloadMQError as exc:
+                if exc.status in (401, 403):
+                    self._record_error(
+                        "ERROR",
+                        "[auth] saved credentials rejected — will register fresh",
+                        exc=exc,
+                    )
+                    auth = None
+                else:
+                    # Transient — let the supervisor back off.
+                    raise
 
         if auth is None:
             registration = await OffloadMQClient.register(
@@ -487,11 +756,8 @@ class Orchestrator:
         with self._lock:
             self._last_detected = detected
 
-        self._client = OffloadMQClient(settings.server, auth.token)
-        self._sync_transport = SyncAgentTransport(settings.server, auth.token)
-
-        # Push current capabilities/tier to server (always required when reusing saved credentials).
-        await self._client.update_agent_info(
+        client = OffloadMQClient(settings.server, auth.token)
+        await client.update_agent_info(
             caps,
             tier,
             settings.max_concurrent,
@@ -499,25 +765,19 @@ class Orchestrator:
             system_info=sysinfo,
             app_version=APP_VERSION,
         )
+        return client, auth.token, auth.expires_in
 
-        with self._lock:
-            self._online = True
-        self._set_message("polling")
-        await self._poll_loop(auth.expires_in)
-
-    async def _poll_loop(self, token_expires_in: int) -> None:
-        client = self._client
-        assert client is not None
+    async def _poll_loop(self, client: OffloadMQClient, token_expires_in: int) -> None:
         consecutive_auth_failures = 0
 
         while not self._stop.is_set():
             try:
-                token_expires_in = await self._maybe_refresh(token_expires_in)
+                token_expires_in = await self._maybe_refresh(client, token_expires_in)
                 settings = self.get_settings()
                 caps = self._registration_caps(settings, self._last_detected)
 
                 if self._store.active_count() >= settings.max_concurrent:
-                    await self._maybe_ping()
+                    await self._maybe_ping(client)
                     await self._idle()
                     continue
 
@@ -525,7 +785,11 @@ class Orchestrator:
                 if task is None:
                     task = await client.poll(caps)
                 if task is None:
-                    consecutive_auth_failures = 0  # successful 204 response — auth is valid
+                    consecutive_auth_failures = 0
+                    # Successful no-op cycle is a good time to drain any
+                    # log entries that piled up from background failures.
+                    if len(self._errors) > 0:
+                        await self._flush_error_pool(client)
                     await self._idle()
                     continue
 
@@ -537,41 +801,46 @@ class Orchestrator:
             except OffloadMQError as exc:
                 if exc.status in (401, 403):
                     consecutive_auth_failures += 1
-                    logger.warning(
-                        "auth failure %d/%d: %s",
-                        consecutive_auth_failures,
-                        _MAX_CONSECUTIVE_AUTH_FAILURES,
-                        exc,
+                    self._record_error(
+                        "ERROR",
+                        f"[poll] auth failure {consecutive_auth_failures}/{_MAX_CONSECUTIVE_AUTH_FAILURES}",
+                        exc=exc,
                     )
                     if consecutive_auth_failures >= _MAX_CONSECUTIVE_AUTH_FAILURES:
-                        raise _ReregistrationNeeded("repeated auth failures") from exc
+                        raise _SessionEnded(
+                            "repeated auth failures", reregister=True
+                        ) from exc
                 else:
                     consecutive_auth_failures = 0
+                    self._record_error("ERROR", "[poll] offloadmq error", exc=exc)
                 self._set_message(f"offloadmq error: {exc}")
+                # Treat any 5xx / network blip as session-fatal so the
+                # supervisor reopens a fresh aiohttp session.
+                if exc.status is None or exc.status >= 500:
+                    raise
                 await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 consecutive_auth_failures = 0
-                logger.exception("poll loop error")
+                self._record_error("ERROR", "[poll] unexpected error", exc=exc)
                 self._set_message(f"error: {exc}")
                 await asyncio.sleep(5)
 
     async def _idle(self) -> None:
         await asyncio.sleep(_POLL_INTERVAL)
 
-    async def _maybe_ping(self) -> None:
+    async def _maybe_ping(self, client: OffloadMQClient) -> None:
         now = time.monotonic()
         if now - self._last_ping_at < _PING_INTERVAL:
-            return
-        client = self._client
-        if client is None:
             return
         try:
             await client.ping()
             self._last_ping_at = now
         except OffloadMQError as exc:
-            logger.warning("heartbeat ping failed: %s", exc)
+            self._record_error("ERROR", "[heartbeat] ping failed", exc=exc)
 
-    async def _maybe_refresh(self, expires_in: int) -> int:
+    async def _maybe_refresh(self, client: OffloadMQClient, expires_in: int) -> int:
         if expires_in - int(time.time()) > _TOKEN_REFRESH_MARGIN:
             return expires_in
         settings = self.get_settings()
@@ -579,9 +848,8 @@ class Orchestrator:
             settings.server, settings.agent_id, settings.key
         )
         self.update_settings(jwt_token=auth.token, token_expires_in=auth.expires_in)
-        if self._client:
-            self._client.update_token(auth.token)
-        if self._sync_transport:
+        client.update_token(auth.token)
+        with self._lock:
             self._sync_transport = SyncAgentTransport(settings.server, auth.token)
         return auth.expires_in
 
@@ -595,7 +863,7 @@ class Orchestrator:
             try:
                 self.rescan(restart_if_changed=False)
             except Exception as exc:  # noqa: BLE001
-                self._log(f"[rescan] failed: {exc}")
+                self._record_error("ERROR", "[rescan] failed", exc=exc)
 
     # ==================================================================
     # Dispatch
@@ -606,16 +874,15 @@ class Orchestrator:
         record, cancel_event = self._store.create(task)
 
         if executor is None:
-            result = TaskResult(
-                task_id=task.id,
-                status=TaskStatus.FAILED,
-                error=f"No executor registered for '{task.capability}'",
-            )
+            msg = f"No executor registered for '{task.capability}'"
+            result = TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=msg)
             self._store.append_log(
-                task.id,
-                LogEntry(level=LogLevel.ERROR, message=result.error or ""),
+                task.id, LogEntry(level=LogLevel.ERROR, message=msg)
             )
             self._store.finish(task.id, result)
+            self._record_error(
+                "ERROR", f"[dispatch] {msg} (task {task.id})"
+            )
             self._schedule_resolve(task, result)
             return
 
@@ -623,8 +890,6 @@ class Orchestrator:
         assert pool is not None
         self._busy.set()
         self._set_message(f"running {task.id}")
-
-        settings = self.get_settings()
 
         def progress_reporter(stage: str, message: str, _extra: str) -> None:
             self._store.append_log(
@@ -654,6 +919,11 @@ class Orchestrator:
 
     def _on_done(self, task: Task, result: TaskResult) -> None:
         self._store.finish(task.id, result)
+        if result.status == TaskStatus.FAILED:
+            self._record_error(
+                "ERROR",
+                f"[task] {task.capability}/{task.id} failed: {result.error or 'unknown error'}",
+            )
         self._schedule_resolve(task, result)
         self._busy.clear()
         self._set_message("polling")
@@ -662,6 +932,12 @@ class Orchestrator:
         loop = self._loop
         client = self._client
         if loop is None or client is None:
+            # Resolve will be retried via task store on next session — but
+            # for now, record so the server learns about it once we reconnect.
+            self._record_error(
+                "ERROR",
+                f"[resolve] no client to resolve task {task.capability}/{task.id}",
+            )
             return
         asyncio.run_coroutine_threadsafe(
             self._safe_resolve(client, task.capability, result), loop
@@ -673,7 +949,17 @@ class Orchestrator:
         try:
             await client.resolve(capability, result)
         except OffloadMQError as exc:
-            logger.warning("resolve failed for %s: %s", result.task_id, exc)
+            self._record_error(
+                "ERROR",
+                f"[resolve] failed for {capability}/{result.task_id}",
+                exc=exc,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._record_error(
+                "ERROR",
+                f"[resolve] unexpected error for {capability}/{result.task_id}",
+                exc=exc,
+            )
 
     def _set_message(self, msg: str) -> None:
         with self._lock:

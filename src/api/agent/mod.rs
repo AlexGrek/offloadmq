@@ -206,6 +206,55 @@ pub async fn upload_to_bucket(
     ))
 }
 
+/// Request body for `POST /private/agent/logs`.
+///
+/// `agent_id` / `agent_name` / `machine_fingerprint` are taken from the body so
+/// the agent can override (e.g. report its own machine fingerprint even if the
+/// server has none on record yet). When fields are omitted, sensible fallbacks
+/// from the authenticated agent record are used.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentLogSubmission {
+    pub severity: String,
+    pub text: String,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub agent_name: Option<String>,
+    #[serde(default)]
+    pub machine_fingerprint: Option<String>,
+}
+
+/// POST /private/agent/logs
+///
+/// Accepts a single runtime log entry from the authenticated agent.
+/// Timestamp is added server-side. Severity must be one of CRITICAL/ERROR/INFO.
+pub async fn submit_agent_log(
+    AuthenticatedAgent(agent): AuthenticatedAgent,
+    State(app_state): State<Arc<AppState>>,
+    Json(body): Json<AgentLogSubmission>,
+) -> Result<impl IntoResponse, AppError> {
+    let severity = crate::db::agent_log_storage::LogSeverity::parse(&body.severity).ok_or_else(
+        || AppError::BadRequest(format!("invalid severity: {}", body.severity)),
+    )?;
+
+    let agent_id = body.agent_id.unwrap_or_else(|| agent.uid.clone());
+    let agent_name = body
+        .agent_name
+        .or_else(|| agent.display_name.clone())
+        .or_else(|| Some(agent.uid_short.clone()));
+    let machine_fingerprint = body
+        .machine_fingerprint
+        .or_else(|| agent.system_info.machine_id.clone());
+
+    let record = app_state
+        .storage
+        .agent_logs
+        .push(&agent_id, agent_name, machine_fingerprint, severity, body.text)
+        .map_err(AppError::Internal)?;
+    Ok(Json(record))
+}
+
 pub async fn try_take_task_handler(
     AuthenticatedAgent(agent): AuthenticatedAgent,
     State(app_state): State<Arc<AppState>>,

@@ -4,6 +4,7 @@ use crate::{
     config::StorageConfig,
     db::{
         agent::AgentStorage,
+        agent_log_storage::AgentLogStorage,
         apikeys::ApiKeysStorage,
         bucket_storage::BucketStorage,
         persistent_task_storage::TaskStorage,
@@ -24,6 +25,7 @@ pub struct AppStorage {
     pub file_store: Arc<FileStore>,
     pub heuristics: Arc<HeuristicStorage>,
     pub service_messages: Arc<ServiceMessageStorage>,
+    pub agent_logs: Arc<AgentLogStorage>,
 }
 
 impl AppStorage {
@@ -46,6 +48,9 @@ impl AppStorage {
         let mut service_messages_path = PathBuf::from(base_path);
         service_messages_path.push("service_messages");
 
+        let mut agent_logs_path = PathBuf::from(base_path);
+        agent_logs_path.push("agent_logs");
+
         std::fs::create_dir_all(base_path)?;
 
         let agents = Arc::new(AgentStorage::new(agents_path.to_str().unwrap())?);
@@ -56,6 +61,7 @@ impl AppStorage {
         let file_store = Arc::new(FileStore::new(storage_config)?);
         let heuristics = Arc::new(HeuristicStorage::open(heuristics_path.to_str().unwrap())?);
         let service_messages = Arc::new(ServiceMessageStorage::open(service_messages_path.to_str().unwrap())?);
+        let agent_logs = Arc::new(AgentLogStorage::open(agent_logs_path.to_str().unwrap())?);
 
         Ok(Self {
             agents,
@@ -65,6 +71,7 @@ impl AppStorage {
             file_store,
             heuristics,
             service_messages,
+            agent_logs,
         })
     }
 

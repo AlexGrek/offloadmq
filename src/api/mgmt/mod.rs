@@ -212,6 +212,88 @@ pub async fn trigger_heuristics_cleanup(
     })))
 }
 
+#[derive(Deserialize)]
+pub struct AgentLogsBySeverityQuery {
+    pub severity: String,
+    /// Default 100. Pass -1 to return all records.
+    pub limit: Option<i64>,
+}
+
+pub async fn list_agent_logs_by_severity(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<AgentLogsBySeverityQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let severity = crate::db::agent_log_storage::LogSeverity::parse(&params.severity)
+        .ok_or_else(|| AppError::BadRequest(format!("invalid severity: {}", params.severity)))?;
+    let limit = params.limit.unwrap_or(100);
+    let items = state
+        .storage
+        .agent_logs
+        .list_by_severity(severity, limit)
+        .map_err(AppError::Internal)?;
+    Ok(Json(json!({
+        "severity": severity.as_str(),
+        "count": items.len(),
+        "items": items,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct AgentLogsByAgentQuery {
+    pub agent_id: String,
+    pub limit: Option<i64>,
+}
+
+pub async fn list_agent_logs_by_agent(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<AgentLogsByAgentQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let limit = params.limit.unwrap_or(100);
+    let items = state
+        .storage
+        .agent_logs
+        .list_by_agent(&params.agent_id, limit)
+        .map_err(AppError::Internal)?;
+    Ok(Json(json!({
+        "agentId": params.agent_id,
+        "count": items.len(),
+        "items": items,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct AgentLogsLatestQuery {
+    pub limit: Option<i64>,
+}
+
+pub async fn list_agent_logs_latest(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<AgentLogsLatestQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let limit = params.limit.unwrap_or(100);
+    let items = state
+        .storage
+        .agent_logs
+        .list_latest(limit)
+        .map_err(AppError::Internal)?;
+    Ok(Json(json!({
+        "count": items.len(),
+        "items": items,
+    })))
+}
+
+pub async fn trigger_agent_logs_cleanup(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let deleted = state
+        .storage
+        .agent_logs
+        .cleanup_older_than(14)
+        .map_err(AppError::Internal)?;
+    info!("Management: agent_logs cleanup triggered, deleted {} record(s)", deleted);
+    Ok(Json(json!({"deleted": deleted, "max_age_days": 14})))
+}
+
 pub async fn trigger_stale_agents_cleanup(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {

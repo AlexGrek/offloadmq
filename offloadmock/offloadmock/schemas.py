@@ -162,6 +162,14 @@ class AgentUpdateRequest(CamelModel):
     display_name: Optional[str] = None
 
 
+class AgentLogSubmission(CamelModel):
+    severity: str
+    text: str
+    agent_id: Optional[str] = None
+    agent_name: Optional[str] = None
+    machine_fingerprint: Optional[str] = None
+
+
 class CreateApiKeyRequest(CamelModel):
     key: str
     capabilities: List[str]

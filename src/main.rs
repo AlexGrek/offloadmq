@@ -85,6 +85,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/bucket/{bucket_uid}/upload",
                     post(api::agent::upload_to_bucket),
                 )
+                .route(
+                    "/logs",
+                    post(api::agent::submit_agent_log),
+                )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,
@@ -169,6 +173,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .route(
                     "/service_logs",
                     get(api::mgmt::list_service_messages),
+                )
+                .route(
+                    "/agent_logs/by_severity",
+                    get(api::mgmt::list_agent_logs_by_severity),
+                )
+                .route(
+                    "/agent_logs/by_agent",
+                    get(api::mgmt::list_agent_logs_by_agent),
+                )
+                .route(
+                    "/agent_logs/latest",
+                    get(api::mgmt::list_agent_logs_latest),
+                )
+                .route(
+                    "/agent_logs/cleanup/trigger",
+                    post(api::mgmt::trigger_agent_logs_cleanup),
                 )
                 .layer(from_fn_with_state(
                     shared_state.clone(),
@@ -415,6 +435,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = state.storage.service_messages.push(
                             "bg",
                             "stale-agents-cleanup-job",
+                            serde_json::json!({ "error": e.to_string() }),
+                        );
+                    }
+                }
+            }
+        });
+    }
+
+    // Background: purge agent log records older than 14 days. Runs once at
+    // startup, then every 6 hours.
+    {
+        const AGENT_LOG_TTL_DAYS: i64 = 14;
+        let state = shared_state.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(time::Duration::from_secs(6 * 60 * 60));
+            loop {
+                interval.tick().await;
+                match state.storage.agent_logs.cleanup_older_than(AGENT_LOG_TTL_DAYS) {
+                    Ok(deleted) => {
+                        if deleted > 0 {
+                            info!(
+                                "Agent logs cleanup: deleted {} record(s) older than {} days",
+                                deleted, AGENT_LOG_TTL_DAYS
+                            );
+                        }
+                        let _ = state.storage.service_messages.push(
+                            "bg",
+                            "agent-logs-cleanup-job",
+                            serde_json::json!({
+                                "deleted": deleted,
+                                "max_age_days": AGENT_LOG_TTL_DAYS,
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("Agent logs cleanup failed: {}", e);
+                        let _ = state.storage.service_messages.push(
+                            "bg",
+                            "agent-logs-cleanup-job",
                             serde_json::json!({ "error": e.to_string() }),
                         );
                     }

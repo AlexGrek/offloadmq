@@ -17,6 +17,7 @@ from .. import deps
 from ..config import settings
 from ..errors import AppError
 from ..schemas import (
+    AgentLogSubmission,
     AgentLoginRequest,
     AgentLoginResponse,
     AgentRegistrationRequest,
@@ -92,6 +93,30 @@ async def update_agent_info(
     return AgentRegistrationResponse(agent_id=uid, key=key, message="Updated").model_dump(
         by_alias=True
     )
+
+
+# ── private: agent logs ────────────────────────────────────────────────────
+
+
+@private_router.post("/logs")
+async def submit_agent_log(
+    req: AgentLogSubmission, agent: Agent = Depends(deps.current_agent)
+) -> dict:
+    severity = (req.severity or "").upper()
+    if severity not in ("CRITICAL", "ERROR", "INFO"):
+        raise AppError.bad_request(f"invalid severity: {req.severity}")
+    deps.store.touch_agent(agent, CommunicationMethod.HTTP)
+    record_id = uuid.uuid4().hex
+    return {
+        "recordId": record_id,
+        "agentId": req.agent_id or agent.uid,
+        "agentName": req.agent_name or agent.display_name or agent.uid[:8],
+        "machineFingerprint": req.machine_fingerprint
+        or (agent.system_info.machine_id if agent.system_info else None),
+        "severity": severity,
+        "text": req.text,
+        "timestamp": now_utc().isoformat(),
+    }
 
 
 # ── private: task polling ────────────────────────────────────────────────────
