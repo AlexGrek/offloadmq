@@ -13,3 +13,6 @@ offload-agent-macos-*
 oai/.buildx-cache/*
 agent_v2/ui-server/frontend/node_modules
 **/frontend/dist
+**/dist
+**.spec
+**/build
