@@ -3,13 +3,9 @@ use std::{path::PathBuf, sync::Arc};
 use crate::{
     config::StorageConfig,
     db::{
-        agent::AgentStorage,
-        agent_log_storage::AgentLogStorage,
-        apikeys::ApiKeysStorage,
-        bucket_storage::BucketStorage,
-        heuristic_storage::HeuristicStorage,
-        persistent_task_storage::TaskStorage,
-        service_message_storage::ServiceMessageStorage,
+        agent::AgentStorage, agent_log_storage::AgentLogStorage, apikeys::ApiKeysStorage,
+        bucket_storage::BucketStorage, heuristic_storage::HeuristicStorage,
+        persistent_task_storage::TaskStorage, service_message_storage::ServiceMessageStorage,
     },
     models::Agent,
     storage::FileStore,

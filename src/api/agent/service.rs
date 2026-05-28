@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use log::{debug, info, warn};
-use rand::seq::IndexedRandom;
 
 use crate::{
     db::heuristic_storage::HeuristicStorage,
@@ -69,20 +68,14 @@ pub async fn poll_non_urgent(
         return Ok(Some(task));
     }
     let all = find_assignable_non_urgent_tasks_with_capabilities_for_tier(
-        &state.storage.tasks,
+        &state.regular,
         caps,
         agent.tier,
         &state.storage.agents,
         &agent.uid,
     )
-    .await?;
-    if all.len() > 0 {
-        let mut rng = rand::rng();
-        let random_item = all.choose(&mut rng).unwrap();
-        Ok(Some(random_item.clone()))
-    } else {
-        Ok(None)
-    }
+    .await;
+    Ok(all)
 }
 
 fn validate_display_name(name: &Option<String>) -> Result<(), AppError> {
@@ -263,8 +256,13 @@ pub async fn take_task(
         );
         Ok(picked)
     } else {
-        let mut assigned =
-            try_pick_up_non_urgent_task(&state.storage.tasks, agent, task_id.clone()).await?;
+        let mut assigned = try_pick_up_non_urgent_task(
+            &state.regular,
+            &state.storage.tasks,
+            agent,
+            task_id.clone(),
+        )
+        .await?;
         log_runner_history(agent, &task_id, &state.storage.heuristics);
         assigned.typical_runtime_seconds = estimate;
         if let Err(e) = state.storage.tasks.update_assigned(&assigned) {

@@ -239,9 +239,8 @@ pub async fn submit_agent_log(
     State(app_state): State<Arc<AppState>>,
     Json(body): Json<AgentLogSubmission>,
 ) -> Result<impl IntoResponse, AppError> {
-    let severity = crate::db::agent_log_storage::LogSeverity::parse(&body.severity).ok_or_else(
-        || AppError::BadRequest(format!("invalid severity: {}", body.severity)),
-    )?;
+    let severity = crate::db::agent_log_storage::LogSeverity::parse(&body.severity)
+        .ok_or_else(|| AppError::BadRequest(format!("invalid severity: {}", body.severity)))?;
 
     let agent_id = body.agent_id.unwrap_or_else(|| agent.uid.clone());
     let agent_name = body
@@ -255,7 +254,13 @@ pub async fn submit_agent_log(
     let record = app_state
         .storage
         .agent_logs
-        .push(&agent_id, agent_name, machine_fingerprint, severity, body.text)
+        .push(
+            &agent_id,
+            agent_name,
+            machine_fingerprint,
+            severity,
+            body.text,
+        )
         .map_err(AppError::Internal)?;
     Ok(Json(record))
 }

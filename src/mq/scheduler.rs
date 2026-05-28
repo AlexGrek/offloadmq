@@ -1,5 +1,5 @@
 use chrono::Utc;
-use log::debug;
+use log::{debug, warn};
 
 use crate::{
     db::{
@@ -8,7 +8,10 @@ use crate::{
     },
     error::AppError,
     models::{Agent, AssignedTask, UnassignedTask},
-    mq::{heuristic::HeuristicRecord, types::UrgentSubmitOutcome, urgent::UrgentTaskStore},
+    mq::{
+        heuristic::HeuristicRecord, regular::RegularTaskStore, types::UrgentSubmitOutcome,
+        urgent::UrgentTaskStore,
+    },
     schema::{TaskId, TaskResultReport, TaskResultStatus, TaskStatus, TaskUpdate},
     utils::base_capability,
 };
@@ -22,43 +25,19 @@ pub async fn find_urgent_tasks_with_capabilities(
 }
 
 pub async fn find_assignable_non_urgent_tasks_with_capabilities_for_tier(
-    store: &TaskStorage,
+    store: &RegularTaskStore,
     caps: &Vec<String>,
     tier: u8,
     agents: &AgentStorage,
     agent_uid: &str,
-) -> Result<Vec<UnassignedTask>, AppError> {
-    let all = store.list_unassigned_with_caps(caps)?;
-    let mut collected = vec![];
-    debug!("Total jobs available: {} (our tier is {})", all.len(), tier);
-    for task in all {
-        if let Some(runner) = task
-            .data
-            .payload
-            .get("runner")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-        {
-            if runner != agent_uid {
-                continue;
-            }
-        }
-        let top_online_tier = all_online_agents_for(&task.id.cap, agents)
-            .await
-            .into_iter()
-            .map(|agent| agent.tier)
-            .max()
-            .unwrap_or_default();
-        if top_online_tier > tier {
-            debug!(
-                "Ingoring task with capability {}, as higher tier agents exist: {top_online_tier}",
-                task.id.cap
-            )
-        } else {
-            collected.push(task);
-        }
+) -> Option<UnassignedTask> {
+    let found = store
+        .find_with_capabilities_for_tier(caps, tier, agents, agent_uid)
+        .await;
+    if found.is_none() {
+        debug!("No regular task eligible for tier {}", tier);
     }
-    Ok(collected)
+    found
 }
 
 pub async fn try_pick_up_urgent_task(
@@ -79,11 +58,47 @@ pub async fn try_pick_up_urgent_task(
 }
 
 pub async fn try_pick_up_non_urgent_task(
-    store: &TaskStorage,
+    regular_store: &RegularTaskStore,
+    persistent_store: &TaskStorage,
     agent: &Agent,
     uid: TaskId,
 ) -> Result<AssignedTask, AppError> {
-    let assigned = store.assign_task(&uid, &agent.uid)?;
+    let task = regular_store
+        .get_task(&uid)
+        .await
+        .ok_or_else(|| AppError::Conflict(format!("Task already taken: {}", uid)))?;
+
+    let removed_persistent = persistent_store.remove_unassigned(&uid)?;
+    if !removed_persistent {
+        return Err(AppError::Conflict(format!(
+            "Task not found in persistent queue: {}",
+            uid
+        )));
+    }
+
+    let assigned = match regular_store.assign_task(&uid, &agent.uid).await {
+        Some(assigned) => assigned,
+        None => {
+            if let Err(e) = persistent_store.add_unassigned(&task) {
+                warn!(
+                    "Failed to rollback persistent regular task {} after take race: {}",
+                    uid, e
+                );
+            }
+            return Err(AppError::Conflict(format!("Task already taken: {}", uid)));
+        }
+    };
+
+    if let Err(e) = persistent_store.update_assigned(&assigned) {
+        if let Err(rollback_err) = persistent_store.add_unassigned(&task) {
+            warn!(
+                "Failed to rollback persistent regular task {} after assign write error: {}",
+                uid, rollback_err
+            );
+        }
+        regular_store.add_task(task).await;
+        return Err(e.into());
+    }
     Ok(assigned)
 }
 

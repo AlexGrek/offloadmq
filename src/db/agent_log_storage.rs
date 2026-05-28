@@ -132,7 +132,11 @@ impl AgentLogStorage {
     }
 
     /// List logs for a given severity, newest first.
-    pub fn list_by_severity(&self, severity: LogSeverity, limit: i64) -> Result<Vec<AgentLogRecord>> {
+    pub fn list_by_severity(
+        &self,
+        severity: LogSeverity,
+        limit: i64,
+    ) -> Result<Vec<AgentLogRecord>> {
         let prefix = format!("{}|", severity.key_prefix());
         let iter = self
             .tree
@@ -171,7 +175,11 @@ impl AgentLogStorage {
         // Same approach: merge per-severity reverse scans, then sort. Each
         // sub-iterator yields newest-first within its severity, so we can also
         // bound work when `limit` is small by taking limit+ from each severity.
-        let take_per_severity = if limit < 0 { usize::MAX } else { limit as usize };
+        let take_per_severity = if limit < 0 {
+            usize::MAX
+        } else {
+            limit as usize
+        };
         let mut collected: Vec<AgentLogRecord> = Vec::new();
         for severity in LogSeverity::all() {
             let prefix = format!("{}|", severity.key_prefix());

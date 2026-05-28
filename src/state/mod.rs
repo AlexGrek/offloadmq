@@ -8,7 +8,7 @@ use crate::{
     config::AppConfig,
     db::{app_storage::AppStorage, service_message_storage::ServiceMessage},
     middleware::auth::Auth,
-    mq::urgent::UrgentTaskStore,
+    mq::{regular::RegularTaskStore, urgent::UrgentTaskStore},
     schema::{TaskId, TaskResultStatus, TaskStatus},
 };
 
@@ -91,6 +91,7 @@ pub struct AppState {
     pub config: Arc<AppConfig>,
     pub auth: Arc<Auth>,
     pub urgent: Arc<UrgentTaskStore>,
+    pub regular: Arc<RegularTaskStore>,
     pub channels: AppChannels,
     /// Serializes bucket validation + reservation during task submission so two
     /// concurrent submissions can't both pass the `rm_after_task` single-use
@@ -105,6 +106,7 @@ impl AppState {
             config: Arc::new(config),
             auth: Arc::new(auth),
             urgent: UrgentTaskStore::new(),
+            regular: RegularTaskStore::new(),
             channels,
             bucket_submit_lock: Arc::new(tokio::sync::Mutex::new(())),
         }

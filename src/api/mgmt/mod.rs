@@ -136,7 +136,7 @@ pub async fn list_tasks(State(state): State<Arc<AppState>>) -> Result<impl IntoR
         .map(|entry| entry.task.clone())
         .collect();
     let regular_assigned = state.storage.tasks.list_assigned_all()?;
-    let regular_unassigned = state.storage.tasks.list_unassigned_all()?;
+    let regular_unassigned = state.regular.list_all().await;
     Ok(Json(json!({"urgent": {"assigned": urgent_assigned,
                                 "unassigned": urgent_unassigned},
                             "regular": {"assigned": regular_assigned,
@@ -149,6 +149,7 @@ pub async fn reset_tasks(
     info!("Tasks reset triggered");
     state.storage.tasks.hard_clear()?;
     state.urgent.hard_clear().await;
+    state.regular.hard_clear().await;
     Ok(Json(json!({"result": "Reset successful"})))
 }
 
@@ -407,7 +408,10 @@ pub async fn trigger_agent_logs_cleanup(
         .agent_logs
         .cleanup_older_than(14)
         .map_err(AppError::Internal)?;
-    info!("Management: agent_logs cleanup triggered, deleted {} record(s)", deleted);
+    info!(
+        "Management: agent_logs cleanup triggered, deleted {} record(s)",
+        deleted
+    );
     Ok(Json(json!({"deleted": deleted, "max_age_days": 14})))
 }
 

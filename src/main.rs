@@ -45,6 +45,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (channels, workers) = AppChannels::new();
     let app_state = AppState::new(app_storage, config.clone(), auth, channels);
     let shared_state = Arc::new(app_state);
+    match shared_state
+        .regular
+        .load_from_persistent(&shared_state.storage.tasks)
+        .await
+    {
+        Ok(n) if n > 0 => info!("Restored {n} queued regular task(s) from persistent storage"),
+        Ok(_) => {}
+        Err(e) => warn!(
+            "Failed to restore regular task queue from persistent storage: {}",
+            e
+        ),
+    }
     tokio::spawn(run_db_write_worker(
         shared_state.clone(),
         workers.db_write_rx,
@@ -94,10 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/bucket/{bucket_uid}/upload",
                     post(api::agent::upload_to_bucket),
                 )
-                .route(
-                    "/logs",
-                    post(api::agent::submit_agent_log),
-                )
+                .route("/logs", post(api::agent::submit_agent_log))
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::jwt_auth_middleware_agent,
@@ -194,10 +203,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/agent_logs/by_agent",
                     get(api::mgmt::list_agent_logs_by_agent),
                 )
-                .route(
-                    "/agent_logs/latest",
-                    get(api::mgmt::list_agent_logs_latest),
-                )
+                .route("/agent_logs/latest", get(api::mgmt::list_agent_logs_latest))
                 .route(
                     "/agent_logs/cleanup/trigger",
                     post(api::mgmt::trigger_agent_logs_cleanup),
@@ -511,7 +517,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut interval = time::interval(time::Duration::from_secs(6 * 60 * 60));
             loop {
                 interval.tick().await;
-                match state.storage.agent_logs.cleanup_older_than(AGENT_LOG_TTL_DAYS) {
+                match state
+                    .storage
+                    .agent_logs
+                    .cleanup_older_than(AGENT_LOG_TTL_DAYS)
+                {
                     Ok(deleted) => {
                         if deleted > 0 {
                             info!(
@@ -568,7 +578,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     _ = interval.tick() => {
-                        match state.storage.tasks.expire_timed_out_unassigned() {
+                        match state.regular.expire_timed_out_unassigned(&state.storage.tasks).await {
                             Ok(n) if n > 0 => {
                                 info!("Task timeout: failed {} unassigned task(s) past wait/total deadline", n);
                             }
