@@ -208,6 +208,49 @@ impl OffloadClient {
         Ok(TaskId { cap, id })
     }
 
+    pub async fn submit_nudenet_task(
+        &self,
+        threshold: f64,
+        bucket_uid: &str,
+    ) -> Result<TaskId, AppError> {
+        let url = format!("{}/api/task/submit", self.base_url);
+        let body = serde_json::json!({
+            "apiKey": self.api_key,
+            "capability": "onnx.nudenet",
+            "urgent": false,
+            "restartable": false,
+            "payload": { "threshold": threshold },
+            "fetchFiles": [],
+            "file_bucket": [bucket_uid],
+            "artifacts": [],
+            "timeoutSecs": 24 * 3600u64,
+            "maxWaitSecs": 24 * 3600u64,
+            "runtimeSecs": 10 * 60u64
+        });
+        let resp = self
+            .http
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(e.to_string()))?;
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("submit failed: {text}")));
+        }
+        let val: serde_json::Value =
+            resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))?;
+        let cap = val["id"]["cap"]
+            .as_str()
+            .ok_or_else(|| AppError::ExternalService("missing id.cap in submit response".into()))?
+            .to_string();
+        let id = val["id"]["id"]
+            .as_str()
+            .ok_or_else(|| AppError::ExternalService("missing id.id in submit response".into()))?
+            .to_string();
+        Ok(TaskId { cap, id })
+    }
+
     /// Submit a non-urgent `tts.*` task. Payload follows the kokoro contract:
     /// `{ model, voice, input }` → response contains `audio_data_base64` +
     /// `content_type`.

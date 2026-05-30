@@ -6,6 +6,7 @@ pub mod chats;
 pub mod generation_parameters;
 pub mod user_system_prompts;
 pub mod image_analysis_jobs;
+pub mod nude_detect_jobs;
 pub mod image_files;
 pub mod image_generation_jobs;
 pub mod image_offload_tasks;

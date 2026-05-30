@@ -20,6 +20,7 @@ import { imageFileUrl, imageThumbnailUrl } from '../api/images'
 import { deleteTtsJob, ttsAudioUrl } from '../api/tts'
 import { FilePropertiesDialog } from '../components/files/FilePropertiesDialog'
 import { ImageLightbox } from '@/components/ImageLightbox'
+import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -50,6 +51,10 @@ export default function FilesPage() {
   const [mediaRevision, setMediaRevision] = useState(0)
   const [info, setInfo] = useState<string | null>(null)
   const [propsFilename, setPropsFilename] = useState<string | null>(null)
+  const [nudeDetectTarget, setNudeDetectTarget] = useState<{
+    imageId: string
+    filename: string
+  } | null>(null)
 
   const load = useCallback(() => {
     if (!token) return
@@ -87,6 +92,7 @@ export default function FilesPage() {
   const summary = data?.summary
 
   return (
+    <>
     <main
       className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-y-auto overscroll-contain p-6"
       data-testid="files-page"
@@ -201,6 +207,9 @@ export default function FilesPage() {
                 load()
               }}
               onShowProperties={() => setPropsFilename(file.filename)}
+              onNudeDetect={(imageId, filename) =>
+                setNudeDetectTarget({ imageId, filename })
+              }
             />
           ))}
         </div>
@@ -236,6 +245,20 @@ export default function FilesPage() {
         token={token}
       />
     </main>
+
+    {nudeDetectTarget && token ? (
+      <NudeDetectModal
+        open
+        onOpenChange={open => {
+          if (!open) setNudeDetectTarget(null)
+        }}
+        token={token}
+        imageId={nudeDetectTarget.imageId}
+        imageUrl={imageFileUrl(nudeDetectTarget.imageId, token, mediaRevision)}
+        filename={nudeDetectTarget.filename}
+      />
+    ) : null}
+    </>
   )
 }
 
@@ -432,6 +455,7 @@ function FileTile({
   fullSrc,
   onImageMutated,
   onShowProperties,
+  onNudeDetect,
 }: {
   file: UserFile
   token: string | null
@@ -442,6 +466,7 @@ function FileTile({
   fullSrc?: string
   onImageMutated: () => void
   onShowProperties: () => void
+  onNudeDetect?: (imageId: string, filename: string) => void
 }) {
   const showInfo = file.direction === 'output'
   const meta = (
@@ -518,6 +543,9 @@ function FileTile({
             direction: file.direction,
             token,
             onDeleted: onImageMutated,
+            onNudeDetect: onNudeDetect
+              ? () => onNudeDetect(file.id, file.filename)
+              : undefined,
           }}
         >
           <div className="relative flex aspect-square items-center justify-center bg-muted/40">
