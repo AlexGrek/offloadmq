@@ -14,6 +14,7 @@ pub struct RunnerSummary {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MgmtAgent {
     uid: String,
     uid_short: String,
