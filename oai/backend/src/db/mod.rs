@@ -4,9 +4,13 @@ pub mod llm_capabilities;
 pub mod chats;
 pub mod user_system_prompts;
 pub mod entities;
+pub mod generation_parameters;
+pub mod image_analysis;
+pub mod nude_detect;
 pub mod image_generation;
 pub mod image_worker_logs;
 pub mod migrator;
+pub mod tts;
 pub mod users;
 
 use anyhow::Result;

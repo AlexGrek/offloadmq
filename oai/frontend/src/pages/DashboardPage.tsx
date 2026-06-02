@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Bot, Eye, FolderOpen, ImagePlus } from 'lucide-react'
+import { Activity, Bot, Eye, FolderOpen, ImagePlus, ShieldAlert, Volume2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const apps = [
@@ -32,6 +32,36 @@ const apps = [
     gradient: 'from-sky-500/20 to-cyan-500/20',
     iconBg: 'bg-sky-500/20',
     iconColor: 'text-sky-400',
+  },
+  {
+    id: 'nude-detect',
+    icon: ShieldAlert,
+    title: 'Nude Detector',
+    description: 'NSFW detection with NudeNet and tunable threshold',
+    href: '/app/nude-detect',
+    gradient: 'from-rose-500/20 to-orange-500/20',
+    iconBg: 'bg-rose-500/20',
+    iconColor: 'text-rose-400',
+  },
+  {
+    id: 'runners',
+    icon: Activity,
+    title: 'Runners',
+    description: 'View active OffloadMQ runner nodes',
+    href: '/app/runners',
+    gradient: 'from-teal-500/20 to-emerald-500/20',
+    iconBg: 'bg-teal-500/20',
+    iconColor: 'text-teal-400',
+  },
+  {
+    id: 'tts',
+    icon: Volume2,
+    title: 'Text to Speech',
+    description: 'Synthesize text as audio with Kokoro and other TTS models',
+    href: '/app/tts',
+    gradient: 'from-violet-500/20 to-fuchsia-500/20',
+    iconBg: 'bg-violet-500/20',
+    iconColor: 'text-violet-400',
   },
   {
     id: 'files',

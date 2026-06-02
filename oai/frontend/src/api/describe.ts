@@ -4,16 +4,36 @@ export interface DescribeCapability {
   raw: string
 }
 
-export interface DescribeSubmitResponse {
-  cap: string
-  id: string
+export interface DescribeJob {
+  job_id: string
+  status: string
+  prompt: string
+  capability: string
+  input_image_id: string | null
+  result: string | null
+  stage: string | null
+  error: string | null
+  offload_cap: string | null
+  offload_task_id: string | null
+  created_at: string
+  updated_at: string
 }
 
-export interface DescribePollResponse {
+export interface StartDescribeJobRequest {
+  capability: string
+  prompt: string
+  image_id: string
+}
+
+export interface StartDescribeJobResponse {
+  job_id: string
   status: string
-  stage?: string | null
-  output?: unknown
-  log?: string | null
+}
+
+export interface CancelDescribeJobResponse {
+  job_id: string
+  status: string
+  message: string
 }
 
 async function request<T>(path: string, token: string, options?: RequestInit): Promise<T> {
@@ -28,6 +48,9 @@ async function request<T>(path: string, token: string, options?: RequestInit): P
     const body = await res.json().catch(() => ({}))
     throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
   }
+  if (res.status === 204) {
+    return undefined as T
+  }
   return res.json() as Promise<T>
 }
 
@@ -37,26 +60,50 @@ export function listDescribeCapabilities(
   return request('/api/describe/capabilities', token)
 }
 
-export function submitDescribeTask(
+export function startDescribeJob(
   token: string,
-  capability: string,
-  prompt: string,
-  image: File,
-): Promise<DescribeSubmitResponse> {
-  const form = new FormData()
-  form.append('capability', capability)
-  form.append('prompt', prompt)
-  form.append('image', image)
-  return request('/api/describe/submit', token, { method: 'POST', body: form })
+  payload: StartDescribeJobRequest,
+): Promise<StartDescribeJobResponse> {
+  return request('/api/describe/jobs', token, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }
 
-export function pollDescribeTask(
-  token: string,
-  cap: string,
-  id: string,
-): Promise<DescribePollResponse> {
-  return request('/api/describe/poll', token, {
+export function listDescribeJobs(token: string): Promise<DescribeJob[]> {
+  return request('/api/describe/jobs', token)
+}
+
+export function getDescribeJob(token: string, jobId: string): Promise<DescribeJob> {
+  return request(`/api/describe/jobs/${encodeURIComponent(jobId)}`, token)
+}
+
+export function pollDescribeJob(token: string, jobId: string): Promise<DescribeJob> {
+  return request(`/api/describe/jobs/${encodeURIComponent(jobId)}/poll`, token, {
     method: 'POST',
-    body: JSON.stringify({ cap, id }),
+  })
+}
+
+export function cancelDescribeJob(
+  token: string,
+  jobId: string,
+): Promise<CancelDescribeJobResponse> {
+  return request(`/api/describe/jobs/${encodeURIComponent(jobId)}/cancel`, token, {
+    method: 'POST',
+  })
+}
+
+export function retryDescribeJob(
+  token: string,
+  jobId: string,
+): Promise<StartDescribeJobResponse> {
+  return request(`/api/describe/jobs/${encodeURIComponent(jobId)}/retry`, token, {
+    method: 'POST',
+  })
+}
+
+export function deleteDescribeJob(token: string, jobId: string): Promise<void> {
+  return request(`/api/describe/jobs/${encodeURIComponent(jobId)}`, token, {
+    method: 'DELETE',
   })
 }

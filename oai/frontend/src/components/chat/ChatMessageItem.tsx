@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { RefreshCw } from 'lucide-react'
+import { Check, Copy, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isMessagePending, type Message } from '@/lib/chat/messages'
 import { MarkdownContent } from '../MarkdownContent'
@@ -15,6 +16,17 @@ export function ChatMessageItem({
   showRetry: boolean
   onRetry: () => void
 }) {
+  const [copied, setCopied] = useState(false)
+  const pending = isMessagePending(msg)
+  const canCopy = !pending && msg.content.length > 0
+
+  function handleCopy() {
+    void navigator.clipboard.writeText(msg.content).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
   return (
     <motion.div
       className={cn('flex flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}
@@ -23,7 +35,7 @@ export function ChatMessageItem({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
     >
-      {isMessagePending(msg) ? (
+      {pending ? (
         <ThinkingBubble statusText={msg.statusText} content={msg.content} />
       ) : (
         <div
@@ -44,16 +56,33 @@ export function ChatMessageItem({
           </MarkdownContent>
         </div>
       )}
-      {showRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          data-testid="retry-btn"
-          className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <RefreshCw className="size-3" />
-          Retry
-        </button>
+      {(canCopy || showRetry) && (
+        <div className="mt-1.5 flex items-center gap-3">
+          {canCopy && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              data-testid="copy-btn"
+              aria-label="Copy message"
+              title="Copy message"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          )}
+          {showRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              data-testid="retry-btn"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <RefreshCw className="size-3" />
+              Retry
+            </button>
+          )}
+        </div>
       )}
     </motion.div>
   )

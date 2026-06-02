@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use log::{debug, info, warn};
-use rand::seq::IndexedRandom;
 
 use crate::{
     db::heuristic_storage::HeuristicStorage,
@@ -16,9 +15,9 @@ use crate::{
     schema::{
         AgentLoginRequest, AgentLoginResponse, AgentRegistrationRequest, AgentRegistrationResponse,
         AgentUpdateRequest, BucketStatResponse, DownloadedFile, FileStatEntry, TaskId,
-        TaskResultReport, TaskUpdate,
+        TaskResultReport, TaskStatus, TaskUpdate,
     },
-    state::AppState,
+    state::{AppState, StreamEvent, TaskLifecycleEvent, TaskQueueKind},
     utils::base_capability,
 };
 
@@ -40,7 +39,11 @@ pub async fn poll_urgent(
     state: &Arc<AppState>,
     comm_method: CommunicationMethod,
 ) -> Result<Option<UnassignedTask>, AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method).await?;
+    let agent = state
+        .storage
+        .agents
+        .update_agent_last_contact(agent, comm_method)
+        .await?;
     let caps = &agent.capabilities;
     Ok(find_urgent_tasks_with_capabilities(&state.urgent, caps, &agent.uid).await)
 }
@@ -50,7 +53,11 @@ pub async fn poll_non_urgent(
     state: &Arc<AppState>,
     comm_method: CommunicationMethod,
 ) -> Result<Option<UnassignedTask>, AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method).await?;
+    let agent = state
+        .storage
+        .agents
+        .update_agent_last_contact(agent, comm_method)
+        .await?;
     let caps = &agent.capabilities;
     debug!(
         "Searching for tasks for agent {:?} with tier {:?}",
@@ -61,20 +68,14 @@ pub async fn poll_non_urgent(
         return Ok(Some(task));
     }
     let all = find_assignable_non_urgent_tasks_with_capabilities_for_tier(
-        &state.storage.tasks,
+        &state.regular,
         caps,
         agent.tier,
         &state.storage.agents,
         &agent.uid,
     )
-    .await?;
-    if all.len() > 0 {
-        let mut rng = rand::rng();
-        let random_item = all.choose(&mut rng).unwrap();
-        Ok(Some(random_item.clone()))
-    } else {
-        Ok(None)
-    }
+    .await;
+    Ok(all)
 }
 
 fn validate_display_name(name: &Option<String>) -> Result<(), AppError> {
@@ -103,7 +104,11 @@ pub async fn do_update_agent_info(
     agent.display_name = req.display_name;
     let uid = agent.uid.clone();
     let key = agent.personal_login_token.clone();
-    state.storage.agents.update_agent_last_contact(agent, comm_method).await?;
+    state
+        .storage
+        .agents
+        .update_agent_last_contact(agent, comm_method)
+        .await?;
     Ok(AgentRegistrationResponse {
         agent_id: uid,
         message: "Updated".to_string(),
@@ -146,8 +151,7 @@ pub async fn do_auth_agent(
     if agent.personal_login_token != req.key {
         warn!(
             "Agent auth rejected: incorrect key for agent_id '{}' (uid_short={})",
-            req.agent_id,
-            agent.uid_short
+            req.agent_id, agent.uid_short
         );
         return Err(mk_auth_err());
     }
@@ -201,7 +205,10 @@ pub async fn get_bucket_file(
         .iter()
         .find(|f| f.uid == file_uid)
         .ok_or_else(|| {
-            AppError::NotFound(format!("File {} not found in bucket {}", file_uid, bucket_uid))
+            AppError::NotFound(format!(
+                "File {} not found in bucket {}",
+                file_uid, bucket_uid
+            ))
         })?
         .clone();
     let data = state
@@ -224,21 +231,55 @@ pub async fn take_task(
     info!("Agent {} picking up task {task_id}", agent.uid_short);
     let cap = base_capability(&task_id.cap);
     let machine_id = agent.system_info.machine_id.as_deref().unwrap_or("");
-    let estimate = state.storage.heuristics.estimate_duration(cap, machine_id).unwrap_or(None);
+    let estimate = state
+        .storage
+        .heuristics
+        .estimate_duration(cap, machine_id)
+        .unwrap_or(None);
 
     if let Some(mut picked) = try_pick_up_urgent_task(&state.urgent, agent, &task_id).await? {
         picked.typical_runtime_seconds = estimate;
         if let Some(d) = estimate {
             state.urgent.set_runtime_estimate(&task_id, d).await;
         }
+        emit_task_lifecycle(
+            state,
+            TaskLifecycleEvent {
+                task_id: task_id.clone(),
+                queue: TaskQueueKind::Urgent,
+                action: "assigned".to_string(),
+                agent_id: Some(agent.uid.clone()),
+                status: Some(TaskStatus::Assigned),
+                result_status: None,
+                stage: None,
+            },
+        );
         Ok(picked)
     } else {
-        let mut assigned = try_pick_up_non_urgent_task(&state.storage.tasks, agent, task_id.clone()).await?;
+        let mut assigned = try_pick_up_non_urgent_task(
+            &state.regular,
+            &state.storage.tasks,
+            agent,
+            task_id.clone(),
+        )
+        .await?;
         log_runner_history(agent, &task_id, &state.storage.heuristics);
         assigned.typical_runtime_seconds = estimate;
         if let Err(e) = state.storage.tasks.update_assigned(&assigned) {
             debug!("Failed to persist runtime estimate for task {task_id}: {e}");
         }
+        emit_task_lifecycle(
+            state,
+            TaskLifecycleEvent {
+                task_id: task_id.clone(),
+                queue: TaskQueueKind::Regular,
+                action: "assigned".to_string(),
+                agent_id: Some(agent.uid.clone()),
+                status: Some(TaskStatus::Assigned),
+                result_status: None,
+                stage: None,
+            },
+        );
         Ok(assigned)
     }
 }
@@ -246,21 +287,27 @@ pub async fn take_task(
 fn log_runner_history(agent: &Agent, task_id: &TaskId, heuristics: &HeuristicStorage) {
     let cap = base_capability(&task_id.cap);
     match heuristics.compute_stats_for(&agent.uid, cap) {
-        Err(e) => debug!("Failed to read heuristics for agent {} cap {}: {}", agent.uid_short, cap, e),
+        Err(e) => debug!(
+            "Failed to read heuristics for agent {} cap {}: {}",
+            agent.uid_short, cap, e
+        ),
         Ok(None) => info!(
             "Agent {} | cap {} | first run — no history yet",
             agent.uid_short, cap
         ),
         Ok(Some(s)) => {
             let success_part = match (s.success_avg_ms, s.success_min_ms, s.success_max_ms) {
-                (Some(avg), Some(min), Some(max)) =>
-                    format!("ok: avg {:.0}ms  min {:.0}ms  max {:.0}ms", avg, min, max),
+                (Some(avg), Some(min), Some(max)) => {
+                    format!("ok: avg {:.0}ms  min {:.0}ms  max {:.0}ms", avg, min, max)
+                }
                 _ => "ok: none".to_string(),
             };
             let fail_part = if s.fail_count > 0 {
                 match (s.fail_avg_ms, s.fail_min_ms, s.fail_max_ms) {
-                    (Some(avg), Some(min), Some(max)) =>
-                        format!("  |  fail ({}): avg {:.0}ms  min {:.0}ms  max {:.0}ms", s.fail_count, avg, min, max),
+                    (Some(avg), Some(min), Some(max)) => format!(
+                        "  |  fail ({}): avg {:.0}ms  min {:.0}ms  max {:.0}ms",
+                        s.fail_count, avg, min, max
+                    ),
                     _ => String::new(),
                 }
             } else {
@@ -281,7 +328,11 @@ pub async fn resolve_task(
     state: &Arc<AppState>,
     comm_method: CommunicationMethod,
 ) -> Result<(), AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method).await?;
+    let agent = state
+        .storage
+        .agents
+        .update_agent_last_contact(agent, comm_method)
+        .await?;
     info!("Agent {} reporting task {task_id}", agent.uid_short);
     debug!("Report: {:?}", &report);
 
@@ -301,11 +352,21 @@ pub async fn resolve_task(
         })
         .unwrap_or_default();
 
+    let result_status = report.status.clone();
     let mut cancel_err: Option<AppError> = None;
-    match report_urgent_task(&state.urgent, report.clone(), task_id).await {
+    let mut queue = TaskQueueKind::Urgent;
+    match report_urgent_task(&state.urgent, report.clone(), task_id.clone()).await {
         Ok(true) => {}
         Ok(false) => {
-            if let Err(e) = report_non_urgent_task(&state.storage.tasks, report, &agent, &state.storage.heuristics).await {
+            queue = TaskQueueKind::Regular;
+            if let Err(e) = report_non_urgent_task(
+                &state.storage.tasks,
+                report.clone(),
+                &agent,
+                &state.storage.heuristics,
+            )
+            .await
+            {
                 if matches!(e, AppError::ClientClosedRequest(_)) {
                     cancel_err = Some(e);
                 } else {
@@ -318,6 +379,18 @@ pub async fn resolve_task(
         }
         Err(e) => return Err(e),
     }
+    emit_task_lifecycle(
+        state,
+        TaskLifecycleEvent {
+            task_id: task_id.clone(),
+            queue,
+            action: "resolved".to_string(),
+            agent_id: Some(agent.uid.clone()),
+            status: None,
+            result_status: Some(result_status),
+            stage: None,
+        },
+    );
 
     for bucket_uid in &file_buckets {
         let bucket = match state.storage.buckets.get_bucket(bucket_uid) {
@@ -358,7 +431,11 @@ pub async fn update_task_progress(
     state: &Arc<AppState>,
     comm_method: CommunicationMethod,
 ) -> Result<(), AppError> {
-    let agent = state.storage.agents.update_agent_last_contact(agent, comm_method).await?;
+    let agent = state
+        .storage
+        .agents
+        .update_agent_last_contact(agent, comm_method)
+        .await?;
     info!(
         "Agent {} updating task {task_id} with log: {:?}",
         agent.uid_short,
@@ -366,10 +443,28 @@ pub async fn update_task_progress(
     );
     debug!("Update: {:?}", &update);
 
-    let found = update_urgent_task(&state.urgent, update.clone(), task_id).await?;
+    let event_status = update.status.clone();
+    let event_stage = update.stage.clone();
+    let found = update_urgent_task(&state.urgent, update.clone(), task_id.clone()).await?;
     if !found {
         update_non_urgent_task(&state.storage.tasks, update).await?;
     }
+    emit_task_lifecycle(
+        state,
+        TaskLifecycleEvent {
+            task_id,
+            queue: if found {
+                TaskQueueKind::Urgent
+            } else {
+                TaskQueueKind::Regular
+            },
+            action: "progress".to_string(),
+            agent_id: Some(agent.uid),
+            status: event_status,
+            result_status: None,
+            stage: event_stage,
+        },
+    );
     Ok(())
 }
 
@@ -379,4 +474,11 @@ pub(crate) fn validate_api_key(keys: &[String], key: &str) -> Result<(), AppErro
         return Err(AppError::Authorization("Incorrect API key".to_string()));
     }
     Ok(())
+}
+
+fn emit_task_lifecycle(state: &Arc<AppState>, event: TaskLifecycleEvent) {
+    let _ = state
+        .channels
+        .stream_tx
+        .send(StreamEvent::TaskLifecycle(event));
 }

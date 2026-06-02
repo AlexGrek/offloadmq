@@ -53,7 +53,11 @@ impl BucketStorage {
 
     // ── bucket CRUD ──────────────────────────────────────────────────────────
 
-    pub async fn create_bucket(&self, api_key: &str, rm_after_task: bool) -> anyhow::Result<BucketMeta> {
+    pub async fn create_bucket(
+        &self,
+        api_key: &str,
+        rm_after_task: bool,
+    ) -> anyhow::Result<BucketMeta> {
         let uid = uuid::Uuid::new_v4().to_string();
         let meta = BucketMeta {
             uid: uid.clone(),
@@ -66,8 +70,7 @@ impl BucketStorage {
         };
         self.save_bucket(&meta).await?;
         let idx_key = format!("{}|{}", api_key, uid);
-        self.owner_idx
-            .insert(idx_key.as_bytes(), uid.as_bytes())?;
+        self.owner_idx.insert(idx_key.as_bytes(), uid.as_bytes())?;
         self.owner_idx.flush_async().await?;
         Ok(meta)
     }
@@ -110,9 +113,7 @@ impl BucketStorage {
 
     pub fn count_buckets_for_key(&self, api_key: &str) -> usize {
         let prefix = format!("{}|", api_key);
-        self.owner_idx
-            .scan_prefix(prefix.as_bytes())
-            .count()
+        self.owner_idx.scan_prefix(prefix.as_bytes()).count()
     }
 
     pub fn list_buckets_for_key(&self, api_key: &str) -> Vec<BucketMeta> {
@@ -137,7 +138,11 @@ impl BucketStorage {
             .filter_map(|item| {
                 let (_, v) = item.ok()?;
                 let meta: BucketMeta = from_slice(&v).ok()?;
-                if meta.created_at < cutoff { Some(meta) } else { None }
+                if meta.created_at < cutoff {
+                    Some(meta)
+                } else {
+                    None
+                }
             })
             .collect()
     }

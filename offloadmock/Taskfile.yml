@@ -1,0 +1,85 @@
+# OffloadMock — task runner (https://taskfile.dev)
+#
+#   task               list available tasks
+#   task install       create the venv + install deps
+#   task run           run the mock server (foreground)
+#   task dev           run with autoreload
+#   task test          run the smoke tests
+#   task health        curl /health on a running server
+#   task clean         remove venv + caches
+#
+# Override host/port:  task run PORT=8000 HOST=0.0.0.0
+
+version: "3"
+
+vars:
+  VENV: venv
+  PY: venv/bin/python
+  HOST: '{{.HOST | default "127.0.0.1"}}'
+  PORT: '{{.PORT | default "3069"}}'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  venv:
+    internal: true
+    cmds:
+      - python3 -m venv {{.VENV}}
+    status:
+      - test -x {{.PY}}
+
+  install:
+    desc: Create the virtualenv and install dependencies
+    deps: [venv]
+    cmds:
+      - "{{.PY}} -m pip install -q -r requirements.txt"
+
+  run:
+    desc: "Run the mock server (override: task run PORT=8000 HOST=0.0.0.0)"
+    deps: [install]
+    env:
+      HOST: "{{.HOST}}"
+      PORT: "{{.PORT}}"
+    cmds:
+      - "{{.PY}} -m offloadmock.main"
+
+  dev:
+    desc: "Run with autoreload (uvicorn --reload)"
+    deps: [install]
+    cmds:
+      - "{{.VENV}}/bin/uvicorn offloadmock.main:app --reload --host {{.HOST}} --port {{.PORT}}"
+
+  test:
+    desc: Run the smoke tests
+    deps: [install]
+    cmds:
+      - "{{.PY}} -m pip install -q pytest"
+      - "{{.PY}} -m pytest tests -q"
+
+  health:
+    desc: "Curl /health on a running server (override: task health PORT=8000)"
+    cmds:
+      - "curl -s http://{{.HOST}}:{{.PORT}}/health"
+      - echo
+
+  routes:
+    desc: List every route the server exposes
+    deps: [install]
+    cmds:
+      - |
+        {{.PY}} - <<'PY'
+        from offloadmock.main import create_app
+        for r in sorted(create_app().routes, key=lambda r: getattr(r, "path", "")):
+            methods = ",".join(sorted(getattr(r, "methods", {"WS"}) or {"WS"}))
+            print(f"{methods:20} {getattr(r, 'path', '')}")
+        PY
+
+  clean:
+    desc: Remove the venv and Python caches
+    cmds:
+      - rm -rf {{.VENV}} .pytest_cache .mypy_cache *.egg-info
+      - find . -name __pycache__ -type d -prune -exec rm -rf {} +

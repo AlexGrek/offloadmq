@@ -1,16 +1,31 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { FileText, HardDrive, ImageIcon, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Download,
+  FileText,
+  HardDrive,
+  ImageIcon,
+  Info,
+  Loader2,
+  Pause,
+  Play,
+  RefreshCw,
+  Trash2,
+  Volume2,
+} from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { listFiles } from '../api/files'
 import type { CleanupFilesScope, FileBrowserResponse, UserFile } from '../api/files'
 import { FilesCleanupMenu } from '../components/files/FilesCleanupMenu'
 import { imageFileUrl, imageThumbnailUrl } from '../api/images'
+import { deleteTtsJob, ttsAudioUrl } from '../api/tts'
+import { FilePropertiesDialog } from '../components/files/FilePropertiesDialog'
 import { ImageLightbox } from '@/components/ImageLightbox'
+import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-type DirectionFilter = 'all' | 'input' | 'output'
+type DirectionFilter = 'all' | 'input' | 'output' | 'audio'
 
 const SCOPE_LABELS: Record<CleanupFilesScope, string> = {
   uploads: 'upload(s)',
@@ -35,6 +50,11 @@ export default function FilesPage() {
   const [query, setQuery] = useState('')
   const [mediaRevision, setMediaRevision] = useState(0)
   const [info, setInfo] = useState<string | null>(null)
+  const [propsFilename, setPropsFilename] = useState<string | null>(null)
+  const [nudeDetectTarget, setNudeDetectTarget] = useState<{
+    imageId: string
+    filename: string
+  } | null>(null)
 
   const load = useCallback(() => {
     if (!token) return
@@ -53,16 +73,26 @@ export default function FilesPage() {
   const files = useMemo(() => {
     const all = data?.files ?? []
     const q = query.trim().toLowerCase()
-    return all.filter(
-      f =>
-        (filter === 'all' || f.direction === filter) &&
-        (q === '' || f.filename.toLowerCase().includes(q)),
-    )
+    return all.filter(f => {
+      if (q !== '' && !f.filename.toLowerCase().includes(q)) return false
+      switch (filter) {
+        case 'all':
+          return true
+        case 'audio':
+          return f.is_audio
+        case 'input':
+        case 'output':
+          return !f.is_audio && f.direction === filter
+      }
+    })
   }, [data, filter, query])
 
+  const imageFiles = useMemo(() => files.filter(f => !f.is_audio), [files])
+  const audioFiles = useMemo(() => files.filter(f => f.is_audio), [files])
   const summary = data?.summary
 
   return (
+    <>
     <main
       className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-y-auto overscroll-contain p-6"
       data-testid="files-page"
@@ -109,7 +139,7 @@ export default function FilesPage() {
       {/* Controls */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-1">
-          {(['all', 'input', 'output'] as const).map(f => (
+          {(['all', 'input', 'output', 'audio'] as const).map(f => (
             <Button
               key={f}
               variant={filter === f ? 'default' : 'ghost'}
@@ -117,7 +147,13 @@ export default function FilesPage() {
               onClick={() => setFilter(f)}
               data-testid={`files-filter-${f}`}
             >
-              {f === 'all' ? 'All' : f === 'input' ? 'Uploads' : 'Generated'}
+              {f === 'all'
+                ? 'All'
+                : f === 'input'
+                  ? 'Uploads'
+                  : f === 'output'
+                    ? 'Generated'
+                    : 'Audio'}
             </Button>
           ))}
         </div>
@@ -154,25 +190,236 @@ export default function FilesPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-        {files.map(file => (
-          <FileTile
-            key={file.id}
-            file={file}
+      {imageFiles.length > 0 && (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+          {imageFiles.map(file => (
+            <FileTile
+              key={file.id}
+              file={file}
+              token={token}
+              mediaRevision={mediaRevision}
+              thumbSrc={
+                file.is_image ? imageThumbnailUrl(file.id, token, mediaRevision) : undefined
+              }
+              fullSrc={file.is_image ? imageFileUrl(file.id, token, mediaRevision) : undefined}
+              onImageMutated={() => {
+                setMediaRevision(v => v + 1)
+                load()
+              }}
+              onShowProperties={() => setPropsFilename(file.filename)}
+              onNudeDetect={(imageId, filename) =>
+                setNudeDetectTarget({ imageId, filename })
+              }
+            />
+          ))}
+        </div>
+      )}
+
+      {audioFiles.length > 0 && (
+        <section
+          className={imageFiles.length > 0 ? 'mt-8' : ''}
+          data-testid="files-audio-section"
+        >
+          {filter === 'all' && imageFiles.length > 0 && (
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+              <Volume2 className="size-4" />
+              Audio
+            </h2>
+          )}
+          <AudioList
+            files={audioFiles}
             token={token}
-            mediaRevision={mediaRevision}
-            thumbSrc={
-              file.is_image ? imageThumbnailUrl(file.id, token, mediaRevision) : undefined
-            }
-            fullSrc={file.is_image ? imageFileUrl(file.id, token, mediaRevision) : undefined}
-            onImageMutated={() => {
-              setMediaRevision(v => v + 1)
-              load()
-            }}
+            onChanged={() => load()}
+            onError={msg => setError(msg)}
+            onShowProperties={fn => setPropsFilename(fn)}
           />
-        ))}
-      </div>
+        </section>
+      )}
+
+      <FilePropertiesDialog
+        open={propsFilename != null}
+        onOpenChange={open => {
+          if (!open) setPropsFilename(null)
+        }}
+        filename={propsFilename}
+        token={token}
+      />
     </main>
+
+    {nudeDetectTarget && token ? (
+      <NudeDetectModal
+        open
+        onOpenChange={open => {
+          if (!open) setNudeDetectTarget(null)
+        }}
+        token={token}
+        imageId={nudeDetectTarget.imageId}
+        imageUrl={imageFileUrl(nudeDetectTarget.imageId, token, mediaRevision)}
+        filename={nudeDetectTarget.filename}
+      />
+    ) : null}
+    </>
+  )
+}
+
+function AudioList({
+  files,
+  token,
+  onChanged,
+  onError,
+  onShowProperties,
+}: {
+  files: UserFile[]
+  token: string | null
+  onChanged: () => void
+  onError: (msg: string) => void
+  onShowProperties: (filename: string) => void
+}) {
+  const [playingId, setPlayingId] = useState<string | null>(null)
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ''
+        audioRef.current = null
+      }
+    }
+  }, [])
+
+  function stopPlayback() {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ''
+      audioRef.current = null
+    }
+    setPlayingId(null)
+    setLoadingId(null)
+  }
+
+  function togglePlay(file: UserFile) {
+    if (playingId === file.id) {
+      stopPlayback()
+      return
+    }
+    stopPlayback()
+    setLoadingId(file.id)
+    const audio = new Audio(ttsAudioUrl(file.id, token))
+    audioRef.current = audio
+    audio.onplaying = () => {
+      setLoadingId(null)
+      setPlayingId(file.id)
+    }
+    audio.onended = () => {
+      if (audioRef.current === audio) audioRef.current = null
+      setPlayingId(prev => (prev === file.id ? null : prev))
+    }
+    audio.onerror = () => {
+      if (audioRef.current === audio) audioRef.current = null
+      setLoadingId(null)
+      setPlayingId(prev => (prev === file.id ? null : prev))
+      onError('Audio playback failed')
+    }
+    void audio.play().catch((e: Error) => {
+      setLoadingId(null)
+      onError(e.message || 'Audio playback failed')
+    })
+  }
+
+  async function handleDelete(file: UserFile) {
+    if (!token) return
+    if (!window.confirm(`Delete "${file.filename}"? This cannot be undone.`)) return
+    setDeletingId(file.id)
+    try {
+      if (playingId === file.id) stopPlayback()
+      await deleteTtsJob(token, file.id)
+      onChanged()
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  return (
+    <ul
+      className="divide-y divide-border overflow-hidden rounded-xl border border-border"
+      data-testid="files-audio-list"
+    >
+      {files.map(file => {
+        const isPlaying = playingId === file.id
+        const isLoading = loadingId === file.id
+        const isDeleting = deletingId === file.id
+        return (
+          <li
+            key={file.id}
+            className="flex items-center gap-3 bg-background px-3 py-2 hover:bg-muted/40 transition-colors"
+            data-testid={`files-audio-row-${file.id}`}
+          >
+            <button
+              type="button"
+              onClick={() => togglePlay(file)}
+              disabled={isLoading || isDeleting}
+              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 transition-colors disabled:opacity-50"
+              title={isPlaying ? 'Stop' : 'Play'}
+              data-testid={`files-audio-play-${file.id}`}
+            >
+              {isLoading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : isPlaying ? (
+                <Pause className="size-4" />
+              ) : (
+                <Play className="size-4 translate-x-px" fill="currentColor" />
+              )}
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium" title={file.filename}>
+                {file.filename}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {formatBytes(file.size_bytes)} · {file.content_type}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onShowProperties(file.filename)}
+              className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Show generation properties"
+              data-testid={`files-audio-info-${file.id}`}
+              aria-label="Show generation properties"
+            >
+              <Info className="size-4" />
+            </button>
+            <a
+              href={ttsAudioUrl(file.id, token)}
+              download={file.filename}
+              className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Download"
+              data-testid={`files-audio-download-${file.id}`}
+            >
+              <Download className="size-4" />
+            </a>
+            <button
+              type="button"
+              onClick={() => void handleDelete(file)}
+              disabled={isDeleting}
+              className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+              title="Delete"
+              data-testid={`files-audio-delete-${file.id}`}
+            >
+              {isDeleting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+            </button>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -207,6 +454,8 @@ function FileTile({
   thumbSrc,
   fullSrc,
   onImageMutated,
+  onShowProperties,
+  onNudeDetect,
 }: {
   file: UserFile
   token: string | null
@@ -216,19 +465,40 @@ function FileTile({
   /** Lightbox / open full size. */
   fullSrc?: string
   onImageMutated: () => void
+  onShowProperties: () => void
+  onNudeDetect?: (imageId: string, filename: string) => void
 }) {
+  const showInfo = file.direction === 'output'
   const meta = (
-    <div className="border-t border-border px-3 py-2">
-      <p className="truncate text-xs font-medium" title={file.filename}>
-        {file.is_image ? (
-          <ImageIcon className="mr-1 inline h-3 w-3 align-text-bottom text-muted-foreground" />
-        ) : null}
-        {file.filename}
-      </p>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">
-        {file.width > 0 && file.height > 0 ? `${file.width}×${file.height} · ` : ''}
-        {formatBytes(file.size_bytes)}
-      </p>
+    <div className="flex items-start gap-2 border-t border-border px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium" title={file.filename}>
+          {file.is_image ? (
+            <ImageIcon className="mr-1 inline h-3 w-3 align-text-bottom text-muted-foreground" />
+          ) : null}
+          {file.filename}
+        </p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          {file.width > 0 && file.height > 0 ? `${file.width}×${file.height} · ` : ''}
+          {formatBytes(file.size_bytes)}
+        </p>
+      </div>
+      {showInfo && (
+        <button
+          type="button"
+          onClick={e => {
+            e.preventDefault()
+            e.stopPropagation()
+            onShowProperties()
+          }}
+          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          title="Show generation properties"
+          data-testid={`file-tile-info-${file.id}`}
+          aria-label="Show generation properties"
+        >
+          <Info className="size-3.5" />
+        </button>
+      )}
     </div>
   )
 
@@ -273,6 +543,9 @@ function FileTile({
             direction: file.direction,
             token,
             onDeleted: onImageMutated,
+            onNudeDetect: onNudeDetect
+              ? () => onNudeDetect(file.id, file.filename)
+              : undefined,
           }}
         >
           <div className="relative flex aspect-square items-center justify-center bg-muted/40">

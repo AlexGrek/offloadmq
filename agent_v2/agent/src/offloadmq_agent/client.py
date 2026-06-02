@@ -218,3 +218,36 @@ class OffloadMQClient:
 
     def update_token(self, jwt_token: str) -> None:
         self._jwt_token = jwt_token
+
+    async def submit_log(
+        self,
+        severity: str,
+        text: str,
+        *,
+        agent_id: str | None = None,
+        agent_name: str | None = None,
+        machine_fingerprint: str | None = None,
+    ) -> None:
+        """POST a single runtime log to the server.
+
+        Severity must be one of CRITICAL, ERROR, INFO. The server stamps the
+        timestamp and record id; missing identity fields fall back to the
+        authenticated agent record server-side.
+        """
+        url = f"{self._server}/private/agent/logs"
+        body: dict[str, Any] = {"severity": severity, "text": text}
+        if agent_id:
+            body["agentId"] = agent_id
+        if agent_name:
+            body["agentName"] = agent_name
+        if machine_fingerprint:
+            body["machineFingerprint"] = machine_fingerprint
+        session = await self._session()
+        async with session.post(url, json=body, headers=self._headers()) as resp:
+            if resp.status not in (200, 201, 204):
+                text_body = await resp.text()
+                raise OffloadMQError(
+                    f"Submit log failed ({resp.status}): {text_body}",
+                    status=resp.status,
+                    body=text_body,
+                )

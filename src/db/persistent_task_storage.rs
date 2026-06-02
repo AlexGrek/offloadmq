@@ -3,7 +3,7 @@ use chrono::Utc;
 use log::info;
 use sled::Db;
 use sled::Transactional;
-use sled::transaction::{abort, TransactionError};
+use sled::transaction::{TransactionError, abort};
 
 use crate::{
     error::AppError,
@@ -56,9 +56,10 @@ impl TaskStorage {
     /// the transactional `remove` is the arbiter against concurrent claims.
     pub fn assign_task(&self, id: &TaskId, agent_id: &str) -> Result<AssignedTask, AppError> {
         let key = Self::make_key(id);
-        let value = self.unassigned.get(key.as_bytes())?.ok_or_else(|| {
-            AppError::Conflict(format!("Unassigned task not found: {}", id))
-        })?;
+        let value = self
+            .unassigned
+            .get(key.as_bytes())?
+            .ok_or_else(|| AppError::Conflict(format!("Unassigned task not found: {}", id)))?;
         let unassigned: UnassignedTask = rmp_serde::from_slice(&value)?;
         let assigned = unassigned.assign_to(agent_id);
         let bytes = rmp_serde::to_vec_named(&assigned)?;
@@ -218,9 +219,13 @@ impl TaskStorage {
             }
             let mut assigned = task.into_assigned("(timeout)");
             assigned.change_status(TaskStatus::Failed);
+            assigned.stage = None;
             self.update_assigned(&assigned)?;
             count += 1;
-            info!("Task {} timed out while unassigned, marked failed", assigned.id);
+            info!(
+                "Task {} timed out while unassigned, marked failed",
+                assigned.id
+            );
         }
 
         Ok(count)
@@ -300,6 +305,7 @@ impl TaskStorage {
         let count = stuck.len();
         for mut task in stuck {
             task.change_status(TaskStatus::Failed);
+            task.stage = None;
             self.update_assigned(&task)?;
             info!(
                 "Task {} cancel-requested but never acknowledged, marked failed",
@@ -349,6 +355,7 @@ impl TaskStorage {
         for mut task in orphaned {
             let agent_id = task.agent_id.clone();
             task.change_status(TaskStatus::Failed);
+            task.stage = None;
             task.append_log(Some(format!(
                 "\n[server] Task failed: agent {} went offline and stopped reporting",
                 agent_id

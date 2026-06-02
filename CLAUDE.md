@@ -298,11 +298,11 @@ These are the hardcoded keys used for local development and testing. Use them di
 
 ## OAI — Own AI Frontend (`oai/`)
 
-OAI is a standalone web application that gives end users access to AI capabilities (LLM chat, image generation/analysis) routed through OffloadMQ. It lives in [oai/](oai/) and has its own backend, frontend, Helm chart, and Docker image.
+OAI is a standalone web application that gives end users access to AI capabilities (LLM chat, image generation/analysis, text-to-speech) routed through OffloadMQ. It lives in [oai/](oai/) and has its own backend, frontend, Helm chart, and Docker image.
 
 ### What it is
 
-- SPA web app — users log in, chat with LLMs over WebSocket, and submit image generation/analysis tasks
+- SPA web app — users log in, chat with LLMs over WebSocket, and submit image generation/analysis and TTS tasks
 - Stateless Rust/Axum backend; all state lives in PostgreSQL (users, sessions, quotas) and Garage/S3 (generated files)
 - Calls the OffloadMQ Client API to submit and poll tasks — OffloadMQ URI and credentials are admin-configurable at runtime
 - User accounts with per-user usage quotas

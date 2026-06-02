@@ -34,7 +34,7 @@ impl ServiceMessageStorage {
     }
 
     /// Append a new message. record_id is generated automatically.
-    pub fn push(&self, class: &str, kind: &str, content: Value) -> Result<()> {
+    pub fn push(&self, class: &str, kind: &str, content: Value) -> Result<ServiceMessage> {
         let record_id = crate::utils::time_sortable_uid();
         let msg = ServiceMessage {
             message_class: class.to_string(),
@@ -46,7 +46,7 @@ impl ServiceMessageStorage {
         let key = format!("{}|{}", class, record_id);
         let bytes = rmp_serde::to_vec_named(&msg)?;
         self.tree.insert(key.as_bytes(), bytes)?;
-        Ok(())
+        Ok(msg)
     }
 
     /// List messages for a class, newest first, with cursor-based pagination.

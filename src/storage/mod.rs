@@ -17,10 +17,9 @@ impl FileStore {
                 Operator::new(services::Fs::default().root(&config.local_root))?.finish()
             }
             "webdav" => {
-                let endpoint = config
-                    .webdav_endpoint
-                    .as_deref()
-                    .ok_or_else(|| anyhow!("STORAGE_WEBDAV_ENDPOINT required for webdav backend"))?;
+                let endpoint = config.webdav_endpoint.as_deref().ok_or_else(|| {
+                    anyhow!("STORAGE_WEBDAV_ENDPOINT required for webdav backend")
+                })?;
 
                 let builder = services::Webdav::default().endpoint(endpoint);
                 let builder = match &config.webdav_username {
@@ -85,10 +84,7 @@ impl FileStore {
     /// Recursively deletes all files in the bucket directory.
     pub async fn delete_bucket(&self, bucket_id: &str) -> anyhow::Result<()> {
         // Ignore errors (bucket directory may not exist if no files were ever uploaded).
-        self.op
-            .remove_all(&format!("{}/", bucket_id))
-            .await
-            .ok();
+        self.op.remove_all(&format!("{}/", bucket_id)).await.ok();
         Ok(())
     }
 }

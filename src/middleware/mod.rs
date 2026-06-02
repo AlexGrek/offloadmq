@@ -33,7 +33,9 @@ impl<S: Send + Sync + 'static> FromRequestParts<S> for OptionalMgmtOverride {
     type Rejection = std::convert::Infallible;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        Ok(OptionalMgmtOverride(parts.extensions.get::<MgmtOverride>().cloned()))
+        Ok(OptionalMgmtOverride(
+            parts.extensions.get::<MgmtOverride>().cloned(),
+        ))
     }
 }
 
@@ -227,11 +229,7 @@ pub async fn apikey_auth_middleware_user(
 
     // Prefer header-based auth (no body read required).
     // This enables non-JSON transports (WebSocket, etc.) to authenticate cleanly.
-    if let Some(api_key) = parts
-        .headers
-        .get("X-API-Key")
-        .and_then(|v| v.to_str().ok())
-    {
+    if let Some(api_key) = parts.headers.get("X-API-Key").and_then(|v| v.to_str().ok()) {
         if !app_state
             .storage
             .client_keys
@@ -292,7 +290,9 @@ pub async fn apikey_header_auth_middleware_storage(
         .client_keys
         .is_key_real_not_revoked(&api_key)
     {
-        return Err(AppError::Authorization("Invalid client API key".to_string()));
+        return Err(AppError::Authorization(
+            "Invalid client API key".to_string(),
+        ));
     }
 
     req.extensions_mut().insert(StorageApiKey(api_key));

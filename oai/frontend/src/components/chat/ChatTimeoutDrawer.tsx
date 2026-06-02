@@ -8,9 +8,9 @@ export type ChatTimeoutSettings = {
 }
 
 export const DEFAULT_TIMEOUT_SETTINGS: ChatTimeoutSettings = {
-  timeoutSecs: null,
-  maxWaitSecs: null,
-  runtimeSecs: null,
+  timeoutSecs: 1500,
+  maxWaitSecs: 300,
+  runtimeSecs: 1200,
 }
 
 const TIMEOUT_DEFS: {

@@ -1,4 +1,7 @@
-use crate::{error::AppError, models::{Agent, CommunicationMethod}};
+use crate::{
+    error::AppError,
+    models::{Agent, CommunicationMethod},
+};
 use chrono::Utc;
 use log::info;
 use rmp_serde::{from_slice, to_vec_named};

@@ -10,6 +10,9 @@ import DashboardPage from './pages/DashboardPage'
 import ChatPage from './pages/ChatPage'
 import ImageGenerationPage from './pages/ImageGenerationPage'
 import DescribeImagePage from './pages/DescribeImagePage'
+import NudeDetectorPage from './pages/NudeDetectorPage'
+import RunnersPage from './pages/RunnersPage'
+import TtsPage from './pages/TtsPage'
 import FilesPage from './pages/FilesPage'
 import SettingsPage from './pages/SettingsPage'
 import ServerConfigPage from './pages/ServerConfigPage'
@@ -40,6 +43,9 @@ export default function App() {
             <Route path="chat" element={<ChatPage />} />
             <Route path="images" element={<ImageGenerationPage />} />
             <Route path="describe" element={<DescribeImagePage />} />
+            <Route path="nude-detect" element={<NudeDetectorPage />} />
+            <Route path="runners" element={<RunnersPage />} />
+            <Route path="tts" element={<TtsPage />} />
             <Route path="files" element={<FilesPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/server" element={<ServerConfigPage />} />

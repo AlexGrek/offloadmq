@@ -14,7 +14,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{
     models::Agent,
-    schema::{mb_to_gb_rounded, TaskId},
+    schema::{TaskId, mb_to_gb_rounded},
     utils::base_capability,
 };
 

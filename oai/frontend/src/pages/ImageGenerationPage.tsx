@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ImageLightbox } from '@/components/ImageLightbox'
+import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -131,6 +132,10 @@ export default function ImageGenerationPage() {
   const [deletingJob, setDeletingJob] = useState(false)
   const [jobsLoading, setJobsLoading] = useState(true)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [nudeDetectTarget, setNudeDetectTarget] = useState<{
+    imageId: string
+    filename: string
+  } | null>(null)
   const [mediaRevision, setMediaRevision] = useState(0)
   const [submitBurst, setSubmitBurst] = useState(false)
   const [compareMode, setCompareMode] = useState(false)
@@ -331,6 +336,7 @@ export default function ImageGenerationPage() {
             token,
             onDeleted: onImageMutated,
             onSendToImg2Img,
+            onNudeDetect: () => setNudeDetectTarget({ imageId, filename }),
           }
         : undefined,
     [token, onImageMutated],
@@ -1348,6 +1354,18 @@ export default function ImageGenerationPage() {
         token={token}
       />
     )}
+    {nudeDetectTarget && token ? (
+      <NudeDetectModal
+        open
+        onOpenChange={open => {
+          if (!open) setNudeDetectTarget(null)
+        }}
+        token={token}
+        imageId={nudeDetectTarget.imageId}
+        imageUrl={imageFileUrl(nudeDetectTarget.imageId, token, mediaRevision)}
+        filename={nudeDetectTarget.filename}
+      />
+    ) : null}
     </>
   )
 }

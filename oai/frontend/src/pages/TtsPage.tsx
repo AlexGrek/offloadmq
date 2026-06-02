@@ -1,0 +1,644 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Download,
+  Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pencil,
+  RefreshCw,
+  RotateCcw,
+  Square,
+  Trash2,
+  Volume2,
+} from 'lucide-react'
+import {
+  cancelTtsJob,
+  deleteTtsJob,
+  getTtsJob,
+  listTtsCapabilities,
+  listTtsJobs,
+  pollTtsJob,
+  retryTtsJob,
+  startTtsJob,
+  ttsAudioUrl,
+  type TtsCapability,
+  type TtsJob,
+} from '../api/tts'
+import { Button } from '../components/ui/button'
+import { Label } from '../components/ui/label'
+import { TtsHistorySidebar, TTS_NEW_PANEL } from '../components/tts/TtsHistorySidebar'
+import { useAuth } from '../contexts/AuthContext'
+import { cn } from '../lib/utils'
+
+const DEFAULT_TEXT = 'Hello from OAI. This is a text-to-speech test.'
+const POLL_INTERVAL_MS = 3000
+const TERMINAL = new Set(['completed', 'failed', 'canceled'])
+
+function modelLabel(cap: string): string {
+  return cap.replace(/^tts\./, '')
+}
+
+function jobTitle(text: string, limit = 56): string {
+  const trimmed = text.trim()
+  if (!trimmed) return 'Speech'
+  if (trimmed.length <= limit) return trimmed
+  return `${trimmed.slice(0, limit - 1).trimEnd()}…`
+}
+
+function audioExt(contentType: string | null): string {
+  if (!contentType) return 'wav'
+  if (contentType.includes('mpeg')) return 'mp3'
+  if (contentType.includes('ogg')) return 'ogg'
+  if (contentType.includes('flac')) return 'flac'
+  if (contentType.includes('aac')) return 'aac'
+  return 'wav'
+}
+
+/** Mirror of `sanitize_filename_slug` in services/tts.rs: alnum + `-` only;
+ *  everything else collapses into a single `_`; trimmed; max 50 chars. */
+function sanitizeFilenameSlug(input: string, maxChars = 50): string {
+  let out = ''
+  let prevUnderscore = false
+  for (const ch of input) {
+    if (out.length >= maxChars) break
+    if (/[A-Za-z0-9-]/.test(ch)) {
+      out += ch
+      prevUnderscore = false
+    } else if (!prevUnderscore) {
+      out += '_'
+      prevUnderscore = true
+    }
+  }
+  const trimmed = out.replace(/^_+|_+$/g, '')
+  return trimmed || 'speech'
+}
+
+export default function TtsPage() {
+  const { token } = useAuth()
+
+  const [capabilities, setCapabilities] = useState<TtsCapability[]>([])
+  const [capsLoading, setCapsLoading] = useState(true)
+  const [capsError, setCapsError] = useState<string | null>(null)
+
+  const [selectedCap, setSelectedCap] = useState('')
+  const [selectedVoice, setSelectedVoice] = useState('')
+  const [text, setText] = useState(DEFAULT_TEXT)
+
+  const [jobs, setJobs] = useState<TtsJob[]>([])
+  const [jobsLoading, setJobsLoading] = useState(true)
+  const [activePanel, setActivePanel] = useState<string>(TTS_NEW_PANEL)
+  const [selectedJob, setSelectedJob] = useState<TtsJob | null>(null)
+  const [jobDetailLoading, setJobDetailLoading] = useState(false)
+
+  const [submitting, setSubmitting] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+  const [polling, setPolling] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [canceling, setCanceling] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const viewingJob = activePanel !== TTS_NEW_PANEL
+  const viewedJobId = viewingJob ? activePanel : null
+
+  const voicesForSelected = useMemo<string[]>(() => {
+    const cap = capabilities.find(c => c.base === selectedCap)
+    return cap?.voices ?? []
+  }, [capabilities, selectedCap])
+
+  const loadCapabilities = useCallback(() => {
+    if (!token) return
+    setCapsLoading(true)
+    setCapsError(null)
+    listTtsCapabilities(token)
+      .then(data => {
+        setCapabilities(data.capabilities)
+        setSelectedCap(prev => {
+          if (prev && data.capabilities.some(c => c.base === prev)) return prev
+          return data.capabilities[0]?.base ?? ''
+        })
+      })
+      .catch((e: Error) => setCapsError(e.message))
+      .finally(() => setCapsLoading(false))
+  }, [token])
+
+  const loadJobs = useCallback(async () => {
+    if (!token) return
+    try {
+      const list = await listTtsJobs(token)
+      setJobs(list)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setJobsLoading(false)
+    }
+  }, [token])
+
+  useEffect(() => {
+    loadCapabilities()
+    void loadJobs()
+  }, [loadCapabilities, loadJobs])
+
+  // Keep voice in sync with the available list for the chosen capability.
+  useEffect(() => {
+    if (voicesForSelected.length === 0) return
+    setSelectedVoice(prev => (prev && voicesForSelected.includes(prev) ? prev : voicesForSelected[0]))
+  }, [voicesForSelected])
+
+  const refreshJob = useCallback(
+    async (jobId: string) => {
+      if (!token) return null
+      const job = await getTtsJob(token, jobId)
+      setSelectedJob(job)
+      setJobs(prev => {
+        const idx = prev.findIndex(j => j.job_id === job.job_id)
+        if (idx >= 0) {
+          const next = [...prev]
+          next[idx] = job
+          return next
+        }
+        return [job, ...prev]
+      })
+      return job
+    },
+    [token],
+  )
+
+  function selectNew() {
+    setActivePanel(TTS_NEW_PANEL)
+    setError(null)
+  }
+
+  async function selectJob(jobId: string) {
+    if (!token) return
+    setActivePanel(jobId)
+    setError(null)
+    setJobDetailLoading(true)
+    try {
+      await refreshJob(jobId)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setJobDetailLoading(false)
+    }
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!token || !selectedCap || !selectedVoice || submitting) return
+    if (!text.trim()) {
+      setError('Enter some text to synthesize.')
+      return
+    }
+    setError(null)
+    setSubmitting(true)
+    try {
+      const res = await startTtsJob(token, {
+        capability: selectedCap,
+        voice: selectedVoice,
+        text: text.trim(),
+      })
+      setActivePanel(res.job_id)
+      await refreshJob(res.job_id)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function onPollNow(jobId: string) {
+    if (!token) return
+    setPolling(true)
+    setError(null)
+    try {
+      const job = await pollTtsJob(token, jobId)
+      setSelectedJob(job)
+      setJobs(prev => prev.map(j => (j.job_id === job.job_id ? job : j)))
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setPolling(false)
+    }
+  }
+
+  async function onCancel(jobId: string) {
+    if (!token) return
+    setCanceling(true)
+    setError(null)
+    try {
+      await cancelTtsJob(token, jobId)
+      await refreshJob(jobId)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setCanceling(false)
+    }
+  }
+
+  async function onRetry(jobId: string) {
+    if (!token) return
+    setRetrying(true)
+    setError(null)
+    try {
+      const res = await retryTtsJob(token, jobId)
+      setActivePanel(res.job_id)
+      await refreshJob(res.job_id)
+      await loadJobs()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setRetrying(false)
+    }
+  }
+
+  async function onDelete(jobId: string) {
+    if (!token) return
+    setDeleting(true)
+    setError(null)
+    try {
+      await deleteTtsJob(token, jobId)
+      setJobs(prev => {
+        const next = prev.filter(j => j.job_id !== jobId)
+        if (next.length > 0) {
+          void selectJob(next[0].job_id)
+        } else {
+          selectNew()
+          setSelectedJob(null)
+        }
+        return next
+      })
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  // Auto-poll while viewing a non-terminal job
+  useEffect(() => {
+    if (!token || !viewedJobId) return
+    const status = selectedJob?.status
+    if (status && TERMINAL.has(status)) return
+    const id = window.setInterval(() => {
+      void onPollNow(viewedJobId)
+    }, POLL_INTERVAL_MS)
+    return () => window.clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, viewedJobId, selectedJob?.status])
+
+  function editFromJob() {
+    if (!selectedJob) return
+    setText(selectedJob.text)
+    if (selectedJob.capability && capabilities.some(c => c.base === selectedJob.capability)) {
+      setSelectedCap(selectedJob.capability)
+    }
+    if (selectedJob.voice) setSelectedVoice(selectedJob.voice)
+    setActivePanel(TTS_NEW_PANEL)
+  }
+
+  const canSubmit = useMemo(
+    () => Boolean(selectedCap && selectedVoice && text.trim() && !submitting),
+    [selectedCap, selectedVoice, text, submitting],
+  )
+
+  const status = selectedJob?.status
+  const isRunning = status != null && !TERMINAL.has(status)
+  const canRetry = status === 'failed' || status === 'canceled'
+  const downloadName = useMemo(() => {
+    if (!selectedJob) return 'audio.wav'
+    const slug = sanitizeFilenameSlug(selectedJob.text)
+    return `${slug}-${selectedJob.job_id}.${audioExt(selectedJob.audio_content_type)}`
+  }, [selectedJob])
+
+  return (
+    <div
+      className="flex min-h-0 flex-1 overflow-hidden bg-background"
+      data-testid="tts-page"
+    >
+      <aside
+        className={cn(
+          'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200',
+          sidebarOpen ? 'w-64' : 'w-0',
+        )}
+        data-testid="tts-sidebar"
+      >
+        <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
+          <span className="text-sm font-semibold text-sidebar-foreground">Speech</span>
+        </div>
+        <TtsHistorySidebar
+          jobs={jobs}
+          activePanel={activePanel}
+          loading={jobsLoading}
+          onSelectNew={selectNew}
+          onSelectJob={jobId => void selectJob(jobId)}
+        />
+      </aside>
+
+      <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden">
+        <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setSidebarOpen(v => !v)}
+            title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+          >
+            {sidebarOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
+          </Button>
+          <h1 className="min-w-0 flex-1 truncate font-display text-sm font-semibold">
+            {viewingJob && selectedJob ? jobTitle(selectedJob.text) : 'New speech'}
+          </h1>
+          {viewingJob && selectedJob && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => void onDelete(selectedJob.job_id)}
+              disabled={deleting}
+              title="Delete speech"
+              aria-label="Delete speech"
+              data-testid="tts-delete-job"
+              className="text-muted-foreground hover:text-destructive"
+            >
+              {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+            </Button>
+          )}
+        </header>
+
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-2xl space-y-5 px-3 py-4 sm:px-6 sm:py-5">
+            {activePanel === TTS_NEW_PANEL && (
+              <section data-testid="tts-new-panel" className="flex flex-col gap-5">
+                <header className="space-y-1">
+                  <h2 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
+                    <Volume2 className="h-4 w-4 text-violet-400" />
+                    New Speech
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Choose a model and voice, then type text to synthesize as audio.
+                  </p>
+                </header>
+
+                <form onSubmit={e => void onSubmit(e)} className="space-y-5">
+                  {/* Model selector */}
+                  <div className="space-y-1.5" data-testid="tts-capability-select">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor="tts-cap">Model</Label>
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={loadCapabilities}
+                        disabled={capsLoading}
+                        data-testid="tts-refresh-caps"
+                      >
+                        <RefreshCw className={cn('size-3', capsLoading && 'animate-spin')} />
+                        Refresh
+                      </button>
+                    </div>
+                    {capsError ? (
+                      <p className="text-xs text-destructive">{capsError}</p>
+                    ) : capsLoading ? (
+                      <div className="flex h-9 items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="size-3.5 animate-spin" /> Loading models…
+                      </div>
+                    ) : capabilities.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No TTS models online. Start a `tts.*` agent (e.g., kokoro) or check the
+                        OffloadMQ connection in Settings.
+                      </p>
+                    ) : (
+                      <select
+                        id="tts-cap"
+                        value={selectedCap}
+                        onChange={e => setSelectedCap(e.target.value)}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        data-testid="tts-cap-select"
+                      >
+                        {capabilities.map(c => (
+                          <option key={c.base} value={c.base}>
+                            {modelLabel(c.base)}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Voice selector */}
+                  <div className="space-y-1.5" data-testid="tts-voice-select">
+                    <Label htmlFor="tts-voice">Voice</Label>
+                    {voicesForSelected.length === 0 ? (
+                      <input
+                        id="tts-voice"
+                        type="text"
+                        value={selectedVoice}
+                        onChange={e => setSelectedVoice(e.target.value)}
+                        placeholder="e.g., af_heart"
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                    ) : (
+                      <select
+                        id="tts-voice"
+                        value={selectedVoice}
+                        onChange={e => setSelectedVoice(e.target.value)}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {voicesForSelected.map(v => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Text */}
+                  <div className="space-y-1.5" data-testid="tts-text">
+                    <Label htmlFor="tts-text-input">Text</Label>
+                    <textarea
+                      id="tts-text-input"
+                      value={text}
+                      onChange={e => setText(e.target.value)}
+                      rows={6}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="Type something to synthesize…"
+                      data-testid="tts-text-input"
+                    />
+                  </div>
+
+                  {/* Submit */}
+                  <Button
+                    type="submit"
+                    disabled={!canSubmit}
+                    className="w-full"
+                    data-testid="tts-submit"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        Submitting…
+                      </>
+                    ) : (
+                      <>
+                        <Volume2 className="mr-2 size-4" />
+                        Synthesize
+                      </>
+                    )}
+                  </Button>
+
+                  {error && (
+                    <p className="text-xs text-destructive" data-testid="tts-error">
+                      {error}
+                    </p>
+                  )}
+                </form>
+              </section>
+            )}
+
+            {viewingJob && (
+              <section data-testid="tts-job-detail" className="space-y-4">
+                {jobDetailLoading && !selectedJob ? (
+                  <div className="flex min-h-[40vh] items-center justify-center">
+                    <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : selectedJob && selectedJob.job_id === viewedJobId ? (
+                  <>
+                    {/* Meta */}
+                    <div className="space-y-0.5">
+                      <h2 className="font-display text-base font-semibold leading-snug">
+                        {jobTitle(selectedJob.text, 200)}
+                      </h2>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {modelLabel(selectedJob.capability)} · {selectedJob.voice} ·{' '}
+                        {selectedJob.status.replace(/_/g, ' ')}
+                      </p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={editFromJob} data-testid="tts-edit">
+                        <Pencil className="mr-1 h-4 w-4" />
+                        Edit
+                      </Button>
+                      {canRetry && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => void onRetry(selectedJob.job_id)}
+                          disabled={retrying}
+                          data-testid="tts-retry-job"
+                        >
+                          {retrying ? (
+                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="mr-1 h-4 w-4" />
+                          )}
+                          Retry
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void onPollNow(selectedJob.job_id)}
+                        disabled={polling}
+                        data-testid="tts-poll-job"
+                      >
+                        {polling ? (
+                          <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-1 h-4 w-4" />
+                        )}
+                        Poll now
+                      </Button>
+                      {isRunning && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => void onCancel(selectedJob.job_id)}
+                          disabled={canceling}
+                          data-testid="tts-cancel-job"
+                        >
+                          {canceling ? (
+                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Square className="mr-1 h-4 w-4 fill-current" />
+                          )}
+                          Cancel
+                        </Button>
+                      )}
+                      {isRunning && (
+                        <span className="flex items-center text-xs text-muted-foreground">
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          Auto-polling every {POLL_INTERVAL_MS / 1000}s…
+                        </span>
+                      )}
+                    </div>
+
+                    {error && (
+                      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        {error}
+                      </p>
+                    )}
+
+                    {/* Text */}
+                    <section className="space-y-1.5">
+                      <h3 className="text-xs font-medium text-muted-foreground">Text</h3>
+                      <p className="whitespace-pre-wrap rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-foreground">
+                        {selectedJob.text.trim() || '—'}
+                      </p>
+                    </section>
+
+                    {/* Audio / pending / error */}
+                    {selectedJob.status === 'completed' && selectedJob.audio_content_type ? (
+                      <section className="space-y-2" data-testid="tts-result">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-medium text-muted-foreground">Audio</h3>
+                          <a
+                            href={ttsAudioUrl(selectedJob.job_id, token)}
+                            download={downloadName}
+                            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            data-testid="tts-download"
+                          >
+                            <Download className="size-3.5" />
+                            Download
+                          </a>
+                        </div>
+                        <audio
+                          key={selectedJob.job_id}
+                          controls
+                          src={ttsAudioUrl(selectedJob.job_id, token)}
+                          className="w-full"
+                          data-testid="tts-audio-player"
+                        />
+                        {selectedJob.audio_size_bytes != null && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {selectedJob.audio_content_type} ·{' '}
+                            {(selectedJob.audio_size_bytes / 1024).toFixed(1)} KB
+                          </p>
+                        )}
+                      </section>
+                    ) : selectedJob.status === 'failed' ? (
+                      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        {selectedJob.error || 'Task failed'}
+                      </p>
+                    ) : selectedJob.status === 'canceled' ? (
+                      <p className="text-xs text-muted-foreground">Task canceled.</p>
+                    ) : (
+                      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" />
+                        {selectedJob.stage || selectedJob.status || 'Running…'}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-center text-sm text-muted-foreground">
+                    Could not load this speech.
+                  </p>
+                )}
+              </section>
+            )}
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}

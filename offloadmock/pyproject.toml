@@ -1,0 +1,25 @@
+[project]
+name = "offloadmock"
+version = "0.1.0"
+description = "A FastAPI mock of the OffloadMQ server that mirrors its API and Rust schema definitions."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.5",
+    "PyJWT>=2.8",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+test = ["httpx>=0.27", "pytest>=8.0"]
+
+[project.scripts]
+offloadmock = "offloadmock.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["offloadmock*"]
