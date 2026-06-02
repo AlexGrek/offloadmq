@@ -56,13 +56,20 @@ Name: "{userdesktop}\{#AppName}"; Filename: "{app}\omq-gui.exe"; Tasks: desktopi
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "OffloadAgent"; ValueData: """{app}\omq-gui.exe"""; Tasks: autostart; Flags: uninsdeletevalue
 
 [Code]
-// Add/remove {app} from HKCU\Environment\Path when the addtopath task is selected.
-
+// Kill running agent processes before files are extracted so the installer
+// can overwrite locked binaries.
 procedure CurStepChanged(CurStep: TSetupStep);
 var
+  ResultCode: Integer;
   OldPath: string;
   InstallDir: string;
 begin
+  if CurStep = ssInstall then
+  begin
+    Exec('taskkill', '/F /IM omq-gui.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('taskkill', '/F /IM omq.exe',     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+
   if (CurStep = ssPostInstall) and IsTaskSelected('addtopath') then
   begin
     InstallDir := ExpandConstant('{app}');
