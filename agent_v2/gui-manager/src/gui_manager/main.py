@@ -8,6 +8,17 @@ Both modes share the same core Orchestrator and the same FastAPI UI server.
 """
 from __future__ import annotations
 
+import os
+import sys
+
+# PyInstaller --windowed on Windows sets stdout/stderr to None (no console).
+# Redirect them to devnull so uvicorn's logging formatter doesn't crash trying
+# to call .isatty() on a NoneType.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")  # noqa: WPS515
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")  # noqa: WPS515
+
 import argparse
 import socket
 import time
