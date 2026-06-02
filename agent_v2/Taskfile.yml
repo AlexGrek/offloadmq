@@ -118,6 +118,12 @@ tasks:
         --add-data "../ui-server/frontend/dist:frontend/dist"
         src/gui_manager/main.py
 
+  installer:windows:
+    desc: "Build a Windows installer (.exe) via Inno Setup — requires ISCC on PATH or default install. Pass VERSION=v0.x.y to override auto-detected version."
+    platforms: [windows]
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-installer.ps1 "{{.VERSION}}"
+
   # ----------------------------------------------------------------
   # Upgrade (this machine)
   # ----------------------------------------------------------------
@@ -204,11 +210,12 @@ tasks:
   # ----------------------------------------------------------------
 
   clean:
-    desc: Remove build artifacts (dist, PyInstaller output, caches)
+    desc: Remove build artifacts (dist, PyInstaller output, installer, caches)
     cmds:
       - rm -rf {{.FRONTEND}}/dist
       - rm -rf cli-manager/build cli-manager/dist cli-manager/*.spec
       - rm -rf gui-manager/build gui-manager/dist gui-manager/*.spec
+      - rm -rf installer-out
       - find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
   clean:all:
