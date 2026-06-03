@@ -50,7 +50,7 @@ You may also use any namespace not already claimed by built-in capabilities (`de
 - Base capability (before `[`) is used for task routing — it must match exactly between client submission and agent registration.
 - Dots separate hierarchy levels: `custom.weather`, `ml.classify.bert`.
 - Colons separate variant/version: `ml.classify:v2`, `custom.translate:en-fr`.
-- No spaces or special characters other than `.`, `:`, `-`, `_`.
+- No spaces or special characters other than `.`, `:`, `-`, `_`, `/`. Forward slashes (`/`) are allowed for namespaced model names (e.g. `llm.hf.co/org/model`), but **must be percent-encoded as `%2F` when used as a URL path segment**.
 
 ---
 
