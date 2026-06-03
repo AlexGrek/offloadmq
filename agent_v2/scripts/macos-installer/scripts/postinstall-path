@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+
+INSTALL_DIR="${HOME}/Applications/OffloadMQ Agent"
+CLI="${INSTALL_DIR}/omq"
+BIN_DIR="${HOME}/.local/bin"
+
+if [[ ! -x "${CLI}" ]]; then
+  echo "postinstall-path: omq not found at ${CLI}" >&2
+  exit 1
+fi
+
+mkdir -p "${BIN_DIR}"
+ln -sf "${CLI}" "${BIN_DIR}/omq"
+echo "Linked ${CLI} -> ${BIN_DIR}/omq"

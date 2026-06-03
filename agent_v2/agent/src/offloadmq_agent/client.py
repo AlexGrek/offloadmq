@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 
@@ -148,7 +149,7 @@ class OffloadMQClient:
             return await self._parse_poll(resp)
 
     async def take(self, capability: str, task_id: str) -> bool:
-        url = f"{self._server}/private/agent/take/{capability}/{task_id}"
+        url = f"{self._server}/private/agent/take/{quote(capability, safe='')}/{task_id}"
         session = await self._session()
         async with session.post(url, headers=self._headers()) as resp:
             return resp.status == 200
@@ -160,7 +161,7 @@ class OffloadMQClient:
         stage: str,
         log: str,
     ) -> None:
-        url = f"{self._server}/private/agent/task/progress/{capability}/{task_id}"
+        url = f"{self._server}/private/agent/task/progress/{quote(capability, safe='')}/{task_id}"
         session = await self._session()
         async with session.post(
             url,
@@ -204,7 +205,7 @@ class OffloadMQClient:
     async def resolve(self, capability: str, result: TaskResult) -> None:
         from offloadmq_agent.result_convert import task_result_to_wire
 
-        url = f"{self._server}/private/agent/task/resolve/{capability}/{result.task_id}"
+        url = f"{self._server}/private/agent/task/resolve/{quote(capability, safe='')}/{result.task_id}"
         payload = task_result_to_wire(result.task_id, capability, result)
         session = await self._session()
         async with session.post(url, json=payload, headers=self._headers()) as resp:

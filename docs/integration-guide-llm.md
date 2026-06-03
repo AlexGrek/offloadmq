@@ -344,7 +344,7 @@ POST /api/task/poll/{cap}/{id}
 Content-Type: application/json
 ```
 
-The capability value must be URL-encoded if it contains special characters (colons, dots are safe in most HTTP clients, but encode to be safe: `llm.qwen3%3A8b`).
+The capability value must be percent-encoded when used as a URL path segment. **Slashes (`/`) and colons (`:`) are the most common characters that require encoding** — e.g. `llm.hf.co/org/model` becomes `llm.hf.co%2Forg%2Fmodel`, and `llm.qwen3:8b` becomes `llm.qwen3%3A8b`. In Python, use `urllib.parse.quote(cap, safe="")`. Failing to encode slashes silently breaks routing (the request hits a 404).
 
 **Request body:**
 

@@ -32,7 +32,7 @@ Tasks flow through a client-server-agent pipeline:
 
 | Concept | Description |
 |---------|-------------|
-| **Capability** | A string like `"llm.mistral"` or `"vision[gpu;cuda12.1]"` identifying what a task requires or an agent provides. Agents can register with extended attributes in brackets; clients submit tasks with base capability only. |
+| **Capability** | A string like `"llm.mistral"`, `"llm.hf.co/org/model"`, or `"vision[gpu;cuda12.1]"` identifying what a task requires or an agent provides. May contain `/` for namespaced model names (e.g. HuggingFace-style `hf.co/org/model`). Agents can register with extended attributes in brackets; clients submit tasks with base capability only. **When used as a URL path segment, capabilities must be percent-encoded** — slashes become `%2F`, colons `%3A`. |
 | **Task ID** | Composed of capability (queue) and a time-sortable unique ID: `TaskId { cap: "llm.mistral", id: "01ARZ3NDE..." }` |
 | **Urgent** | Tasks with `urgent: true` are stored in-memory with 60s TTL and return immediate blocking (for `/submit_blocking`). Regular tasks persist to Sled DB with 24h+ lifetime. |
 | **Tier** | Agent performance tier (0-255). Higher-tier agents get priority for non-urgent tasks. Lower-tier agents still receive tasks when no higher-tier agents are online. |
@@ -255,7 +255,7 @@ Checks the status of a task by ID. Works for both urgent and regular tasks.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `cap` | string | The capability (queue) — URL-encoded if contains special chars |
+| `cap` | string | The capability (queue) — must be percent-encoded; slashes (`/`) become `%2F`, colons (`:`) become `%3A` |
 | `id` | string | The time-sortable task ID |
 
 **Request body**
@@ -400,7 +400,7 @@ Request cancellation of a task. Behavior depends on the task's current state:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `cap` | string | The capability (queue) -- URL-encoded if contains special chars |
+| `cap` | string | The capability (queue) — must be percent-encoded; slashes (`/`) become `%2F`, colons (`:`) become `%3A` |
 | `id` | string | The time-sortable task ID |
 
 **Request body**
@@ -837,7 +837,7 @@ Claim a task you polled and transition it to "assigned" state.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `cap` | string | The capability (URL-encoded if needed) |
+| `cap` | string | The capability — must be percent-encoded; slashes (`/`) become `%2F`, colons (`:`) become `%3A` |
 | `id` | string | The task ID |
 
 **Response** (200 OK)
@@ -894,7 +894,7 @@ Report that you've completed (or failed) the task. Final state transition.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `cap` | string | The capability (URL-encoded if needed) |
+| `cap` | string | The capability — must be percent-encoded; slashes (`/`) become `%2F`, colons (`:`) become `%3A` |
 | `id` | string | The task ID |
 
 **Request body**
@@ -1304,8 +1304,9 @@ print(f"Submitted task: {task_id}")
 # 2. Poll task status until complete
 while True:
     poll_payload = {"apiKey": API_KEY}
+    from urllib.parse import quote
     response = requests.post(
-        f"{BASE_URL}/api/task/poll/{task_id['cap']}/{task_id['id']}",
+        f"{BASE_URL}/api/task/poll/{quote(task_id['cap'], safe='')}/{task_id['id']}",
         json=poll_payload
     )
     status_data = response.json()
@@ -1413,10 +1414,12 @@ while True:
     print(f"Payload: {task_data['payload']}")
 
     # 4. Claim the task
+    from urllib.parse import quote
     cap = task_id["cap"]
+    cap_enc = quote(cap, safe="")  # encode slashes, colons, etc.
     task_id_str = task_id["id"]
     response = requests.post(
-        f"{BASE_URL}/private/agent/take/{cap}/{task_id_str}",
+        f"{BASE_URL}/private/agent/take/{cap_enc}/{task_id_str}",
         headers=headers
     )
     print("Task claimed")
@@ -1428,7 +1431,7 @@ while True:
         "log_update": "Loading model...\n"
     }
     requests.post(
-        f"{BASE_URL}/private/agent/task/progress/{cap}/{task_id_str}",
+        f"{BASE_URL}/private/agent/task/progress/{cap_enc}/{task_id_str}",
         json=progress_payload,
         headers=headers
     )
@@ -1447,7 +1450,7 @@ while True:
         }
     }
     response = requests.post(
-        f"{BASE_URL}/private/agent/task/resolve/{cap}/{task_id_str}",
+        f"{BASE_URL}/private/agent/task/resolve/{cap_enc}/{task_id_str}",
         json=resolve_payload,
         headers=headers
     )

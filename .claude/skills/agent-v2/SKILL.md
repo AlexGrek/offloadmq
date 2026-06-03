@@ -50,6 +50,10 @@ uv run omq-gui                             # GUI: native window
 uv run omq-gui --server                    # GUI: headless server mode
 uv run omq config import-legacy            # import ~/.offload-agent.json → v2
 
+# installers (from agent_v2/ via Taskfile)
+task installer:windows                     # Windows .exe (Inno Setup)
+task installer:macos                       # macOS .pkg (pkgbuild)
+
 # type-check (mandatory before commit — keep it green)
 uv run --with mypy mypy agent/src core/src ui-server/src --ignore-missing-imports
 

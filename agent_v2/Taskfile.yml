@@ -124,6 +124,12 @@ tasks:
     cmds:
       - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-installer.ps1 "{{.VERSION}}"
 
+  installer:macos:
+    desc: "Build a macOS installer (.pkg) via pkgbuild/productbuild — run on macOS only. Pass VERSION=v0.x.y to override auto-detected version."
+    platforms: [darwin]
+    cmds:
+      - bash scripts/build-macos-installer.sh "{{.VERSION}}"
+
   # ----------------------------------------------------------------
   # Upgrade (this machine)
   # ----------------------------------------------------------------

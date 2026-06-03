@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+
+INSTALL_DIR="${HOME}/Applications/OffloadMQ Agent"
+
+chmod +x "${INSTALL_DIR}/omq-gui" "${INSTALL_DIR}/omq"
+xattr -cr "${INSTALL_DIR}" 2>/dev/null || true
+echo "Installed OffloadMQ Agent to ${INSTALL_DIR}"
