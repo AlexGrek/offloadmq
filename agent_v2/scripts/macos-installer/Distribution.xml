@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>OffloadMQ Agent</title>
+    <organization>com.offloadmq</organization>
+    <domains enable_localSystem="false" enable_currentUserHome="true"/>
+    <options customize="always" require-scripts="true" rootVolumeOnly="false"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.offloadmq.agent.app"/>
+        </line>
+        <line choice="com.offloadmq.path"/>
+        <line choice="com.offloadmq.autostart"/>
+    </choices-outline>
+    <choice id="default" visible="false">
+        <choice-ref id="com.offloadmq.agent.app"/>
+    </choice>
+    <choice id="com.offloadmq.agent.app" visible="true" title="OffloadMQ Agent" description="Install omq-gui and omq to ~/Applications/OffloadMQ Agent." selected="true" enabled="false">
+        <pkg-ref id="com.offloadmq.agent.app"/>
+    </choice>
+    <choice id="com.offloadmq.path" visible="true" title="Add CLI to PATH" description="Symlink omq into ~/.local/bin (add that directory to your PATH if needed)." selected="false">
+        <pkg-ref id="com.offloadmq.path"/>
+    </choice>
+    <choice id="com.offloadmq.autostart" visible="true" title="Start at login" description="Register a LaunchAgent (com.offloadmq.agent) to run omq-gui when you log in." selected="false">
+        <pkg-ref id="com.offloadmq.autostart"/>
+    </choice>
+    <pkg-ref id="com.offloadmq.agent.app" version="0" onConclusion="none">omq-app.pkg</pkg-ref>
+    <pkg-ref id="com.offloadmq.path" version="0" onConclusion="none">omq-path.pkg</pkg-ref>
+    <pkg-ref id="com.offloadmq.autostart" version="0" onConclusion="none">omq-autostart.pkg</pkg-ref>
+</installer-gui-script>

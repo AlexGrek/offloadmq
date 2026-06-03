@@ -1,0 +1,44 @@
+#!/bin/bash
+set -euo pipefail
+
+INSTALL_DIR="${HOME}/Applications/OffloadMQ Agent"
+GUI="${INSTALL_DIR}/omq-gui"
+LABEL="com.offloadmq.agent"
+PLIST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
+LOG_DIR="${HOME}/Library/Logs/OffloadAgent"
+
+if [[ ! -x "${GUI}" ]]; then
+  echo "postinstall-autostart: omq-gui not found at ${GUI}" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "${PLIST}")" "${LOG_DIR}"
+
+cat > "${PLIST}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${GUI}</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${INSTALL_DIR}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>${LOG_DIR}/stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>${LOG_DIR}/stderr.log</string>
+</dict>
+</plist>
+EOF
+
+launchctl unload "${PLIST}" 2>/dev/null || true
+launchctl load "${PLIST}"
+echo "LaunchAgent installed at ${PLIST}"
