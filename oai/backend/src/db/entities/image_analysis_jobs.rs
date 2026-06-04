@@ -19,6 +19,9 @@ pub struct Model {
     pub result: Option<String>,
     pub stage: Option<String>,
     pub error: Option<String>,
+    /// OffloadMQ `dataPreparation` map (glob → action) serialized as JSON; applied
+    /// to the input image before the vision task runs. `None` = no preprocessing.
+    pub data_preparation: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

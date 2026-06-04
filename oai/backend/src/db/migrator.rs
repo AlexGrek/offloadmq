@@ -25,6 +25,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260522_000017_create_tts_jobs::Migration),
             Box::new(m20260522_000018_create_generation_parameters::Migration),
             Box::new(m20260524_000019_create_nude_detect_jobs::Migration),
+            Box::new(m20260604_000020_image_analysis_data_preparation::Migration),
         ]
     }
 }
@@ -1773,5 +1774,50 @@ mod m20260524_000019_create_nude_detect_jobs {
     enum Users {
         Table,
         Id,
+    }
+}
+
+mod m20260604_000020_image_analysis_data_preparation {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260604_000020_image_analysis_data_preparation"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageAnalysisJobs::Table)
+                        .add_column(
+                            ColumnDef::new(ImageAnalysisJobs::DataPreparation).text().null(),
+                        )
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageAnalysisJobs::Table)
+                        .drop_column(ImageAnalysisJobs::DataPreparation)
+                        .to_owned(),
+                )
+                .await
+        }
+    }
+
+    #[derive(DeriveIden)]
+    enum ImageAnalysisJobs {
+        Table,
+        DataPreparation,
     }
 }

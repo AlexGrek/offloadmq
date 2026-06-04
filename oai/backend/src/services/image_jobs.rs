@@ -83,9 +83,10 @@ pub async fn upload_input_image(
     filename: String,
     bytes: Vec<u8>,
     content_type: String,
+    downscale: bool,
 ) -> Result<image_generation::ImageFile, AppError> {
     storage::operator(state)?;
-    let processed = image_processing::process_image(bytes, Some(content_type))?;
+    let processed = image_processing::process_image_opts(bytes, Some(content_type), downscale)?;
 
     let image_id = state.next_id();
     let storage_path = image_paths::main_image_path(user_id, "input", None, image_id);

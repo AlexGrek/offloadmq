@@ -34,11 +34,24 @@ import {
   DescribeHistorySidebar,
 } from '../components/describe/DescribeHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
+import RescaleControls from '../components/imggen/RescaleControls'
+import { rescaleDataPrep, type RescaleState } from '../lib/imggen'
 import { cn } from '../lib/utils'
 
 const DEFAULT_PROMPT = 'Describe this image in detail'
 const POLL_INTERVAL_MS = 3000
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
+
+// Vision models handle modest resolutions best — downscale the input by default
+// (mirrors the management sandbox Image Analyzer).
+const DEFAULT_RESCALE: RescaleState = {
+  enabled: true,
+  mode: 'max',
+  width: 1024,
+  height: 1024,
+  px: 1024,
+  mp: '',
+}
 
 function capLabel(cap: DescribeCapability): string {
   const model = cap.base.replace(/^llm\./, '')
@@ -62,6 +75,7 @@ export default function DescribeImagePage() {
 
   const [selectedCap, setSelectedCap] = useState('')
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
+  const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
 
   const [uploadedInput, setUploadedInput] = useState<UploadedImage | null>(null)
   const previewUrlRef = useRef<string | null>(null)
@@ -182,7 +196,8 @@ export default function DescribeImagePage() {
     previewUrlRef.current = preview
     setImagePreview(preview)
     try {
-      const img = await uploadImage(token, file)
+      // Upload full-res — the agent's dataPreparation is the sole rescaler.
+      const img = await uploadImage(token, file, { downscale: false })
       setUploadedInput(img)
     } catch (e) {
       setError((e as Error).message)
@@ -202,6 +217,8 @@ export default function DescribeImagePage() {
         capability: selectedCap,
         prompt: prompt.trim() || DEFAULT_PROMPT,
         image_id: uploadedInput.image_id,
+        // null → backend applies a 1920px safety-net rescale on the agent side.
+        data_preparation: rescaleDataPrep(rescale.enabled, rescale),
       })
       setActivePanel(res.job_id)
       clearInput()
@@ -521,6 +538,20 @@ export default function DescribeImagePage() {
                       placeholder={DEFAULT_PROMPT}
                       data-testid="describe-prompt-input"
                     />
+                  </div>
+
+                  {/* Rescale */}
+                  <div className="space-y-1.5">
+                    <Label>Resize before analysis</Label>
+                    <RescaleControls
+                      state={rescale}
+                      onChange={patch => setRescale(prev => ({ ...prev, ...patch }))}
+                      label="Rescale input image"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      On: the agent rescales to your limit. Off: OffloadAI caps the longest edge at
+                      1920px.
+                    </p>
                   </div>
 
                   {/* Submit */}

@@ -3,13 +3,15 @@
 //! background. Mirrors the image-generation service but produces a single text
 //! result instead of output image files.
 
+use std::collections::HashMap;
+
 use serde::Serialize;
 
 use crate::{
     db::{image_analysis, image_generation},
     error::AppError,
     offload::{PollResponse, TaskId},
-    services::{offload_factory, storage},
+    services::{image_processing, offload_factory, storage},
     state::AppState,
 };
 
@@ -24,6 +26,9 @@ pub struct StartJobParams {
     pub capability: String,
     pub prompt: String,
     pub image_id: i64,
+    /// OffloadMQ `dataPreparation` map (glob → action) applied to the input image
+    /// before the vision task runs. Empty / `None` = send the image as-is.
+    pub data_preparation: Option<HashMap<String, String>>,
 }
 
 pub struct JobDetail {
@@ -67,6 +72,16 @@ pub async fn start_job(
         .await?
         .ok_or(AppError::NotFound)?;
 
+    // Analysis inputs are uploaded full-res. When the caller supplies a rescale
+    // map the agent does all scaling; when it doesn't, OAI downscales the input
+    // itself (to MAX_IMAGE_EDGE) before handing it to the agent.
+    let data_prep = data_preparation_map(&req.data_preparation);
+    let data_prep_json = data_prep
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|e| AppError::Internal(format!("serialize dataPreparation: {e}")))?;
+
     let job_id = state.next_id();
     image_analysis::create_job(
         &state.db,
@@ -76,6 +91,7 @@ pub async fn start_job(
             prompt,
             capability: &req.capability,
             input_image_id: Some(input.id),
+            data_preparation: data_prep_json.as_deref(),
         },
     )
     .await?;
@@ -85,14 +101,21 @@ pub async fn start_job(
 
     let op = storage::operator(state)?;
     let bytes = storage::read(op, &input.storage_path).await?;
+    // No agent-side rescale → OAI caps the longest edge before upload.
+    let (bytes, content_type) = if data_prep.is_some() {
+        (bytes, input.content_type.clone())
+    } else {
+        let processed = image_processing::process_image(bytes, Some(input.content_type.clone()))?;
+        (processed.bytes, processed.content_type)
+    };
     img_client
-        .upload_bucket_file(&bucket.bucket_uid, bytes, &input.filename, &input.content_type)
+        .upload_bucket_file(&bucket.bucket_uid, bytes, &input.filename, &content_type)
         .await?;
 
     let chat_client = offload_factory::chat_client(state).await?;
     let messages = vec![serde_json::json!({ "role": "user", "content": prompt })];
     let task_id = chat_client
-        .submit_vision_task(&req.capability, messages, &bucket.bucket_uid)
+        .submit_vision_task(&req.capability, messages, &bucket.bucket_uid, data_prep.as_ref())
         .await?;
 
     image_analysis::set_offload_task(
@@ -120,6 +143,10 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
     let image_id = job
         .input_image_id
         .ok_or_else(|| AppError::BadRequest("retry requires the original input image".into()))?;
+    let data_preparation = job
+        .data_preparation
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<HashMap<String, String>>(s).ok());
     start_job(
         state,
         user_id,
@@ -127,9 +154,23 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
             capability: job.capability.clone(),
             prompt: job.prompt.clone(),
             image_id,
+            data_preparation,
         },
     )
     .await
+}
+
+/// Convert a non-empty rescale map into a JSON object for the OffloadMQ
+/// `dataPreparation` field. Empty / `None` yields `None` (no explicit rescale).
+fn data_preparation_map(
+    prep: &Option<HashMap<String, String>>,
+) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let map = prep.as_ref().filter(|m| !m.is_empty())?;
+    Some(
+        map.iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect(),
+    )
 }
 
 pub async fn cancel_job(

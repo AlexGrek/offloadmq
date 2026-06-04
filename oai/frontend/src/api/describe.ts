@@ -23,6 +23,8 @@ export interface StartDescribeJobRequest {
   capability: string
   prompt: string
   image_id: string
+  /** OffloadMQ `dataPreparation` map (glob → action) to rescale the image before analysis. */
+  data_preparation?: Record<string, string> | null
 }
 
 export interface StartDescribeJobResponse {

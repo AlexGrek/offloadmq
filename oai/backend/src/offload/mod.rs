@@ -166,9 +166,10 @@ impl OffloadClient {
         capability: &str,
         messages: Vec<serde_json::Value>,
         bucket_uid: &str,
+        data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
     ) -> Result<TaskId, AppError> {
         let url = format!("{}/api/task/submit", self.base_url);
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "apiKey": self.api_key,
             "capability": capability,
             "urgent": false,
@@ -184,6 +185,9 @@ impl OffloadClient {
             "maxWaitSecs": 24 * 3600u64,
             "runtimeSecs": 15 * 60u64
         });
+        if let Some(prep) = data_preparation.filter(|m| !m.is_empty()) {
+            body["dataPreparation"] = serde_json::Value::Object(prep.clone());
+        }
         let resp = self
             .http
             .post(&url)

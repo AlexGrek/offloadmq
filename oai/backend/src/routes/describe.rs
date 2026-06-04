@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
@@ -34,6 +35,10 @@ pub struct StartJobRequest {
     pub capability: String,
     pub prompt: String,
     pub image_id: String,
+    /// Optional OffloadMQ `dataPreparation` map (glob → action), e.g.
+    /// `{"*": "scale/max[px=1024]"}` — rescales the image before analysis.
+    #[serde(default)]
+    pub data_preparation: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize)]
@@ -55,6 +60,7 @@ pub async fn start_job(
             capability: req.capability,
             prompt: req.prompt,
             image_id,
+            data_preparation: req.data_preparation,
         },
     )
     .await?;

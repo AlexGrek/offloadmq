@@ -16,6 +16,8 @@ pub struct NewJobInput<'a> {
     pub prompt: &'a str,
     pub capability: &'a str,
     pub input_image_id: Option<i64>,
+    /// JSON-serialized OffloadMQ `dataPreparation` map, or `None` for no preprocessing.
+    pub data_preparation: Option<&'a str>,
 }
 
 pub async fn create_job(
@@ -38,6 +40,7 @@ pub async fn create_job(
         result: ActiveValue::Set(None),
         stage: ActiveValue::Set(None),
         error: ActiveValue::Set(None),
+        data_preparation: ActiveValue::Set(input.data_preparation.map(str::to_string)),
     };
     model.insert(db).await.map_err(AppError::Database)
 }

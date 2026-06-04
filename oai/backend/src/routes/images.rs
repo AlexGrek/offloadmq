@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{Multipart, Path, Query, State},
     http::{HeaderValue, StatusCode},
     response::IntoResponse,
     Json,
@@ -108,13 +108,29 @@ pub struct JobEvent {
     pub created_at: String,
 }
 
+#[derive(Deserialize)]
+pub struct UploadQuery {
+    /// When `false`, OAI keeps the image at full resolution (orientation/format
+    /// normalized only). The image-analysis page uses this so the agent's
+    /// `dataPreparation` is the sole rescaler. Defaults to `true`.
+    #[serde(default = "default_downscale")]
+    pub downscale: bool,
+}
+
+fn default_downscale() -> bool {
+    true
+}
+
 pub async fn upload_input_image(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
+    Query(query): Query<UploadQuery>,
     multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
     let (filename, bytes, content_type) = read_upload(multipart).await?;
-    let file = image_jobs::upload_input_image(&state, user_id, filename, bytes, content_type).await?;
+    let file =
+        image_jobs::upload_input_image(&state, user_id, filename, bytes, content_type, query.downscale)
+            .await?;
     Ok((
         StatusCode::CREATED,
         Json(UploadResponse {
