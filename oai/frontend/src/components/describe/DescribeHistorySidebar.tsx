@@ -1,4 +1,5 @@
 import { Loader2, Plus } from 'lucide-react'
+import { capabilityBaseLabel } from '@/lib/modelAvailability'
 import { cn } from '@/lib/utils'
 import { imageThumbnailUrl } from '../../api/images'
 import type { DescribeJob } from '../../api/describe'
@@ -72,7 +73,7 @@ export function DescribeHistorySidebar({
                 : null
               const active = activePanel === job.job_id
               const inProgress = statusLabel(job.status)
-              const model = job.capability.replace(/^llm\./, '')
+              const model = capabilityBaseLabel(job.capability)
 
               return (
                 <li key={job.job_id}>

@@ -2,6 +2,8 @@ export interface TtsCapability {
   base: string
   voices: string[]
   raw: string
+  online: boolean
+  last_available_at: string
 }
 
 export interface TtsJob {

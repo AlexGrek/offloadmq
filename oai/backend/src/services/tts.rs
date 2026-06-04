@@ -19,6 +19,8 @@ pub struct TtsCapability {
     pub base: String,
     pub voices: Vec<String>,
     pub raw: String,
+    pub online: bool,
+    pub last_available_at: String,
 }
 
 pub struct StartJobParams {
@@ -39,6 +41,7 @@ pub struct CancelJobOutcome {
 
 pub async fn list_tts_capabilities(state: &AppState) -> Result<Vec<TtsCapability>, AppError> {
     let client = offload_factory::chat_client(state).await?;
+    let now = chrono::Utc::now().to_rfc3339();
     let caps = client.list_capabilities_with_prefix("tts.").await?;
     Ok(caps
         .into_iter()
@@ -46,6 +49,8 @@ pub async fn list_tts_capabilities(state: &AppState) -> Result<Vec<TtsCapability
             base: c.base,
             voices: c.tags,
             raw: c.raw,
+            online: true,
+            last_available_at: now.clone(),
         })
         .collect())
 }

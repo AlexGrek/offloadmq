@@ -1,8 +1,14 @@
 import type { LlmCapabilityInfo } from '../types/ws'
 
+/** Human-readable model name: strip the first `prefix.` segment (e.g. `llm.mistral` → `mistral`). */
+export function capabilityBaseLabel(base: string): string {
+  const dot = base.indexOf('.')
+  return dot >= 0 ? base.slice(dot + 1) : base
+}
+
 /** Human-readable model name with the `llm.` prefix stripped. */
 export function modelLabel(cap: LlmCapabilityInfo): string {
-  return cap.base.replace(/^llm\./, '')
+  return capabilityBaseLabel(cap.base)
 }
 
 /** Matches backend `llm_capabilities::STALE_AFTER` (3 days). */

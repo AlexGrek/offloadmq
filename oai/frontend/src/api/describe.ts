@@ -1,8 +1,6 @@
-export interface DescribeCapability {
-  base: string
-  tags: string[]
-  raw: string
-}
+import type { LlmCapabilityInfo } from '../types/ws'
+
+export type DescribeCapability = LlmCapabilityInfo
 
 export interface DescribeJob {
   job_id: string

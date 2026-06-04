@@ -24,8 +24,12 @@ import {
   type TtsCapability,
   type TtsJob,
 } from '../api/tts'
+import { CapabilityModelPicker, type PickerCapability } from '../components/CapabilityModelPicker'
 import { Button } from '../components/ui/button'
 import { Label } from '../components/ui/label'
+import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
+import { capabilityBaseLabel } from '../lib/modelAvailability'
+import { pickListedCapability } from '../lib/capability-picker'
 import { TtsHistorySidebar, TTS_NEW_PANEL } from '../components/tts/TtsHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { cn } from '../lib/utils'
@@ -34,8 +38,14 @@ const DEFAULT_TEXT = 'Hello from OAI. This is a text-to-speech test.'
 const POLL_INTERVAL_MS = 3000
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 
-function modelLabel(cap: string): string {
-  return cap.replace(/^tts\./, '')
+function ttsPickerCapabilities(caps: TtsCapability[]): PickerCapability[] {
+  return caps.map(c => ({
+    base: c.base,
+    tags: [],
+    raw: c.raw,
+    online: c.online,
+    last_available_at: c.last_available_at,
+  }))
 }
 
 function jobTitle(text: string, limit = 56): string {
@@ -77,8 +87,8 @@ export default function TtsPage() {
   const { token } = useAuth()
 
   const [capabilities, setCapabilities] = useState<TtsCapability[]>([])
-  const [capsLoading, setCapsLoading] = useState(true)
-  const [capsError, setCapsError] = useState<string | null>(null)
+  const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('idle')
+  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
 
   const [selectedCap, setSelectedCap] = useState('')
   const [selectedVoice, setSelectedVoice] = useState('')
@@ -108,18 +118,20 @@ export default function TtsPage() {
 
   const loadCapabilities = useCallback(() => {
     if (!token) return
-    setCapsLoading(true)
-    setCapsError(null)
+    setCapabilitiesStatus('loading')
+    setCapabilitiesError(null)
     listTtsCapabilities(token)
       .then(data => {
         setCapabilities(data.capabilities)
-        setSelectedCap(prev => {
-          if (prev && data.capabilities.some(c => c.base === prev)) return prev
-          return data.capabilities[0]?.base ?? ''
-        })
+        setCapabilitiesStatus('ready')
+        setSelectedCap(prev =>
+          pickListedCapability(prev, data.capabilities) ?? data.capabilities[0]?.base ?? '',
+        )
       })
-      .catch((e: Error) => setCapsError(e.message))
-      .finally(() => setCapsLoading(false))
+      .catch((e: Error) => {
+        setCapabilitiesError(e.message)
+        setCapabilitiesStatus('error')
+      })
   }, [token])
 
   const loadJobs = useCallback(async () => {
@@ -298,8 +310,15 @@ export default function TtsPage() {
   }
 
   const canSubmit = useMemo(
-    () => Boolean(selectedCap && selectedVoice && text.trim() && !submitting),
-    [selectedCap, selectedVoice, text, submitting],
+    () =>
+      capabilitiesStatus === 'ready' &&
+      Boolean(selectedCap && selectedVoice && text.trim() && !submitting),
+    [selectedCap, selectedVoice, text, submitting, capabilitiesStatus],
+  )
+
+  const pickerCapabilities = useMemo(
+    () => ttsPickerCapabilities(capabilities),
+    [capabilities],
   )
 
   const status = selectedJob?.status
@@ -380,46 +399,23 @@ export default function TtsPage() {
                 </header>
 
                 <form onSubmit={e => void onSubmit(e)} className="space-y-5">
-                  {/* Model selector */}
                   <div className="space-y-1.5" data-testid="tts-capability-select">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label htmlFor="tts-cap">Model</Label>
-                      <button
-                        type="button"
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={loadCapabilities}
-                        disabled={capsLoading}
-                        data-testid="tts-refresh-caps"
-                      >
-                        <RefreshCw className={cn('size-3', capsLoading && 'animate-spin')} />
-                        Refresh
-                      </button>
-                    </div>
-                    {capsError ? (
-                      <p className="text-xs text-destructive">{capsError}</p>
-                    ) : capsLoading ? (
-                      <div className="flex h-9 items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="size-3.5 animate-spin" /> Loading models…
-                      </div>
-                    ) : capabilities.length === 0 ? (
+                    <Label>Model</Label>
+                    <CapabilityModelPicker
+                      capabilities={pickerCapabilities}
+                      selected={selectedCap}
+                      onSelect={setSelectedCap}
+                      onRefresh={loadCapabilities}
+                      capabilitiesStatus={capabilitiesStatus}
+                      capabilitiesError={capabilitiesError}
+                      formatLabel={cap => capabilityBaseLabel(cap.base)}
+                      testIdPrefix="tts-model-picker"
+                    />
+                    {capabilitiesStatus === 'ready' && capabilities.length === 0 && (
                       <p className="text-xs text-muted-foreground">
                         No TTS models online. Start a `tts.*` agent (e.g., kokoro) or check the
                         OffloadMQ connection in Settings.
                       </p>
-                    ) : (
-                      <select
-                        id="tts-cap"
-                        value={selectedCap}
-                        onChange={e => setSelectedCap(e.target.value)}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        data-testid="tts-cap-select"
-                      >
-                        {capabilities.map(c => (
-                          <option key={c.base} value={c.base}>
-                            {modelLabel(c.base)}
-                          </option>
-                        ))}
-                      </select>
                     )}
                   </div>
 
@@ -508,7 +504,7 @@ export default function TtsPage() {
                         {jobTitle(selectedJob.text, 200)}
                       </h2>
                       <p className="font-mono text-xs text-muted-foreground">
-                        {modelLabel(selectedJob.capability)} · {selectedJob.voice} ·{' '}
+                        {capabilityBaseLabel(selectedJob.capability)} · {selectedJob.voice} ·{' '}
                         {selectedJob.status.replace(/_/g, ' ')}
                       </p>
                     </div>

@@ -26,8 +26,12 @@ import {
   type DescribeJob,
 } from '../api/describe'
 import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
+import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
 import { Button } from '../components/ui/button'
 import { Label } from '../components/ui/label'
+import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
+import { capabilityBaseLabel } from '../lib/modelAvailability'
+import { pickListedCapability } from '../lib/capability-picker'
 import { MarkdownContent } from '../components/MarkdownContent'
 import {
   DESCRIBE_NEW_PANEL,
@@ -53,12 +57,6 @@ const DEFAULT_RESCALE: RescaleState = {
   mp: '',
 }
 
-function capLabel(cap: DescribeCapability): string {
-  const model = cap.base.replace(/^llm\./, '')
-  const extra = cap.tags.filter(t => t.toLowerCase() !== 'vision').join(', ')
-  return extra ? `${model} [${extra}]` : model
-}
-
 function jobTitle(prompt: string, limit = 56): string {
   const trimmed = prompt.trim()
   if (!trimmed) return 'Analysis'
@@ -70,8 +68,8 @@ export default function DescribeImagePage() {
   const { token } = useAuth()
 
   const [capabilities, setCapabilities] = useState<DescribeCapability[]>([])
-  const [capsLoading, setCapsLoading] = useState(true)
-  const [capsError, setCapsError] = useState<string | null>(null)
+  const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('idle')
+  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
 
   const [selectedCap, setSelectedCap] = useState('')
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
@@ -103,18 +101,20 @@ export default function DescribeImagePage() {
 
   const loadCapabilities = useCallback(() => {
     if (!token) return
-    setCapsLoading(true)
-    setCapsError(null)
+    setCapabilitiesStatus('loading')
+    setCapabilitiesError(null)
     listDescribeCapabilities(token)
       .then(data => {
         setCapabilities(data.capabilities)
-        setSelectedCap(prev => {
-          if (prev && data.capabilities.some(c => c.base === prev)) return prev
-          return data.capabilities[0]?.base ?? ''
-        })
+        setCapabilitiesStatus('ready')
+        setSelectedCap(prev =>
+          pickListedCapability(prev, data.capabilities) ?? data.capabilities[0]?.base ?? '',
+        )
       })
-      .catch((e: Error) => setCapsError(e.message))
-      .finally(() => setCapsLoading(false))
+      .catch((e: Error) => {
+        setCapabilitiesError(e.message)
+        setCapabilitiesStatus('error')
+      })
   }, [token])
 
   const loadJobs = useCallback(async () => {
@@ -331,8 +331,10 @@ export default function DescribeImagePage() {
   }
 
   const canSubmit = useMemo(
-    () => Boolean(uploadedInput && selectedCap && !submitting && !uploading),
-    [uploadedInput, selectedCap, submitting, uploading],
+    () =>
+      capabilitiesStatus === 'ready' &&
+      Boolean(uploadedInput && selectedCap && !submitting && !uploading),
+    [uploadedInput, selectedCap, submitting, uploading, capabilitiesStatus],
   )
 
   const status = selectedJob?.status
@@ -409,46 +411,24 @@ export default function DescribeImagePage() {
                 </header>
 
                 <form onSubmit={e => void onSubmit(e)} className="space-y-5">
-                  {/* Model selector */}
                   <div className="space-y-1.5" data-testid="describe-capability-select">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label htmlFor="describe-cap">Model</Label>
-                      <button
-                        type="button"
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={loadCapabilities}
-                        disabled={capsLoading}
-                        data-testid="describe-refresh-caps"
-                      >
-                        <RefreshCw className={cn('size-3', capsLoading && 'animate-spin')} />
-                        Refresh
-                      </button>
-                    </div>
-                    {capsError ? (
-                      <p className="text-xs text-destructive">{capsError}</p>
-                    ) : capsLoading ? (
-                      <div className="flex h-9 items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="size-3.5 animate-spin" /> Loading models…
-                      </div>
-                    ) : capabilities.length === 0 ? (
+                    <Label>Model</Label>
+                    <CapabilityModelPicker
+                      capabilities={capabilities}
+                      selected={selectedCap}
+                      onSelect={setSelectedCap}
+                      onRefresh={loadCapabilities}
+                      capabilitiesStatus={capabilitiesStatus}
+                      capabilitiesError={capabilitiesError}
+                      formatLabel={cap => capabilityBaseLabel(cap.base)}
+                      filterTags={tags => tags.filter(t => t.toLowerCase() !== 'vision')}
+                      testIdPrefix="describe-model-picker"
+                    />
+                    {capabilitiesStatus === 'ready' && capabilities.length === 0 && (
                       <p className="text-xs text-muted-foreground">
                         No vision models found. Start a vision-capable LLM agent or check OffloadMQ
                         connection in Settings.
                       </p>
-                    ) : (
-                      <select
-                        id="describe-cap"
-                        value={selectedCap}
-                        onChange={e => setSelectedCap(e.target.value)}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        data-testid="describe-cap-select"
-                      >
-                        {capabilities.map(c => (
-                          <option key={c.base} value={c.base}>
-                            {capLabel(c)}
-                          </option>
-                        ))}
-                      </select>
                     )}
                   </div>
 
@@ -609,7 +589,7 @@ export default function DescribeImagePage() {
                         {jobTitle(selectedJob.prompt, 200)}
                       </h2>
                       <p className="font-mono text-xs text-muted-foreground">
-                        {selectedJob.capability.replace(/^llm\./, '')} ·{' '}
+                        {capabilityBaseLabel(selectedJob.capability)} ·{' '}
                         {selectedJob.status.replace(/_/g, ' ')}
                       </p>
                     </div>

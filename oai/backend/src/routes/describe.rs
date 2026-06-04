@@ -13,13 +13,14 @@ use crate::{
     db::image_analysis,
     error::AppError,
     middleware::AuthenticatedUser,
+    offload::LlmCapabilityInfo,
     services::image_analysis as analysis,
     state::AppState,
 };
 
 #[derive(Serialize)]
 pub struct CapabilitiesResponse {
-    pub capabilities: Vec<analysis::DescribeCapability>,
+    pub capabilities: Vec<LlmCapabilityInfo>,
 }
 
 pub async fn list_capabilities(

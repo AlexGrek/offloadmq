@@ -3,24 +3,15 @@
 //! background. Mirrors the image-generation service but produces a single text
 //! result instead of output image files.
 
-use std::collections::HashMap;
-
-use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
-    db::{image_analysis, image_generation},
+    db::{image_analysis, image_generation, llm_capabilities},
     error::AppError,
-    offload::{PollResponse, TaskId},
+    offload::{LlmCapabilityInfo, PollResponse, TaskId},
     services::{image_processing, offload_factory, storage},
     state::AppState,
 };
-
-#[derive(Debug, Serialize)]
-pub struct DescribeCapability {
-    pub base: String,
-    pub tags: Vec<String>,
-    pub raw: String,
-}
 
 pub struct StartJobParams {
     pub capability: String,
@@ -43,13 +34,15 @@ pub struct CancelJobOutcome {
 
 pub async fn list_vision_capabilities(
     state: &AppState,
-) -> Result<Vec<DescribeCapability>, AppError> {
+) -> Result<Vec<LlmCapabilityInfo>, AppError> {
     let client = offload_factory::chat_client(state).await?;
-    let caps = client.list_capabilities_with_prefix("llm.").await?;
-    Ok(caps
+    let online = client.list_llm_capabilities().await?;
+    llm_capabilities::sync_online(&state.db, &online).await?;
+    let online_bases: HashSet<String> = online.iter().map(|c| c.base.clone()).collect();
+    let all = llm_capabilities::list_for_display(&state.db, &online_bases).await?;
+    Ok(all
         .into_iter()
         .filter(|c| c.tags.iter().any(|t| t.eq_ignore_ascii_case("vision")))
-        .map(|c| DescribeCapability { base: c.base, tags: c.tags, raw: c.raw })
         .collect())
 }
 
