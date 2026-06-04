@@ -29,6 +29,8 @@ const EMPTY: Settings = {
   sensitive_allowed_caps: [],
   slavemode_allowed_caps: [],
   comfyui_url: "http://127.0.0.1:8188",
+  kokoro_api_url: "",
+  kokoro_api_key: "",
   win_startup_enabled: false,
   mac_startup_enabled: false,
   agent_id: "",
