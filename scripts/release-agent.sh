@@ -160,21 +160,30 @@ curl -sS \
 
 upload_target() {
   local file="$1" filename="$2"
-  echo "→ Uploading ${filename} as ${VERSION}..."
-  local http_status
-  http_status=$(curl -sS --write-out "%{http_code}" -o /tmp/dl_upload_resp \
-    -X POST "${BASE_URL}/api/v1/release/${BUCKET}/upload" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -F "version=${VERSION}" \
-    -F "os_arch=${OS_ARCH}" \
-    -F "file=@${file};filename=${filename}")
-
-  if [[ "$http_status" != "201" ]]; then
-    echo "error: upload failed for ${filename} (HTTP ${http_status})" >&2
+  local attempt max_attempts=4 delay=20
+  for attempt in $(seq 1 $max_attempts); do
+    echo "→ Uploading ${filename} as ${VERSION} (attempt ${attempt}/${max_attempts})..."
+    local http_status
+    http_status=$(curl -sS --write-out "%{http_code}" -o /tmp/dl_upload_resp \
+      --max-time 300 \
+      -X POST "${BASE_URL}/api/v1/release/${BUCKET}/upload" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -F "version=${VERSION}" \
+      -F "os_arch=${OS_ARCH}" \
+      -F "file=@${file};filename=${filename}")
+    if [[ "$http_status" == "201" ]]; then
+      echo "  Latest: ${BASE_URL}/rs/${BUCKET}/latest/${OS_ARCH}/${filename}"
+      return 0
+    fi
+    echo "  Upload returned HTTP ${http_status}:" >&2
     cat /tmp/dl_upload_resp >&2
-    exit 1
-  fi
-  echo "  Latest: ${BASE_URL}/rs/${BUCKET}/latest/${OS_ARCH}/${filename}"
+    if [[ $attempt -lt $max_attempts ]]; then
+      echo "  Retrying in ${delay}s..." >&2
+      sleep $delay
+    fi
+  done
+  echo "error: upload failed for ${filename} after ${max_attempts} attempts" >&2
+  exit 1
 }
 
 upload_target "$CLI_RENAMED" "$CLI_NAME"
