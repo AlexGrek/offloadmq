@@ -217,15 +217,19 @@ tasks:
 
   release:
     desc: Compute version, tag, push, then upload agent_v2 binaries (CLI + GUI)
-    cmd: |
-      #!/usr/bin/env bash
-      set -e
-      if [ -z "$DL_API_KEY" ]; then echo "error: DL_API_KEY is not set"; exit 1; fi
-      VERSION=$(./scripts/compute-agent-version.sh)
-      echo "==> Releasing {{.APP_NAME}} $VERSION"
-      git tag "release-$VERSION"
-      git push origin "release-$VERSION"
-      DL_BASE_URL={{.DL_BASE_URL}} ./scripts/release-agent.sh "$VERSION"
+    cmds:
+      - platforms: [linux, darwin]
+        cmd: |
+          #!/usr/bin/env bash
+          set -e
+          if [ -z "$DL_API_KEY" ]; then echo "error: DL_API_KEY is not set"; exit 1; fi
+          VERSION=$(./scripts/compute-agent-version.sh)
+          echo "==> Releasing {{.APP_NAME}} $VERSION"
+          git tag "release-$VERSION"
+          git push origin "release-$VERSION"
+          DL_BASE_URL={{.DL_BASE_URL}} ./scripts/release-agent.sh "$VERSION"
+      - platforms: [windows]
+        cmd: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release.ps1 {{.DL_BASE_URL}}
 
   # ── Agent install helpers ─────────────────────────────────────────────────────
 
