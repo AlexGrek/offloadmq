@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +14,6 @@ from offloadmq_agent.data.task_inputs import stage_task_inputs
 from offloadmq_agent.executor import register
 from offloadmq_agent.models import Task, TaskResult, TaskStatus
 from offloadmq_agent.ollama import get_ollama_base_url
-
-logger = logging.getLogger(__name__)
 
 # Image extensions Ollama vision models accept via the per-message ``images`` field.
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
