@@ -143,6 +143,19 @@ async fn run_chat(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "chat not found".to_string())?;
 
+    // Record the system prompt actually used for this turn as a recent (best-effort),
+    // so it's reusable across chats without the frontend issuing a second request.
+    if !chat.system_prompt.trim().is_empty() {
+        let _ = crate::db::prompts::record_use(
+            &state.db,
+            || state.next_id(),
+            user_id,
+            "llm-system",
+            &chat.system_prompt,
+        )
+        .await;
+    }
+
     // A turn with only attachments still needs non-empty user content so it
     // survives `build_offload_chat_messages` (and the agent has a turn to attach
     // the extracted text / images onto).

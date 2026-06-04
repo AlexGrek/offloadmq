@@ -27,6 +27,7 @@ import {
 } from '../api/describe'
 import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
 import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
+import { PromptTextarea } from '../components/PromptTextarea'
 import { Button } from '../components/ui/button'
 import { Label } from '../components/ui/label'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
@@ -519,12 +520,13 @@ export default function DescribeImagePage() {
                   {/* Prompt */}
                   <div className="space-y-1.5" data-testid="describe-prompt">
                     <Label htmlFor="describe-prompt-input">Prompt</Label>
-                    <textarea
+                    <PromptTextarea
                       id="describe-prompt-input"
                       value={prompt}
-                      onChange={e => setPrompt(e.target.value)}
+                      onChange={setPrompt}
+                      bucket="describe-image-user"
+                      token={token}
                       rows={2}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       placeholder={DEFAULT_PROMPT}
                       data-testid="describe-prompt-input"
                     />

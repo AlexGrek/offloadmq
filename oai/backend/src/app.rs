@@ -74,21 +74,12 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/chat/attachments/{id}/download",
             get(routes::chat_attachments::download_document),
         )
+        .route("/api/prompts/{bucket}", get(routes::prompts::list_library))
+        .route("/api/prompts/{bucket}/star", post(routes::prompts::star))
         .route(
-            "/api/system-prompts",
-            get(routes::system_prompts::list_library),
-        )
-        .route(
-            "/api/system-prompts/use",
-            post(routes::system_prompts::record_use),
-        )
-        .route(
-            "/api/system-prompts/{id}",
-            axum::routing::delete(routes::system_prompts::delete_prompt),
-        )
-        .route(
-            "/api/system-prompts/{id}/star",
-            axum::routing::patch(routes::system_prompts::set_starred),
+            "/api/prompt-entries/{id}",
+            axum::routing::patch(routes::prompts::update_entry)
+                .delete(routes::prompts::delete_entry),
         )
         .route("/api/files", get(routes::files::list_files))
         .route("/api/files/properties", get(routes::files::get_file_properties))

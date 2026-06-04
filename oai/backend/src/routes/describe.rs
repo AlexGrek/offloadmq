@@ -49,6 +49,20 @@ pub async fn start_job(
     Json(req): Json<StartJobRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let image_id = parse_id(&req.image_id, "image_id")?;
+
+    // Record the user prompt as a recent (best-effort) for cross-job reuse, so the
+    // frontend doesn't need a second request to maintain the recents list.
+    if !req.prompt.trim().is_empty() {
+        let _ = crate::db::prompts::record_use(
+            &state.db,
+            || state.next_id(),
+            user_id,
+            "describe-image-user",
+            &req.prompt,
+        )
+        .await;
+    }
+
     let job_id = analysis::start_job(
         &state,
         user_id,

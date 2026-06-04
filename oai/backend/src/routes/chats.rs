@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
-    db::{chat_attachments, chats, user_system_prompts},
+    db::{chat_attachments, chats, prompts},
     error::AppError,
     middleware::AuthenticatedUser,
     services::chat_attachments as attachment_service,
@@ -107,9 +107,9 @@ pub async fn create_chat(
     let system_prompt = if content.trim().is_empty() {
         "You are a helpful AI assistant.".to_string()
     } else {
-        user_system_prompts::normalize_content(content)?
+        prompts::normalize_content(content)?
     };
-    let _ = user_system_prompts::record_use(&state.db, || state.next_id(), user_id, &system_prompt).await?;
+    let _ = prompts::record_use(&state.db, || state.next_id(), user_id, "llm-system", &system_prompt).await;
     let id = state.next_id();
     let chat = chats::create_chat(&state.db, id, user_id, &system_prompt).await?;
     let chat = if let Some(ref model) = body.as_ref().and_then(|b| b.last_model.as_ref()) {
@@ -147,8 +147,8 @@ pub async fn update_system_prompt(
     Json(req): Json<UpdateSystemPromptRequest>,
 ) -> Result<Json<ChatResponse>, AppError> {
     let id: i64 = chat_id.parse().map_err(|_| AppError::BadRequest("invalid chat id".into()))?;
-    let system_prompt = user_system_prompts::normalize_content(&req.content)?;
-    let _ = user_system_prompts::record_use(&state.db, || state.next_id(), user_id, &system_prompt).await?;
+    let system_prompt = prompts::normalize_content(&req.content)?;
+    let _ = prompts::record_use(&state.db, || state.next_id(), user_id, "llm-system", &system_prompt).await;
     let chat = chats::set_system_prompt(&state.db, id, user_id, &system_prompt).await?;
     Ok(Json(chat_to_response(chat)))
 }
