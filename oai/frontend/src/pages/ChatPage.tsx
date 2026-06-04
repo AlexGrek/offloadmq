@@ -5,6 +5,7 @@ import { ToolDebugModal, toolDebugReady } from '../components/ToolDebugModal'
 import { cancelOffloadTask } from '../api/tasks'
 import { useWsChat, nextReqId } from '../hooks/useWsChat'
 import { useTranscriptScroll } from '../hooks/useTranscriptScroll'
+import { useIsMobile } from '../hooks/useIsMobile'
 import type { ServerEvent } from '../types/ws'
 import {
   listChats,
@@ -73,7 +74,8 @@ export default function ChatPage() {
   activeChatIdRef.current = activeChatId
   chatTasksRef.current = chatTasks
   const [messages, setMessages] = useState<Message[]>([])
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const isMobile = useIsMobile()
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [loadingChats, setLoadingChats] = useState(true)
@@ -94,6 +96,12 @@ export default function ChatPage() {
     setAttachError(null)
     setReferencePickerOpen(false)
   }, [activeChatId])
+
+  // On mobile the sidebar is a full-screen overlay — collapse it when we cross
+  // into a narrow viewport so it never starts covering the conversation.
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false)
+  }, [isMobile])
 
   const addAttachment = useCallback((att: ChatAttachment) => {
     setPendingAttachments(prev =>
@@ -445,6 +453,7 @@ export default function ChatPage() {
       setInput('')
       setPendingAttachments([])
       setAttachError(null)
+      if (isMobile) setSidebarOpen(false)
     } catch (e) {
       console.error('failed to create chat', e)
     }
@@ -621,18 +630,23 @@ export default function ChatPage() {
 
   return (
     <div
-      className="flex min-h-0 flex-1 overflow-hidden bg-background"
+      className="relative flex min-h-0 flex-1 overflow-hidden bg-background"
       data-testid="chat-page"
     >
       <ChatSidebar
         open={sidebarOpen}
+        isMobile={isMobile}
         chats={chats}
         activeChatId={activeChatId}
         loading={loadingChats}
         runningChatIds={runningChatIds}
-        onSelectChat={setActiveChatId}
+        onSelectChat={id => {
+          setActiveChatId(id)
+          if (isMobile) setSidebarOpen(false)
+        }}
         onNewChat={handleNewChat}
         onDeleteChat={handleDeleteChat}
+        onClose={() => setSidebarOpen(false)}
       />
 
       {/* ── Main: header + scrollable transcript + fixed input ── */}

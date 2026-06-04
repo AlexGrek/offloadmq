@@ -39,6 +39,32 @@ impl RegularTaskStore {
         Ok(count)
     }
 
+    /// Re-sync the in-memory queue from the persistent unassigned tree, adding any
+    /// task that is missing in memory — tasks that were already unassigned when
+    /// the process started, or any drift between the two stores. Run on every
+    /// reconcile tick so such tasks are guaranteed to be in the dispatchable
+    /// queue and picked up by the dispatch backstop.
+    ///
+    /// **Additive only:** it never removes in-memory entries, so a task submitted
+    /// concurrently (added to Sled before memory) can't be dropped by a stale
+    /// snapshot. A truly-assigned task is already gone from the unassigned tree,
+    /// so it is never resurrected here. Returns the number of tasks newly added.
+    pub async fn reconcile_unassigned_from_persistent(
+        &self,
+        task_storage: &TaskStorage,
+    ) -> Result<usize> {
+        let persistent = task_storage.list_unassigned_all()?;
+        let mut guard = self.tasks.write().await;
+        let mut added = 0;
+        for task in persistent {
+            if !guard.contains_key(&task.id) {
+                guard.insert(task.id.clone(), task);
+                added += 1;
+            }
+        }
+        Ok(added)
+    }
+
     pub async fn get_task(&self, task_id: &TaskId) -> Option<UnassignedTask> {
         self.tasks.read().await.get(task_id).cloned()
     }

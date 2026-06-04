@@ -615,6 +615,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Err(e) => log::warn!("Orphan recovery error: {}", e),
                             _ => {}
                         }
+                        // Pull any unassigned tasks that exist in persistent
+                        // storage but are missing from the in-memory queue —
+                        // notably tasks that were already unassigned when this
+                        // process started — into the dispatchable queue so the
+                        // backstop below delivers them.
+                        match state
+                            .regular
+                            .reconcile_unassigned_from_persistent(&state.storage.tasks)
+                            .await
+                        {
+                            Ok(n) if n > 0 => {
+                                info!("Reconcile: restored {n} unassigned task(s) into the in-memory queue");
+                            }
+                            Err(e) => log::warn!("Unassigned queue reconcile error: {}", e),
+                            _ => {}
+                        }
                         // Self-heal the per-agent in-flight load from the source
                         // of truth BEFORE the backstop runs. Any slot left
                         // occupied by a task the sweeps above just drove terminal

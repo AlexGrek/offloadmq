@@ -1,11 +1,16 @@
-import { Loader2, Pencil, Trash2 } from 'lucide-react'
+import { Loader2, Pencil, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { ChatSummary } from '@/api/chats'
 
-/** Collapsible chat list: fixed header + independently scrollable list. */
+/**
+ * Chat list: fixed header + independently scrollable list.
+ * Desktop: inline collapsible column (w-64 / w-0).
+ * Mobile: full-screen overlay over the page content; auto-hides on select.
+ */
 export function ChatSidebar({
   open,
+  isMobile,
   chats,
   activeChatId,
   loading,
@@ -13,8 +18,10 @@ export function ChatSidebar({
   onSelectChat,
   onNewChat,
   onDeleteChat,
+  onClose,
 }: {
   open: boolean
+  isMobile: boolean
   chats: ChatSummary[]
   activeChatId: string | null
   loading: boolean
@@ -22,27 +29,45 @@ export function ChatSidebar({
   onSelectChat: (id: string) => void
   onNewChat: () => void
   onDeleteChat: (e: React.MouseEvent, id: string) => void
+  onClose: () => void
 }) {
   return (
     <aside
       className={cn(
-        'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar',
-        'transition-[width] duration-200',
-        open ? 'w-64' : 'w-0',
+        'flex min-h-0 flex-col overflow-hidden border-r border-border bg-sidebar',
+        isMobile
+          ? open
+            ? 'absolute inset-0 z-40 w-full'
+            : 'hidden'
+          : cn('shrink-0 transition-[width] duration-200', open ? 'w-64' : 'w-0'),
       )}
       data-testid="chat-sidebar"
     >
       <div className="flex items-center justify-between px-3 h-11 border-b border-border shrink-0">
         <span className="text-sm font-semibold text-sidebar-foreground">Chats</span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onNewChat}
-          title="New chat"
-          data-testid="new-chat-btn"
-        >
-          <Pencil />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onNewChat}
+            title="New chat"
+            data-testid="new-chat-btn"
+          >
+            <Pencil />
+          </Button>
+          {isMobile && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onClose}
+              title="Close"
+              aria-label="Close sidebar"
+              data-testid="chat-sidebar-close"
+            >
+              <X />
+            </Button>
+          )}
+        </div>
       </div>
 
       <div

@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { getSettings } from '../api/admin'
 import {
   getImageJob,
@@ -99,6 +100,7 @@ const DEFAULT_RESCALE: RescaleState = {
 export default function ImageGenerationPage() {
   const { token } = useAuth()
   const { refreshRunningImageJobs } = useProgress()
+  const isMobile = useIsMobile()
   const [mode, setMode] = useState<ImgGenMode>('txt2img')
   const [prompt, setPrompt] = useState(MODE_DEFAULTS.txt2img.prompt)
   const [negativePrompt, setNegativePrompt] = useState('')
@@ -127,7 +129,7 @@ export default function ImageGenerationPage() {
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [timelineOpen, setTimelineOpen] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
   const [debugOpen, setDebugOpen] = useState(false)
   const [deletingJob, setDeletingJob] = useState(false)
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -146,6 +148,12 @@ export default function ImageGenerationPage() {
   useEffect(() => {
     setDebugOpen(false)
   }, [activePanel])
+
+  // On mobile the pipelines sidebar is a full-screen overlay — collapse it when
+  // we cross into a narrow viewport so it never starts covering the workspace.
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false)
+  }, [isMobile])
 
   const capabilities = useMemo(
     () => filterCapabilitiesByWorkflow(allCapabilities, mode),
@@ -627,18 +635,34 @@ export default function ImageGenerationPage() {
   return (
     <>
     <div
-      className="flex min-h-0 flex-1 overflow-hidden bg-background"
+      className="relative flex min-h-0 flex-1 overflow-hidden bg-background"
       data-testid="image-generation-page"
     >
       <aside
         className={cn(
-          'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200',
-          sidebarOpen ? 'w-64' : 'w-0',
+          'flex min-h-0 flex-col overflow-hidden border-r border-border bg-sidebar',
+          isMobile
+            ? sidebarOpen
+              ? 'absolute inset-0 z-40 w-full'
+              : 'hidden'
+            : cn('shrink-0 transition-[width] duration-200', sidebarOpen ? 'w-64' : 'w-0'),
         )}
         data-testid="imggen-pipelines-sidebar"
       >
         <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
           <span className="text-sm font-semibold text-sidebar-foreground">Pipelines</span>
+          {isMobile && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setSidebarOpen(false)}
+              title="Close"
+              aria-label="Close sidebar"
+              data-testid="imggen-sidebar-close"
+            >
+              <X />
+            </Button>
+          )}
         </div>
         <ImageJobHistorySidebar
           jobs={jobs}
@@ -646,8 +670,14 @@ export default function ImageGenerationPage() {
           token={token}
           mediaRevision={mediaRevision}
           loading={jobsLoading}
-          onSelectNew={selectNew}
-          onSelectJob={jobId => void selectJob(jobId)}
+          onSelectNew={() => {
+            selectNew()
+            if (isMobile) setSidebarOpen(false)
+          }}
+          onSelectJob={jobId => {
+            void selectJob(jobId)
+            if (isMobile) setSidebarOpen(false)
+          }}
         />
       </aside>
 
