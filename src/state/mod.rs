@@ -8,7 +8,7 @@ use crate::{
     config::AppConfig,
     db::{app_storage::AppStorage, service_message_storage::ServiceMessage},
     middleware::auth::Auth,
-    mq::{regular::RegularTaskStore, registry::AgentRegistry, urgent::UrgentTaskStore},
+    mq::{registry::AgentRegistry, regular::RegularTaskStore, urgent::UrgentTaskStore},
     schema::{TaskId, TaskResultStatus, TaskStatus},
 };
 

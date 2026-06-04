@@ -124,8 +124,8 @@ async fn handle_text(
         ClientCommand::ListCapabilities { req_id } => {
             chat::list_capabilities(req_id, tx, state).await;
         }
-        ClientCommand::Chat { req_id, capability, chat_id, content, model_online, timeout_secs, max_wait_secs, runtime_secs } => {
-            chat::chat(req_id, capability, chat_id, content, model_online, timeout_secs, max_wait_secs, runtime_secs, tx, state, user_id).await;
+        ClientCommand::Chat { req_id, capability, chat_id, content, attachment_ids, model_online, timeout_secs, max_wait_secs, runtime_secs } => {
+            chat::chat(req_id, capability, chat_id, content, attachment_ids, model_online, timeout_secs, max_wait_secs, runtime_secs, tx, state, user_id).await;
         }
     }
 }

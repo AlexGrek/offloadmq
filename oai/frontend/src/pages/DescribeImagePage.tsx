@@ -33,6 +33,7 @@ import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import { capabilityBaseLabel } from '../lib/modelAvailability'
 import { pickListedCapability } from '../lib/capability-picker'
 import { MarkdownContent } from '../components/MarkdownContent'
+import { SpeechListenWidget } from '../components/SpeechListenWidget'
 import {
   DESCRIBE_NEW_PANEL,
   DescribeHistorySidebar,
@@ -196,8 +197,7 @@ export default function DescribeImagePage() {
     previewUrlRef.current = preview
     setImagePreview(preview)
     try {
-      // Upload full-res — the agent's dataPreparation is the sole rescaler.
-      const img = await uploadImage(token, file, { downscale: false })
+      const img = await uploadImage(token, file)
       setUploadedInput(img)
     } catch (e) {
       setError((e as Error).message)
@@ -217,7 +217,7 @@ export default function DescribeImagePage() {
         capability: selectedCap,
         prompt: prompt.trim() || DEFAULT_PROMPT,
         image_id: uploadedInput.image_id,
-        // null → backend applies a 1920px safety-net rescale on the agent side.
+        // null -> send the OAI-normalized upload without extra agent-side rescale.
         data_preparation: rescaleDataPrep(rescale.enabled, rescale),
       })
       setActivePanel(res.job_id)
@@ -678,17 +678,24 @@ export default function DescribeImagePage() {
                       <section className="space-y-2" data-testid="describe-result">
                         <div className="flex items-center justify-between">
                           <h3 className="text-xs font-medium text-muted-foreground">Result</h3>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 gap-1.5 text-xs"
-                            onClick={handleCopy}
-                            data-testid="describe-copy"
-                          >
-                            <Copy className="size-3.5" />
-                            {copied ? 'Copied!' : 'Copy'}
-                          </Button>
+                          <div className="flex items-center gap-0.5">
+                            <SpeechListenWidget
+                              text={selectedJob.result}
+                              triggerVariant="ghost"
+                              testIdPrefix="describe-listen"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-1.5 text-xs"
+                              onClick={handleCopy}
+                              data-testid="describe-copy"
+                            >
+                              <Copy className="size-3.5" />
+                              {copied ? 'Copied!' : 'Copy'}
+                            </Button>
+                          </div>
                         </div>
                         <div className="rounded-xl border border-border bg-muted/30 px-4 py-4">
                           <MarkdownContent>{selectedJob.result}</MarkdownContent>

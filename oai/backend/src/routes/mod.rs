@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod auth;
+pub mod chat_attachments;
 pub mod chats;
 pub mod system_prompts;
 pub mod debug;

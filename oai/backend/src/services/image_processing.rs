@@ -90,18 +90,6 @@ pub fn process_image(
     bytes: Vec<u8>,
     content_type_hint: Option<String>,
 ) -> Result<ProcessedImage, AppError> {
-    process_image_opts(bytes, content_type_hint, true)
-}
-
-/// Like [`process_image`], but `downscale = false` skips the `MAX_IMAGE_EDGE`
-/// downscale step (orientation baking, JPEG re-encode, EXIF strip and thumbnail
-/// generation still run). Used for image-analysis inputs, where the agent's
-/// `dataPreparation` is the sole rescaler and OAI must not pre-shrink the image.
-pub fn process_image_opts(
-    bytes: Vec<u8>,
-    _content_type_hint: Option<String>,
-    downscale: bool,
-) -> Result<ProcessedImage, AppError> {
     ensure_vips_initialized()?;
 
     if bytes.is_empty() {
@@ -129,7 +117,7 @@ pub fn process_image_opts(
     let ow = img.get_width() as u32;
     let oh = img.get_height() as u32;
 
-    let (img, rescaled) = if downscale && ow.max(oh) > MAX_IMAGE_EDGE {
+    let (img, rescaled) = if ow.max(oh) > MAX_IMAGE_EDGE {
         let scale = (MAX_IMAGE_EDGE as f64) / (ow.max(oh) as f64);
         let resized = img
             .resize(scale)

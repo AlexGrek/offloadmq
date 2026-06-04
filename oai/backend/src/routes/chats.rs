@@ -8,10 +8,13 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use std::collections::HashMap;
+
 use crate::{
-    db::{chats, user_system_prompts},
+    db::{chat_attachments, chats, user_system_prompts},
     error::AppError,
     middleware::AuthenticatedUser,
+    services::chat_attachments as attachment_service,
     state::AppState,
 };
 
@@ -53,6 +56,7 @@ pub struct MessageResponse {
     pub status: String,
     pub model: Option<String>,
     pub created_at: String,
+    pub attachments: Vec<attachment_service::AttachmentDto>,
 }
 
 fn chat_to_response(c: chats::Chat) -> ChatResponse {
@@ -66,7 +70,10 @@ fn chat_to_response(c: chats::Chat) -> ChatResponse {
     }
 }
 
-fn message_to_response(m: chats::ChatMessage) -> MessageResponse {
+fn message_to_response(
+    m: chats::ChatMessage,
+    attachments: Vec<attachment_service::AttachmentDto>,
+) -> MessageResponse {
     MessageResponse {
         id: m.id.to_string(),
         role: m.role,
@@ -74,6 +81,7 @@ fn message_to_response(m: chats::ChatMessage) -> MessageResponse {
         status: m.status,
         model: m.model,
         created_at: m.created_at.to_rfc3339(),
+        attachments,
     }
 }
 
@@ -164,5 +172,25 @@ pub async fn get_messages(
     // Verify ownership
     chats::get_chat(&state.db, id, user_id).await?.ok_or(AppError::NotFound)?;
     let msgs = chats::get_messages(&state.db, id).await?;
-    Ok(Json(msgs.into_iter().map(message_to_response).collect()))
+
+    let message_ids: Vec<i64> = msgs.iter().map(|m| m.id).collect();
+    let attachments = chat_attachments::list_for_messages(&state.db, &message_ids).await?;
+    let mut by_message: HashMap<i64, Vec<attachment_service::AttachmentDto>> = HashMap::new();
+    for att in &attachments {
+        if let Some(mid) = att.message_id {
+            by_message
+                .entry(mid)
+                .or_default()
+                .push(attachment_service::to_dto(att));
+        }
+    }
+
+    let out = msgs
+        .into_iter()
+        .map(|m| {
+            let atts = by_message.remove(&m.id).unwrap_or_default();
+            message_to_response(m, atts)
+        })
+        .collect();
+    Ok(Json(out))
 }

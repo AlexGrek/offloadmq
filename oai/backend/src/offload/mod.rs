@@ -113,8 +113,13 @@ impl OffloadClient {
         timeout_secs: Option<u32>,
         max_wait_secs: Option<u32>,
         runtime_secs: Option<u32>,
+        file_bucket: Option<&str>,
     ) -> Result<TaskId, AppError> {
         let url = format!("{}/api/task/submit", self.base_url);
+        // When a bucket is attached the agent extracts text from documents and
+        // base64-attaches images onto the last user message (offload-agent
+        // `exec/llm.py`). Streaming stays on so the reply still streams back.
+        let buckets: Vec<&str> = file_bucket.into_iter().collect();
         let mut body = serde_json::json!({
             "apiKey": self.api_key,
             "capability": capability,
@@ -125,7 +130,7 @@ impl OffloadClient {
                 "messages": messages
             },
             "fetchFiles": [],
-            "file_bucket": [],
+            "file_bucket": buckets,
             "artifacts": []
         });
         if let Some(v) = timeout_secs {

@@ -95,7 +95,10 @@ impl AgentRegistry {
     /// against a slow teardown of an old socket evicting a newer reconnect.
     pub fn deregister(&self, uid: &str, conn_id: u64) {
         let mut guard = self.conns.lock().unwrap();
-        if guard.get(uid).is_some_and(|existing| existing.conn_id == conn_id) {
+        if guard
+            .get(uid)
+            .is_some_and(|existing| existing.conn_id == conn_id)
+        {
             guard.remove(uid);
         }
     }

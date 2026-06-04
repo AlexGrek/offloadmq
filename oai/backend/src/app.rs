@@ -52,6 +52,29 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         )
         .route("/api/chats/{id}/messages", get(routes::chats::get_messages))
         .route(
+            "/api/chat/attachments/upload",
+            post(routes::chat_attachments::upload_document)
+                .layer(DefaultBodyLimit::max(
+                    crate::services::chat_attachments::MAX_DOCUMENT_BYTES,
+                )),
+        )
+        .route(
+            "/api/chat/attachments/image",
+            post(routes::chat_attachments::create_image_attachment),
+        )
+        .route(
+            "/api/chat/attachments/reference",
+            post(routes::chat_attachments::reference_document),
+        )
+        .route(
+            "/api/chat/attachments/documents",
+            get(routes::chat_attachments::list_documents),
+        )
+        .route(
+            "/api/chat/attachments/{id}/download",
+            get(routes::chat_attachments::download_document),
+        )
+        .route(
             "/api/system-prompts",
             get(routes::system_prompts::list_library),
         )

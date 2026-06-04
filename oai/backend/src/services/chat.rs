@@ -9,10 +9,12 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::db;
 use crate::db::chats as db_chats;
 use crate::db::llm_capabilities;
 use crate::error::AppError;
 use crate::offload::{ChatMessage, LlmCapabilityInfo, OffloadClient, TaskId};
+use crate::services::chat_attachments;
 use crate::services::offload_factory;
 use crate::state::AppState;
 use crate::ws::events::ServerEvent;
@@ -80,11 +82,13 @@ async fn load_capabilities(state: &AppState) -> Result<Vec<LlmCapabilityInfo>, A
     llm_capabilities::list_for_display(&state.db, &online_bases).await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn chat(
     req_id: String,
     capability: String,
     chat_id_str: String,
     content: String,
+    attachment_ids: Vec<String>,
     model_online: bool,
     timeout_secs: Option<u32>,
     max_wait_secs: Option<u32>,
@@ -93,7 +97,7 @@ pub async fn chat(
     state: &Arc<AppState>,
     user_id: i64,
 ) {
-    if let Err(message) = run_chat(&req_id, capability, chat_id_str, content, model_online, timeout_secs, max_wait_secs, runtime_secs, tx, state, user_id).await
+    if let Err(message) = run_chat(&req_id, capability, chat_id_str, content, attachment_ids, model_online, timeout_secs, max_wait_secs, runtime_secs, tx, state, user_id).await
     {
         send_error(tx, &req_id, &message);
     }
@@ -101,11 +105,13 @@ pub async fn chat(
 
 /// Persists the user message, submits the chat task, and spawns the poll loop.
 /// Returns a user-facing error string; the caller relays it as a `ServerEvent`.
+#[allow(clippy::too_many_arguments)]
 async fn run_chat(
     req_id: &str,
     capability: String,
     chat_id_str: String,
     content: String,
+    attachment_ids: Vec<String>,
     model_online: bool,
     timeout_secs: Option<u32>,
     max_wait_secs: Option<u32>,
@@ -116,28 +122,66 @@ async fn run_chat(
 ) -> Result<(), String> {
     let chat_id: i64 = chat_id_str.parse().map_err(|_| "invalid chat_id".to_string())?;
 
+    let parsed_attachment_ids: Vec<i64> = attachment_ids
+        .iter()
+        .filter_map(|s| s.parse::<i64>().ok())
+        .collect();
+    if parsed_attachment_ids.len() > chat_attachments::MAX_ATTACHMENTS_PER_MESSAGE {
+        return Err(format!(
+            "too many attachments (max {})",
+            chat_attachments::MAX_ATTACHMENTS_PER_MESSAGE
+        ));
+    }
+
     let chat = db_chats::get_chat(&state.db, chat_id, user_id)
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "chat not found".to_string())?;
+
+    // A turn with only attachments still needs non-empty user content so it
+    // survives `build_offload_chat_messages` (and the agent has a turn to attach
+    // the extracted text / images onto).
+    let trimmed = content.trim();
+    let stored_content = if trimmed.is_empty() && !parsed_attachment_ids.is_empty() {
+        "Please review the attached file(s).".to_string()
+    } else {
+        content.clone()
+    };
+
     let user_msg_id = state.next_id();
     db_chats::add_message(
         &state.db,
         user_msg_id,
         chat_id,
         "user",
-        &content,
+        &stored_content,
         "complete",
         Some(&capability),
     )
     .await
     .map_err(|e| e.to_string())?;
+
+    // Link pre-uploaded attachments to this message and stage them into a
+    // one-shot bucket for the agent (document text extraction + image attach).
+    let attachments = db::chat_attachments::link_to_message(
+        &state.db,
+        &parsed_attachment_ids,
+        user_id,
+        user_msg_id,
+        chat_id,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let file_bucket = chat_attachments::stage_into_bucket(state, &attachments)
+        .await
+        .map_err(|e| e.to_string())?;
+
     let _ = db_chats::set_last_model(&state.db, chat_id, user_id, &capability)
         .await
         .map_err(|e| e.to_string())?;
 
     if chat.title.is_empty() {
-        let title = content.chars().take(50).collect::<String>();
+        let title = stored_content.chars().take(50).collect::<String>();
         let _ = db_chats::set_title(&state.db, chat_id, &title).await;
     } else {
         let _ = db_chats::touch_chat(&state.db, chat_id).await;
@@ -152,13 +196,14 @@ async fn run_chat(
     tracing::debug!(
         chat_id,
         offload_message_count = messages.len(),
+        attachment_count = attachments.len(),
         "submitting chat task with full history"
     );
 
     let (eff_timeout, eff_wait, eff_runtime, deadline) =
         resolve_timeouts(model_online, timeout_secs, max_wait_secs, runtime_secs);
     let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
-    let task_id = client.submit_chat(&capability, messages, eff_timeout, eff_wait, eff_runtime).await.map_err(|e| e.to_string())?;
+    let task_id = client.submit_chat(&capability, messages, eff_timeout, eff_wait, eff_runtime, file_bucket.as_deref()).await.map_err(|e| e.to_string())?;
 
     // Persist the assistant reply as `pending` up front, carrying the offload
     // task id. This is the authoritative record: the live poll loop below

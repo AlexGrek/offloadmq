@@ -1,4 +1,5 @@
 import type { ChatMessageRecord } from '@/api/chats'
+import type { ChatAttachment } from '@/api/chatAttachments'
 import type { ChatTaskRecord } from '@/contexts/WorkloadContext'
 import { firstSelectableModel } from '@/lib/modelAvailability'
 import type { LlmCapabilityInfo } from '@/types/ws'
@@ -14,6 +15,7 @@ export type Message = {
   status: MessageStatus
   reqId?: string
   statusText?: string
+  attachments?: ChatAttachment[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -38,6 +40,7 @@ export function recordToMessage(r: ChatMessageRecord): Message | null {
     role: r.role,
     content: r.content,
     status: normalizeStatus(r.status),
+    attachments: r.attachments,
   }
 }
 

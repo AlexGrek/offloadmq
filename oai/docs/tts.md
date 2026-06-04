@@ -85,6 +85,7 @@ returns 400 otherwise.
 - **API client**: [api/tts.ts](../frontend/src/api/tts.ts)
 - **Route**: `/app/tts` (registered in `App.tsx`)
 - **Dashboard tile**: violet "Text to Speech" tile.
+- **Embedded listen**: [SpeechListenWidget.tsx](../frontend/src/components/SpeechListenWidget.tsx) — speaker icon beside LLM copy actions (chat assistant bubbles, image describe results). Submits via the same `/api/tts/jobs` flow; voice/model prefs in `localStorage` (`oai-tts-voice`, `oai-tts-capability`).
 
 Auto-polling cadence is 3 s and stops on terminal states (`completed`,
 `failed`, `canceled`).

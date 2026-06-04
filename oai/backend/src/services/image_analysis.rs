@@ -65,9 +65,9 @@ pub async fn start_job(
         .await?
         .ok_or(AppError::NotFound)?;
 
-    // Analysis inputs are uploaded full-res. When the caller supplies a rescale
-    // map the agent does all scaling; when it doesn't, OAI downscales the input
-    // itself (to MAX_IMAGE_EDGE) before handing it to the agent.
+    // Stored uploads are already normalized and capped to MAX_IMAGE_EDGE.
+    // Optional dataPreparation can still ask the agent to shrink further for
+    // model-specific context limits.
     let data_prep = data_preparation_map(&req.data_preparation);
     let data_prep_json = data_prep
         .as_ref()
@@ -94,7 +94,6 @@ pub async fn start_job(
 
     let op = storage::operator(state)?;
     let bytes = storage::read(op, &input.storage_path).await?;
-    // No agent-side rescale → OAI caps the longest edge before upload.
     let (bytes, content_type) = if data_prep.is_some() {
         (bytes, input.content_type.clone())
     } else {

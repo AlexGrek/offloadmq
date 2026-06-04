@@ -75,6 +75,11 @@ sequenceDiagram
 | `frontend/src/api/debug.ts` | `fetchOffloadPoll` |
 | `frontend/src/components/chat/SystemPromptStudio.tsx` | Empty-thread editor + library; `DEFAULT_PROMPT` |
 | `frontend/src/components/chat/SystemPromptBlock.tsx` | In-thread read-only prompt (markdown, no frame) |
+| `frontend/src/components/chat/ChatMessageItem.tsx` | Transcript row; copy + **Listen** (`SpeechListenWidget`) on assistant messages; renders `MessageAttachments` |
+| `frontend/src/components/chat/MessageAttachments.tsx` | Transcript image thumbnails + document chips |
+| `frontend/src/components/chat/AttachmentReferencePicker.tsx` | Modal to reference existing images / prior documents |
+| `frontend/src/api/chatAttachments.ts` | Attachment upload/reference/list/download + `cloneAttachmentsForResend` |
+| `frontend/src/components/SpeechListenWidget.tsx` | Popup TTS (OAI `/api/tts/jobs`) — shared with image describe result header |
 | `frontend/src/components/MarkdownContent.tsx` | GFM: `default` / `inverted` (user bubble) / `muted` (system) |
 | `frontend/src/components/ToolDebugModal.tsx` | Raw OffloadMQ poll JSON for active task |
 
@@ -104,7 +109,7 @@ sequenceDiagram
 | `type` | Fields |
 |--------|--------|
 | `list_capabilities` | `req_id` |
-| `chat` | `req_id`, `capability`, `chat_id`, `content` |
+| `chat` | `req_id`, `capability`, `chat_id`, `content`, optional `attachment_ids[]` |
 | `ping` | — |
 
 On connect, frontend sends `list_capabilities` with `req_id: 'init'`.
@@ -225,8 +230,12 @@ Local `systemPrompt` state synced from `activeChat.system_prompt` on chat switch
 | PATCH | `/api/chats/{id}/system-prompt` `{ content }` |
 | DELETE | `/api/chats/{id}` |
 | GET | `/api/chats/{id}/messages` |
+| POST | `/api/chat/attachments/upload` (multipart) · `/image` · `/reference` |
+| GET | `/api/chat/attachments/documents` · `/{id}/download` |
 
-Messages: `role` user|assistant|system; `status` complete|failed; snowflake ids as strings in JSON.
+Messages: `role` user|assistant|system; `status` complete|failed; snowflake ids as strings in JSON. `messages[]` now include `attachments[]` (`{ id, kind, filename, content_type, size_bytes, image_id }`).
+
+**Attachments:** see [oai/docs/chat-attachments.md](../../../oai/docs/chat-attachments.md). User attaches images/docs (or references existing files); OAI stages them into a one-shot OffloadMQ bucket and submits the chat task with `file_bucket: [uid]`. The agent extracts document text + base64-attaches images onto the last user message. Backend: `services/chat_attachments.rs`, `routes/chat_attachments.rs`, `db/chat_attachments.rs`; `chat_attachments` table (images → `image_files`, docs → `users/{uid}/chat_docs/`).
 
 ---
 
@@ -236,15 +245,18 @@ Messages: `role` user|assistant|system; `status` complete|failed; snowflake ids 
 |------|------|
 | `backend/src/ws/chat.rs` | WS upgrade, ping/idle, dispatch commands |
 | `backend/src/ws/events.rs` | `ClientCommand`, `ServerEvent` serde |
-| `backend/src/services/chat.rs` | capabilities, run_chat, poll_loop, finish_success/failure |
-| `backend/src/routes/chats.rs` | REST handlers |
+| `backend/src/services/chat.rs` | capabilities, run_chat (links + stages attachments), poll_loop, finish_success/failure |
+| `backend/src/services/chat_attachments.rs` | upload/reference/list documents + `stage_into_bucket` |
+| `backend/src/routes/chats.rs` | REST handlers (messages include `attachments[]`) |
+| `backend/src/routes/chat_attachments.rs` | Attachment upload/reference/list/download |
+| `backend/src/db/chat_attachments.rs` | `chat_attachments` access (create/link/list) |
 | `backend/src/routes/system_prompts.rs` | Library |
 | `backend/src/routes/tasks.rs` | Cancel proxy |
 | `backend/src/routes/debug.rs` | `offload_poll` |
 | `backend/src/db/chats.rs` | chats + chat_messages access |
 | `backend/src/app.rs` | Route registration |
 
-**DB entities:** `chats` (title, system_prompt), `chat_messages` (cascade delete with chat).
+**DB entities:** `chats` (title, system_prompt), `chat_messages` (cascade delete with chat), `chat_attachments` (per-message attachment instance; `image_file_id` → `image_files`, or `storage_path` for docs).
 
 ---
 
@@ -281,6 +293,11 @@ messages-area, message-{id}, message-pending, message-streaming,
 chat-system-prompt-display,
 model-picker, model-picker-trigger, model-picker-dropdown,
 chat-input-box, chat-input, send-btn, chat-cancel-btn,
+chat-attach-btn, attach-upload-image, attach-upload-doc, attach-reference,
+composer-attachments, composer-chip-{id}, composer-chip-remove-{id},
+composer-attach-error, composer-vision-warning,
+ref-picker-tab-{images|documents}, ref-picker-image-{id}, ref-picker-doc-{id},
+message-attachments, attachment-image-{id}, attachment-doc-{id},
 system-prompt-studio, system-prompt-editor, system-prompt-apply,
 system-prompt-pick-{id}, system-prompt-star-{id}, system-prompt-delete-{id},
 tool-debug-open, tool-debug-modal, tool-debug-fetch-poll, tool-debug-poll,

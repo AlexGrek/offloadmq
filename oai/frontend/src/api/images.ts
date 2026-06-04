@@ -139,16 +139,10 @@ async function request<T>(path: string, token: string, options?: RequestInit): P
   return res.json() as Promise<T>
 }
 
-export function uploadImage(
-  token: string,
-  file: File,
-  opts?: { downscale?: boolean },
-): Promise<UploadedImage> {
+export function uploadImage(token: string, file: File): Promise<UploadedImage> {
   const form = new FormData()
   form.append('file', file)
-  // Image analysis uploads full-res (downscale=false) and lets the agent rescale.
-  const query = opts?.downscale === false ? '?downscale=false' : ''
-  return request(`/api/images/upload${query}`, token, { method: 'POST', body: form })
+  return request('/api/images/upload', token, { method: 'POST', body: form })
 }
 
 export function startImageJob(token: string, payload: StartImageJobRequest): Promise<StartImageJobResponse> {

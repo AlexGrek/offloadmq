@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod chat_attachments;
 pub mod connection;
 pub mod k8s_self;
 pub mod debug_offload;

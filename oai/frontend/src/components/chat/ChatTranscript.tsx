@@ -85,6 +85,7 @@ export function ChatTranscript({
               msg={msg}
               showRetry={idx === messages.length - 1 && canRetry}
               onRetry={onRetry}
+              token={token}
             />
           ))}
           <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />

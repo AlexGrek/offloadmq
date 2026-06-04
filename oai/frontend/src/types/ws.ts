@@ -24,5 +24,5 @@ export type ServerEvent =
 
 export type ClientCommand =
   | { type: 'list_capabilities'; req_id: string }
-  | { type: 'chat'; req_id: string; capability: string; chat_id: string; content: string; model_online: boolean; timeout_secs?: number; max_wait_secs?: number; runtime_secs?: number }
+  | { type: 'chat'; req_id: string; capability: string; chat_id: string; content: string; attachment_ids?: string[]; model_online: boolean; timeout_secs?: number; max_wait_secs?: number; runtime_secs?: number }
   | { type: 'ping' }

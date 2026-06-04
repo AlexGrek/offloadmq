@@ -60,7 +60,9 @@ Thumbnails are deleted together with the main file when storage is purged. User 
 
 ## Upload input image
 
-Stage a file for **img2img** (or general user storage). Returns a snowflake `image_id` referenced as `input_image_id` when starting a job.
+Stage a file for **img2img**, image analysis, or general user storage. Returns a snowflake `image_id` referenced as `input_image_id` when starting a job.
+
+Uploads are always normalized by OAI before storage: the longest edge is capped at 1920 px, even if a later job also supplies OffloadMQ `dataPreparation` to shrink the file further for a specific model.
 
 ```
 POST /api/images/upload

@@ -1,3 +1,5 @@
+import type { ChatAttachment } from './chatAttachments'
+
 export interface ChatSummary {
   id: string
   title: string
@@ -14,6 +16,7 @@ export interface ChatMessageRecord {
   status: 'complete' | 'failed' | 'thinking' | 'pending'
   model: string | null
   created_at: string
+  attachments?: ChatAttachment[]
 }
 
 async function request<T>(path: string, token: string, options?: RequestInit): Promise<T> {

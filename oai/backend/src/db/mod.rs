@@ -1,6 +1,7 @@
 pub mod app_settings;
 pub mod imggen_capabilities;
 pub mod llm_capabilities;
+pub mod chat_attachments;
 pub mod chats;
 pub mod user_system_prompts;
 pub mod entities;

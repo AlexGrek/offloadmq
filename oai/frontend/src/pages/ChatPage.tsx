@@ -25,6 +25,14 @@ import { ChatSidebar } from '../components/chat/ChatSidebar'
 import { ChatHeader } from '../components/chat/ChatHeader'
 import { ChatTranscript } from '../components/chat/ChatTranscript'
 import { ChatComposer } from '../components/chat/ChatComposer'
+import { AttachmentReferencePicker } from '../components/chat/AttachmentReferencePicker'
+import {
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  cloneAttachmentsForResend,
+  uploadDocumentAttachment,
+  uploadImageAttachment,
+  type ChatAttachment,
+} from '../api/chatAttachments'
 import {
   capitalize,
   isMessagePending,
@@ -74,11 +82,54 @@ export default function ChatPage() {
   const [debugOpen, setDebugOpen] = useState(false)
   const [timeoutDrawerOpen, setTimeoutDrawerOpen] = useState(false)
   const [chatTimeoutMap, setChatTimeoutMap] = useState<Map<string, ChatTimeoutEntry>>(new Map())
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([])
+  const [attaching, setAttaching] = useState(false)
+  const [attachError, setAttachError] = useState<string | null>(null)
+  const [referencePickerOpen, setReferencePickerOpen] = useState(false)
 
   useEffect(() => {
     setDebugOpen(false)
     setTimeoutDrawerOpen(false)
+    setPendingAttachments([])
+    setAttachError(null)
+    setReferencePickerOpen(false)
   }, [activeChatId])
+
+  const addAttachment = useCallback((att: ChatAttachment) => {
+    setPendingAttachments(prev =>
+      prev.length >= MAX_ATTACHMENTS_PER_MESSAGE || prev.some(a => a.id === att.id)
+        ? prev
+        : [...prev, att],
+    )
+  }, [])
+
+  const removeAttachment = useCallback((id: string) => {
+    setPendingAttachments(prev => prev.filter(a => a.id !== id))
+  }, [])
+
+  const uploadAttachments = useCallback(
+    async (files: File[], kind: 'image' | 'document') => {
+      if (!token) return
+      setAttachError(null)
+      setAttaching(true)
+      try {
+        for (const file of files) {
+          const att =
+            kind === 'image'
+              ? await uploadImageAttachment(token, file)
+              : await uploadDocumentAttachment(token, file)
+          setPendingAttachments(prev =>
+            prev.length >= MAX_ATTACHMENTS_PER_MESSAGE ? prev : [...prev, att],
+          )
+        }
+      } catch (e) {
+        setAttachError((e as Error).message)
+      } finally {
+        setAttaching(false)
+      }
+    },
+    [token],
+  )
 
   function updateChatTimeout(key: keyof ChatTimeoutSettings, value: number | null) {
     if (!activeChatId) return
@@ -392,6 +443,8 @@ export default function ChatPage() {
       setActiveChatId(chat.id)
       setMessages([])
       setInput('')
+      setPendingAttachments([])
+      setAttachError(null)
     } catch (e) {
       console.error('failed to create chat', e)
     }
@@ -414,14 +467,20 @@ export default function ChatPage() {
     }
   }
 
-  const sendWithText = useCallback((text: string) => {
-    if (!text || !selectedModel || ws.status !== 'connected' || !activeChatId) return
+  const sendWithText = useCallback((text: string, attachments: ChatAttachment[] = []) => {
+    if ((!text && attachments.length === 0) || !selectedModel || ws.status !== 'connected' || !activeChatId) return
     if (!modelListed(selectedModel, ws.capabilities)) return
 
     const reqId = nextReqId('chat')
     const assistantMsgId = uid()
 
-    const userMsg: Message = { id: uid(), role: 'user', content: text, status: 'complete' }
+    const userMsg: Message = {
+      id: uid(),
+      role: 'user',
+      content: text,
+      status: 'complete',
+      attachments: attachments.length > 0 ? attachments : undefined,
+    }
     const thinkingMsg: Message = {
       id: assistantMsgId,
       role: 'assistant',
@@ -449,7 +508,7 @@ export default function ChatPage() {
         c.id === activeChatId
           ? {
               ...c,
-              ...(c.title === '' ? { title: text.slice(0, 50) } : {}),
+              ...(c.title === '' && text ? { title: text.slice(0, 50) } : {}),
               last_model: selectedModel,
             }
           : c,
@@ -464,6 +523,7 @@ export default function ChatPage() {
       capability: selectedModel,
       chat_id: activeChatId,
       content: text,
+      ...(attachments.length > 0 && { attachment_ids: attachments.map(a => a.id) }),
       model_online: modelOnline,
       ...(entry?.timeoutSecs != null && { timeout_secs: entry.timeoutSecs }),
       ...(entry?.maxWaitSecs != null && { max_wait_secs: entry.maxWaitSecs }),
@@ -473,10 +533,13 @@ export default function ChatPage() {
 
   const send = useCallback(() => {
     const text = input.trim()
-    if (!text) return
+    if (!text && pendingAttachments.length === 0) return
+    const attachments = pendingAttachments
     setInput('')
-    sendWithText(text)
-  }, [input, sendWithText])
+    setPendingAttachments([])
+    setAttachError(null)
+    sendWithText(text, attachments)
+  }, [input, pendingAttachments, sendWithText])
 
   const retry = useCallback(() => {
     let lastFailedIdx = -1
@@ -487,17 +550,39 @@ export default function ChatPage() {
       }
     }
     if (lastFailedIdx < 0) return
-    let lastUserContent: string | undefined
+    let lastUserMsg: Message | undefined
     for (let i = lastFailedIdx - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') { lastUserContent = messages[i].content; break }
+      if (messages[i].role === 'user') { lastUserMsg = messages[i]; break }
     }
-    if (!lastUserContent) return
+    if (!lastUserMsg) return
+    const content = lastUserMsg.content
+    const priorAttachments = lastUserMsg.attachments ?? []
     setMessages((prev: Message[]) => prev.filter((_: Message, i: number) => i !== lastFailedIdx))
-    sendWithText(lastUserContent)
-  }, [messages, sendWithText])
+
+    // Already-linked attachments won't re-stage; clone them into fresh refs so
+    // the model sees them again on retry (re-stage on retry only).
+    if (priorAttachments.length > 0 && token) {
+      setAttaching(true)
+      cloneAttachmentsForResend(token, priorAttachments)
+        .then(cloned => sendWithText(content, cloned))
+        .catch(e => setAttachError((e as Error).message))
+        .finally(() => setAttaching(false))
+    } else {
+      sendWithText(content)
+    }
+  }, [messages, sendWithText, token])
+
+  const selectedCapInfo = ws.capabilities.find(c => c.base === selectedModel)
+  const visionWarning =
+    pendingAttachments.some(a => a.kind === 'image') &&
+    selectedCapInfo != null &&
+    !selectedCapInfo.tags.includes('vision')
+      ? 'The selected model has no "vision" tag — it may ignore attached images. Text documents are still read on any model.'
+      : null
 
   const canSend =
-    !!input.trim() &&
+    (!!input.trim() || pendingAttachments.length > 0) &&
+    !attaching &&
     modelListed(selectedModel, ws.capabilities) &&
     ws.status === 'connected' &&
     ws.capabilitiesStatus === 'ready' &&
@@ -617,8 +702,24 @@ export default function ChatPage() {
           canSend={canSend}
           canCancelTask={canCancelTask}
           onCancel={() => void handleCancel()}
+          attachments={pendingAttachments}
+          attaching={attaching}
+          attachError={attachError}
+          attachDisabled={pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
+          onUploadImages={files => void uploadAttachments(files, 'image')}
+          onUploadDocuments={files => void uploadAttachments(files, 'document')}
+          onRemoveAttachment={removeAttachment}
+          onOpenReferencePicker={() => setReferencePickerOpen(true)}
+          visionWarning={visionWarning}
         />
       </div>
+
+      <AttachmentReferencePicker
+        open={referencePickerOpen}
+        onOpenChange={setReferencePickerOpen}
+        onPick={addAttachment}
+        disabled={pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
+      />
     </div>
   )
 }
