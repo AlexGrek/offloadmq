@@ -31,6 +31,10 @@ ingress:
   host: "oai.alexgr.space"
   tls:
     secretName: oai-tls
+  # Redirect all plain HTTP (web entrypoint) to HTTPS via a Traefik redirectScheme
+  # Middleware attached to this ingress's router. Requests already on HTTPS are not
+  # redirected (Traefik skips when the resulting URL is unchanged), so there is no loop.
+  redirectToHttps: true
 
 config:
   staticDir: "/app/static"
