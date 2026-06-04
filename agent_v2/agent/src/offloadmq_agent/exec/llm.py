@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -70,16 +71,31 @@ def _attach_images(messages: list[dict[str, Any]], images: list[str]) -> list[di
     return messages
 
 
+_STREAM_FLUSH_INTERVAL = 2.0  # seconds between progress log flushes, matching v1 behaviour
+
+
 async def _stream_with_cancel(
     resp: aiohttp.ClientResponse,
     collected: list[str],
     ctx: ExecContext,
 ) -> bool:
-    """Stream Ollama tokens, aborting the HTTP connection immediately on cancel.
+    """Stream Ollama tokens, forwarding buffered text as progress logs every 2 s.
 
     Returns True if the cancel event fired before streaming completed,
-    False on normal completion.
+    False on normal completion.  Mirrors the v1 ``execute_llm_query`` streaming
+    path so callers (OAI chat, etc.) receive incremental text via task progress.
     """
+    pending: list[str] = []
+    last_flush: float = time.monotonic()
+
+    async def _flush(force: bool = False) -> None:
+        nonlocal last_flush
+        now = time.monotonic()
+        if pending and (force or now - last_flush >= _STREAM_FLUSH_INTERVAL):
+            text = "".join(pending)
+            pending.clear()
+            last_flush = now
+            await ctx.progress("running", text)
 
     async def _read() -> None:
         async for line in resp.content:
@@ -94,8 +110,12 @@ async def _stream_with_cancel(
                 )
                 if token:
                     collected.append(token)
+                    pending.append(token)
+                    await _flush()
             except json.JSONDecodeError:
                 pass
+        # Flush any remaining buffered tokens when the stream ends normally.
+        await _flush(force=True)
 
     async def _watch_cancel() -> None:
         while not ctx.cancel_event.is_set():
@@ -124,7 +144,10 @@ async def _stream_with_cancel(
             raise exc
         return False
 
-    # watch_task fired first → cancel event was set while still streaming
+    # watch_task fired first → cancel event was set while still streaming.
+    # Flush whatever we buffered so the partial text reaches the caller.
+    if pending:
+        await ctx.progress("running", "".join(pending))
     return True
 
 
