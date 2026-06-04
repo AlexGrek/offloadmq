@@ -62,6 +62,8 @@ export interface Settings {
   sensitive_allowed_caps: string[];
   slavemode_allowed_caps: string[];
   comfyui_url: string;
+  kokoro_api_url: string;
+  kokoro_api_key: string;
   win_startup_enabled: boolean;
   mac_startup_enabled: boolean;
   agent_id: string;

@@ -92,13 +92,12 @@ def check_docker() -> CapResult:
 
 def check_kokoro() -> CapResult:
     import requests
-    from urllib.parse import urlparse
-    from .exec.tts import KOKORO_API_URL
 
-    parsed = urlparse(KOKORO_API_URL)
-    base = f"{parsed.scheme}://{parsed.netloc}"
+    from offloadmq_agent.kokoro_config import kokoro_base_url, kokoro_verify_tls
+
+    base = kokoro_base_url()
     voices_url = f"{base}/v1/audio/voices"
-    verify_tls = not (parsed.hostname in ("localhost", "127.0.0.1", "::1"))
+    verify_tls = kokoro_verify_tls()
 
     try:
         r = requests.get(voices_url, timeout=3, verify=verify_tls)

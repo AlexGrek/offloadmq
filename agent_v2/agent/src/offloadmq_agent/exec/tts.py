@@ -4,10 +4,8 @@ from typing import Any
 from offloadmq_agent.wire import *
 from offloadmq_agent.transport_exec import AgentTransport
 from offloadmq_agent.exec.reporting import *
+from offloadmq_agent.kokoro_config import kokoro_api_key, kokoro_speech_url, kokoro_verify_tls
 from pathlib import Path
-
-KOKORO_API_URL = "https://localhost:8443/v1/audio/speech"  # adjust if needed
-KOKORO_API_KEY = "your-api-key-hehehe"  # set if you use KW_SECRET_API_KEY
 
 def execute_kokoro_tts(
     transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any], data: Path,
@@ -40,12 +38,18 @@ def execute_kokoro_tts(
         # TaskCancelled is raised here if the client already cancelled the task.
         report_progress(transport, log=None, stage="running", task_id=task_id)
 
-        # Make request
-        headers = {}
-        if KOKORO_API_KEY:
-            headers["Authorization"] = f"Bearer {KOKORO_API_KEY}"
+        headers: dict[str, str] = {}
+        api_key = kokoro_api_key()
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
-        r = requests.post(KOKORO_API_URL, json=payload, headers=headers, timeout=job_timeout, verify=False)
+        r = requests.post(
+            kokoro_speech_url(),
+            json=payload,
+            headers=headers,
+            timeout=job_timeout,
+            verify=kokoro_verify_tls(),
+        )
         r.raise_for_status()
 
         # Kokoro returns audio in binary; here we keep it raw

@@ -19,6 +19,8 @@ class SettingsPayload(BaseModel):
     autostart: bool | None = None
     webui_port: int | None = None
     comfyui_url: str | None = None
+    kokoro_api_url: str | None = None
+    kokoro_api_key: str | None = None
     win_startup_enabled: bool | None = None
     mac_startup_enabled: bool | None = None
 
@@ -50,6 +52,11 @@ class CustomDeletePayload(BaseModel):
 
 class ComfyUrlPayload(BaseModel):
     comfyui_url: str = ""
+
+
+class KokoroSettingsPayload(BaseModel):
+    kokoro_api_url: str = ""
+    kokoro_api_key: str = ""
 
 
 class WorkflowAddPayload(BaseModel):
@@ -228,6 +235,32 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
     @router.post("/comfy/url")
     def comfy_url(payload: ComfyUrlPayload) -> dict[str, Any]:
         return _dump(orch.apply_settings(comfyui_url=payload.comfyui_url.strip()))
+
+    # ------------------------------------------------------------------
+    # Kokoro TTS
+    # ------------------------------------------------------------------
+
+    @router.post("/kokoro/settings")
+    def kokoro_settings(payload: KokoroSettingsPayload) -> dict[str, Any]:
+        result = _dump(
+            orch.apply_settings(
+                kokoro_api_url=payload.kokoro_api_url.strip(),
+                kokoro_api_key=payload.kokoro_api_key.strip(),
+            )
+        )
+        orch.start_background_scan()
+        return result
+
+    @router.get("/kokoro/status")
+    def kokoro_status() -> dict[str, Any]:
+        from offloadmq_agent.capabilities_sync import check_kokoro
+
+        r = check_kokoro()
+        return {
+            "ok": r.ok,
+            "capabilities": r.caps,
+            "reason": r.reason,
+        }
 
     @router.post("/comfy/workflows/add")
     def comfy_add_workflow(payload: WorkflowAddPayload) -> dict[str, Any]:

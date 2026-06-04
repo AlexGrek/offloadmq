@@ -100,6 +100,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ comfyui_url }),
     }),
+
+  saveKokoroSettings: (p: { kokoro_api_url: string; kokoro_api_key: string }) =>
+    request<Settings>("/kokoro/settings", {
+      method: "POST",
+      body: JSON.stringify(p),
+    }),
+  getKokoroStatus: () =>
+    request<{ ok: boolean; capabilities: string[]; reason: string }>(
+      "/kokoro/status"
+    ),
   addComfyWorkflow: (p: {
     workflow_name: string;
     task_type: string;
