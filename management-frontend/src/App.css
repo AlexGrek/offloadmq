@@ -438,6 +438,19 @@ button.chip:hover {
   color: #4ade80;
 }
 
+.chip-busy {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #d97706;
+  font-weight: 500;
+}
+
+[data-theme="dark"] .chip-busy {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
 .chips-wrap {
   display: flex;
   gap: .4rem;

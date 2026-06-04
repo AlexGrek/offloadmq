@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Layers, Gauge, Cpu, Clock, Fingerprint, SquareArrowRight, BarChart2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Layers, Gauge, Cpu, Clock, Fingerprint, SquareArrowRight, BarChart2, Activity } from "lucide-react";
 import { fmtDate, stripCapabilityAttrs, parseCapabilityAttrs } from "../../utils";
 import Chip from "../Chip";
 import AttributeTag from "../AttributeTag";
@@ -47,6 +47,9 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
     const regularCaps = (a.capabilities || []).filter(c => !stripCapabilityAttrs(c).startsWith('slavemode.'));
     const visibleCaps = capsExpanded ? regularCaps : regularCaps.slice(0, 4);
 
+    const inFlight = a.inFlight ?? 0;
+    const isBusy = inFlight > 0;
+
     return (
         <li style={{ borderRadius: '10px', border: '1px solid var(--border)', background: 'var(--glass)', overflow: 'hidden', transition: 'box-shadow 0.15s' }}>
             {/* Header row */}
@@ -64,6 +67,9 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
                         <Chip><Layers size={10} style={{ marginRight: 3 }} />{a.tier}</Chip>
                         <Chip><Gauge size={10} style={{ marginRight: 3 }} />{a.capacity}</Chip>
+                        <Chip variant={isBusy ? 'busy' : 'default'} title={isBusy ? `${inFlight} task(s) running of ${a.capacity} capacity` : 'Idle'}>
+                            <Activity size={10} style={{ marginRight: 3 }} />{inFlight}/{a.capacity}{isBusy ? ' busy' : ' idle'}
+                        </Chip>
                         <Chip><Cpu size={10} style={{ marginRight: 3 }} />{(a.capabilities || []).length}</Chip>
                         {a.appVersion && <Chip>{a.appVersion}</Chip>}
                         {a.systemInfo?.machineId && <Chip><Fingerprint size={10} style={{ marginRight: 3 }} />{a.systemInfo.machineId}</Chip>}

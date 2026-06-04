@@ -31,6 +31,8 @@ import {
 } from '../components/nudedetect/NudeDetectHistorySidebar'
 import { NudeDetectResultsList } from '../components/nudedetect/NudeDetectResultView'
 import { useAuth } from '../contexts/AuthContext'
+import { useIsMobile } from '../hooks/useIsMobile'
+import { ToolSidebar } from '../components/ToolSidebar'
 import { DEFAULT_NUDENET_THRESHOLD, totalDetectionCount } from '../lib/nudeDetectLabels'
 import { cn } from '../lib/utils'
 
@@ -66,7 +68,12 @@ export default function NudeDetectorPage() {
   const [polling, setPolling] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [canceling, setCanceling] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const isMobile = useIsMobile()
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
+  // Mobile: the sidebar is a full-screen overlay — collapse it on entering a narrow viewport.
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false)
+  }, [isMobile])
   const [error, setError] = useState<string | null>(null)
 
   const previewsRef = useRef<string[]>([])
@@ -309,28 +316,31 @@ export default function NudeDetectorPage() {
 
   return (
     <div
-      className="flex min-h-0 flex-1 overflow-hidden bg-background"
+      className="relative flex min-h-0 flex-1 overflow-hidden bg-background"
       data-testid="nudedetect-page"
     >
-      <aside
-        className={cn(
-          'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200',
-          sidebarOpen ? 'w-64' : 'w-0',
-        )}
-        data-testid="nudedetect-sidebar"
+      <ToolSidebar
+        title="Scans"
+        open={sidebarOpen}
+        isMobile={isMobile}
+        onClose={() => setSidebarOpen(false)}
+        testId="nudedetect-sidebar"
       >
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
-          <span className="text-sm font-semibold text-sidebar-foreground">Scans</span>
-        </div>
         <NudeDetectHistorySidebar
           jobs={jobs}
           activePanel={activePanel}
           token={token}
           loading={jobsLoading}
-          onSelectNew={selectNew}
-          onSelectJob={jobId => void selectJob(jobId)}
+          onSelectNew={() => {
+            selectNew()
+            if (isMobile) setSidebarOpen(false)
+          }}
+          onSelectJob={jobId => {
+            void selectJob(jobId)
+            if (isMobile) setSidebarOpen(false)
+          }}
         />
-      </aside>
+      </ToolSidebar>
 
       <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden">
         <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">

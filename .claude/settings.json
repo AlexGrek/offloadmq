@@ -154,7 +154,8 @@
       "Bash(sed *)",
       "Bash(grep *)",
       "Edit(/.claude/skills/oai-backend/**)",
-      "Edit(/.claude/skills/oai-new-feature/**)"
+      "Edit(/.claude/skills/oai-new-feature/**)",
+      "Bash(rg *)"
     ],
     "additionalDirectories": []
   }

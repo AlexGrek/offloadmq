@@ -39,6 +39,8 @@ import {
   DescribeHistorySidebar,
 } from '../components/describe/DescribeHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
+import { useIsMobile } from '../hooks/useIsMobile'
+import { ToolSidebar } from '../components/ToolSidebar'
 import RescaleControls from '../components/imggen/RescaleControls'
 import { rescaleDataPrep, type RescaleState } from '../lib/imggen'
 import { cn } from '../lib/utils'
@@ -93,7 +95,12 @@ export default function DescribeImagePage() {
   const [polling, setPolling] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [canceling, setCanceling] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const isMobile = useIsMobile()
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
+  // Mobile: the sidebar is a full-screen overlay — collapse it on entering a narrow viewport.
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false)
+  }, [isMobile])
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -343,28 +350,31 @@ export default function DescribeImagePage() {
 
   return (
     <div
-      className="flex min-h-0 flex-1 overflow-hidden bg-background"
+      className="relative flex min-h-0 flex-1 overflow-hidden bg-background"
       data-testid="describe-page"
     >
-      <aside
-        className={cn(
-          'flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200',
-          sidebarOpen ? 'w-64' : 'w-0',
-        )}
-        data-testid="describe-sidebar"
+      <ToolSidebar
+        title="Analyses"
+        open={sidebarOpen}
+        isMobile={isMobile}
+        onClose={() => setSidebarOpen(false)}
+        testId="describe-sidebar"
       >
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
-          <span className="text-sm font-semibold text-sidebar-foreground">Analyses</span>
-        </div>
         <DescribeHistorySidebar
           jobs={jobs}
           activePanel={activePanel}
           token={token}
           loading={jobsLoading}
-          onSelectNew={selectNew}
-          onSelectJob={jobId => void selectJob(jobId)}
+          onSelectNew={() => {
+            selectNew()
+            if (isMobile) setSidebarOpen(false)
+          }}
+          onSelectJob={jobId => {
+            void selectJob(jobId)
+            if (isMobile) setSidebarOpen(false)
+          }}
         />
-      </aside>
+      </ToolSidebar>
 
       <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden">
         <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">

@@ -1,6 +1,7 @@
-import { Loader2, Pencil, Trash2, X } from 'lucide-react'
+import { Loader2, Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { ToolSidebar } from '@/components/ToolSidebar'
 import type { ChatSummary } from '@/api/chats'
 
 /**
@@ -32,44 +33,24 @@ export function ChatSidebar({
   onClose: () => void
 }) {
   return (
-    <aside
-      className={cn(
-        'flex min-h-0 flex-col overflow-hidden border-r border-border bg-sidebar',
-        isMobile
-          ? open
-            ? 'absolute inset-0 z-40 w-full'
-            : 'hidden'
-          : cn('shrink-0 transition-[width] duration-200', open ? 'w-64' : 'w-0'),
-      )}
-      data-testid="chat-sidebar"
+    <ToolSidebar
+      title="Chats"
+      open={open}
+      isMobile={isMobile}
+      onClose={onClose}
+      testId="chat-sidebar"
+      headerAction={
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onNewChat}
+          title="New chat"
+          data-testid="new-chat-btn"
+        >
+          <Pencil />
+        </Button>
+      }
     >
-      <div className="flex items-center justify-between px-3 h-11 border-b border-border shrink-0">
-        <span className="text-sm font-semibold text-sidebar-foreground">Chats</span>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onNewChat}
-            title="New chat"
-            data-testid="new-chat-btn"
-          >
-            <Pencil />
-          </Button>
-          {isMobile && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={onClose}
-              title="Close"
-              aria-label="Close sidebar"
-              data-testid="chat-sidebar-close"
-            >
-              <X />
-            </Button>
-          )}
-        </div>
-      </div>
-
       <div
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 px-1"
         data-testid="chat-sidebar-list"
@@ -134,6 +115,6 @@ export function ChatSidebar({
           })
         )}
       </div>
-    </aside>
+    </ToolSidebar>
   )
 }

@@ -27,23 +27,49 @@ use crate::{
     utils::base_capability,
 };
 
+/// Serialize an agent for the management UI and attach live runtime state that
+/// isn't part of the persisted record: `inFlight` (non-terminal tasks the agent
+/// currently holds, the authoritative busy count) and `connected` (live WS).
+fn agent_with_runtime(state: &Arc<AppState>, agent: &Agent) -> serde_json::Value {
+    let mut value = serde_json::to_value(agent).unwrap_or_else(|_| json!({}));
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "inFlight".to_string(),
+            json!(state.agent_load.in_flight(&agent.uid)),
+        );
+        obj.insert(
+            "connected".to_string(),
+            json!(state.registry.is_connected(&agent.uid)),
+        );
+    }
+    value
+}
+
 pub async fn list_agents(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let agents = state.storage.agents.list_all_agents();
+    let agents: Vec<serde_json::Value> = state
+        .storage
+        .agents
+        .list_all_agents()
+        .iter()
+        .map(|a| agent_with_runtime(&state, a))
+        .collect();
     Ok(Json(agents))
 }
 
 pub async fn list_agents_online(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let agents = state.storage.agents.list_all_agents();
-    Ok(Json(
-        agents
-            .into_iter()
-            .filter(Agent::is_online)
-            .collect::<Vec<Agent>>(),
-    ))
+    let agents: Vec<serde_json::Value> = state
+        .storage
+        .agents
+        .list_all_agents()
+        .into_iter()
+        .filter(Agent::is_online)
+        .map(|a| agent_with_runtime(&state, &a))
+        .collect();
+    Ok(Json(agents))
 }
 
 pub async fn remove_agent(

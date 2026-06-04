@@ -59,6 +59,7 @@ import {
   ToolDebugModal,
   toolDebugReady,
 } from '../components/ToolDebugModal'
+import { ToolSidebar } from '../components/ToolSidebar'
 import {
   MODE_DEFAULTS,
   applyPipelineParamsToNewForm,
@@ -638,32 +639,13 @@ export default function ImageGenerationPage() {
       className="relative flex min-h-0 flex-1 overflow-hidden bg-background"
       data-testid="image-generation-page"
     >
-      <aside
-        className={cn(
-          'flex min-h-0 flex-col overflow-hidden border-r border-border bg-sidebar',
-          isMobile
-            ? sidebarOpen
-              ? 'absolute inset-0 z-40 w-full'
-              : 'hidden'
-            : cn('shrink-0 transition-[width] duration-200', sidebarOpen ? 'w-64' : 'w-0'),
-        )}
-        data-testid="imggen-pipelines-sidebar"
+      <ToolSidebar
+        title="Pipelines"
+        open={sidebarOpen}
+        isMobile={isMobile}
+        onClose={() => setSidebarOpen(false)}
+        testId="imggen-pipelines-sidebar"
       >
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
-          <span className="text-sm font-semibold text-sidebar-foreground">Pipelines</span>
-          {isMobile && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setSidebarOpen(false)}
-              title="Close"
-              aria-label="Close sidebar"
-              data-testid="imggen-sidebar-close"
-            >
-              <X />
-            </Button>
-          )}
-        </div>
         <ImageJobHistorySidebar
           jobs={jobs}
           activePanel={activePanel}
@@ -679,7 +661,7 @@ export default function ImageGenerationPage() {
             if (isMobile) setSidebarOpen(false)
           }}
         />
-      </aside>
+      </ToolSidebar>
 
       <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden">
         <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
