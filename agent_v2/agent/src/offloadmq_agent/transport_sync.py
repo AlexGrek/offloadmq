@@ -87,7 +87,10 @@ class SyncAgentTransport:
         display_name: str | None = None,
         app_version: str = "2.0.0",
     ) -> None:
-        from offloadmq_agent.systeminfo import collect_system_info
+        from offloadmq_agent.systeminfo import (
+            collect_system_info,
+            effective_display_name,
+        )
 
         sysinfo = collect_system_info()
         body: dict[str, Any] = {
@@ -96,9 +99,8 @@ class SyncAgentTransport:
             "capacity": capacity,
             "systemInfo": sysinfo,
             "appVersion": app_version,
+            "displayName": effective_display_name(display_name, sysinfo),
         }
-        if display_name:
-            body["displayName"] = display_name[:50]
         resp = self.post(
             "private", "agent", "info", "update", json_body=body, timeout=30
         )

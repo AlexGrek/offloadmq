@@ -9,19 +9,6 @@ import { SaveIndicator } from "@/components/SaveIndicator";
 import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import type { Settings } from "@/types";
 
-function computeDefaultName(sysinfo: Record<string, unknown>): string {
-  let cpu = ((sysinfo.cpuModel as string) || (sysinfo.cpuArch as string) || "")
-    .replace(/\(R\)/g, "")
-    .replace(/\(TM\)/g, "")
-    .replace(/ CPU/g, "")
-    .trim();
-  if (cpu.includes(" @ ")) cpu = cpu.slice(0, cpu.indexOf(" @ "));
-  cpu = cpu.replace(/\s+/g, " ").trim();
-  const ramGb = (sysinfo.totalMemoryGb as number) ?? 0;
-  const name = cpu ? `${cpu} ${ramGb}GB` : `${ramGb}GB`;
-  return name.slice(0, 50);
-}
-
 export function ConnectionPage() {
   const [form, setForm] = useState<Partial<Settings>>({});
   const [registerId, setRegisterId] = useState("");
@@ -33,8 +20,7 @@ export function ConnectionPage() {
   useEffect(() => {
     api.getSettings().then((settings) => {
       if (!settings.display_name) {
-        api.getSystemInfo().then(({ sysinfo }) => {
-          const defaultName = computeDefaultName(sysinfo);
+        api.getDefaultDisplayName().then(({ display_name: defaultName }) => {
           if (defaultName) {
             const patched = { ...settings, display_name: defaultName };
             setForm(patched);

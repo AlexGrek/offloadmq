@@ -353,6 +353,18 @@ def compute_default_display_name(sysinfo: Dict[str, Any]) -> str:
     return (base[: max(1, 50 - len(gpu_tail) - 1)].rstrip() + " " + gpu_tail)[:50]
 
 
+def effective_display_name(
+    display_name: str | None,
+    system_info: Dict[str, Any],
+) -> str:
+    """Non-empty custom name from config, else hardware-derived default (same as v1 register)."""
+    if display_name is not None:
+        stripped = str(display_name).strip()
+        if stripped:
+            return stripped[:50]
+    return compute_default_display_name(system_info)
+
+
 def print_system_info(sysinfo: Dict[str, Any]) -> None:
     typer.echo("Collecting system information...")
     typer.echo(f"OS: {sysinfo['os']}")
@@ -374,6 +386,7 @@ __all__ = [
     "calculate_tier",
     "collect_system_info",
     "compute_default_display_name",
+    "effective_display_name",
     "get_cpu_model",
     "get_gpu_info",
     "print_system_info",

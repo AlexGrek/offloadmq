@@ -336,6 +336,16 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
 
         return {"sysinfo": collect_system_info()}
 
+    @router.get("/system/default-display-name")
+    def default_display_name() -> dict[str, str]:
+        from offloadmq_agent.systeminfo import (
+            collect_system_info,
+            effective_display_name,
+        )
+
+        sysinfo = collect_system_info()
+        return {"display_name": effective_display_name("", sysinfo)}
+
     @router.get("/update/check")
     def update_check() -> dict[str, Any]:
         from offloadmq_core.orchestrator import APP_VERSION

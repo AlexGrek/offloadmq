@@ -128,6 +128,8 @@ export const api = {
 
   getSystemInfo: () =>
     request<{ sysinfo: Record<string, unknown> }>("/system/info"),
+  getDefaultDisplayName: () =>
+    request<{ display_name: string }>("/system/default-display-name"),
   getStartupStatus: () =>
     request<{
       platform: string;

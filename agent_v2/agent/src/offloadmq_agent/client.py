@@ -87,10 +87,14 @@ class OffloadMQClient:
             "capacity": capacity,
             "appVersion": app_version,
         }
-        if system_info is not None:
-            payload["systemInfo"] = system_info
-        if display_name:
-            payload["displayName"] = display_name[:50]
+        from offloadmq_agent.systeminfo import (
+            collect_system_info,
+            effective_display_name,
+        )
+
+        sysinfo = system_info if system_info is not None else collect_system_info()
+        payload["systemInfo"] = sysinfo
+        payload["displayName"] = effective_display_name(display_name, sysinfo)
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
             async with session.post(url, json=payload) as resp:
                 if resp.status != 200:
@@ -198,10 +202,15 @@ class OffloadMQClient:
             "capacity": capacity,
             "appVersion": app_version,
         }
-        if system_info is not None:
-            body["systemInfo"] = system_info
-        if display_name:
-            body["displayName"] = display_name[:50]
+        from offloadmq_agent.systeminfo import (
+            collect_system_info,
+            effective_display_name,
+        )
+
+        sysinfo = system_info if system_info is not None else collect_system_info()
+        body["systemInfo"] = sysinfo
+        # Always send resolved name: the server overwrites display_name on every update.
+        body["displayName"] = effective_display_name(display_name, sysinfo)
         session = await self._session()
         async with session.post(
             url, json=body, headers=self._headers(), timeout=self._timeout
