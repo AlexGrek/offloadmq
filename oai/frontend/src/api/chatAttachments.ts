@@ -1,3 +1,4 @@
+import { apiRequest as request } from './http'
 import { uploadImage } from './images'
 
 export const MAX_ATTACHMENTS_PER_MESSAGE = 10
@@ -25,19 +26,6 @@ interface AttachmentResponse {
   attachment: ChatAttachment
 }
 
-async function request<T>(path: string, token: string, options?: RequestInit): Promise<T> {
-  const isFormData = options?.body instanceof FormData
-  const headers = new Headers(options?.headers)
-  headers.set('Authorization', `Bearer ${token}`)
-  if (!isFormData) headers.set('Content-Type', 'application/json')
-  const res = await fetch(path, { ...options, headers })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
-  }
-  if (res.status === 204) return undefined as T
-  return res.json() as Promise<T>
-}
 
 /** Uploads a new image (via the shared image store) and wraps it as a chat attachment. */
 export async function uploadImageAttachment(token: string, file: File): Promise<ChatAttachment> {

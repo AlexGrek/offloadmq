@@ -1,4 +1,5 @@
 import type { LlmCapabilityInfo } from '../types/ws'
+import { apiRequest as request } from './http'
 
 export type DescribeCapability = LlmCapabilityInfo
 
@@ -34,24 +35,6 @@ export interface CancelDescribeJobResponse {
   job_id: string
   status: string
   message: string
-}
-
-async function request<T>(path: string, token: string, options?: RequestInit): Promise<T> {
-  const isFormData = options?.body instanceof FormData
-  const headers = new Headers(options?.headers)
-  headers.set('Authorization', `Bearer ${token}`)
-  if (!isFormData) {
-    headers.set('Content-Type', 'application/json')
-  }
-  const res = await fetch(path, { ...options, headers })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
-  }
-  if (res.status === 204) {
-    return undefined as T
-  }
-  return res.json() as Promise<T>
 }
 
 export function listDescribeCapabilities(

@@ -404,6 +404,8 @@ task kill            # Kill ports 3000/5173 and stop infra
 - Authenticated routes (JWT middleware): `/api/me`, WebSocket chat, task submission
 - Static assets (React build) served via `tower-http::ServeDir` with SPA fallback
 
+**Offload-job framework** — the "submit task → poll → persist" features (describe, nude_detect, tts, music_generation) share a generic backbone instead of each re-implementing the lifecycle: [db/offload_jobs.rs](oai/backend/src/db/offload_jobs.rs) (generic DB ops + `OffloadJobEntity`/`OffloadJobModel` traits), [services/offload_job.rs](oai/backend/src/services/offload_job.rs) (generic poll/cancel/reconcile + `JobReconciler` trait), [offload/task_status.rs](oai/backend/src/offload/task_status.rs) (shared status helpers + `OffloadPoller`), [jobs/worker_runtime.rs](oai/backend/src/jobs/worker_runtime.rs) (generic worker loop), and [routes/job_common.rs](oai/backend/src/routes/job_common.rs) (shared DTOs + `parse_id`). Each feature supplies only its trait impls, `start_job`, and the completed-result handler. Chat (WS) and image generation (multi-file pipeline) are intentionally bespoke. On the frontend, all authenticated API clients share [api/http.ts](oai/frontend/src/api/http.ts) (`apiRequest`). **Building a new such feature: use the `oai-new-feature` skill.**
+
 **Frontend** ([oai/frontend/](oai/frontend/)) — React 19 + React Router 7 + TypeScript + Vite + shadcn/ui
 
 - [oai/frontend/src/App.tsx](oai/frontend/src/App.tsx) — client-side router

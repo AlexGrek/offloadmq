@@ -265,7 +265,7 @@ Confirm non-obvious layout/navigation before implementing. Do not ask about stan
 
 ### New API Module
 
-Follow `src/api/auth.ts`: private `request<T>()`, typed exports, interfaces matching backend.
+Authenticated clients import the shared fetch helper — `import { apiRequest as request } from './http'` — then write typed functions + interfaces matching the backend. Do **not** re-declare a local `request<T>`; `api/http.ts` handles `Authorization: Bearer <token>`, JSON vs FormData, `{ error }` unwrapping, and `204`. The only exception is `api/auth.ts` (public, no token, base-URL prefixed) — leave it standalone.
 
 ### Auth Token
 

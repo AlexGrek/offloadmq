@@ -1,3 +1,5 @@
+import { apiRequest as request } from './http'
+
 export interface SystemPromptItem {
   id: string
   content: string
@@ -8,23 +10,6 @@ export interface SystemPromptItem {
 export interface SystemPromptLibrary {
   recent: SystemPromptItem[]
   starred: SystemPromptItem[]
-}
-
-function authHeaders(token: string): HeadersInit {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
-  }
-}
-
-async function request<T>(path: string, token: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, { ...options, headers: { ...authHeaders(token), ...options?.headers } })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
-  }
-  if (res.status === 204) return undefined as T
-  return res.json() as Promise<T>
 }
 
 export function listSystemPromptLibrary(token: string): Promise<SystemPromptLibrary> {

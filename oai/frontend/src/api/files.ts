@@ -1,3 +1,5 @@
+import { apiRequest as request } from './http'
+
 export interface UserFile {
   id: string
   /** `"image"` (image_files) or `"audio"` (synthesized tts_jobs). */
@@ -28,22 +30,6 @@ export interface StorageSummary {
 export interface FileBrowserResponse {
   files: UserFile[]
   summary: StorageSummary
-}
-
-async function request<T>(path: string, token: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(options?.headers ?? {}),
-    },
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
-  }
-  return res.json() as Promise<T>
 }
 
 export type CleanupFilesScope = 'uploads' | 'generated' | 'all'

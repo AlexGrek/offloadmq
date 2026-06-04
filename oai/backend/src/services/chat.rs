@@ -13,7 +13,7 @@ use crate::db;
 use crate::db::chats as db_chats;
 use crate::db::llm_capabilities;
 use crate::error::AppError;
-use crate::offload::{ChatMessage, LlmCapabilityInfo, OffloadClient, TaskId};
+use crate::offload::{task_status, ChatMessage, LlmCapabilityInfo, OffloadClient, TaskId};
 use crate::services::chat_attachments;
 use crate::services::offload_factory;
 use crate::state::AppState;
@@ -274,11 +274,11 @@ async fn poll_loop(
 
         match resp.status.as_str() {
             "completed" => {
-                finish_success(&state, &tx, &ctx, extract_llm_text(&resp.output), resp.log).await;
+                finish_success(&state, &tx, &ctx, task_status::extract_llm_text(&resp.output), resp.log).await;
                 return;
             }
             "failed" => {
-                finish_failure(&state, &tx, &ctx, extract_error_text(&resp.output), resp.log).await;
+                finish_failure(&state, &tx, &ctx, task_status::extract_error_text(&resp.output, "Unknown error"), resp.log).await;
                 return;
             }
             "canceled" => {
@@ -411,12 +411,12 @@ async fn reconcile_pending_message(
 
     match resp.status.as_str() {
         "completed" => {
-            db_chats::finalize_message(&state.db, msg.id, &extract_llm_text(&resp.output), "complete")
+            db_chats::finalize_message(&state.db, msg.id, &task_status::extract_llm_text(&resp.output), "complete")
                 .await?;
             let _ = db_chats::touch_chat(&state.db, msg.chat_id).await;
         }
         "failed" => {
-            db_chats::finalize_message(&state.db, msg.id, &extract_error_text(&resp.output), "failed")
+            db_chats::finalize_message(&state.db, msg.id, &task_status::extract_error_text(&resp.output, "Unknown error"), "failed")
                 .await?;
         }
         "canceled" => {
@@ -486,7 +486,7 @@ fn progress_stream_text(resp: &crate::offload::PollResponse) -> Option<String> {
             return Some(log.clone());
         }
     }
-    let partial = extract_llm_text(&resp.output);
+    let partial = task_status::extract_llm_text(&resp.output);
     if partial.is_empty() {
         None
     } else {
@@ -494,65 +494,9 @@ fn progress_stream_text(resp: &crate::offload::PollResponse) -> Option<String> {
     }
 }
 
-fn extract_llm_text(output: &Option<serde_json::Value>) -> String {
-    output
-        .as_ref()
-        .and_then(extract_llm_text_from_value)
-        .unwrap_or_default()
-        .to_string()
-}
-
-/// Matches offload-agent Ollama output and management-frontend `extractSandboxModelText`.
-fn extract_llm_text_from_value(v: &serde_json::Value) -> Option<&str> {
-    v.get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            v.get("choices")
-                .and_then(|c| c.as_array())
-                .and_then(|a| a.first())
-                .and_then(|c0| c0.get("message"))
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_str())
-                .filter(|s| !s.is_empty())
-        })
-        .or_else(|| v.get("response").and_then(|r| r.as_str()).filter(|s| !s.is_empty()))
-}
-
-fn extract_error_text(output: &Option<serde_json::Value>) -> String {
-    output
-        .as_ref()
-        .and_then(|v| v.get("error").and_then(|e| e.as_str()).or_else(|| v.as_str()))
-        .unwrap_or("Unknown error")
-        .to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn extract_llm_text_ollama_message_content() {
-        let output = serde_json::json!({
-            "model": "qwen3:8b",
-            "message": { "role": "assistant", "content": "Hello from Ollama" },
-            "done": true
-        });
-        assert_eq!(extract_llm_text(&Some(output)), "Hello from Ollama");
-    }
-
-    #[test]
-    fn extract_llm_text_legacy_response_field() {
-        let output = serde_json::json!({ "response": "legacy text", "done": true });
-        assert_eq!(extract_llm_text(&Some(output)), "legacy text");
-    }
-
-    #[test]
-    fn extract_llm_text_missing_returns_empty() {
-        assert_eq!(extract_llm_text(&None), "");
-        assert_eq!(extract_llm_text(&Some(serde_json::json!({ "done": true }))), "");
-    }
 
     #[test]
     fn build_offload_chat_messages_full_thread() {

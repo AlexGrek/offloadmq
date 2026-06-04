@@ -57,6 +57,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             e
         ),
     }
+    // Seed the authoritative per-agent in-flight load from persisted assigned
+    // tasks so a restart with in-flight work starts with a correct capacity gate.
+    shared_state
+        .agent_load
+        .reconcile(rebuild_agent_load(&shared_state).await);
     tokio::spawn(run_db_write_worker(
         shared_state.clone(),
         workers.db_write_rx,
@@ -610,6 +615,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Err(e) => log::warn!("Orphan recovery error: {}", e),
                             _ => {}
                         }
+                        // Self-heal the per-agent in-flight load from the source
+                        // of truth BEFORE the backstop runs. Any slot left
+                        // occupied by a task the sweeps above just drove terminal
+                        // (or a missed incremental release) is reclaimed here, so
+                        // the gate can never pin an idle agent at capacity forever.
+                        state
+                            .agent_load
+                            .reconcile(rebuild_agent_load(&state).await);
                         // Dispatch backstop: deliver any queued work that a push
                         // missed (submit/connect/resolve races, reconnects, or
                         // capacity self-heal) to currently-connected agents.
@@ -633,6 +646,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
+}
+
+/// Rebuild the authoritative per-agent in-flight load from the source of truth:
+/// non-terminal assigned tasks in the persistent regular store plus in-flight
+/// urgent assignments, grouped by owning agent uid. Used to seed the load at
+/// startup and to reconcile it on every maintenance tick (self-healing).
+async fn rebuild_agent_load(
+    state: &Arc<AppState>,
+) -> std::collections::HashMap<String, std::collections::HashSet<offloadmq::schema::TaskId>> {
+    use std::collections::{HashMap, HashSet};
+    let mut live: HashMap<String, HashSet<offloadmq::schema::TaskId>> = HashMap::new();
+    match state.storage.tasks.list_assigned_all() {
+        Ok(assigned) => {
+            for task in assigned {
+                if !task.status.is_terminal() {
+                    live.entry(task.agent_id.clone())
+                        .or_default()
+                        .insert(task.id.clone());
+                }
+            }
+        }
+        Err(e) => warn!("agent_load reconcile: failed to list assigned tasks: {e}"),
+    }
+    for (agent_id, task_id) in state.urgent.list_assigned_owners().await {
+        live.entry(agent_id).or_default().insert(task_id);
+    }
+    live
 }
 
 // Utility handlers

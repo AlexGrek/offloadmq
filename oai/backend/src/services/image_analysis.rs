@@ -1,15 +1,28 @@
-//! Image-analysis job orchestration: persist describe jobs, submit to OffloadMQ
-//! vision tasks, poll for results and reconcile in-flight jobs in the
-//! background. Mirrors the image-generation service but produces a single text
-//! result instead of output image files.
+//! Image-analysis (describe) job orchestration: persist describe jobs, stage the
+//! input image in an OffloadMQ bucket, submit a vision task, and persist the text
+//! result on completion. The poll/cancel/reconcile state machine is the shared
+//! [`offload_job`] driver; this module supplies the analysis-specific pieces.
 
 use std::collections::{HashMap, HashSet};
 
+use async_trait::async_trait;
+
 use crate::{
-    db::{image_analysis, image_generation, llm_capabilities},
+    db::{
+        entities::image_analysis_jobs::Entity as ImageAnalysisJobEntity, image_analysis,
+        image_generation, llm_capabilities, offload_jobs,
+    },
     error::AppError,
-    offload::{LlmCapabilityInfo, PollResponse, TaskId},
-    services::{image_processing, offload_factory, storage},
+    offload::{
+        task_status::{self, NormalizedPoll, OffloadPoller},
+        LlmCapabilityInfo,
+    },
+    services::{
+        image_processing,
+        offload_factory,
+        offload_job::{self, CancelOutcome, JobReconciler},
+        storage,
+    },
     state::AppState,
 };
 
@@ -26,10 +39,45 @@ pub struct JobDetail {
     pub job: image_analysis::ImageAnalysisJob,
 }
 
-pub struct CancelJobOutcome {
-    pub job_id: i64,
-    pub status: String,
-    pub message: String,
+/// Drives the generic poll/cancel/reconcile lifecycle for image-analysis jobs.
+struct ImageAnalysisReconciler;
+
+#[async_trait]
+impl JobReconciler for ImageAnalysisReconciler {
+    type Entity = ImageAnalysisJobEntity;
+
+    fn label(&self) -> &'static str {
+        "image analysis"
+    }
+
+    fn failure_fallback(&self) -> &'static str {
+        "vision task failed"
+    }
+
+    async fn poller(&self, state: &AppState) -> Result<Box<dyn OffloadPoller>, AppError> {
+        Ok(Box::new(offload_factory::chat_client(state).await?))
+    }
+
+    async fn on_completed(
+        &self,
+        state: &AppState,
+        job: &image_analysis::ImageAnalysisJob,
+        poll: &NormalizedPoll,
+    ) -> Result<(), AppError> {
+        let text = task_status::extract_llm_text(&poll.output);
+        if text.is_empty() {
+            offload_jobs::update_status::<ImageAnalysisJobEntity>(
+                &state.db,
+                job.id,
+                "failed",
+                None,
+                Some("vision task returned empty result"),
+            )
+            .await
+        } else {
+            image_analysis::set_result(&state.db, job.id, &text).await
+        }
+    }
 }
 
 pub async fn list_vision_capabilities(
@@ -110,12 +158,12 @@ pub async fn start_job(
         .submit_vision_task(&req.capability, messages, &bucket.bucket_uid, data_prep.as_ref())
         .await?;
 
-    image_analysis::set_offload_task(
+    offload_jobs::set_offload_task::<ImageAnalysisJobEntity>(
         &state.db,
         job_id,
         &task_id.cap,
         &task_id.id,
-        &bucket.bucket_uid,
+        Some(&bucket.bucket_uid),
     )
     .await?;
 
@@ -123,7 +171,7 @@ pub async fn start_job(
 }
 
 pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i64, AppError> {
-    let job = image_analysis::get_job(&state.db, job_id, user_id)
+    let job = offload_jobs::get_job::<ImageAnalysisJobEntity>(&state.db, job_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
     if !matches!(job.status.as_str(), "failed" | "canceled") {
@@ -169,58 +217,15 @@ pub async fn cancel_job(
     state: &AppState,
     user_id: i64,
     job_id: i64,
-) -> Result<CancelJobOutcome, AppError> {
-    let job = image_analysis::get_job(&state.db, job_id, user_id)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    if is_terminal(&job.status) {
-        return Err(AppError::BadRequest(format!(
-            "job is already in terminal state: {}",
-            job.status
-        )));
-    }
-
-    let (Some(cap), Some(task_id)) = (job.offload_cap.clone(), job.offload_task_id.clone()) else {
-        let message = "Canceled before OffloadMQ task was created";
-        image_analysis::update_status(&state.db, job.id, "canceled", None, Some(message)).await?;
-        return Ok(CancelJobOutcome {
-            job_id: job.id,
-            status: "canceled".into(),
-            message: message.into(),
-        });
-    };
-
-    let client = offload_factory::chat_client(state).await?;
-    match client.cancel_task(&TaskId { cap, id: task_id }).await {
-        Ok(resp) => {
-            image_analysis::update_status(&state.db, job.id, &resp.status, None, None).await?;
-            Ok(CancelJobOutcome {
-                job_id: job.id,
-                status: resp.status,
-                message: resp.message,
-            })
-        }
-        Err(e) => {
-            if let Some(reason) = offload_task_missing_message(&e) {
-                image_analysis::update_status(&state.db, job.id, "failed", None, Some(&reason))
-                    .await?;
-                Ok(CancelJobOutcome {
-                    job_id: job.id,
-                    status: "failed".into(),
-                    message: reason,
-                })
-            } else {
-                Err(e)
-            }
-        }
-    }
+) -> Result<CancelOutcome, AppError> {
+    offload_job::cancel_job(&ImageAnalysisReconciler, state, user_id, job_id).await
 }
 
 pub async fn delete_job(state: &AppState, user_id: i64, job_id: i64) -> Result<(), AppError> {
-    image_analysis::get_job(&state.db, job_id, user_id)
+    offload_jobs::get_job::<ImageAnalysisJobEntity>(&state.db, job_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    image_analysis::delete_job(&state.db, job_id, user_id).await
+    offload_jobs::delete_job::<ImageAnalysisJobEntity>(&state.db, job_id, user_id).await
 }
 
 pub async fn poll_job(
@@ -228,28 +233,7 @@ pub async fn poll_job(
     user_id: i64,
     job_id: i64,
 ) -> Result<image_analysis::ImageAnalysisJob, AppError> {
-    let job = image_analysis::get_job(&state.db, job_id, user_id)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    if is_terminal(&job.status) {
-        return Ok(job);
-    }
-    let Some(cap) = job.offload_cap.clone() else {
-        return Ok(job);
-    };
-    let Some(task_id) = job.offload_task_id.clone() else {
-        return Ok(job);
-    };
-    if let Err(e) = run_poll_once(state, &job, &cap, &task_id).await {
-        if let Some(reason) = offload_task_missing_message(&e) {
-            image_analysis::update_status(&state.db, job.id, "failed", None, Some(&reason)).await?;
-        } else {
-            return Err(e);
-        }
-    }
-    image_analysis::get_job(&state.db, job_id, user_id)
-        .await?
-        .ok_or(AppError::NotFound)
+    offload_job::poll_job(&ImageAnalysisReconciler, state, user_id, job_id).await
 }
 
 pub async fn user_job_detail(
@@ -257,7 +241,7 @@ pub async fn user_job_detail(
     job_id: i64,
     user_id: i64,
 ) -> Result<JobDetail, AppError> {
-    let job = image_analysis::get_job(&state.db, job_id, user_id)
+    let job = offload_jobs::get_job::<ImageAnalysisJobEntity>(&state.db, job_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
     Ok(JobDetail { job })
@@ -268,7 +252,7 @@ pub async fn list_user_jobs(
     user_id: i64,
     limit: u64,
 ) -> Result<Vec<image_analysis::ImageAnalysisJob>, AppError> {
-    image_analysis::list_jobs(&state.db, user_id, limit).await
+    offload_jobs::list_jobs::<ImageAnalysisJobEntity>(&state.db, user_id, limit).await
 }
 
 /// Background worker pass: advances in-flight analysis jobs.
@@ -276,147 +260,5 @@ pub async fn run_background_reconcile_pass(
     state: &AppState,
     batch_size: u64,
 ) -> Result<(), AppError> {
-    let jobs = image_analysis::list_jobs_for_background_worker(&state.db, batch_size).await?;
-    for job in jobs {
-        let (Some(cap), Some(task_id)) = (job.offload_cap.clone(), job.offload_task_id.clone())
-        else {
-            continue;
-        };
-        match run_poll_once(state, &job, &cap, &task_id).await {
-            Ok(()) => {}
-            Err(e) => {
-                if let Some(reason) = offload_task_missing_message(&e) {
-                    let _ = image_analysis::update_status(
-                        &state.db,
-                        job.id,
-                        "failed",
-                        None,
-                        Some(&reason),
-                    )
-                    .await;
-                } else {
-                    tracing::warn!("image analysis poll failed for job {}: {e}", job.id);
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-async fn run_poll_once(
-    state: &AppState,
-    job: &image_analysis::ImageAnalysisJob,
-    cap: &str,
-    task_id: &str,
-) -> Result<(), AppError> {
-    let client = offload_factory::chat_client(state).await?;
-    let poll = client
-        .poll_task(&TaskId { cap: cap.to_string(), id: task_id.to_string() })
-        .await?;
-    apply_poll(state, job, &poll).await
-}
-
-async fn apply_poll(
-    state: &AppState,
-    job: &image_analysis::ImageAnalysisJob,
-    poll: &PollResponse,
-) -> Result<(), AppError> {
-    match poll.status.as_str() {
-        "completed" => {
-            let text = extract_llm_text(&poll.output);
-            if text.is_empty() {
-                image_analysis::update_status(
-                    &state.db,
-                    job.id,
-                    "failed",
-                    None,
-                    Some("vision task returned empty result"),
-                )
-                .await?;
-            } else {
-                image_analysis::set_result(&state.db, job.id, &text).await?;
-            }
-        }
-        "failed" => {
-            let err = extract_error_text(&poll.output);
-            image_analysis::update_status(&state.db, job.id, "failed", None, Some(&err)).await?;
-        }
-        "canceled" => {
-            image_analysis::update_status(&state.db, job.id, "canceled", None, None).await?;
-        }
-        other => {
-            image_analysis::update_status(&state.db, job.id, other, poll.stage.as_deref(), None)
-                .await?;
-        }
-    }
-    Ok(())
-}
-
-fn is_terminal(status: &str) -> bool {
-    matches!(status, "completed" | "failed" | "canceled")
-}
-
-fn extract_llm_text(output: &Option<serde_json::Value>) -> String {
-    output
-        .as_ref()
-        .and_then(extract_llm_text_from_value)
-        .unwrap_or_default()
-        .to_string()
-}
-
-fn extract_llm_text_from_value(v: &serde_json::Value) -> Option<&str> {
-    v.get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            v.get("choices")
-                .and_then(|c| c.as_array())
-                .and_then(|a| a.first())
-                .and_then(|c0| c0.get("message"))
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_str())
-                .filter(|s| !s.is_empty())
-        })
-        .or_else(|| v.get("response").and_then(|r| r.as_str()).filter(|s| !s.is_empty()))
-        .or_else(|| v.get("content").and_then(|c| c.as_str()).filter(|s| !s.is_empty()))
-}
-
-fn extract_error_text(output: &Option<serde_json::Value>) -> String {
-    output
-        .as_ref()
-        .and_then(|v| v.get("error").and_then(|e| e.as_str()).or_else(|| v.as_str()))
-        .unwrap_or("vision task failed")
-        .to_string()
-}
-
-const OFFLOAD_TASK_MISSING: &str =
-    "OffloadMQ task not found (likely deleted or archived on the server)";
-
-fn offload_task_missing_message(err: &AppError) -> Option<String> {
-    let AppError::ExternalService(msg) = err else {
-        return None;
-    };
-    if let Some(rest) = msg.strip_prefix("POLL_HTTP_") {
-        if offload_http_is_task_missing(rest) {
-            return Some(OFFLOAD_TASK_MISSING.to_string());
-        }
-    }
-    if let Some(rest) = msg.strip_prefix("CANCEL_HTTP_") {
-        if offload_http_is_task_missing(rest) {
-            return Some(OFFLOAD_TASK_MISSING.to_string());
-        }
-    }
-    let lower = msg.to_ascii_lowercase();
-    if lower.contains("not found") || lower.contains("not_found") {
-        return Some(OFFLOAD_TASK_MISSING.to_string());
-    }
-    None
-}
-
-fn offload_http_is_task_missing(rest: &str) -> bool {
-    matches!(
-        rest.split_once(':').map(|(code, _)| code),
-        Some("404") | Some("410")
-    )
+    offload_job::reconcile_pass(&ImageAnalysisReconciler, state, batch_size).await
 }

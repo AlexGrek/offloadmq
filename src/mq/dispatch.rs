@@ -81,6 +81,8 @@ async fn next_task_for(state: &Arc<AppState>, agent: &Agent) -> Option<TaskId> {
 /// queue instead of being stuck on an agent that never received it. Urgent first
 /// (no-op if the task isn't urgent), then regular.
 async fn revert_assignment(state: &Arc<AppState>, agent: &Agent, task_id: &TaskId) {
+    // `take_task` counted this against the agent's load; reverting frees it again.
+    state.agent_load.released(&agent.uid, task_id);
     state.registry.untrack_assigned(&agent.uid, task_id);
     if state.urgent.unassign_task(task_id).await {
         return;
@@ -179,7 +181,7 @@ pub async fn dispatch_for_capability(state: &Arc<AppState>, cap: &str) {
             .into_iter()
             .filter(|a| !unhealthy.contains(&a.uid))
             .filter(|a| state.registry.is_connected(&a.uid))
-            .filter(|a| state.registry.in_flight(&a.uid) < effective_capacity(a))
+            .filter(|a| state.agent_load.in_flight(&a.uid) < effective_capacity(a))
             .collect();
         if candidates.is_empty() {
             break;
@@ -187,7 +189,7 @@ pub async fn dispatch_for_capability(state: &Arc<AppState>, cap: &str) {
 
         let mut progressed = false;
         for agent in &candidates {
-            if state.registry.in_flight(&agent.uid) >= effective_capacity(agent) {
+            if state.agent_load.in_flight(&agent.uid) >= effective_capacity(agent) {
                 continue;
             }
             let Some(task_id) = next_task_for(state, agent).await else {
@@ -223,7 +225,7 @@ pub async fn dispatch_to_agent(state: &Arc<AppState>, uid: &str) {
         let Some(agent) = state.storage.get_agent(uid) else {
             break;
         };
-        if state.registry.in_flight(uid) >= effective_capacity(&agent) {
+        if state.agent_load.in_flight(uid) >= effective_capacity(&agent) {
             break;
         }
         let Some(task_id) = next_task_for(state, &agent).await else {

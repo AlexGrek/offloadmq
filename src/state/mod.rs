@@ -8,7 +8,10 @@ use crate::{
     config::AppConfig,
     db::{app_storage::AppStorage, service_message_storage::ServiceMessage},
     middleware::auth::Auth,
-    mq::{registry::AgentRegistry, regular::RegularTaskStore, urgent::UrgentTaskStore},
+    mq::{
+        agent_load::AgentLoad, registry::AgentRegistry, regular::RegularTaskStore,
+        urgent::UrgentTaskStore,
+    },
     schema::{TaskId, TaskResultStatus, TaskStatus},
 };
 
@@ -94,6 +97,10 @@ pub struct AppState {
     pub regular: Arc<RegularTaskStore>,
     /// Live agent WebSocket connections, enabling server-initiated task push.
     pub registry: Arc<AgentRegistry>,
+    /// Authoritative per-agent in-flight (non-terminal) task count, keyed by uid.
+    /// Source of truth for the dispatch capacity gate; reconciled from the task
+    /// store so it cannot leak the way the per-connection counter did.
+    pub agent_load: Arc<AgentLoad>,
     pub channels: AppChannels,
     /// Serializes bucket validation + reservation during task submission so two
     /// concurrent submissions can't both pass the `rm_after_task` single-use
@@ -110,6 +117,7 @@ impl AppState {
             urgent: UrgentTaskStore::new(),
             regular: RegularTaskStore::new(),
             registry: AgentRegistry::new(),
+            agent_load: AgentLoad::new(),
             channels,
             bucket_submit_lock: Arc::new(tokio::sync::Mutex::new(())),
         }

@@ -13,6 +13,7 @@ import DescribeImagePage from './pages/DescribeImagePage'
 import NudeDetectorPage from './pages/NudeDetectorPage'
 import RunnersPage from './pages/RunnersPage'
 import TtsPage from './pages/TtsPage'
+import MusicGenerationPage from './pages/MusicGenerationPage'
 import FilesPage from './pages/FilesPage'
 import SettingsPage from './pages/SettingsPage'
 import ServerConfigPage from './pages/ServerConfigPage'
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="nude-detect" element={<NudeDetectorPage />} />
             <Route path="runners" element={<RunnersPage />} />
             <Route path="tts" element={<TtsPage />} />
+            <Route path="music" element={<MusicGenerationPage />} />
             <Route path="files" element={<FilesPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/server" element={<ServerConfigPage />} />

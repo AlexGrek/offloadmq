@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppError;
 
 pub mod image_tasks;
+pub mod task_status;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmCapabilityInfo {

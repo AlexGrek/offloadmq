@@ -9,32 +9,44 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    db::tts,
+    db::{entities::music_generation_jobs::Entity as MusicJobEntity, music_generation, offload_jobs},
     error::AppError,
     middleware::AuthenticatedUser,
     routes::job_common::{parse_id, CancelJobResponse, StartJobResponse},
-    services::tts as service,
+    services::music_generation as service,
     state::AppState,
 };
 
 #[derive(Serialize)]
 pub struct CapabilitiesResponse {
-    pub capabilities: Vec<service::TtsCapability>,
+    pub capabilities: Vec<service::MusicCapability>,
 }
 
 pub async fn list_capabilities(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(_): AuthenticatedUser,
 ) -> Result<Json<CapabilitiesResponse>, AppError> {
-    let capabilities = service::list_tts_capabilities(&state).await?;
+    let capabilities = service::list_capabilities(&state).await?;
     Ok(Json(CapabilitiesResponse { capabilities }))
 }
 
 #[derive(Deserialize)]
 pub struct StartJobRequest {
     pub capability: String,
-    pub voice: String,
-    pub text: String,
+    pub tags: String,
+    pub lyrics: Option<String>,
+    pub bpm: Option<i32>,
+    #[serde(default = "default_duration")]
+    pub duration: i32,
+    pub seed: Option<i32>,
+    pub language: Option<String>,
+    pub keyscale: Option<String>,
+    pub cfg_scale: Option<f64>,
+    pub temperature: Option<f64>,
+}
+
+fn default_duration() -> i32 {
+    30
 }
 
 pub async fn start_job(
@@ -47,8 +59,15 @@ pub async fn start_job(
         user_id,
         service::StartJobParams {
             capability: req.capability,
-            voice: req.voice,
-            text: req.text,
+            tags: req.tags,
+            lyrics: req.lyrics,
+            bpm: req.bpm,
+            duration: req.duration,
+            seed: req.seed,
+            language: req.language,
+            keyscale: req.keyscale,
+            cfg_scale: req.cfg_scale,
+            temperature: req.temperature,
         },
     )
     .await?;
@@ -56,15 +75,29 @@ pub async fn start_job(
 }
 
 #[derive(Serialize)]
+pub struct AudioTrackInfo {
+    pub track: usize,
+    pub filename: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+}
+
+#[derive(Serialize)]
 pub struct JobDetailsResponse {
     pub job_id: String,
     pub status: String,
-    pub text: String,
     pub capability: String,
-    pub voice: String,
-    pub model: String,
-    pub audio_content_type: Option<String>,
-    pub audio_size_bytes: Option<i64>,
+    pub tags: String,
+    pub lyrics: Option<String>,
+    pub bpm: Option<i32>,
+    pub duration: i32,
+    pub seed: Option<i32>,
+    pub language: Option<String>,
+    pub keyscale: Option<String>,
+    pub cfg_scale: Option<f64>,
+    pub temperature: Option<f64>,
+    pub result_seed: Option<i32>,
+    pub audio_tracks: Vec<AudioTrackInfo>,
     pub stage: Option<String>,
     pub error: Option<String>,
     pub offload_cap: Option<String>,
@@ -87,8 +120,10 @@ pub async fn get_job(
     Path(job_id_str): Path<String>,
 ) -> Result<Json<JobDetailsResponse>, AppError> {
     let job_id = parse_id(&job_id_str, "job_id")?;
-    let detail = service::user_job_detail(&state, job_id, user_id).await?;
-    Ok(Json(job_details_response(detail.job)))
+    let job = offload_jobs::get_job::<MusicJobEntity>(&state.db, job_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(Json(job_details_response(job)))
 }
 
 pub async fn poll_job(
@@ -134,28 +169,48 @@ pub async fn delete_job(
 pub async fn get_audio(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
-    Path(job_id_str): Path<String>,
+    Path((job_id_str, track_str)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, AppError> {
     let job_id = parse_id(&job_id_str, "job_id")?;
-    let (bytes, content_type) = service::audio_bytes(&state, user_id, job_id).await?;
+    let track: usize = track_str
+        .parse()
+        .map_err(|_| AppError::BadRequest("invalid track index".into()))?;
+    let (bytes, content_type, _filename) =
+        service::audio_bytes(&state, user_id, job_id, track).await?;
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(
         axum::http::header::CONTENT_TYPE,
-        HeaderValue::from_str(&content_type).unwrap_or(HeaderValue::from_static("audio/wav")),
+        HeaderValue::from_str(&content_type).unwrap_or(HeaderValue::from_static("audio/mpeg")),
     );
     Ok((StatusCode::OK, headers, bytes))
 }
 
-fn job_details_response(job: tts::TtsJob) -> JobDetailsResponse {
+fn job_details_response(job: music_generation::MusicJob) -> JobDetailsResponse {
+    let audio_tracks = service::parse_audio_files(job.audio_files_json.as_deref())
+        .into_iter()
+        .enumerate()
+        .map(|(i, r)| AudioTrackInfo {
+            track: i,
+            filename: r.filename,
+            content_type: r.content_type,
+            size_bytes: r.size_bytes,
+        })
+        .collect();
     JobDetailsResponse {
         job_id: job.id.to_string(),
         status: job.status,
-        text: job.text,
         capability: job.capability,
-        voice: job.voice,
-        model: job.model,
-        audio_content_type: job.audio_content_type,
-        audio_size_bytes: job.audio_size_bytes,
+        tags: job.tags,
+        lyrics: job.lyrics,
+        bpm: job.bpm,
+        duration: job.duration,
+        seed: job.seed,
+        language: job.language,
+        keyscale: job.keyscale,
+        cfg_scale: job.cfg_scale,
+        temperature: job.temperature,
+        result_seed: job.result_seed,
+        audio_tracks,
         stage: job.stage,
         error: job.error,
         offload_cap: job.offload_cap,

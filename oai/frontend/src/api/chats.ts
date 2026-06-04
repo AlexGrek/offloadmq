@@ -1,4 +1,5 @@
 import type { ChatAttachment } from './chatAttachments'
+import { apiRequest as request } from './http'
 
 export interface ChatSummary {
   id: string
@@ -17,23 +18,6 @@ export interface ChatMessageRecord {
   model: string | null
   created_at: string
   attachments?: ChatAttachment[]
-}
-
-async function request<T>(path: string, token: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...options?.headers,
-    },
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
-  }
-  if (res.status === 204) return undefined as T
-  return res.json()
 }
 
 export function listChats(token: string): Promise<ChatSummary[]> {

@@ -14,6 +14,7 @@ use crate::{
     error::AppError,
     middleware::AuthenticatedUser,
     offload::LlmCapabilityInfo,
+    routes::job_common::{parse_id, CancelJobResponse, StartJobResponse},
     services::image_analysis as analysis,
     state::AppState,
 };
@@ -42,12 +43,6 @@ pub struct StartJobRequest {
     pub data_preparation: Option<HashMap<String, String>>,
 }
 
-#[derive(Serialize)]
-pub struct StartJobResponse {
-    pub job_id: String,
-    pub status: String,
-}
-
 pub async fn start_job(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
@@ -65,13 +60,7 @@ pub async fn start_job(
         },
     )
     .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(StartJobResponse {
-            job_id: job_id.to_string(),
-            status: "submitted".into(),
-        }),
-    ))
+    Ok((StatusCode::CREATED, Json(StartJobResponse::submitted(job_id))))
 }
 
 #[derive(Serialize)]
@@ -118,13 +107,6 @@ pub async fn poll_job(
     Ok(Json(job_details_response(job)))
 }
 
-#[derive(Serialize)]
-pub struct CancelJobResponse {
-    pub job_id: String,
-    pub status: String,
-    pub message: String,
-}
-
 pub async fn cancel_job(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
@@ -132,11 +114,7 @@ pub async fn cancel_job(
 ) -> Result<Json<CancelJobResponse>, AppError> {
     let job_id = parse_id(&job_id_str, "job_id")?;
     let out = analysis::cancel_job(&state, user_id, job_id).await?;
-    Ok(Json(CancelJobResponse {
-        job_id: out.job_id.to_string(),
-        status: out.status,
-        message: out.message,
-    }))
+    Ok(Json(out.into()))
 }
 
 pub async fn retry_job(
@@ -146,13 +124,7 @@ pub async fn retry_job(
 ) -> Result<impl IntoResponse, AppError> {
     let job_id = parse_id(&job_id_str, "job_id")?;
     let new_id = analysis::retry_job(&state, user_id, job_id).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(StartJobResponse {
-            job_id: new_id.to_string(),
-            status: "submitted".into(),
-        }),
-    ))
+    Ok((StatusCode::CREATED, Json(StartJobResponse::submitted(new_id))))
 }
 
 pub async fn delete_job(
@@ -180,8 +152,4 @@ fn job_details_response(job: image_analysis::ImageAnalysisJob) -> JobDetailsResp
         created_at: job.created_at.to_rfc3339(),
         updated_at: job.updated_at.to_rfc3339(),
     }
-}
-
-fn parse_id(value: &str, field: &str) -> Result<i64, AppError> {
-    value.parse::<i64>().map_err(|_| AppError::BadRequest(format!("invalid {field}")))
 }

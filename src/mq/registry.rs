@@ -44,8 +44,9 @@ pub struct AgentConn {
     /// Feeds the connection's writer task.
     pub tx: mpsc::Sender<WsOut>,
     /// Tasks currently pushed to / held by this connection and not yet terminal.
-    /// `len()` is the in-flight count used by the capacity gate; the set itself is
-    /// drained on disconnect to decide which tasks to re-queue (only un-started ones).
+    /// Drained on disconnect to decide which tasks to re-queue (only un-started
+    /// ones). The capacity gate no longer reads this — that count is now the
+    /// uid-keyed [`crate::mq::agent_load::AgentLoad`], which cannot leak.
     pub assigned: Arc<Mutex<HashSet<TaskId>>>,
     /// Disambiguates reconnects so a slow old-socket teardown can't evict a newer one.
     pub conn_id: u64,
@@ -115,15 +116,6 @@ impl AgentRegistry {
 
     pub fn connected_uids(&self) -> Vec<String> {
         self.conns.lock().unwrap().keys().cloned().collect()
-    }
-
-    /// Number of tasks currently in flight on `uid`'s connection (0 if not connected).
-    pub fn in_flight(&self, uid: &str) -> usize {
-        let guard = self.conns.lock().unwrap();
-        guard
-            .get(uid)
-            .map(|c| c.assigned.lock().unwrap().len())
-            .unwrap_or(0)
     }
 
     /// Record that `task_id` is held by `uid`'s connection (no-op if not connected).

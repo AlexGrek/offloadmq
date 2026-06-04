@@ -317,6 +317,26 @@ impl UrgentTaskStore {
         }
     }
 
+    /// List currently in-flight urgent assignments as `(agent_id, task_id)`,
+    /// excluding terminal ones. Feeds the per-agent in-flight load reconcile so
+    /// urgent work counts toward an agent's capacity alongside regular tasks.
+    pub async fn list_assigned_owners(&self) -> Vec<(String, TaskId)> {
+        self.tasks
+            .read()
+            .await
+            .values()
+            .filter_map(|entry| {
+                entry.assigned_task.as_ref().and_then(|a| {
+                    if a.status.is_terminal() {
+                        None
+                    } else {
+                        Some((a.agent_id.clone(), a.id.clone()))
+                    }
+                })
+            })
+            .collect()
+    }
+
     pub async fn get_assigned_task(&self, task_id: &TaskId) -> Option<AssignedTask> {
         let assigned = self.tasks.read().await;
         assigned

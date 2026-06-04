@@ -1,14 +1,66 @@
-use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect,
-};
+//! NudeNet detection job persistence. Lifecycle columns are handled generically
+//! via [`crate::db::offload_jobs`]; only the detection-specific writes
+//! (`create_job`, `set_result`) and the framework trait impls live here.
+
+use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
 
 use crate::{
-    db::entities::nude_detect_jobs::{self, Entity as NudeDetectJobEntity},
+    db::{
+        entities::nude_detect_jobs::{self, Entity as NudeDetectJobEntity},
+        offload_jobs::{OffloadJobEntity, OffloadJobModel},
+    },
     error::AppError,
 };
 
 pub type NudeDetectJob = nude_detect_jobs::Model;
+
+impl OffloadJobModel for nude_detect_jobs::Model {
+    fn id(&self) -> i64 {
+        self.id
+    }
+    fn status(&self) -> &str {
+        &self.status
+    }
+    fn offload_cap(&self) -> Option<&str> {
+        self.offload_cap.as_deref()
+    }
+    fn offload_task_id(&self) -> Option<&str> {
+        self.offload_task_id.as_deref()
+    }
+}
+
+impl OffloadJobEntity for NudeDetectJobEntity {
+    fn col_id() -> Self::Column {
+        nude_detect_jobs::Column::Id
+    }
+    fn col_user_id() -> Self::Column {
+        nude_detect_jobs::Column::UserId
+    }
+    fn col_status() -> Self::Column {
+        nude_detect_jobs::Column::Status
+    }
+    fn col_stage() -> Self::Column {
+        nude_detect_jobs::Column::Stage
+    }
+    fn col_error() -> Self::Column {
+        nude_detect_jobs::Column::Error
+    }
+    fn col_created_at() -> Self::Column {
+        nude_detect_jobs::Column::CreatedAt
+    }
+    fn col_updated_at() -> Self::Column {
+        nude_detect_jobs::Column::UpdatedAt
+    }
+    fn col_offload_cap() -> Self::Column {
+        nude_detect_jobs::Column::OffloadCap
+    }
+    fn col_offload_task_id() -> Self::Column {
+        nude_detect_jobs::Column::OffloadTaskId
+    }
+    fn col_bucket() -> Option<Self::Column> {
+        Some(nude_detect_jobs::Column::OffloadBucketUid)
+    }
+}
 
 pub struct NewJobInput {
     pub id: i64,
@@ -40,90 +92,6 @@ pub async fn create_job(
     model.insert(db).await.map_err(AppError::Database)
 }
 
-pub async fn get_job(
-    db: &DatabaseConnection,
-    job_id: i64,
-    user_id: i64,
-) -> Result<Option<NudeDetectJob>, AppError> {
-    NudeDetectJobEntity::find_by_id(job_id)
-        .filter(nude_detect_jobs::Column::UserId.eq(user_id))
-        .one(db)
-        .await
-        .map_err(AppError::Database)
-}
-
-pub async fn list_jobs(
-    db: &DatabaseConnection,
-    user_id: i64,
-    limit: u64,
-) -> Result<Vec<NudeDetectJob>, AppError> {
-    NudeDetectJobEntity::find()
-        .filter(nude_detect_jobs::Column::UserId.eq(user_id))
-        .order_by_desc(nude_detect_jobs::Column::CreatedAt)
-        .limit(limit)
-        .all(db)
-        .await
-        .map_err(AppError::Database)
-}
-
-pub async fn delete_job(
-    db: &DatabaseConnection,
-    job_id: i64,
-    user_id: i64,
-) -> Result<(), AppError> {
-    let result = NudeDetectJobEntity::delete_many()
-        .filter(nude_detect_jobs::Column::Id.eq(job_id))
-        .filter(nude_detect_jobs::Column::UserId.eq(user_id))
-        .exec(db)
-        .await
-        .map_err(AppError::Database)?;
-    if result.rows_affected == 0 {
-        return Err(AppError::NotFound);
-    }
-    Ok(())
-}
-
-pub async fn set_offload_task(
-    db: &DatabaseConnection,
-    job_id: i64,
-    offload_cap: &str,
-    offload_task_id: &str,
-    offload_bucket_uid: &str,
-) -> Result<(), AppError> {
-    let now = chrono::Utc::now().fixed_offset();
-    let model = nude_detect_jobs::ActiveModel {
-        id: ActiveValue::Set(job_id),
-        status: ActiveValue::Set("submitted".to_string()),
-        offload_cap: ActiveValue::Set(Some(offload_cap.to_string())),
-        offload_task_id: ActiveValue::Set(Some(offload_task_id.to_string())),
-        offload_bucket_uid: ActiveValue::Set(Some(offload_bucket_uid.to_string())),
-        updated_at: ActiveValue::Set(now),
-        ..Default::default()
-    };
-    model.update(db).await.map_err(AppError::Database)?;
-    Ok(())
-}
-
-pub async fn update_status(
-    db: &DatabaseConnection,
-    job_id: i64,
-    status: &str,
-    stage: Option<&str>,
-    error: Option<&str>,
-) -> Result<(), AppError> {
-    let now = chrono::Utc::now().fixed_offset();
-    let model = nude_detect_jobs::ActiveModel {
-        id: ActiveValue::Set(job_id),
-        status: ActiveValue::Set(status.to_string()),
-        stage: ActiveValue::Set(stage.map(str::to_string)),
-        error: ActiveValue::Set(error.map(str::to_string)),
-        updated_at: ActiveValue::Set(now),
-        ..Default::default()
-    };
-    model.update(db).await.map_err(AppError::Database)?;
-    Ok(())
-}
-
 pub async fn set_result(
     db: &DatabaseConnection,
     job_id: i64,
@@ -141,23 +109,4 @@ pub async fn set_result(
     };
     model.update(db).await.map_err(AppError::Database)?;
     Ok(())
-}
-
-pub async fn list_jobs_for_background_worker(
-    db: &DatabaseConnection,
-    limit: u64,
-) -> Result<Vec<NudeDetectJob>, AppError> {
-    NudeDetectJobEntity::find()
-        .filter(
-            Condition::any()
-                .add(nude_detect_jobs::Column::Status.eq("submitted"))
-                .add(nude_detect_jobs::Column::Status.eq("pending"))
-                .add(nude_detect_jobs::Column::Status.eq("running"))
-                .add(nude_detect_jobs::Column::Status.eq("cancelRequested")),
-        )
-        .order_by_asc(nude_detect_jobs::Column::UpdatedAt)
-        .limit(limit)
-        .all(db)
-        .await
-        .map_err(AppError::Database)
 }

@@ -1,14 +1,66 @@
-use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect,
-};
+//! Image-analysis (describe) job persistence. Lifecycle columns are handled
+//! generically via [`crate::db::offload_jobs`]; only the analysis-specific writes
+//! (`create_job`, `set_result`) and the framework trait impls live here.
+
+use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
 
 use crate::{
-    db::entities::image_analysis_jobs::{self, Entity as ImageAnalysisJobEntity},
+    db::{
+        entities::image_analysis_jobs::{self, Entity as ImageAnalysisJobEntity},
+        offload_jobs::{OffloadJobEntity, OffloadJobModel},
+    },
     error::AppError,
 };
 
 pub type ImageAnalysisJob = image_analysis_jobs::Model;
+
+impl OffloadJobModel for image_analysis_jobs::Model {
+    fn id(&self) -> i64 {
+        self.id
+    }
+    fn status(&self) -> &str {
+        &self.status
+    }
+    fn offload_cap(&self) -> Option<&str> {
+        self.offload_cap.as_deref()
+    }
+    fn offload_task_id(&self) -> Option<&str> {
+        self.offload_task_id.as_deref()
+    }
+}
+
+impl OffloadJobEntity for ImageAnalysisJobEntity {
+    fn col_id() -> Self::Column {
+        image_analysis_jobs::Column::Id
+    }
+    fn col_user_id() -> Self::Column {
+        image_analysis_jobs::Column::UserId
+    }
+    fn col_status() -> Self::Column {
+        image_analysis_jobs::Column::Status
+    }
+    fn col_stage() -> Self::Column {
+        image_analysis_jobs::Column::Stage
+    }
+    fn col_error() -> Self::Column {
+        image_analysis_jobs::Column::Error
+    }
+    fn col_created_at() -> Self::Column {
+        image_analysis_jobs::Column::CreatedAt
+    }
+    fn col_updated_at() -> Self::Column {
+        image_analysis_jobs::Column::UpdatedAt
+    }
+    fn col_offload_cap() -> Self::Column {
+        image_analysis_jobs::Column::OffloadCap
+    }
+    fn col_offload_task_id() -> Self::Column {
+        image_analysis_jobs::Column::OffloadTaskId
+    }
+    fn col_bucket() -> Option<Self::Column> {
+        Some(image_analysis_jobs::Column::OffloadBucketUid)
+    }
+}
 
 pub struct NewJobInput<'a> {
     pub id: i64,
@@ -45,90 +97,6 @@ pub async fn create_job(
     model.insert(db).await.map_err(AppError::Database)
 }
 
-pub async fn get_job(
-    db: &DatabaseConnection,
-    job_id: i64,
-    user_id: i64,
-) -> Result<Option<ImageAnalysisJob>, AppError> {
-    ImageAnalysisJobEntity::find_by_id(job_id)
-        .filter(image_analysis_jobs::Column::UserId.eq(user_id))
-        .one(db)
-        .await
-        .map_err(AppError::Database)
-}
-
-pub async fn list_jobs(
-    db: &DatabaseConnection,
-    user_id: i64,
-    limit: u64,
-) -> Result<Vec<ImageAnalysisJob>, AppError> {
-    ImageAnalysisJobEntity::find()
-        .filter(image_analysis_jobs::Column::UserId.eq(user_id))
-        .order_by_desc(image_analysis_jobs::Column::CreatedAt)
-        .limit(limit)
-        .all(db)
-        .await
-        .map_err(AppError::Database)
-}
-
-pub async fn delete_job(
-    db: &DatabaseConnection,
-    job_id: i64,
-    user_id: i64,
-) -> Result<(), AppError> {
-    let result = ImageAnalysisJobEntity::delete_many()
-        .filter(image_analysis_jobs::Column::Id.eq(job_id))
-        .filter(image_analysis_jobs::Column::UserId.eq(user_id))
-        .exec(db)
-        .await
-        .map_err(AppError::Database)?;
-    if result.rows_affected == 0 {
-        return Err(AppError::NotFound);
-    }
-    Ok(())
-}
-
-pub async fn set_offload_task(
-    db: &DatabaseConnection,
-    job_id: i64,
-    offload_cap: &str,
-    offload_task_id: &str,
-    offload_bucket_uid: &str,
-) -> Result<(), AppError> {
-    let now = chrono::Utc::now().fixed_offset();
-    let model = image_analysis_jobs::ActiveModel {
-        id: ActiveValue::Set(job_id),
-        status: ActiveValue::Set("submitted".to_string()),
-        offload_cap: ActiveValue::Set(Some(offload_cap.to_string())),
-        offload_task_id: ActiveValue::Set(Some(offload_task_id.to_string())),
-        offload_bucket_uid: ActiveValue::Set(Some(offload_bucket_uid.to_string())),
-        updated_at: ActiveValue::Set(now),
-        ..Default::default()
-    };
-    model.update(db).await.map_err(AppError::Database)?;
-    Ok(())
-}
-
-pub async fn update_status(
-    db: &DatabaseConnection,
-    job_id: i64,
-    status: &str,
-    stage: Option<&str>,
-    error: Option<&str>,
-) -> Result<(), AppError> {
-    let now = chrono::Utc::now().fixed_offset();
-    let model = image_analysis_jobs::ActiveModel {
-        id: ActiveValue::Set(job_id),
-        status: ActiveValue::Set(status.to_string()),
-        stage: ActiveValue::Set(stage.map(str::to_string)),
-        error: ActiveValue::Set(error.map(str::to_string)),
-        updated_at: ActiveValue::Set(now),
-        ..Default::default()
-    };
-    model.update(db).await.map_err(AppError::Database)?;
-    Ok(())
-}
-
 pub async fn set_result(
     db: &DatabaseConnection,
     job_id: i64,
@@ -146,23 +114,4 @@ pub async fn set_result(
     };
     model.update(db).await.map_err(AppError::Database)?;
     Ok(())
-}
-
-pub async fn list_jobs_for_background_worker(
-    db: &DatabaseConnection,
-    limit: u64,
-) -> Result<Vec<ImageAnalysisJob>, AppError> {
-    ImageAnalysisJobEntity::find()
-        .filter(
-            Condition::any()
-                .add(image_analysis_jobs::Column::Status.eq("submitted"))
-                .add(image_analysis_jobs::Column::Status.eq("pending"))
-                .add(image_analysis_jobs::Column::Status.eq("running"))
-                .add(image_analysis_jobs::Column::Status.eq("cancelRequested")),
-        )
-        .order_by_asc(image_analysis_jobs::Column::UpdatedAt)
-        .limit(limit)
-        .all(db)
-        .await
-        .map_err(AppError::Database)
 }

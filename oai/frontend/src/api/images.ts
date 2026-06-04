@@ -1,3 +1,5 @@
+import { apiRequest as request } from './http'
+
 export interface UploadedImage {
   image_id: string
   filename: string
@@ -119,24 +121,6 @@ export interface ImgGenCapability {
   raw: string
   online: boolean
   last_available_at: string // RFC3339
-}
-
-async function request<T>(path: string, token: string, options?: RequestInit): Promise<T> {
-  const isFormData = options?.body instanceof FormData
-  const headers = new Headers(options?.headers)
-  headers.set('Authorization', `Bearer ${token}`)
-  if (!isFormData) {
-    headers.set('Content-Type', 'application/json')
-  }
-  const res = await fetch(path, {
-    ...options,
-    headers,
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
-  }
-  return res.json() as Promise<T>
 }
 
 export function uploadImage(token: string, file: File): Promise<UploadedImage> {

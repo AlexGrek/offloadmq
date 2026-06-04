@@ -1,3 +1,5 @@
+import { apiRequest as request } from './http'
+
 export interface RunnerSummary {
   uid: string
   uid_short: string
@@ -10,20 +12,6 @@ export interface RunnerSummary {
 
 export interface ListRunnersResponse {
   runners: RunnerSummary[]
-}
-
-async function request<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(path, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`)
-  }
-  return res.json() as Promise<T>
 }
 
 export function listOnlineRunners(token: string): Promise<ListRunnersResponse> {

@@ -12,6 +12,8 @@ pub mod image_paths;
 pub mod image_pipeline_params;
 pub mod image_processing;
 pub mod offload_factory;
+pub mod offload_job;
 pub mod runners;
 pub mod storage;
 pub mod tts;
+pub mod music_generation;

@@ -21,11 +21,13 @@ Stack this skill with:
 - **oai-devops** — only when adding env vars, migrations that affect deploy, or new Helm bits.
 - **oai-itests** — when writing Python integration tests for new routes.
 
-The two reference implementations are:
-- **Image generation** — `services/image_jobs.rs`, `routes/images.rs`, `jobs/image_pipeline_worker.rs`, `pages/ImageGenerationPage.tsx`, `components/imggen/ImageJobHistorySidebar.tsx`.
-- **Image analysis** — `services/image_analysis.rs`, `routes/describe.rs`, `jobs/image_analysis_worker.rs`, `pages/DescribeImagePage.tsx`, `components/describe/DescribeHistorySidebar.tsx`.
+**The four simple features run on a shared framework — use it, don't re-duplicate.** A new submit→poll→persist feature should reuse `db/offload_jobs.rs`, `services/offload_job.rs`, `offload/task_status.rs`, `jobs/worker_runtime.rs`, and `routes/job_common.rs`, implementing only its unique logic (two trait impls + `start_job` + the completed-result handler). See **"Use the shared framework"** below.
 
-Read both before designing a new feature; copy the simpler one (`image_analysis`) unless your feature produces output *files* (use `image_jobs` then).
+Reference implementations, simplest first — copy the closest match:
+- **TTS** (no input file, audio blob output) — `db/tts.rs`, `services/tts.rs`, `routes/tts.rs`, `jobs/tts_worker.rs`, `pages/TtsPage.tsx`.
+- **Image analysis / nude detect** (input image → text/JSON result) — `db/image_analysis.rs`, `services/image_analysis.rs`, `routes/describe.rs`.
+- **Music generation** (output *files* from an OffloadMQ bucket, image-client poller) — `db/music_generation.rs`, `services/music_generation.rs`, `routes/music_generation.rs`.
+- **Image generation** — `services/image_jobs.rs` etc. is the *bespoke* multi-file pipeline (NOT on the framework); only copy it if you need pipeline events + multiple output files + an offload-tasks table.
 
 ---
 
@@ -96,84 +98,112 @@ Plus any feature-specific params (input image id, dimensions, model knobs, …).
 
 ---
 
-## 2. DB module (`db/<feature>.rs`)
+## 2. DB module (`db/<feature>.rs`) — wire into the generic ops, don't re-write them
 
-Pure data access — no business logic, no OffloadMQ calls. Mirror `db/image_analysis.rs`:
+The lifecycle reads/writes (`get_job`, `list_jobs`, `delete_job`, `update_status`,
+`set_offload_task`, `list_jobs_for_background_worker`) are **generic** in
+`db/offload_jobs.rs` — do NOT re-implement them per feature. Your `db/<feature>.rs`
+contains only:
 
-```rust
-pub async fn create_job(db, NewJobInput) -> Result<Model>
-pub async fn get_job(db, job_id, user_id) -> Result<Option<Model>>
-pub async fn list_jobs(db, user_id, limit) -> Result<Vec<Model>>
-pub async fn delete_job(db, job_id, user_id) -> Result<()>
-pub async fn set_offload_task(db, job_id, cap, task_id, ...) -> Result<()>
-pub async fn update_status(db, job_id, status, stage, error) -> Result<()>
-pub async fn set_result(db, job_id, result) -> Result<()>
-pub async fn list_jobs_for_background_worker(db, limit) -> Result<Vec<Model>>
-```
+1. `pub type <Feature>Job = <feature>_jobs::Model;` alias.
+2. `impl OffloadJobModel for <feature>_jobs::Model` — `id`, `status`, `offload_cap`, `offload_task_id`.
+3. `impl OffloadJobEntity for <Entity>` — the `col_*()` accessors (and `col_bucket()` ⇒ `Some(...)` if the table has a bucket column; default `None` otherwise).
+4. `create_job(db, NewJobInput)` — the only feature-specific insert.
+5. result setter(s) — `set_result` (text/JSON), `set_audio` / `set_audio_files`, etc.
 
-The background worker query is required — it must return all non-terminal jobs ordered by `updated_at ASC` so older in-flight jobs are reconciled first.
+Mirror `db/tts.rs` (no bucket) or `db/image_analysis.rs` (with bucket). Then call the
+generic ops with a turbofish, e.g. `offload_jobs::get_job::<<Feature>Entity>(...)`.
 
-Register in `db/mod.rs`.
+Register in `db/mod.rs`. The generic worker query returns all non-terminal jobs
+ordered by `updated_at ASC` (older in-flight jobs reconciled first).
 
 ---
 
-## 3. Service layer (`services/<feature>.rs`)
+## 3. Service layer (`services/<feature>.rs`) — implement `JobReconciler`, delegate the rest
 
-This is the **only** layer that talks to OffloadMQ. Routes never construct OffloadMQ clients directly.
+This is the **only** layer that talks to OffloadMQ. Routes never construct OffloadMQ
+clients directly. The poll/cancel/reconcile state machine is generic
+(`services/offload_job.rs`); you implement one trait + the genuinely unique functions.
 
-**Required public functions:**
+**Implement `JobReconciler` on a zero-sized marker** (mirror `services/tts.rs`):
 
 ```rust
-pub async fn list_capabilities(state) -> Result<Vec<Cap>>   // filter offload_factory output
-pub async fn start_job(state, user_id, params) -> Result<job_id>
-pub async fn poll_job(state, user_id, job_id) -> Result<Job>
-pub async fn cancel_job(state, user_id, job_id) -> Result<Outcome>
-pub async fn retry_job(state, user_id, job_id) -> Result<new_job_id>
-pub async fn delete_job(state, user_id, job_id) -> Result<()>
-pub async fn list_user_jobs(state, user_id, limit) -> Result<Vec<Job>>
-pub async fn user_job_detail(state, job_id, user_id) -> Result<Detail>
+struct <Feature>Reconciler;
 
-// Worker entry point — called by jobs/<feature>_worker.rs
-pub async fn run_background_reconcile_pass(state, batch_size) -> Result<()>
+#[async_trait]
+impl JobReconciler for <Feature>Reconciler {
+    type Entity = <Feature>Entity;
+    fn label(&self) -> &'static str { "<feature>" }
+    fn failure_fallback(&self) -> &'static str { "<feature> task failed" }
+    async fn poller(&self, state) -> Result<Box<dyn OffloadPoller>> {
+        Ok(Box::new(offload_factory::chat_client(state).await?))   // or image_client for bucket output
+    }
+    async fn on_completed(&self, state, job: &Model, poll: &NormalizedPoll) -> Result<()> {
+        // the ONLY varying branch: extract result from poll.output and persist it
+        // (set_result / download bucket files → set_audio_files / decode base64 → set_audio).
+        // failed / canceled / in-progress are handled by the driver.
+    }
+}
 ```
 
-**`start_job` flow (verbatim):**
+**Then write the feature-specific functions** (everything else is a thin delegate):
 
-1. Validate input (`prompt` non-empty, `capability` non-empty/prefix match).
-2. Persist a row with `status="created"` (snowflake id from `state.next_id()`).
-3. Build OffloadMQ client via `offload_factory::chat_client(state)` or `image_client(state)`.
-4. (If input file) `create_bucket(true)` + `upload_bucket_file(...)`.
-5. Submit via `submit_chat` / `submit_vision_task` / `submit_img_task`.
-6. `set_offload_task(...)` → status flips to `"submitted"`.
+```rust
+pub async fn list_capabilities(state) -> Result<Vec<Cap>>            // filter offload_factory output
+pub async fn start_job(state, user_id, params) -> Result<job_id>     // validate → create_job → submit → set_offload_task
+pub async fn retry_job(state, user_id, job_id) -> Result<new_id>     // reload params, re-call start_job
+
+// thin wrappers over the generic driver / generic db ops:
+pub async fn poll_job(...)  { offload_job::poll_job(&<Feature>Reconciler, ...).await }
+pub async fn cancel_job(...) -> offload_job::CancelOutcome { offload_job::cancel_job(&<Feature>Reconciler, ...).await }
+pub async fn run_background_reconcile_pass(...) { offload_job::reconcile_pass(&<Feature>Reconciler, ...).await }
+pub async fn list_user_jobs(...) { offload_jobs::list_jobs::<<Feature>Entity>(...).await }
+pub async fn user_job_detail(...) / delete_job(...)  // get_job/delete_job via offload_jobs, plus storage cleanup in delete
+```
+
+**`start_job` flow:**
+
+1. Validate input (non-empty prompt/tags, `capability` prefix match).
+2. `create_job(...)` with `status="created"` (snowflake id from `state.next_id()`).
+3. Build client via `offload_factory::chat_client(state)` / `image_client(state)`.
+4. (If input file) `create_bucket(true)` + `upload_bucket_file(...)`; (if output files) `create_bucket(false)`.
+5. Submit via `submit_chat` / `submit_vision_task` / `submit_tts_task` / `submit_img_task`.
+6. `offload_jobs::set_offload_task::<<Feature>Entity>(db, id, cap, task_id, bucket_opt)` → status `"submitted"`.
 7. Return job id.
 
-**`poll_job` flow:**
-
-1. Load job. If `is_terminal(status)` → return as-is.
-2. Build client. Call `client.poll_task(...)`.
-3. Map OffloadMQ poll status → DB status. On `"completed"` extract result and call `set_result`. On `"failed"` extract error message and call `update_status(... "failed" ...)`.
-4. On poll error: detect "task missing" (404/410) via `offload_task_missing_message(err)` and mark the job failed locally; otherwise propagate.
-
-**Always copy these helpers verbatim from `services/image_analysis.rs`:**
-- `is_terminal(status)` — terminal status check
-- `extract_llm_text(output)` — LLM output extractor (Ollama + OpenAI shapes)
-- `extract_error_text(output)` — error extractor
-- `offload_task_missing_message(err)` — 404/410 detector
-- `offload_http_is_task_missing(rest)` — http code matcher
+**Never re-copy the status helpers** — use `offload::task_status::{is_terminal,
+extract_llm_text, extract_error_text, offload_task_missing_message}` and `OffloadPoller`.
 
 Register in `services/mod.rs`.
 
 ---
 
-## 4. Background worker (`jobs/<feature>_worker.rs`)
+## 4. Background worker (`jobs/<feature>_worker.rs`) — ~6 lines over `worker_runtime`
 
-Wakes every ~10 s, calls `services::<feature>::run_background_reconcile_pass(state, batch_size)`, logs warnings on failure (never panic — OffloadMQ being down must not crash the worker).
+Delegate the tick loop + env parsing to `jobs/worker_runtime.rs`:
+
+```rust
+pub fn spawn(state: Arc<AppState>) {
+    worker_runtime::spawn(
+        state,
+        WorkerConfig {
+            label: "<feature>",
+            tick_env: "<FEATURE_UPPER>_WORKER_TICK_SECS",
+            batch_env: "<FEATURE_UPPER>_WORKER_BATCH_SIZE",
+            default_tick_secs: 10,
+            default_batch_size: 20,
+        },
+        |state, batch| async move { <feature>::run_background_reconcile_pass(&state, batch).await },
+    );
+}
+```
 
 Wire in two places:
 - `jobs/mod.rs` — `pub mod <feature>_worker;`
 - `main.rs` — `jobs::<feature>_worker::spawn(state.clone());`
 
-Add two env vars (optional): `<FEATURE_UPPER>_WORKER_TICK_SECS`, `<FEATURE_UPPER>_WORKER_BATCH_SIZE`. Defaults: 10 s tick, 20 batch. Document them in `oai-devops`.
+Defaults: 10 s tick, 20 batch. Document the two env vars in `oai-devops`. (Only the
+image-generation worker keeps a bespoke loop — it also writes per-run logs.)
 
 ---
 
@@ -181,7 +211,10 @@ Add two env vars (optional): `<FEATURE_UPPER>_WORKER_TICK_SECS`, `<FEATURE_UPPER
 
 Thin handlers. Each handler: parse path params → call one service function → map to a DTO `Serialize` struct → return `Json`.
 
-Use snake_case in the DTOs (matches the rest of the OAI API).
+Use snake_case in the DTOs (matches the rest of the OAI API). Reuse the shared bits
+from `routes/job_common.rs` — `parse_id(value, field)`, `StartJobResponse::submitted(id)`
+(for start + retry), and `CancelJobResponse::from(outcome)` (`Ok(Json(out.into()))`).
+Only the feature's `StartJobRequest` and `JobDetailsResponse` are written per feature.
 
 **Standard route set:**
 
@@ -204,7 +237,11 @@ Register in `app.rs` inside the `authenticated` router group (so JWT middleware 
 
 ## 6. Frontend API client (`oai/frontend/src/api/<feature>.ts`)
 
-Mirror `api/describe.ts`. Plain functions returning typed promises. Use the shared `request<T>(path, token, options)` pattern with `Authorization: Bearer <token>`. JSON bodies are stringified; FormData is detected and passed through.
+Mirror `api/describe.ts`. Plain functions returning typed promises. Import the shared
+fetch helper — `import { apiRequest as request } from './http'` — do **not** re-declare a
+local `request<T>`; `http.ts` already handles `Authorization: Bearer <token>`, JSON vs
+FormData, `{ error }` unwrapping, and `204`. (Only `auth.ts` is separate: it's the
+public, no-token client.)
 
 Export typed interfaces for every DTO the backend returns. Keep these names in sync with the backend `Serialize` structs (snake_case fields).
 
@@ -278,10 +315,12 @@ For HTTP-level reference: the Rust route handlers in `src/api/client/mod.rs` and
 
 - [ ] Migration adds the new table and is registered in `migrator.rs::migrations()`.
 - [ ] Entity is registered in `db/entities/mod.rs`.
-- [ ] `db/mod.rs` exports the new data-access module.
-- [ ] `services/mod.rs` exports the service; `routes/<feature>.rs` is in `routes/mod.rs`.
-- [ ] Worker is spawned in `main.rs`.
+- [ ] `db/mod.rs` exports the new data-access module; it impls `OffloadJobEntity` + `OffloadJobModel` and re-uses the generic ops (no hand-written `get_job`/`update_status`/etc.).
+- [ ] `services/<feature>.rs` impls `JobReconciler`; poll/cancel/reconcile are thin delegates to `services::offload_job` (no copied status helpers).
+- [ ] `services/mod.rs` exports the service; `routes/<feature>.rs` is in `routes/mod.rs` and reuses `routes::job_common`.
+- [ ] Worker is a `worker_runtime::spawn(...)` config and is spawned in `main.rs`.
 - [ ] `cargo check` passes from `oai/backend/`.
+- [ ] Frontend API client imports `apiRequest` from `api/http.ts` (no local `request<T>`).
 - [ ] Frontend builds: `npx tsc --noEmit` from `oai/frontend/`.
 - [ ] Sidebar item added to `AppShell` nav.
 - [ ] Auto-poll stops on terminal statuses (no runaway timers).

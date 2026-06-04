@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Activity, Bot, Eye, FolderOpen, ImagePlus, ShieldAlert, Volume2 } from 'lucide-react'
+import { Activity, Bot, Eye, FolderOpen, ImagePlus, Music, ShieldAlert, Volume2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const apps = [
@@ -52,6 +52,16 @@ const apps = [
     gradient: 'from-teal-500/20 to-emerald-500/20',
     iconBg: 'bg-teal-500/20',
     iconColor: 'text-teal-400',
+  },
+  {
+    id: 'music',
+    icon: Music,
+    title: 'Music Generation',
+    description: 'Generate music from style tags and lyrics with txt2music models',
+    href: '/app/music',
+    gradient: 'from-fuchsia-500/20 to-pink-500/20',
+    iconBg: 'bg-fuchsia-500/20',
+    iconColor: 'text-fuchsia-400',
   },
   {
     id: 'tts',

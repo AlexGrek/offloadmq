@@ -1,3 +1,4 @@
+pub mod agent_load;
 pub mod dispatch;
 pub mod heuristic;
 pub mod registry;

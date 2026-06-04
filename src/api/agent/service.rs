@@ -242,9 +242,12 @@ pub async fn take_task(
         if let Some(d) = estimate {
             state.urgent.set_runtime_estimate(&task_id, d).await;
         }
-        // Track this task against the agent's live WS connection (if any) so the
-        // push capacity gate counts it and disconnect handling can find it. No-op
-        // for HTTP-only agents (not registered).
+        // Count this task against the agent's authoritative in-flight load (the
+        // capacity gate's source of truth, keyed by uid). The store write above
+        // already happened, so a concurrent reconcile can't drop it.
+        state.agent_load.assigned(&agent.uid, task_id.clone());
+        // Also track it on the agent's live WS connection (if any) so disconnect
+        // handling can re-queue un-started tasks. No-op for unconnected agents.
         state.registry.track_assigned(&agent.uid, task_id.clone());
         emit_task_lifecycle(
             state,
@@ -272,6 +275,7 @@ pub async fn take_task(
         if let Err(e) = state.storage.tasks.update_assigned(&assigned) {
             debug!("Failed to persist runtime estimate for task {task_id}: {e}");
         }
+        state.agent_load.assigned(&agent.uid, task_id.clone());
         state.registry.track_assigned(&agent.uid, task_id.clone());
         emit_task_lifecycle(
             state,
@@ -359,6 +363,7 @@ pub async fn resolve_task(
 
     let result_status = report.status.clone();
     let mut cancel_err: Option<AppError> = None;
+    let mut report_err: Option<AppError> = None;
     let mut queue = TaskQueueKind::Urgent;
     match report_urgent_task(&state.urgent, report.clone(), task_id.clone()).await {
         Ok(true) => {}
@@ -375,17 +380,29 @@ pub async fn resolve_task(
                 if matches!(e, AppError::ClientClosedRequest(_)) {
                     cancel_err = Some(e);
                 } else {
-                    return Err(e);
+                    report_err = Some(e);
                 }
             }
         }
         Err(e) if matches!(e, AppError::ClientClosedRequest(_)) => {
             cancel_err = Some(e);
         }
-        Err(e) => return Err(e),
+        Err(e) => report_err = Some(e),
     }
-    // Task reached a terminal state — free the slot on the agent's WS connection.
+    // The agent reported a terminal result for this task — free its capacity slot
+    // on EVERY outcome (success, cancel-ack, or a report error such as the task
+    // already having been terminated by a sweep). A slot left occupied here is
+    // exactly what used to pin the agent at capacity and starve it of all future
+    // dispatch.
+    state.agent_load.released(&agent.uid, &task_id);
     state.registry.untrack_assigned(&agent.uid, &task_id);
+
+    if let Some(e) = report_err {
+        // Slot is freed above; the next dispatch trigger / 30s backstop reuses it.
+        crate::mq::dispatch::dispatch_to_agent(state, &agent.uid).await;
+        return Err(e);
+    }
+
     emit_task_lifecycle(
         state,
         TaskLifecycleEvent {

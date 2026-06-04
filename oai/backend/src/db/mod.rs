@@ -6,12 +6,14 @@ pub mod chats;
 pub mod user_system_prompts;
 pub mod entities;
 pub mod generation_parameters;
+pub mod offload_jobs;
 pub mod image_analysis;
 pub mod nude_detect;
 pub mod image_generation;
 pub mod image_worker_logs;
 pub mod migrator;
 pub mod tts;
+pub mod music_generation;
 pub mod users;
 
 use anyhow::Result;

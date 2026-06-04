@@ -164,6 +164,33 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/tts/jobs/{id}/cancel", post(routes::tts::cancel_job))
         .route("/api/tts/jobs/{id}/retry", post(routes::tts::retry_job))
         .route("/api/tts/jobs/{id}/audio", get(routes::tts::get_audio))
+        .route(
+            "/api/music-gen/capabilities",
+            get(routes::music_generation::list_capabilities),
+        )
+        .route("/api/music-gen/jobs", post(routes::music_generation::start_job))
+        .route("/api/music-gen/jobs", get(routes::music_generation::list_jobs))
+        .route(
+            "/api/music-gen/jobs/{id}",
+            get(routes::music_generation::get_job)
+                .delete(routes::music_generation::delete_job),
+        )
+        .route(
+            "/api/music-gen/jobs/{id}/poll",
+            post(routes::music_generation::poll_job),
+        )
+        .route(
+            "/api/music-gen/jobs/{id}/cancel",
+            post(routes::music_generation::cancel_job),
+        )
+        .route(
+            "/api/music-gen/jobs/{id}/retry",
+            post(routes::music_generation::retry_job),
+        )
+        .route(
+            "/api/music-gen/jobs/{id}/audio/{track}",
+            get(routes::music_generation::get_audio),
+        )
         .layer(from_fn_with_state(state.clone(), middleware::jwt_auth_middleware));
 
     let admin = Router::new()

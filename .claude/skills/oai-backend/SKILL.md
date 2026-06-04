@@ -51,6 +51,11 @@ oai/backend/src/
     chats.rs                      # CRUD chats + messages, system-prompt / last-model patches
     system_prompts.rs             # library list, record_use, delete, star/unstar
     images.rs                     # upload input, start/list/get/poll/cancel job, get image, capabilities
+    job_common.rs                 # parse_id + shared StartJobResponse/CancelJobResponse DTOs (offload-job features)
+    describe.rs                   # image-analysis (vision) jobs
+    nude_detect.rs                # NudeNet detection jobs
+    tts.rs                        # text-to-speech jobs
+    music_generation.rs           # txt2music jobs
     files.rs                      # read-only user file browser
     progress.rs                   # GET /api/progress/running — global drawer feed
     tasks.rs                      # POST /api/tasks/cancel/:cap/:id
@@ -64,7 +69,12 @@ oai/backend/src/
   services/
     mod.rs
     chat.rs                       # chat domain: capability list, message persist, poll loop, reconcile
-    image_jobs.rs                 # image domain: start/poll/cancel/reconcile jobs, download outputs
+    offload_job.rs                # GENERIC poll/cancel/reconcile driver + JobReconciler trait (see framework below)
+    image_analysis.rs             # describe (vision) domain — JobReconciler impl + start_job
+    nude_detect.rs                # NudeNet domain — JobReconciler impl + start_job + availability
+    tts.rs                        # text-to-speech domain — JobReconciler impl + start_job
+    music_generation.rs           # txt2music domain — JobReconciler impl + start_job (image client poller)
+    image_jobs.rs                 # image domain: start/poll/cancel/reconcile jobs, download outputs (bespoke, not on framework)
     image_processing.rs           # process_image() — resize, re-encode, SHA-256, EXIF strip
     image_pipeline_params.rs      # ImagePipelineParams — build + parse stored JSON
     image_job_names.rs            # display_name / prompt_label helpers
@@ -79,6 +89,7 @@ oai/backend/src/
   offload/
     mod.rs                        # OffloadClient (LLM chat + capabilities), types: TaskId, ChatMessage, etc.
     image_tasks.rs                # OffloadImageClient (bucket create/upload/download, submit imggen task)
+    task_status.rs                # shared status helpers (is_terminal, extract_llm_text/error, task-missing) + OffloadPoller trait
 
   db/
     mod.rs                        # connect() — SeaORM, runs migrations on boot
@@ -86,7 +97,12 @@ oai/backend/src/
     users.rs                      # find_by_login, find_by_id, create, create_admin, update_used_storage
     chats.rs                      # chat + message CRUD, finalize_message, list_pending_assistant_messages
     app_settings.rs               # singleton row get/update (offloadmq_url, api tokens)
-    image_generation.rs           # jobs, files, pipeline events, offload tasks — full CRUD
+    offload_jobs.rs               # GENERIC job ops + OffloadJobEntity/OffloadJobModel traits (see framework below)
+    image_analysis.rs             # describe jobs: create_job + set_result + trait impls
+    nude_detect.rs                # nudenet jobs: create_job + set_result + trait impls
+    tts.rs                        # tts jobs: create_job + set_audio + trait impls
+    music_generation.rs           # music jobs: create_job + set_audio_files + trait impls
+    image_generation.rs           # jobs, files, pipeline events, offload tasks — full CRUD (bespoke)
     image_worker_logs.rs          # worker log rows
     llm_capabilities.rs           # sync_online(), list_for_display()
     user_system_prompts.rs        # library CRUD + star
@@ -94,10 +110,28 @@ oai/backend/src/
 
   jobs/
     mod.rs
-    image_pipeline_worker.rs      # tokio::spawn loop — background poll + reconcile image jobs
-    chat_worker.rs                # tokio::spawn loop — background reconcile pending assistant messages
+    worker_runtime.rs             # spawn(state, WorkerConfig, pass_fn) — generic tick loop for reconcile workers
+    image_pipeline_worker.rs      # bespoke loop — background poll + reconcile image jobs (also writes run logs)
+    chat_worker.rs                # reconcile pending assistant messages (uses worker_runtime)
+    tts_worker.rs / image_analysis_worker.rs / nude_detect_worker.rs / music_generation_worker.rs  # 6-line configs over worker_runtime
     llm_capability_cleanup_worker.rs  # marks LLM capabilities offline after inactivity
 ```
+
+---
+
+## Offload-Job Framework
+
+Five features are the same "submit an OffloadMQ task → poll → persist result" shape: **describe** (image analysis), **nude_detect**, **tts**, **music_generation** — plus chat (WS) and image generation (bespoke, multi-file). The four simple ones run on a shared framework so a new feature writes only its unique logic. Build a new one with the **oai-new-feature** skill; the pieces:
+
+| Concern | Where | What you implement per feature |
+|---------|-------|-------------------------------|
+| Generic DB ops (`get_job`, `list_jobs`, `delete_job`, `update_status`, `set_offload_task`, `list_jobs_for_background_worker`) | `db/offload_jobs.rs` | `impl OffloadJobEntity for <Entity>` (column accessors) + `impl OffloadJobModel for <Model>` (id/status/offload_cap/offload_task_id). Keep `create_job` + result setters in `db/<feature>.rs`. |
+| Status helpers + normalized poll/cancel over both clients | `offload/task_status.rs` | nothing — reuse `is_terminal`, `extract_llm_text`, `extract_error_text(out, fallback)`, `offload_task_missing_message`, `OffloadPoller`. |
+| poll / cancel / reconcile state machine | `services/offload_job.rs` | `impl JobReconciler` on a ZST: `type Entity`, `label`, `failure_fallback`, `poller` (chat vs image client), `on_completed` (persist result). Then thin wrappers `poll_job`/`cancel_job`/`run_background_reconcile_pass` delegate to the driver. |
+| Background worker | `jobs/worker_runtime.rs` | a ~6-line `spawn` with a `WorkerConfig` + the reconcile pass fn. |
+| Route DTOs / id parsing | `routes/job_common.rs` | reuse `parse_id`, `StartJobResponse::submitted(id)`, `CancelJobResponse::from(outcome)`. |
+
+`OffloadPoller` normalizes the two concrete clients (`OffloadClient`, `OffloadImageClient`) — both hit the same upstream endpoints; a feature picks one in `JobReconciler::poller`. The generic DB writes use `update_many().col_expr(...)` so they work over any entity implementing the trait (no per-feature typed ActiveModel boilerplate).
 
 ---
 

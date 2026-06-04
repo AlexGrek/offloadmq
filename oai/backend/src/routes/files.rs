@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use axum::extract::Query;
 
 use crate::{
-    db::{generation_parameters, image_generation, tts},
+    db::{entities::tts_jobs::Entity as TtsJobEntity, generation_parameters, image_generation, offload_jobs},
     error::AppError,
     middleware::AuthenticatedUser,
     services::image_jobs,
@@ -116,7 +116,8 @@ pub async fn list_files(
         })
         .collect();
 
-    let audio_jobs = tts::list_jobs(&state.db, user_id, FILE_LIST_LIMIT).await?;
+    let audio_jobs =
+        offload_jobs::list_jobs::<TtsJobEntity>(&state.db, user_id, FILE_LIST_LIMIT).await?;
     for job in audio_jobs {
         let Some(audio) = map_audio_job(&job) else {
             continue;
@@ -195,7 +196,7 @@ pub async fn get_file_properties(
 
 /// Map a completed TTS job into a `UserFile` row. Returns `None` until the
 /// audio blob has been written.
-fn map_audio_job(job: &tts::TtsJob) -> Option<UserFile> {
+fn map_audio_job(job: &crate::db::entities::tts_jobs::Model) -> Option<UserFile> {
     if job.status != "completed" {
         return None;
     }
