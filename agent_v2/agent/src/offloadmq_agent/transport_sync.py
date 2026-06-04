@@ -1,7 +1,6 @@
 """Synchronous HTTP transport for legacy executor integration."""
 from __future__ import annotations
 
-import json
 from typing import Any
 from urllib.parse import quote
 
@@ -29,25 +28,6 @@ class SyncAgentTransport:
         return requests.post(
             self._url(*segments), headers=self._headers, json=json_body, timeout=timeout
         )
-
-    def poll_task(self, timeout: int = 60) -> dict[str, Any]:
-        resp = self.get("private", "agent", "task", "poll", timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        return dict(data) if data is not None else {}
-
-    def take_task(self, raw_id: str, raw_cap: str, timeout: int = 60) -> dict[str, Any]:
-        resp = self.post(
-            "private",
-            "agent",
-            "take",
-            quote(raw_cap, safe=""),
-            quote(raw_id, safe=""),
-            json_body={},
-            timeout=timeout,
-        )
-        resp.raise_for_status()
-        return dict(resp.json())
 
     def post_task_progress(
         self, task_id: Any, report: Any, timeout: int = 10

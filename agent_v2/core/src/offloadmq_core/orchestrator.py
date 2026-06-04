@@ -22,7 +22,6 @@ import asyncio
 import itertools
 import logging
 import threading
-import time
 import traceback
 from pathlib import Path
 from typing import Any
@@ -54,13 +53,9 @@ from offloadmq_core.task_store import TaskRecord, TaskStore
 
 logger = logging.getLogger(__name__)
 
-_TOKEN_REFRESH_MARGIN = 300
-_POLL_INTERVAL = 2.0
-_PING_INTERVAL = 60.0
 _RESCAN_INTERVALS = [30, 120, 300]
 _RESCAN_STEADY = 900
 APP_VERSION = "2.0.0"
-_MAX_CONSECUTIVE_AUTH_FAILURES = 3
 
 # Reconnect backoff: 2 → 4 → 8 → … capped at 60s. Reset on a successful auth.
 _RECONNECT_BACKOFF_BASE = 2.0
@@ -114,7 +109,6 @@ class Orchestrator:
         self._online = False
         self._status_message = "stopped"
         self._last_detected: list[str] = []
-        self._last_ping_at = 0.0
 
     # ==================================================================
     # Local logging + error pool
@@ -681,16 +675,16 @@ class Orchestrator:
             self._client = client
             self._sync_transport = SyncAgentTransport(settings.server, auth_token)
             self._online = True
-        self._set_message("polling")
+        self._set_message("connecting")
         self._record_error("INFO", "[supervisor] agent online")
 
         # Flush anything that piled up while we were disconnected.
         await self._flush_error_pool(client)
 
         try:
-            await self._poll_loop(client, auth_expires_in)
+            await self._ws_loop(client)
         finally:
-            # _poll_loop owns the connection's lifetime; close on the way out.
+            # _ws_loop owns the connection's lifetime; close on the way out.
             try:
                 await client.close()
             except Exception:  # noqa: BLE001
@@ -767,91 +761,61 @@ class Orchestrator:
         )
         return client, auth.token, auth.expires_in
 
-    async def _poll_loop(self, client: OffloadMQClient, token_expires_in: int) -> None:
-        consecutive_auth_failures = 0
+    async def _ws_loop(self, client: OffloadMQClient) -> None:
+        """Receive pushed work over the WebSocket until the socket closes.
 
-        while not self._stop.is_set():
-            try:
-                token_expires_in = await self._maybe_refresh(client, token_expires_in)
-                settings = self.get_settings()
-                caps = self._registration_caps(settings, self._last_detected)
+        The server *pushes* assigned tasks and proactive cancellations; the agent
+        no longer polls. A clean socket close (server restart, network blip)
+        returns normally so the supervisor reconnects with backoff. Capacity is
+        enforced server-side — the server never pushes beyond the agent's
+        registered ``capacity`` — so there is no client-side gate here.
+        """
+        await client.open_ws()
+        self._set_message("online")
 
-                if self._store.active_count() >= settings.max_concurrent:
-                    await self._maybe_ping(client)
-                    await self._idle()
+        async for msg in client.ws_messages():
+            if self._stop.is_set():
+                break
+            mtype = msg.get("type")
+
+            if mtype == "task":
+                raw = msg.get("task")
+                if not isinstance(raw, dict):
                     continue
-
-                task = await client.poll_urgent(caps)
-                if task is None:
-                    task = await client.poll(caps)
-                if task is None:
-                    consecutive_auth_failures = 0
-                    # Successful no-op cycle is a good time to drain any
-                    # log entries that piled up from background failures.
-                    if len(self._errors) > 0:
-                        await self._flush_error_pool(client)
-                    await self._idle()
+                try:
+                    task = Task.from_poll(raw)
+                except Exception as exc:  # noqa: BLE001
+                    self._record_error("ERROR", "[ws] malformed task push", exc=exc)
                     continue
-
-                consecutive_auth_failures = 0
-                if not await client.take(task.capability, task.id):
-                    continue
-
                 self._dispatch(task)
-            except OffloadMQError as exc:
-                if exc.status in (401, 403):
-                    consecutive_auth_failures += 1
-                    self._record_error(
-                        "ERROR",
-                        f"[poll] auth failure {consecutive_auth_failures}/{_MAX_CONSECUTIVE_AUTH_FAILURES}",
-                        exc=exc,
-                    )
-                    if consecutive_auth_failures >= _MAX_CONSECUTIVE_AUTH_FAILURES:
-                        raise _SessionEnded(
-                            "repeated auth failures", reregister=True
-                        ) from exc
+
+            elif mtype == "cancel":
+                tid = msg.get("taskId")
+                task_id = tid.get("id") if isinstance(tid, dict) else None
+                if task_id:
+                    self._store.request_cancel(str(task_id))
+                    self._log(f"[ws] cancel requested for task {task_id}")
+
+            elif mtype == "error":
+                # An ack for one of our own RPC sends failed. 499 just means the
+                # task was cancelled client-side — informational, not an error.
+                err = msg.get("error") or {}
+                if msg.get("status") == 499:
+                    self._log(f"[ws] {err.get('message', 'task cancelled')}")
                 else:
-                    consecutive_auth_failures = 0
-                    self._record_error("ERROR", "[poll] offloadmq error", exc=exc)
-                self._set_message(f"offloadmq error: {exc}")
-                # Treat any 5xx / network blip as session-fatal so the
-                # supervisor reopens a fresh aiohttp session.
-                if exc.status is None or exc.status >= 500:
-                    raise
-                await asyncio.sleep(5)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # noqa: BLE001
-                consecutive_auth_failures = 0
-                self._record_error("ERROR", "[poll] unexpected error", exc=exc)
-                self._set_message(f"error: {exc}")
-                await asyncio.sleep(5)
+                    self._record_error(
+                        "ERROR", f"[ws] server error: {err.get('message', err)}"
+                    )
 
-    async def _idle(self) -> None:
-        await asyncio.sleep(_POLL_INTERVAL)
+            elif mtype in ("connected", "heartbeat", "response"):
+                # Liveness / RPC acks. Heartbeats are a good moment to drain any
+                # error logs that piled up from background failures.
+                if mtype == "heartbeat" and len(self._errors) > 0:
+                    await self._flush_error_pool(client)
+            # Unknown frame types are ignored.
 
-    async def _maybe_ping(self, client: OffloadMQClient) -> None:
-        now = time.monotonic()
-        if now - self._last_ping_at < _PING_INTERVAL:
-            return
-        try:
-            await client.ping()
-            self._last_ping_at = now
-        except OffloadMQError as exc:
-            self._record_error("ERROR", "[heartbeat] ping failed", exc=exc)
-
-    async def _maybe_refresh(self, client: OffloadMQClient, expires_in: int) -> int:
-        if expires_in - int(time.time()) > _TOKEN_REFRESH_MARGIN:
-            return expires_in
-        settings = self.get_settings()
-        auth = await OffloadMQClient.authenticate(
-            settings.server, settings.agent_id, settings.key
-        )
-        self.update_settings(jwt_token=auth.token, token_expires_in=auth.expires_in)
-        client.update_token(auth.token)
-        with self._lock:
-            self._sync_transport = SyncAgentTransport(settings.server, auth.token)
-        return auth.expires_in
+        # Socket closed: return so the supervisor reconnects.
+        self._set_message("disconnected")
 
     def _rescan_scheduler_main(self) -> None:
         schedule = itertools.chain(_RESCAN_INTERVALS, itertools.repeat(_RESCAN_STEADY))
@@ -926,7 +890,7 @@ class Orchestrator:
             )
         self._schedule_resolve(task, result)
         self._busy.clear()
-        self._set_message("polling")
+        self._set_message("online")
 
     def _schedule_resolve(self, task: Task, result: TaskResult) -> None:
         loop = self._loop

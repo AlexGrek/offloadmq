@@ -670,6 +670,30 @@ async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<
         }
     });
 
+    // Keepalive: while the socket is open the agent counts as online even if it
+    // is idle (sends no requests). Re-fetch the record fresh each tick so we bump
+    // `last_contact` without clobbering capability/tier changes from info/update.
+    let ka_state = Arc::clone(&app_state);
+    let ka_uid = uid.clone();
+    let keepalive_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+        interval.tick().await; // skip the immediate tick — connect already bumped it
+        loop {
+            interval.tick().await;
+            let Some(fresh) = ka_state.storage.get_agent(&ka_uid) else {
+                break;
+            };
+            if let Err(e) = ka_state
+                .storage
+                .agents
+                .update_agent_last_contact(fresh, CommunicationMethod::WebSocket)
+                .await
+            {
+                warn!("WS keepalive: failed to update last_contact for {ka_uid}: {e}");
+            }
+        }
+    });
+
     // Welcome message (via the writer channel).
     let welcome = json!({
         "type": "connected",
@@ -785,6 +809,7 @@ async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<
 
     let _ = out_tx.send(WsOut::Close).await;
     writer_task.abort();
+    keepalive_task.abort();
     info!(
         "Agent {} WebSocket connection closed (conn {})",
         agent_id, conn_id

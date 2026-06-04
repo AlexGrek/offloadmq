@@ -1,15 +1,22 @@
-"""Async HTTP client for the OffloadMQ agent API."""
+"""Async client for the OffloadMQ agent API.
+
+Registration, login, capability/info updates and runtime-log submission stay over
+HTTP. The task lifecycle — receiving work, progress, and resolution — runs over a
+single persistent **WebSocket** (`/private/agent/ws`): the server *pushes* tasks
+instead of the agent polling. HTTP polling has been removed.
+"""
 from __future__ import annotations
 
+import asyncio
+import uuid
+from collections.abc import AsyncIterator
 from typing import Any
-from urllib.parse import quote
 
 import aiohttp
 
 from offloadmq_agent.models import (
     AgentAuth,
     AgentRegistration,
-    Task,
     TaskResult,
 )
 
@@ -35,16 +42,27 @@ class OffloadMQClient:
         self._jwt_token = jwt_token
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._client_session: aiohttp.ClientSession | None = None
+        self._ws: aiohttp.ClientWebSocketResponse | None = None
+        # Serializes concurrent WS sends (progress/resolve are scheduled from
+        # worker threads onto the loop and could otherwise interleave frames).
+        self._ws_lock = asyncio.Lock()
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._jwt_token}"}
 
     async def _session(self) -> aiohttp.ClientSession:
         if self._client_session is None or self._client_session.closed:
-            self._client_session = aiohttp.ClientSession(timeout=self._timeout)
+            # No total timeout: the session also carries the long-lived WebSocket.
+            self._client_session = aiohttp.ClientSession()
         return self._client_session
 
     async def close(self) -> None:
+        if self._ws is not None and not self._ws.closed:
+            try:
+                await self._ws.close()
+            except Exception:  # noqa: BLE001
+                pass
+        self._ws = None
         if self._client_session is not None and not self._client_session.closed:
             await self._client_session.close()
         self._client_session = None
@@ -101,58 +119,51 @@ class OffloadMQClient:
                 data: dict[str, Any] = await resp.json()
                 return AgentAuth(token=data["token"], expires_in=data["expiresIn"])
 
-    async def _parse_poll(self, resp: aiohttp.ClientResponse) -> Task | None:
-        if resp.status == 204:
-            return None
-        if resp.status != 200:
-            text = await resp.text()
-            raise OffloadMQError(
-                f"Poll failed ({resp.status}): {text}",
-                status=resp.status,
-                body=text,
-            )
-        raw = await resp.json()
-        if raw is None:
-            return None
-        return Task.from_poll(raw)
+    # ------------------------------------------------------------------
+    # WebSocket — primary task channel (server pushes tasks, agent reports)
+    # ------------------------------------------------------------------
 
-    async def ping(self) -> None:
-        url = f"{self._server}/private/agent/ping"
+    async def open_ws(self) -> None:
+        """Open the persistent agent WebSocket. Auth is via the `token` query
+        param at upgrade time (same JWT as the HTTP `Authorization` header)."""
         session = await self._session()
-        async with session.get(url, headers=self._headers()) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    raise OffloadMQError(
-                        f"Ping failed ({resp.status}): {text}",
-                        status=resp.status,
-                        body=text,
-                    )
+        url = f"{self._server}/private/agent/ws"
+        # heartbeat=None: the server already sends its own heartbeat frames; we
+        # don't want aiohttp injecting client pings on top.
+        self._ws = await session.ws_connect(
+            url, params={"token": self._jwt_token}, heartbeat=None
+        )
 
-    async def poll(self, capabilities: list[str]) -> Task | None:
-        url = f"{self._server}/private/agent/task/poll"
-        session = await self._session()
-        async with session.get(
-            url,
-            params={"caps": ",".join(capabilities)},
-            headers=self._headers(),
-        ) as resp:
-            return await self._parse_poll(resp)
+    async def ws_messages(self) -> AsyncIterator[dict[str, Any]]:
+        """Yield decoded JSON text frames from the server until the socket closes.
 
-    async def poll_urgent(self, capabilities: list[str]) -> Task | None:
-        url = f"{self._server}/private/agent/task/poll_urgent"
-        session = await self._session()
-        async with session.get(
-            url,
-            params={"caps": ",".join(capabilities)},
-            headers=self._headers(),
-        ) as resp:
-            return await self._parse_poll(resp)
+        Server frames carry a `type`: `connected`, `heartbeat`, `task` (a pushed
+        `AssignedTask`), `cancel`, plus `response`/`error` acks for the agent's
+        own RPC sends.
+        """
+        ws = self._ws
+        if ws is None:
+            raise OffloadMQError("websocket not connected")
+        async for msg in ws:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                try:
+                    data = msg.json()
+                except Exception:  # noqa: BLE001
+                    continue
+                if isinstance(data, dict):
+                    yield data
+            elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING):
+                break
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                raise OffloadMQError(f"websocket error: {ws.exception()!r}")
 
-    async def take(self, capability: str, task_id: str) -> bool:
-        url = f"{self._server}/private/agent/take/{quote(capability, safe='')}/{task_id}"
-        session = await self._session()
-        async with session.post(url, headers=self._headers()) as resp:
-            return resp.status == 200
+    async def _ws_send(self, action: str, params: dict[str, Any]) -> None:
+        ws = self._ws
+        if ws is None or ws.closed:
+            raise OffloadMQError("websocket not connected", status=0)
+        frame = {"req_id": uuid.uuid4().hex, "action": action, "params": params}
+        async with self._ws_lock:
+            await ws.send_json(frame)
 
     async def report_progress(
         self,
@@ -161,15 +172,14 @@ class OffloadMQClient:
         stage: str,
         log: str,
     ) -> None:
-        url = f"{self._server}/private/agent/task/progress/{quote(capability, safe='')}/{task_id}"
-        session = await self._session()
-        async with session.post(
-            url,
-            json={"stage": stage, "log": log},
-            headers=self._headers(),
-        ) as resp:
-            if resp.status not in (200, 204):
-                pass
+        from offloadmq_agent.wire import TaskId, TaskProgressReport
+
+        report = TaskProgressReport(
+            id=TaskId(id=task_id, cap=capability),
+            stage=stage or None,
+            log_update=log or None,
+        )
+        await self._ws_send("update_progress", report.to_wire())
 
     async def update_agent_info(
         self,
@@ -193,7 +203,9 @@ class OffloadMQClient:
         if display_name:
             body["displayName"] = display_name[:50]
         session = await self._session()
-        async with session.post(url, json=body, headers=self._headers()) as resp:
+        async with session.post(
+            url, json=body, headers=self._headers(), timeout=self._timeout
+        ) as resp:
             if resp.status not in (200, 204):
                 text = await resp.text()
                 raise OffloadMQError(
@@ -205,17 +217,8 @@ class OffloadMQClient:
     async def resolve(self, capability: str, result: TaskResult) -> None:
         from offloadmq_agent.result_convert import task_result_to_wire
 
-        url = f"{self._server}/private/agent/task/resolve/{quote(capability, safe='')}/{result.task_id}"
         payload = task_result_to_wire(result.task_id, capability, result)
-        session = await self._session()
-        async with session.post(url, json=payload, headers=self._headers()) as resp:
-            if resp.status not in (200, 204):
-                text = await resp.text()
-                raise OffloadMQError(
-                    f"Resolve failed ({resp.status}): {text}",
-                    status=resp.status,
-                    body=text,
-                )
+        await self._ws_send("resolve_task", payload)
 
     def update_token(self, jwt_token: str) -> None:
         self._jwt_token = jwt_token
@@ -244,7 +247,9 @@ class OffloadMQClient:
         if machine_fingerprint:
             body["machineFingerprint"] = machine_fingerprint
         session = await self._session()
-        async with session.post(url, json=body, headers=self._headers()) as resp:
+        async with session.post(
+            url, json=body, headers=self._headers(), timeout=self._timeout
+        ) as resp:
             if resp.status not in (200, 201, 204):
                 text_body = await resp.text()
                 raise OffloadMQError(

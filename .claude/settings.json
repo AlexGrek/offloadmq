@@ -147,7 +147,8 @@
       "Bash(sed -n '/pub async fn resolve_task/,/^}/p' src/api/agent/service.rs)",
       "Bash(mkdir -p /Users/vedmedik/dev/offloadmq/.claude/skills/oai-new-feature)",
       "Bash(task --list-all)",
-      "Bash(task test *)"
+      "Bash(task test *)",
+      "Bash(pkill -f \"target/debug/offloadmq\")"
     ],
     "additionalDirectories": [
       "/Users/vedmedik/dev/offloadmq/.claude/skills",

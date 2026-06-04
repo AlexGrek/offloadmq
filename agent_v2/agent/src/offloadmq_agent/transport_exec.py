@@ -19,8 +19,6 @@ class AgentTransport(Protocol):
     def post(
         self, *segments: str, json_body: dict[str, Any], timeout: int = 60
     ) -> requests.Response: ...
-    def poll_task(self, timeout: int = 60) -> dict[str, Any]: ...
-    def take_task(self, raw_id: str, raw_cap: str, timeout: int = 60) -> dict[str, Any]: ...
     def post_task_progress(
         self, task_id: TaskId, report: TaskProgressReport, timeout: int = 10
     ) -> requests.Response: ...
@@ -70,34 +68,22 @@ class CaptureTransport:
     ) -> requests.Response:
         return self._inner.post(*segments, json_body=json_body, timeout=timeout)
 
-    def poll_task(self, timeout: int = 60) -> dict[str, Any]:
-        return self._inner.poll_task(timeout=timeout)
-
-    def take_task(self, raw_id: str, raw_cap: str, timeout: int = 60) -> dict[str, Any]:
-        return self._inner.take_task(raw_id, raw_cap, timeout=timeout)
-
     def post_task_progress(
         self, task_id: TaskId, report: TaskProgressReport, timeout: int = 10
     ) -> requests.Response:
         from offloadmq_agent.exec.reporting import TaskCancelled
 
-        if report.log_update:
-            msg = report.log_update[:500]
-        elif report.stage:
-            msg = report.stage
-        else:
-            msg = ""
+        # Forward the progress upstream. The hook routes it to the orchestrator,
+        # which sends it to the server over the WebSocket (no HTTP progress call).
+        msg = report.log_update or report.stage or ""
         if self._progress_hook:
             self._progress_hook(report.stage or "", msg)
-        try:
-            return self._inner.post_task_progress(task_id, report, timeout=timeout)
-        except Exception as exc:
-            if "499" in str(exc):
-                raise TaskCancelled("cancelled") from exc
-            resp = self._inner.post_task_progress(task_id, report, timeout=timeout)
-            if resp.status_code == 499:
-                raise TaskCancelled("cancelled")
-            return resp
+        # Cancellation now arrives as a server WS push that sets the ctx cancel
+        # event; routed executors learn about it on their next progress call,
+        # preserving the previous HTTP-499 behavior.
+        if self._ctx.cancelled:
+            raise TaskCancelled("cancelled")
+        return _FakeResponse(200)  # type: ignore[return-value]
 
     def post_task_result(
         self, report: TaskResultReport, timeout: int = 60
