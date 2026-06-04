@@ -6,7 +6,8 @@
 /.vite
 **/__pycache__
 **/*.pyc
-offload-agent/app/_version.py
+**/_version.py
+**/.venv/
 ansible/inventory/hosts.yml
 .claude/settings.local.json
 offload-agent-macos-*
@@ -17,4 +18,3 @@ agent_v2/**/build/
 agent_v2/**/dist/
 agent_v2/**/*.spec
 agent_v2/installer-out/
-agent_v2/cli-manager/src/cli_manager/_version.py

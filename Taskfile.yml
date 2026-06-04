@@ -202,7 +202,7 @@ tasks:
   # ── Agent release ─────────────────────────────────────────────────────────────
 
   release:agent:
-    desc: Build and upload offload-agent binary to dl.alexgr.space (VERSION= to override auto-version)
+    desc: Build and upload agent_v2 binaries (omq + omq-gui) to dl.alexgr.space (VERSION= to override auto-version)
     cmd: |
       #!/usr/bin/env bash
       if [ -z "$DL_API_KEY" ]; then echo "error: DL_API_KEY is not set"; exit 1; fi
@@ -216,7 +216,7 @@ tasks:
       DL_BASE_URL={{.DL_BASE_URL}} ./scripts/release-micro-agent.sh {{.VERSION}}
 
   release:
-    desc: Compute version, tag, push, then upload agent + micro-agent binaries
+    desc: Compute version, tag, push, then upload agent_v2 binaries (CLI + GUI)
     cmd: |
       #!/usr/bin/env bash
       set -e
@@ -226,56 +226,93 @@ tasks:
       git tag "release-$VERSION"
       git push origin "release-$VERSION"
       DL_BASE_URL={{.DL_BASE_URL}} ./scripts/release-agent.sh "$VERSION"
-      DL_BASE_URL={{.DL_BASE_URL}} ./scripts/release-micro-agent.sh "$VERSION"
 
   # ── Agent install helpers ─────────────────────────────────────────────────────
 
   agent:kill:mac:
-    desc: Stop all offload-agent processes on macOS
+    desc: Stop the running omq-gui process and unload the LaunchAgent on macOS
     cmd: |
       launchctl unload ~/Library/LaunchAgents/com.offloadmq.agent.plist 2>/dev/null || true
-      pkill -f "offload-agent|Offload Agent" 2>/dev/null || true
+      pkill -f omq-gui 2>/dev/null || true
 
   agent:update:mac:
-    desc: Download and install latest offload-agent on this macOS machine
-    deps: [agent:kill:mac]
+    desc: Download and install latest omq-gui (agent_v2) on this macOS machine
+    platforms: [darwin]
     cmd: |
       #!/usr/bin/env bash
-      set -e
-      MAC_ARCH=$(uname -m | sed 's/x86_64/amd64/')
-      BIN="offload-agent-darwin-${MAC_ARCH}"
-      curl -fLO "https://dl.alexgr.space/rs/offload-agent/latest/darwin-${MAC_ARCH}/${BIN}"
-      chmod +x "$BIN"
-      sudo "./$BIN" install bin
-      launchctl load ~/Library/LaunchAgents/com.offloadmq.agent.plist 2>/dev/null || true
-      rm -f "$BIN"
-      offload-agent --version
+      set -eu
+      BASE="${DL_BASE_URL:-https://dl.alexgr.space}"
+      BUCKET="${DL_BUCKET:-offload-agent}"
+      case "$(uname -m)" in
+        x86_64) A=amd64 ;;
+        arm64)  A=arm64 ;;
+        *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+      esac
+      FILE="omq-gui-darwin-$A"
+      URL="$BASE/rs/$BUCKET/latest/darwin-$A/$FILE"
+      DEST="$(command -v omq-gui || echo "$HOME/.local/bin/omq-gui")"
+      PLIST="$HOME/Library/LaunchAgents/com.offloadmq.agent.plist"
+      echo "Downloading $URL"
+      TMP="$(mktemp)"
+      curl -fL "$URL" -o "$TMP"
+      chmod +x "$TMP"
+      echo "Stopping omq-gui ..."
+      if [ -f "$PLIST" ]; then launchctl unload "$PLIST" 2>/dev/null || true; fi
+      pkill -f omq-gui 2>/dev/null || true
+      mkdir -p "$(dirname "$DEST")"
+      if [ -w "$(dirname "$DEST")" ]; then mv -f "$TMP" "$DEST"; else sudo mv -f "$TMP" "$DEST"; fi
+      xattr -cr "$DEST" 2>/dev/null || true
+      echo "Installed -> $DEST (Gatekeeper quarantine stripped)"
+      if [ -f "$PLIST" ]; then
+        launchctl load "$PLIST" 2>/dev/null || true
+        echo "Relaunched via LaunchAgent."
+      else
+        echo "(no LaunchAgent configured; start omq-gui manually)"
+      fi
 
   agent:update:linux:
-    desc: Download and install latest offload-agent on this Linux machine
+    desc: Download and install latest omq (agent_v2 CLI) on this Linux machine
+    platforms: [linux]
     cmd: |
       #!/usr/bin/env bash
-      set -e
-      curl -fLO "https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/offload-agent-linux-amd64"
-      chmod +x offload-agent-linux-amd64
-      sudo systemctl stop offload-agent || true
-      sudo ./offload-agent-linux-amd64 install bin
-      sudo restorecon -v /usr/local/bin/offload-agent 2>/dev/null || true
-      sudo systemctl start offload-agent
-      rm -f offload-agent-linux-amd64
-      offload-agent --version
+      set -eu
+      BASE="${DL_BASE_URL:-https://dl.alexgr.space}"
+      BUCKET="${DL_BUCKET:-offload-agent}"
+      case "$(uname -m)" in
+        x86_64|amd64) A=amd64 ;;
+        aarch64|arm64) A=arm64 ;;
+        *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+      esac
+      FILE="omq-linux-$A"
+      URL="$BASE/rs/$BUCKET/latest/linux-$A/$FILE"
+      DEST="$(command -v omq || echo "$HOME/.local/bin/omq")"
+      echo "Downloading $URL"
+      TMP="$(mktemp)"
+      curl -fL "$URL" -o "$TMP"
+      chmod +x "$TMP"
+      echo "Stopping offloadmq-agent.service (user) ..."
+      systemctl --user stop offloadmq-agent.service 2>/dev/null || true
+      mkdir -p "$(dirname "$DEST")"
+      if [ -w "$(dirname "$DEST")" ]; then mv -f "$TMP" "$DEST"; else sudo mv -f "$TMP" "$DEST"; fi
+      echo "Installed -> $DEST"
+      systemctl --user start offloadmq-agent.service 2>/dev/null \
+        || echo "(service not installed; start manually: omq webui --start)"
+      "$DEST" status || true
 
   # ── Build helpers ─────────────────────────────────────────────────────────────
 
   build:agent:
-    desc: Build offload-agent standalone binary
-    dir: offload-agent
-    cmd: make build
+    desc: Build agent_v2 CLI and GUI binaries (PyInstaller)
+    cmds:
+      - task -d agent_v2 package:cli
+      - task -d agent_v2 package:gui
 
   build:agent:clean:
-    desc: Clean and rebuild offload-agent standalone binary
-    dir: offload-agent
-    cmd: make rebuild
+    desc: Clean artifacts and rebuild agent_v2 CLI and GUI binaries
+    cmds:
+      - task -d agent_v2 clean
+      - task -d agent_v2 package:cli
+      - task -d agent_v2 package:gui
 
   # ── Clean ─────────────────────────────────────────────────────────────────────
 
