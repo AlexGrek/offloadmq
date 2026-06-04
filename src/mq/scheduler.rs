@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use chrono::Utc;
 use log::{debug, warn};
 
@@ -13,6 +15,7 @@ use crate::{
         urgent::UrgentTaskStore,
     },
     schema::{TaskId, TaskResultReport, TaskResultStatus, TaskStatus, TaskUpdate},
+    state::AppState,
     utils::base_capability,
 };
 
@@ -100,6 +103,25 @@ pub async fn try_pick_up_non_urgent_task(
         return Err(e.into());
     }
     Ok(assigned)
+}
+
+/// Revert a non-urgent task that was assigned back to the queue (push-failure
+/// recovery / disconnect re-queue). Mirrors the rollback inside
+/// `try_pick_up_non_urgent_task`: the persistent store atomically moves the
+/// record from assigned → unassigned (only when still un-started), then it is
+/// re-added to the in-memory queue. Returns true if the task was re-queued.
+pub async fn try_unassign_non_urgent_task(
+    regular_store: &RegularTaskStore,
+    persistent_store: &TaskStorage,
+    task_id: &TaskId,
+) -> Result<bool, AppError> {
+    match persistent_store.unassign_task(task_id)? {
+        Some(unassigned) => {
+            regular_store.add_task(unassigned).await;
+            Ok(true)
+        }
+        None => Ok(false),
+    }
 }
 
 pub async fn report_urgent_task<'a>(
@@ -258,10 +280,11 @@ pub async fn all_online_agents_for(cap: &std::string::String, agents: &AgentStor
 }
 
 pub async fn submit_urgent_task(
-    store: &UrgentTaskStore,
-    agents: &AgentStorage,
+    app_state: &Arc<AppState>,
     task: UnassignedTask,
 ) -> Result<UrgentSubmitOutcome, AppError> {
+    let store = &app_state.urgent;
+    let agents = &app_state.storage.agents;
     if !has_potential_agents_for(&task.id.cap, agents).await {
         return Err(AppError::SchedulingImpossible(format!(
             "no online runners for capability {}",
@@ -276,11 +299,16 @@ pub async fn submit_urgent_task(
         .data
         .timeout_secs
         .map(|ts| task.created_at + chrono::TimeDelta::seconds(ts as i64));
-    let state = store
+    let task_state = store
         .add_task(task.clone(), pending_ttl_secs, global_deadline)
         .await?;
 
-    let mut rx = state.notify.subscribe();
+    // Subscribe BEFORE dispatching so an instant take+resolve can't be missed.
+    let mut rx = task_state.notify.subscribe();
+
+    // Push the task to a connected eligible agent now instead of waiting for a
+    // poll. The pushed agent takes + resolves, which notifies `rx` below.
+    crate::mq::dispatch::dispatch_for_capability(app_state, &task.id.cap).await;
 
     // Wait for status change that is terminal (Completed or Failed)
     loop {

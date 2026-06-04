@@ -610,6 +610,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Err(e) => log::warn!("Orphan recovery error: {}", e),
                             _ => {}
                         }
+                        // Dispatch backstop: deliver any queued work that a push
+                        // missed (submit/connect/resolve races, reconnects, or
+                        // capacity self-heal) to currently-connected agents.
+                        for uid in state.registry.connected_uids() {
+                            crate::mq::dispatch::dispatch_to_agent(&state, &uid).await;
+                        }
                     }
                 }
             }

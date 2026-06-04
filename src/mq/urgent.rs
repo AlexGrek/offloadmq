@@ -140,6 +140,30 @@ impl UrgentTaskStore {
         false
     }
 
+    /// Revert an urgent task from `Assigned` back to `Pending` so it can be
+    /// re-dispatched or polled. Used when a push send fails before delivery and on
+    /// WS disconnect. Only reverts tasks the agent never started: the assigned
+    /// record must still be in `Assigned` status (a `Starting`/`Running` task is
+    /// left to the agent, and terminal tasks are done). Returns true if reverted.
+    pub async fn unassign_task(&self, task_id: &TaskId) -> bool {
+        let mut tasks = self.tasks.write().await;
+        if let Some(entry) = tasks.get_mut(task_id) {
+            let un_started = matches!(
+                entry.assigned_task.as_ref().map(|a| &a.status),
+                Some(TaskStatus::Assigned)
+            );
+            if un_started {
+                entry.assigned_task = None;
+                entry.last_update = Utc::now();
+                let mut status = entry.state.status.write().await;
+                *status = TaskStatus::Pending;
+                let _ = entry.state.notify.send(TaskStatus::Pending);
+                return true;
+            }
+        }
+        false
+    }
+
     pub async fn hard_clear(&self) {
         info!("Cleaning up urgent tasks queue");
 

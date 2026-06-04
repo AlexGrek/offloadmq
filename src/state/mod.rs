@@ -8,7 +8,7 @@ use crate::{
     config::AppConfig,
     db::{app_storage::AppStorage, service_message_storage::ServiceMessage},
     middleware::auth::Auth,
-    mq::{regular::RegularTaskStore, urgent::UrgentTaskStore},
+    mq::{regular::RegularTaskStore, registry::AgentRegistry, urgent::UrgentTaskStore},
     schema::{TaskId, TaskResultStatus, TaskStatus},
 };
 
@@ -92,6 +92,8 @@ pub struct AppState {
     pub auth: Arc<Auth>,
     pub urgent: Arc<UrgentTaskStore>,
     pub regular: Arc<RegularTaskStore>,
+    /// Live agent WebSocket connections, enabling server-initiated task push.
+    pub registry: Arc<AgentRegistry>,
     pub channels: AppChannels,
     /// Serializes bucket validation + reservation during task submission so two
     /// concurrent submissions can't both pass the `rm_after_task` single-use
@@ -107,6 +109,7 @@ impl AppState {
             auth: Arc::new(auth),
             urgent: UrgentTaskStore::new(),
             regular: RegularTaskStore::new(),
+            registry: AgentRegistry::new(),
             channels,
             bucket_submit_lock: Arc::new(tokio::sync::Mutex::new(())),
         }

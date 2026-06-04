@@ -242,6 +242,10 @@ pub async fn take_task(
         if let Some(d) = estimate {
             state.urgent.set_runtime_estimate(&task_id, d).await;
         }
+        // Track this task against the agent's live WS connection (if any) so the
+        // push capacity gate counts it and disconnect handling can find it. No-op
+        // for HTTP-only agents (not registered).
+        state.registry.track_assigned(&agent.uid, task_id.clone());
         emit_task_lifecycle(
             state,
             TaskLifecycleEvent {
@@ -268,6 +272,7 @@ pub async fn take_task(
         if let Err(e) = state.storage.tasks.update_assigned(&assigned) {
             debug!("Failed to persist runtime estimate for task {task_id}: {e}");
         }
+        state.registry.track_assigned(&agent.uid, task_id.clone());
         emit_task_lifecycle(
             state,
             TaskLifecycleEvent {
@@ -379,6 +384,8 @@ pub async fn resolve_task(
         }
         Err(e) => return Err(e),
     }
+    // Task reached a terminal state — free the slot on the agent's WS connection.
+    state.registry.untrack_assigned(&agent.uid, &task_id);
     emit_task_lifecycle(
         state,
         TaskLifecycleEvent {
@@ -417,6 +424,9 @@ pub async fn resolve_task(
             bucket_uid
         );
     }
+
+    // The agent just freed a slot — push it the next eligible task (if connected).
+    crate::mq::dispatch::dispatch_to_agent(state, &agent.uid).await;
 
     if let Some(e) = cancel_err {
         return Err(e);

@@ -133,7 +133,7 @@ pub async fn do_submit_task_blocking(
         created_at: Utc::now(),
     };
     info!("New urgent task: {:?}", task);
-    let outcome = submit_urgent_task(&state.urgent, &state.storage.agents, task).await?;
+    let outcome = submit_urgent_task(state, task).await?;
     emit_urgent_expired_if_needed(state, &outcome);
     Ok(outcome)
 }
@@ -166,7 +166,7 @@ pub async fn do_submit_task(
     };
     info!("New unassigned task: {:?}", task);
     if urgent {
-        let outcome = submit_urgent_task(&state.urgent, &state.storage.agents, task).await?;
+        let outcome = submit_urgent_task(state, task).await?;
         emit_urgent_expired_if_needed(state, &outcome);
         Ok(SubmitOutcome::Urgent(outcome))
     } else {
@@ -174,6 +174,10 @@ pub async fn do_submit_task(
         let capability = task.id.cap.clone();
         state.storage.tasks.add_unassigned(&task)?;
         state.regular.add_task(task).await;
+        // Push the freshly-queued task to a connected agent immediately instead of
+        // waiting for it to poll. No-op if no eligible agent is connected — the
+        // task stays queued for HTTP pollers / a later connect.
+        crate::mq::dispatch::dispatch_for_capability(state, &capability).await;
         Ok(SubmitOutcome::Queued { id, capability })
     }
 }
@@ -255,6 +259,9 @@ pub async fn do_cancel_task(
     match state.urgent.cancel_task(&task_id).await {
         Ok(TaskStatus::CancelRequested) => {
             info!("Urgent task {} cancel requested (was assigned)", task_id);
+            if let Some(assigned) = state.urgent.get_assigned_task(&task_id).await {
+                push_cancel_to_agent(state, &assigned.agent_id, &task_id);
+            }
             emit_task_lifecycle(
                 state,
                 TaskLifecycleEvent {
@@ -329,6 +336,7 @@ async fn cancel_regular_task(
         }
         task.change_status(TaskStatus::CancelRequested);
         state.storage.tasks.update_assigned(&task)?;
+        push_cancel_to_agent(state, &task.agent_id, task_id);
         info!("Task {} cancel requested (was assigned)", task_id);
         return Ok(CancelOutcome {
             id: task_id.clone(),
@@ -409,6 +417,17 @@ pub fn do_capabilities_online(
             .retain(|el| ApiKeysStorage::has_capability(&key.capabilities, base_capability(el)));
     }
     Ok(capabilities)
+}
+
+/// Proactively notify a connected agent that a task it holds has been cancelled,
+/// so it can stop work immediately instead of learning on its next progress or
+/// resolve call. No-op for HTTP-only agents (not connected over WS) — they keep
+/// receiving the cancel signal via the existing 499-on-next-call path.
+fn push_cancel_to_agent(state: &Arc<AppState>, agent_id: &str, task_id: &TaskId) {
+    if let Some(tx) = state.registry.sender(agent_id) {
+        let msg = serde_json::json!({ "type": "cancel", "taskId": task_id }).to_string();
+        let _ = tx.try_send(crate::mq::registry::WsOut::Text(msg));
+    }
 }
 
 fn emit_task_lifecycle(state: &Arc<AppState>, event: TaskLifecycleEvent) {

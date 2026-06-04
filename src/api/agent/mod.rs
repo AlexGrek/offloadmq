@@ -614,56 +614,75 @@ async fn ws_route_post(
 }
 
 async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<AppState>) {
-    let (sender, mut receiver) = socket.split();
-    let sender = Arc::new(tokio::sync::Mutex::new(sender));
+    use crate::mq::registry::{WS_OUT_CHANNEL_CAPACITY, WsOut};
+
+    let (mut sink, mut receiver) = socket.split();
+    let uid = agent.uid.clone();
     let agent_id = agent.uid_short.clone();
 
-    // Send welcome message
-    {
-        let welcome = json!({
-            "type": "connected",
-            "agent_id": agent_id,
-            "message": "WebSocket connection established"
-        });
-        let mut tx = sender.lock().await;
-        if tx
-            .send(Message::Text(welcome.to_string().into()))
-            .await
-            .is_err()
-        {
-            warn!("Failed to send welcome message to agent {}", agent_id);
-            return;
-        }
-    }
+    // Single outbound channel. The writer task spawned below is the SOLE owner of
+    // the socket sink — responses, the heartbeat, and dispatcher/cancel pushes all
+    // funnel through this channel, giving deterministic frame ordering and letting
+    // code elsewhere push to this agent via the registry.
+    let (out_tx, mut out_rx) = tokio::sync::mpsc::channel::<WsOut>(WS_OUT_CHANNEL_CAPACITY);
 
-    // Heartbeat task
-    let hb_sender = Arc::clone(&sender);
-    let hb_agent_id = agent_id.clone();
-    let heartbeat_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+    // Register BEFORE spawning the writer so a task submission racing the connect
+    // can already find this connection and push to it.
+    let (conn_id, assigned_set) = app_state.registry.register(&uid, out_tx.clone());
+
+    // Writer task: owns the sink, forwards queued WsOut messages, and emits the 5s
+    // heartbeat. Exactly one task ever writes to the socket.
+    let writer_agent_id = agent_id.clone();
+    let writer_task = tokio::spawn(async move {
+        let mut hb = tokio::time::interval(tokio::time::Duration::from_secs(5));
         let mut counter: u64 = 0;
         loop {
-            interval.tick().await;
-            counter += 1;
-            let msg = json!({
-                "type": "heartbeat",
-                "counter": counter,
-                "timestamp": Utc::now().to_rfc3339()
-            });
-            let mut tx = hb_sender.lock().await;
-            if tx
-                .send(Message::Text(msg.to_string().into()))
-                .await
-                .is_err()
-            {
-                warn!("Failed to send heartbeat to agent {}", hb_agent_id);
-                break;
+            tokio::select! {
+                msg = out_rx.recv() => match msg {
+                    Some(WsOut::Text(t)) => {
+                        if sink.send(Message::Text(t.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(WsOut::Binary(b)) => {
+                        if sink.send(Message::Binary(b.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(WsOut::Close) | None => {
+                        let _ = sink.send(Message::Close(None)).await;
+                        break;
+                    }
+                },
+                _ = hb.tick() => {
+                    counter += 1;
+                    let msg = json!({
+                        "type": "heartbeat",
+                        "counter": counter,
+                        "timestamp": Utc::now().to_rfc3339()
+                    });
+                    if sink.send(Message::Text(msg.to_string().into())).await.is_err() {
+                        warn!("Failed to send heartbeat to agent {}", writer_agent_id);
+                        break;
+                    }
+                }
             }
-            debug!("Sent heartbeat {} to agent {}", counter, hb_agent_id);
         }
     });
 
-    // Main receive loop - dispatch requests
+    // Welcome message (via the writer channel).
+    let welcome = json!({
+        "type": "connected",
+        "agent_id": agent_id,
+        "message": "WebSocket connection established"
+    });
+    let _ = out_tx.send(WsOut::Text(welcome.to_string())).await;
+    info!("Agent {} WebSocket ready (conn {})", agent_id, conn_id);
+
+    // Drain any already-queued work to this agent now that it is connected.
+    crate::mq::dispatch::dispatch_to_agent(&app_state, &uid).await;
+
+    // Main receive loop — dispatch requests, send responses via the writer channel.
     while let Some(result) = receiver.next().await {
         match result {
             Ok(Message::Text(text)) => {
@@ -684,7 +703,8 @@ async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<
                     continue;
                 }
 
-                // For upload_file, read the next binary frame
+                // For upload_file, read the next binary frame from the socket. This
+                // read stays in the receive loop; only writes moved to the channel.
                 let upload_data = if action == "upload_file" {
                     match receiver.next().await {
                         Some(Ok(Message::Binary(data))) => Some(data.to_vec()),
@@ -699,8 +719,7 @@ async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<
                                     "expected binary frame after upload_file".into(),
                                 ),
                             );
-                            let mut tx = sender.lock().await;
-                            let _ = tx.send(Message::Text(err_msg.into())).await;
+                            let _ = out_tx.send(WsOut::Text(err_msg)).await;
                             continue;
                         }
                         _ => {
@@ -729,9 +748,8 @@ async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<
                         }
                     };
 
-                let mut tx = sender.lock().await;
-                if tx.send(Message::Text(response_text.into())).await.is_err() {
-                    warn!("Failed to send response to agent {}", agent_id);
+                if out_tx.send(WsOut::Text(response_text)).await.is_err() {
+                    warn!("Failed to enqueue response to agent {}", agent_id);
                     break;
                 }
             }
@@ -750,6 +768,25 @@ async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<
         }
     }
 
-    heartbeat_task.abort();
-    info!("Agent {} WebSocket connection closed", agent_id);
+    // Teardown: deregister this connection (conn_id-guarded so a reconnect that
+    // already replaced us is left intact), then close the writer.
+    app_state.registry.deregister(&uid, conn_id);
+
+    // Re-queue tasks this connection held but the agent never started. Started
+    // tasks (Starting/Running) stay assigned — the agent finishes them across
+    // reconnects, with orphan recovery as the backstop.
+    let held: Vec<TaskId> = {
+        let mut guard = assigned_set.lock().unwrap();
+        guard.drain().collect()
+    };
+    if !held.is_empty() {
+        crate::mq::dispatch::requeue_disconnected(&app_state, held).await;
+    }
+
+    let _ = out_tx.send(WsOut::Close).await;
+    writer_task.abort();
+    info!(
+        "Agent {} WebSocket connection closed (conn {})",
+        agent_id, conn_id
+    );
 }

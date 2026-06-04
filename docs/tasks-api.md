@@ -567,6 +567,78 @@ Pass header `X-MGMT-API-KEY: <management token>` (same as other Client API route
 Base path: `/private/agent/*`
 Authentication: `Authorization: Bearer <JWT>` header
 
+### Communication model: WebSocket push (primary) vs HTTP polling (deprecated)
+
+The server **pushes** tasks to connected agents over a persistent WebSocket. An
+agent that holds a live WS connection does **not** need to poll or to claim
+tasks — the server selects it, assigns the task atomically, and delivers the
+already-assigned task. HTTP polling (`GET /private/agent/task/poll*` +
+`POST /private/agent/take/...`) still works for legacy agents but is
+**deprecated**; new agents should use the WebSocket.
+
+> Registration (`/register`), login (`/login`), and the storage/bucket helpers
+> remain HTTP. Only the task-distribution loop moves to push.
+
+#### Connect
+
+```
+GET /private/agent/ws?token=<JWT>
+```
+
+Authentication happens at upgrade time via the `token` query parameter (same JWT
+as the HTTP `Authorization` header). On connect the server immediately drains any
+already-queued work to the agent (up to its `capacity`).
+
+#### Server → agent messages
+
+All server→agent frames are JSON text with a `type` field:
+
+| `type` | Payload | Meaning |
+|--------|---------|---------|
+| `connected` | `{ agentId, message }` | Sent once on connect. |
+| `heartbeat` | `{ counter, timestamp }` | Every 5 s; liveness only. |
+| `task` | `{ task: <AssignedTask> }` | **A task has been assigned and pushed to you.** Start executing immediately — it is already in `assigned` state under your `agentId`. Report progress/resolve as usual. |
+| `cancel` | `{ taskId: { cap, id } }` | The client cancelled a task you hold. Stop work and report partial output. (HTTP/legacy agents instead get **499** on their next progress/resolve call — see [Cancellation](#task-cancellation).) |
+
+The pushed `task` payload is identical to the response of `POST /private/agent/take/{cap}/{id}`.
+
+#### Agent → server messages (request/response RPC)
+
+The agent reports results and performs side calls over the same socket using a
+request envelope. Responses are correlated by `req_id`:
+
+```jsonc
+// request
+{ "req_id": "r1", "action": "resolve_task", "params": { /* TaskResultReport */ } }
+// success response
+{ "req_id": "r1", "type": "response", "status": 200, "data": { /* ... */ } }
+// error response
+{ "req_id": "r1", "type": "error", "status": 499, "error": { "type": "...", "message": "..." } }
+```
+
+| `action` | `params` | Purpose |
+|----------|----------|---------|
+| `update_progress` | `TaskUpdate` | Append log / set stage / move to `starting`\|`running`. **Sending this marks the task started** — see disconnect behavior below. |
+| `resolve_task` | `TaskResultReport` | Report terminal result (frees the slot; the server then pushes your next task). |
+| `upload_file` | `{ bucket_uid, filename }` + a following **binary** frame | Upload an output file. |
+| `get` / `post` | `{ path: [...], body? }` | Generic access to the HTTP agent routes (e.g. bucket stat, info update). |
+| `poll_task` / `poll_task_urgent` / `take_task` | — | Legacy pull actions. Still available for compatibility; unnecessary under push. |
+
+#### Capacity, disconnect, and reconnect
+
+- **Capacity** — the server tracks how many tasks each connection currently holds
+  and never pushes beyond the agent's registered `capacity` (a `capacity` of 0 is
+  treated as 1). Legacy HTTP polls are not capacity-gated.
+- **Reconnect** — a new WS connection for the same agent supersedes the old one.
+- **Disconnect** — if your socket drops:
+  - tasks you had **not started** (no `update_progress` yet → still `assigned`)
+    are returned to the queue and re-dispatched to another agent;
+  - tasks you had **started** (`starting`/`running`) stay assigned to you — finish
+    them and resolve over a reconnected socket. (Orphan recovery fails them only
+    if the agent stays offline and silent for ~30 min.)
+
+---
+
 ### Register Agent
 
 ```
@@ -740,6 +812,8 @@ Lightweight liveness check that updates `last_contact` without fetching tasks. U
 
 ### Poll Urgent Tasks
 
+> **Deprecated.** Prefer the [WebSocket push channel](#communication-model-websocket-push-primary-vs-http-polling-deprecated). Polling still works for legacy agents.
+
 ```
 GET /private/agent/task/poll_urgent
 Authorization: Bearer <JWT>
@@ -796,6 +870,8 @@ null
 ---
 
 ### Poll Non-Urgent Tasks
+
+> **Deprecated.** Prefer the [WebSocket push channel](#communication-model-websocket-push-primary-vs-http-polling-deprecated). Polling still works for legacy agents.
 
 ```
 GET /private/agent/task/poll

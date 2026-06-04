@@ -112,6 +112,47 @@ impl TaskStorage {
         Ok(())
     }
 
+    /// Revert an assigned task back to the unassigned queue.
+    ///
+    /// Used by the push dispatcher when a push send fails before the agent
+    /// received the task, and on WS disconnect to re-queue tasks the agent never
+    /// started. Only reverts tasks still in `Assigned` status — a `Starting` /
+    /// `Running` task is being worked on (left to the agent / orphan recovery),
+    /// and terminal tasks are done. The remove-from-assigned + insert-into-
+    /// unassigned pair runs in one transaction. Returns the restored task, or
+    /// `None` if it was missing or no longer un-started.
+    pub fn unassign_task(&self, id: &TaskId) -> Result<Option<UnassignedTask>, AppError> {
+        let key = Self::make_key(id);
+        let value = match self.assigned.get(key.as_bytes())? {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+        let assigned: AssignedTask = rmp_serde::from_slice(&value)?;
+        if assigned.status != TaskStatus::Assigned {
+            return Ok(None);
+        }
+        let unassigned = UnassignedTask {
+            id: assigned.id.clone(),
+            data: assigned.data.clone(),
+            created_at: assigned.created_at,
+        };
+        let bytes = rmp_serde::to_vec_named(&unassigned)?;
+        let res = (&self.assigned, &self.unassigned).transaction(move |(asg, un)| {
+            // If the assigned record is gone, a concurrent resolve / sweep handled
+            // it — abort so we don't resurrect a stale copy.
+            if asg.remove(key.as_bytes())?.is_none() {
+                return abort(());
+            }
+            un.insert(key.as_bytes(), bytes.clone())?;
+            Ok(())
+        });
+        match res {
+            Ok(()) => Ok(Some(unassigned)),
+            Err(TransactionError::Abort(())) => Ok(None),
+            Err(TransactionError::Storage(e)) => Err(AppError::Database(e)),
+        }
+    }
+
     /// Remove an unassigned task by id (returns true if it existed)
     pub fn remove_unassigned(&self, id: &TaskId) -> Result<bool> {
         let key = Self::make_key(id);
