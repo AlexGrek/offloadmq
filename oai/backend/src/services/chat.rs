@@ -120,6 +120,11 @@ async fn run_chat(
     state: &Arc<AppState>,
     user_id: i64,
 ) -> Result<(), String> {
+    // OffloadMQ matches agents by BASE capability and requires tasks to be
+    // submitted without extended attributes. The model picker may hand us the
+    // raw cap (e.g. `llm.gemma4[vision;tools]`); strip it to base here so the
+    // task is actually schedulable and stored consistently everywhere below.
+    let capability = crate::offload::base_capability(&capability).to_string();
     let chat_id: i64 = chat_id_str.parse().map_err(|_| "invalid chat_id".to_string())?;
 
     let parsed_attachment_ids: Vec<i64> = attachment_ids

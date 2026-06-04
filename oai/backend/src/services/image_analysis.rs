@@ -108,6 +108,9 @@ pub async fn start_job(
     if req.capability.is_empty() {
         return Err(AppError::BadRequest("capability is required".into()));
     }
+    // OffloadMQ schedules by base capability — strip any extended attributes the
+    // model picker may include (e.g. `llm.qwen3-vl:8b[vision;tools]`).
+    let capability = crate::offload::base_capability(&req.capability).to_string();
 
     let input = image_generation::get_image_file(&state.db, req.image_id, user_id)
         .await?
@@ -130,7 +133,7 @@ pub async fn start_job(
             id: job_id,
             user_id,
             prompt,
-            capability: &req.capability,
+            capability: &capability,
             input_image_id: Some(input.id),
             data_preparation: data_prep_json.as_deref(),
         },
@@ -155,7 +158,7 @@ pub async fn start_job(
     let chat_client = offload_factory::chat_client(state).await?;
     let messages = vec![serde_json::json!({ "role": "user", "content": prompt })];
     let task_id = chat_client
-        .submit_vision_task(&req.capability, messages, &bucket.bucket_uid, data_prep.as_ref())
+        .submit_vision_task(&capability, messages, &bucket.bucket_uid, data_prep.as_ref())
         .await?;
 
     offload_jobs::set_offload_task::<ImageAnalysisJobEntity>(

@@ -73,7 +73,7 @@ impl UrgentTaskStore {
                 }
                 if !caps
                     .iter()
-                    .any(|c| base_capability(c) == item.1.task.id.cap.as_str())
+                    .any(|c| base_capability(c) == base_capability(&item.1.task.id.cap))
                 {
                     return false;
                 }

@@ -101,10 +101,12 @@ impl RegularTaskStore {
         let mut eligible: Vec<UnassignedTask> = Vec::new();
 
         for task in tasks.values() {
-            if !caps
-                .iter()
-                .any(|cap| base_capability(cap) == task.id.cap.as_str())
-            {
+            // Match on base capability for BOTH sides. Clients are supposed to
+            // submit base caps, but a task whose cap carries extended attributes
+            // (e.g. `llm.gemma4[vision;tools]`) must still match an agent that
+            // advertises the same base — otherwise it sits unassigned forever.
+            let task_base = base_capability(&task.id.cap);
+            if !caps.iter().any(|cap| base_capability(cap) == task_base) {
                 continue;
             }
             if let Some(runner) = task
@@ -127,7 +129,7 @@ impl RegularTaskStore {
                         && agent
                             .capabilities
                             .iter()
-                            .any(|cap| base_capability(cap) == task.id.cap.as_str())
+                            .any(|cap| base_capability(cap) == task_base)
                 })
                 .map(|agent| agent.tier)
                 .max()

@@ -250,11 +250,12 @@ pub async fn update_non_urgent_task<'a>(
 }
 
 pub async fn has_potential_agents_for(cap: &std::string::String, agents: &AgentStorage) -> bool {
+    let base = base_capability(cap);
     for agent in agents.list_all_agents() {
         if agent
             .capabilities
             .iter()
-            .any(|c| base_capability(c) == cap.as_str())
+            .any(|c| base_capability(c) == base)
             && agent.is_online()
         {
             return true;
@@ -264,12 +265,13 @@ pub async fn has_potential_agents_for(cap: &std::string::String, agents: &AgentS
 }
 
 pub async fn all_online_agents_for(cap: &std::string::String, agents: &AgentStorage) -> Vec<Agent> {
+    let base = base_capability(cap);
     let mut collection = vec![];
     for agent in agents.list_all_agents() {
         if agent
             .capabilities
             .iter()
-            .any(|c| base_capability(c) == cap.as_str())
+            .any(|c| base_capability(c) == base)
             && agent.is_online()
         {
             collection.push(agent);

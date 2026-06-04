@@ -382,6 +382,14 @@ pub(crate) async fn post_cancel(
     resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))
 }
 
+/// Strip extended attributes from a capability string: `llm.gemma4[vision;tools]`
+/// → `llm.gemma4`. OffloadMQ requires tasks to be submitted with the **base**
+/// capability only — its scheduler matches agents by base, so a bracketed task
+/// cap would never be assigned. Always normalize before submitting a task.
+pub fn base_capability(cap: &str) -> &str {
+    cap.split_once('[').map(|(base, _)| base).unwrap_or(cap)
+}
+
 fn parse_capabilities_with_prefix(raw: &[String], prefix: &str) -> Vec<CapabilityInfo> {
     raw.iter()
         .filter(|s| s.starts_with(prefix))
