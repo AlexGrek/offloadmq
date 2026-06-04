@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, BarChart2, RefreshCw } from "lucide-react";
 import {
@@ -93,7 +94,7 @@ export default function AgentStatsDrawer({ agent, onClose }) {
     const totalSuccess = records ? records.filter(r => r.success).length : 0;
     const totalFail = records ? records.filter(r => !r.success).length : 0;
 
-    return (
+    return createPortal(
         <AnimatePresence>
             {agent && (
                 <>
@@ -238,7 +239,8 @@ export default function AgentStatsDrawer({ agent, onClose }) {
                     </motion.div>
                 </>
             )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 }
 
