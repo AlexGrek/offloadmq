@@ -2,6 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { apiFetch, fmtDate } from "../utils";
 import Banner from "./Banner";
+import AgentStatsDrawer from "./agents/AgentStatsDrawer";
+
+function shortId(id) {
+  if (!id) return "—";
+  return id.length > 10 ? id.slice(0, 8) + "…" : id;
+}
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -110,7 +116,7 @@ function FilterBar({ filters, onChange, onApply, loading }) {
 
 const LIMIT = 50;
 
-function RecordsTab() {
+function RecordsTab({ onOpenStats }) {
   const [filters, setFilters] = useState({ capability: "", runner_id: "", machine_id: "" });
   const [items, setItems]     = useState([]);
   const [cursor, setCursor]   = useState(null);
@@ -190,8 +196,19 @@ function RecordsTab() {
                   <td style={{ padding: "8px 10px", verticalAlign: "top" }}>
                     <Mono>{r.capability}</Mono>
                   </td>
-                  <td style={{ padding: "8px 10px", verticalAlign: "top", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    <Mono>{r.runnerId}</Mono>
+                  <td style={{ padding: "8px 10px", verticalAlign: "top" }}>
+                    <button
+                      type="button"
+                      title={r.runnerId}
+                      onClick={() => onOpenStats(r.runnerId)}
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        padding: 0, fontFamily: "monospace", fontSize: "12px",
+                        color: "var(--primary)", textDecoration: "underline dotted",
+                      }}
+                    >
+                      {shortId(r.runnerId)}
+                    </button>
                   </td>
                   <td style={{ padding: "8px 10px", verticalAlign: "top" }}>
                     {r.machineId ? <Mono>{r.machineId}</Mono> : <span style={{ color: "var(--muted)" }}>—</span>}
@@ -223,7 +240,7 @@ function RecordsTab() {
 
 // ─── Shared stats table ───────────────────────────────────────────────────────
 
-function StatsTable({ items, idLabel, idKey, loading, error, onRefresh }) {
+function StatsTable({ items, idLabel, idKey, loading, error, onRefresh, onClickId }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "12px" }}>
@@ -257,9 +274,26 @@ function StatsTable({ items, idLabel, idKey, loading, error, onRefresh }) {
           <tbody>
             {items.map((r, i) => (
               <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
-                <td style={{ padding: "8px 10px" }}><Mono>{r.capability}</Mono></td>
-                <td style={{ padding: "8px 10px", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  <Mono>{r[idKey]}</Mono>
+                <td style={{ padding: "8px 10px" }}>
+                  {r.capability ? <Mono>{r.capability}</Mono> : <span style={{ color: "var(--muted)" }}>—</span>}
+                </td>
+                <td style={{ padding: "8px 10px" }}>
+                  {onClickId ? (
+                    <button
+                      type="button"
+                      title={r[idKey]}
+                      onClick={() => onClickId(r[idKey])}
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        padding: 0, fontFamily: "monospace", fontSize: "12px",
+                        color: "var(--primary)", textDecoration: "underline dotted",
+                      }}
+                    >
+                      {shortId(r[idKey])}
+                    </button>
+                  ) : (
+                    <Mono title={r[idKey]}>{shortId(r[idKey])}</Mono>
+                  )}
                 </td>
                 <td style={{ padding: "8px 10px", textAlign: "right" }}>{r.totalRuns}</td>
                 <td style={{ padding: "8px 10px", textAlign: "right",
@@ -302,6 +336,43 @@ function useStatsTab(endpoint) {
   return { items, loading, error, fetch: fetch_ };
 }
 
+// ─── Machine stats grouped by machineId ──────────────────────────────────────
+
+function groupByMachine(items) {
+  const map = {};
+  for (const r of items) {
+    const key = r.machineId || "unknown";
+    if (!map[key]) {
+      map[key] = { machineId: key, totalRuns: 0, _successes: 0, successMinMs: null, successMaxMs: null, _successMsSum: 0, _successCount: 0, _failMsSum: 0, _failCount: 0 };
+    }
+    const g = map[key];
+    g.totalRuns += r.totalRuns ?? 0;
+    const successes = Math.round(((r.successPct ?? 0) / 100) * (r.totalRuns ?? 0));
+    const failures = (r.totalRuns ?? 0) - successes;
+    g._successes += successes;
+    if (r.successAvgMs != null && successes > 0) {
+      g._successMsSum += r.successAvgMs * successes;
+      g._successCount += successes;
+    }
+    if (r.successMinMs != null) g.successMinMs = g.successMinMs == null ? r.successMinMs : Math.min(g.successMinMs, r.successMinMs);
+    if (r.successMaxMs != null) g.successMaxMs = g.successMaxMs == null ? r.successMaxMs : Math.max(g.successMaxMs, r.successMaxMs);
+    if (r.failAvgMs != null && failures > 0) {
+      g._failMsSum += r.failAvgMs * failures;
+      g._failCount += failures;
+    }
+  }
+  return Object.values(map).map(g => ({
+    machineId: g.machineId,
+    totalRuns: g.totalRuns,
+    successPct: g.totalRuns > 0 ? (g._successes / g.totalRuns) * 100 : 0,
+    successAvgMs: g._successCount > 0 ? g._successMsSum / g._successCount : null,
+    successMinMs: g.successMinMs,
+    successMaxMs: g.successMaxMs,
+    failAvgMs: g._failCount > 0 ? g._failMsSum / g._failCount : null,
+    capability: null,
+  })).sort((a, b) => b.totalRuns - a.totalRuns);
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 const TABS = [
@@ -312,6 +383,7 @@ const TABS = [
 
 export default function HeuristicsPage() {
   const [tab, setTab] = useState("records");
+  const [statsAgent, setStatsAgent] = useState(null);
 
   const runners  = useStatsTab("/management/heuristics/stats/runners");
   const machines = useStatsTab("/management/heuristics/stats/machines");
@@ -326,6 +398,10 @@ export default function HeuristicsPage() {
     }
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const openStats = (uid) => setStatsAgent({ uid, displayName: null, uidShort: shortId(uid) });
+
+  const groupedMachines = groupByMachine(machines.items);
+
   return (
     <div className="page">
       <div className="page-head">
@@ -334,7 +410,7 @@ export default function HeuristicsPage() {
 
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
 
-      {tab === "records" && <RecordsTab />}
+      {tab === "records" && <RecordsTab onOpenStats={openStats} />}
 
       {tab === "runners" && (
         <StatsTable
@@ -344,12 +420,13 @@ export default function HeuristicsPage() {
           loading={runners.loading}
           error={runners.error}
           onRefresh={runners.fetch}
+          onClickId={openStats}
         />
       )}
 
       {tab === "machines" && (
         <StatsTable
-          items={machines.items}
+          items={groupedMachines}
           idLabel="Machine ID"
           idKey="machineId"
           loading={machines.loading}
@@ -357,6 +434,8 @@ export default function HeuristicsPage() {
           onRefresh={machines.fetch}
         />
       )}
+
+      <AgentStatsDrawer agent={statsAgent} onClose={() => setStatsAgent(null)} />
     </div>
   );
 }

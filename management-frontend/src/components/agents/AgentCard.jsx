@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Layers, Gauge, Cpu, Clock, Fingerprint, SquareArrowRight } from "lucide-react";
+import { ChevronDown, ChevronUp, Layers, Gauge, Cpu, Clock, Fingerprint, SquareArrowRight, BarChart2 } from "lucide-react";
 import { fmtDate, stripCapabilityAttrs, parseCapabilityAttrs } from "../../utils";
 import Chip from "../Chip";
 import AttributeTag from "../AttributeTag";
@@ -10,6 +10,7 @@ import ForceRescanButton from "./ForceRescanButton";
 import OllamaManagerModal from "./OllamaManagerModal";
 import OnnxManagerModal from "./OnnxManagerModal";
 import SpecialCapsModal from "./SpecialCapsModal";
+import AgentStatsDrawer from "./AgentStatsDrawer";
 
 function relativeTime(iso) {
     if (!iso) return 'Never';
@@ -32,6 +33,7 @@ function KV({ label, value, mono }) {
 export default function AgentCard({ a, onDelete, onRescanDone }) {
     const [isOpen, setIsOpen] = useState(false);
     const [capsExpanded, setCapsExpanded] = useState(false);
+    const [statsOpen, setStatsOpen] = useState(false);
 
     const slavemodeCapabilities = (a.capabilities || []).filter(c => stripCapabilityAttrs(c).startsWith('slavemode.'));
     const hasForceRescan = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.force-rescan');
@@ -76,6 +78,20 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
                         )}
                     </div>
                 </div>
+
+                <button
+                    onClick={e => { e.stopPropagation(); setStatsOpen(true); }}
+                    title="Runner stats"
+                    style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        padding: '3px 8px', borderRadius: '5px', border: '1px solid var(--border)',
+                        background: 'var(--input-bg)', color: 'var(--muted)',
+                        cursor: 'pointer', fontSize: '11px', flexShrink: 0,
+                    }}
+                >
+                    <BarChart2 size={12} />
+                    Stats
+                </button>
 
                 <div style={{ color: 'var(--muted)', flexShrink: 0 }}>
                     {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -207,6 +223,8 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <AgentStatsDrawer agent={statsOpen ? a : null} onClose={() => setStatsOpen(false)} />
         </li>
     );
 }

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Copy, RefreshCw, X } from "lucide-react";
+import { BarChart2, ChevronDown, ChevronRight, Copy, RefreshCw, X } from "lucide-react";
 import { apiFetch, fmtDate } from "../utils";
 import Banner from "./Banner";
 import ColorDot from "./ColorDot";
+import AgentStatsDrawer from "./agents/AgentStatsDrawer";
 
 const SEVERITIES = ["CRITICAL", "ERROR", "INFO"];
 
@@ -85,7 +86,7 @@ function Field({ label, value, mono = true }) {
   );
 }
 
-function LogRow({ rec, onSelectAgent, expanded, onToggle }) {
+function LogRow({ rec, onSelectAgent, onOpenStats, expanded, onToggle }) {
   const fingerprintSeed = rec.machineFingerprint || rec.agentId || "";
   return (
     <div style={{
@@ -118,6 +119,19 @@ function LogRow({ rec, onSelectAgent, expanded, onToggle }) {
           }}
         >
           {rec.agentName || rec.agentId}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onOpenStats(rec.agentId, rec.agentName); }}
+          title="Runner stats"
+          style={{
+            display: "inline-flex", alignItems: "center", gap: "3px",
+            padding: "1px 6px", borderRadius: "4px",
+            border: "1px solid var(--border)", background: "var(--input-bg)",
+            color: "var(--muted)", cursor: "pointer", fontSize: "10px",
+          }}
+        >
+          <BarChart2 size={10} />
         </button>
         <span style={{
           flex: 1, minWidth: 0,
@@ -174,6 +188,7 @@ export default function AgentLogsPage() {
   const [error, setError]             = useState("");
   const [expanded, setExpanded]       = useState(() => new Set());
   const [limit, setLimit]             = useState(100);
+  const [statsAgent, setStatsAgent]   = useState(null);   // { uid, displayName }
 
   const toggleSeverity = (sev) => {
     setSelectedSeverities(prev => {
@@ -243,6 +258,10 @@ export default function AgentLogsPage() {
   const onSelectAgent = (agentId) => {
     setAgentFilter(agentId);
     setAgentInput(agentId);
+  };
+
+  const onOpenStats = (agentId, agentName) => {
+    setStatsAgent({ uid: agentId, displayName: agentName || null, uidShort: agentId?.slice(0, 8) });
   };
 
   const clearAgentFilter = () => {
@@ -378,10 +397,13 @@ export default function AgentLogsPage() {
               expanded={expanded.has(rec.recordId)}
               onToggle={() => toggleExpanded(rec.recordId)}
               onSelectAgent={onSelectAgent}
+              onOpenStats={onOpenStats}
             />
           ))}
         </div>
       )}
+
+      <AgentStatsDrawer agent={statsAgent} onClose={() => setStatsAgent(null)} />
     </div>
   );
 }
