@@ -8,6 +8,7 @@ import { SystemPromptStudio } from './SystemPromptStudio'
 /** Scrollable message region: empty-state prompt studio, loader, or the transcript. */
 export function ChatTranscript({
   scrollRef,
+  contentRef,
   messagesEndRef,
   onScroll,
   onWheel,
@@ -26,6 +27,7 @@ export function ChatTranscript({
   onRetry,
 }: {
   scrollRef: React.RefObject<HTMLDivElement | null>
+  contentRef: (el: HTMLDivElement | null) => void
   messagesEndRef: React.RefObject<HTMLDivElement | null>
   onScroll: () => void
   onWheel: (e: React.WheelEvent<HTMLDivElement>) => void
@@ -77,7 +79,7 @@ export function ChatTranscript({
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
+        <div ref={contentRef} className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
           <SystemPromptBlock content={systemPrompt} />
           {messages.map((msg, idx) => (
             <ChatMessageItem

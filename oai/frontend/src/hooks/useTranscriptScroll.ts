@@ -6,10 +6,16 @@ const BOTTOM_THRESHOLD_PX = 48
 /**
  * Owns the chat transcript's auto-follow scrolling.
  *
- * Pins to the bottom only while the user is already at the bottom; any upward
- * scroll disables follow, and scrolling back to the end re-enables it. Returns
- * the refs/handlers the transcript wires up plus `pinForOutgoing()` for the page
- * to call right before appending the user's own message.
+ * Stays pinned to the bottom while the user is at (or near) the bottom, and
+ * keeps following as the assistant's reply streams in. Any upward scroll/wheel
+ * detaches follow-mode; scrolling back to the end (or hitting the button)
+ * re-attaches it.
+ *
+ * The actual "stick to bottom" is driven by a `ResizeObserver` on the transcript
+ * content — so it survives async height changes (markdown relayout, message
+ * remounts, image/font loads) that a render-time effect alone would miss. Wire
+ * `contentRef` onto the element whose height grows (the messages list), and
+ * `scrollRef` onto the scroll container.
  */
 export function useTranscriptScroll(opts: {
   messages: Message[]
@@ -21,11 +27,11 @@ export function useTranscriptScroll(opts: {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  /** When true, new content keeps the transcript pinned to the bottom. */
-  const autoScrollRef = useRef(true)
-  const lastScrollTopRef = useRef(0)
-  /** Ignore onScroll while we programmatically pin (DOM swaps reset scrollTop → false "scroll up"). */
-  const suppressScrollHandlerRef = useRef(false)
+  /** When true, height changes keep the transcript pinned to the bottom. */
+  const followRef = useRef(true)
+  /** Ignore scroll events emitted by an in-flight smooth programmatic scroll. */
+  const smoothSuppressRef = useRef(false)
+  const smoothTimer = useRef<number | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
 
   const isStreaming = messages.some(isMessagePending)
@@ -34,98 +40,117 @@ export function useTranscriptScroll(opts: {
     return el.scrollHeight - el.scrollTop - el.clientHeight
   }
 
-  function maxScrollTop(el: HTMLDivElement): number {
-    return Math.max(0, el.scrollHeight - el.clientHeight)
-  }
-
-  const handleScroll = useCallback(() => {
-    if (suppressScrollHandlerRef.current) return
+  /** Snap the scroll container (never an ancestor) to its bottom. */
+  const snapToBottom = useCallback((behavior: ScrollBehavior = 'instant') => {
     const el = scrollRef.current
     if (!el) return
-    const { scrollTop } = el
-    const dist = distanceFromBottom(el)
-
-    // Any upward scroll disables follow; reaching the end re-enables it.
-    if (scrollTop < lastScrollTopRef.current - 1) {
-      autoScrollRef.current = false
-    } else if (dist <= BOTTOM_THRESHOLD_PX) {
-      autoScrollRef.current = true
-    }
-
-    lastScrollTopRef.current = scrollTop
-    setShowScrollBtn(!autoScrollRef.current)
-  }, [])
-
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    if (e.deltaY < 0) autoScrollRef.current = false
-  }, [])
-
-  /** Pin transcript to the bottom by scrolling the container only — never ancestors. */
-  function scrollTranscriptToEnd(behavior: ScrollBehavior = 'instant') {
-    const el = scrollRef.current
-    if (!el) return
-    const top = maxScrollTop(el)
+    const top = Math.max(0, el.scrollHeight - el.clientHeight)
     if (behavior === 'smooth') {
+      smoothSuppressRef.current = true
+      if (smoothTimer.current) clearTimeout(smoothTimer.current)
+      smoothTimer.current = window.setTimeout(() => {
+        smoothSuppressRef.current = false
+      }, 500)
       el.scrollTo({ top, behavior: 'smooth' })
     } else {
       el.scrollTop = top
     }
-    lastScrollTopRef.current = el.scrollTop
-  }
+  }, [])
 
-  function followTranscriptBottom(behavior: ScrollBehavior = 'instant') {
-    if (!autoScrollRef.current) return
-    suppressScrollHandlerRef.current = true
-    scrollTranscriptToEnd(behavior)
-    requestAnimationFrame(() => {
-      scrollTranscriptToEnd('instant')
-      const el = scrollRef.current
-      if (el) lastScrollTopRef.current = el.scrollTop
-      setShowScrollBtn(false)
-      requestAnimationFrame(() => {
-        suppressScrollHandlerRef.current = false
-      })
-    })
-  }
-
-  /** Manual "scroll to bottom" button — re-enables follow. */
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    autoScrollRef.current = true
-    suppressScrollHandlerRef.current = true
-    scrollTranscriptToEnd(behavior)
+  const handleScroll = useCallback(() => {
+    if (smoothSuppressRef.current) return
     const el = scrollRef.current
-    if (el) lastScrollTopRef.current = el.scrollTop
-    setShowScrollBtn(false)
-    requestAnimationFrame(() => {
-      suppressScrollHandlerRef.current = false
-    })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!el) return
+    // Distance-based: at/near the bottom means "follow", anywhere above means the
+    // user is reading history. Our own instant snaps land at the bottom, so they
+    // re-affirm follow rather than break it — no direction tracking needed.
+    const atBottom = distanceFromBottom(el) <= BOTTOM_THRESHOLD_PX
+    followRef.current = atBottom
+    setShowScrollBtn(!atBottom)
+  }, [])
+
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    const el = scrollRef.current
+    if (!el) return
+    // Upward intent detaches follow immediately (wins the fight against fast
+    // streaming), but only when there's actually room to scroll up.
+    if (e.deltaY < 0 && el.scrollHeight > el.clientHeight) {
+      followRef.current = false
+      setShowScrollBtn(true)
+    }
+  }, [])
+
+  /** Manual "scroll to bottom" button — re-attaches follow. */
+  const scrollToBottom = useCallback(
+    (behavior: ScrollBehavior = 'smooth') => {
+      followRef.current = true
+      setShowScrollBtn(false)
+      snapToBottom(behavior)
+    },
+    [snapToBottom],
+  )
 
   /** Call right before appending an outgoing message so we stay pinned. */
   const pinForOutgoing = useCallback(() => {
-    autoScrollRef.current = true
-    suppressScrollHandlerRef.current = true
-    const el = scrollRef.current
-    // Seed lastScrollTop with the current value so any scroll events that fire
-    // during the DOM swap aren't misread as an upward scroll (which would
-    // disable follow-mode and leave the transcript stranded at the top).
-    if (el) lastScrollTopRef.current = el.scrollTop
+    followRef.current = true
     setShowScrollBtn(false)
-  }, [])
+    snapToBottom('instant')
+  }, [snapToBottom])
 
+  // Observe the transcript content: any height change while following snaps us to
+  // the bottom. ResizeObserver fires after layout / before paint, so there's no
+  // flash, and it catches growth that no React render reports (markdown relayout,
+  // images, fonts, message remounts).
+  const observerRef = useRef<ResizeObserver | null>(null)
+  const observedRef = useRef<HTMLElement | null>(null)
+  const setContentRef = useCallback((el: HTMLDivElement | null) => {
+    if (observerRef.current && observedRef.current) {
+      observerRef.current.unobserve(observedRef.current)
+    }
+    observedRef.current = el
+    if (!el) return
+    if (!observerRef.current) {
+      observerRef.current = new ResizeObserver(() => {
+        if (followRef.current) snapToBottom('instant')
+      })
+    }
+    observerRef.current.observe(el)
+  }, [snapToBottom])
+
+  useEffect(
+    () => () => {
+      observerRef.current?.disconnect()
+      if (smoothTimer.current) clearTimeout(smoothTimer.current)
+    },
+    [],
+  )
+
+  // Snap on the window resizing (clientHeight changes don't resize the content box).
+  useEffect(() => {
+    const onResize = () => {
+      if (followRef.current) snapToBottom('instant')
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [snapToBottom])
+
+  // Immediate pre-paint snap when the message list itself changes (covers the
+  // first-message studio→transcript swap before the observer attaches).
   useLayoutEffect(() => {
     if (showSystemStudio || loadingMessages) return
-    followTranscriptBottom('instant')
-  }, [messages, isStreaming, showSystemStudio, loadingMessages]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (followRef.current) snapToBottom('instant')
+  }, [messages, isStreaming, showSystemStudio, loadingMessages, snapToBottom])
 
+  // New chat opened: re-attach follow and drop to the bottom once it renders.
   useEffect(() => {
-    autoScrollRef.current = true
+    followRef.current = true
     setShowScrollBtn(false)
-    requestAnimationFrame(() => followTranscriptBottom('instant'))
-  }, [activeChatId]) // eslint-disable-line react-hooks/exhaustive-deps
+    requestAnimationFrame(() => snapToBottom('instant'))
+  }, [activeChatId, snapToBottom])
 
   return {
     scrollRef,
+    contentRef: setContentRef,
     messagesEndRef,
     showScrollBtn,
     handleScroll,

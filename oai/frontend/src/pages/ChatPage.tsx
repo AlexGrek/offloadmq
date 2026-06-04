@@ -682,6 +682,7 @@ export default function ChatPage() {
 
         <ChatTranscript
           scrollRef={scroll.scrollRef}
+          contentRef={scroll.contentRef}
           messagesEndRef={scroll.messagesEndRef}
           onScroll={scroll.handleScroll}
           onWheel={scroll.handleWheel}
