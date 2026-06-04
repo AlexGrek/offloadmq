@@ -68,11 +68,12 @@ cd ui-server/frontend && npm install && npm run build
 
 `offloadmock/` (repo root) is a FastAPI mock of the OffloadMQ server. Use it to
 run/develop the agent **without** the real Rust server — it implements the full
-agent API (register, auth, ping, info/update, poll, take/resolve/progress,
-buckets) with exact schemas. **The queue is always empty (no task execution)**,
-so the agent registers, authenticates, pushes capabilities, and polls forever
-getting `200 null` — ideal for testing the poll loop, registration, capability
-policy, and connection/UI flows. Full docs + endpoint reference:
+agent API (register, auth, ping, info/update, the agent **WebSocket**,
+take/resolve/progress, buckets) with exact schemas. **The queue is always empty
+(no task execution)**, so the agent registers, authenticates, pushes
+capabilities, and then holds an **idle WebSocket** (welcome + 5 s heartbeats, no
+task ever pushed) — ideal for testing registration, capability policy, and
+connection/UI flows. Full docs + endpoint reference:
 [offloadmock/DOCS.md](../../../offloadmock/DOCS.md).
 
 ```bash
@@ -91,17 +92,18 @@ end you still need the real server (the mock will never assign a task).
 
 ## 1. `agent/` — offloadmq-agent (toolkit + executors)
 
-Processing toolkit used by core. **No orchestration, no UI.** Poll/register via
-aiohttp; routed executors use sync `requests` inside worker threads.
+Processing toolkit used by core. **No orchestration, no UI.** Register/auth +
+persistent WebSocket via aiohttp; routed executors use sync `requests` inside
+worker threads.
 
 ### Core modules
 
 | File | Purpose |
 |---|---|
-| `models.py` | `Task` (includes `server_task` from poll), `TaskResult`, `TaskStatus`, `LogEntry`, registration DTOs |
+| `models.py` | `Task` (`Task.from_poll` parses the pushed task frame into `server_task`), `TaskResult`, `TaskStatus`, `LogEntry`, registration DTOs |
 | `wire.py` | Server wire types: `TaskId`, `TaskResultReport`, `TaskProgressReport` |
 | `context.py` | `ExecContext` — structured logs, cooperative cancel, `agent_transport` |
-| `client.py` | `OffloadMQClient` — register/auth, poll (urgent + normal), take, progress, **wire-format resolve** |
+| `client.py` | `OffloadMQClient` — register/auth (HTTP); persistent WebSocket (`open_ws`/`ws_messages`) receives server-pushed tasks + cancels; `report_progress` + **wire-format `resolve`** sent over WS; `update_agent_info`. HTTP polling removed. |
 | `executor.py` | `@register("prefix")`, `find()`, `registered_prefixes()` |
 | `capabilities.py` | Async wrapper over `capabilities_sync.detect_capabilities()` |
 | `capabilities_sync.py` | Full runtime probes (Ollama, docker, ComfyUI, custom, ONNX, …) |
@@ -193,7 +195,7 @@ converts captured `TaskResultReport` → `TaskResult`. Orchestrator resolves via
 
 ## 2. `core/` — offloadmq-core (orchestration)
 
-Single object both entry points drive. Settings, task store, executor pool, poller.
+Single object both entry points drive. Settings, task store, executor pool, WS supervisor.
 
 | File | Purpose |
 |---|---|
@@ -201,7 +203,7 @@ Single object both entry points drive. Settings, task store, executor pool, poll
 | `legacy_migration.py` | Map `~/.offload-agent.json` → v2 settings |
 | `task_store.py` | In-memory tasks + logs; terminal cap 200 |
 | `executor_pool.py` | `ThreadPoolExecutor`; `asyncio.run(executor)` per task |
-| `orchestrator.py` | Lifecycle, urgent+normal poll, progress forward, cap push, background rescan |
+| `orchestrator.py` | Lifecycle, WS supervisor + session (receives server-pushed tasks/cancels), progress forward, cap push, background rescan |
 | `agent_log.py` | Ring buffer for UI log tail |
 | `scan_state.py` | Background scan state for capabilities UI |
 | `webui.py` | uvicorn lifecycle |
@@ -211,15 +213,20 @@ Single object both entry points drive. Settings, task store, executor pool, poll
 
 ```
 caller thread          orchestrator.start() → spawns:
-  poller thread        asyncio loop: register → auth → poll (urgent first) → dispatch
+  supervisor thread    asyncio loop: register → auth → push caps → open WS →
+  (omq-supervisor)     receive pushed task/cancel frames → dispatch to pool
   pool worker × N      asyncio.run(executor) per task
   rescan thread        stepped capability rescan + push
   ui-server thread     uvicorn (GUI) or blocking (server mode)
 ```
 
-- Poller respects `max_concurrent`; passes `SyncAgentTransport` as `ctx.agent_transport`.
+- **Server-push model:** the server never pushes beyond the agent's registered
+  `capacity`, so there is no client-side concurrency gate. Executors receive
+  `SyncAgentTransport` as `ctx.agent_transport`.
 - `client.resolve` uses wire `TaskResultReport` shape via `result_convert`.
-- JWT refresh 300s before expiry. **HTTP polling only** (no WebSocket transport).
+- Transport is a single persistent **WebSocket** (`/private/agent/ws`) — HTTP
+  polling has been removed. The supervisor stays alive until `stop()`,
+  reconnecting with exponential backoff (and re-auth) on any socket close.
 
 ### Orchestrator API (implements `OrchestratorAPI`)
 
