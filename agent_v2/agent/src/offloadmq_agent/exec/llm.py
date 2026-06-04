@@ -2,15 +2,75 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import logging
+from pathlib import Path
 from typing import Any
 
 import aiohttp
 
 from offloadmq_agent.context import ExecContext
+from offloadmq_agent.data.task_inputs import stage_task_inputs
 from offloadmq_agent.executor import register
 from offloadmq_agent.models import Task, TaskResult, TaskStatus
 from offloadmq_agent.ollama import get_ollama_base_url
+
+logger = logging.getLogger(__name__)
+
+# Image extensions Ollama vision models accept via the per-message ``images`` field.
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+
+
+def _collect_image_attachments(data_path: Path) -> list[str]:
+    """Base64-encode every image file in ``data_path`` for Ollama's ``images`` field."""
+    attachments: list[str] = []
+    if not data_path.exists():
+        return attachments
+    for f in sorted(data_path.iterdir()):
+        if f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS:
+            attachments.append(base64.b64encode(f.read_bytes()).decode("ascii"))
+    return attachments
+
+
+def _convert_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Flatten OpenAI-style multimodal ``content`` parts into Ollama's shape.
+
+    A message whose ``content`` is a list of ``{type: text|image_url}`` parts is
+    rewritten to a plain-text ``content`` plus an ``images`` list of base64 data.
+    Plain-string messages pass through untouched.
+    """
+    converted: list[dict[str, Any]] = []
+    for msg in messages:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            converted.append(msg)
+            continue
+        text_parts: list[str] = []
+        images: list[str] = []
+        for part in content:
+            if part.get("type") == "text":
+                text_parts.append(part.get("text", ""))
+            elif part.get("type") == "image_url":
+                url = part.get("image_url", {}).get("url", "")
+                images.append(url.split(",", 1)[-1] if url.startswith("data:") else url)
+        new_msg = {**msg, "content": "\n".join(text_parts)}
+        if images:
+            new_msg["images"] = images
+        converted.append(new_msg)
+    return converted
+
+
+def _attach_images(messages: list[dict[str, Any]], images: list[str]) -> list[dict[str, Any]]:
+    """Append ``images`` to the last user message (or create one if absent)."""
+    if not images:
+        return messages
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            msg["images"] = list(msg.get("images", [])) + images
+            return messages
+    messages.append({"role": "user", "content": "", "images": images})
+    return messages
 
 
 async def _stream_with_cancel(
@@ -73,7 +133,8 @@ async def _stream_with_cancel(
 
 @register("llm")
 async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
-    model = task.capability.removeprefix("llm.")
+    # Strip extended capability attributes (e.g. "llm.qwen2.5vl:7b[vision]").
+    model = task.capability.removeprefix("llm.").split("[", 1)[0]
     prompt: str = task.payload.get("prompt", "")
     messages: list[dict[str, Any]] = task.payload.get("messages", [])
 
@@ -87,7 +148,28 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
     if not messages:
         messages = [{"role": "user", "content": prompt}]
 
-    await ctx.progress("generating", f"model={model}", messages=len(messages))
+    # Normalize OpenAI multimodal parts, then attach any images staged from the
+    # task's input buckets (vision requests upload the image to a file_bucket).
+    messages = _convert_openai_messages(messages)
+    try:
+        data_path = (
+            await asyncio.to_thread(stage_task_inputs, task, ctx.agent_transport)
+            if ctx.agent_transport is not None
+            else None
+        )
+    except Exception as exc:
+        return TaskResult(
+            task_id=task.id,
+            status=TaskStatus.FAILED,
+            error=f"Failed to stage input files: {exc}",
+        )
+    image_attachments = _collect_image_attachments(data_path) if data_path else []
+    if image_attachments:
+        messages = _attach_images(messages, image_attachments)
+
+    await ctx.progress(
+        "generating", f"model={model}", messages=len(messages), images=len(image_attachments)
+    )
 
     body: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
     collected: list[str] = []
