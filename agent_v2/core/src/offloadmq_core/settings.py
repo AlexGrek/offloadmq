@@ -28,6 +28,10 @@ class Settings(BaseModel):
     # ComfyUI / workflows
     comfyui_url: str = "http://127.0.0.1:8188"
 
+    # Kokoro TTS (OpenAI-compatible speech API)
+    kokoro_api_url: str = "https://localhost:8443/v1/audio/speech"
+    kokoro_api_key: str = ""
+
     # OS integration flags (persisted; platform modules apply changes).
     win_startup_enabled: bool = False
     mac_startup_enabled: bool = False
@@ -41,7 +45,15 @@ class Settings(BaseModel):
     jwt_token: str = ""
     token_expires_in: int = 0
 
-    @field_validator("server", "api_key", "display_name", "comfyui_url", mode="before")
+    @field_validator(
+        "server",
+        "api_key",
+        "display_name",
+        "comfyui_url",
+        "kokoro_api_url",
+        "kokoro_api_key",
+        mode="before",
+    )
     @classmethod
     def _strip(cls, v: Any) -> Any:
         return v.strip() if isinstance(v, str) else v

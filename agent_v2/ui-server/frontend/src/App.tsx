@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router";
 import { Layout } from "@/components/Layout";
 import { CapabilitiesPage } from "@/pages/CapabilitiesPage";
 import { ComfyPage } from "@/pages/ComfyPage";
+import { KokoroPage } from "@/pages/KokoroPage";
 import { ConfigPage } from "@/pages/ConfigPage";
 import { ConnectionPage } from "@/pages/ConnectionPage";
 import { CustomCapsPage } from "@/pages/CustomCapsPage";
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="slavemode" element={<SlavemodePage />} />
         <Route path="custom" element={<CustomCapsPage />} />
         <Route path="comfy" element={<ComfyPage />} />
+        <Route path="kokoro" element={<KokoroPage />} />
         <Route path="system" element={<SystemPage />} />
         <Route path="logs" element={<LogsPage />} />
         <Route path="config" element={<ConfigPage />} />
