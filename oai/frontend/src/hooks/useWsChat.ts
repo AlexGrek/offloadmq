@@ -38,6 +38,7 @@ export function useWsChat(token: string | null): WsChatHandle {
   const pendingCapsReq = useRef<string | null>(null)
   const handlersRef = useRef(new Set<(event: ServerEvent) => void>())
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const retryDelay = useRef(1500)
   const destroyed = useRef(false)
   // Stable ref so the retry closure always has current token
@@ -88,6 +89,15 @@ export function useWsChat(token: string | null): WsChatHandle {
         setCapabilitiesStatus('loading')
         setCapabilitiesError(null)
         ws.send(JSON.stringify({ type: 'list_capabilities', req_id: 'init' }))
+        // App-level heartbeat: keeps the server's 120s read-idle timer alive during
+        // long generations, and surfaces a silently-dead socket (send throws → close
+        // → reconnect) faster than waiting on the transport.
+        if (pingTimer.current) clearInterval(pingTimer.current)
+        pingTimer.current = setInterval(() => {
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'ping' }))
+          }
+        }, 25_000)
       }
 
       ws.onmessage = (e) => {
@@ -115,6 +125,7 @@ export function useWsChat(token: string | null): WsChatHandle {
       ws.onerror = () => setStatus('error')
 
       ws.onclose = () => {
+        if (pingTimer.current) { clearInterval(pingTimer.current); pingTimer.current = null }
         if (destroyed.current) return
         setStatus('disconnected')
         const delay = retryDelay.current
@@ -128,6 +139,7 @@ export function useWsChat(token: string | null): WsChatHandle {
     return () => {
       destroyed.current = true
       if (retryTimer.current) clearTimeout(retryTimer.current)
+      if (pingTimer.current) { clearInterval(pingTimer.current); pingTimer.current = null }
       wsRef.current?.close()
       setStatus('disconnected')
       setCapabilities([])

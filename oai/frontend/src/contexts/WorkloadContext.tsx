@@ -90,7 +90,9 @@ export function WorkloadProvider({ children }: { children: ReactNode }) {
     setChatTasks(prev =>
       prev.map(t => {
         if (t.reqId !== reqId) return t
-        const wsEvents = [...t.wsEvents, event]
+        // Cap history: a long stream emits ~1 progress event/s and only the latest
+        // log/result matters for derivation — unbounded growth is pure overhead.
+        const wsEvents = [...t.wsEvents, event].slice(-50)
         return {
           ...t,
           wsEvents,

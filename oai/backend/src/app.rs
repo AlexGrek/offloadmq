@@ -28,6 +28,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
 
     let public = Router::new()
         .route("/api/health", get(routes::health::health))
+        .route("/api/version", get(routes::health::version))
         .route("/api/auth/register", post(routes::auth::register))
         .route("/api/auth/login", post(routes::auth::login));
 

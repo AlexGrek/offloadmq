@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { VersionInfo } from '../components/VersionInfo'
 
 export default function SettingsPage() {
   const { user, token } = useAuth()
@@ -257,6 +258,8 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           )}
+
+          <VersionInfo className="pt-1 text-center" />
         </div>
     </main>
   )

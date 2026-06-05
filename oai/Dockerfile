@@ -20,6 +20,10 @@ RUN --mount=type=cache,id=oai-cargo-registry,target=/usr/local/cargo/registry \
     cp /app/.target-cache/release/oai-backend /app/oai-backend
 
 FROM --platform=$TARGETPLATFORM debian:bookworm-slim
+# Build identity (short git hash), set by Taskfile docker build/release.
+# Baked here in the slim stage only, so it never busts the cargo build cache.
+# Reported by GET /api/version and matched against the frontend's VITE_APP_VERSION.
+ARG OAI_BUILD_VERSION=dev
 RUN apt-get update && apt-get install -y ca-certificates libvips42 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -30,5 +34,6 @@ EXPOSE 3000
 ENV SERVER_ADDRESS=0.0.0.0:3000
 ENV STATIC_DIR=/app/static
 ENV RUST_LOG=info
+ENV OAI_BUILD_VERSION=$OAI_BUILD_VERSION
 
 CMD ["./oai-backend"]

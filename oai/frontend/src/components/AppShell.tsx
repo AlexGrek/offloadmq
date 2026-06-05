@@ -3,6 +3,7 @@ import { ProgressProvider } from '../contexts/ProgressContext'
 import { WorkloadProvider } from '../contexts/WorkloadContext'
 import { GlobalProgressDrawer } from './GlobalProgressDrawer'
 import { TopBar } from './TopBar'
+import { UpdateBanner } from './UpdateBanner'
 
 /** Authenticated app layout: shared top bar + page content below. */
 export function AppShell() {
@@ -15,6 +16,7 @@ export function AppShell() {
           <div className="flex min-h-0 flex-1 basis-0 flex-col overflow-hidden">
             <Outlet />
           </div>
+          <UpdateBanner />
         </div>
       </ProgressProvider>
     </WorkloadProvider>

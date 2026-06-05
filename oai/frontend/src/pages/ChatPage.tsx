@@ -73,6 +73,10 @@ export default function ChatPage() {
   const chatTasksRef = useRef(chatTasks)
   activeChatIdRef.current = activeChatId
   chatTasksRef.current = chatTasks
+  const chatsRef = useRef(chats)
+  const capsRef = useRef(ws.capabilities)
+  chatsRef.current = chats
+  capsRef.current = ws.capabilities
   const [messages, setMessages] = useState<Message[]>([])
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
@@ -159,6 +163,11 @@ export default function ChatPage() {
 
   // reqId → assistant message id in the current messages list
   const reqToMsgId = useRef<Map<string, string>>(new Map())
+  // Wall-clock of the last WS frame received — drives the stall watchdog below so a
+  // half-open socket (status stuck "connected", no events) still falls back to REST.
+  const lastWsEventAtRef = useRef<number>(Date.now())
+  // Previous ws.status, to detect a fresh (re)connect and resync from the DB.
+  const prevWsStatusRef = useRef(ws.status)
 
   function restoreReqMappings(msgs: Message[]) {
     reqToMsgId.current.clear()
@@ -199,8 +208,11 @@ export default function ChatPage() {
         )
         setMessages(merged)
         restoreReqMappings(merged)
-        const chat = chats.find(c => c.id === activeChatId)
-        const model = resolveChatModel(chat?.last_model, records, ws.capabilities)
+        // Resolve from refs so this effect runs ONLY on chat switch — depending on
+        // `chats`/capabilities here would refetch the whole transcript on every send
+        // (title/last_model update `chats`), racing the optimistic + streaming UI.
+        const chat = chatsRef.current.find(c => c.id === activeChatId)
+        const model = resolveChatModel(chat?.last_model, records, capsRef.current)
         if (model) setSelectedModel(model)
       })
       .catch(console.error)
@@ -210,7 +222,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true
     }
-  }, [activeChatId, token, chats, ws.capabilities])
+  }, [activeChatId, token])
 
   // Apply saved model immediately when switching chats (before messages finish loading).
   useEffect(() => {
@@ -233,15 +245,31 @@ export default function ChatPage() {
 
   const activeChat = chats.find(c => c.id === activeChatId)
 
-  // A persisted (REST-backed) assistant reply still in flight: no live WS task
-  // owns it (reqId == null), so the background worker is finishing it. Poll the
-  // transcript until it resolves — this is the "came back later" / post-restart path.
-  const hasRestPendingReply = messages.some(m => m.status === 'thinking' && m.reqId == null)
+  // Stall watchdog: whenever an assistant reply is in flight, fall back to polling
+  // the DB if the live stream isn't delivering — covers a dropped socket, a half-open
+  // socket (status stuck "connected"), and the "came back later" / post-restart path
+  // where no live WS task owns the reply. A healthy stream emits a progress event ~1/s,
+  // so this never fires while events are actually flowing.
+  const hasPendingReply = messages.some(isMessagePending)
   useEffect(() => {
-    if (!activeChatId || !token || !hasRestPendingReply) return
-    const interval = setInterval(() => refreshChatMessages(activeChatId), 2500)
+    if (!activeChatId || !token || !hasPendingReply) return
+    const interval = setInterval(() => {
+      const stale = ws.status !== 'connected' || Date.now() - lastWsEventAtRef.current > 6000
+      if (stale && activeChatIdRef.current) refreshChatMessages(activeChatIdRef.current)
+    }, 2500)
     return () => clearInterval(interval)
-  }, [activeChatId, token, hasRestPendingReply]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeChatId, token, hasPendingReply, ws.status]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On a fresh (re)connect, resync the open chat from the DB. The poll loop's events
+  // for an in-flight task are bound to the dropped socket and are gone; the DB row is
+  // the durable record, so this is what recovers state without a manual page reload.
+  useEffect(() => {
+    const prev = prevWsStatusRef.current
+    prevWsStatusRef.current = ws.status
+    if (ws.status === 'connected' && prev !== 'connected' && activeChatId && token) {
+      refreshChatMessages(activeChatId)
+    }
+  }, [ws.status, activeChatId, token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeChat) {
@@ -296,6 +324,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     return ws.subscribe((event: ServerEvent) => {
+      lastWsEventAtRef.current = Date.now()
       const reqId = 'req_id' in event ? event.req_id : undefined
       if (reqId) appendChatWsEvent(reqId, event)
 
@@ -419,9 +448,18 @@ export default function ChatPage() {
     getChatMessages(token, chatId)
       .then(records => {
         if (activeChatIdRef.current !== chatId) return
+        const restPending = records.some(
+          r => r.role === 'assistant' && (r.status === 'pending' || r.status === 'thinking'),
+        )
+        // The DB says this chat's reply is finalized — clear any in-flight task so a
+        // dropped/reconnected socket (whose stream events are gone) doesn't strand a
+        // "thinking" bubble or duplicate it alongside the persisted reply.
+        if (!restPending) {
+          for (const t of chatTasksForChat(chatId)) finishChatTask(t.reqId, 'completed', true)
+        }
         const merged = mergeInFlightMessages(
           records.map(recordToMessage).filter((m): m is Message => m != null),
-          chatTasksForChat(chatId),
+          restPending ? chatTasksForChat(chatId) : [],
         )
         setMessages(merged)
         restoreReqMappings(merged)

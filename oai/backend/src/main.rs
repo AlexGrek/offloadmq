@@ -13,6 +13,7 @@ mod services;
 mod snowflake;
 mod state;
 mod storage;
+mod version;
 mod ws;
 
 use middleware::auth::Auth;
@@ -28,6 +29,8 @@ async fn main() -> Result<()> {
                 .unwrap_or_else(|_| "info".into()),
         )
         .init();
+
+    tracing::info!("oai-backend build version: {}", version::build_version());
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let jwt_secret =

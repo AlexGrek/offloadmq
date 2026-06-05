@@ -156,7 +156,9 @@ tasks:
     desc: Build React frontend (production)
     dir: frontend
     env:
-      VITE_APP_VERSION: "{{.GIT_COMMITS}}"
+      # Short git hash — same identity as the Docker image tag and the backend's
+      # OAI_BUILD_VERSION, so the SPA can detect new deployments via /api/version.
+      VITE_APP_VERSION: "{{.GIT_HASH}}"
     cmd: npm run build
 
   install:
@@ -197,6 +199,7 @@ tasks:
       - mkdir -p {{.BUILDX_LOCAL_CACHE}}
       - rm -rf {{.BUILDX_LOCAL_CACHE_NEW}}
       - docker buildx build --builder {{.BUILDX_BUILDER}} --platform linux/amd64 --load
+          --build-arg OAI_BUILD_VERSION={{.GIT_HASH}}
           --cache-from=type=local,src={{.BUILDX_LOCAL_CACHE}}
           --cache-to=type=local,dest={{.BUILDX_LOCAL_CACHE_NEW}},mode=max
           -f Dockerfile
@@ -212,6 +215,7 @@ tasks:
       - mkdir -p {{.BUILDX_LOCAL_CACHE}}
       - rm -rf {{.BUILDX_LOCAL_CACHE_NEW}}
       - docker buildx build --builder {{.BUILDX_BUILDER}} --platform linux/amd64 --push
+          --build-arg OAI_BUILD_VERSION={{.GIT_HASH}}
           --cache-from=type=local,src={{.BUILDX_LOCAL_CACHE}}
           --cache-to=type=local,dest={{.BUILDX_LOCAL_CACHE_NEW}},mode=max
           -f Dockerfile
