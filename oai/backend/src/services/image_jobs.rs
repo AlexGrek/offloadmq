@@ -416,7 +416,7 @@ pub async fn image_thumbnail_bytes(
 
     let main = storage::read(op, &file.storage_path).await?;
     let main_jpeg = image_processing::ensure_jpeg_response(main, &file.content_type)?;
-    let (thumb_bytes, _tw, _th) = image_processing::thumbnail_from_main_jpeg(&main_jpeg)?;
+    let thumb_bytes = image_processing::thumbnail_from_main_jpeg(&main_jpeg)?;
     storage::write(op, &thumb_path, thumb_bytes.clone()).await?;
     image_generation::set_image_thumbnail_meta(
         &state.db,

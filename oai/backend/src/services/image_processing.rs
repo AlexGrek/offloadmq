@@ -56,8 +56,6 @@ pub struct ProcessedImage {
     pub exif_orientation: Option<i32>,
     pub sha256: String,
     pub thumbnail_bytes: Vec<u8>,
-    pub thumbnail_width: i32,
-    pub thumbnail_height: i32,
 }
 
 /// Like [`process_image`], then writes the job prompt into EXIF `ImageDescription`
@@ -92,7 +90,8 @@ pub fn process_generated_image(
 /// viewers never need to apply a rotation transform on the stored file.
 pub fn process_image(
     bytes: Vec<u8>,
-    content_type_hint: Option<String>,
+    // Kept as a forward-compatible hint; the format is auto-detected from magic bytes below.
+    _content_type_hint: Option<String>,
 ) -> Result<ProcessedImage, AppError> {
     ensure_vips_initialized()?;
 
@@ -131,8 +130,7 @@ pub fn process_image(
     if is_jpeg_magic(&bytes)
         && (original_len > MAX_TRANSCODE_BYTES || ow.max(oh) > MAX_TRANSCODE_EDGE)
     {
-        let (thumbnail_bytes, thumbnail_width, thumbnail_height) =
-            encode_thumbnail_shrink_on_load(&bytes)?;
+        let thumbnail_bytes = encode_thumbnail_shrink_on_load(&bytes)?;
         let sha256 = sha256_hex(&bytes);
         return Ok(ProcessedImage {
             bytes,
@@ -147,8 +145,6 @@ pub fn process_image(
             exif_orientation: exif_orientation_val,
             sha256,
             thumbnail_bytes,
-            thumbnail_width,
-            thumbnail_height,
         });
     }
 
@@ -168,7 +164,7 @@ pub fn process_image(
     // Always encode through libvips: bakes orientation into pixels, strips all EXIF.
     let encoded = vips_to_jpeg(&img, JPEG_QUALITY)?;
     let sha256 = sha256_hex(&encoded);
-    let (thumbnail_bytes, thumbnail_width, thumbnail_height) = encode_thumbnail_vips(&img)?;
+    let thumbnail_bytes = encode_thumbnail_vips(&img)?;
 
     Ok(ProcessedImage {
         bytes: encoded,
@@ -183,8 +179,6 @@ pub fn process_image(
         exif_orientation: exif_orientation_val,
         sha256,
         thumbnail_bytes,
-        thumbnail_width,
-        thumbnail_height,
     })
 }
 
@@ -197,7 +191,7 @@ pub fn ensure_jpeg_response(bytes: Vec<u8>, content_type: &str) -> Result<Vec<u8
 }
 
 /// Build a thumbnail from an existing main JPEG on disk (backfill path).
-pub fn thumbnail_from_main_jpeg(bytes: &[u8]) -> Result<(Vec<u8>, i32, i32), AppError> {
+pub fn thumbnail_from_main_jpeg(bytes: &[u8]) -> Result<Vec<u8>, AppError> {
     ensure_vips_initialized()?;
     let img = VipsImage::new_from_buffer(bytes, "")
         .map_err(|e| AppError::BadRequest(format!("decode thumbnail source failed: {e}")))?;
@@ -221,7 +215,7 @@ fn is_jpeg_magic(bytes: &[u8]) -> bool {
 /// shrink-on-load, so it never fully decodes the source into RAM. EXIF orientation is
 /// applied (thumbnail is upright) and the result is downsized to fit a `THUMBNAIL_MAX_EDGE`
 /// box. Used by the [`process_image`] passthrough path for large JPEGs.
-fn encode_thumbnail_shrink_on_load(bytes: &[u8]) -> Result<(Vec<u8>, i32, i32), AppError> {
+fn encode_thumbnail_shrink_on_load(bytes: &[u8]) -> Result<Vec<u8>, AppError> {
     let thumb = VipsImage::thumbnail_buffer_with_opts(
         bytes,
         THUMBNAIL_MAX_EDGE as i32,
@@ -230,10 +224,7 @@ fn encode_thumbnail_shrink_on_load(bytes: &[u8]) -> Result<(Vec<u8>, i32, i32), 
             .set("size", "down"),
     )
     .map_err(|e| AppError::Internal(format!("thumbnail_buffer failed: {e}")))?;
-    let tw = thumb.get_width();
-    let th = thumb.get_height();
-    let bytes = vips_to_jpeg(&thumb, JPEG_QUALITY)?;
-    Ok((bytes, tw, th))
+    vips_to_jpeg(&thumb, JPEG_QUALITY)
 }
 
 fn vips_to_jpeg(img: &VipsImage, quality: u8) -> Result<Vec<u8>, AppError> {
@@ -246,7 +237,7 @@ fn vips_to_jpeg(img: &VipsImage, quality: u8) -> Result<Vec<u8>, AppError> {
     .map_err(|e| AppError::Internal(format!("vips jpeg encode failed: {e}")))
 }
 
-fn encode_thumbnail_vips(img: &VipsImage) -> Result<(Vec<u8>, i32, i32), AppError> {
+fn encode_thumbnail_vips(img: &VipsImage) -> Result<Vec<u8>, AppError> {
     let w = img.get_width() as u32;
     let h = img.get_height() as u32;
     if w.max(h) > THUMBNAIL_MAX_EDGE {
@@ -254,13 +245,9 @@ fn encode_thumbnail_vips(img: &VipsImage) -> Result<(Vec<u8>, i32, i32), AppErro
         let resized = img
             .resize(scale)
             .map_err(|e| AppError::Internal(format!("thumbnail resize failed: {e}")))?;
-        let tw = resized.get_width();
-        let th = resized.get_height();
-        let bytes = vips_to_jpeg(&resized, JPEG_QUALITY)?;
-        Ok((bytes, tw, th))
+        vips_to_jpeg(&resized, JPEG_QUALITY)
     } else {
-        let bytes = vips_to_jpeg(img, JPEG_QUALITY)?;
-        Ok((bytes, w as i32, h as i32))
+        vips_to_jpeg(img, JPEG_QUALITY)
     }
 }
 
@@ -351,7 +338,6 @@ mod tests {
         assert!(is_jpeg_blob(&out.bytes, "image/jpeg"));
         assert!(!out.thumbnail_bytes.is_empty());
         assert!(is_jpeg_blob(&out.thumbnail_bytes, "image/jpeg"));
-        assert!(out.thumbnail_width > 0);
     }
 
     #[test]
@@ -406,7 +392,8 @@ mod tests {
         assert_eq!(out.height, 4);
         // Thumbnail is still produced (shrink-on-load) and fits the thumbnail box.
         assert!(is_jpeg_blob(&out.thumbnail_bytes, "image/jpeg"));
-        assert!(out.thumbnail_width.max(out.thumbnail_height) <= THUMBNAIL_MAX_EDGE as i32);
+        let thumb = image::load_from_memory(&out.thumbnail_bytes).unwrap();
+        assert!(thumb.width().max(thumb.height()) <= THUMBNAIL_MAX_EDGE);
     }
 
     #[test]

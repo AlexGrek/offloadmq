@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, DatabaseConnection, EntityTrait, Set,
 };
@@ -10,8 +10,6 @@ use crate::{
     error::AppError,
     offload::LlmCapabilityInfo,
 };
-
-pub const STALE_AFTER: Duration = Duration::days(3);
 
 pub async fn sync_online(
     db: &DatabaseConnection,

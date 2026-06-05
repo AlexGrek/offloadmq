@@ -1010,7 +1010,7 @@ export default function ImageGenerationPage() {
 
             <div className="relative sm:w-auto">
               <motion.div
-                className="sm:w-auto"
+                className="flex justify-center sm:w-auto"
                 animate={submitBurst ? { scale: [1, 1.06, 0.97, 1] } : {}}
                 transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
               >
