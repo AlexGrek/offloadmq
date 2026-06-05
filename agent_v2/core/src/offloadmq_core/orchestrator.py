@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import logging
+import random
 import threading
 import traceback
 from pathlib import Path
@@ -60,6 +61,13 @@ APP_VERSION = "2.0.0"
 # Reconnect backoff: 2 → 4 → 8 → … capped at 60s. Reset on a successful auth.
 _RECONNECT_BACKOFF_BASE = 2.0
 _RECONNECT_BACKOFF_CAP = 60.0
+
+# Agent→server heartbeat cadence: a fresh random delay in [min, max] seconds is
+# rolled before every beat, mirroring the server's own 60–90s heartbeat. The beat
+# runs on the session event loop independently of job execution (jobs run on pool
+# worker threads), so the agent keeps heartbeating even while busy with a task.
+_WS_HEARTBEAT_MIN_SECS = 60.0
+_WS_HEARTBEAT_MAX_SECS = 90.0
 
 
 class _SessionEnded(Exception):
@@ -773,6 +781,46 @@ class Orchestrator:
         await client.open_ws()
         self._set_message("online")
 
+        # Heartbeat runs concurrently with the receive loop, on this same event
+        # loop. Job execution happens on pool worker threads, so heartbeats keep
+        # firing even while the agent is busy running a task.
+        hb_task = asyncio.create_task(self._ws_heartbeat_loop(client))
+        try:
+            await self._ws_recv_loop(client)
+        finally:
+            hb_task.cancel()
+            try:
+                await hb_task
+            except asyncio.CancelledError:
+                pass
+
+        # Socket closed: return so the supervisor reconnects.
+        self._set_message("disconnected")
+
+    async def _ws_heartbeat_loop(self, client: OffloadMQClient) -> None:
+        """Beat to the server every random 60–90s for the life of one session.
+
+        A send failure means the socket is gone — stop quietly and let the
+        receive loop's clean exit drive the supervisor's reconnect. Never touches
+        ``_busy``/active-task state: the agent must heartbeat while jobs run.
+        """
+        while not self._stop.is_set():
+            try:
+                await asyncio.sleep(
+                    random.uniform(_WS_HEARTBEAT_MIN_SECS, _WS_HEARTBEAT_MAX_SECS)
+                )
+            except asyncio.CancelledError:
+                break
+            if self._stop.is_set():
+                break
+            try:
+                await client.send_heartbeat()
+            except Exception:  # noqa: BLE001
+                # Socket closed or transient — the receive loop ends and the
+                # supervisor reconnects. Don't spam the error pool from here.
+                break
+
+    async def _ws_recv_loop(self, client: OffloadMQClient) -> None:
         async for msg in client.ws_messages():
             if self._stop.is_set():
                 break
@@ -813,9 +861,6 @@ class Orchestrator:
                 if mtype == "heartbeat" and len(self._errors) > 0:
                     await self._flush_error_pool(client)
             # Unknown frame types are ignored.
-
-        # Socket closed: return so the supervisor reconnects.
-        self._set_message("disconnected")
 
     def _rescan_scheduler_main(self) -> None:
         schedule = itertools.chain(_RESCAN_INTERVALS, itertools.repeat(_RESCAN_STEADY))

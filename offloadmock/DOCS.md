@@ -150,7 +150,8 @@ HS256, valid one week; `expiresIn` is the **absolute** expiry unix timestamp
   kept in memory.
 - **Exact schemas & errors** — every response matches the Rust JSON shape
   (camelCase, `Z` datetimes, error envelope). See [Schema fidelity](#schema-fidelity).
-- **WebSocket** — agent WS connect, welcome frame, 5 s heartbeats, and the
+- **WebSocket** — agent WS connect, welcome frame, randomized 60–90 s heartbeats
+  (matching the real server), the agent→server `heartbeat`/`ping` action, and the
   request/response envelope for the dispatched actions.
 
 - **Inject synthetic tasks** via the [Testing surface](#testing-surface) so a
@@ -422,11 +423,13 @@ GET /private/agent/ws?token=<agent-JWT>
 
 On connect the server sends
 `{"type":"connected","agent_id":"<short>","message":"…"}`, then a
-`{"type":"heartbeat","counter":N,"timestamp":"…Z"}` every 5 s. Requests use the
-envelope `{"req_id","action","params"}`; responses are
-`{"req_id","type":"response","status","data"}` or
-`{"req_id","type":"error","status","error":{type,message}}`. `poll_task` /
-`poll_task_urgent` return `data: null`; task mutations return not-found errors.
+`{"type":"heartbeat","counter":N,"timestamp":"…Z"}` on a fresh random 60–90 s
+delay each beat. Requests use the envelope `{"req_id","action","params"}`;
+responses are `{"req_id","type":"response","status","data"}` or
+`{"req_id","type":"error","status","error":{type,message}}`. The agent→server
+`heartbeat` (alias `ping`) action bumps `last_contact` and returns
+`{"status":"ok"}`. `poll_task` / `poll_task_urgent` return `data: null`; task
+mutations return not-found errors.
 
 ---
 

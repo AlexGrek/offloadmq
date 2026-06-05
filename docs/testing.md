@@ -128,7 +128,7 @@ Tests WebSocket communication between agents and server.
 **Tests:**
 - `test_websocket_connection_successful` — Establish WebSocket connection with valid JWT
 - `test_websocket_connection_fails_with_invalid_token` — Reject invalid tokens
-- `test_websocket_receives_heartbeat` — Receive server heartbeats every 5 seconds
+- `test_websocket_receives_heartbeat` — Receive server heartbeats (randomized 60–90 s; the test harness sets a short interval via `AGENT_WS_HEARTBEAT_*`)
 
 **Messages:**
 - Connection message includes `agent_id`
@@ -404,7 +404,7 @@ List tasks:
 ### WebSocket Agent Communication
 
 - Agents authenticate with JWT tokens (not API keys)
-- Server sends heartbeat messages every 5 seconds
+- Server sends heartbeat messages on a randomized 60–90 s cadence; agents send their own `heartbeat` beat back on the same cadence (both tunable via `AGENT_WS_HEARTBEAT_MIN_SECS` / `AGENT_WS_HEARTBEAT_MAX_SECS`)
 - Messages are JSON-encoded
 - Connection message includes agent_id for identification
 

@@ -171,8 +171,11 @@ def test_websocket_receives_heartbeat():
     ws_thread = threading.Thread(target=ws.run_forever, daemon=True)
     ws_thread.start()
 
-    # Wait for connection and heartbeat (heartbeat is sent every 5 seconds)
-    timeout = 8
+    # Wait for connection and heartbeat. The server heartbeat interval is
+    # randomized 60–90s in production; the itests harness (itests/Makefile)
+    # starts the server with AGENT_WS_HEARTBEAT_MIN_SECS=2/MAX=3 so a beat
+    # arrives within a few seconds here.
+    timeout = 12
     start = time.time()
     heartbeat_received = False
     while time.time() - start < timeout:

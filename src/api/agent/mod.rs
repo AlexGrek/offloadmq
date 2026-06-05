@@ -386,6 +386,14 @@ async fn ws_dispatch(
     upload_data: Option<Vec<u8>>,
 ) -> Result<(u16, serde_json::Value), AppError> {
     match action {
+        // ── Heartbeat ────────────────────────────────────────────
+        // Agent→server liveness beat (random 60–90s cadence). Bumps the agent's
+        // last_contact so it stays online even while idle or busy with a job.
+        "heartbeat" | "ping" => {
+            service::do_agent_ping(agent.clone(), state, CommunicationMethod::WebSocket).await?;
+            Ok((200, json!({"status": "ok"})))
+        }
+
         // ── Poll ─────────────────────────────────────────────────
         "poll_task" => {
             let task =
@@ -630,11 +638,24 @@ async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<
     // can already find this connection and push to it.
     let (conn_id, assigned_set) = app_state.registry.register(&uid, out_tx.clone());
 
-    // Writer task: owns the sink, forwards queued WsOut messages, and emits the 5s
-    // heartbeat. Exactly one task ever writes to the socket.
+    // Writer task: owns the sink, forwards queued WsOut messages, and emits the
+    // heartbeat. Exactly one task ever writes to the socket. The heartbeat fires
+    // on a fresh random delay in [min, max] each time (default 60–90s) so a fleet
+    // of agents doesn't beat in lockstep.
     let writer_agent_id = agent_id.clone();
+    let hb_min = app_state.config.agent_ws.heartbeat_min_secs;
+    let hb_max = app_state.config.agent_ws.heartbeat_max_secs;
     let writer_task = tokio::spawn(async move {
-        let mut hb = tokio::time::interval(tokio::time::Duration::from_secs(5));
+        let next_hb_delay = || {
+            let secs = if hb_min >= hb_max {
+                hb_min
+            } else {
+                use rand::Rng;
+                rand::rng().random_range(hb_min..=hb_max)
+            };
+            tokio::time::Duration::from_secs(secs)
+        };
+        let mut hb = Box::pin(tokio::time::sleep(next_hb_delay()));
         let mut counter: u64 = 0;
         loop {
             tokio::select! {
@@ -654,7 +675,7 @@ async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<
                         break;
                     }
                 },
-                _ = hb.tick() => {
+                _ = &mut hb => {
                     counter += 1;
                     let msg = json!({
                         "type": "heartbeat",
@@ -665,6 +686,7 @@ async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<
                         warn!("Failed to send heartbeat to agent {}", writer_agent_id);
                         break;
                     }
+                    hb.as_mut().set(tokio::time::sleep(next_hb_delay()));
                 }
             }
         }

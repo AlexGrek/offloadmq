@@ -596,7 +596,7 @@ All server→agent frames are JSON text with a `type` field:
 | `type` | Payload | Meaning |
 |--------|---------|---------|
 | `connected` | `{ agentId, message }` | Sent once on connect. |
-| `heartbeat` | `{ counter, timestamp }` | Every 5 s; liveness only. |
+| `heartbeat` | `{ counter, timestamp }` | Liveness only. Sent on a fresh random delay in 60–90 s each beat (tunable via `AGENT_WS_HEARTBEAT_MIN_SECS` / `AGENT_WS_HEARTBEAT_MAX_SECS`). |
 | `task` | `{ task: <AssignedTask> }` | **A task has been assigned and pushed to you.** Start executing immediately — it is already in `assigned` state under your `agentId`. Report progress/resolve as usual. |
 | `cancel` | `{ taskId: { cap, id } }` | The client cancelled a task you hold. Stop work and report partial output. (HTTP/legacy agents instead get **499** on their next progress/resolve call — see [Cancellation](#task-cancellation).) |
 
@@ -618,6 +618,7 @@ request envelope. Responses are correlated by `req_id`:
 
 | `action` | `params` | Purpose |
 |----------|----------|---------|
+| `heartbeat` (alias `ping`) | — | Agent→server liveness beat. Bumps `last_contact` so the agent stays online even when idle or busy running a job. Sent on a fresh random 60–90 s delay each beat, independent of task execution. |
 | `update_progress` | `TaskUpdate` | Append log / set stage / move to `starting`\|`running`. **Sending this marks the task started** — see disconnect behavior below. |
 | `resolve_task` | `TaskResultReport` | Report terminal result (frees the slot; the server then pushes your next task). |
 | `upload_file` | `{ bucket_uid, filename }` + a following **binary** frame | Upload an output file. |

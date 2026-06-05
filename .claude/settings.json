@@ -155,7 +155,9 @@
       "Bash(grep *)",
       "Edit(/.claude/skills/oai-backend/**)",
       "Edit(/.claude/skills/oai-new-feature/**)",
-      "Bash(rg *)"
+      "Bash(rg *)",
+      "Bash(.venv/bin/python -c \"import aiohttp; print\\(aiohttp.__version__\\)\")",
+      "Bash(.venv/bin/python -c \"import inspect, aiohttp; from aiohttp.client_ws import ClientWebSocketResponse as W; print\\(inspect.signature\\(W.receive\\)\\)\")"
     ],
     "additionalDirectories": []
   }

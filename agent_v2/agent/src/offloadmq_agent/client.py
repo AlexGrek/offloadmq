@@ -20,6 +20,14 @@ from offloadmq_agent.models import (
     TaskResult,
 )
 
+# Zombie-session guard. The server heartbeats every 60–90s and also acks the
+# agent's own heartbeats, so on a healthy socket a frame arrives well within this
+# window. If nothing arrives for the whole window the peer has gone silent (the
+# server forgot us / half-open TCP), so we tear the socket down and let the
+# supervisor reconnect instead of waiting forever on a dead connection. Sized to
+# tolerate one fully missed 60–90s heartbeat window plus margin.
+_WS_RECV_TIMEOUT_SECS = 180.0
+
 
 class OffloadMQError(Exception):
     def __init__(
@@ -144,11 +152,24 @@ class OffloadMQClient:
         Server frames carry a `type`: `connected`, `heartbeat`, `task` (a pushed
         `AssignedTask`), `cancel`, plus `response`/`error` acks for the agent's
         own RPC sends.
+
+        Each receive is bounded by ``_WS_RECV_TIMEOUT_SECS``. If the server goes
+        silent for the whole window — no heartbeat, no ack, nothing — the socket
+        is presumed dead (server forgot us / half-open TCP) and we raise so the
+        supervisor tears it down and reconnects rather than sitting in a zombie
+        session that *thinks* it is connected.
         """
         ws = self._ws
         if ws is None:
             raise OffloadMQError("websocket not connected")
-        async for msg in ws:
+        while True:
+            try:
+                msg = await ws.receive(timeout=_WS_RECV_TIMEOUT_SECS)
+            except asyncio.TimeoutError as exc:
+                raise OffloadMQError(
+                    f"websocket idle for {_WS_RECV_TIMEOUT_SECS:.0f}s — "
+                    "server silent, reconnecting"
+                ) from exc
             if msg.type == aiohttp.WSMsgType.TEXT:
                 try:
                     data = msg.json()
@@ -156,7 +177,11 @@ class OffloadMQClient:
                     continue
                 if isinstance(data, dict):
                     yield data
-            elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING):
+            elif msg.type in (
+                aiohttp.WSMsgType.CLOSE,
+                aiohttp.WSMsgType.CLOSING,
+                aiohttp.WSMsgType.CLOSED,
+            ):
                 break
             elif msg.type == aiohttp.WSMsgType.ERROR:
                 raise OffloadMQError(f"websocket error: {ws.exception()!r}")
@@ -168,6 +193,16 @@ class OffloadMQClient:
         frame = {"req_id": uuid.uuid4().hex, "action": action, "params": params}
         async with self._ws_lock:
             await ws.send_json(frame)
+
+    async def send_heartbeat(self) -> None:
+        """Send a liveness heartbeat to the server over the WebSocket.
+
+        Mirrors the server→agent heartbeat frames in the other direction: it
+        bumps the agent's ``last_contact`` server-side so the agent stays counted
+        as online even when idle *or* busy running a job. Fire-and-forget — the
+        server replies with a normal ``response`` ack that the receive loop drops.
+        """
+        await self._ws_send("heartbeat", {})
 
     async def report_progress(
         self,

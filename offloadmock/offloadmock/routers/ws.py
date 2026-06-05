@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -19,6 +20,11 @@ from ..schemas import CommunicationMethod, TaskId
 from ..utils import iso_z, now_utc
 
 router = APIRouter()
+
+# Server→agent heartbeat cadence — a fresh random delay in [min, max] seconds is
+# rolled before every beat, mirroring the real server (env AGENT_WS_HEARTBEAT_*).
+_HEARTBEAT_MIN_SECS = 60.0
+_HEARTBEAT_MAX_SECS = 90.0
 
 
 def _ws_ok(req_id: str, status: int, data) -> str:
@@ -41,6 +47,10 @@ def _ws_err(req_id: str, err: AppError) -> str:
 
 
 async def _dispatch(action: str, params: dict, agent) -> tuple[int, object]:
+    if action in ("heartbeat", "ping"):
+        # Agent→server liveness beat — bump last_contact and ack.
+        deps.store.touch_agent(agent, CommunicationMethod.WEBSOCKET)
+        return 200, {"status": "ok"}
     if action in ("poll_task", "poll_task_urgent"):
         deps.store.touch_agent(agent, CommunicationMethod.WEBSOCKET)
         return 200, None
@@ -93,7 +103,7 @@ async def websocket_handler(ws: WebSocket) -> None:
         counter = 0
         try:
             while True:
-                await asyncio.sleep(5)
+                await asyncio.sleep(random.uniform(_HEARTBEAT_MIN_SECS, _HEARTBEAT_MAX_SECS))
                 counter += 1
                 await ws.send_text(
                     json.dumps(

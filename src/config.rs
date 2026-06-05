@@ -149,6 +149,37 @@ impl StaleAgentsConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct AgentWsConfig {
+    /// Min seconds between server→agent heartbeat frames, also used as the
+    /// agent→server cadence reference. A fresh delay is rolled in [min, max]
+    /// before every heartbeat (env: AGENT_WS_HEARTBEAT_MIN_SECS, default: 60).
+    pub heartbeat_min_secs: u64,
+    /// Max seconds between heartbeats (env: AGENT_WS_HEARTBEAT_MAX_SECS, default: 90).
+    pub heartbeat_max_secs: u64,
+}
+
+impl AgentWsConfig {
+    pub fn from_env() -> Self {
+        let heartbeat_min_secs = env::var("AGENT_WS_HEARTBEAT_MIN_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(60u64);
+        let mut heartbeat_max_secs = env::var("AGENT_WS_HEARTBEAT_MAX_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(90u64);
+        // Guard against an inverted range so `random_range(min..=max)` never panics.
+        if heartbeat_max_secs < heartbeat_min_secs {
+            heartbeat_max_secs = heartbeat_min_secs;
+        }
+        Self {
+            heartbeat_min_secs,
+            heartbeat_max_secs,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct AppConfig {
     pub jwt_secret: String,
     pub database_root_path: String,
@@ -162,6 +193,7 @@ pub struct AppConfig {
     pub storage: StorageConfig,
     pub heuristics: HeuristicsConfig,
     pub stale_agents: StaleAgentsConfig,
+    pub agent_ws: AgentWsConfig,
 }
 
 impl AppConfig {
@@ -205,6 +237,7 @@ impl AppConfig {
         let storage = StorageConfig::from_env(&database_root_path);
         let heuristics = HeuristicsConfig::from_env();
         let stale_agents = StaleAgentsConfig::from_env();
+        let agent_ws = AgentWsConfig::from_env();
 
         Ok(Self {
             jwt_secret,
@@ -218,6 +251,7 @@ impl AppConfig {
             storage,
             heuristics,
             stale_agents,
+            agent_ws,
         })
     }
 }

@@ -33,7 +33,7 @@ start-server:
 	@if [ -f $(SERVER_PID_FILE) ] && kill -0 $$(cat $(SERVER_PID_FILE)) 2>/dev/null; then \
 		echo "Server already running (PID $$(cat $(SERVER_PID_FILE)))"; \
 	else \
-		cd $(ROOT_DIR) && cargo run > /tmp/offloadmq-server.log 2>&1 & echo $$! > $(SERVER_PID_FILE); \
+		cd $(ROOT_DIR) && AGENT_WS_HEARTBEAT_MIN_SECS=2 AGENT_WS_HEARTBEAT_MAX_SECS=3 cargo run > /tmp/offloadmq-server.log 2>&1 & echo $$! > $(SERVER_PID_FILE); \
 		echo "Waiting for server to be ready..."; \
 		for i in 1 2 3 4 5 6 7 8 9 10; do \
 			if curl -s http://localhost:3069/health > /dev/null 2>&1; then \
