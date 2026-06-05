@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ImageLightbox } from '@/components/ImageLightbox'
+import { PromptTextarea } from '../components/PromptTextarea'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -851,12 +852,13 @@ export default function ImageGenerationPage() {
 
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="prompt">Prompt</Label>
-                <textarea
+                <PromptTextarea
                   id="prompt"
                   value={prompt}
-                  onChange={e => setPrompt(e.target.value)}
+                  onChange={setPrompt}
+                  bucket="imggen-prompt"
+                  token={token}
                   rows={4}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   data-testid="imggen-prompt"
                 />
               </div>
@@ -876,13 +878,14 @@ export default function ImageGenerationPage() {
                   </Button>
                 </div>
                 {overrideNegative ? (
-                  <textarea
+                  <PromptTextarea
                     id="negative-prompt"
                     value={negativePrompt}
-                    onChange={e => setNegativePrompt(e.target.value)}
+                    onChange={setNegativePrompt}
+                    bucket="imggen-negative"
+                    token={token}
                     rows={2}
                     placeholder="e.g. blurry, deformed, low quality"
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     data-testid="imggen-negative-prompt"
                   />
                 ) : (

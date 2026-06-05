@@ -187,8 +187,11 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
     if image_attachments:
         messages = _attach_images(messages, image_attachments)
 
-    await ctx.progress(
-        "generating", f"model={model}", messages=len(messages), images=len(image_attachments)
+    # Local diagnostic only (mirrors v1's logger.info before streaming): not
+    # forwarded to the task's server-side progress, so the streamed logs carry
+    # only the LLM response text — never a "model=" line.
+    await ctx.info(
+        "generating", model=model, messages=len(messages), images=len(image_attachments)
     )
 
     body: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
@@ -229,7 +232,9 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
         )
 
     full_text = "".join(collected)
-    await ctx.progress("done", f"tokens≈{len(collected)}", tokens=len(collected))
+    # Local diagnostic only — like v1, the stream itself is the server-side
+    # progress, so the final result (resolve) is the only thing that follows it.
+    await ctx.info("done", tokens=len(collected))
     return TaskResult(
         task_id=task.id,
         status=TaskStatus.COMPLETED,

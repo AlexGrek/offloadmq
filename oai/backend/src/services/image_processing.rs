@@ -18,6 +18,10 @@ pub const THUMBNAIL_MAX_EDGE: u32 = 384;
 pub const JPEG_QUALITY: u8 = 90;
 /// Max raw upload size (must match `DefaultBodyLimit` on `POST /api/images/upload`).
 pub const MAX_UPLOAD_BYTES: usize = 32 * 1024 * 1024;
+/// JPEG inputs at or above this byte size bypass decode + re-encode (see [`process_image`]).
+pub const MAX_TRANSCODE_BYTES: usize = 8 * 1024 * 1024;
+/// JPEG inputs with any dimension above this also bypass decode + re-encode.
+pub const MAX_TRANSCODE_EDGE: u32 = 6000;
 
 static VIPS_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
@@ -113,9 +117,40 @@ pub fn process_image(
         .autorot()
         .map_err(|e| AppError::Internal(format!("autorot failed: {e}")))?;
 
-    // Measure post-rotation dimensions.
+    // Measure post-rotation dimensions. `autorot`, `get_width` and `get_height` are
+    // header-only — no pixels are decoded yet.
     let ow = img.get_width() as u32;
     let oh = img.get_height() as u32;
+
+    // Bypass decode + re-encode for oversized JPEG inputs. `new_from_buffer` decodes a JPEG
+    // fully into RAM for random access, and the resize + JPEG encode below pull every pixel
+    // through — a 48 MP / multi-MB photo can exceed pod memory and trigger an OOM kill. For
+    // big JPEGs we store the original bytes verbatim (no resize, no re-encode) and build only
+    // a shrink-on-load thumbnail, which never materializes the full source. Non-JPEG inputs
+    // are always transcoded because the pipeline requires JPEG output.
+    if is_jpeg_magic(&bytes)
+        && (original_len > MAX_TRANSCODE_BYTES || ow.max(oh) > MAX_TRANSCODE_EDGE)
+    {
+        let (thumbnail_bytes, thumbnail_width, thumbnail_height) =
+            encode_thumbnail_shrink_on_load(&bytes)?;
+        let sha256 = sha256_hex(&bytes);
+        return Ok(ProcessedImage {
+            bytes,
+            content_type: "image/jpeg".to_string(),
+            width: ow as i32,
+            height: oh as i32,
+            original_width: Some(ow as i32),
+            original_height: Some(oh as i32),
+            original_bytes: Some(original_len as i64),
+            rescaled: false,
+            reencoded: false,
+            exif_orientation: exif_orientation_val,
+            sha256,
+            thumbnail_bytes,
+            thumbnail_width,
+            thumbnail_height,
+        });
+    }
 
     let (img, rescaled) = if ow.max(oh) > MAX_IMAGE_EDGE {
         let scale = (MAX_IMAGE_EDGE as f64) / (ow.max(oh) as f64);
@@ -174,7 +209,31 @@ pub fn is_jpeg_blob(bytes: &[u8], content_type: &str) -> bool {
     if ct != "image/jpeg" && ct != "image/jpg" {
         return false;
     }
+    is_jpeg_magic(bytes)
+}
+
+/// True if the buffer starts with the JPEG SOI marker, regardless of declared content type.
+fn is_jpeg_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF
+}
+
+/// Memory-safe thumbnail for an oversized source. libvips `thumbnail_buffer` uses
+/// shrink-on-load, so it never fully decodes the source into RAM. EXIF orientation is
+/// applied (thumbnail is upright) and the result is downsized to fit a `THUMBNAIL_MAX_EDGE`
+/// box. Used by the [`process_image`] passthrough path for large JPEGs.
+fn encode_thumbnail_shrink_on_load(bytes: &[u8]) -> Result<(Vec<u8>, i32, i32), AppError> {
+    let thumb = VipsImage::thumbnail_buffer_with_opts(
+        bytes,
+        THUMBNAIL_MAX_EDGE as i32,
+        VOption::new()
+            .set("height", THUMBNAIL_MAX_EDGE as i32)
+            .set("size", "down"),
+    )
+    .map_err(|e| AppError::Internal(format!("thumbnail_buffer failed: {e}")))?;
+    let tw = thumb.get_width();
+    let th = thumb.get_height();
+    let bytes = vips_to_jpeg(&thumb, JPEG_QUALITY)?;
+    Ok((bytes, tw, th))
 }
 
 fn vips_to_jpeg(img: &VipsImage, quality: u8) -> Result<Vec<u8>, AppError> {
@@ -322,5 +381,39 @@ mod tests {
     fn upload_path_does_not_embed_prompt() {
         let out = process_image(tiny_png(), Some("image/png".into())).unwrap();
         assert!(exif_image_description(&out.bytes).is_none());
+    }
+
+    fn wide_jpeg(width: u32, height: u32) -> Vec<u8> {
+        let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
+            ImageBuffer::from_fn(width, height, |x, _| Rgb([(x % 256) as u8, 64, 192]));
+        let mut buf = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new(&mut Cursor::new(&mut buf))
+            .write_image(img.as_raw(), width, height, ExtendedColorType::Rgb8)
+            .unwrap();
+        buf
+    }
+
+    #[test]
+    fn oversized_jpeg_bypasses_transcoding() {
+        // Any dimension > 6000 → original bytes are stored verbatim, never re-encoded.
+        let jpeg = wide_jpeg(6001, 4);
+        let out = process_image(jpeg.clone(), Some("image/jpeg".into())).unwrap();
+        assert!(!out.reencoded);
+        assert!(!out.rescaled);
+        assert_eq!(out.bytes, jpeg, "bytes must pass through unmodified");
+        assert_eq!(out.content_type, "image/jpeg");
+        assert_eq!(out.width, 6001);
+        assert_eq!(out.height, 4);
+        // Thumbnail is still produced (shrink-on-load) and fits the thumbnail box.
+        assert!(is_jpeg_blob(&out.thumbnail_bytes, "image/jpeg"));
+        assert!(out.thumbnail_width.max(out.thumbnail_height) <= THUMBNAIL_MAX_EDGE as i32);
+    }
+
+    #[test]
+    fn normal_jpeg_is_still_transcoded() {
+        // Small JPEG under both thresholds → normal decode + re-encode path.
+        let jpeg = wide_jpeg(64, 64);
+        let out = process_image(jpeg, Some("image/jpeg".into())).unwrap();
+        assert!(out.reencoded);
     }
 }

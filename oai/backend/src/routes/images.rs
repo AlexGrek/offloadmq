@@ -135,6 +135,29 @@ pub async fn start_job(
     AuthenticatedUser(user_id): AuthenticatedUser,
     Json(req): Json<StartJobParams>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Record the prompts as recents (best-effort) for cross-job reuse, so the
+    // frontend doesn't need a second request to maintain the recents lists.
+    if !req.prompt.trim().is_empty() {
+        let _ = crate::db::prompts::record_use(
+            &state.db,
+            || state.next_id(),
+            user_id,
+            "imggen-prompt",
+            &req.prompt,
+        )
+        .await;
+    }
+    if let Some(neg) = req.negative_prompt.as_deref().filter(|s| !s.trim().is_empty()) {
+        let _ = crate::db::prompts::record_use(
+            &state.db,
+            || state.next_id(),
+            user_id,
+            "imggen-negative",
+            neg,
+        )
+        .await;
+    }
+
     let job_id = image_jobs::start_job(&state, user_id, req).await?;
     Ok((
         StatusCode::CREATED,
