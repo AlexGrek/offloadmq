@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "@/api/client";
+import { KeepAwakeCard } from "@/components/KeepAwakeCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -210,6 +211,7 @@ export function SystemPage() {
           />
         </CardContent>
       </Card>
+      <KeepAwakeCard />
       <StartupCard />
     </div>
   );

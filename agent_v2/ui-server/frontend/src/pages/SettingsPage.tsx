@@ -33,6 +33,7 @@ const EMPTY: Settings = {
   kokoro_api_key: "",
   win_startup_enabled: false,
   mac_startup_enabled: false,
+  keep_awake_enabled: false,
   agent_id: "",
   key: "",
   jwt_token: "",

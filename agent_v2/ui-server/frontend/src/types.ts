@@ -66,6 +66,7 @@ export interface Settings {
   kokoro_api_key: string;
   win_startup_enabled: boolean;
   mac_startup_enabled: boolean;
+  keep_awake_enabled: boolean;
   agent_id: string;
   key: string;
   jwt_token: string;
