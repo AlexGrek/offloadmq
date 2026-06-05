@@ -33,6 +33,7 @@ import { pickListedCapability } from '../lib/capability-picker'
 import { TtsHistorySidebar, TTS_NEW_PANEL } from '../components/tts/TtsHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
 
 const DEFAULT_TEXT = 'Hello from OAI. This is a text-to-speech test.'
@@ -210,6 +211,7 @@ export default function TtsPage() {
     }
     setError(null)
     setSubmitting(true)
+    setJobDetailLoading(true)
     try {
       const res = await startTtsJob(token, {
         capability: selectedCap,
@@ -222,6 +224,7 @@ export default function TtsPage() {
       setError((err as Error).message)
     } finally {
       setSubmitting(false)
+      setJobDetailLoading(false)
     }
   }
 
@@ -491,9 +494,7 @@ export default function TtsPage() {
                   </Button>
 
                   {error && (
-                    <p className="text-xs text-destructive" data-testid="tts-error">
-                      {error}
-                    </p>
+                    <JobErrorBanner message={error} testId="tts-error" />
                   )}
                 </form>
               </section>
@@ -501,6 +502,7 @@ export default function TtsPage() {
 
             {viewingJob && (
               <section data-testid="tts-job-detail" className="space-y-4">
+                {error && <JobErrorBanner message={error} testId="tts-job-error" />}
                 {jobDetailLoading && !selectedJob ? (
                   <div className="flex min-h-[40vh] items-center justify-center">
                     <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -578,12 +580,6 @@ export default function TtsPage() {
                       )}
                     </div>
 
-                    {error && (
-                      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {error}
-                      </p>
-                    )}
-
                     {/* Text */}
                     <section className="space-y-1.5">
                       <h3 className="text-xs font-medium text-muted-foreground">Text</h3>
@@ -622,9 +618,10 @@ export default function TtsPage() {
                         )}
                       </section>
                     ) : selectedJob.status === 'failed' ? (
-                      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {selectedJob.error || 'Task failed'}
-                      </p>
+                      <JobErrorBanner
+                        message={selectedJob.error || 'Task failed'}
+                        testId="tts-job-failed"
+                      />
                     ) : selectedJob.status === 'canceled' ? (
                       <p className="text-xs text-muted-foreground">Task canceled.</p>
                     ) : (
