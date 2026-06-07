@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { api } from "@/api/client";
+import { ComfyParamMapEditor } from "@/components/ComfyParamMapEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -12,6 +13,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { SaveIndicator } from "@/components/SaveIndicator";
 import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 
@@ -65,7 +73,6 @@ function AddWorkflowDialog({
         namespace: namespace.trim(),
         graph_json: graphJson.trim(),
       });
-      // auto-detect param map right after adding
       try {
         await api.autodetectComfyParamMap({
           workflow_name: name.trim(),
@@ -157,6 +164,10 @@ export function ComfyPage() {
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const standardTaskTypesRef = useRef<string[]>([]);
 
+  // Param map drawer state
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorWorkflowKey, setEditorWorkflowKey] = useState<string>("");
+
   const refreshWorkflows = () =>
     api.getComfyWorkflows().then((r) => {
       setWorkflows(r.workflows);
@@ -190,6 +201,11 @@ export function ComfyPage() {
     }
   };
 
+  const openEditor = (w: Workflow) => {
+    setEditorWorkflowKey(`${w.namespace}::${w.name}`);
+    setEditorOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">ComfyUI workflows</h1>
@@ -212,9 +228,14 @@ export function ComfyPage() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Workflows</CardTitle>
-          <Button size="sm" onClick={() => setShowAdd(true)}>
-            Add workflow
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setEditorWorkflowKey(""); setEditorOpen(true); }}>
+              Edit param maps
+            </Button>
+            <Button size="sm" onClick={() => setShowAdd(true)}>
+              Add workflow
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-2">
           {workflows.length === 0 && (
@@ -236,15 +257,24 @@ export function ComfyPage() {
                     {w.task_types.join(", ")}
                   </span>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={deletingKey === key}
-                  onClick={() => deleteWorkflow(w)}
-                  className="text-destructive hover:text-destructive"
-                >
-                  {deletingKey === key ? "Removing…" : "Remove"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openEditor(w)}
+                  >
+                    Edit params
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={deletingKey === key}
+                    onClick={() => deleteWorkflow(w)}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    {deletingKey === key ? "Removing…" : "Remove"}
+                  </Button>
+                </div>
               </div>
             );
           })}
@@ -260,6 +290,24 @@ export function ComfyPage() {
           refreshWorkflows();
         }}
       />
+
+      {/* Param map editor — right-side drawer */}
+      <Sheet open={editorOpen} onOpenChange={setEditorOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Workflow param map editor</SheetTitle>
+          </SheetHeader>
+          <SheetBody>
+            {/* key remounts the editor when the selected workflow changes */}
+            <ComfyParamMapEditor
+              key={editorWorkflowKey}
+              workflows={workflows}
+              taskTypes={standardTaskTypes}
+              initialWorkflowKey={editorWorkflowKey}
+            />
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

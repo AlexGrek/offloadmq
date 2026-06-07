@@ -95,3 +95,28 @@ export const TERMINAL_STATUSES: TaskStatus[] = [
   "failed",
   "cancelled",
 ];
+
+export type ParamTarget = [string, string];
+export type ParamMap = Record<string, ParamTarget[] | null>;
+
+export interface InputOption {
+  node_id: string;
+  input_name: string;
+  class_type: string;
+  kind: "wire" | "literal";
+  preview: string;
+}
+
+export interface StandardField {
+  key: string;
+  label: string;
+  help: string;
+}
+
+export interface ParamMapData {
+  ok: boolean;
+  params: ParamMap;
+  standard_fields: StandardField[];
+  extra_keys: string[];
+  input_options: InputOption[];
+}

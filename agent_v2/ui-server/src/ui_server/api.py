@@ -79,6 +79,13 @@ class ParamMapPayload(BaseModel):
     param_map_json: str
 
 
+class ParamMapSavePayload(BaseModel):
+    workflow_name: str
+    task_type: str
+    namespace: str = ""
+    params: dict[str, Any]
+
+
 def _dump(model: BaseModel) -> dict[str, Any]:
     return model.model_dump(mode="json")
 
@@ -306,33 +313,72 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
         task_type: str = Query(""),
         namespace: str = Query(""),
     ) -> dict[str, Any]:
-        from offloadmq_core.comfy_service import _resolve_workflow_graph_path
+        import json
+
+        from offloadmq_core.comfy_service import (
+            _PARAM_FIELD_KEY_RE,
+            _build_comfy_input_options,
+            _param_ui_standard_rows,
+            _resolve_workflow_graph_path,
+            _standard_param_field_keys,
+        )
 
         try:
-            base = _resolve_workflow_graph_path(workflow_name, task_type, namespace).parent
-            pmap = base / f"{task_type}.params.json"
-            if not pmap.exists():
-                return {"ok": True, "paramMap": {}}
-            import json
-
-            return {"ok": True, "paramMap": json.loads(pmap.read_text())}
+            graph_path = _resolve_workflow_graph_path(workflow_name, task_type, namespace)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @router.post("/comfy/workflows/param-map")
-    def comfy_save_param_map(payload: ParamMapPayload) -> dict[str, bool]:
-        import json
-
-        from offloadmq_core.comfy_service import _resolve_workflow_graph_path
+        if not graph_path.exists():
+            raise HTTPException(status_code=404, detail="workflow graph JSON not found")
 
         try:
-            base = _resolve_workflow_graph_path(
+            graph = json.loads(graph_path.read_text())
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"invalid graph JSON: {exc}") from exc
+
+        params_path = graph_path.with_suffix(".params.json")
+        params: dict[str, Any] = {}
+        if params_path.exists():
+            try:
+                loaded = json.loads(params_path.read_text())
+                if isinstance(loaded, dict):
+                    params = loaded
+            except json.JSONDecodeError:
+                pass
+
+        std_keys = _standard_param_field_keys(task_type)
+        extra_keys = sorted(k for k in params if k not in std_keys and _PARAM_FIELD_KEY_RE.match(k))
+
+        return {
+            "ok": True,
+            "params": params,
+            "standard_fields": _param_ui_standard_rows(task_type),
+            "extra_keys": extra_keys,
+            "input_options": _build_comfy_input_options(graph),
+        }
+
+    @router.post("/comfy/workflows/param-map")
+    def comfy_save_param_map(payload: ParamMapSavePayload) -> dict[str, bool]:
+        import json
+
+        from offloadmq_core.comfy_service import (
+            _resolve_workflow_graph_path,
+            _validate_param_map,
+        )
+
+        try:
+            graph_path = _resolve_workflow_graph_path(
                 payload.workflow_name, payload.task_type, payload.namespace
-            ).parent
-            pmap = base / f"{payload.task_type}.params.json"
-            pmap.write_text(payload.param_map_json)
+            )
+            if not graph_path.exists():
+                raise HTTPException(status_code=404, detail="workflow graph JSON not found")
+            graph = json.loads(graph_path.read_text())
+            _validate_param_map(payload.params, graph)
+            pmap = graph_path.with_suffix(".params.json")
+            pmap.write_text(json.dumps(payload.params, indent=2))
+            orch.start_background_scan()
             return {"ok": True}
-        except (ValueError, json.JSONDecodeError) as exc:
+        except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.post("/comfy/workflows/param-map/autodetect")

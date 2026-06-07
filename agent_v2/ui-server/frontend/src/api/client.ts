@@ -125,13 +125,31 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ workflow_name, namespace }),
     }),
+  getComfyParamMap: (p: {
+    workflow_name: string;
+    task_type: string;
+    namespace: string;
+  }) => {
+    const q = new URLSearchParams(p).toString();
+    return request<import("@/types").ParamMapData>(`/comfy/workflows/param-map?${q}`);
+  },
+  saveComfyParamMap: (p: {
+    workflow_name: string;
+    task_type: string;
+    namespace: string;
+    params: import("@/types").ParamMap;
+  }) =>
+    request<{ ok: boolean }>("/comfy/workflows/param-map", {
+      method: "POST",
+      body: JSON.stringify(p),
+    }),
   autodetectComfyParamMap: (p: {
     workflow_name: string;
     task_type: string;
     namespace: string;
     param_map_json: string;
   }) =>
-    request<{ ok: boolean; paramMap: Record<string, unknown> }>(
+    request<{ ok: boolean; paramMap: import("@/types").ParamMap }>(
       "/comfy/workflows/param-map/autodetect",
       { method: "POST", body: JSON.stringify(p) }
     ),
