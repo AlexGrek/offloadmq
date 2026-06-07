@@ -114,7 +114,7 @@ def wait_for_completion(
 
         # Periodically report progress to detect client-side cancellation (499 → TaskCancelled).
         if transport is not None and task_id is not None and attempt % _PROGRESS_REPORT_EVERY == 0:
-            report_progress(transport, log=None, stage="queued", task_id=task_id)
+            report_progress(transport, log=None, stage="running", task_id=task_id)
 
         time.sleep(_POLL_INTERVAL_SEC)
     raise TimeoutError(f"ComfyUI job {prompt_id} did not complete within the allotted time")
