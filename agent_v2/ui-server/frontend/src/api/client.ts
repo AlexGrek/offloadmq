@@ -76,7 +76,15 @@ export const api = {
     request<{ ok: boolean }>(`/tasks/${id}/cancel`, { method: "POST" }),
 
   listCustomCaps: () =>
-    request<{ caps: { name: string; capability: string }[] }>("/custom/list"),
+    request<{
+      caps: {
+        name: string;
+        capability: string;
+        type: string;
+        description: string;
+        params: { name: string; type: string }[];
+      }[];
+    }>("/custom/list"),
   getCustomCap: (name: string) =>
     request<{ yaml: string }>(`/custom/get/${encodeURIComponent(name)}`),
   saveCustomCap: (name: string, yaml: string) =>
@@ -89,6 +97,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
+  uploadCustomCap: async (file: File): Promise<{ ok: boolean }> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(BASE + "/custom/upload", { method: "POST", body: fd });
+    if (!res.ok) {
+      let detail = `${res.status} ${res.statusText}`;
+      try { const b = await res.json(); if (b?.detail) detail = b.detail; } catch { /* ignore */ }
+      throw new Error(detail);
+    }
+    return res.json() as Promise<{ ok: boolean }>;
+  },
 
   getComfyWorkflows: () =>
     request<{

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 import { api } from "@/api/client";
 import { ComfyParamMapEditor } from "@/components/ComfyParamMapEditor";
@@ -47,6 +47,7 @@ function AddWorkflowDialog({
   const [graphJson, setGraphJson] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setName("");
@@ -54,12 +55,24 @@ function AddWorkflowDialog({
     setNamespace("");
     setGraphJson("");
     setError("");
+    if (fileRef.current) fileRef.current.value = "";
   };
 
   const handleClose = () => {
     reset();
     onClose();
   };
+
+  const loadFile = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result;
+      if (typeof text === "string") setGraphJson(text);
+    };
+    reader.readAsText(file);
+    // Pre-fill name from filename if empty
+    setName((prev) => prev || file.name.replace(/\.[^.]+$/, ""));
+  }, []);
 
   const submit = async () => {
     setError("");
@@ -134,8 +147,26 @@ function AddWorkflowDialog({
           </div>
           <div className="space-y-1">
             <Label>ComfyUI API-format graph JSON</Label>
+            {/* File picker — populates the textarea */}
+            <div className="flex items-center gap-2 mb-1">
+              <input
+                type="file"
+                ref={fileRef}
+                accept=".json"
+                className="text-xs file:rounded file:border-0 file:bg-secondary file:text-secondary-foreground file:text-xs file:font-medium file:px-2 file:py-1 file:mr-2 file:cursor-pointer cursor-pointer"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) loadFile(f);
+                }}
+              />
+              {graphJson && (
+                <span className="text-xs text-muted-foreground">
+                  {graphJson.length.toLocaleString()} chars
+                </span>
+              )}
+            </div>
             <textarea
-              className="w-full h-48 rounded-md border border-input bg-transparent px-3 py-2 text-xs font-mono shadow-sm resize-y"
+              className="w-full h-40 rounded-md border border-input bg-transparent px-3 py-2 text-xs font-mono shadow-sm resize-y"
               placeholder='{"1": {"class_type": "...", "inputs": {...}}, ...}'
               value={graphJson}
               onChange={(e) => setGraphJson(e.target.value)}

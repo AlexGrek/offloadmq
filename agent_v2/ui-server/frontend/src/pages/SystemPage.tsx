@@ -14,6 +14,15 @@ type StartupStatus = {
   mac_enabled: boolean;
   win_enabled: boolean;
   systemd_installed: boolean;
+  // Windows debug
+  win_exe?: string | null;
+  win_frozen?: boolean;
+  win_registry_value?: string | null;
+  // macOS debug
+  mac_exe?: string | null;
+  mac_frozen?: boolean;
+  mac_plist?: string | null;
+  mac_log_dir?: string;
 };
 
 function StartupCard() {
@@ -53,45 +62,103 @@ function StartupCard() {
       </CardHeader>
       <CardContent className="space-y-3">
         {platform === "darwin" && (
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">macOS LaunchAgent</p>
-              <p className="text-xs text-muted-foreground">
-                Runs omq-gui at login via ~/Library/LaunchAgents
-              </p>
+          <>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">macOS LaunchAgent</p>
+                <p className="text-xs text-muted-foreground">
+                  Runs omq-gui at login via ~/Library/LaunchAgents
+                </p>
+              </div>
+              <Button
+                variant={status.mac_enabled ? "default" : "outline"}
+                size="sm"
+                disabled={busy}
+                onClick={() => act(() => api.setMacStartup(!status.mac_enabled))}
+              >
+                {status.mac_enabled ? "Enabled" : "Disabled"}
+              </Button>
             </div>
-            <Button
-              variant={status.mac_enabled ? "default" : "outline"}
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                act(() => api.setMacStartup(!status.mac_enabled))
-              }
-            >
-              {status.mac_enabled ? "Enabled" : "Disabled"}
-            </Button>
-          </div>
+            <div className="rounded bg-muted px-3 py-2 text-xs font-mono space-y-1">
+              <div>
+                <span className="text-muted-foreground">exe: </span>
+                <span className="break-all">{status.mac_exe ?? "—"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">frozen: </span>
+                <span className={status.mac_frozen ? "text-green-500" : "text-amber-500"}>
+                  {String(!!status.mac_frozen)}
+                </span>
+                {!status.mac_frozen && (
+                  <span className="text-amber-500 ml-2">
+                    (running from source — exe path will be python)
+                  </span>
+                )}
+              </div>
+              <div>
+                <span className="text-muted-foreground">plist: </span>
+                {status.mac_plist ? (
+                  <span className="text-green-500 whitespace-pre-wrap break-all">
+                    {status.mac_plist}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground italic">not installed</span>
+                )}
+              </div>
+              {status.mac_log_dir && (
+                <div>
+                  <span className="text-muted-foreground">logs: </span>
+                  <span>{status.mac_log_dir}/stdout.log</span>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {platform === "win32" && (
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Windows startup</p>
-              <p className="text-xs text-muted-foreground">
-                Runs omq-gui at login via HKCU registry
-              </p>
+          <>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Windows startup</p>
+                <p className="text-xs text-muted-foreground">
+                  Runs omq-gui at login via HKCU registry
+                </p>
+              </div>
+              <Button
+                variant={status.win_enabled ? "default" : "outline"}
+                size="sm"
+                disabled={busy}
+                onClick={() => act(() => api.setWinStartup(!status.win_enabled))}
+              >
+                {status.win_enabled ? "Enabled" : "Disabled"}
+              </Button>
             </div>
-            <Button
-              variant={status.win_enabled ? "default" : "outline"}
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                act(() => api.setWinStartup(!status.win_enabled))
-              }
-            >
-              {status.win_enabled ? "Enabled" : "Disabled"}
-            </Button>
-          </div>
+            <div className="rounded bg-muted px-3 py-2 text-xs font-mono space-y-1">
+              <div>
+                <span className="text-muted-foreground">exe: </span>
+                <span className="break-all">{status.win_exe ?? "—"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">frozen: </span>
+                <span className={status.win_frozen ? "text-green-500" : "text-amber-500"}>
+                  {String(!!status.win_frozen)}
+                </span>
+                {!status.win_frozen && (
+                  <span className="text-amber-500 ml-2">
+                    (running from source — startup still works but exe path will be python.exe)
+                  </span>
+                )}
+              </div>
+              <div>
+                <span className="text-muted-foreground">registry value: </span>
+                {status.win_registry_value ? (
+                  <span className="text-green-500 break-all">{status.win_registry_value}</span>
+                ) : (
+                  <span className="text-muted-foreground italic">not set</span>
+                )}
+              </div>
+            </div>
+          </>
         )}
 
         {platform === "linux" && (

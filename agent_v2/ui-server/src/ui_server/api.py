@@ -372,8 +372,7 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
             )
             if not graph_path.exists():
                 raise HTTPException(status_code=404, detail="workflow graph JSON not found")
-            graph = json.loads(graph_path.read_text())
-            _validate_param_map(payload.params, graph)
+            _validate_param_map(payload.params)
             pmap = graph_path.with_suffix(".params.json")
             pmap.write_text(json.dumps(payload.params, indent=2))
             orch.start_background_scan()
@@ -454,7 +453,7 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
         from offloadmq_core.systemd_service import is_installed
 
         settings = orch.get_settings()
-        return {
+        result: dict[str, Any] = {
             "platform": sys.platform,
             "mac_enabled": startup_mac.enabled(),
             "win_enabled": startup_win.enabled(),
@@ -465,6 +464,18 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
             "keep_awake_enabled": getattr(settings, "keep_awake_enabled", False),
             "keep_awake_method": keep_awake.method(),
         }
+        # Windows debug info
+        if sys.platform == "win32":
+            result["win_exe"] = startup_win._get_exe_path()
+            result["win_frozen"] = getattr(sys, "frozen", False)
+            result["win_registry_value"] = startup_win.read_value()
+        # macOS debug info
+        if sys.platform == "darwin":
+            result["mac_exe"] = startup_mac._get_exe_path()
+            result["mac_frozen"] = getattr(sys, "frozen", False)
+            result["mac_plist"] = startup_mac.read_plist()
+            result["mac_log_dir"] = startup_mac._LOG_DIR
+        return result
 
     @router.post("/system/keep-awake")
     def keep_awake_toggle(enable: bool = Query(...)) -> dict[str, Any]:

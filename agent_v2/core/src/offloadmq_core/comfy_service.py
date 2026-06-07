@@ -283,10 +283,12 @@ def _build_comfy_input_options(graph: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
-def _validate_param_map(params: Any, graph: Dict[str, Any]) -> None:
+def _validate_param_map(params: Any) -> None:
+    """Validate param map structure only. Target existence is not checked — the
+    executor silently skips targets whose node_id or input_name are absent from
+    the graph at runtime, so unknown targets are valid (workflows evolve)."""
     if not isinstance(params, dict):
         raise ValueError("params must be a JSON object")
-    node_ids = set(str(k) for k in graph.keys())
     for field, targets in params.items():
         if not _PARAM_FIELD_KEY_RE.match(field):
             raise ValueError(f"invalid param field name: {field!r}")
@@ -299,22 +301,10 @@ def _validate_param_map(params: Any, graph: Dict[str, Any]) -> None:
                 raise ValueError(
                     f"param {field!r}: each target must be [node_id, input_name]"
                 )
-            nid_raw, inp_name = pair[0], pair[1]
+            _, inp_name = pair[0], pair[1]
             if not isinstance(inp_name, str):
                 raise ValueError(
                     f"param {field!r}: input slot name must be a string"
-                )
-            nid = str(nid_raw)
-            if nid not in node_ids:
-                raise ValueError(
-                    f"param {field!r}: node id {nid!r} not found in workflow graph"
-                )
-            node = graph[nid]
-            inps = node.get("inputs") or {}
-            if inp_name not in inps:
-                ct = node.get("class_type", "?")
-                raise ValueError(
-                    f"param {field!r}: node {nid} ({ct}) has no input {inp_name!r}"
                 )
 
 
@@ -654,7 +644,7 @@ def register_comfy_routes(
             with open(graph_path, encoding="utf-8") as f:
                 graph = json_module.load(f)
             _validate_comfy_api_workflow(graph)
-            _validate_param_map(params, graph)
+            _validate_param_map(params)
         except ValueError as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
         except json_module.JSONDecodeError as exc:

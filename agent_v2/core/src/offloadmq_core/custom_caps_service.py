@@ -11,9 +11,15 @@ from offloadmq_agent.custom_caps import (
 )
 
 
-def list_custom_caps() -> list[dict[str, str]]:
+def list_custom_caps() -> list[dict[str, Any]]:
     return [
-        {"name": c.name, "capability": c.capability_string()}
+        {
+            "name": c.name,
+            "capability": c.capability_string(),
+            "type": c.exec_type,
+            "description": c.description,
+            "params": [{"name": p.name, "type": p.type} for p in c.params],
+        }
         for c in discover_custom_caps()
     ]
 
