@@ -297,6 +297,10 @@ class Orchestrator:
             return
         if changed & self._SERVER_FACING and self._online:
             self.push_capabilities_to_server()
+        if "keep_awake_enabled" in changed:
+            from offloadmq_core import keep_awake
+
+            keep_awake.sync_from_settings(after.keep_awake_enabled, self._log)
 
     def _resize_pool(self, max_workers: int) -> None:
         with self._lock:

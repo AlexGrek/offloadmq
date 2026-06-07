@@ -20,10 +20,14 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")  # noqa: WPS515
 
 import argparse
+import atexit
 import socket
 import time
 
-from offloadmq_core import Orchestrator, run_blocking, run_in_thread
+from offloadmq_core import Orchestrator, keep_awake, run_blocking, run_in_thread
+
+# Mark GUI entry point so the web UI can show GUI-only controls.
+os.environ.setdefault("OMQ_GUI", "1")
 
 
 def _find_free_port(preferred: int) -> int:
@@ -78,6 +82,7 @@ def main() -> None:
     args = parser.parse_args()
 
     orch = Orchestrator()
+    atexit.register(keep_awake.shutdown)
     port = _find_free_port(args.port)
     _maybe_autostart(orch)
 

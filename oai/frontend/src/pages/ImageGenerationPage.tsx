@@ -47,6 +47,7 @@ import {
   type UploadedImage,
   uploadImage,
 } from '../api/images'
+import { JobErrorBanner } from '../components/JobErrorBanner'
 import RescaleControls from '../components/imggen/RescaleControls'
 import {
   ImageJobHistorySidebar,
@@ -468,6 +469,7 @@ export default function ImageGenerationPage() {
   async function onSubmit() {
     if (!token || !canSubmit) return
     setSubmitting(true)
+    setJobDetailLoading(true)
     setError(null)
     setInfo('Submitting image generation task to OffloadMQ.')
     const dataPrep = mode === 'img2img' ? rescaleDataPrep(rescale.enabled, rescale) : null
@@ -496,6 +498,7 @@ export default function ImageGenerationPage() {
       setError((e as Error).message)
     } finally {
       setSubmitting(false)
+      setJobDetailLoading(false)
     }
   }
 
@@ -1065,7 +1068,7 @@ export default function ImageGenerationPage() {
               <p className="text-xs text-muted-foreground">{info}</p>
             )}
             {error && activePanel === IMGGEN_NEW_PANEL && (
-              <p className="text-xs text-destructive">{error}</p>
+              <JobErrorBanner message={error} testId="imggen-error" />
             )}
           </div>
         </section>
@@ -1078,6 +1081,7 @@ export default function ImageGenerationPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           >
+          {error && <JobErrorBanner message={error} testId="imggen-job-error" />}
           {jobDetailLoading ? (
             <div className="flex min-h-[40vh] items-center justify-center">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -1170,6 +1174,15 @@ export default function ImageGenerationPage() {
                   </p>
                 </div>
               </div>
+            ) : displayStatus === 'failed' ? (
+              !error ? (
+                <div className="flex aspect-video w-full items-center justify-center bg-destructive/5 px-6">
+                  <JobErrorBanner
+                    message={selectedJob.error || 'Generation failed'}
+                    testId="imggen-job-failed"
+                  />
+                </div>
+              ) : null
             ) : null}
 
             {/* ── Compact title + meta ── */}
@@ -1252,11 +1265,6 @@ export default function ImageGenerationPage() {
                 )}
               </div>
               {info && <p className="text-xs text-muted-foreground">{info}</p>}
-              {(error || selectedJob.error) && (
-                <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  {error || selectedJob.error}
-                </p>
-              )}
 
               {/* ── Pipeline accordion ── */}
               <div className="space-y-2" data-testid="imggen-pipeline">

@@ -41,6 +41,7 @@ import {
 } from '../components/describe/DescribeHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
 import RescaleControls from '../components/imggen/RescaleControls'
 import { rescaleDataPrep, type RescaleState } from '../lib/imggen'
@@ -220,6 +221,7 @@ export default function DescribeImagePage() {
     if (!token || !uploadedInput || !selectedCap || submitting) return
     setError(null)
     setSubmitting(true)
+    setJobDetailLoading(true)
     try {
       const res = await startDescribeJob(token, {
         capability: selectedCap,
@@ -235,6 +237,7 @@ export default function DescribeImagePage() {
       setError((err as Error).message)
     } finally {
       setSubmitting(false)
+      setJobDetailLoading(false)
     }
   }
 
@@ -567,9 +570,7 @@ export default function DescribeImagePage() {
                   </Button>
 
                   {error && (
-                    <p className="text-xs text-destructive" data-testid="describe-error">
-                      {error}
-                    </p>
+                    <JobErrorBanner message={error} testId="describe-error" />
                   )}
                 </form>
               </section>
@@ -577,6 +578,7 @@ export default function DescribeImagePage() {
 
             {viewingJob && (
               <section data-testid="describe-job-detail" className="space-y-4">
+                {error && <JobErrorBanner message={error} testId="describe-job-error" />}
                 {jobDetailLoading && !selectedJob ? (
                   <div className="flex min-h-[40vh] items-center justify-center">
                     <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -671,12 +673,6 @@ export default function DescribeImagePage() {
                       )}
                     </div>
 
-                    {error && (
-                      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {error}
-                      </p>
-                    )}
-
                     {/* Prompt */}
                     <section className="space-y-1.5">
                       <h3 className="text-xs font-medium text-muted-foreground">Prompt</h3>
@@ -714,9 +710,10 @@ export default function DescribeImagePage() {
                         </div>
                       </section>
                     ) : selectedJob.status === 'failed' ? (
-                      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {selectedJob.error || 'Task failed'}
-                      </p>
+                      <JobErrorBanner
+                        message={selectedJob.error || 'Task failed'}
+                        testId="describe-job-failed"
+                      />
                     ) : selectedJob.status === 'canceled' ? (
                       <p className="text-xs text-muted-foreground">Task canceled.</p>
                     ) : (

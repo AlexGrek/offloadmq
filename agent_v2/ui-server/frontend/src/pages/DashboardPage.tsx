@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { Activity, Play, Square } from "lucide-react";
 
 import { api } from "@/api/client";
+import { KeepAwakeCard } from "@/components/KeepAwakeCard";
 import { usePoll } from "@/hooks/usePoll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,7 @@ export function DashboardPage() {
             <Stat label="Failed" value={failed.length} />
             <Stat label="Threads" value={status?.maxConcurrent ?? 1} />
           </div>
+          <KeepAwakeCard compact />
           {status?.capabilities?.length ? (
             <div className="flex flex-wrap gap-1.5">
               {status.capabilities.map((c) => (

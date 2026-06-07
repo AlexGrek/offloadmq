@@ -33,6 +33,17 @@ def create_app(orchestrator: OrchestratorAPI) -> FastAPI:
                 orchestrator.start()
             except RuntimeError:
                 pass
+        if getattr(settings, "keep_awake_enabled", False):
+            from offloadmq_core import keep_awake
+
+            log = getattr(orchestrator, "_log", None)
+            keep_awake.sync_from_settings(True, log)
+
+    @app.on_event("shutdown")
+    async def _on_shutdown() -> None:
+        from offloadmq_core import keep_awake
+
+        keep_awake.shutdown()
 
     static = _static_dir()
     if static.exists():

@@ -23,6 +23,7 @@ class SettingsPayload(BaseModel):
     kokoro_api_key: str | None = None
     win_startup_enabled: bool | None = None
     mac_startup_enabled: bool | None = None
+    keep_awake_enabled: bool | None = None
 
 
 class CapabilityPolicyPayload(BaseModel):
@@ -401,16 +402,38 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
 
     @router.get("/system/startup-status")
     def startup_status() -> dict[str, Any]:
+        import os
         import sys
-        from offloadmq_core import startup_mac, startup_win
+        from offloadmq_core import keep_awake, startup_mac, startup_win
         from offloadmq_core.systemd_service import is_installed
 
+        settings = orch.get_settings()
         return {
             "platform": sys.platform,
             "mac_enabled": startup_mac.enabled(),
             "win_enabled": startup_win.enabled(),
             "systemd_installed": is_installed(),
+            "gui_mode": os.environ.get("OMQ_GUI") == "1",
+            "keep_awake_available": keep_awake.available(),
+            "keep_awake_active": keep_awake.active(),
+            "keep_awake_enabled": getattr(settings, "keep_awake_enabled", False),
+            "keep_awake_method": keep_awake.method(),
         }
+
+    @router.post("/system/keep-awake")
+    def keep_awake_toggle(enable: bool = Query(...)) -> dict[str, Any]:
+        import logging
+
+        from offloadmq_core import keep_awake
+
+        if enable and not keep_awake.available():
+            raise HTTPException(
+                status_code=400,
+                detail="Keep awake is not available on this platform",
+            )
+        keep_awake.sync_from_settings(enable, logging.getLogger(__name__).info)
+        settings = orch.apply_settings(keep_awake_enabled=enable)
+        return _dump(settings)
 
     @router.post("/system/win-startup")
     def win_startup(enable: bool = Query(...)) -> dict[str, Any]:

@@ -35,6 +35,7 @@ import { pickListedCapability } from '../lib/capability-picker'
 import { MusicHistorySidebar, MUSIC_NEW_PANEL } from '../components/music/MusicHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
 
 const POLL_INTERVAL_MS = 4000
@@ -180,6 +181,7 @@ export default function MusicGenerationPage() {
     }
     setError(null)
     setSubmitting(true)
+    setJobDetailLoading(true)
     try {
       const req = {
         capability: selectedCap,
@@ -202,6 +204,7 @@ export default function MusicGenerationPage() {
       setError((err as Error).message)
     } finally {
       setSubmitting(false)
+      setJobDetailLoading(false)
     }
   }
 
@@ -588,9 +591,7 @@ export default function MusicGenerationPage() {
                   </Button>
 
                   {error && (
-                    <p className="text-xs text-destructive" data-testid="music-error">
-                      {error}
-                    </p>
+                    <JobErrorBanner message={error} testId="music-error" />
                   )}
                 </form>
               </section>
@@ -598,6 +599,7 @@ export default function MusicGenerationPage() {
 
             {viewingJob && (
               <section data-testid="music-job-detail" className="space-y-4">
+                {error && <JobErrorBanner message={error} testId="music-job-error" />}
                 {jobDetailLoading && !selectedJob ? (
                   <div className="flex min-h-[40vh] items-center justify-center">
                     <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -675,12 +677,6 @@ export default function MusicGenerationPage() {
                       )}
                     </div>
 
-                    {error && (
-                      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {error}
-                      </p>
-                    )}
-
                     {/* Style tags */}
                     <section className="space-y-1.5">
                       <h3 className="text-xs font-medium text-muted-foreground">Style</h3>
@@ -757,9 +753,10 @@ export default function MusicGenerationPage() {
                         </div>
                       </section>
                     ) : selectedJob.status === 'failed' ? (
-                      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {selectedJob.error || 'Task failed'}
-                      </p>
+                      <JobErrorBanner
+                        message={selectedJob.error || 'Task failed'}
+                        testId="music-job-failed"
+                      />
                     ) : selectedJob.status === 'canceled' ? (
                       <p className="text-xs text-muted-foreground">Task canceled.</p>
                     ) : (

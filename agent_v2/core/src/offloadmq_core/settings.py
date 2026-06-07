@@ -35,6 +35,7 @@ class Settings(BaseModel):
     # OS integration flags (persisted; platform modules apply changes).
     win_startup_enabled: bool = False
     mac_startup_enabled: bool = False
+    keep_awake_enabled: bool = False
 
     # Internal flags
     onnx_slavemode_initialized: bool = False

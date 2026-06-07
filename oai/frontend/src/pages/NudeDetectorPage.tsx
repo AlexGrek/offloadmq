@@ -32,6 +32,7 @@ import {
 import { NudeDetectResultsList } from '../components/nudedetect/NudeDetectResultView'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
 import { DEFAULT_NUDENET_THRESHOLD, totalDetectionCount } from '../lib/nudeDetectLabels'
 import { cn } from '../lib/utils'
@@ -206,6 +207,7 @@ export default function NudeDetectorPage() {
 
     setError(null)
     setSubmitting(true)
+    setJobDetailLoading(true)
     try {
       let firstJobId: string | null = null
       for (const item of ready) {
@@ -225,6 +227,7 @@ export default function NudeDetectorPage() {
       setError((err as Error).message)
     } finally {
       setSubmitting(false)
+      setJobDetailLoading(false)
     }
   }
 
@@ -527,9 +530,7 @@ export default function NudeDetectorPage() {
                   </Button>
 
                   {error ? (
-                    <p className="text-xs text-destructive" data-testid="nudedetect-error">
-                      {error}
-                    </p>
+                    <JobErrorBanner message={error} testId="nudedetect-error" />
                   ) : null}
                 </form>
               </section>
@@ -537,6 +538,7 @@ export default function NudeDetectorPage() {
 
             {viewingJob && (
               <section data-testid="nudedetect-job-detail" className="space-y-4">
+                {error ? <JobErrorBanner message={error} testId="nudedetect-job-error" /> : null}
                 {jobDetailLoading && !selectedJob ? (
                   <div className="flex min-h-[40vh] items-center justify-center">
                     <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -621,12 +623,6 @@ export default function NudeDetectorPage() {
                       ) : null}
                     </div>
 
-                    {error ? (
-                      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {error}
-                      </p>
-                    ) : null}
-
                     {selectedJob.result?.results ? (
                       <NudeDetectResultsList
                         results={selectedJob.result.results}
@@ -637,9 +633,10 @@ export default function NudeDetectorPage() {
                         }
                       />
                     ) : selectedJob.status === 'failed' ? (
-                      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {selectedJob.error || 'Task failed'}
-                      </p>
+                      <JobErrorBanner
+                        message={selectedJob.error || 'Task failed'}
+                        testId="nudedetect-job-failed"
+                      />
                     ) : selectedJob.status === 'canceled' ? (
                       <p className="text-xs text-muted-foreground">Task canceled.</p>
                     ) : (

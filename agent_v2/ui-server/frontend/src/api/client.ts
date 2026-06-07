@@ -146,7 +146,14 @@ export const api = {
       mac_enabled: boolean;
       win_enabled: boolean;
       systemd_installed: boolean;
+      gui_mode: boolean;
+      keep_awake_available: boolean;
+      keep_awake_active: boolean;
+      keep_awake_enabled: boolean;
+      keep_awake_method: string;
     }>("/system/startup-status"),
+  setKeepAwake: (enable: boolean) =>
+    request<Settings>(`/system/keep-awake?enable=${enable}`, { method: "POST" }),
   setWinStartup: (enable: boolean) =>
     request<Settings>(`/system/win-startup?enable=${enable}`, { method: "POST" }),
   setMacStartup: (enable: boolean) =>
