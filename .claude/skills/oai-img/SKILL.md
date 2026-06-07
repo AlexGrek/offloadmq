@@ -111,7 +111,7 @@ sequenceDiagram
 
 | Aspect | txt2img | img2img |
 |--------|---------|---------|
-| Defaults | 1024×1024 (`MODE_DEFAULTS`) | 768×768, rescale on |
+| Defaults | 1024×1024 (`MODE_DEFAULTS`) | input-driven: original resolution (sub-4K) or proportional 1024 long edge; keep-proportions on |
 | Upload | — | `POST /api/images/upload` |
 | `workflow` | `"txt2img"` | `"img2img"` |
 | `input_image_id` | null | from upload snowflake id |
@@ -131,6 +131,12 @@ sequenceDiagram
 **Offload submit** (`offload/image_tasks.rs` `submit_img_task`): `urgent: false`, `file_bucket`, `output_bucket`, `dataPreparation`, `fetchFiles` for outputs.
 
 **Capabilities:** prefix `imggen.` via `POST …/capabilities/list/online_ext`. Tags in brackets e.g. `[txt2img;img2img]` — `filterCapabilitiesByWorkflow` matches workflow; if none match, shows all caps.
+
+**img2img resolution toggles** (page state, near Width/Height; helpers in `lib/imggen.ts`):
+
+- **Original resolution** (`imggen-original-resolution`) — offered only when the input fits under 4K (`fitsOriginalResolution`, `FOUR_K_EDGE = 3840` on the larger edge). Default-**on** after upload/pick for sub-4K inputs. Locks Width/Height to the input's stored dims and submits with `data_preparation = null` (input passed through un-rescaled → output at original size). Hides the "Offload rescaling" advanced section while on.
+- **Keep proportions** (`imggen-keep-proportions`) — offered for any img2img input; default-on whenever an input is present (implied + disabled while Original resolution is on). Locks the output aspect ratio to the input: editing one dimension recomputes the other (`proportionalCounterpart`, 8px grid), and the dimension presets become proportional variants (`proportionalPresets` over `PRESET_LONG_EDGES`). ≥4K inputs default to a proportional 1024 long edge (`proportionalSize`).
+- `applyInputDefaults(img)` sets both toggles + dims on every input change (upload, library pick, send-to-img2img, mode switch); `applyPipelineParamsToNewForm` re-derives them on Edit prompt / retry.
 
 ---
 
@@ -298,7 +304,9 @@ imggen-pipeline-new, imggen-pipeline-item-{job_id},
 imggen-new-panel, imggen-mode-tabs, imggen-mode-img2img,
 imggen-capability-select, imggen-input-section, imggen-upload-input,
 imggen-rescale, imggen-prompt, imggen-negative-toggle,
-imggen-width, imggen-height, imggen-submit-job,
+imggen-width, imggen-height, imggen-swap-dims, imggen-copy-from-input,
+imggen-resolution-toggles, imggen-original-resolution, imggen-keep-proportions,
+imggen-submit-job,
 imggen-job-detail, imggen-poll-job, imggen-cancel-job,
 imggen-pipeline, imggen-pipeline-toggle, imggen-pipeline-status,
 tool-debug-open, tool-debug-modal, tool-debug-fetch-poll, tool-debug-poll,
