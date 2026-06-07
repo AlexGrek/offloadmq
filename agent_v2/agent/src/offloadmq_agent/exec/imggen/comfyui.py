@@ -7,6 +7,8 @@ Covers all direct calls to the ComfyUI REST API:
   GET  /view          — download output files
 """
 
+import json
+import logging
 import time
 from typing import Any
 
@@ -17,6 +19,8 @@ from offloadmq_agent.settings_util import load_agent_settings as load_config
 from offloadmq_agent.wire import TaskId
 from offloadmq_agent.transport_exec import AgentTransport
 from offloadmq_agent.exec.reporting import report_progress
+
+logger = logging.getLogger("agent")
 
 _COMFYUI_DEFAULT_URL = "http://127.0.0.1:8188"
 _POLL_INTERVAL_SEC = 2
@@ -40,9 +44,28 @@ def upload_image(local_path: Path) -> str:
     return str(r.json()["name"])
 
 
-def queue_prompt(workflow_graph: dict[str, Any]) -> str:
-    """Submit a workflow graph to ComfyUI and return the prompt_id."""
-    r = requests.post(f"{comfyui_url()}/prompt", json={"prompt": workflow_graph}, timeout=30)
+def queue_prompt(
+    workflow_graph: dict[str, Any],
+    transport: AgentTransport | None = None,
+    task_id: TaskId | None = None,
+) -> str:
+    """Submit a workflow graph to ComfyUI and return the prompt_id.
+
+    If ``transport`` and ``task_id`` are provided, the full request body is also
+    sent to the server as a progress log so it shows up in the task detail UI.
+    """
+    body = {"prompt": workflow_graph}
+    url = f"{comfyui_url()}/prompt"
+    request_log = json.dumps(body, indent=2, default=str)
+    logger.info("POST %s — request body:\n%s", url, request_log)
+    if transport is not None and task_id is not None:
+        report_progress(
+            transport,
+            log=f"ComfyUI request (POST {url}):\n{request_log}",
+            stage="queued",
+            task_id=task_id,
+        )
+    r = requests.post(url, json=body, timeout=30)
     r.raise_for_status()
     prompt_id: str = str(r.json().get("prompt_id") or "")
     if not prompt_id:

@@ -49,7 +49,7 @@ def execute_imggen_comfyui(
         inject_values = build_injection_values(payload, task_type, data_path)
         graph = inject_params(graph, param_map, inject_values)
 
-        prompt_id = queue_prompt(graph)
+        prompt_id = queue_prompt(graph, transport, task_id)
         report_progress(transport, f"Queued as prompt_id={prompt_id}", "queued", task_id)
 
         history_entry = wait_for_completion(prompt_id, transport, task_id)
