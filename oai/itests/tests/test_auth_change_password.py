@@ -2,7 +2,7 @@
 
 import httpx
 
-from helpers import login
+from .helpers import login
 
 
 class TestChangePasswordSuccess:

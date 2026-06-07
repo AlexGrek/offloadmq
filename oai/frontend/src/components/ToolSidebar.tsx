@@ -34,6 +34,7 @@ export function ToolSidebar({
     <aside
       className={cn(
         'flex min-h-0 flex-col overflow-hidden border-r border-border bg-sidebar',
+        '[&_button:not(:disabled)]:cursor-pointer',
         isMobile
           ? open
             ? 'absolute inset-0 z-40 w-full'
