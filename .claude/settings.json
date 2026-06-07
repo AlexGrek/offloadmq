@@ -158,8 +158,12 @@
       "Bash(rg *)",
       "Bash(.venv/bin/python -c \"import aiohttp; print\\(aiohttp.__version__\\)\")",
       "Bash(.venv/bin/python -c \"import inspect, aiohttp; from aiohttp.client_ws import ClientWebSocketResponse as W; print\\(inspect.signature\\(W.receive\\)\\)\")",
-      "Bash(awk 'NR>=1 && /^impl/{last=NR\": \"$0} NR==14999{print \"nearest impl above 14999: \"last}' src/ops.rs)"
+      "Bash(awk 'NR>=1 && /^impl/{last=NR\": \"$0} NR==14999{print \"nearest impl above 14999: \"last}' src/ops.rs)",
+      "Bash(git stash *)",
+      "Bash(node -e 'const d=JSON.parse\\(require\\(\"fs\"\\).readFileSync\\(0\\)\\);const c={};for\\(const f of d\\)for\\(const m of f.messages\\)c[m.ruleId]=\\(c[m.ruleId]||0\\)+1;console.log\\(Object.keys\\(c\\).length?c:\"clean\"\\)')"
     ],
-    "additionalDirectories": []
+    "additionalDirectories": [
+      "/tmp"
+    ]
   }
 }

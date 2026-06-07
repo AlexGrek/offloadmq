@@ -13,6 +13,64 @@ export type ImgGenMode = 'txt2img' | 'img2img'
 
 export type RescaleMode = 'exact' | 'max'
 
+/** 4K UHD width — img2img inputs whose larger edge reaches this are too big to offer "original resolution". */
+export const FOUR_K_EDGE = 3840
+
+/** True when an image is small enough to safely generate at its original (un-rescaled) resolution. */
+export function fitsOriginalResolution(width: number, height: number): boolean {
+  return Math.max(width, height) < FOUR_K_EDGE
+}
+
+/** Long-edge sizes proposed as proportional ("keep proportions") variants in img2img. */
+export const PRESET_LONG_EDGES = [512, 768, 1024, 1280, 1536] as const
+
+/** Diffusion models expect dimensions on an 8px grid; round (never below the grid step). */
+function roundToMultiple(value: number, multiple: number): number {
+  return Math.max(multiple, Math.round(value / multiple) * multiple)
+}
+
+/** Scale an input's aspect ratio to a target long edge, snapped to an 8px grid. */
+export function proportionalSize(
+  inputWidth: number,
+  inputHeight: number,
+  longEdge: number,
+): [number, number] {
+  if (inputWidth <= 0 || inputHeight <= 0) return [longEdge, longEdge]
+  const landscape = inputWidth >= inputHeight
+  const shortRatio = landscape ? inputHeight / inputWidth : inputWidth / inputHeight
+  const short = roundToMultiple(longEdge * shortRatio, 8)
+  return landscape ? [longEdge, short] : [short, longEdge]
+}
+
+/** Dimension presets that preserve the input image's aspect ratio (deduped). */
+export function proportionalPresets(inputWidth: number, inputHeight: number): [number, number][] {
+  const seen = new Set<string>()
+  const presets: [number, number][] = []
+  for (const longEdge of PRESET_LONG_EDGES) {
+    const [w, h] = proportionalSize(inputWidth, inputHeight, longEdge)
+    const key = `${w}x${h}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      presets.push([w, h])
+    }
+  }
+  return presets
+}
+
+/** Given one edited dimension, the matching other dimension that preserves the input ratio. */
+export function proportionalCounterpart(
+  changed: 'width' | 'height',
+  value: number,
+  inputWidth: number,
+  inputHeight: number,
+): number {
+  if (inputWidth <= 0 || inputHeight <= 0 || value <= 0) return value
+  const ratio = inputWidth / inputHeight
+  return changed === 'width'
+    ? roundToMultiple(value / ratio, 8)
+    : roundToMultiple(value * ratio, 8)
+}
+
 export interface RescaleState {
   enabled: boolean
   mode: RescaleMode
@@ -184,6 +242,8 @@ export interface ApplyPipelineToNewFormHandlers {
   setHeight: (v: number) => void
   setSeed: (v: string) => void
   setRescale: (v: RescaleState) => void
+  setOriginalResolution: (v: boolean) => void
+  setKeepProportions: (v: boolean) => void
   setUploadedInput: (v: UploadedImage | null) => void
   setInputPreviewUrl: (v: string | null) => void
   rescaleUserEditedRef: { current: boolean }
@@ -211,19 +271,28 @@ export function applyPipelineParamsToNewForm(
   handlers.setSeed(p.seed != null ? String(p.seed) : '')
   handlers.rescaleUserEditedRef.current = true
   handlers.setRescale(rescaleFromParams(p.rescale))
-  if (mode === 'img2img' && p.input_image_id) {
-    const inputFile = job.files.find(f => f.direction === 'input')
-    if (inputFile) {
-      handlers.setUploadedInput(uploadedInputFromJobFile(inputFile))
-      handlers.setInputPreviewUrl(imagePreviewUrl ?? null)
-    } else {
-      handlers.setUploadedInput(null)
-      handlers.setInputPreviewUrl(null)
-    }
+  const inputFile =
+    mode === 'img2img' && p.input_image_id
+      ? job.files.find(f => f.direction === 'input')
+      : undefined
+  if (inputFile) {
+    handlers.setUploadedInput(uploadedInputFromJobFile(inputFile))
+    handlers.setInputPreviewUrl(imagePreviewUrl ?? null)
   } else {
     handlers.setUploadedInput(null)
     handlers.setInputPreviewUrl(null)
   }
+  // Re-derive the "original resolution" toggle: img2img job whose generation dims match a
+  // sub-4K input image (and no active rescale) was generated at the input's native size.
+  handlers.setOriginalResolution(
+    !!inputFile &&
+      fitsOriginalResolution(inputFile.width, inputFile.height) &&
+      p.width === inputFile.width &&
+      p.height === inputFile.height &&
+      !p.rescale?.enabled,
+  )
+  // Default proportion-locking on whenever an input image is present.
+  handlers.setKeepProportions(!!inputFile)
 }
 
 export const MODE_DEFAULTS: Record<

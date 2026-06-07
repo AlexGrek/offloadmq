@@ -66,8 +66,12 @@ import {
   MODE_DEFAULTS,
   applyPipelineParamsToNewForm,
   filterCapabilitiesByWorkflow,
+  fitsOriginalResolution,
   jobPromptTitle,
   jobTechMeta,
+  proportionalCounterpart,
+  proportionalPresets,
+  proportionalSize,
 
   pipelineEventsWithoutPolls,
   pipelineStatusLine,
@@ -116,6 +120,12 @@ export default function ImageGenerationPage() {
   const [height, setHeight] = useState(MODE_DEFAULTS.txt2img.height)
   const [seed, setSeed] = useState('')
   const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
+  // img2img "original resolution": lock generation dims to the input image and pass it
+  // through to the agent un-rescaled. Only offered for sub-4K inputs; default-on after upload.
+  const [originalResolution, setOriginalResolution] = useState(false)
+  // img2img "keep proportions": lock the output aspect ratio to the input image's and offer
+  // proportional dimension presets. Default-on whenever an input is present.
+  const [keepProportions, setKeepProportions] = useState(false)
   const rescaleUserEditedRef = useRef(false)
 
   const [uploadedInput, setUploadedInput] = useState<UploadedImage | null>(null)
@@ -170,6 +180,28 @@ export default function ImageGenerationPage() {
     if (mode === 'img2img' && !uploadedInput) return false
     return true
   }, [prompt, capability, mode, uploadedInput, capabilitiesStatus])
+
+  // "Original resolution" is only meaningful for an img2img input small enough to generate verbatim.
+  const canUseOriginalResolution = useMemo(
+    () =>
+      mode === 'img2img' &&
+      uploadedInput != null &&
+      fitsOriginalResolution(uploadedInput.width, uploadedInput.height),
+    [mode, uploadedInput],
+  )
+
+  // Output aspect ratio is locked to the input whenever either toggle is on.
+  const ratioLocked = originalResolution || keepProportions
+
+  // Dimension presets: proportional variants of the input while ratio-locked, else square/common sizes.
+  const dimensionPresets = useMemo<[number, number][]>(() => {
+    if (ratioLocked && uploadedInput) {
+      return proportionalPresets(uploadedInput.width, uploadedInput.height)
+    }
+    return [
+      [512, 512], [768, 768], [1024, 1024], [1024, 768], [768, 1024],
+    ]
+  }, [ratioLocked, uploadedInput])
 
   const patchRescale = useCallback((patch: Partial<RescaleState>) => {
     setRescale(prev => ({ ...prev, ...patch }))
@@ -256,6 +288,25 @@ export default function ImageGenerationPage() {
     }
   }, [capabilities, capability, jobs])
 
+  // Default a freshly set img2img input: keep proportions on, and use original resolution when
+  // it fits under 4K (locks dims to the input). Larger inputs default to a proportional 1024 long
+  // edge. Returns whether original resolution was enabled.
+  function applyInputDefaults(img: UploadedImage): boolean {
+    const fits = fitsOriginalResolution(img.width, img.height)
+    setKeepProportions(true)
+    setOriginalResolution(fits)
+    rescaleUserEditedRef.current = false
+    if (fits) {
+      setWidth(img.width)
+      setHeight(img.height)
+    } else {
+      const [w, h] = proportionalSize(img.width, img.height, 1024)
+      setWidth(w)
+      setHeight(h)
+    }
+    return fits
+  }
+
   function switchMode(next: ImgGenMode) {
     if (next === mode) return
     setMode(next)
@@ -275,6 +326,13 @@ export default function ImageGenerationPage() {
     if (next === 'txt2img') {
       setUploadedInput(null)
       setInputPreviewUrl(null)
+      setOriginalResolution(false)
+      setKeepProportions(false)
+    } else if (uploadedInput) {
+      applyInputDefaults(uploadedInput)
+    } else {
+      setOriginalResolution(false)
+      setKeepProportions(false)
     }
   }
 
@@ -291,10 +349,17 @@ export default function ImageGenerationPage() {
     try {
       const img = await uploadImage(token, file)
       setUploadedInput(img)
-      setInfo(`Uploaded ${img.filename} as ${img.width}x${img.height}.`)
+      const original = applyInputDefaults(img)
+      setInfo(
+        original
+          ? `Uploaded ${img.filename} (${img.width}×${img.height}). Generating at original resolution.`
+          : `Uploaded ${img.filename} as ${img.width}×${img.height}.`,
+      )
     } catch (e) {
       setError((e as Error).message)
       setUploadedInput(null)
+      setOriginalResolution(false)
+      setKeepProportions(false)
       setInputPreviewUrl(prev => {
         if (prev) URL.revokeObjectURL(prev)
         return null
@@ -306,6 +371,8 @@ export default function ImageGenerationPage() {
 
   function clearInput() {
     setUploadedInput(null)
+    setOriginalResolution(false)
+    setKeepProportions(false)
     setInputPreviewUrl(prev => {
       if (prev) URL.revokeObjectURL(prev)
       return null
@@ -355,7 +422,7 @@ export default function ImageGenerationPage() {
 
   function sendToImg2Img(file: { image_id: string; filename: string; content_type: string; width: number; height: number; size_bytes: number; rescaled: boolean; reencoded: boolean }) {
     switchMode('img2img')
-    setUploadedInput({
+    const img: UploadedImage = {
       image_id: file.image_id,
       filename: file.filename,
       content_type: file.content_type,
@@ -364,10 +431,16 @@ export default function ImageGenerationPage() {
       size_bytes: file.size_bytes,
       rescaled: file.rescaled,
       reencoded: file.reencoded,
-    })
+    }
+    setUploadedInput(img)
+    const original = applyInputDefaults(img)
     setInputPreviewUrl(null)
     setActivePanel(IMGGEN_NEW_PANEL)
-    setInfo(`Input set to "${file.filename}" (${file.width}×${file.height}). Adjust settings and submit.`)
+    setInfo(
+      original
+        ? `Input set to "${file.filename}" (${file.width}×${file.height}). Generating at original resolution.`
+        : `Input set to "${file.filename}" (${file.width}×${file.height}). Adjust settings and submit.`,
+    )
     setError(null)
   }
 
@@ -472,7 +545,9 @@ export default function ImageGenerationPage() {
     setJobDetailLoading(true)
     setError(null)
     setInfo('Submitting image generation task to OffloadMQ.')
-    const dataPrep = mode === 'img2img' ? rescaleDataPrep(rescale.enabled, rescale) : null
+    // Original-resolution passes the input through un-rescaled (no dataPreparation).
+    const dataPrep =
+      mode === 'img2img' && !originalResolution ? rescaleDataPrep(rescale.enabled, rescale) : null
     try {
       const [res] = await Promise.all([
         startImageJob(token, {
@@ -543,6 +618,8 @@ export default function ImageGenerationPage() {
         setHeight,
         setSeed,
         setRescale,
+        setOriginalResolution,
+        setKeepProportions,
         setUploadedInput,
         setInputPreviewUrl,
         rescaleUserEditedRef,
@@ -557,6 +634,10 @@ export default function ImageGenerationPage() {
 
   function rescaleForSubmit(): ImagePipelineRescaleParams | null {
     if (mode !== 'img2img') return null
+    // Original-resolution: persist rescale as disabled so the job reconstructs as pass-through.
+    if (originalResolution) {
+      return { enabled: false, mode: rescale.mode, width, height, px: null, mp: null }
+    }
     return {
       enabled: rescale.enabled,
       mode: rescale.mode,
@@ -904,9 +985,14 @@ export default function ImageGenerationPage() {
                       id="width"
                       type="number"
                       value={width}
+                      disabled={originalResolution}
                       onChange={e => {
                         if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
-                        setWidth(Number(e.target.value) || 1024)
+                        const w = Number(e.target.value) || 1024
+                        setWidth(w)
+                        if (keepProportions && uploadedInput) {
+                          setHeight(proportionalCounterpart('width', w, uploadedInput.width, uploadedInput.height))
+                        }
                       }}
                       data-testid="imggen-width"
                     />
@@ -916,12 +1002,13 @@ export default function ImageGenerationPage() {
                     variant="ghost"
                     size="icon-sm"
                     className="mb-0.5 shrink-0"
+                    disabled={ratioLocked}
                     onClick={() => {
                       if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
                       setWidth(height)
                       setHeight(width)
                     }}
-                    title="Swap width and height"
+                    title={ratioLocked ? 'Disabled while proportions are locked' : 'Swap width and height'}
                     data-testid="imggen-swap-dims"
                   >
                     <ArrowLeftRight className="size-4" />
@@ -932,9 +1019,14 @@ export default function ImageGenerationPage() {
                       id="height"
                       type="number"
                       value={height}
+                      disabled={originalResolution}
                       onChange={e => {
                         if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
-                        setHeight(Number(e.target.value) || 1024)
+                        const h = Number(e.target.value) || 1024
+                        setHeight(h)
+                        if (keepProportions && uploadedInput) {
+                          setWidth(proportionalCounterpart('height', h, uploadedInput.width, uploadedInput.height))
+                        }
                       }}
                       data-testid="imggen-height"
                     />
@@ -945,6 +1037,7 @@ export default function ImageGenerationPage() {
                       variant="ghost"
                       size="sm"
                       className="mb-0.5 shrink-0 text-xs"
+                      disabled={originalResolution}
                       onClick={() => {
                         if (rescale.mode === 'exact') rescaleUserEditedRef.current = false
                         setWidth(uploadedInput.width)
@@ -959,12 +1052,11 @@ export default function ImageGenerationPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {([
-                    [512, 512], [768, 768], [1024, 1024], [1024, 768], [768, 1024],
-                  ] as [number, number][]).map(([w, h]) => (
+                  {dimensionPresets.map(([w, h]) => (
                     <button
                       key={`${w}x${h}`}
                       type="button"
+                      disabled={originalResolution}
                       onClick={() => {
                         if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
                         setWidth(w)
@@ -973,6 +1065,7 @@ export default function ImageGenerationPage() {
                       className={cn(
                         'h-7 rounded-md border border-input bg-background px-2 text-xs transition-colors hover:bg-muted/50',
                         width === w && height === h && 'border-primary bg-primary/10 text-primary',
+                        originalResolution && 'cursor-not-allowed opacity-50 hover:bg-background',
                       )}
                       data-testid={`imggen-preset-${w}x${h}`}
                     >
@@ -980,6 +1073,55 @@ export default function ImageGenerationPage() {
                     </button>
                   ))}
                 </div>
+                {mode === 'img2img' && uploadedInput && (
+                  <div className="flex flex-col gap-1.5 pt-0.5" data-testid="imggen-resolution-toggles">
+                    {canUseOriginalResolution && (
+                      <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={originalResolution}
+                          onChange={e => {
+                            const next = e.target.checked
+                            setOriginalResolution(next)
+                            if (next) {
+                              setWidth(uploadedInput.width)
+                              setHeight(uploadedInput.height)
+                            }
+                          }}
+                          className="rounded border-border"
+                          data-testid="imggen-original-resolution"
+                        />
+                        Original resolution ({uploadedInput.width}×{uploadedInput.height})
+                      </label>
+                    )}
+                    <label
+                      className={cn(
+                        'flex w-fit items-center gap-2 text-sm text-muted-foreground',
+                        originalResolution ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={ratioLocked}
+                        disabled={originalResolution}
+                        onChange={e => {
+                          const next = e.target.checked
+                          setKeepProportions(next)
+                          if (next && uploadedInput) {
+                            rescaleUserEditedRef.current = false
+                            setHeight(
+                              proportionalCounterpart('width', width, uploadedInput.width, uploadedInput.height),
+                            )
+                          }
+                        }}
+                        className="rounded border-border"
+                        data-testid="imggen-keep-proportions"
+                      />
+                      Keep proportions
+                      {originalResolution && ' (locked to original)'}
+                    </label>
+                  </div>
+                )}
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="seed">Seed (optional)</Label>
@@ -987,7 +1129,7 @@ export default function ImageGenerationPage() {
               </div>
             </div>
 
-            {mode === 'img2img' && (
+            {mode === 'img2img' && !originalResolution && (
               <details className="group" data-testid="imggen-advanced">
                 <summary className="flex cursor-pointer select-none list-none items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
                   <ChevronDown className="size-3 -rotate-90 transition-transform group-open:rotate-0" />
@@ -1372,6 +1514,7 @@ export default function ImageGenerationPage() {
         onClose={() => setPickerOpen(false)}
         onSelect={img => {
           setUploadedInput(img)
+          applyInputDefaults(img)
           setInputPreviewUrl(null)
         }}
         token={token}
