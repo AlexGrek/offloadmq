@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { ArrowUp, FileText, FolderOpen, ImageIcon, Loader2, Plus, Square, X } from 'lucide-react'
+import { ArrowUp, FileText, FolderOpen, ImageIcon, Loader2, Square, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -35,7 +35,8 @@ export function ChatComposer({
   onUploadImages,
   onUploadDocuments,
   onRemoveAttachment,
-  onOpenReferencePicker,
+  onOpenImageLibrary,
+  onOpenDocumentPicker,
   visionWarning,
 }: {
   value: string
@@ -60,14 +61,16 @@ export function ChatComposer({
   onUploadImages: (files: File[]) => void
   onUploadDocuments: (files: File[]) => void
   onRemoveAttachment: (id: string) => void
-  onOpenReferencePicker: () => void
+  onOpenImageLibrary: () => void
+  onOpenDocumentPicker: () => void
   visionWarning: string | null
 }) {
   const { token } = useAuth()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const docInputRef = useRef<HTMLInputElement>(null)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [imageMenuOpen, setImageMenuOpen] = useState(false)
+  const [docMenuOpen, setDocMenuOpen] = useState(false)
 
   useEffect(() => {
     const el = textareaRef.current
@@ -83,9 +86,14 @@ export function ChatComposer({
     }
   }
 
-  function pickFiles(ref: React.RefObject<HTMLInputElement | null>) {
-    setMenuOpen(false)
+  function pickFiles(ref: React.RefObject<HTMLInputElement | null>, close: () => void) {
+    close()
     ref.current?.click()
+  }
+
+  function closeMenus() {
+    setImageMenuOpen(false)
+    setDocMenuOpen(false)
   }
 
   return (
@@ -156,33 +164,37 @@ export function ChatComposer({
           />
 
           <div className="flex items-center gap-2 px-2 pb-2">
-            <div className="relative shrink-0">
-              <Button
-                variant="outline"
-                size="icon-xs"
-                title={attachDisabled ? 'Attachment limit reached' : 'Attach files'}
-                className="rounded-full"
-                disabled={!hasActiveChat || attachDisabled}
-                onClick={() => setMenuOpen(v => !v)}
-                data-testid="chat-attach-btn"
-              >
-                <Plus />
-              </Button>
-              {menuOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setMenuOpen(false)}
-                    aria-hidden
-                  />
-                  <div className="absolute bottom-full left-0 z-20 mb-2 w-48 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-lg">
-                    <MenuItem icon={<ImageIcon className="size-4" />} label="Upload image" onClick={() => pickFiles(imageInputRef)} testId="attach-upload-image" />
-                    <MenuItem icon={<FileText className="size-4" />} label="Upload document" onClick={() => pickFiles(docInputRef)} testId="attach-upload-doc" />
-                    <MenuItem icon={<FolderOpen className="size-4" />} label="From your files" onClick={() => { setMenuOpen(false); onOpenReferencePicker() }} testId="attach-reference" />
-                  </div>
-                </>
-              )}
-            </div>
+            <AttachMenu
+              open={imageMenuOpen}
+              onToggle={() => {
+                setDocMenuOpen(false)
+                setImageMenuOpen(v => !v)
+              }}
+              onClose={closeMenus}
+              disabled={!hasActiveChat || attachDisabled}
+              title={attachDisabled ? 'Attachment limit reached' : 'Attach image'}
+              testId="chat-attach-image-btn"
+              icon={<ImageIcon />}
+            >
+              <MenuItem icon={<ImageIcon className="size-4" />} label="Upload image" onClick={() => pickFiles(imageInputRef, closeMenus)} testId="attach-upload-image" />
+              <MenuItem icon={<FolderOpen className="size-4" />} label="From library" onClick={() => { closeMenus(); onOpenImageLibrary() }} testId="attach-from-library" />
+            </AttachMenu>
+
+            <AttachMenu
+              open={docMenuOpen}
+              onToggle={() => {
+                setImageMenuOpen(false)
+                setDocMenuOpen(v => !v)
+              }}
+              onClose={closeMenus}
+              disabled={!hasActiveChat || attachDisabled}
+              title={attachDisabled ? 'Attachment limit reached' : 'Attach document'}
+              testId="chat-attach-doc-btn"
+              icon={<FileText />}
+            >
+              <MenuItem icon={<FileText className="size-4" />} label="Upload document" onClick={() => pickFiles(docInputRef, closeMenus)} testId="attach-upload-doc" />
+              <MenuItem icon={<FolderOpen className="size-4" />} label="From your documents" onClick={() => { closeMenus(); onOpenDocumentPicker() }} testId="attach-from-documents" />
+            </AttachMenu>
 
             <ModelPicker
               capabilities={capabilities}
@@ -248,6 +260,50 @@ export function ChatComposer({
           Shift+Enter for new line · Enter to send
         </p>
       </div>
+    </div>
+  )
+}
+
+function AttachMenu({
+  open,
+  onToggle,
+  onClose,
+  disabled,
+  title,
+  testId,
+  icon,
+  children,
+}: {
+  open: boolean
+  onToggle: () => void
+  onClose: () => void
+  disabled: boolean
+  title: string
+  testId: string
+  icon: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="relative shrink-0">
+      <Button
+        variant="outline"
+        size="icon-xs"
+        title={title}
+        className="rounded-full"
+        disabled={disabled}
+        onClick={onToggle}
+        data-testid={testId}
+      >
+        {icon}
+      </Button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={onClose} aria-hidden />
+          <div className="absolute bottom-full left-0 z-20 mb-2 w-48 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-lg">
+            {children}
+          </div>
+        </>
+      )}
     </div>
   )
 }

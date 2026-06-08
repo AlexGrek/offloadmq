@@ -77,7 +77,8 @@ sequenceDiagram
 | `frontend/src/components/chat/SystemPromptBlock.tsx` | In-thread read-only prompt (markdown, no frame) |
 | `frontend/src/components/chat/ChatMessageItem.tsx` | Transcript row; copy + **Listen** (`SpeechListenWidget`) on assistant messages; renders `MessageAttachments` |
 | `frontend/src/components/chat/MessageAttachments.tsx` | Transcript image thumbnails + document chips |
-| `frontend/src/components/chat/AttachmentReferencePicker.tsx` | Modal to reference existing images / prior documents |
+| `frontend/src/components/chat/DocumentReferencePicker.tsx` | Modal to reference prior documents |
+| `frontend/src/components/imggen/ImagePickerModal.tsx` | Shared library image picker (chat + imggen) |
 | `frontend/src/api/chatAttachments.ts` | Attachment upload/reference/list/download + `cloneAttachmentsForResend` |
 | `frontend/src/components/SpeechListenWidget.tsx` | Popup TTS (OAI `/api/tts/jobs`) — shared with image describe result header |
 | `frontend/src/components/MarkdownContent.tsx` | GFM: `default` / `inverted` (user bubble) / `muted` (system) |
@@ -293,10 +294,12 @@ messages-area, message-{id}, message-pending, message-streaming,
 chat-system-prompt-display,
 model-picker, model-picker-trigger, model-picker-dropdown,
 chat-input-box, chat-input, send-btn, chat-cancel-btn,
-chat-attach-btn, attach-upload-image, attach-upload-doc, attach-reference,
+chat-attach-image-btn, chat-attach-doc-btn,
+attach-upload-image, attach-from-library, attach-upload-doc, attach-from-documents,
 composer-attachments, composer-chip-{id}, composer-chip-remove-{id},
 composer-attach-error, composer-vision-warning,
-ref-picker-tab-{images|documents}, ref-picker-image-{id}, ref-picker-doc-{id},
+imggen-image-picker-modal, imggen-picker-file-{id}, imggen-picker-confirm,
+doc-picker-item-{id}, doc-picker-error,
 message-attachments, attachment-image-{id}, attachment-doc-{id},
 system-prompt-studio, system-prompt-editor, system-prompt-apply,
 system-prompt-pick-{id}, system-prompt-star-{id}, system-prompt-delete-{id},
