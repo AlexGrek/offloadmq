@@ -107,24 +107,29 @@ pub async fn upload_input_image(
     .await
 }
 
-/// Re-submit a failed or canceled job using its stored `pipeline_params`.
+/// Re-submit a terminal job using its stored `pipeline_params` (retry or generate again).
 pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i64, AppError> {
     let job = image_generation::get_job(&state.db, job_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    if !matches!(job.status.as_str(), "failed" | "canceled") {
+    if !matches!(job.status.as_str(), "failed" | "canceled" | "completed") {
         return Err(AppError::BadRequest(format!(
-            "only failed or canceled jobs can be retried (status={})",
+            "only failed, canceled, or completed jobs can be resubmitted (status={})",
             job.status
         )));
     }
     let params = image_pipeline_params::parse_stored_pipeline_params(&job);
     let start = start_params_from_pipeline(&params);
     let new_id = start_job(state, user_id, start).await?;
+    let (source_event, target_event) = if job.status == "completed" {
+        ("job.regenerate", "job.regenerated_from")
+    } else {
+        ("job.retry", "job.retried_from")
+    };
     record_event(
         state,
         job_id,
-        "job.retry",
+        source_event,
         "ok",
         Some(&format!("new_job_id={new_id}")),
     )
@@ -132,7 +137,7 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
     record_event(
         state,
         new_id,
-        "job.retried_from",
+        target_event,
         "ok",
         Some(&format!("source_job_id={job_id}")),
     )
