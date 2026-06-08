@@ -3,7 +3,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
 import { Download, ImagePlus, ShieldAlert, Star, Trash2, X } from 'lucide-react'
@@ -43,13 +42,11 @@ export type ImageLightboxProps = {
   actions?: ImageLightboxActions
 }
 
-/** Height (px) of the bottom hot-zone that keeps the floating chrome visible. */
-const NEAR_ZONE_PX = 220
 /** Idle delay before the floating chrome fades away. */
 const AUTO_HIDE_MS = 2000
 
 const glassButton =
-  'inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium ' +
+  'inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium ' +
   'text-white/85 transition-colors hover:bg-white/12 hover:text-white ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ' +
   'disabled:cursor-not-allowed disabled:opacity-50'
@@ -82,34 +79,29 @@ export function ImageLightbox({
   }, [])
 
   const scheduleHide = useCallback(() => {
-    if (hideTimer.current !== null) return
+    clearHideTimer()
     hideTimer.current = window.setTimeout(() => {
       setChromeVisible(false)
       hideTimer.current = null
     }, AUTO_HIDE_MS)
-  }, [])
+  }, [clearHideTimer])
+
+  const revealChrome = useCallback(() => {
+    setChromeVisible(true)
+    scheduleHide()
+  }, [scheduleHide])
 
   // Reveal chrome immediately on open, then let it fade after the idle delay.
   useEffect(() => {
     if (open) {
-      setChromeVisible(true)
-      scheduleHide()
+      revealChrome()
     }
     return () => clearHideTimer()
-  }, [open, scheduleHide, clearHideTimer])
+  }, [open, revealChrome, clearHideTimer])
 
-  const onPointerMove = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
-      const near = e.clientY >= window.innerHeight - NEAR_ZONE_PX
-      if (near) {
-        clearHideTimer()
-        setChromeVisible(true)
-      } else {
-        scheduleHide()
-      }
-    },
-    [clearHideTimer, scheduleHide],
-  )
+  const onPointerActivity = useCallback(() => {
+    revealChrome()
+  }, [revealChrome])
 
   useEffect(() => {
     if (!open || !actions?.token) return
@@ -191,13 +183,19 @@ export function ImageLightbox({
       </DialogTrigger>
       <DialogContent
         showClose={false}
+        overlayClassName="bg-black/95 backdrop-blur-none"
         className={cn(
-          'fixed inset-0 left-0 top-0 z-50 flex h-dvh w-screen max-w-none translate-x-0 translate-y-0',
-          'items-center justify-center overflow-hidden rounded-none border-0 bg-black/95 p-0 shadow-none',
+          // Important overrides beat default centered dialog layout (max-h, translate, etc.)
+          '!fixed !inset-0 !left-0 !top-0 !z-50 flex !h-dvh !max-h-dvh !w-dvw !max-w-none',
+          '!translate-x-0 !translate-y-0',
+          'items-center justify-center overflow-hidden rounded-none border-0 bg-black p-0 shadow-none',
+          'data-[state=closed]:zoom-out-100 data-[state=open]:zoom-in-100',
         )}
         onOpenAutoFocus={e => e.preventDefault()}
         onClick={() => setOpen(false)}
-        onPointerMove={onPointerMove}
+        onPointerMove={onPointerActivity}
+        onPointerDown={onPointerActivity}
+        onTouchStart={onPointerActivity}
         data-testid={testId ? `${testId}-lightbox` : 'image-lightbox'}
       >
         <DialogTitle className="sr-only">{alt}</DialogTitle>
@@ -213,16 +211,16 @@ export function ImageLightbox({
         {/* Top-right close — part of the auto-hiding chrome */}
         <div
           className={cn(
-            'absolute right-3 top-3 z-10 transition-all duration-300 sm:right-4 sm:top-4',
+            'absolute right-3 top-3 z-10 transition-opacity duration-300 sm:right-4 sm:top-4',
             chromeVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
         >
           <DialogClose
             onClick={stop}
-            className="pointer-events-auto inline-flex size-10 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/85 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-2xl transition-colors hover:bg-white/20 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="pointer-events-auto inline-flex size-8 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white/85 shadow-[0_4px_24px_rgba(0,0,0,0.5)] transition-colors hover:bg-black/80 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             aria-label="Close"
           >
-            <X className="size-5" />
+            <X className="size-4" />
           </DialogClose>
         </div>
 
@@ -230,14 +228,14 @@ export function ImageLightbox({
         <div
           onClick={stop}
           className={cn(
-            'pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2',
-            'px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-16',
-            'transition-all duration-300',
-            chromeVisible ? 'opacity-100 translate-y-0' : 'translate-y-4 opacity-0',
+            'pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-1.5',
+            'px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-12',
+            'transition-opacity duration-300',
+            chromeVisible ? 'opacity-100' : 'opacity-0',
           )}
         >
           {caption ? (
-            <p className="pointer-events-auto max-w-2xl px-2 text-center text-sm text-white/70">
+            <p className="pointer-events-auto max-w-2xl px-2 text-center text-[10px] leading-tight text-white/55">
               {caption}
             </p>
           ) : null}
@@ -251,7 +249,7 @@ export function ImageLightbox({
           ) : null}
           {actions ? (
             <div
-              className="pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded-2xl border border-white/15 bg-white/[0.08] p-1.5 shadow-[0_8px_40px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
+              className="pointer-events-auto flex flex-wrap items-center justify-center gap-0.5 rounded-xl border border-white/15 bg-black/70 p-1 shadow-[0_8px_40px_rgba(0,0,0,0.6)]"
               data-testid={testId ? `${testId}-lightbox-actions` : 'image-lightbox-actions'}
             >
               {actions.onNudeDetect ? (
@@ -264,7 +262,7 @@ export function ImageLightbox({
                   }}
                   data-testid={testId ? `${testId}-nude-detect` : 'image-lightbox-nude-detect'}
                 >
-                  <ShieldAlert className="size-4" />
+                  <ShieldAlert className="size-3" />
                   NSFW Scan
                 </button>
               ) : null}
@@ -278,7 +276,7 @@ export function ImageLightbox({
                   }}
                   data-testid={testId ? `${testId}-send-to-img2img` : 'image-lightbox-send-to-img2img'}
                 >
-                  <ImagePlus className="size-4" />
+                  <ImagePlus className="size-3" />
                   Use in Img2Img
                 </button>
               ) : null}
@@ -288,7 +286,7 @@ export function ImageLightbox({
                 onClick={onDownload}
                 data-testid={testId ? `${testId}-download` : 'image-lightbox-download'}
               >
-                <Download className="size-4" />
+                <Download className="size-3" />
                 Download
               </button>
               <button
@@ -299,7 +297,7 @@ export function ImageLightbox({
                 data-testid={testId ? `${testId}-star` : 'image-lightbox-star'}
                 aria-pressed={starred}
               >
-                <Star className={cn('size-4', starred && 'fill-current')} />
+                <Star className={cn('size-3', starred && 'fill-current')} />
                 {starred ? 'Starred' : 'Star'}
               </button>
               {canDelete ? (
@@ -313,7 +311,7 @@ export function ImageLightbox({
                   onClick={() => void onDelete()}
                   data-testid={testId ? `${testId}-delete` : 'image-lightbox-delete'}
                 >
-                  <Trash2 className="size-4" />
+                  <Trash2 className="size-3" />
                   Delete
                 </button>
               ) : null}
