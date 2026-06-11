@@ -29,7 +29,7 @@ export interface ImagePipelineParams {
   width: number
   height: number
   seed?: number | null
-  workflow: 'txt2img' | 'img2img'
+  workflow: 'txt2img' | 'img2img' | 'txt2video' | 'img2video'
   input_image_id?: string | null
   data_preparation?: Record<string, string> | null
   rescale?: ImagePipelineRescaleParams | null
@@ -44,7 +44,7 @@ export interface StartImageJobRequest {
   width: number
   height: number
   seed?: number | null
-  workflow?: 'txt2img' | 'img2img'
+  workflow?: 'txt2img' | 'img2img' | 'txt2video' | 'img2video'
   input_image_id?: string | null
   /** OffloadMQ dataPreparation (glob → action), e.g. `{ "*": "scale/768x768" }`. */
   data_preparation?: Record<string, string> | null

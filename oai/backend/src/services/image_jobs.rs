@@ -392,6 +392,9 @@ pub async fn image_bytes(
         .await?
         .ok_or(AppError::NotFound)?;
     let bytes = storage::read(op, &file.storage_path).await?;
+    if file.content_type.starts_with("video/") {
+        return Ok((bytes, file.content_type));
+    }
     let bytes = image_processing::ensure_jpeg_response(bytes, &file.content_type)?;
     Ok((bytes, "image/jpeg".to_string()))
 }
@@ -405,6 +408,10 @@ pub async fn image_thumbnail_bytes(
     let file = image_generation::get_image_file(&state.db, image_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
+    // Videos have no JPEG thumbnail — serve a 404 so the sidebar skips the preview.
+    if file.content_type.starts_with("video/") {
+        return Err(AppError::NotFound);
+    }
     let thumb_path = file
         .thumbnail_storage_path
         .clone()
@@ -737,10 +744,14 @@ fn validate_start_job(req: &StartJobParams, workflow: &str) -> Result<(), AppErr
     if !req.capability.starts_with("imggen.") {
         return Err(AppError::BadRequest("capability must start with imggen.".into()));
     }
-    if workflow == "img2img" && req.input_image_id.is_none() {
-        return Err(AppError::BadRequest("img2img requires input_image_id".into()));
+    if matches!(workflow, "img2img" | "img2video") && req.input_image_id.is_none() {
+        return Err(AppError::BadRequest(format!("{workflow} requires input_image_id")));
     }
     Ok(())
+}
+
+fn is_video_workflow(workflow: &str) -> bool {
+    matches!(workflow, "txt2video" | "img2video")
 }
 
 fn parse_input_image_id(req: &StartJobParams) -> Result<Option<i64>, AppError> {
@@ -1057,35 +1068,52 @@ async fn fetch_and_store_outputs(
         .await?
         .ok_or_else(|| AppError::BadRequest("missing offload row".into()))?;
     let output_bucket = output_bucket_of(&offload)?;
-    let images = collect_output_images(output.as_ref(), offload.last_poll_output.as_deref());
-    let Some(image) = images.last() else {
-        record_event(
-            state,
-            job.id,
-            "download.outputs",
-            "pending",
-            Some("no output images in poll payload; keep job submitted for retry"),
-        )
-        .await?;
-        return Ok(());
-    };
-
     let client =
         offload_factory::image_client_from_settings(state, app_settings::get(&state.db).await?)?;
-    if images.len() > 1 {
-        record_event(
-            state,
-            job.id,
-            "download.outputs",
-            "ok",
-            Some(&format!(
-                "offload returned {} images; storing last only",
-                images.len()
-            )),
-        )
-        .await?;
+
+    if is_video_workflow(&job.workflow) {
+        let video = collect_output_video(output.as_ref(), offload.last_poll_output.as_deref());
+        let Some(video) = video else {
+            record_event(
+                state,
+                job.id,
+                "download.outputs",
+                "pending",
+                Some("no video in poll payload; keep job submitted for retry"),
+            )
+            .await?;
+            return Ok(());
+        };
+        store_output_video(state, &client, user_id, job, &output_bucket, &video).await?;
+    } else {
+        let images = collect_output_images(output.as_ref(), offload.last_poll_output.as_deref());
+        let Some(image) = images.last() else {
+            record_event(
+                state,
+                job.id,
+                "download.outputs",
+                "pending",
+                Some("no output images in poll payload; keep job submitted for retry"),
+            )
+            .await?;
+            return Ok(());
+        };
+        if images.len() > 1 {
+            record_event(
+                state,
+                job.id,
+                "download.outputs",
+                "ok",
+                Some(&format!(
+                    "offload returned {} images; storing last only",
+                    images.len()
+                )),
+            )
+            .await?;
+        }
+        store_output_image(state, &client, user_id, job, &output_bucket, 0, image).await?;
     }
-    store_output_image(state, &client, user_id, job, &output_bucket, 0, image).await?;
+
     image_generation::update_job_status(&state.db, job.id, "completed", None).await?;
     record_event(state, job.id, "job.finalize", "ok", Some("completed")).await?;
     Ok(())
@@ -1119,6 +1147,88 @@ fn images_array(value: Option<&Value>) -> Vec<Value> {
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default()
+}
+
+/// Extracts the `video` object from a poll payload, falling back to the cached last-poll output.
+fn collect_output_video(output: Option<&Value>, cached: Option<&str>) -> Option<Value> {
+    if let Some(v) = output.and_then(|o| o.get("video")) {
+        if v.is_object() {
+            return Some(v.clone());
+        }
+    }
+    let cached_value = cached.and_then(|c| serde_json::from_str::<Value>(c).ok())?;
+    let v = cached_value.get("video")?;
+    if v.is_object() { Some(v.clone()) } else { None }
+}
+
+/// Downloads a raw video file from the offload bucket and persists it to storage.
+async fn store_output_video(
+    state: &AppState,
+    client: &OffloadImageClient,
+    user_id: i64,
+    job: &image_generation::ImageGenerationJob,
+    output_bucket: &str,
+    video: &Value,
+) -> Result<(), AppError> {
+    let file_uid = video["file_uid"]
+        .as_str()
+        .ok_or_else(|| AppError::ExternalService("video output missing file_uid".into()))?;
+    let filename = video["filename"]
+        .as_str()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "output.mp4".to_string());
+    let content_type = video["content_type"]
+        .as_str()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "video/mp4".to_string());
+
+    let (bytes, _) = download_with_retries(client, output_bucket, file_uid, 3).await?;
+    let sha256 = image_processing::sha256_hex(&bytes);
+    let stored_bytes = bytes.len() as i64;
+
+    let file_id = state.next_id();
+    let storage_path = image_paths::video_output_path(user_id, job.id, file_id, &filename);
+
+    let op = storage::operator(state)?;
+    storage::write(op, &storage_path, bytes).await?;
+
+    image_generation::create_image_file(
+        &state.db,
+        image_generation::NewImageFileInput {
+            id: file_id,
+            user_id,
+            job_id: Some(job.id),
+            direction: "output",
+            source: "offload_download",
+            storage_path: &storage_path,
+            thumbnail_storage_path: &storage_path,
+            thumbnail_stored_bytes: 0,
+            filename: &filename,
+            content_type: &content_type,
+            original_bytes: None,
+            stored_bytes,
+            original_width: None,
+            original_height: None,
+            stored_width: 0,
+            stored_height: 0,
+            exif_orientation: None,
+            rescaled: false,
+            reencoded: false,
+            sha256: &sha256,
+            offload_bucket_uid: Some(output_bucket),
+            offload_file_uid: Some(file_uid),
+        },
+    )
+    .await?;
+    recalc_user_storage(state, user_id).await?;
+    record_event(
+        state,
+        job.id,
+        "download.video.store",
+        "ok",
+        Some(&format!("file_id={file_id} file_uid={file_uid}")),
+    )
+    .await
 }
 
 async fn store_output_image(

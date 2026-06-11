@@ -16,6 +16,7 @@ import {
   Pencil,
   Sparkles,
   Upload,
+  Video,
   Wand2,
   X,
 } from 'lucide-react'
@@ -67,6 +68,8 @@ import {
   applyPipelineParamsToNewForm,
   filterCapabilitiesByWorkflow,
   fitsOriginalResolution,
+  isInputImageMode,
+  isVideoMode,
   jobPromptTitle,
   jobTechMeta,
   proportionalCounterpart,
@@ -177,11 +180,11 @@ export default function ImageGenerationPage() {
     if (capabilitiesStatus !== 'ready') return false
     if (!prompt.trim()) return false
     if (!capability) return false
-    if (mode === 'img2img' && !uploadedInput) return false
+    if (isInputImageMode(mode) && !uploadedInput) return false
     return true
   }, [prompt, capability, mode, uploadedInput, capabilitiesStatus])
 
-  // "Original resolution" is only meaningful for an img2img input small enough to generate verbatim.
+  // "Original resolution" is only meaningful for img2img (not img2video).
   const canUseOriginalResolution = useMemo(
     () =>
       mode === 'img2img' &&
@@ -207,9 +210,9 @@ export default function ImageGenerationPage() {
     setRescale(prev => ({ ...prev, ...patch }))
   }, [])
 
-  // Keep exact-mode rescale in sync with output dims until user overrides (img2img sandbox behavior).
+  // Keep exact-mode rescale in sync with output dims until user overrides.
   useEffect(() => {
-    if (mode !== 'img2img') return
+    if (!isInputImageMode(mode)) return
     if (rescale.mode === 'exact' && !rescaleUserEditedRef.current) {
       setRescale(prev => ({ ...prev, width, height }))
     }
@@ -317,13 +320,13 @@ export default function ImageGenerationPage() {
     rescaleUserEditedRef.current = false
     setRescale(prev => ({
       ...prev,
-      enabled: next === 'img2img',
+      enabled: next === 'img2img' || next === 'img2video',
       mode: 'exact',
       width: defaults.width,
       height: defaults.height,
       ...defaults.rescale,
     }))
-    if (next === 'txt2img') {
+    if (!isInputImageMode(next)) {
       setUploadedInput(null)
       setInputPreviewUrl(null)
       setOriginalResolution(false)
@@ -544,8 +547,8 @@ export default function ImageGenerationPage() {
     setSubmitting(true)
     setJobDetailLoading(true)
     setError(null)
-    setInfo('Submitting image generation task to OffloadMQ.')
-    // Original-resolution passes the input through un-rescaled (no dataPreparation).
+    setInfo(`Submitting ${isVideoMode(mode) ? 'video generation' : 'image generation'} task to OffloadMQ.`)
+    // dataPreparation: only for img2img (not txt2img, not video modes).
     const dataPrep =
       mode === 'img2img' && !originalResolution ? rescaleDataPrep(rescale.enabled, rescale) : null
     try {
@@ -633,9 +636,9 @@ export default function ImageGenerationPage() {
   }
 
   function rescaleForSubmit(): ImagePipelineRescaleParams | null {
-    if (mode !== 'img2img') return null
-    // Original-resolution: persist rescale as disabled so the job reconstructs as pass-through.
-    if (originalResolution) {
+    if (mode !== 'img2img' && mode !== 'img2video') return null
+    // Original-resolution (img2img only): persist rescale as disabled so the job reconstructs as pass-through.
+    if (mode === 'img2img' && originalResolution) {
       return { enabled: false, mode: rescale.mode, width, height, px: null, mp: null }
     }
     return {
@@ -711,7 +714,8 @@ export default function ImageGenerationPage() {
   const canCompare =
     selectedJob?.workflow === 'img2img' &&
     Boolean(selectedJob?.input_image_id) &&
-    outputFiles.length > 0
+    outputFiles.length > 0 &&
+    outputFiles.every(f => !f.content_type.startsWith('video/'))
 
   useEffect(() => {
     setTimelineOpen(false)
@@ -813,11 +817,13 @@ export default function ImageGenerationPage() {
               New Job
             </h2>
             <p className="text-sm text-muted-foreground">
-              Img2Img uploads your image to a bucket, rescales it with dataPreparation, then runs the workflow.
+              {isVideoMode(mode)
+                ? 'Video generation via ComfyUI. Output is an MP4 with no thumbnail preview.'
+                : 'Img2Img uploads your image to a bucket, rescales it with dataPreparation, then runs the workflow.'}
             </p>
           </header>
           <div className="flex flex-col gap-4">
-            <div className="flex gap-2 sm:gap-2" data-testid="imggen-mode-tabs">
+            <div className="flex flex-wrap gap-2" data-testid="imggen-mode-tabs">
               <Button
                 variant={mode === 'txt2img' ? 'default' : 'outline'}
                 size="sm"
@@ -837,6 +843,26 @@ export default function ImageGenerationPage() {
                 <ImagePlus className="mr-1 h-3.5 w-3.5" />
                 Img2Img
               </Button>
+              <Button
+                variant={mode === 'txt2video' ? 'default' : 'outline'}
+                size="sm"
+                className="min-h-10 flex-1 sm:flex-none"
+                onClick={() => switchMode('txt2video')}
+                data-testid="imggen-mode-txt2video"
+              >
+                <Video className="mr-1 h-3.5 w-3.5" />
+                Txt2Video
+              </Button>
+              <Button
+                variant={mode === 'img2video' ? 'default' : 'outline'}
+                size="sm"
+                className="min-h-10 flex-1 sm:flex-none"
+                onClick={() => switchMode('img2video')}
+                data-testid="imggen-mode-img2video"
+              >
+                <Video className="mr-1 h-3.5 w-3.5" />
+                Img2Video
+              </Button>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -852,12 +878,12 @@ export default function ImageGenerationPage() {
                 />
                 {capabilitiesStatus === 'ready' && capabilities.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    No image models found. Start an imggen agent or check OffloadMQ connection in Settings.
+                    No models found for this mode. Start an imggen agent or check OffloadMQ connection in Settings.
                   </p>
                 )}
               </div>
 
-              {mode === 'img2img' && (
+              {isInputImageMode(mode) && (
                 <div className="space-y-3 sm:col-span-2" data-testid="imggen-input-section">
                   <Label>Input image</Label>
                   <div className="flex flex-wrap items-start gap-2">
@@ -987,7 +1013,7 @@ export default function ImageGenerationPage() {
                       value={width}
                       disabled={originalResolution}
                       onChange={e => {
-                        if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                        if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
                         const w = Number(e.target.value) || 1024
                         setWidth(w)
                         if (keepProportions && uploadedInput) {
@@ -1021,7 +1047,7 @@ export default function ImageGenerationPage() {
                       value={height}
                       disabled={originalResolution}
                       onChange={e => {
-                        if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                        if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
                         const h = Number(e.target.value) || 1024
                         setHeight(h)
                         if (keepProportions && uploadedInput) {
@@ -1031,7 +1057,7 @@ export default function ImageGenerationPage() {
                       data-testid="imggen-height"
                     />
                   </div>
-                  {mode === 'img2img' && uploadedInput && (
+                  {isInputImageMode(mode) && uploadedInput && (
                     <Button
                       type="button"
                       variant="ghost"
@@ -1058,7 +1084,7 @@ export default function ImageGenerationPage() {
                       type="button"
                       disabled={originalResolution}
                       onClick={() => {
-                        if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                        if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
                         setWidth(w)
                         setHeight(h)
                       }}
@@ -1075,6 +1101,7 @@ export default function ImageGenerationPage() {
                 </div>
                 {mode === 'img2img' && uploadedInput && (
                   <div className="flex flex-col gap-1.5 pt-0.5" data-testid="imggen-resolution-toggles">
+
                     {canUseOriginalResolution && (
                       <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
                         <input
@@ -1131,6 +1158,7 @@ export default function ImageGenerationPage() {
 
             {mode === 'img2img' && !originalResolution && (
               <details className="group" data-testid="imggen-advanced">
+
                 <summary className="flex cursor-pointer select-none list-none items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
                   <ChevronDown className="size-3 -rotate-90 transition-transform group-open:rotate-0" />
                   Offload rescaling
@@ -1183,7 +1211,10 @@ export default function ImageGenerationPage() {
                     )}
                   </AnimatePresence>
                   {submitting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-                  {mode === 'img2img' ? 'Edit Image' : 'Generate Image'}
+                  {mode === 'img2img' ? 'Edit Image'
+                    : mode === 'txt2video' ? 'Generate Video'
+                    : mode === 'img2video' ? 'Animate Image'
+                    : 'Generate Image'}
                 </Button>
               </motion.div>
 
@@ -1283,29 +1314,40 @@ export default function ImageGenerationPage() {
               </div>
             ) : outputFiles.length > 0 ? (
               <div className={outputFiles.length > 1 ? 'grid grid-cols-2 gap-px bg-border' : undefined}>
-                {outputFiles.map(file => (
-                  <ImageLightbox
-                    key={file.image_id}
-                    src={imageFileUrl(file.image_id, token, mediaRevision)}
-                    alt={file.filename}
-                    caption={`${file.filename} — ${file.width}×${file.height}`}
-                    triggerClassName="group block w-full overflow-hidden bg-muted/20"
-                    testId={`imggen-output-${file.image_id}`}
-                    actions={lightboxActions(
-                      file.image_id,
-                      file.filename,
-                      file.direction,
-                      () => sendToImg2Img(file),
-                    )}
-                  >
-                    <img
+                {outputFiles.map(file =>
+                  file.content_type.startsWith('video/') ? (
+                    <div key={file.image_id} className="w-full bg-muted/20" data-testid={`imggen-output-${file.image_id}`}>
+                      <video
+                        src={imageFileUrl(file.image_id, token, mediaRevision)}
+                        controls
+                        loop
+                        className="w-full max-h-[70vh] object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <ImageLightbox
+                      key={file.image_id}
                       src={imageFileUrl(file.image_id, token, mediaRevision)}
-                      alt=""
-                      aria-hidden
-                      className="w-full object-contain max-h-[70vh] transition-opacity group-hover:opacity-95"
-                    />
-                  </ImageLightbox>
-                ))}
+                      alt={file.filename}
+                      caption={`${file.filename} — ${file.width}×${file.height}`}
+                      triggerClassName="group block w-full overflow-hidden bg-muted/20"
+                      testId={`imggen-output-${file.image_id}`}
+                      actions={lightboxActions(
+                        file.image_id,
+                        file.filename,
+                        file.direction,
+                        () => sendToImg2Img(file),
+                      )}
+                    >
+                      <img
+                        src={imageFileUrl(file.image_id, token, mediaRevision)}
+                        alt=""
+                        aria-hidden
+                        className="w-full object-contain max-h-[70vh] transition-opacity group-hover:opacity-95"
+                      />
+                    </ImageLightbox>
+                  )
+                )}
               </div>
             ) : isRunning ? (
               <div className="flex aspect-video w-full items-center justify-center bg-muted/30">

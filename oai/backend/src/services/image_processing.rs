@@ -263,7 +263,7 @@ fn exif_orientation_int(bytes: &[u8]) -> Option<i32> {
         .and_then(|v| i32::try_from(v).ok())
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     hex::encode(hasher.finalize())

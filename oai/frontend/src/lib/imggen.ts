@@ -9,7 +9,15 @@ import type {
 } from '../api/images'
 import { pickListedCapability } from './capability-picker'
 
-export type ImgGenMode = 'txt2img' | 'img2img'
+export type ImgGenMode = 'txt2img' | 'img2img' | 'txt2video' | 'img2video'
+
+export function isVideoMode(mode: ImgGenMode): boolean {
+  return mode === 'txt2video' || mode === 'img2video'
+}
+
+export function isInputImageMode(mode: ImgGenMode): boolean {
+  return mode === 'img2img' || mode === 'img2video'
+}
 
 export type RescaleMode = 'exact' | 'max'
 
@@ -184,6 +192,7 @@ export function pipelineStatusLine(
 /** Build pipeline params from legacy job columns when `pipeline_params` is missing. */
 export function pipelineParamsFromJob(job: ImageJobDetails): ImagePipelineParams {
   if (job.pipeline_params) return job.pipeline_params
+  const workflow = job.workflow as ImgGenMode
   return {
     capability: job.capability,
     prompt: job.prompt,
@@ -192,11 +201,11 @@ export function pipelineParamsFromJob(job: ImageJobDetails): ImagePipelineParams
     width: job.width,
     height: job.height,
     seed: job.seed,
-    workflow: job.workflow as ImgGenMode,
+    workflow,
     input_image_id: job.input_image_id,
     data_preparation: null,
     rescale:
-      job.workflow === 'img2img'
+      workflow === 'img2img' || workflow === 'img2video'
         ? {
             enabled: true,
             mode: 'exact',
@@ -257,7 +266,11 @@ export function applyPipelineParamsToNewForm(
   availableCapabilities?: readonly { base: string }[],
 ): void {
   const p = pipelineParamsFromJob(job)
-  const mode = p.workflow === 'img2img' ? 'img2img' : 'txt2img'
+  const mode: ImgGenMode =
+    p.workflow === 'img2img' ? 'img2img'
+    : p.workflow === 'txt2video' ? 'txt2video'
+    : p.workflow === 'img2video' ? 'img2video'
+    : 'txt2img'
   handlers.setMode(mode)
   handlers.setPrompt(p.prompt)
   handlers.setNegativePrompt(p.negative_prompt?.trim() ?? '')
@@ -272,7 +285,7 @@ export function applyPipelineParamsToNewForm(
   handlers.rescaleUserEditedRef.current = true
   handlers.setRescale(rescaleFromParams(p.rescale))
   const inputFile =
-    mode === 'img2img' && p.input_image_id
+    (mode === 'img2img' || mode === 'img2video') && p.input_image_id
       ? job.files.find(f => f.direction === 'input')
       : undefined
   if (inputFile) {
@@ -284,8 +297,10 @@ export function applyPipelineParamsToNewForm(
   }
   // Re-derive the "original resolution" toggle: img2img job whose generation dims match a
   // sub-4K input image (and no active rescale) was generated at the input's native size.
+  // Not applicable to img2video.
   handlers.setOriginalResolution(
-    !!inputFile &&
+    mode === 'img2img' &&
+      !!inputFile &&
       fitsOriginalResolution(inputFile.width, inputFile.height) &&
       p.width === inputFile.width &&
       p.height === inputFile.height &&
@@ -310,5 +325,17 @@ export const MODE_DEFAULTS: Record<
     width: 768,
     height: 768,
     rescale: { enabled: false, mode: 'exact', width: 768, height: 768 },
+  },
+  txt2video: {
+    prompt: 'A majestic eagle soaring over mountain peaks, cinematic',
+    width: 768,
+    height: 512,
+    rescale: { enabled: false },
+  },
+  img2video: {
+    prompt: 'animate this image with subtle motion',
+    width: 768,
+    height: 512,
+    rescale: { enabled: false, mode: 'exact', width: 768, height: 512 },
   },
 }
