@@ -26,10 +26,12 @@ import { ChatSidebar } from '../components/chat/ChatSidebar'
 import { ChatHeader } from '../components/chat/ChatHeader'
 import { ChatTranscript } from '../components/chat/ChatTranscript'
 import { ChatComposer } from '../components/chat/ChatComposer'
-import { AttachmentReferencePicker } from '../components/chat/AttachmentReferencePicker'
+import { DocumentReferencePicker } from '../components/chat/DocumentReferencePicker'
+import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   cloneAttachmentsForResend,
+  createImageAttachment,
   uploadDocumentAttachment,
   uploadImageAttachment,
   type ChatAttachment,
@@ -91,14 +93,16 @@ export default function ChatPage() {
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([])
   const [attaching, setAttaching] = useState(false)
   const [attachError, setAttachError] = useState<string | null>(null)
-  const [referencePickerOpen, setReferencePickerOpen] = useState(false)
+  const [imagePickerOpen, setImagePickerOpen] = useState(false)
+  const [documentPickerOpen, setDocumentPickerOpen] = useState(false)
 
   useEffect(() => {
     setDebugOpen(false)
     setTimeoutDrawerOpen(false)
     setPendingAttachments([])
     setAttachError(null)
-    setReferencePickerOpen(false)
+    setImagePickerOpen(false)
+    setDocumentPickerOpen(false)
   }, [activeChatId])
 
   // On mobile the sidebar is a full-screen overlay — collapse it when we cross
@@ -141,6 +145,23 @@ export default function ChatPage() {
       }
     },
     [token],
+  )
+
+  const pickLibraryImage = useCallback(
+    async (imageId: string) => {
+      if (!token) return
+      setAttachError(null)
+      setAttaching(true)
+      try {
+        const att = await createImageAttachment(token, imageId)
+        addAttachment(att)
+      } catch (e) {
+        setAttachError((e as Error).message)
+      } finally {
+        setAttaching(false)
+      }
+    },
+    [token, addAttachment],
   )
 
   function updateChatTimeout(key: keyof ChatTimeoutSettings, value: number | null) {
@@ -762,14 +783,24 @@ export default function ChatPage() {
           onUploadImages={files => void uploadAttachments(files, 'image')}
           onUploadDocuments={files => void uploadAttachments(files, 'document')}
           onRemoveAttachment={removeAttachment}
-          onOpenReferencePicker={() => setReferencePickerOpen(true)}
+          onOpenImageLibrary={() => setImagePickerOpen(true)}
+          onOpenDocumentPicker={() => setDocumentPickerOpen(true)}
           visionWarning={visionWarning}
         />
       </div>
 
-      <AttachmentReferencePicker
-        open={referencePickerOpen}
-        onOpenChange={setReferencePickerOpen}
+      {token && (
+        <ImagePickerModal
+          open={imagePickerOpen}
+          onClose={() => setImagePickerOpen(false)}
+          onSelect={img => void pickLibraryImage(img.image_id)}
+          token={token}
+        />
+      )}
+
+      <DocumentReferencePicker
+        open={documentPickerOpen}
+        onOpenChange={setDocumentPickerOpen}
         onPick={addAttachment}
         disabled={pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
       />

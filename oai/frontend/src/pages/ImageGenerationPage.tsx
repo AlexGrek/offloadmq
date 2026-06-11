@@ -26,6 +26,15 @@ import { PromptTextarea } from '../components/PromptTextarea'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '../contexts/AuthContext'
@@ -83,9 +92,11 @@ import {
   type RescaleState,
 } from '../lib/imggen'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
-import type { ImagePipelineRescaleParams } from '../api/images'
+import type { ImagePipelineRescaleParams, StartImageJobRequest } from '../api/images'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
+const MAX_GENERATE_MULTIPLE = 10
+const DEFAULT_GENERATE_MULTIPLE = 4
 
 const BURST_SPARKS = [
   { x: -62, y: -28, delay: 0 },
@@ -157,6 +168,11 @@ export default function ImageGenerationPage() {
   const [mediaRevision, setMediaRevision] = useState(0)
   const [submitBurst, setSubmitBurst] = useState(false)
   const [compareMode, setCompareMode] = useState(false)
+  const [generateMultipleOpen, setGenerateMultipleOpen] = useState(false)
+  const [generateMultipleCountInput, setGenerateMultipleCountInput] = useState(
+    String(DEFAULT_GENERATE_MULTIPLE),
+  )
+  const generateMultipleCountRef = useRef<HTMLInputElement>(null)
 
   const viewingJob = activePanel !== IMGGEN_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
@@ -496,7 +512,7 @@ export default function ImageGenerationPage() {
     }
   }
 
-  async function onRetryJob(jobId: string) {
+  async function onResubmitJob(jobId: string, action: 'retry' | 'generate-again') {
     if (!token) return
     setRetrying(true)
     setError(null)
@@ -513,7 +529,11 @@ export default function ImageGenerationPage() {
         error: null,
         output_images: [],
       })
-      setInfo(`Retry submitted as job ${res.job_id}. Polling for results…`)
+      setInfo(
+        action === 'generate-again'
+          ? `Generate again submitted as job ${res.job_id}. Polling for results…`
+          : `Retry submitted as job ${res.job_id}. Polling for results…`,
+      )
       void refreshRunningImageJobs()
       void runPoll(res.job_id)
     } catch (e) {
@@ -548,24 +568,9 @@ export default function ImageGenerationPage() {
     setJobDetailLoading(true)
     setError(null)
     setInfo(`Submitting ${isVideoMode(mode) ? 'video generation' : 'image generation'} task to OffloadMQ.`)
-    // dataPreparation: only for img2img (not txt2img, not video modes).
-    const dataPrep =
-      mode === 'img2img' && !originalResolution ? rescaleDataPrep(rescale.enabled, rescale) : null
     try {
       const [res] = await Promise.all([
-        startImageJob(token, {
-          capability: capability.trim(),
-          prompt: prompt.trim(),
-          negative_prompt: overrideNegative ? negativePrompt.trim() || null : null,
-          override_negative: overrideNegative,
-          width,
-          height,
-          seed: seed.trim() ? Number(seed) : null,
-          workflow: mode,
-          input_image_id: uploadedInput?.image_id ?? null,
-          data_preparation: dataPrep,
-          rescale: rescaleForSubmit(),
-        }),
+        startImageJob(token, buildSubmitRequest()),
         new Promise<void>(resolve => window.setTimeout(resolve, 600)),
       ])
       setActivePanel(res.job_id)
@@ -574,6 +579,67 @@ export default function ImageGenerationPage() {
       setInfo(`Job ${res.job_id} submitted. Polling for results…`)
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      setSubmitting(false)
+      setJobDetailLoading(false)
+    }
+  }
+
+  function parseGenerateMultipleCount(raw: string): number {
+    const n = parseInt(raw, 10)
+    if (!Number.isFinite(n)) return DEFAULT_GENERATE_MULTIPLE
+    return Math.min(MAX_GENERATE_MULTIPLE, Math.max(1, n))
+  }
+
+  async function onSubmitMultiple() {
+    if (!token || !canSubmit) return
+    const count = parseGenerateMultipleCount(generateMultipleCountInput)
+    setGenerateMultipleOpen(false)
+    setSubmitting(true)
+    setJobDetailLoading(true)
+    setError(null)
+    const submittedIds: string[] = []
+    try {
+      for (let i = 0; i < count; i++) {
+        setInfo(`Submitting job ${i + 1} of ${count}…`)
+        const res = await startImageJob(token, buildSubmitRequest())
+        submittedIds.push(res.job_id)
+        await refreshJob(res.job_id)
+      }
+      const lastId = submittedIds[submittedIds.length - 1]!
+      setActivePanel(lastId)
+      setActivePoll({
+        job_id: lastId,
+        status: 'submitted',
+        stage: null,
+        error: null,
+        output_images: [],
+      })
+      setInfo(
+        count === 1
+          ? `Job ${lastId} submitted. Polling for results…`
+          : `${count} jobs submitted. Showing job ${lastId}. Polling for results…`,
+      )
+      void refreshRunningImageJobs()
+      void runPoll(lastId)
+    } catch (e) {
+      if (submittedIds.length > 0) {
+        const lastId = submittedIds[submittedIds.length - 1]!
+        setActivePanel(lastId)
+        setActivePoll({
+          job_id: lastId,
+          status: 'submitted',
+          stage: null,
+          error: null,
+          output_images: [],
+        })
+        void runPoll(lastId)
+      }
+      setError(
+        submittedIds.length > 0
+          ? `Failed after ${submittedIds.length} of ${count} jobs: ${(e as Error).message}`
+          : (e as Error).message,
+      )
     } finally {
       setSubmitting(false)
       setJobDetailLoading(false)
@@ -651,6 +717,24 @@ export default function ImageGenerationPage() {
     }
   }
 
+  function buildSubmitRequest(): StartImageJobRequest {
+    const dataPrep =
+      mode === 'img2img' && !originalResolution ? rescaleDataPrep(rescale.enabled, rescale) : null
+    return {
+      capability: capability.trim(),
+      prompt: prompt.trim(),
+      negative_prompt: overrideNegative ? negativePrompt.trim() || null : null,
+      override_negative: overrideNegative,
+      width,
+      height,
+      seed: seed.trim() ? Number(seed) : null,
+      workflow: mode,
+      input_image_id: uploadedInput?.image_id ?? null,
+      data_preparation: dataPrep,
+      rescale: rescaleForSubmit(),
+    }
+  }
+
   async function selectJob(jobId: string) {
     if (!token) return
     setActivePanel(jobId)
@@ -695,6 +779,8 @@ export default function ImageGenerationPage() {
     viewingJob &&
     selectedJob != null &&
     (selectedJob.status === 'failed' || selectedJob.status === 'canceled')
+  const canGenerateAgain =
+    viewingJob && selectedJob != null && selectedJob.status === 'completed'
 
   const pipelineEvents = useMemo(
     () => (selectedJob ? pipelineEventsWithoutPolls(selectedJob.events) : []),
@@ -721,6 +807,15 @@ export default function ImageGenerationPage() {
     setTimelineOpen(false)
     setCompareMode(false)
   }, [selectedJob?.job_id])
+
+  useEffect(() => {
+    if (!generateMultipleOpen) return
+    const id = window.requestAnimationFrame(() => {
+      generateMultipleCountRef.current?.focus()
+      generateMultipleCountRef.current?.select()
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [generateMultipleOpen])
 
   return (
     <>
@@ -1181,7 +1276,7 @@ export default function ImageGenerationPage() {
               </details>
             )}
 
-            <div className="relative sm:w-auto">
+            <div className="relative flex flex-col items-center gap-1 sm:w-auto">
               <motion.div
                 className="flex justify-center sm:w-auto"
                 animate={submitBurst ? { scale: [1, 1.06, 0.97, 1] } : {}}
@@ -1217,6 +1312,18 @@ export default function ImageGenerationPage() {
                     : 'Generate Image'}
                 </Button>
               </motion.div>
+
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto px-0 text-xs"
+                onClick={() => setGenerateMultipleOpen(true)}
+                disabled={!canSubmit || submitting}
+                data-testid="imggen-generate-multiple-open"
+              >
+                Generate multiple
+              </Button>
 
               <AnimatePresence>
                 {submitBurst &&
@@ -1392,11 +1499,27 @@ export default function ImageGenerationPage() {
                   <Pencil className="mr-1 h-4 w-4" />
                   Edit prompt
                 </Button>
+                {canGenerateAgain && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => viewedJobId && void onResubmitJob(viewedJobId, 'generate-again')}
+                    disabled={!viewedJobId || retrying}
+                    data-testid="imggen-generate-again"
+                  >
+                    {retrying ? (
+                      <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-1 h-4 w-4" />
+                    )}
+                    Generate again
+                  </Button>
+                )}
                 {canRetryJob && (
                   <Button
                     variant="default"
                     size="sm"
-                    onClick={() => viewedJobId && void onRetryJob(viewedJobId)}
+                    onClick={() => viewedJobId && void onResubmitJob(viewedJobId, 'retry')}
                     disabled={!viewedJobId || retrying}
                     data-testid="imggen-retry-job"
                   >
@@ -1574,6 +1697,64 @@ export default function ImageGenerationPage() {
         filename={nudeDetectTarget.filename}
       />
     ) : null}
+    <Dialog open={generateMultipleOpen} onOpenChange={setGenerateMultipleOpen}>
+      <DialogContent className="sm:max-w-sm" data-testid="imggen-generate-multiple-dialog">
+        <DialogHeader>
+          <DialogTitle>Generate multiple</DialogTitle>
+          <DialogDescription>
+            Submit the same settings as separate jobs, one after another.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <div className="space-y-2">
+            <Label htmlFor="imggen-generate-multiple-count">Number of images</Label>
+            <Input
+              ref={generateMultipleCountRef}
+              id="imggen-generate-multiple-count"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={MAX_GENERATE_MULTIPLE}
+              value={generateMultipleCountInput}
+              onChange={e => setGenerateMultipleCountInput(e.target.value)}
+              onBlur={() =>
+                setGenerateMultipleCountInput(String(parseGenerateMultipleCount(generateMultipleCountInput)))
+              }
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void onSubmitMultiple()
+                }
+              }}
+              className="font-mono tabular-nums ring-2 ring-primary/40"
+              data-testid="imggen-generate-multiple-count"
+            />
+            <p className="text-xs text-muted-foreground">
+              Up to {MAX_GENERATE_MULTIPLE} separate runs in the pipeline sidebar.
+            </p>
+          </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setGenerateMultipleOpen(false)}
+            data-testid="imggen-generate-multiple-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void onSubmitMultiple()}
+            disabled={!canSubmit || submitting}
+            data-testid="imggen-generate-multiple-submit"
+          >
+            Generate {parseGenerateMultipleCount(generateMultipleCountInput)}{' '}
+            {parseGenerateMultipleCount(generateMultipleCountInput) === 1 ? 'image' : 'images'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </>
   )
 }
