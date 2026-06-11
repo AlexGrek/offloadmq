@@ -44,6 +44,9 @@ pub struct StartJobParams {
     /// UI rescale controls snapshot (img2img); stored in pipeline params for "edit prompt".
     #[serde(default)]
     pub rescale: Option<RescaleParams>,
+    /// Number of frames for video generation workflows.
+    #[serde(default)]
+    pub video_length: Option<i32>,
 }
 
 /// Result of polling a job — domain data the route maps to its response DTO.
@@ -779,6 +782,7 @@ fn start_params_from_pipeline(p: &ImagePipelineParams) -> StartJobParams {
         input_image_id: p.input_image_id.clone(),
         data_preparation: p.data_preparation.clone(),
         rescale: p.rescale.clone(),
+        video_length: p.video_length,
     }
 }
 
@@ -799,6 +803,7 @@ fn build_pipeline_params(
         input_image_id: input_image_id.map(|id| id.to_string()),
         data_preparation: req.data_preparation.clone(),
         rescale: req.rescale.clone(),
+        video_length: req.video_length,
     }
 }
 
@@ -870,6 +875,9 @@ fn build_submit_payload(
     }
     if let Some(input) = input {
         payload["input_image"] = serde_json::json!(input.filename);
+    }
+    if let Some(length) = req.video_length {
+        payload["length"] = serde_json::json!(length);
     }
     payload
 }

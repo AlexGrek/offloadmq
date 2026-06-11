@@ -204,6 +204,7 @@ export function pipelineParamsFromJob(job: ImageJobDetails): ImagePipelineParams
     workflow,
     input_image_id: job.input_image_id,
     data_preparation: null,
+    video_length: null,
     rescale:
       workflow === 'img2img' || workflow === 'img2video'
         ? {
@@ -250,6 +251,7 @@ export interface ApplyPipelineToNewFormHandlers {
   setWidth: (v: number) => void
   setHeight: (v: number) => void
   setSeed: (v: string) => void
+  setVideoLength: (v: number) => void
   setRescale: (v: RescaleState) => void
   setOriginalResolution: (v: boolean) => void
   setKeepProportions: (v: boolean) => void
@@ -282,6 +284,7 @@ export function applyPipelineParamsToNewForm(
   handlers.setWidth(p.width)
   handlers.setHeight(p.height)
   handlers.setSeed(p.seed != null ? String(p.seed) : '')
+  handlers.setVideoLength(p.video_length ?? 25)
   handlers.rescaleUserEditedRef.current = true
   handlers.setRescale(rescaleFromParams(p.rescale))
   const inputFile =
@@ -306,8 +309,8 @@ export function applyPipelineParamsToNewForm(
       p.height === inputFile.height &&
       !p.rescale?.enabled,
   )
-  // Default proportion-locking on whenever an input image is present.
-  handlers.setKeepProportions(!!inputFile)
+  // Lock proportions for img2img with an input image; not for video modes.
+  handlers.setKeepProportions(mode === 'img2img' && !!inputFile)
 }
 
 export const MODE_DEFAULTS: Record<

@@ -33,6 +33,7 @@ export interface ImagePipelineParams {
   input_image_id?: string | null
   data_preparation?: Record<string, string> | null
   rescale?: ImagePipelineRescaleParams | null
+  video_length?: number | null
 }
 
 export interface StartImageJobRequest {
@@ -50,6 +51,8 @@ export interface StartImageJobRequest {
   data_preparation?: Record<string, string> | null
   /** UI rescale state at submit time (img2img). */
   rescale?: ImagePipelineRescaleParams | null
+  /** Number of frames for video generation workflows. */
+  video_length?: number | null
 }
 
 export interface StartImageJobResponse {

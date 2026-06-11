@@ -37,6 +37,9 @@ pub struct ImagePipelineParams {
     pub data_preparation: Option<HashMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rescale: Option<RescaleParams>,
+    /// Number of frames for video generation workflows (txt2video / img2video).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_length: Option<i32>,
 }
 
 impl ImagePipelineParams {
@@ -61,6 +64,7 @@ impl ImagePipelineParams {
             workflow: job.workflow.clone(),
             input_image_id: job.input_image_id.map(|id| id.to_string()),
             data_preparation: None,
+            video_length: None,
             rescale: if job.workflow == "img2img" {
                 Some(RescaleParams {
                     enabled: true,

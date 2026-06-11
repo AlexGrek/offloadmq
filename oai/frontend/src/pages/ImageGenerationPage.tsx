@@ -133,6 +133,7 @@ export default function ImageGenerationPage() {
   const [width, setWidth] = useState(MODE_DEFAULTS.txt2img.width)
   const [height, setHeight] = useState(MODE_DEFAULTS.txt2img.height)
   const [seed, setSeed] = useState('')
+  const [videoLength, setVideoLength] = useState(25)
   const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
   // img2img "original resolution": lock generation dims to the input image and pass it
   // through to the agent un-rescaled. Only offered for sub-4K inputs; default-on after upload.
@@ -307,10 +308,17 @@ export default function ImageGenerationPage() {
     }
   }, [capabilities, capability, jobs])
 
-  // Default a freshly set img2img input: keep proportions on, and use original resolution when
-  // it fits under 4K (locks dims to the input). Larger inputs default to a proportional 1024 long
-  // edge. Returns whether original resolution was enabled.
-  function applyInputDefaults(img: UploadedImage): boolean {
+  // Apply defaults after an input image is set. For img2img: lock proportions + use original
+  // resolution when sub-4K. For video modes: leave output resolution untouched — the user sets
+  // it independently. `forMode` defaults to current `mode` but must be passed explicitly when
+  // called from switchMode (where React state hasn't flushed yet).
+  function applyInputDefaults(img: UploadedImage, forMode: ImgGenMode = mode): boolean {
+    if (forMode !== 'img2img') {
+      setKeepProportions(false)
+      setOriginalResolution(false)
+      rescaleUserEditedRef.current = false
+      return false
+    }
     const fits = fitsOriginalResolution(img.width, img.height)
     setKeepProportions(true)
     setOriginalResolution(fits)
@@ -348,7 +356,7 @@ export default function ImageGenerationPage() {
       setOriginalResolution(false)
       setKeepProportions(false)
     } else if (uploadedInput) {
-      applyInputDefaults(uploadedInput)
+      applyInputDefaults(uploadedInput, next)
     } else {
       setOriginalResolution(false)
       setKeepProportions(false)
@@ -686,6 +694,7 @@ export default function ImageGenerationPage() {
         setWidth,
         setHeight,
         setSeed,
+        setVideoLength,
         setRescale,
         setOriginalResolution,
         setKeepProportions,
@@ -732,6 +741,7 @@ export default function ImageGenerationPage() {
       input_image_id: uploadedInput?.image_id ?? null,
       data_preparation: dataPrep,
       rescale: rescaleForSubmit(),
+      video_length: isVideoMode(mode) ? videoLength : null,
     }
   }
 
@@ -1249,6 +1259,20 @@ export default function ImageGenerationPage() {
                 <Label htmlFor="seed">Seed (optional)</Label>
                 <Input id="seed" value={seed} onChange={e => setSeed(e.target.value)} placeholder="empty = random" />
               </div>
+              {isVideoMode(mode) && (
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="video-length">Length (frames)</Label>
+                  <Input
+                    id="video-length"
+                    type="number"
+                    min={1}
+                    max={300}
+                    value={videoLength}
+                    onChange={e => setVideoLength(Math.max(1, Number(e.target.value) || 25))}
+                    data-testid="imggen-video-length"
+                  />
+                </div>
+              )}
             </div>
 
             {mode === 'img2img' && !originalResolution && (
