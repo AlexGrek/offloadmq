@@ -343,9 +343,9 @@ Paths are relative to `oai/`.
 
 Paths are relative to `oai/`.
 
-**Frontend:** `frontend/src/pages/ImageGenerationPage.tsx`, `frontend/src/pages/ImageWorkerLogsPage.tsx`, `frontend/src/pages/FilesPage.tsx`, `frontend/src/components/imggen/**`, `frontend/src/lib/imggen.ts`, `frontend/src/api/images.ts`, `frontend/src/hooks/useRunningImageJobs.ts`, `frontend/src/contexts/ProgressContext.tsx`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (image rows)
+**Frontend:** `frontend/src/pages/ImageGenerationPage.tsx`, `frontend/src/pages/ImageWorkerLogsPage.tsx`, `frontend/src/pages/FilesPage.tsx`, `frontend/src/components/imggen/**`, `frontend/src/lib/imggen.ts`, `frontend/src/api/images.ts`, `frontend/src/api/promptgen.ts`, `frontend/src/hooks/useRunningImageJobs.ts`, `frontend/src/contexts/ProgressContext.tsx`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (image rows)
 
-**Backend:** `backend/src/routes/images.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/services/image_jobs.rs`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
+**Backend:** `backend/src/routes/images.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/routes/promptgen.rs`, `backend/src/services/image_jobs.rs`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/services/promptgen.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
 
 #### Skill summaries
 

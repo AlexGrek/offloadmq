@@ -117,7 +117,9 @@ function PromptGeneratorDialog({
         if (!alive) return
         setCapabilities(data.capabilities)
         setCapabilitiesStatus('ready')
-        setCapability(prev => pickListedCapability(prev, data.capabilities) ?? '')
+        setCapability(prev =>
+          pickListedCapability(prev, data.capabilities) ?? data.capabilities[0]?.base ?? '',
+        )
       })
       .catch((e: Error) => {
         if (!alive) return

@@ -49,7 +49,8 @@ oai/backend/src/
     auth.rs                       # register, login, me, change_password
     admin.rs                      # admin settings, connection check, image admin, k8s self
     chats.rs                      # CRUD chats + messages, system-prompt / last-model patches
-    system_prompts.rs             # library list, record_use, delete, star/unstar
+    prompts.rs                    # generic prompt library — per-user buckets, recent/starred
+    promptgen.rs                  # prompt generator — LLM rewrite of a rough idea (imggen)
     images.rs                     # upload input, start/list/get/poll/cancel job, get image, capabilities
     job_common.rs                 # parse_id + shared StartJobResponse/CancelJobResponse DTOs (offload-job features)
     describe.rs                   # image-analysis (vision) jobs
@@ -80,6 +81,7 @@ oai/backend/src/
     image_job_names.rs            # display_name / prompt_label helpers
     offload_factory.rs            # chat_client() + image_client() — build OffloadMQ clients from DB settings
     progress.rs                   # list_running_image_jobs() → RunningJobsResponse
+    promptgen.rs                  # prompt generator: capabilities, generate (submit LLM task), poll
     storage.rs                    # operator(), read(), write() wrappers over AppState.storage
     connection.rs                 # check_offloadmq_connection()
     debug_offload.rs              # raw poll for debug route
@@ -105,7 +107,7 @@ oai/backend/src/
     image_generation.rs           # jobs, files, pipeline events, offload tasks — full CRUD (bespoke)
     image_worker_logs.rs          # worker log rows
     llm_capabilities.rs           # sync_online(), list_for_display()
-    user_system_prompts.rs        # library CRUD + star
+    prompts.rs                    # generic prompt library (prompt_entries: bucket + recent/starred)
     entities/                     # SeaORM entity structs (auto-derived, one per table)
 
   jobs/
@@ -187,10 +189,12 @@ Static SPA assets are served via `tower_http::ServeDir`; unmatched paths fall ba
 | PATCH | `/api/chats/{id}/system-prompt` | `routes::chats::update_system_prompt` |
 | PATCH | `/api/chats/{id}/last-model` | `routes::chats::update_last_model` |
 | GET | `/api/chats/{id}/messages` | `routes::chats::get_messages` |
-| GET | `/api/system-prompts` | `routes::system_prompts::list_library` |
-| POST | `/api/system-prompts/use` | `routes::system_prompts::record_use` |
-| DELETE | `/api/system-prompts/{id}` | `routes::system_prompts::delete_prompt` |
-| PATCH | `/api/system-prompts/{id}/star` | `routes::system_prompts::set_starred` |
+| GET | `/api/prompts/{bucket}` | `routes::prompts::list_library` |
+| POST | `/api/prompts/{bucket}/star` | `routes::prompts::star` |
+| PATCH/DELETE | `/api/prompt-entries/{id}` | `routes::prompts::update_entry` / `delete_entry` |
+| GET | `/api/promptgen/capabilities` | `routes::promptgen::list_capabilities` |
+| POST | `/api/promptgen/generate` | `routes::promptgen::generate` |
+| POST | `/api/promptgen/poll` | `routes::promptgen::poll` |
 | GET | `/api/files` | `routes::files::list_files` |
 | POST | `/api/images/upload` | `routes::images::upload_input_image` (10 MiB limit) |
 | POST | `/api/images/jobs` | `routes::images::start_job` |
