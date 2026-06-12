@@ -66,6 +66,7 @@ import {
 import { PipelineJobParamsPanel } from '../components/imggen/PipelineJobParamsPanel'
 import { ImgGenModelPicker } from '../components/imggen/ImgGenModelPicker'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
+import { PromptGeneratorModal } from '../components/imggen/PromptGeneratorModal'
 import {
   ToolDebugHeaderButton,
   ToolDebugModal,
@@ -162,6 +163,7 @@ export default function ImageGenerationPage() {
   const [deletingJob, setDeletingJob] = useState(false)
   const [jobsLoading, setJobsLoading] = useState(true)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [promptGenOpen, setPromptGenOpen] = useState(false)
   const [nudeDetectTarget, setNudeDetectTarget] = useState<{
     imageId: string
     filename: string
@@ -1066,7 +1068,20 @@ export default function ImageGenerationPage() {
               )}
 
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="prompt">Prompt</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="prompt">Prompt</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setPromptGenOpen(true)}
+                    data-testid="imggen-promptgen-open"
+                  >
+                    <Wand2 className="mr-1 size-3.5" />
+                    Prompt generator
+                  </Button>
+                </div>
                 <PromptTextarea
                   id="prompt"
                   value={prompt}
@@ -1709,6 +1724,14 @@ export default function ImageGenerationPage() {
         token={token}
       />
     )}
+    <PromptGeneratorModal
+      open={promptGenOpen}
+      onOpenChange={setPromptGenOpen}
+      mode={mode}
+      prompt={prompt}
+      token={token}
+      onUsePrompt={setPrompt}
+    />
     {nudeDetectTarget && token ? (
       <NudeDetectModal
         open

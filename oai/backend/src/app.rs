@@ -75,6 +75,12 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/chat/attachments/{id}/download",
             get(routes::chat_attachments::download_document),
         )
+        .route(
+            "/api/promptgen/capabilities",
+            get(routes::promptgen::list_capabilities),
+        )
+        .route("/api/promptgen/generate", post(routes::promptgen::generate))
+        .route("/api/promptgen/poll", post(routes::promptgen::poll))
         .route("/api/prompts/{bucket}", get(routes::prompts::list_library))
         .route("/api/prompts/{bucket}/star", post(routes::prompts::star))
         .route(

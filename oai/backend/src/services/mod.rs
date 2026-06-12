@@ -6,6 +6,7 @@ pub mod debug_offload;
 pub mod image_analysis;
 pub mod nude_detect;
 pub mod progress;
+pub mod promptgen;
 pub mod image_jobs;
 pub mod image_job_names;
 pub mod image_paths;
