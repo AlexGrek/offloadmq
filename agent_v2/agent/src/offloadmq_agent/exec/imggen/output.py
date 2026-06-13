@@ -21,10 +21,22 @@ _VIDEO_TASK_TYPES = {"txt2video", "img2video"}
 #   "videos" — native SaveVideo / SaveWEBM (ui.PreviewVideo)
 #   "gifs"   — VideoHelperSuite VHS_VideoCombine (mp4/webm/gif all land here)
 #   "images" — SaveAnimatedWEBP / SaveAnimatedPNG (animated frames saved as a
-#              single file under the regular image key)
+#              single file under the regular image key), AND workflows that emit
+#              mp4/webm directly into the images key (e.g. WAN 2.1 img2video)
 # Video/gif keys are preferred across all nodes before falling back to images,
 # so a preview-image node can't shadow the real video output.
 _VIDEO_OUTPUT_KEYS = ("videos", "gifs", "images")
+
+# Extensions treated as video/animation when scanning the generic "images" key.
+# Still-image formats (png, jpg, jpeg, …) are deliberately excluded so that
+# temp preview frames don't shadow the real video output.
+_VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".gif", ".webp", ".avi", ".mov", ".mkv"})
+
+
+def _has_video_extension(filename: str) -> bool:
+    if "." not in filename:
+        return False
+    return f".{filename.rsplit('.', 1)[-1].lower()}" in _VIDEO_EXTENSIONS
 
 # Per-output-entry fields worth surfacing in the task log (the raw entries can
 # also carry a huge embedded "workflow" blob, which we deliberately skip).
@@ -122,6 +134,12 @@ def collect_video(
         for node_id, node_output in outputs.items():
             for vid in node_output.get(key, []):
                 filename = vid.get("filename", "")
+                # Under the generic "images" key, still-image files (png/jpg/…)
+                # must be skipped — they are preview frames or temp outputs, not
+                # the video result.  The dedicated "videos"/"gifs" keys are
+                # always accepted regardless of extension.
+                if key == "images" and not _has_video_extension(filename):
+                    continue
                 _log(
                     transport, task_id,
                     f"Found video candidate under '{key}' in node {node_id}: filename='{filename}' "
