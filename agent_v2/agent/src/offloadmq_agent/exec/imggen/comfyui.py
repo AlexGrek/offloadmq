@@ -24,7 +24,7 @@ logger = logging.getLogger("agent")
 
 _COMFYUI_DEFAULT_URL = "http://127.0.0.1:8188"
 _POLL_INTERVAL_SEC = 2
-_MAX_POLL_ATTEMPTS = 150  # ~5 minutes at 2s intervals
+_DEFAULT_JOB_TIMEOUT_SEC = 600  # fallback when the caller doesn't pass job_timeout
 
 
 def comfyui_url() -> str:
@@ -80,15 +80,20 @@ def wait_for_completion(
     prompt_id: str,
     transport: AgentTransport | None = None,
     task_id: TaskId | None = None,
+    job_timeout: int = _DEFAULT_JOB_TIMEOUT_SEC,
 ) -> dict[str, Any]:
     """Poll /history/{prompt_id} until the job finishes. Returns the history entry.
+
+    The job is given ``job_timeout`` seconds to complete (driven by the task's
+    configured timeout), polling every ``_POLL_INTERVAL_SEC`` seconds.
 
     If ``transport`` and ``task_id`` are provided, calls ``report_progress`` every
     ``_PROGRESS_REPORT_EVERY`` cycles so that a 499 (client cancel) can be
     detected and raised as ``TaskCancelled`` during the wait loop.
     """
     url = f"{comfyui_url()}/history/{prompt_id}"
-    for attempt in range(_MAX_POLL_ATTEMPTS):
+    max_attempts = max(1, job_timeout // _POLL_INTERVAL_SEC)
+    for attempt in range(max_attempts):
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         history = r.json()
@@ -126,7 +131,10 @@ def wait_for_completion(
             report_progress(transport, log=None, stage="running", task_id=task_id)
 
         time.sleep(_POLL_INTERVAL_SEC)
-    raise TimeoutError(f"ComfyUI job {prompt_id} did not complete within the allotted time")
+    raise TimeoutError(
+        f"ComfyUI job {prompt_id} did not complete within {job_timeout}s "
+        f"({max_attempts} polls at {_POLL_INTERVAL_SEC}s)"
+    )
 
 
 def download_file(filename: str, subfolder: str, file_type: str) -> tuple[bytes, str]:

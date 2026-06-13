@@ -54,7 +54,7 @@ def execute_musicgen_comfyui(
         prompt_id = queue_prompt(graph)
         report_progress(transport, f"Queued as prompt_id={prompt_id}", "queued", task_id)
 
-        history_entry = wait_for_completion(prompt_id, transport, task_id)
+        history_entry = wait_for_completion(prompt_id, transport, task_id, job_timeout)
         report_progress(transport, "Generation complete — collecting output", "collecting", task_id)
 
         seed = inject_values.get("seed") or payload.get("seed")

@@ -141,6 +141,12 @@ impl OffloadImageClient {
         output_bucket_uid: &str,
         data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
     ) -> Result<(OffloadTaskId, serde_json::Value), AppError> {
+        // The agent uses runtimeSecs as its ComfyUI completion-wait budget.
+        // Video generation is far slower than still images, so give video
+        // workflows a 3-hour budget by default; images keep a 2-hour budget.
+        let workflow = payload.get("workflow").and_then(|w| w.as_str()).unwrap_or("");
+        let is_video = matches!(workflow, "txt2video" | "img2video");
+        let runtime_secs: u64 = if is_video { 3 * 3600 } else { 2 * 3600 };
         let mut body = serde_json::json!({
             "apiKey": self.api_key,
             "capability": capability,
@@ -149,7 +155,7 @@ impl OffloadImageClient {
             "output_bucket": output_bucket_uid,
             "timeoutSecs": 24 * 3600u64,
             "maxWaitSecs": 24 * 3600u64,
-            "runtimeSecs": 2 * 3600u64
+            "runtimeSecs": runtime_secs
         });
         if let Some(input_bucket) = input_bucket_uid {
             body["file_bucket"] = serde_json::json!([input_bucket]);
