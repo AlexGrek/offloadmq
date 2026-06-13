@@ -1,6 +1,6 @@
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Condition,
+    sea_query::Expr, ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
+    QueryFilter, QueryOrder, QuerySelect, Condition,
 };
 
 use crate::{
@@ -197,6 +197,7 @@ pub async fn create_offload_task(
         last_poll_log: ActiveValue::Set(None),
         last_poll_output: ActiveValue::Set(None),
         submitted_at: ActiveValue::Set(now),
+        started_at: ActiveValue::Set(None),
         updated_at: ActiveValue::Set(now),
     };
     model.insert(db).await.map_err(AppError::Database)
@@ -250,6 +251,23 @@ pub async fn update_offload_task_poll(
         ..Default::default()
     };
     model.update(db).await.map_err(AppError::Database)?;
+    Ok(())
+}
+
+/// Stamp `started_at = now` the first time a task is observed executing on an
+/// agent. The `IS NULL` filter makes this set-once and idempotent across polls.
+pub async fn mark_offload_task_started(
+    db: &DatabaseConnection,
+    id: i64,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().fixed_offset();
+    ImageOffloadTaskEntity::update_many()
+        .col_expr(image_offload_tasks::Column::StartedAt, Expr::value(now))
+        .filter(image_offload_tasks::Column::Id.eq(id))
+        .filter(image_offload_tasks::Column::StartedAt.is_null())
+        .exec(db)
+        .await
+        .map_err(AppError::Database)?;
     Ok(())
 }
 

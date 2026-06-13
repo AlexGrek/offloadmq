@@ -25,6 +25,11 @@ pub struct OffloadPollResponse {
     pub stage: Option<String>,
     pub output: Option<serde_json::Value>,
     pub log: Option<String>,
+    /// Heuristic execution-time estimate computed by the OffloadMQ server from
+    /// past runs of this capability. Serialized as `{ secs, nanos }`. Used to
+    /// drive the time-based progress bar. Absent when no history exists.
+    #[serde(default, rename = "typicalRuntimeSeconds")]
+    pub typical_runtime_seconds: Option<std::time::Duration>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -44,6 +44,11 @@ pub struct PollResponse {
     pub stage: Option<String>,
     pub error: Option<String>,
     pub output_images: Vec<ImageRef>,
+    /// RFC3339 timestamp of when execution actually began on an agent (null
+    /// while the task is still queued). Anchors the run-time progress bar.
+    pub started_at: Option<String>,
+    /// Heuristic execution-time estimate in seconds (null when unknown).
+    pub typical_runtime_seconds: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -178,6 +183,8 @@ pub async fn poll_job(
         stage: polled.stage,
         error: polled.error,
         output_images: polled.output_files.into_iter().map(map_image_ref).collect(),
+        started_at: polled.started_at.map(|d| d.to_rfc3339()),
+        typical_runtime_seconds: polled.typical_runtime_seconds,
     }))
 }
 

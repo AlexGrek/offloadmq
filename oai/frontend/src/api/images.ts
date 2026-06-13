@@ -75,6 +75,10 @@ export interface PollImageJobResponse {
   stage: string | null
   error: string | null
   output_images: ImageRef[]
+  /** RFC3339 time the task began executing on an agent; null while still queued. */
+  started_at?: string | null
+  /** Heuristic execution-time estimate in seconds; null when unknown. */
+  typical_runtime_seconds?: number | null
 }
 
 export interface ImageJobEvent {

@@ -15,6 +15,9 @@ pub struct Model {
     pub last_poll_log: Option<String>,
     pub last_poll_output: Option<String>,
     pub submitted_at: DateTimeWithTimeZone,
+    /// When the task first began executing on an agent (status `starting`/`running`),
+    /// as opposed to `submitted_at` (queue time). Drives the run-time progress bar.
+    pub started_at: Option<DateTimeWithTimeZone>,
     pub updated_at: DateTimeWithTimeZone,
 }
 

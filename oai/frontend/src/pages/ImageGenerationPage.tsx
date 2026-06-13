@@ -64,6 +64,7 @@ import {
   IMGGEN_NEW_PANEL,
 } from '../components/imggen/ImageJobHistorySidebar'
 import { PipelineJobParamsPanel } from '../components/imggen/PipelineJobParamsPanel'
+import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImgGenModelPicker } from '../components/imggen/ImgGenModelPicker'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { PromptGeneratorModal } from '../components/imggen/PromptGeneratorModal'
@@ -1496,12 +1497,15 @@ export default function ImageGenerationPage() {
                 )}
               </div>
             ) : isRunning ? (
-              <div className="flex aspect-video w-full items-center justify-center bg-muted/30">
-                <div className="flex flex-col items-center gap-3 text-muted-foreground">
+              <div className="flex aspect-video w-full items-center justify-center bg-muted/30 px-6">
+                <div className="flex w-full flex-col items-center gap-4 text-muted-foreground">
                   <Loader2 className="size-10 animate-spin opacity-40" />
-                  <p className="text-sm font-medium capitalize">
-                    {activePoll?.stage ?? displayStatus ?? 'Generating…'}
-                  </p>
+                  <JobProgressBar
+                    status={displayStatus ?? selectedJob.status}
+                    stage={activePoll?.stage}
+                    startedAt={activePoll?.started_at}
+                    typicalRuntimeSeconds={activePoll?.typical_runtime_seconds}
+                  />
                 </div>
               </div>
             ) : displayStatus === 'failed' ? (

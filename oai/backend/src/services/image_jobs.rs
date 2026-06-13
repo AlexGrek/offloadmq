@@ -55,6 +55,10 @@ pub struct PolledJob {
     pub stage: Option<String>,
     pub error: Option<String>,
     pub output_files: Vec<image_generation::ImageFile>,
+    /// When the task began executing on an agent (None while still queued).
+    pub started_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    /// Heuristic execution-time estimate in seconds (None when unknown).
+    pub typical_runtime_seconds: Option<f64>,
 }
 
 /// A job plus its files and pipeline events, used to build detail responses.
@@ -348,6 +352,8 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
             status: job.status,
             stage: None,
             error: job.error,
+            started_at: None,
+            typical_runtime_seconds: None,
         });
     }
 
@@ -364,12 +370,15 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
                     status: job.status,
                     stage: None,
                     error: job.error,
+                    started_at: None,
+                    typical_runtime_seconds: None,
                 });
             }
             return Err(e);
         }
     };
     record_event(state, job.id, "offload.poll", "ok", Some(&poll_summary(&poll))).await?;
+    let typical_runtime_seconds = poll.typical_runtime_seconds.map(|d| d.as_secs_f64());
     match poll.status.as_str() {
         "completed" => fetch_and_store_outputs(state, user_id, &job, poll.output).await?,
         "failed" | "canceled" => mark_failed(state, job.id, &poll).await?,
@@ -379,6 +388,11 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
         _ => {}
     }
 
+    // Re-read the offload task to pick up `started_at` (set by poll_and_persist
+    // the first time the agent began executing).
+    let started_at = image_generation::get_offload_task_by_job(&state.db, job.id)
+        .await?
+        .and_then(|t| t.started_at);
     let job = image_generation::get_job(&state.db, job.id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -387,6 +401,8 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
         status: job.status,
         stage: poll.stage,
         error: job.error,
+        started_at,
+        typical_runtime_seconds,
     })
 }
 
@@ -985,6 +1001,12 @@ async fn poll_and_persist(
         poll.output.as_ref().map(|v| v.to_string()).as_deref(),
     )
     .await?;
+    // Stamp the real execution-start time the first time the agent actually
+    // begins work (not while pending/queued/assigned), so the progress bar
+    // measures run time rather than queue wait. Set-once via IS NULL filter.
+    if matches!(poll.status.as_str(), "starting" | "running") {
+        image_generation::mark_offload_task_started(&state.db, task.id).await?;
+    }
     Ok(poll)
 }
 

@@ -29,6 +29,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260604_000021_create_chat_attachments::Migration),
             Box::new(m20260604_000022_create_music_generation_jobs::Migration),
             Box::new(m20260604_000023_create_prompt_entries::Migration),
+            Box::new(m20260613_000024_image_offload_task_started_at::Migration),
         ]
     }
 }
@@ -2228,5 +2229,52 @@ mod m20260604_000020_image_analysis_data_preparation {
     enum ImageAnalysisJobs {
         Table,
         DataPreparation,
+    }
+}
+
+mod m20260613_000024_image_offload_task_started_at {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260613_000024_image_offload_task_started_at"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageOffloadTasks::Table)
+                        .add_column(
+                            ColumnDef::new(ImageOffloadTasks::StartedAt)
+                                .timestamp_with_time_zone()
+                                .null(),
+                        )
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageOffloadTasks::Table)
+                        .drop_column(ImageOffloadTasks::StartedAt)
+                        .to_owned(),
+                )
+                .await
+        }
+    }
+
+    #[derive(DeriveIden)]
+    enum ImageOffloadTasks {
+        Table,
+        StartedAt,
     }
 }
