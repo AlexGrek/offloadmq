@@ -109,6 +109,15 @@ def wait_for_completion(
                         f"ComfyUI execution failed in {node_type}: {exception_message}"
                     )
                 raise RuntimeError("ComfyUI execution failed (no error details returned)")
+            n_outputs = len(entry.get("outputs", {}))
+            completion_log = (
+                f"ComfyUI job {prompt_id} finished after {attempt + 1} poll(s): "
+                f"status_str={status.get('status_str')!r}, completed={status.get('completed')}, "
+                f"{n_outputs} output node(s)"
+            )
+            logger.info(completion_log)
+            if transport is not None and task_id is not None:
+                report_progress(transport, log=completion_log, stage="collecting", task_id=task_id)
             result: dict[str, Any] = entry
             return result
 

@@ -56,7 +56,7 @@ def execute_imggen_comfyui(
         report_progress(transport, "Generation complete — collecting output", "collecting", task_id)
 
         seed = inject_values.get("seed") or payload.get("seed")
-        output = build_output(history_entry, task_type, prompt_id, seed, transport, output_bucket)
+        output = build_output(history_entry, task_type, prompt_id, seed, transport, output_bucket, task_id)
         report = make_success_report(task_id, capability, output)
 
     except TaskCancelled:
