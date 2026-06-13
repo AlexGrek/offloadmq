@@ -112,6 +112,10 @@ export function filterCapabilitiesByWorkflow(
   const filtered = caps.filter(
     cap => cap.tags.length === 0 || cap.tags.some(t => t.toLowerCase() === workflow),
   )
+  // Fall back to all caps only when every capability is untagged (legacy agents with no
+  // bracket metadata). If some caps have tags but none match this workflow, return empty
+  // so the UI shows "No models found for this mode" instead of unrelated models.
+  if (filtered.length === 0 && caps.some(c => c.tags.length > 0)) return []
   return filtered.length > 0 ? filtered : caps
 }
 
