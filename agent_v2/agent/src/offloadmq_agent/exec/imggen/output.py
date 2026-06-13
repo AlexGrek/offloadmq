@@ -36,19 +36,36 @@ def collect_images(history_entry: dict[str, Any], transport: AgentTransport, buc
     return images
 
 
+# Output keys ComfyUI uses for video, in preference order:
+#   "videos" — native SaveVideo / SaveWEBM (ui.PreviewVideo)
+#   "gifs"   — VideoHelperSuite VHS_VideoCombine (mp4/webm/gif all land here)
+#   "images" — SaveAnimatedWEBP / SaveAnimatedPNG (animated frames saved as a
+#              single file under the regular image key)
+# Video/gif keys are preferred across all nodes before falling back to images,
+# so a preview-image node can't shadow the real video output.
+_VIDEO_OUTPUT_KEYS = ("videos", "gifs", "images")
+
+
 def collect_video(history_entry: dict[str, Any], transport: AgentTransport, bucket_uid: str) -> dict[str, Any] | None:
-    """Download the first output video/gif from a history entry and upload it to the bucket."""
-    for node_output in history_entry.get("outputs", {}).values():
-        for vid in node_output.get("videos", []) or node_output.get("gifs", []):
-            filename = vid.get("filename", "")
-            content, ct = download_file(filename, vid.get("subfolder", ""), vid.get("type", "output"))
-            file_uid = upload_output_file(transport, bucket_uid, filename, content, ct)
-            return {
-                "filename":     filename,
-                "content_type": ct,
-                "file_uid":     file_uid,
-                "bucket_uid":   bucket_uid,
-            }
+    """Download the first output video from a history entry and upload it to the bucket.
+
+    Scans every output node for each known video key in preference order, so an
+    animated file emitted under the generic "images" key (SaveAnimatedWEBP/PNG)
+    is still recognised as the video result.
+    """
+    outputs = history_entry.get("outputs", {}).values()
+    for key in _VIDEO_OUTPUT_KEYS:
+        for node_output in outputs:
+            for vid in node_output.get(key, []):
+                filename = vid.get("filename", "")
+                content, ct = download_file(filename, vid.get("subfolder", ""), vid.get("type", "output"))
+                file_uid = upload_output_file(transport, bucket_uid, filename, content, ct)
+                return {
+                    "filename":     filename,
+                    "content_type": ct,
+                    "file_uid":     file_uid,
+                    "bucket_uid":   bucket_uid,
+                }
     return None
 
 
