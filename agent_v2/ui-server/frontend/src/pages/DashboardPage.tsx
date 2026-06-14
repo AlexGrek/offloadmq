@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { Activity, Play, Square } from "lucide-react";
+import { Activity, Loader2, Play, RefreshCw, Square } from "lucide-react";
 
 import { api } from "@/api/client";
 import { KeepAwakeCard } from "@/components/KeepAwakeCard";
@@ -20,6 +20,7 @@ import { TERMINAL_STATUSES } from "@/types";
 
 export function DashboardPage() {
   const [busy, setBusy] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
   const { data: status, refresh } = usePoll<AgentStatus>(api.getStatus, 2000);
   const { data: taskData } = usePoll<{ tasks: TaskRecord[] }>(
     api.listTasks,
@@ -46,6 +47,18 @@ export function DashboardPage() {
     }
   };
 
+  const rescan = async () => {
+    setRescanning(true);
+    try {
+      await api.rescanCapabilities(false);
+      refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRescanning(false);
+    }
+  };
+
   const running = status?.running ?? false;
 
   return (
@@ -68,14 +81,30 @@ export function DashboardPage() {
               {status?.agentId ? ` · ${status.agentId}` : ""}
             </CardDescription>
           </div>
-          <Button
-            onClick={toggle}
-            disabled={busy}
-            variant={running ? "destructive" : "default"}
-          >
-            {running ? <Square /> : <Play />}
-            {running ? "Stop" : "Start"}
-          </Button>
+          <div className="flex items-center gap-2">
+            {running && (
+              <Button
+                variant="outline"
+                onClick={rescan}
+                disabled={rescanning}
+              >
+                {rescanning ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <RefreshCw />
+                )}
+                Rescan
+              </Button>
+            )}
+            <Button
+              onClick={toggle}
+              disabled={busy}
+              variant={running ? "destructive" : "default"}
+            >
+              {running ? <Square /> : <Play />}
+              {running ? "Stop" : "Start"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <Separator />

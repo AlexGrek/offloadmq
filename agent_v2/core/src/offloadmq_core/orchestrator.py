@@ -366,6 +366,10 @@ class Orchestrator:
             self._scan.set_result(caps, info)
             with self._lock:
                 self._last_detected = caps
+            # Push to server if already online — covers the startup race where
+            # _connect() ran before ComfyUI / other runtimes were fully ready.
+            if self._online:
+                self.push_capabilities_to_server()
 
         threading.Thread(target=_run, name="omq-scan", daemon=True).start()
 
@@ -387,8 +391,16 @@ class Orchestrator:
             # No longer a full stop/start — just cycle the live session.
             self._cycle_session()
             result["restarted"] = True
-        elif self._online and self._client is not None:
-            self.push_capabilities_to_server()
+        else:
+            # Synchronously update settings.capabilities so the dashboard reflects
+            # the latest detection immediately — before the async server push lands.
+            # This is the single source of truth: detected caps → policy filter → stored.
+            settings = self.get_settings()
+            reg_caps = self._registration_caps(settings, caps)
+            local_caps = [c for c in reg_caps if not c.startswith("slavemode.")]
+            self.update_settings(capabilities=local_caps)
+            if self._online and self._client is not None:
+                self.push_capabilities_to_server()
         return result
 
     def update_capability_policy(
@@ -971,7 +983,11 @@ class Orchestrator:
         with self._lock:
             skipped = self._skipped_rescans
             self._skipped_rescans = 0
-        if skipped > 0:
+        # Always rescan after slavemode tasks — they call rescan_and_push() internally
+        # which pushes to server but does NOT update _last_detected. Without this, the
+        # next orchestrator push (e.g. from a settings change) would overwrite the server
+        # with stale pre-slavemode data. Also rescan if ticks were skipped while busy.
+        if skipped > 0 or task.capability.startswith("slavemode."):
             self._trigger_rescan_async()
 
     def _schedule_resolve(self, task: Task, result: TaskResult) -> None:

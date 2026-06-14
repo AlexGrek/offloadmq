@@ -14,7 +14,7 @@ if (-not $env:DL_API_KEY) {
     exit 1
 }
 
-# ── Compute version (mirrors compute-agent-version.sh logic) ──────────────────
+# Compute version (mirrors compute-agent-version.sh logic)
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
 $Count = (git -C $RepoRoot rev-list --count HEAD 2>$null).Trim()
@@ -22,8 +22,8 @@ if (-not $Count) { $Count = "0" }
 
 $Tag = (git -C $RepoRoot describe --tags --match 'release-*' --abbrev=0 2>$null).Trim()
 if ($Tag) {
-    $Ver    = $Tag -replace '^release-', ''
-    $Prefix = $Ver -replace '\.\d+$', ''
+    $Ver     = $Tag -replace '^release-', ''
+    $Prefix  = $Ver -replace '\.\d+$', ''
     $Version = "${Prefix}.${Count}"
 } else {
     $Version = "v0.3.${Count}"
@@ -31,19 +31,19 @@ if ($Tag) {
 
 Write-Host "==> Releasing offloadmq $Version"
 
-# ── Tag and push ───────────────────────────────────────────────────────────────
+# Tag and push
 git tag "release-$Version"
 if ($LASTEXITCODE -ne 0) { throw "git tag failed" }
 
 git push origin "release-$Version"
 if ($LASTEXITCODE -ne 0) { throw "git push failed" }
 
-# ── Build and upload binaries (CLI + GUI) ────────────────────────────────────
+# Build and upload binaries (CLI + GUI)
 $env:DL_BASE_URL = $DlBaseUrl
 & "$PSScriptRoot\release-agent.ps1" $Version
 if ($LASTEXITCODE -ne 0) { throw "release-agent.ps1 failed" }
 
-# ── Build Windows installer ───────────────────────────────────────────────────
+# Build Windows installer (binaries already in dist/ from release-agent.ps1)
 Write-Host ""
 Write-Host "==> Building Windows installer for $Version"
 
@@ -55,16 +55,17 @@ $IsccOnPath = Get-Command "ISCC" -ErrorAction SilentlyContinue
 if ($IsccOnPath) {
     $IsccCmd = $IsccOnPath.Source
 } else {
-    foreach ($p in @(
+    $candidates = @(
         "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
         "C:\Program Files\Inno Setup 6\ISCC.exe",
         "C:\Program Files (x86)\Inno Setup 5\ISCC.exe"
-    )) {
+    )
+    foreach ($p in $candidates) {
         if (Test-Path $p) { $IsccCmd = $p; break }
     }
 }
 if (-not $IsccCmd) {
-    Write-Error "ISCC not found — install Inno Setup 6 from https://jrsoftware.org/isinfo.php"
+    Write-Error "ISCC not found -- install Inno Setup 6 from https://jrsoftware.org/isinfo.php"
     exit 1
 }
 
@@ -79,7 +80,7 @@ if (-not (Test-Path $InstallerFile)) {
 }
 Write-Host "-> Installer: $InstallerFile"
 
-# ── Upload installer ──────────────────────────────────────────────────────────
+# Upload installer
 Write-Host ""
 Write-Host "==> Uploading installer"
 
@@ -89,8 +90,8 @@ $ArchTag = switch ($Arch) {
     "ARM64" { "arm64" }
     default  { "amd64" }
 }
-$OsArch  = "windows-$ArchTag"
-$Bucket  = if ($env:DL_BUCKET) { $env:DL_BUCKET } else { "offload-agent" }
+$OsArch = "windows-$ArchTag"
+$Bucket = if ($env:DL_BUCKET) { $env:DL_BUCKET } else { "offload-agent" }
 
 $AuthResp = Invoke-RestMethod `
     -Method Post `
@@ -113,16 +114,16 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
 } else {
     $StatusFile = [System.IO.Path]::GetTempFileName()
     $RespFile   = [System.IO.Path]::GetTempFileName()
-    curl.exe -sS --write-out "%{http_code}" -o $RespFile `
+    curl.exe -sS --write-out "%{http_code}" -o "$RespFile" `
         -X POST "${DlBaseUrl}/api/v1/release/${Bucket}/upload" `
         -H "Authorization: Bearer $Token" `
         -F "version=$Version" `
         -F "os_arch=$OsArch" `
         -F "file=@${InstallerFile};filename=${InstallerName}" `
-        | Out-File $StatusFile -Encoding ascii
-    $Status = (Get-Content $StatusFile).Trim()
+        | Out-File "$StatusFile" -Encoding ascii
+    $Status = (Get-Content "$StatusFile").Trim()
     if ($Status -ne "201") {
-        Get-Content $RespFile | Write-Error
+        Get-Content "$RespFile" | Write-Error
         throw "installer upload failed (HTTP $Status)"
     }
 }
