@@ -435,28 +435,33 @@ pub async fn image_thumbnail_bytes(
     let file = image_generation::get_image_file(&state.db, image_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    // Videos have no JPEG thumbnail — serve a 404 so the sidebar skips the preview.
-    if file.content_type.starts_with("video/") {
-        return Err(AppError::NotFound);
-    }
+    let is_video = file.content_type.starts_with("video/");
+    let canonical_thumb = image_paths::thumbnail_path(user_id, image_id);
     let thumb_path = file
         .thumbnail_storage_path
         .clone()
-        .unwrap_or_else(|| image_paths::thumbnail_path(user_id, image_id));
+        .filter(|p| p != &file.storage_path)
+        .unwrap_or(canonical_thumb.clone());
 
     if let Ok(bytes) = storage::read(op, &thumb_path).await {
-        return Ok(bytes);
+        if image_processing::is_jpeg_blob(&bytes, "image/jpeg") {
+            return Ok(bytes);
+        }
     }
 
     let main = storage::read(op, &file.storage_path).await?;
-    let main_jpeg = image_processing::ensure_jpeg_response(main, &file.content_type)?;
-    let thumb_bytes = image_processing::thumbnail_from_main_jpeg(&main_jpeg)?;
-    storage::write(op, &thumb_path, thumb_bytes.clone()).await?;
+    let thumb_bytes = if is_video {
+        image_processing::thumbnail_from_video(&main)?
+    } else {
+        let main_jpeg = image_processing::ensure_jpeg_response(main, &file.content_type)?;
+        image_processing::thumbnail_from_main_jpeg(&main_jpeg)?
+    };
+    storage::write(op, &canonical_thumb, thumb_bytes.clone()).await?;
     image_generation::set_image_thumbnail_meta(
         &state.db,
         file.id,
         user_id,
-        &thumb_path,
+        &canonical_thumb,
         thumb_bytes.len() as i64,
     )
     .await?;
@@ -604,6 +609,7 @@ pub async fn purge_stored_image(state: &AppState, file: &image_generation::Image
     let thumb = file
         .thumbnail_storage_path
         .clone()
+        .filter(|p| p != &file.storage_path)
         .unwrap_or_else(|| image_paths::thumbnail_path(file.user_id, file.id));
     storage::delete(op, &thumb).await?;
     Ok(())
@@ -1226,9 +1232,12 @@ async fn store_output_video(
 
     let file_id = state.next_id();
     let storage_path = image_paths::video_output_path(user_id, job.id, file_id, &filename);
+    let thumbnail_storage_path = image_paths::thumbnail_path(user_id, file_id);
+    let thumbnail_bytes = image_processing::thumbnail_from_video(&bytes)?;
 
     let op = storage::operator(state)?;
     storage::write(op, &storage_path, bytes).await?;
+    storage::write(op, &thumbnail_storage_path, thumbnail_bytes.clone()).await?;
 
     image_generation::create_image_file(
         &state.db,
@@ -1239,8 +1248,8 @@ async fn store_output_video(
             direction: "output",
             source: "offload_download",
             storage_path: &storage_path,
-            thumbnail_storage_path: &storage_path,
-            thumbnail_stored_bytes: 0,
+            thumbnail_storage_path: &thumbnail_storage_path,
+            thumbnail_stored_bytes: thumbnail_bytes.len() as i64,
             filename: &filename,
             content_type: &content_type,
             original_bytes: None,

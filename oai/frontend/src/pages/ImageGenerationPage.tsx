@@ -1002,7 +1002,7 @@ export default function ImageGenerationPage() {
             </h2>
             <p className="text-sm text-muted-foreground">
               {isVideoMode(mode)
-                ? 'Video generation via ComfyUI. Output is an MP4 with no thumbnail preview.'
+                ? 'Video generation via ComfyUI. Output is an MP4; a frame thumbnail appears in the job list and file browser.'
                 : 'Img2Img uploads your image to a bucket, rescales it with dataPreparation, then runs the workflow.'}
             </p>
           </header>

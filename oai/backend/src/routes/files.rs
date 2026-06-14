@@ -44,6 +44,8 @@ pub struct UserFile {
     pub thumbnail_url: String,
     /// True when the content type is an image and can be previewed inline.
     pub is_image: bool,
+    /// True when the content type is video (thumbnail JPEG served like images).
+    pub is_video: bool,
     /// True when the content type is audio.
     pub is_audio: bool,
 }
@@ -142,9 +144,14 @@ pub async fn list_files(
 
 fn map_user_file(f: image_generation::ImageFile) -> UserFile {
     let is_image = f.content_type.starts_with("image/");
+    let is_video = f.content_type.starts_with("video/");
     UserFile {
         url: format!("/api/images/files/{}", f.id),
-        thumbnail_url: format!("/api/images/files/{}/thumbnail", f.id),
+        thumbnail_url: if is_image || is_video {
+            format!("/api/images/files/{}/thumbnail", f.id)
+        } else {
+            String::new()
+        },
         id: f.id.to_string(),
         kind: "image".to_string(),
         direction: f.direction,
@@ -158,6 +165,7 @@ fn map_user_file(f: image_generation::ImageFile) -> UserFile {
         job_id: f.job_id.map(|id| id.to_string()),
         created_at: f.created_at.to_rfc3339(),
         is_image,
+        is_video,
         is_audio: false,
     }
 }
@@ -227,6 +235,7 @@ fn map_audio_job(job: &crate::db::entities::tts_jobs::Model) -> Option<UserFile>
         job_id: Some(job.id.to_string()),
         created_at: job.created_at.to_rfc3339(),
         is_image: false,
+        is_video: false,
         is_audio: true,
     })
 }

@@ -3,7 +3,7 @@
 //! libvips processes images in strips rather than loading the full decoded pixel buffer into RAM,
 //! preventing OOM kills when users upload large inputs (e.g. 48 MP camera shots).
 
-use std::{io::Cursor, sync::OnceLock};
+use std::{io::Cursor, process::Command, sync::OnceLock, time::{SystemTime, UNIX_EPOCH}};
 
 use rs_vips::{
     Vips, VipsImage,
@@ -196,6 +196,73 @@ pub fn thumbnail_from_main_jpeg(bytes: &[u8]) -> Result<Vec<u8>, AppError> {
     let img = VipsImage::new_from_buffer(bytes, "")
         .map_err(|e| AppError::BadRequest(format!("decode thumbnail source failed: {e}")))?;
     encode_thumbnail_vips(&img)
+}
+
+/// Extract a JPEG thumbnail from a video blob via ffmpeg (first frame at ~0.5s).
+pub fn thumbnail_from_video(bytes: &[u8]) -> Result<Vec<u8>, AppError> {
+    if bytes.is_empty() {
+        return Err(AppError::BadRequest("empty video".into()));
+    }
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = std::env::temp_dir();
+    let input = tmp.join(format!("oai-vid-{stamp}.bin"));
+    let output = tmp.join(format!("oai-vid-thumb-{stamp}.jpg"));
+
+    std::fs::write(&input, bytes)
+        .map_err(|e| AppError::Internal(format!("write temp video failed: {e}")))?;
+
+    let scale = format!(
+        "scale={}:{}:force_original_aspect_ratio=decrease",
+        THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE
+    );
+    let status = Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            "0.5",
+            "-i",
+        ])
+        .arg(input.as_os_str())
+        .args([
+            "-vframes",
+            "1",
+            "-vf",
+            &scale,
+            "-q:v",
+            "2",
+            "-y",
+        ])
+        .arg(output.as_os_str())
+        .status()
+        .map_err(|e| AppError::Internal(format!("ffmpeg spawn failed: {e}")))?;
+
+    let _ = std::fs::remove_file(&input);
+
+    if !status.success() {
+        let _ = std::fs::remove_file(&output);
+        return Err(AppError::Internal(
+            "ffmpeg video thumbnail extraction failed".into(),
+        ));
+    }
+
+    let thumb = std::fs::read(&output).map_err(|e| {
+        let _ = std::fs::remove_file(&output);
+        AppError::Internal(format!("read ffmpeg thumbnail failed: {e}"))
+    })?;
+    let _ = std::fs::remove_file(&output);
+
+    if !is_jpeg_blob(&thumb, "image/jpeg") {
+        return Err(AppError::Internal(
+            "ffmpeg did not produce a valid JPEG thumbnail".into(),
+        ));
+    }
+    Ok(thumb)
 }
 
 pub fn is_jpeg_blob(bytes: &[u8], content_type: &str) -> bool {

@@ -199,7 +199,9 @@ export default function FilesPage() {
               token={token}
               mediaRevision={mediaRevision}
               thumbSrc={
-                file.is_image ? imageThumbnailUrl(file.id, token, mediaRevision) : undefined
+                file.is_image || file.is_video
+                  ? imageThumbnailUrl(file.id, token, mediaRevision)
+                  : undefined
               }
               fullSrc={file.is_image ? imageFileUrl(file.id, token, mediaRevision) : undefined}
               onImageMutated={() => {
@@ -473,7 +475,7 @@ function FileTile({
     <div className="flex items-start gap-2 border-t border-border px-3 py-2">
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-medium" title={file.filename}>
-          {file.is_image ? (
+          {file.is_image || file.is_video ? (
             <ImageIcon className="mr-1 inline h-3 w-3 align-text-bottom text-muted-foreground" />
           ) : null}
           {file.filename}
@@ -504,7 +506,7 @@ function FileTile({
 
   const thumb = (
     <div className="relative flex aspect-square items-center justify-center bg-muted/40">
-      {file.is_image && thumbSrc ? (
+      {((file.is_image || file.is_video) && thumbSrc) ? (
         <img
           src={thumbSrc}
           alt=""

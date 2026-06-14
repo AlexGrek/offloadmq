@@ -1,7 +1,7 @@
 import { Loader2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { imageThumbnailUrl, type ImageJobDetails } from '../../api/images'
-import { isVideoMode, jobPromptTitle, jobTechMeta, lastOutputImageId, type ImgGenMode } from '../../lib/imggen'
+import { jobPromptTitle, jobTechMeta, lastOutputImageId } from '../../lib/imggen'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 export const IMGGEN_NEW_PANEL = 'new' as const
@@ -61,9 +61,7 @@ export function ImageJobHistorySidebar({
         ) : (
           <ul className="space-y-1">
             {jobs.map(job => {
-              const outputId = isVideoMode(job.workflow as ImgGenMode)
-                ? null
-                : lastOutputImageId(job)
+              const outputId = lastOutputImageId(job)
               const bgUrl = outputId
                 ? imageThumbnailUrl(outputId, token, mediaRevision)
                 : null

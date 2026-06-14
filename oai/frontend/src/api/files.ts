@@ -17,6 +17,7 @@ export interface UserFile {
   url: string
   thumbnail_url: string
   is_image: boolean
+  is_video: boolean
   is_audio: boolean
 }
 
