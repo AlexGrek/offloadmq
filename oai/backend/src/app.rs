@@ -40,6 +40,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         )
         .route("/api/admin/am_i_admin", get(routes::admin::am_i_admin))
         .route("/api/ws/chat", get(crate::ws::chat::ws_chat))
+        .route("/api/ws/promptgen", get(crate::ws::promptgen::ws_promptgen))
         .route("/api/chats", get(routes::chats::list_chats))
         .route("/api/chats", post(routes::chats::create_chat))
         .route("/api/chats/{id}", axum::routing::delete(routes::chats::delete_chat))

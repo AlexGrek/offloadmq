@@ -15,24 +15,23 @@ import { cn } from '@/lib/utils'
 import { CapabilityModelPicker } from '@/components/CapabilityModelPicker'
 import { PromptTextarea } from '@/components/PromptTextarea'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import {
-  generatePrompt,
-  listPromptGenCapabilities,
-  pollPromptGen,
-  type PromptGenCapability,
-  type PromptGenTaskId,
-} from '@/api/promptgen'
+import { nextPromptGenReqId, useWsPromptGen } from '@/hooks/useWsPromptGen'
 import { cancelOffloadTask } from '@/api/tasks'
 import { pickListedCapability } from '@/lib/capability-picker'
 import type { CapabilitiesStatus } from '@/lib/capabilitiesStatus'
+import type { PromptGenTaskId } from '@/types/ws-promptgen'
 import { isVideoMode, type ImgGenMode } from '@/lib/imggen'
 
 /** `{}` in the query template is replaced with the user's idea server-side. */
 const PLACEHOLDER = '{}'
 
-const POLL_MS = 1500
+const MAX_LOG_LINES = 40
 const MODEL_STORAGE_KEY = 'oai_promptgen_model'
 const queryStorageKey = (mode: ImgGenMode) => `oai_promptgen_query_${mode}`
+
+function formatLogTime(d = new Date()): string {
+  return d.toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
 
 function defaultQuery(mode: ImgGenMode): string {
   return isVideoMode(mode)
@@ -64,13 +63,8 @@ interface PromptGeneratorModalProps {
 
 /**
  * "Prompt generator" — rewrites a rough idea into a polished generation prompt
- * via an LLM. Centered dialog on desktop, bottom sheet on mobile. The query
- * template is persisted per mode: drafts in localStorage, history/favorites in
- * the prompt library bucket `imggen-promptgen-{mode}` (recorded server-side on
- * generate).
- *
- * The inner component mounts fresh on every open, so all state starts from
- * initializers (idea snapshot, per-mode query draft) instead of reset effects.
+ * via an LLM over WebSocket (same task event flow as chat). Centered dialog on
+ * desktop, bottom sheet on mobile.
  */
 export function PromptGeneratorModal(props: PromptGeneratorModalProps) {
   if (!props.open) return null
@@ -85,6 +79,7 @@ function PromptGeneratorDialog({
   onUsePrompt,
 }: PromptGeneratorModalProps) {
   const isMobile = useIsMobile()
+  const ws = useWsPromptGen(token)
   const [idea, setIdea] = useState(() => prompt)
   const [query, setQuery] = useState(
     () => localStorage.getItem(queryStorageKey(mode)) || defaultQuery(mode),
@@ -92,127 +87,192 @@ function PromptGeneratorDialog({
   const [capability, setCapability] = useState(
     () => localStorage.getItem(MODEL_STORAGE_KEY) ?? '',
   )
-  const [capabilities, setCapabilities] = useState<PromptGenCapability[]>([])
-  const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('loading')
-  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
-  const [capabilitiesNonce, setCapabilitiesNonce] = useState(0)
   const [phase, setPhase] = useState<Phase>('idle')
   const [statusLabel, setStatusLabel] = useState('')
   const [result, setResult] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [stopping, setStopping] = useState(false)
+  const [logs, setLogs] = useState<string[]>([])
   const taskRef = useRef<PromptGenTaskId | null>(null)
+  const reqIdRef = useRef<string | null>(null)
+  const aliveRef = useRef(true)
+  const capsLoggedRef = useRef<CapabilitiesStatus>('idle')
+
+  function appendLog(message: string) {
+    if (!aliveRef.current) return
+    const line = `${formatLogTime()} ${message}`
+    setLogs(prev => [...prev.slice(-(MAX_LOG_LINES - 1)), line])
+  }
+
+  function clearActiveTask() {
+    taskRef.current = null
+    reqIdRef.current = null
+  }
+
+  function requestTaskCancel(task: PromptGenTaskId, reason: string) {
+    if (!token) return
+    appendLog(`${reason} → cancel ${task.cap}/${task.id}`)
+    void cancelOffloadTask(token, task.cap, task.id)
+      .then(() => { if (aliveRef.current) appendLog('cancel request sent') })
+      .catch(e => {
+        if (aliveRef.current) {
+          appendLog(`cancel failed: ${e instanceof Error ? e.message : 'unknown error'}`)
+        }
+      })
+  }
+
+  function cancelTaskSilently(task: PromptGenTaskId) {
+    if (!token) return
+    void cancelOffloadTask(token, task.cap, task.id).catch(() => {})
+  }
+
+  function dismiss() {
+    aliveRef.current = false
+    const task = taskRef.current
+    clearActiveTask()
+    if (task) cancelTaskSilently(task)
+    onOpenChange(false)
+  }
 
   const queryValid = query.includes(PLACEHOLDER)
   const canGenerate =
-    !!token && phase !== 'running' && queryValid && !!idea.trim() && !!capability &&
-    capabilitiesStatus === 'ready'
+    ws.status === 'connected' &&
+    phase !== 'running' &&
+    queryValid &&
+    !!idea.trim() &&
+    !!capability &&
+    ws.capabilitiesStatus === 'ready'
 
-  // Load models on mount; re-runs when the picker's refresh bumps the nonce.
   useEffect(() => {
-    if (!token) return
-    let alive = true
-    listPromptGenCapabilities(token)
-      .then(data => {
-        if (!alive) return
-        setCapabilities(data.capabilities)
-        setCapabilitiesStatus('ready')
-        setCapability(prev =>
-          pickListedCapability(prev, data.capabilities) ?? data.capabilities[0]?.base ?? '',
-        )
-      })
-      .catch((e: Error) => {
-        if (!alive) return
-        setCapabilitiesError(e.message)
-        setCapabilitiesStatus('error')
-      })
+    aliveRef.current = true
     return () => {
-      alive = false
+      aliveRef.current = false
+      const task = taskRef.current
+      taskRef.current = null
+      reqIdRef.current = null
+      if (token && task) void cancelOffloadTask(token, task.cap, task.id).catch(() => {})
     }
-  }, [token, capabilitiesNonce])
+  }, [token])
 
-  function refreshCapabilities() {
-    setCapabilitiesStatus('loading')
-    setCapabilitiesError(null)
-    setCapabilitiesNonce(n => n + 1)
-  }
+  useEffect(() => {
+    if (ws.capabilitiesStatus !== 'ready' || ws.capabilities.length === 0) return
+    setCapability(prev =>
+      pickListedCapability(prev, ws.capabilities) ?? ws.capabilities[0]?.base ?? '',
+    )
+  }, [ws.capabilities, ws.capabilitiesStatus])
+
+  useEffect(() => {
+    if (ws.capabilitiesStatus === capsLoggedRef.current) return
+    capsLoggedRef.current = ws.capabilitiesStatus
+    if (ws.capabilitiesStatus === 'loading') {
+      appendLog('loading prompt-gen capabilities…')
+    } else if (ws.capabilitiesStatus === 'ready') {
+      appendLog(`capabilities ready (${ws.capabilities.length} models)`)
+    } else if (ws.capabilitiesStatus === 'error' && ws.capabilitiesError) {
+      appendLog(`capabilities failed: ${ws.capabilitiesError}`)
+    }
+  }, [ws.capabilitiesStatus, ws.capabilities.length, ws.capabilitiesError])
+
+  useEffect(() => {
+    if (ws.status === 'connecting') appendLog('ws connecting…')
+    else if (ws.status === 'connected') appendLog('ws connected')
+    else if (ws.status === 'disconnected' && phase === 'running') {
+      appendLog('ws disconnected during generation')
+      const task = taskRef.current
+      if (task) cancelTaskSilently(task)
+      if (aliveRef.current) {
+        setError('Connection lost')
+        setPhase('idle')
+        setStopping(false)
+        clearActiveTask()
+      }
+    }
+  }, [ws.status, phase, token])
 
   // Persist the query draft per mode as the user types.
   useEffect(() => {
     localStorage.setItem(queryStorageKey(mode), query)
   }, [mode, query])
 
-  // Poll the running task until terminal. The backend resolves the final text.
+  // Stream task events from the prompt-gen WebSocket.
   useEffect(() => {
-    if (phase !== 'running' || !token) return
-    const task = taskRef.current
-    if (!task) return
-    let alive = true
-    let timer: ReturnType<typeof setTimeout>
-    const tick = async () => {
-      try {
-        const poll = await pollPromptGen(token, task)
-        if (!alive || taskRef.current !== task) return
-        if (poll.status === 'completed' && poll.text) {
-          setResult(poll.text)
-          setPhase('done')
-          return
+    return ws.subscribe(event => {
+      if (!aliveRef.current) return
+      const reqId = reqIdRef.current
+      if (!reqId) return
+      if ('req_id' in event && event.req_id !== reqId) return
+
+      switch (event.type) {
+        case 'task:queued':
+          appendLog(`queued ${event.cap}/${event.id}`)
+          taskRef.current = { cap: event.cap, id: event.id }
+          setStatusLabel(STATUS_LABELS.pending ?? 'Queued…')
+          break
+        case 'task:progress': {
+          const stage = event.stage ? ` stage=${event.stage}` : ''
+          appendLog(`progress status=${event.status}${stage}`)
+          setStatusLabel(STATUS_LABELS[event.status] ?? event.status)
+          break
         }
-        if (poll.status === 'failed' || poll.status === 'canceled' || poll.error) {
-          setError(poll.status === 'canceled' ? null : (poll.error ?? 'Generation failed'))
+        case 'task:result':
+          appendLog(`completed (${event.text.length} chars)`)
+          setResult(event.text)
+          setPhase('done')
+          clearActiveTask()
+          break
+        case 'task:failed':
+          appendLog(`failed: ${event.error}`)
+          setError(event.error === 'Task was canceled' ? null : event.error)
           setPhase('idle')
           setStopping(false)
-          return
-        }
-        setStatusLabel(STATUS_LABELS[poll.status] ?? poll.status)
-      } catch (e) {
-        if (!alive || taskRef.current !== task) return
-        setError(e instanceof Error ? e.message : 'Polling failed')
-        setPhase('idle')
-        setStopping(false)
-        return
+          clearActiveTask()
+          break
+        case 'error':
+          appendLog(`error: ${event.message}`)
+          setError(event.message)
+          setPhase('idle')
+          setStopping(false)
+          clearActiveTask()
+          break
       }
-      timer = setTimeout(() => void tick(), POLL_MS)
-    }
-    void tick()
-    return () => {
-      alive = false
-      clearTimeout(timer)
-    }
-  }, [phase, token])
+    })
+  }, [ws.subscribe])
 
-  async function handleGenerate() {
-    if (!token || !canGenerate) return
+  function handleGenerate() {
+    if (!canGenerate) return
     setError(null)
     setResult('')
     setStopping(false)
+    clearActiveTask()
     setStatusLabel('Submitting…')
     setPhase('running')
     localStorage.setItem(MODEL_STORAGE_KEY, capability)
-    try {
-      taskRef.current = await generatePrompt(token, {
-        mode,
-        capability,
-        query: query.trim(),
-        prompt: idea.trim(),
-      })
-    } catch (e) {
-      taskRef.current = null
-      setError(e instanceof Error ? e.message : 'Failed to submit')
+
+    const reqId = nextPromptGenReqId('promptgen')
+    reqIdRef.current = reqId
+    appendLog(`ws send → mode=${mode} cap=${capability}`)
+    const sent = ws.send({
+      type: 'generate_prompt',
+      req_id: reqId,
+      mode,
+      capability,
+      query: query.trim(),
+      prompt: idea.trim(),
+    })
+    if (!sent) {
+      appendLog('ws send failed: socket not open')
+      setError('WebSocket not connected')
       setPhase('idle')
+      clearActiveTask()
     }
   }
 
-  async function handleStop() {
+  function handleStop() {
     const task = taskRef.current
     if (!token || !task || stopping) return
     setStopping(true)
     setStatusLabel('Stopping…')
-    try {
-      await cancelOffloadTask(token, task.cap, task.id)
-    } catch {
-      // Poll loop will surface the terminal state either way.
-    }
+    requestTaskCancel(task, 'stop')
   }
 
   function handleUse() {
@@ -225,7 +285,7 @@ function PromptGeneratorDialog({
   const modeNoun = isVideoMode(mode) ? 'video' : 'image'
 
   return (
-    <Dialog open onOpenChange={next => { if (!next && phase !== 'running') onOpenChange(false) }}>
+    <Dialog open onOpenChange={next => { if (!next) dismiss() }}>
       <DialogContent
         data-testid="promptgen-modal"
         className={cn(
@@ -324,12 +384,12 @@ function PromptGeneratorDialog({
           <div className="space-y-1.5">
             <Label>Model</Label>
             <CapabilityModelPicker
-              capabilities={capabilities}
+              capabilities={ws.capabilities}
               selected={capability}
               onSelect={setCapability}
-              onRefresh={refreshCapabilities}
-              capabilitiesStatus={capabilitiesStatus}
-              capabilitiesError={capabilitiesError}
+              onRefresh={ws.refreshCapabilities}
+              capabilitiesStatus={ws.capabilitiesStatus}
+              capabilitiesError={ws.capabilitiesError}
               testIdPrefix="promptgen-model"
             />
           </div>
@@ -348,7 +408,6 @@ function PromptGeneratorDialog({
             )}
           </AnimatePresence>
 
-          {/* Morphing action element: Generate button → loader pill → prompt variant. */}
           <div className="flex flex-col items-stretch gap-2">
             <motion.div
               layout
@@ -366,7 +425,7 @@ function PromptGeneratorDialog({
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     disabled={!canGenerate}
-                    onClick={() => void handleGenerate()}
+                    onClick={handleGenerate}
                     data-testid="promptgen-generate"
                     className={cn(
                       'flex min-h-11 w-full items-center justify-center gap-2 bg-primary px-5 text-sm font-medium text-primary-foreground',
@@ -392,7 +451,7 @@ function PromptGeneratorDialog({
                     <button
                       type="button"
                       disabled={stopping}
-                      onClick={() => void handleStop()}
+                      onClick={handleStop}
                       title="Stop"
                       aria-label="Stop"
                       data-testid="promptgen-stop"
@@ -428,6 +487,18 @@ function PromptGeneratorDialog({
               </AnimatePresence>
             </motion.div>
 
+            {logs.length > 0 && (
+              <div
+                className="max-h-28 overflow-y-auto overscroll-contain rounded-md bg-muted/40 px-2.5 py-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+                data-testid="promptgen-logs"
+                aria-live="polite"
+              >
+                {logs.map((line, i) => (
+                  <div key={`${i}-${line}`}>{line}</div>
+                ))}
+              </div>
+            )}
+
             <AnimatePresence initial={false}>
               {phase === 'done' && (
                 <motion.div
@@ -443,7 +514,7 @@ function PromptGeneratorDialog({
                     variant="outline"
                     className="min-h-11 w-full sm:min-h-9"
                     disabled={!canGenerate}
-                    onClick={() => void handleGenerate()}
+                    onClick={handleGenerate}
                     data-testid="promptgen-regenerate"
                   >
                     <RotateCcw className="mr-1.5 size-3.5" />

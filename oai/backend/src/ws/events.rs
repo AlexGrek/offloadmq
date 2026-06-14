@@ -76,3 +76,17 @@ pub enum ClientCommand {
     },
     Ping,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PromptGenClientCommand {
+    ListCapabilities { req_id: String },
+    GeneratePrompt {
+        req_id: String,
+        mode: String,
+        capability: String,
+        query: String,
+        prompt: String,
+    },
+    Ping,
+}
