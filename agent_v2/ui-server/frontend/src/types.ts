@@ -61,6 +61,7 @@ export interface Settings {
   regular_disabled_caps: string[];
   sensitive_allowed_caps: string[];
   slavemode_allowed_caps: string[];
+  rescan_interval_secs: number;
   comfyui_url: string;
   kokoro_api_url: string;
   kokoro_api_key: string;

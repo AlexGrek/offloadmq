@@ -19,7 +19,6 @@ without having to SSH into the machine.
 from __future__ import annotations
 
 import asyncio
-import itertools
 import logging
 import random
 import threading
@@ -54,8 +53,8 @@ from offloadmq_core.task_store import TaskRecord, TaskStore
 
 logger = logging.getLogger(__name__)
 
-_RESCAN_INTERVALS = [30, 120, 300]
-_RESCAN_STEADY = 900
+_RESCAN_BURST_INTERVAL = 30   # seconds between rescans during startup burst
+_RESCAN_BURST_DURATION = 300  # 5-minute burst window after start
 APP_VERSION = "2.0.0"
 
 # Reconnect backoff: 2 → 4 → 8 → … capped at 60s. Reset on a successful auth.
@@ -117,6 +116,8 @@ class Orchestrator:
         self._online = False
         self._status_message = "stopped"
         self._last_detected: list[str] = []
+        self._skipped_rescans: int = 0
+        self._rescan_guard = threading.Lock()
 
     # ==================================================================
     # Local logging + error pool
@@ -866,17 +867,44 @@ class Orchestrator:
                     await self._flush_error_pool(client)
             # Unknown frame types are ignored.
 
+    def _execute_rescan(self) -> None:
+        """Run one rescan + server push. At most one runs at a time (guarded by _rescan_guard)."""
+        if not self._rescan_guard.acquire(blocking=False):
+            return
+        try:
+            self.rescan(restart_if_changed=False)
+        except Exception as exc:  # noqa: BLE001
+            self._record_error("ERROR", "[rescan] failed", exc=exc)
+        finally:
+            self._rescan_guard.release()
+
+    def _trigger_rescan_async(self) -> None:
+        """Spawn a background rescan thread; no-op if one is already running."""
+        if self._rescan_guard.locked():
+            return
+        threading.Thread(target=self._execute_rescan, name="omq-rescan-bg", daemon=True).start()
+
+    def _scheduler_maybe_rescan(self) -> None:
+        """Called by the scheduler on each tick; tracks skipped cycles while busy."""
+        if self._busy.is_set() or self._store.active_count() > 0:
+            with self._lock:
+                self._skipped_rescans += 1
+            return
+        with self._lock:
+            self._skipped_rescans = 0
+        self._execute_rescan()
+
     def _rescan_scheduler_main(self) -> None:
-        schedule = itertools.chain(_RESCAN_INTERVALS, itertools.repeat(_RESCAN_STEADY))
-        for interval in schedule:
+        burst_count = _RESCAN_BURST_DURATION // _RESCAN_BURST_INTERVAL
+        for _ in range(burst_count):
+            if self._stop.wait(_RESCAN_BURST_INTERVAL):
+                return
+            self._scheduler_maybe_rescan()
+        while True:
+            interval = float(self.get_settings().rescan_interval_secs)
             if self._stop.wait(interval):
                 return
-            if self._busy.is_set() or self._store.active_count() > 0:
-                continue
-            try:
-                self.rescan(restart_if_changed=False)
-            except Exception as exc:  # noqa: BLE001
-                self._record_error("ERROR", "[rescan] failed", exc=exc)
+            self._scheduler_maybe_rescan()
 
     # ==================================================================
     # Dispatch
@@ -940,6 +968,11 @@ class Orchestrator:
         self._schedule_resolve(task, result)
         self._busy.clear()
         self._set_message("online")
+        with self._lock:
+            skipped = self._skipped_rescans
+            self._skipped_rescans = 0
+        if skipped > 0:
+            self._trigger_rescan_async()
 
     def _schedule_resolve(self, task: Task, result: TaskResult) -> None:
         loop = self._loop

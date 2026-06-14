@@ -28,6 +28,7 @@ const EMPTY: Settings = {
   regular_disabled_caps: [],
   sensitive_allowed_caps: [],
   slavemode_allowed_caps: [],
+  rescan_interval_secs: 180,
   comfyui_url: "http://127.0.0.1:8188",
   kokoro_api_url: "",
   kokoro_api_key: "",
@@ -118,6 +119,19 @@ export function SettingsPage() {
             min={1}
             value={cfg.max_concurrent}
             onChange={(e) => edit({ max_concurrent: Number(e.target.value) })}
+            onBlur={flush}
+            onKeyDown={(e) => e.key === "Enter" && flush()}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="rescanInterval">Capability rescan interval (seconds)</Label>
+          <Input
+            id="rescanInterval"
+            type="number"
+            min={30}
+            value={cfg.rescan_interval_secs}
+            onChange={(e) => edit({ rescan_interval_secs: Number(e.target.value) })}
             onBlur={flush}
             onKeyDown={(e) => e.key === "Enter" && flush()}
           />

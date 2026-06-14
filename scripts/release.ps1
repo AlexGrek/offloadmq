@@ -38,7 +38,95 @@ if ($LASTEXITCODE -ne 0) { throw "git tag failed" }
 git push origin "release-$Version"
 if ($LASTEXITCODE -ne 0) { throw "git push failed" }
 
-# ── Build and upload ───────────────────────────────────────────────────────────
+# ── Build and upload binaries (CLI + GUI) ────────────────────────────────────
 $env:DL_BASE_URL = $DlBaseUrl
 & "$PSScriptRoot\release-agent.ps1" $Version
 if ($LASTEXITCODE -ne 0) { throw "release-agent.ps1 failed" }
+
+# ── Build Windows installer ───────────────────────────────────────────────────
+Write-Host ""
+Write-Host "==> Building Windows installer for $Version"
+
+$AgentDir = Join-Path $RepoRoot "agent_v2"
+$IssFile  = Join-Path $AgentDir "scripts\windows-installer.iss"
+
+$IsccCmd = $null
+$IsccOnPath = Get-Command "ISCC" -ErrorAction SilentlyContinue
+if ($IsccOnPath) {
+    $IsccCmd = $IsccOnPath.Source
+} else {
+    foreach ($p in @(
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+        "C:\Program Files\Inno Setup 6\ISCC.exe",
+        "C:\Program Files (x86)\Inno Setup 5\ISCC.exe"
+    )) {
+        if (Test-Path $p) { $IsccCmd = $p; break }
+    }
+}
+if (-not $IsccCmd) {
+    Write-Error "ISCC not found — install Inno Setup 6 from https://jrsoftware.org/isinfo.php"
+    exit 1
+}
+
+New-Item -ItemType Directory -Force -Path (Join-Path $AgentDir "installer-out") | Out-Null
+& $IsccCmd "/DINSTALLER_VERSION=$Version" $IssFile
+if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+$InstallerFile = Join-Path $AgentDir "installer-out\omq-setup-$Version-windows.exe"
+if (-not (Test-Path $InstallerFile)) {
+    Write-Error "Expected installer not found: $InstallerFile"
+    exit 1
+}
+Write-Host "-> Installer: $InstallerFile"
+
+# ── Upload installer ──────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "==> Uploading installer"
+
+$Arch = $env:PROCESSOR_ARCHITECTURE
+$ArchTag = switch ($Arch) {
+    "AMD64" { "amd64" }
+    "ARM64" { "arm64" }
+    default  { "amd64" }
+}
+$OsArch  = "windows-$ArchTag"
+$Bucket  = if ($env:DL_BUCKET) { $env:DL_BUCKET } else { "offload-agent" }
+
+$AuthResp = Invoke-RestMethod `
+    -Method Post `
+    -Uri "${DlBaseUrl}/api/v1/auth/token" `
+    -Headers @{ Authorization = "Bearer $env:DL_API_KEY" }
+$Token = $AuthResp.token
+if (-not $Token) {
+    Write-Error "error: failed to obtain JWT for installer upload"
+    exit 1
+}
+
+$InstallerName = "omq-setup-$Version-windows.exe"
+
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    Invoke-RestMethod `
+        -Method Post `
+        -Uri "${DlBaseUrl}/api/v1/release/${Bucket}/upload" `
+        -Headers @{ Authorization = "Bearer $Token" } `
+        -Form @{ version = $Version; os_arch = $OsArch; file = Get-Item $InstallerFile } | Out-Null
+} else {
+    $StatusFile = [System.IO.Path]::GetTempFileName()
+    $RespFile   = [System.IO.Path]::GetTempFileName()
+    curl.exe -sS --write-out "%{http_code}" -o $RespFile `
+        -X POST "${DlBaseUrl}/api/v1/release/${Bucket}/upload" `
+        -H "Authorization: Bearer $Token" `
+        -F "version=$Version" `
+        -F "os_arch=$OsArch" `
+        -F "file=@${InstallerFile};filename=${InstallerName}" `
+        | Out-File $StatusFile -Encoding ascii
+    $Status = (Get-Content $StatusFile).Trim()
+    if ($Status -ne "201") {
+        Get-Content $RespFile | Write-Error
+        throw "installer upload failed (HTTP $Status)"
+    }
+}
+
+Write-Host "  Latest: ${DlBaseUrl}/rs/${Bucket}/latest/${OsArch}/${InstallerName}"
+Write-Host ""
+Write-Host "Released $Bucket $Version for $OsArch (CLI + GUI + installer)"
