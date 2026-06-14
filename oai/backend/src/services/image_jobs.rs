@@ -167,6 +167,9 @@ pub async fn start_job(
     let workflow = resolve_workflow(&req);
     validate_start_job(&req, &workflow)?;
 
+    let mut req = req;
+    req.prompt = image_job_names::expand_prompt_placeholders(req.prompt.trim());
+
     let job_id = state.next_id();
     let display_name = image_job_names::generate_display_name();
     let pipeline_params = build_pipeline_params(&req, &workflow, input_image_id);
