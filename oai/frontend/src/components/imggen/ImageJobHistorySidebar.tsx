@@ -2,6 +2,7 @@ import { Loader2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { imageThumbnailUrl, type ImageJobDetails } from '../../api/images'
 import { jobPromptTitle, jobTechMeta, lastOutputImageId } from '../../lib/imggen'
+import { WorkflowBadge } from './WorkflowBadge'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 export const IMGGEN_NEW_PANEL = 'new' as const
@@ -111,9 +112,7 @@ export function ImageJobHistorySidebar({
                         <p className="line-clamp-2 min-w-0 flex-1 text-xs font-semibold leading-snug text-foreground">
                           {jobPromptTitle(job.prompt, 72)}
                         </p>
-                        <span className="shrink-0 rounded bg-foreground/8 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground dark:bg-foreground/12">
-                          {job.workflow}
-                        </span>
+                        <WorkflowBadge workflow={job.workflow} />
                       </div>
                       <span className="truncate font-mono text-[10px] text-muted-foreground/80">
                         {jobTechMeta(job)}

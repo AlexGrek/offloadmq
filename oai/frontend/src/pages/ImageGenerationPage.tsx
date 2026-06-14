@@ -265,6 +265,19 @@ export default function ImageGenerationPage() {
     }
   }, [token])
 
+  const refreshJobs = useCallback(async () => {
+    if (!token) return
+    setJobsLoading(true)
+    try {
+      const list = await listImageJobs(token)
+      setJobs(list)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setJobsLoading(false)
+    }
+  }, [token])
+
   useEffect(() => {
     if (!token) {
       setAllCapabilities([])
@@ -272,7 +285,6 @@ export default function ImageGenerationPage() {
       setCapabilitiesError(null)
       return
     }
-    setJobsLoading(true)
     ;(async () => {
       try {
         const settings = await getSettings(token)
@@ -282,17 +294,10 @@ export default function ImageGenerationPage() {
       } catch {
         // non-fatal
       }
-      try {
-        const list = await listImageJobs(token)
-        setJobs(list)
-      } catch (e) {
-        setError((e as Error).message)
-      } finally {
-        setJobsLoading(false)
-      }
+      await refreshJobs()
       await loadCapabilities()
     })()
-  }, [token, loadCapabilities])
+  }, [token, loadCapabilities, refreshJobs])
 
   const refreshCapabilities = useCallback(() => {
     void loadCapabilities()
@@ -936,6 +941,19 @@ export default function ImageGenerationPage() {
         isMobile={isMobile}
         onClose={() => setSidebarOpen(false)}
         testId="imggen-pipelines-sidebar"
+        headerAction={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => void refreshJobs()}
+            disabled={jobsLoading}
+            title="Refresh pipelines"
+            aria-label="Refresh pipelines"
+            data-testid="imggen-pipelines-refresh"
+          >
+            <RefreshCw className={jobsLoading ? 'animate-spin' : undefined} />
+          </Button>
+        }
       >
         <ImageJobHistorySidebar
           jobs={jobs}
