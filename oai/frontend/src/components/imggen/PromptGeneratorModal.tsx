@@ -101,7 +101,7 @@ function PromptGeneratorDialog({
   function appendLog(message: string) {
     if (!aliveRef.current) return
     const line = `${formatLogTime()} ${message}`
-    setLogs(prev => [...prev.slice(-(MAX_LOG_LINES - 1)), line])
+    setLogs(prev => [line, ...prev.slice(0, MAX_LOG_LINES - 1)])
   }
 
   function clearActiveTask() {
@@ -489,12 +489,17 @@ function PromptGeneratorDialog({
 
             {logs.length > 0 && (
               <div
-                className="max-h-28 overflow-y-auto overscroll-contain rounded-md bg-muted/40 px-2.5 py-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+                className="max-h-28 overflow-y-auto overscroll-contain rounded-md bg-muted/40 px-2.5 py-2 font-mono leading-relaxed text-muted-foreground"
                 data-testid="promptgen-logs"
                 aria-live="polite"
               >
                 {logs.map((line, i) => (
-                  <div key={`${i}-${line}`}>{line}</div>
+                  <div
+                    key={`${i}-${line}`}
+                    className={i === 0 ? 'text-xs text-foreground/85' : 'text-[10px]'}
+                  >
+                    {line}
+                  </div>
                 ))}
               </div>
             )}
