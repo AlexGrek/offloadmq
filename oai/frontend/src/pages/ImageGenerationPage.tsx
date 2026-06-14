@@ -79,6 +79,7 @@ import { ToolSidebar } from '../components/ToolSidebar'
 import {
   MODE_DEFAULTS,
   randomTxt2imgPrompt,
+  randomTxt2videoPrompt,
   applyPipelineParamsToNewForm,
   filterCapabilitiesByWorkflow,
   fitsOriginalResolution,
@@ -92,6 +93,7 @@ import {
 
   pipelineEventsWithoutPolls,
   pipelineStatusLine,
+  parseVideoLength,
   rescaleDataPrep,
   type ImgGenMode,
   type RescaleState,
@@ -140,7 +142,7 @@ export default function ImageGenerationPage() {
   const [width, setWidth] = useState(MODE_DEFAULTS.txt2img.width)
   const [height, setHeight] = useState(MODE_DEFAULTS.txt2img.height)
   const [seed, setSeed] = useState('')
-  const [videoLength, setVideoLength] = useState(25)
+  const [videoLength, setVideoLength] = useState('25')
   const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
   // img2img "original resolution": lock generation dims to the input image and pass it
   // through to the agent un-rescaled. Only offered for sub-4K inputs; default-on after upload.
@@ -358,7 +360,13 @@ export default function ImageGenerationPage() {
     if (next === mode) return
     setMode(next)
     const defaults = MODE_DEFAULTS[next]
-    setPrompt(next === 'txt2img' ? randomTxt2imgPrompt() : defaults.prompt)
+    setPrompt(
+      next === 'txt2img'
+        ? randomTxt2imgPrompt()
+        : next === 'txt2video'
+          ? randomTxt2videoPrompt()
+          : defaults.prompt,
+    )
     setWidth(defaults.width)
     setHeight(defaults.height)
     rescaleUserEditedRef.current = false
@@ -467,8 +475,20 @@ export default function ImageGenerationPage() {
     [token, onImageMutated],
   )
 
-  function sendToImg2Img(file: { image_id: string; filename: string; content_type: string; width: number; height: number; size_bytes: number; rescaled: boolean; reencoded: boolean }) {
-    switchMode('img2img')
+  function sendOutputToInputMode(
+    file: {
+      image_id: string
+      filename: string
+      content_type: string
+      width: number
+      height: number
+      size_bytes: number
+      rescaled: boolean
+      reencoded: boolean
+    },
+    targetMode: 'img2img' | 'img2video',
+  ) {
+    switchMode(targetMode)
     const img: UploadedImage = {
       image_id: file.image_id,
       filename: file.filename,
@@ -480,15 +500,47 @@ export default function ImageGenerationPage() {
       reencoded: file.reencoded,
     }
     setUploadedInput(img)
-    const original = applyInputDefaults(img)
+    const original = applyInputDefaults(img, targetMode)
     setInputPreviewUrl(null)
     setActivePanel(IMGGEN_NEW_PANEL)
-    setInfo(
-      original
-        ? `Input set to "${file.filename}" (${file.width}×${file.height}). Generating at original resolution.`
-        : `Input set to "${file.filename}" (${file.width}×${file.height}). Adjust settings and submit.`,
-    )
+    if (targetMode === 'img2video') {
+      setInfo(
+        `Input set to "${file.filename}" (${file.width}×${file.height}). Image to Video mode — adjust and submit when ready.`,
+      )
+    } else {
+      setInfo(
+        original
+          ? `Input set to "${file.filename}" (${file.width}×${file.height}). Generating at original resolution.`
+          : `Input set to "${file.filename}" (${file.width}×${file.height}). Adjust settings and submit.`,
+      )
+    }
     setError(null)
+  }
+
+  function sendToImg2Img(file: {
+    image_id: string
+    filename: string
+    content_type: string
+    width: number
+    height: number
+    size_bytes: number
+    rescaled: boolean
+    reencoded: boolean
+  }) {
+    sendOutputToInputMode(file, 'img2img')
+  }
+
+  function sendToImg2Video(file: {
+    image_id: string
+    filename: string
+    content_type: string
+    width: number
+    height: number
+    size_bytes: number
+    rescaled: boolean
+    reencoded: boolean
+  }) {
+    sendOutputToInputMode(file, 'img2video')
   }
 
   const runPoll = useCallback(
@@ -761,7 +813,7 @@ export default function ImageGenerationPage() {
       input_image_id: uploadedInput?.image_id ?? null,
       data_preparation: dataPrep,
       rescale: rescaleForSubmit(),
-      video_length: isVideoMode(mode) ? videoLength : null,
+      video_length: isVideoMode(mode) ? parseVideoLength(videoLength) : null,
     }
   }
 
@@ -826,6 +878,13 @@ export default function ImageGenerationPage() {
     () => (selectedJob ? selectedJob.files.filter(f => f.direction === 'output') : []),
     [selectedJob],
   )
+
+  const animateOutputFile = useMemo(() => {
+    const images = outputFiles.filter(f => !f.content_type.startsWith('video/'))
+    return images.length > 0 ? images[images.length - 1]! : null
+  }, [outputFiles])
+
+  const canAnimateOutput = canGenerateAgain && animateOutputFile != null
 
   const canCompare =
     selectedJob?.workflow === 'img2img' &&
@@ -1089,12 +1148,18 @@ export default function ImageGenerationPage() {
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-0.5">
                     <Label htmlFor="prompt">Prompt</Label>
-                    {mode === 'txt2img' ? (
+                    {mode === 'txt2img' || mode === 'txt2video' ? (
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => setPrompt(p => randomTxt2imgPrompt(p))}
+                        onClick={() =>
+                          setPrompt(p =>
+                            mode === 'txt2video'
+                              ? randomTxt2videoPrompt(p)
+                              : randomTxt2imgPrompt(p),
+                          )
+                        }
                         title="Random prompt"
                         aria-label="Random prompt"
                         data-testid="imggen-prompt-randomize"
@@ -1316,7 +1381,8 @@ export default function ImageGenerationPage() {
                     min={1}
                     max={300}
                     value={videoLength}
-                    onChange={e => setVideoLength(Math.max(1, Number(e.target.value) || 25))}
+                    onChange={e => setVideoLength(e.target.value)}
+                    onBlur={() => setVideoLength(String(parseVideoLength(videoLength)))}
                     data-testid="imggen-video-length"
                   />
                 </div>
@@ -1585,6 +1651,17 @@ export default function ImageGenerationPage() {
                       <Sparkles className="mr-1 h-4 w-4" />
                     )}
                     Generate again
+                  </Button>
+                )}
+                {canAnimateOutput && animateOutputFile && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => sendToImg2Video(animateOutputFile)}
+                    data-testid="imggen-animate-output"
+                  >
+                    <Video className="mr-1 h-4 w-4" />
+                    Animate
                   </Button>
                 )}
                 {canRetryJob && (

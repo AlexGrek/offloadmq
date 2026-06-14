@@ -246,6 +246,12 @@ export function uploadedInputFromJobFile(file: ImageJobFile): UploadedImage {
   }
 }
 
+export function parseVideoLength(raw: string): number {
+  const n = Number(raw.trim())
+  if (!Number.isFinite(n)) return 25
+  return Math.min(300, Math.max(1, Math.round(n)))
+}
+
 export interface ApplyPipelineToNewFormHandlers {
   setMode: (mode: ImgGenMode) => void
   setPrompt: (v: string) => void
@@ -255,7 +261,7 @@ export interface ApplyPipelineToNewFormHandlers {
   setWidth: (v: number) => void
   setHeight: (v: number) => void
   setSeed: (v: string) => void
-  setVideoLength: (v: number) => void
+  setVideoLength: (v: string) => void
   setRescale: (v: RescaleState) => void
   setOriginalResolution: (v: boolean) => void
   setKeepProportions: (v: boolean) => void
@@ -288,7 +294,7 @@ export function applyPipelineParamsToNewForm(
   handlers.setWidth(p.width)
   handlers.setHeight(p.height)
   handlers.setSeed(p.seed != null ? String(p.seed) : '')
-  handlers.setVideoLength(p.video_length ?? 25)
+  handlers.setVideoLength(String(p.video_length ?? 25))
   handlers.rescaleUserEditedRef.current = true
   handlers.setRescale(rescaleFromParams(p.rescale))
   const inputFile =
@@ -376,6 +382,49 @@ export function randomTxt2imgPrompt(exclude?: string): string {
   return pool[i]!
 }
 
+/** Rotating starter prompts for txt2video — motion/camera-focused, with {?} subjects. */
+export const TXT2VIDEO_DEFAULT_PROMPTS = [
+  'A cinematic slow pan around {?} standing in wind-swept dunes at golden hour',
+  '{?} sprinting through neon rain, camera tracking low behind splashing puddles',
+  'Timelapse of clouds racing over {?} perched on a cliff above the sea',
+  'An orbiting drone shot circling {?} in a misty bamboo forest at dawn',
+  '{?} emerging from smoke in slow motion, embers drifting through dark air',
+  'Gentle handheld footage of {?} reading by candlelight as pages flutter',
+  'A dramatic crane rise revealing {?} alone on a rooftop at midnight',
+  '{?} dancing in a sunbeam inside a dusty attic, particles swirling',
+  'Underwater tracking shot following {?} through kelp forests, caustic light',
+  'A vintage film reel of {?} racing a steam train along a mountain pass',
+  'Macro close-up of {?} blinking as rain streaks the lens, shallow depth of field',
+  '{?} walking through a crowded Tokyo crossing in slow motion, bokeh lights',
+  'A steadicam follow behind {?} exploring a candlelit cathedral aisle',
+  'Lightning flashing over {?} on a jagged peak, storm clouds rolling',
+  'Stop-motion style {?} assembling itself from scattered clockwork parts',
+  '{?} surfing a giant wave in slow motion, spray catching sunset light',
+  'A rotating gimbal shot around {?} floating in zero gravity among debris',
+  'Fireworks blooming behind {?} on a lakeshore, ripples spreading outward',
+  '{?} riding a motorcycle through desert highway heat shimmer, wide angle',
+  'Snowfall accumulating on {?} as the camera slowly pushes in, soft focus',
+  'A hyperlapse of {?} crossing a bustling market from dawn to dusk',
+  '{?} performing on a rainy stage, spotlight cutting through stage fog',
+  'FPV-style dive toward {?} standing at the center of a spiral staircase',
+  'Northern lights pulsing over {?} seated by a campfire on frozen tundra',
+  '{?} releasing paper lanterns into the night sky, warm glow rising upward',
+  'Slow dolly zoom on {?} in a crowded train car, realization dawning',
+  'A looping shot of {?} beside a window as rain runs down the glass',
+  '{?} marching through autumn leaves, leaves spiraling upward in their wake',
+  'Cinematic aerial orbit of {?} on a glass bridge above a sea of clouds',
+  'Soft focus pull from foreground bokeh to {?} opening eyes in morning light',
+] as const
+
+export function randomTxt2videoPrompt(exclude?: string): string {
+  const pool =
+    exclude && TXT2VIDEO_DEFAULT_PROMPTS.length > 1
+      ? TXT2VIDEO_DEFAULT_PROMPTS.filter(p => p !== exclude)
+      : TXT2VIDEO_DEFAULT_PROMPTS
+  const i = Math.floor(Math.random() * pool.length)
+  return pool[i]!
+}
+
 export const MODE_DEFAULTS: Record<
   ImgGenMode,
   { prompt: string; width: number; height: number; rescale: Partial<RescaleState> }
@@ -393,7 +442,7 @@ export const MODE_DEFAULTS: Record<
     rescale: { enabled: false, mode: 'exact', width: 768, height: 768 },
   },
   txt2video: {
-    prompt: 'A majestic eagle soaring over mountain peaks, cinematic',
+    prompt: TXT2VIDEO_DEFAULT_PROMPTS[0],
     width: 768,
     height: 512,
     rescale: { enabled: false },
