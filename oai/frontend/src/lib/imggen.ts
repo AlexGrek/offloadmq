@@ -337,9 +337,13 @@ export const TXT2IMG_DEFAULT_PROMPTS = [
   'A Victorian automaton {?} performing on a stage of gears and starlight',
 ] as const
 
-export function randomTxt2imgPrompt(): string {
-  const i = Math.floor(Math.random() * TXT2IMG_DEFAULT_PROMPTS.length)
-  return TXT2IMG_DEFAULT_PROMPTS[i]!
+export function randomTxt2imgPrompt(exclude?: string): string {
+  const pool =
+    exclude && TXT2IMG_DEFAULT_PROMPTS.length > 1
+      ? TXT2IMG_DEFAULT_PROMPTS.filter(p => p !== exclude)
+      : TXT2IMG_DEFAULT_PROMPTS
+  const i = Math.floor(Math.random() * pool.length)
+  return pool[i]!
 }
 
 export const MODE_DEFAULTS: Record<

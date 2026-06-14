@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
 import { useWorkload } from '../contexts/WorkloadContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { RandomNamesWidget } from './RandomNamesWidget'
 import { Button } from './ui/button'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +28,7 @@ export function TopBar() {
         oai
       </Link>
       <div className="flex items-center gap-1">
+        <RandomNamesWidget />
         <Button
           variant="ghost"
           size="sm"

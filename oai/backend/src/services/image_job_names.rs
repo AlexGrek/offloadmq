@@ -3,13 +3,36 @@
 use std::collections::HashSet;
 
 use names::Generator;
+use serde::Serialize;
 
 use crate::db::image_generation::ImageGenerationJob;
 
 const PROMPT_NAME_PLACEHOLDER: &str = "{?}";
 
+#[derive(Debug, Clone, Serialize)]
+pub struct GeneratedName {
+    pub slug: String,
+    pub phrase: String,
+}
+
 pub fn generate_display_name() -> String {
     Generator::default().next().expect("names generator yields a name")
+}
+
+pub fn generate_random_names(count: usize) -> Vec<GeneratedName> {
+    let count = count.clamp(1, 20);
+    let mut used = HashSet::new();
+    let mut out = Vec::with_capacity(count);
+    while out.len() < count {
+        let slug = generate_display_name();
+        if used.insert(slug.clone()) {
+            out.push(GeneratedName {
+                phrase: slug.replace('-', " "),
+                slug,
+            });
+        }
+    }
+    out
 }
 
 /// Replace each `{?}` in a prompt with a random generated name (dashes → spaces).
@@ -72,6 +95,18 @@ fn prompt_excerpt(prompt: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generate_random_names_returns_unique_batch() {
+        let names = generate_random_names(8);
+        assert_eq!(names.len(), 8);
+        let slugs: HashSet<_> = names.iter().map(|n| n.slug.as_str()).collect();
+        assert_eq!(slugs.len(), 8);
+        for name in &names {
+            assert!(name.slug.contains('-'));
+            assert_eq!(name.phrase, name.slug.replace('-', " "));
+        }
+    }
 
     #[test]
     fn generate_display_name_is_non_empty() {

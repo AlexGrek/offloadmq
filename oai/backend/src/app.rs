@@ -120,6 +120,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             get(routes::images::get_image_starred).patch(routes::images::set_image_starred),
         )
         .route("/api/progress/running", get(routes::progress::running_jobs))
+        .route("/api/names/random", get(routes::names::random_names))
         .route("/api/runners/online", get(routes::runners::list_online))
         .route(
             "/api/tasks/cancel/{cap}/{id}",

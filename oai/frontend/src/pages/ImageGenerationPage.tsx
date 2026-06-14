@@ -15,6 +15,7 @@ import {
   Square,
   Trash2,
   Pencil,
+  Shuffle,
   Sparkles,
   Upload,
   Video,
@@ -1086,7 +1087,22 @@ export default function ImageGenerationPage() {
 
               <div className="space-y-1.5 sm:col-span-2">
                 <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor="prompt">Prompt</Label>
+                  <div className="flex items-center gap-0.5">
+                    <Label htmlFor="prompt">Prompt</Label>
+                    {mode === 'txt2img' ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setPrompt(p => randomTxt2imgPrompt(p))}
+                        title="Random prompt"
+                        aria-label="Random prompt"
+                        data-testid="imggen-prompt-randomize"
+                      >
+                        <Shuffle className="size-3.5" />
+                      </Button>
+                    ) : null}
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
@@ -1514,15 +1530,12 @@ export default function ImageGenerationPage() {
               </div>
             ) : isRunning ? (
               <div className="flex aspect-video w-full items-center justify-center bg-muted/30 px-6">
-                <div className="flex w-full flex-col items-center gap-4 text-muted-foreground">
-                  <Loader2 className="size-10 animate-spin opacity-40" />
-                  <JobProgressBar
-                    status={displayStatus ?? selectedJob.status}
-                    stage={activePoll?.stage}
-                    startedAt={activePoll?.started_at}
-                    typicalRuntimeSeconds={activePoll?.typical_runtime_seconds}
-                  />
-                </div>
+                <JobProgressBar
+                  status={displayStatus ?? selectedJob.status}
+                  stage={activePoll?.stage}
+                  startedAt={activePoll?.started_at}
+                  typicalRuntimeSeconds={activePoll?.typical_runtime_seconds}
+                />
               </div>
             ) : displayStatus === 'failed' ? (
               !error ? (
