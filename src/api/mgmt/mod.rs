@@ -1,4 +1,5 @@
 pub mod heuristics;
+pub mod k8s;
 pub mod storage;
 
 use std::{collections::HashSet, env, sync::Arc};

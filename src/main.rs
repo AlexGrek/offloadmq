@@ -213,6 +213,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "/agent_logs/cleanup/trigger",
                     post(api::mgmt::trigger_agent_logs_cleanup),
                 )
+                .route("/k8s/self/pod", get(api::mgmt::k8s::k8s_self_pod))
+                .route("/k8s/self/logs", get(api::mgmt::k8s::k8s_self_logs))
                 .layer(from_fn_with_state(
                     shared_state.clone(),
                     middleware::token_auth_middleware_mgmt,

@@ -812,3 +812,11 @@ button.chip:hover {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* Pod logs — compact tab labels on narrow screens */
+@media (max-width: 640px) {
+  .pod-logs-tab-long { display: none; }
+}
+@media (min-width: 641px) {
+  .pod-logs-tab-short { display: none; }
+}

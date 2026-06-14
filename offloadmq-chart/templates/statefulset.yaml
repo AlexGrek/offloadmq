@@ -13,6 +13,10 @@ spec:
       labels:
         app: offloadmq
     spec:
+      {{- if .Values.k8sLogs.enabled }}
+      serviceAccountName: {{ .Values.k8sLogs.serviceAccount.name | default "offloadmq" }}
+      automountServiceAccountToken: true
+      {{- end }}
       containers:
         - name: offloadmq
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -46,6 +50,18 @@ spec:
                 secretKeyRef:
                   name: offloadmq-secrets
                   key: MGMT_TOKEN
+            {{- if .Values.k8sLogs.enabled }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: FRONTEND_LABEL_SELECTOR
+              value: {{ .Values.k8sLogs.frontendLabelSelector | quote }}
+            {{- end }}
           resources:
 {{ toYaml .Values.resources | indent 12 }}
           volumeMounts:

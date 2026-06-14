@@ -17,8 +17,9 @@ Administrative endpoints for monitoring and managing agents, tasks, and client A
 6. [Client API Keys](#client-api-keys)
 7. [Heuristics](#heuristics)
 8. [Maintenance Jobs](#maintenance-jobs)
-9. [Service Logs](#service-logs)
-10. [Examples](#examples)
+9. [Kubernetes Pod Logs](#kubernetes-pod-logs)
+10. [Service Logs](#service-logs)
+11. [Examples](#examples)
 
 ---
 
@@ -28,7 +29,7 @@ The management API is the control plane for OffloadMQ. It provides:
 
 - **Monitoring** — List agents, tasks, capabilities
 - **Management** — Create/revoke API keys, remove agents, reset tasks
-- **Inspection** — View system version, online agent status
+- **Inspection** — View system version, online agent status, Kubernetes pod logs (in-cluster)
 
 All endpoints require the `MGMT_TOKEN` environment variable set at server startup. Pass it as:
 
@@ -867,6 +868,206 @@ Removes agents that have not been contacted for longer than `STALE_AGENTS_TTL_DA
 
 ---
 
+## Kubernetes Pod Logs
+
+Read live pod status and container stdout from the Kubernetes API (equivalent to `kubectl get pod` + `kubectl logs`). Use the same **management token** as every other `/management/*` route:
+
+```bash
+export MGMT_TOKEN="your-management-token"
+export BASE="https://offloadmq.example.com"   # or http://localhost:3069
+
+curl -sS -H "Authorization: Bearer $MGMT_TOKEN" \
+  "$BASE/management/k8s/self/logs?component=server&tail_lines=200"
+```
+
+**Requirements**
+
+- OffloadMQ server must run **inside Kubernetes** with Helm `k8sLogs.enabled: true` (ServiceAccount + RBAC for `pods` and `pods/log`).
+- Outside the cluster (local `cargo run`), these endpoints return **500** — the in-cluster service account token is not available.
+
+**Components**
+
+| `component` | Pod | Default container |
+|-------------|-----|-------------------|
+| `server` (default) | This MQ StatefulSet pod (`POD_NAME`) | `offloadmq` |
+| `frontend` | Management UI Deployment (label `app=offloadmq-frontend`) | `frontend` |
+
+Override the container with `container=<name>` when a pod has multiple containers.
+
+---
+
+### Get Pod Status
+
+```
+GET /management/k8s/self/pod?component=<server|frontend>
+Authorization: Bearer <token>
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `component` | `server` | Stack component to inspect (see table above) |
+
+**Response** (200 OK)
+
+```json
+{
+  "component": "server",
+  "name": "offloadmq-0",
+  "namespace": "default",
+  "phase": "Running",
+  "pod_ip": "10.42.0.15",
+  "host_ip": "192.168.1.10",
+  "start_time": "2026-03-01T08:00:00Z",
+  "ready": true,
+  "conditions": [
+    {
+      "condition_type": "Ready",
+      "status": "True",
+      "reason": null,
+      "message": null
+    }
+  ],
+  "containers": [
+    {
+      "name": "offloadmq",
+      "ready": true,
+      "restart_count": 1,
+      "has_previous_instance": true,
+      "current_state": {
+        "phase": "running",
+        "reason": null,
+        "message": null,
+        "exit_code": null,
+        "started_at": "2026-03-01T10:05:01Z",
+        "finished_at": null
+      },
+      "last_state": {
+        "phase": "terminated",
+        "reason": "Error",
+        "message": null,
+        "exit_code": 1,
+        "started_at": "2026-03-01T10:00:00Z",
+        "finished_at": "2026-03-01T10:05:00Z"
+      }
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `current_state` | Running/waiting/terminated state of the **current** container instance |
+| `last_state` | State of the **previous** instance after a restart (`exit_code`, `reason`, `finished_at`) |
+| `has_previous_instance` | `true` when `restart_count > 0` or a terminated `last_state` exists — use this to decide whether `previous=true` log fetch is meaningful |
+
+**cURL**
+
+```bash
+curl -sS -H "Authorization: Bearer $MGMT_TOKEN" \
+  "$BASE/management/k8s/self/pod?component=server" | jq .
+```
+
+---
+
+### Get Pod Logs
+
+```
+GET /management/k8s/self/logs?component=<server|frontend>&tail_lines=500
+Authorization: Bearer <token>
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `component` | `server` | Same as [Get Pod Status](#get-pod-status) |
+| `tail_lines` | `500` | Lines from log tail (max 10 000) |
+| `container` | *(component default)* | Override container name |
+| `previous` | `false` | Logs from the **previous terminated container instance** (`kubectl logs --previous`) |
+| `timestamps` | `false` | Prefix each line with a timestamp |
+
+When `previous=true`, the response includes `previous_exit` with exit code, reason, and timestamps from pod status `lastState`.
+
+**Response** (200 OK)
+
+```json
+{
+  "component": "server",
+  "pod": "offloadmq-0",
+  "namespace": "default",
+  "container": "offloadmq",
+  "tail_lines": 500,
+  "previous": false,
+  "content": "2026-03-01T10:05:01Z  INFO offloadmq: listening on 0.0.0.0:3069\n",
+  "previous_exit": null
+}
+```
+
+With `previous=true` after a container restart:
+
+```json
+{
+  "component": "server",
+  "pod": "offloadmq-0",
+  "namespace": "default",
+  "container": "offloadmq",
+  "tail_lines": 500,
+  "previous": true,
+  "content": "... stderr/stdout from the crashed instance ...",
+  "previous_exit": {
+    "phase": "terminated",
+    "reason": "OOMKilled",
+    "message": null,
+    "exit_code": 137,
+    "started_at": "2026-03-01T10:00:00Z",
+    "finished_at": "2026-03-01T10:05:00Z"
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `content` | Raw log text (may include ANSI colour codes) |
+| `previous` | Echo of the request flag |
+| `previous_exit` | Present only when `previous=true`; exit status of the terminated instance |
+
+**cURL — current server logs (last 200 lines)**
+
+```bash
+curl -sS -H "Authorization: Bearer $MGMT_TOKEN" \
+  "$BASE/management/k8s/self/logs?component=server&tail_lines=200" | jq -r .content
+```
+
+**cURL — previous crashed instance (after a restart)**
+
+```bash
+curl -sS -H "Authorization: Bearer $MGMT_TOKEN" \
+  "$BASE/management/k8s/self/logs?component=server&tail_lines=1000&previous=true" \
+  | jq '{ exit: .previous_exit, logs: .content }'
+```
+
+**cURL — management frontend pod**
+
+```bash
+curl -sS -H "Authorization: Bearer $MGMT_TOKEN" \
+  "$BASE/management/k8s/self/logs?component=frontend&tail_lines=500" | jq -r .content
+```
+
+**cURL — with timestamps**
+
+```bash
+curl -sS -H "Authorization: Bearer $MGMT_TOKEN" \
+  "$BASE/management/k8s/self/logs?component=server&tail_lines=100&timestamps=true" \
+  | jq -r .content
+```
+
+**Errors**
+
+| Status | Typical cause |
+|--------|----------------|
+| `401` | Missing or invalid `Authorization: Bearer` management token |
+| `500` | Not running in Kubernetes, RBAC missing, pod not found, or no previous instance to read (`previous=true` on a container that never restarted) |
+
+---
+
 ## Service Logs
 
 Persistent log of internal system events emitted by background jobs and other server subsystems.
@@ -1116,6 +1317,32 @@ TASK_ID="01ARZ3NDE4V2XTGZUVY7"
 
 curl -X POST "$BASE/management/tasks/cancel/$(python3 -c "import urllib.parse; print(urllib.parse.quote('$CAP'))")/$TASK_ID" \
   -H "Authorization: Bearer $MGMT_TOKEN" | jq .
+```
+
+### cURL - Kubernetes Pod Logs
+
+Requires the server to run in-cluster with `k8sLogs.enabled`. Set `BASE` to your OffloadMQ URL (ingress or in-cluster service if curling from another pod).
+
+```bash
+MGMT_TOKEN="my-management-token"
+BASE="https://offloadmq.example.com"
+
+# Pod status (phase, restarts, previous exit code)
+curl -sS -H "Authorization: Bearer $MGMT_TOKEN" \
+  "$BASE/management/k8s/self/pod?component=server" | jq .
+
+# Tail server logs — print stdout only
+curl -sS -H "Authorization: Bearer $MGMT_TOKEN" \
+  "$BASE/management/k8s/self/logs?component=server&tail_lines=200" | jq -r .content
+
+# Previous container instance after a crash (logs + exit status)
+curl -sS -H "Authorization: Bearer $MGMT_TOKEN" \
+  "$BASE/management/k8s/self/logs?component=server&previous=true&tail_lines=2000" \
+  | jq '{ pod, container, previous_exit, content }'
+
+# Management frontend proxy pod
+curl -sS -H "Authorization: Bearer $MGMT_TOKEN" \
+  "$BASE/management/k8s/self/logs?component=frontend&tail_lines=500" | jq -r .content
 ```
 
 ---

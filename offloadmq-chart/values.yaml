@@ -85,6 +85,13 @@ resources:
     cpu: 200m
     memory: 256Mi
 
+# In-cluster pod log access from the management UI (Kubernetes API + RBAC).
+k8sLogs:
+  enabled: true
+  serviceAccount:
+    name: offloadmq
+  frontendLabelSelector: "app=offloadmq-frontend"
+
 # Secret values — override via -f .secrets.yaml or --set secrets.*
 secrets:
   JWT_SECRET: "your-super-secret-and-long-jwt-key"

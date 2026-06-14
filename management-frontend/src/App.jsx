@@ -3,7 +3,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { BrowserRouter as Router, Routes, Route, NavLink } from "react-router-dom";
 import './App.css';
 import ExpandableDeleteButton from "./components/ExpandableDeleteButton";
-import { Activity, AlertTriangle, Brackets, Database, HardDriveDownload, KeySquare, ListChecks, Loader2, Menu, Moon, ScrollText, SquarePlay, Sun, Zap, Wrench } from "lucide-react";
+import { Activity, AlertTriangle, Brackets, Cloud, Database, HardDriveDownload, KeySquare, ListChecks, Loader2, Menu, Moon, ScrollText, SquarePlay, Sun, Zap, Wrench } from "lucide-react";
 import { TOKEN_KEY, apiFetch } from "./utils";
 
 const AgentsPage = React.lazy(() => import("./components/AgentsPage"));
@@ -13,6 +13,7 @@ const ApiTestingTool = React.lazy(() => import("./components/ApiTestingTool"));
 const SandboxApps = React.lazy(() => import("./components/SandboxApps"));
 const StoragePage = React.lazy(() => import("./components/StoragePage"));
 const ServiceLogsPage = React.lazy(() => import("./components/ServiceLogsPage"));
+const PodLogsPage = React.lazy(() => import("./components/PodLogsPage"));
 const AgentLogsPage = React.lazy(() => import("./components/AgentLogsPage"));
 const BackgroundJobTriggersPage = React.lazy(() => import("./components/BackgroundJobTriggersPage"));
 const UtilsPage = React.lazy(() => import("./components/UtilsPage"));
@@ -39,6 +40,7 @@ const routes = [
   { path: "/sandbox", label: "Sandbox", icon: <SquarePlay /> },
   { path: "/heuristics",   label: "Heuristics",   icon: <Activity /> },
   { path: "/service-logs", label: "Service Logs", icon: <ScrollText /> },
+  { path: "/pod-logs", label: "Pod Logs", icon: <Cloud /> },
   { path: "/agent-logs", label: "Agent Logs", icon: <AlertTriangle /> },
   { path: "/bg-triggers", label: "BG Triggers", icon: <Zap /> },
   { path: "/utils", label: "Utils", icon: <Wrench /> },
@@ -122,6 +124,7 @@ const tokenMissing = !(localStorage.getItem(TOKEN_KEY) || "");
                 <Route path="/sandbox" element={<SandboxApps />} />
                 <Route path="/heuristics" element={<HeuristicsPage />} />
                 <Route path="/service-logs" element={<ServiceLogsPage />} />
+                <Route path="/pod-logs" element={<PodLogsPage />} />
                 <Route path="/agent-logs" element={<AgentLogsPage />} />
                 <Route path="/bg-triggers" element={<BackgroundJobTriggersPage />} />
                 <Route path="/utils" element={<UtilsPage />} />

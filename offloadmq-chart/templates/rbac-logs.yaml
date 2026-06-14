@@ -1,0 +1,36 @@
+{{- if .Values.k8sLogs.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.k8sLogs.serviceAccount.name | default "offloadmq" }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: offloadmq-logs
+  namespace: {{ .Release.Namespace }}
+rules:
+  # Server pod — name from downward API (POD_NAME).
+  # Management frontend — list pods by label (Deployment suffix is not fixed).
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: offloadmq-logs
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: offloadmq-logs
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.k8sLogs.serviceAccount.name | default "offloadmq" }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
