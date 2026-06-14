@@ -1550,7 +1550,7 @@ export default function ImageGenerationPage() {
 
             {/* ── Compact title + meta ── */}
             <div className="border-b border-border px-4 py-3 space-y-0.5">
-              <h2 className="font-display text-base font-semibold leading-snug">
+              <h2 className="text-base font-medium leading-snug text-foreground">
                 {jobPromptTitle(selectedJob.prompt, 120)}
               </h2>
               <p className="font-mono text-xs text-muted-foreground" data-testid="imggen-job-tech-meta">
