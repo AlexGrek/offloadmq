@@ -31,11 +31,17 @@ if ($Tag) {
 
 Write-Host "==> Releasing offloadmq $Version"
 
-# Tag and push
-git tag "release-$Version"
-if ($LASTEXITCODE -ne 0) { throw "git tag failed" }
+# Tag and push (skip creation if tag already exists)
+$TagName = "release-$Version"
+$TagExists = git rev-parse $TagName 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "-> Tag $TagName already exists, skipping creation"
+} else {
+    git tag $TagName
+    if ($LASTEXITCODE -ne 0) { throw "git tag failed" }
+}
 
-git push origin "release-$Version"
+git push origin $TagName
 if ($LASTEXITCODE -ne 0) { throw "git push failed" }
 
 # Build and upload binaries (CLI + GUI)

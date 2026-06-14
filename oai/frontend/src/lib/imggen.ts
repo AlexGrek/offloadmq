@@ -317,12 +317,37 @@ export function applyPipelineParamsToNewForm(
   handlers.setKeepProportions(mode === 'img2img' && !!inputFile)
 }
 
+/** Rotating starter prompts for txt2img — one is picked at random on the frontend. */
+export const TXT2IMG_DEFAULT_PROMPTS = [
+  'A cinematic portrait of a cyberpunk fox in neon rain',
+  'A bioluminescent jellyfish cathedral drifting through deep ocean darkness, ethereal light rays',
+  'An astronaut gardener tending bonsai trees on a Martian crater rim at golden hour',
+  'A steampunk owl scholar surrounded by floating brass orbs and parchment scrolls',
+  'A samurai composed entirely of cherry blossom petals standing in a misty bamboo forest',
+  'A vintage dieselpunk locomotive racing through clouds at sunset, dramatic wide angle',
+  'A crystalline wolf howling at a fractured moon over an aurora-lit frozen lake',
+  'A baroque palace interior overgrown with luminous tropical vines and butterflies',
+  'A noir detective cat in a rain-soaked alley, cigarette smoke curling into neon signs',
+  'A giant tortoise carrying an entire medieval village on its shell through desert dunes',
+  'An art deco mermaid lounging in a submerged 1920s ballroom, caustic light patterns',
+  'A phoenix reborn from ashes in a volcanic forge, molten feathers trailing sparks',
+  'A floating island library with waterfalls cascading into clouds, warm candlelight inside',
+  'A retro-futuristic synthwave highway stretching into infinity under twin suns',
+  'A macro photograph of a dewdrop reflecting an entire enchanted forest within it',
+  'A Victorian automaton ballerina performing on a stage of gears and starlight',
+] as const
+
+export function randomTxt2imgPrompt(): string {
+  const i = Math.floor(Math.random() * TXT2IMG_DEFAULT_PROMPTS.length)
+  return TXT2IMG_DEFAULT_PROMPTS[i]!
+}
+
 export const MODE_DEFAULTS: Record<
   ImgGenMode,
   { prompt: string; width: number; height: number; rescale: Partial<RescaleState> }
 > = {
   txt2img: {
-    prompt: 'A cinematic portrait of a cyberpunk fox in neon rain',
+    prompt: TXT2IMG_DEFAULT_PROMPTS[0],
     width: 1024,
     height: 1024,
     rescale: { enabled: false },

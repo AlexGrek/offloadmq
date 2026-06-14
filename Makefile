@@ -260,7 +260,12 @@ release: RELEASE_AGENT_TAG_CALCULATED = $(shell ./scripts/compute-agent-version.
 release:
 	@echo "version: $(RELEASE_AGENT_TAG_CALCULATED)"
 	@echo "Releasing $(APP_NAME) version $(RELEASE_AGENT_TAG_CALCULATED) via github"
-	git tag release-$(RELEASE_AGENT_TAG_CALCULATED) &&  git push origin release-$(RELEASE_AGENT_TAG_CALCULATED)
+	@if git rev-parse "release-$(RELEASE_AGENT_TAG_CALCULATED)" >/dev/null 2>&1; then \
+		echo "→ Tag release-$(RELEASE_AGENT_TAG_CALCULATED) already exists, skipping creation"; \
+	else \
+		git tag "release-$(RELEASE_AGENT_TAG_CALCULATED)"; \
+	fi
+	git push origin "release-$(RELEASE_AGENT_TAG_CALCULATED)"
 	@echo "Releasing $(APP_NAME) $(RELEASE_AGENT_TAG_CALCULATED) ..."
 	@$(MAKE) release-agent
 	@$(MAKE) release-micro-agent

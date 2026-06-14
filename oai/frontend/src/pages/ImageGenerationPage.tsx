@@ -77,6 +77,7 @@ import {
 import { ToolSidebar } from '../components/ToolSidebar'
 import {
   MODE_DEFAULTS,
+  randomTxt2imgPrompt,
   applyPipelineParamsToNewForm,
   filterCapabilitiesByWorkflow,
   fitsOriginalResolution,
@@ -128,7 +129,7 @@ export default function ImageGenerationPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const [mode, setMode] = useState<ImgGenMode>('txt2img')
-  const [prompt, setPrompt] = useState(MODE_DEFAULTS.txt2img.prompt)
+  const [prompt, setPrompt] = useState(() => randomTxt2imgPrompt())
   const [negativePrompt, setNegativePrompt] = useState('')
   const [overrideNegative, setOverrideNegative] = useState(false)
   const [capability, setCapability] = useState('')
@@ -356,7 +357,7 @@ export default function ImageGenerationPage() {
     if (next === mode) return
     setMode(next)
     const defaults = MODE_DEFAULTS[next]
-    setPrompt(defaults.prompt)
+    setPrompt(next === 'txt2img' ? randomTxt2imgPrompt() : defaults.prompt)
     setWidth(defaults.width)
     setHeight(defaults.height)
     rescaleUserEditedRef.current = false
