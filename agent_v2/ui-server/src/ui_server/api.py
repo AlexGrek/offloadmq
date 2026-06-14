@@ -21,6 +21,7 @@ class SettingsPayload(BaseModel):
     comfyui_url: str | None = None
     kokoro_api_url: str | None = None
     kokoro_api_key: str | None = None
+    rescan_interval_secs: int | None = None
     win_startup_enabled: bool | None = None
     mac_startup_enabled: bool | None = None
     keep_awake_enabled: bool | None = None

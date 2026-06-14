@@ -32,6 +32,9 @@ class Settings(BaseModel):
     kokoro_api_url: str = "https://localhost:8443/v1/audio/speech"
     kokoro_api_key: str = ""
 
+    # Rescan cadence
+    rescan_interval_secs: int = Field(default=180, ge=30)
+
     # OS integration flags (persisted; platform modules apply changes).
     win_startup_enabled: bool = False
     mac_startup_enabled: bool = False
