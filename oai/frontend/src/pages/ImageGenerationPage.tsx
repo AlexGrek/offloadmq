@@ -96,6 +96,7 @@ import {
   parseVideoLength,
   rescaleDataPrep,
   type ImgGenMode,
+  type ImggenRouteState,
   type RescaleState,
 } from '../lib/imggen'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
@@ -192,17 +193,8 @@ export default function ImageGenerationPage() {
     setDebugOpen(false)
   }, [activePanel])
 
-  // Another page (e.g. image analysis "Use as prompt") can route here with a
-  // prompt to prefill. Apply it once to a fresh txt2img form, then clear the
-  // navigation state so a refresh/back doesn't re-apply it.
-  useEffect(() => {
-    const incoming = (location.state as { usePrompt?: string } | null)?.usePrompt
-    if (typeof incoming !== 'string') return
-    setMode('txt2img')
-    setPrompt(incoming)
-    setActivePanel(IMGGEN_NEW_PANEL)
-    navigate(location.pathname, { replace: true, state: null })
-  }, [location.state, location.pathname, navigate])
+  // Another page (e.g. image analysis "Use as prompt", files "Edit"/"Animate") can route
+  // here with state to prefill. Handled after sendOutputToInputMode is defined below.
 
   // On mobile the pipelines sidebar is a full-screen overlay — collapse it when
   // we cross into a narrow viewport so it never starts covering the workspace.
@@ -460,7 +452,13 @@ export default function ImageGenerationPage() {
   }, [viewedJobId, refreshJob])
 
   const lightboxActions = useCallback(
-    (imageId: string, filename: string, direction: string, onSendToImg2Img?: () => void) =>
+    (
+      imageId: string,
+      filename: string,
+      direction: string,
+      onSendToImg2Img?: () => void,
+      onSendToImg2Video?: () => void,
+    ) =>
       token
         ? {
             imageId,
@@ -469,6 +467,7 @@ export default function ImageGenerationPage() {
             token,
             onDeleted: onImageMutated,
             onSendToImg2Img,
+            onSendToImg2Video,
             onNudeDetect: () => setNudeDetectTarget({ imageId, filename }),
           }
         : undefined,
@@ -542,6 +541,25 @@ export default function ImageGenerationPage() {
   }) {
     sendOutputToInputMode(file, 'img2video')
   }
+
+  useEffect(() => {
+    const state = location.state as ImggenRouteState | null
+    if (!state) return
+
+    if (typeof state.usePrompt === 'string') {
+      setMode('txt2img')
+      setPrompt(state.usePrompt)
+      setActivePanel(IMGGEN_NEW_PANEL)
+      navigate(location.pathname, { replace: true, state: null })
+      return
+    }
+
+    const incoming = state.useInputImage
+    if (!incoming?.image?.image_id) return
+
+    sendOutputToInputMode(incoming.image, incoming.mode)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
 
   const runPoll = useCallback(
     async (jobId: string) => {
@@ -1545,6 +1563,7 @@ export default function ImageGenerationPage() {
                         file.filename,
                         file.direction,
                         () => sendToImg2Img(file),
+                        () => sendToImg2Video(file),
                       )}
                     >
                       <img
@@ -1582,6 +1601,7 @@ export default function ImageGenerationPage() {
                         file.filename,
                         file.direction,
                         () => sendToImg2Img(file),
+                        () => sendToImg2Video(file),
                       )}
                     >
                       <img

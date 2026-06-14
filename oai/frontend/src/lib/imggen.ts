@@ -11,6 +11,15 @@ import { pickListedCapability } from './capability-picker'
 
 export type ImgGenMode = 'txt2img' | 'img2img' | 'txt2video' | 'img2video'
 
+/** React Router location state for `/app/images` deep links from other pages. */
+export type ImggenRouteState = {
+  usePrompt?: string
+  useInputImage?: {
+    mode: 'img2img' | 'img2video'
+    image: UploadedImage
+  }
+}
+
 export function isVideoMode(mode: ImgGenMode): boolean {
   return mode === 'txt2video' || mode === 'img2video'
 }

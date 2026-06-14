@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Download,
   FileText,
@@ -17,6 +18,8 @@ import { listFiles } from '../api/files'
 import type { CleanupFilesScope, FileBrowserResponse, UserFile } from '../api/files'
 import { FilesCleanupMenu } from '../components/files/FilesCleanupMenu'
 import { imageFileUrl, imageThumbnailUrl } from '../api/images'
+import type { UploadedImage } from '../api/images'
+import type { ImggenRouteState } from '../lib/imggen'
 import { deleteTtsJob, ttsAudioUrl } from '../api/tts'
 import { FilePropertiesDialog } from '../components/files/FilePropertiesDialog'
 import { ImageLightbox } from '@/components/ImageLightbox'
@@ -41,8 +44,22 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
+function userFileToUploadedImage(file: UserFile): UploadedImage {
+  return {
+    image_id: file.id,
+    filename: file.filename,
+    content_type: file.content_type,
+    width: file.width,
+    height: file.height,
+    size_bytes: file.size_bytes,
+    rescaled: false,
+    reencoded: false,
+  }
+}
+
 export default function FilesPage() {
   const { token } = useAuth()
+  const navigate = useNavigate()
   const [data, setData] = useState<FileBrowserResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -55,6 +72,16 @@ export default function FilesPage() {
     imageId: string
     filename: string
   } | null>(null)
+
+  const navigateToImggen = useCallback(
+    (file: UserFile, mode: 'img2img' | 'img2video') => {
+      const state: ImggenRouteState = {
+        useInputImage: { mode, image: userFileToUploadedImage(file) },
+      }
+      navigate('/app/images', { state })
+    },
+    [navigate],
+  )
 
   const load = useCallback(() => {
     if (!token) return
@@ -212,6 +239,8 @@ export default function FilesPage() {
               onNudeDetect={(imageId, filename) =>
                 setNudeDetectTarget({ imageId, filename })
               }
+              onEdit={file => navigateToImggen(file, 'img2img')}
+              onAnimate={file => navigateToImggen(file, 'img2video')}
             />
           ))}
         </div>
@@ -458,6 +487,8 @@ function FileTile({
   onImageMutated,
   onShowProperties,
   onNudeDetect,
+  onEdit,
+  onAnimate,
 }: {
   file: UserFile
   token: string | null
@@ -469,6 +500,8 @@ function FileTile({
   onImageMutated: () => void
   onShowProperties: () => void
   onNudeDetect?: (imageId: string, filename: string) => void
+  onEdit?: (file: UserFile) => void
+  onAnimate?: (file: UserFile) => void
 }) {
   const showInfo = file.direction === 'output'
   const meta = (
@@ -548,6 +581,8 @@ function FileTile({
             onNudeDetect: onNudeDetect
               ? () => onNudeDetect(file.id, file.filename)
               : undefined,
+            onSendToImg2Img: onEdit ? () => onEdit(file) : undefined,
+            onSendToImg2Video: onAnimate ? () => onAnimate(file) : undefined,
           }}
         >
           <div className="relative flex aspect-square items-center justify-center bg-muted/40">
