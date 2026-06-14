@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Copy,
   Eye,
@@ -11,6 +12,7 @@ import {
   RotateCcw,
   Square,
   Trash2,
+  Wand2,
   X,
 } from 'lucide-react'
 import {
@@ -71,6 +73,7 @@ function jobTitle(prompt: string, limit = 56): string {
 
 export default function DescribeImagePage() {
   const { token } = useAuth()
+  const navigate = useNavigate()
 
   const [capabilities, setCapabilities] = useState<DescribeCapability[]>([])
   const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('idle')
@@ -327,6 +330,12 @@ export default function DescribeImagePage() {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1800)
     })
+  }
+
+  function useResultAsPrompt() {
+    const result = selectedJob?.result?.trim()
+    if (!result) return
+    navigate('/app/images', { state: { usePrompt: result } })
   }
 
   function editPromptFromJob() {
@@ -692,6 +701,18 @@ export default function DescribeImagePage() {
                               triggerVariant="ghost"
                               testIdPrefix="describe-listen"
                             />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-1.5 text-xs"
+                              onClick={useResultAsPrompt}
+                              title="Open Image Generation with this text as the prompt"
+                              data-testid="describe-use-as-prompt"
+                            >
+                              <Wand2 className="size-3.5" />
+                              Use as prompt
+                            </Button>
                             <Button
                               type="button"
                               variant="ghost"

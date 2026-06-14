@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeftRight,
   ChevronDown,
@@ -124,6 +125,8 @@ export default function ImageGenerationPage() {
   const { token } = useAuth()
   const { refreshRunningImageJobs } = useProgress()
   const isMobile = useIsMobile()
+  const location = useLocation()
+  const navigate = useNavigate()
   const [mode, setMode] = useState<ImgGenMode>('txt2img')
   const [prompt, setPrompt] = useState(MODE_DEFAULTS.txt2img.prompt)
   const [negativePrompt, setNegativePrompt] = useState('')
@@ -184,6 +187,18 @@ export default function ImageGenerationPage() {
   useEffect(() => {
     setDebugOpen(false)
   }, [activePanel])
+
+  // Another page (e.g. image analysis "Use as prompt") can route here with a
+  // prompt to prefill. Apply it once to a fresh txt2img form, then clear the
+  // navigation state so a refresh/back doesn't re-apply it.
+  useEffect(() => {
+    const incoming = (location.state as { usePrompt?: string } | null)?.usePrompt
+    if (typeof incoming !== 'string') return
+    setMode('txt2img')
+    setPrompt(incoming)
+    setActivePanel(IMGGEN_NEW_PANEL)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
 
   // On mobile the pipelines sidebar is a full-screen overlay — collapse it when
   // we cross into a narrow viewport so it never starts covering the workspace.
