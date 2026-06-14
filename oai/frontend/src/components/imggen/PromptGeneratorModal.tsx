@@ -35,8 +35,8 @@ function formatLogTime(d = new Date()): string {
 
 function defaultQuery(mode: ImgGenMode): string {
   return isVideoMode(mode)
-    ? 'Create a video generation prompt from this: {}'
-    : 'Create an image generation prompt from this: {}'
+    ? 'Create a video generation prompt from this: {}. Use "{?}" instead of a subject to generate random subject in runtime.'
+    : 'Create an image generation prompt from this: {}. Use "{?}" instead of a subject to generate random subject in runtime.'
 }
 
 const STATUS_LABELS: Record<string, string> = {
