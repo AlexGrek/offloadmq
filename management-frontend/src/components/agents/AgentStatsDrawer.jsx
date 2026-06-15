@@ -78,7 +78,7 @@ export default function AgentStatsDrawer({ agent, onClose }) {
             const data = await apiFetch(
                 `/management/heuristics/records?runner_id=${encodeURIComponent(agent.uid)}&limit=2000`
             );
-            setRecords(Array.isArray(data) ? data : (data?.records ?? []));
+            setRecords(Array.isArray(data) ? data : (data?.items ?? []));
         } catch (e) {
             setError(e.message);
         } finally {
