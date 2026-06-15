@@ -108,6 +108,18 @@ export function DashboardPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <Separator />
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            <InfoRow label="Name" value={status?.displayName || "—"} />
+            <InfoRow
+              label="Fingerprint"
+              value={
+                (status?.sysinfo as Record<string, string> | undefined)
+                  ?.machineId ?? "—"
+              }
+              mono
+            />
+          </div>
+          <Separator />
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Stat label="Active" value={active.length} accent />
             <Stat label="Completed" value={completed.length} />
@@ -154,6 +166,23 @@ export function DashboardPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={mono ? "font-mono" : ""}>{value}</span>
+    </>
   );
 }
 
