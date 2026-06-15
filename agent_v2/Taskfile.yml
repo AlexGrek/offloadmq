@@ -103,10 +103,12 @@ tasks:
     deps: [frontend:build]
     dir: cli-manager
     cmds:
+      - rm -rf build dist omq.spec
       - >-
         uv run --with pyinstaller pyinstaller --onefile --name omq
+        --paths src
         --add-data "../ui-server/frontend/dist:frontend/dist"
-        src/cli_manager/main.py
+        _pyi_entry.py
 
   package:gui:
     desc: Build a single-file GUI binary (PyInstaller)
