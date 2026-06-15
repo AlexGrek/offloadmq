@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Gavel,
@@ -17,12 +17,10 @@ import {
   cancelLlmDebateJob,
   deleteLlmDebateJob,
   getLlmDebateJob,
-  listLlmDebateCapabilities,
   listLlmDebateJobs,
   pollLlmDebateJob,
   retryLlmDebateJob,
   startLlmDebateJob,
-  type LlmDebateCapability,
   type LlmDebateJob,
 } from '../api/llmDebate'
 import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
@@ -38,7 +36,7 @@ import { PromptTextarea } from '../components/PromptTextarea'
 import { ToolSidebar } from '../components/ToolSidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
-import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
+import { nextDebateReqId, useWsDebate } from '../hooks/useWsDebate'
 import { capabilityBaseLabel, firstSelectableModel } from '../lib/modelAvailability'
 import { pickListedCapability } from '../lib/capability-picker'
 import {
@@ -50,7 +48,6 @@ import {
 } from '../lib/llmPromptBuckets'
 import { cn } from '../lib/utils'
 
-const POLL_INTERVAL_MS = 2500
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 const DEFAULT_SYSTEM = 'You are a helpful AI assistant.'
 const DEFAULT_INITIAL = "Hello! Let's have a conversation."
@@ -75,10 +72,12 @@ function jobTitle(prompt: string, limit = 56): string {
 export default function LlmDebatePage() {
   const { token } = useAuth()
   const isMobile = useIsMobile()
+  const ws = useWsDebate(token)
+  const watchReqRef = useRef<string | null>(null)
 
-  const [capabilities, setCapabilities] = useState<LlmDebateCapability[]>([])
-  const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('idle')
-  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
+  const capabilities = ws.capabilities
+  const capabilitiesStatus = ws.capabilitiesStatus
+  const capabilitiesError = ws.capabilitiesError
 
   const [modelA, setModelA] = useState('')
   const [modelB, setModelB] = useState('')
@@ -114,30 +113,18 @@ export default function LlmDebatePage() {
   const viewingJob = activePanel !== LLM_DEBATE_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
 
-  const loadCapabilities = useCallback(() => {
-    if (!token) return
-    setCapabilitiesStatus('loading')
-    setCapabilitiesError(null)
-    listLlmDebateCapabilities(token)
-      .then(data => {
-        setCapabilities(data.capabilities)
-        setCapabilitiesStatus('ready')
-        const first = firstSelectableModel(data.capabilities)
-        const second =
-          data.capabilities.find(c => c.base !== first)?.base ?? first ?? ''
-        setModelA(prev => pickListedCapability(prev, data.capabilities) ?? first ?? '')
-        setModelB(prev => {
-          const picked = pickListedCapability(prev, data.capabilities)
-          if (picked) return picked
-          return second
-        })
-        setModelRef(prev => pickListedCapability(prev, data.capabilities) ?? first ?? '')
-      })
-      .catch((e: Error) => {
-        setCapabilitiesError(e.message)
-        setCapabilitiesStatus('error')
-      })
-  }, [token])
+  useEffect(() => {
+    if (ws.capabilitiesStatus !== 'ready' || capabilities.length === 0) return
+    const first = firstSelectableModel(capabilities)
+    const second = capabilities.find(c => c.base !== first)?.base ?? first ?? ''
+    setModelA(prev => pickListedCapability(prev, capabilities) ?? first ?? '')
+    setModelB(prev => {
+      const picked = pickListedCapability(prev, capabilities)
+      if (picked) return picked
+      return second
+    })
+    setModelRef(prev => pickListedCapability(prev, capabilities) ?? first ?? '')
+  }, [capabilities, ws.capabilitiesStatus])
 
   const loadJobs = useCallback(async () => {
     if (!token) return
@@ -152,9 +139,57 @@ export default function LlmDebatePage() {
   }, [token])
 
   useEffect(() => {
-    loadCapabilities()
     void loadJobs()
-  }, [loadCapabilities, loadJobs])
+  }, [loadJobs])
+
+  const applyJobUpdate = useCallback((job: LlmDebateJob, activeId?: string | null) => {
+    if (activeId && job.job_id === activeId) {
+      setSelectedJob(job)
+    } else {
+      setSelectedJob(prev => (prev?.job_id === job.job_id ? job : prev))
+    }
+    setJobs(prev => {
+      const idx = prev.findIndex(j => j.job_id === job.job_id)
+      if (idx >= 0) {
+        const next = [...prev]
+        next[idx] = job
+        return next
+      }
+      return [job, ...prev]
+    })
+  }, [])
+
+  useEffect(() => {
+    return ws.subscribe(event => {
+      if (event.type === 'debate:update') {
+        if (event.req_id === watchReqRef.current) {
+          setPolling(false)
+        }
+        if (viewedJobId && event.job.job_id === viewedJobId) {
+          applyJobUpdate(event.job, viewedJobId)
+        }
+      } else if (
+        event.type === 'error' &&
+        event.req_id != null &&
+        event.req_id === watchReqRef.current
+      ) {
+        setPolling(false)
+        setError(event.message)
+      }
+    })
+  }, [ws.subscribe, applyJobUpdate, viewedJobId])
+
+  const viewedJobTerminal =
+    selectedJob?.job_id === viewedJobId &&
+    selectedJob.status != null &&
+    TERMINAL.has(selectedJob.status)
+
+  useEffect(() => {
+    if (!viewedJobId || ws.status !== 'connected' || viewedJobTerminal) return
+    const reqId = nextDebateReqId('watch')
+    watchReqRef.current = reqId
+    ws.send({ type: 'watch_job', req_id: reqId, job_id: viewedJobId })
+  }, [viewedJobId, ws.status, viewedJobTerminal, ws.send])
 
   const refreshJob = useCallback(
     async (jobId: string) => {
@@ -235,13 +270,22 @@ export default function LlmDebatePage() {
   }
 
   async function onPollNow(jobId: string) {
-    if (!token) return
     setPolling(true)
     setError(null)
+    if (ws.status === 'connected') {
+      const reqId = nextDebateReqId('watch')
+      watchReqRef.current = reqId
+      if (ws.send({ type: 'watch_job', req_id: reqId, job_id: jobId })) {
+        return
+      }
+    }
+    if (!token) {
+      setPolling(false)
+      return
+    }
     try {
       const job = await pollLlmDebateJob(token, jobId)
-      setSelectedJob(job)
-      setJobs(prev => prev.map(j => (j.job_id === job.job_id ? job : j)))
+      applyJobUpdate(job, viewedJobId)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -300,17 +344,6 @@ export default function LlmDebatePage() {
       setDeleting(false)
     }
   }
-
-  useEffect(() => {
-    if (!token || !viewedJobId) return
-    const status = selectedJob?.status
-    if (status && TERMINAL.has(status)) return
-    const id = window.setInterval(() => {
-      void onPollNow(viewedJobId)
-    }, POLL_INTERVAL_MS)
-    return () => window.clearInterval(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, viewedJobId, selectedJob?.status])
 
   function editFromJob() {
     if (!selectedJob) return
@@ -442,7 +475,7 @@ export default function LlmDebatePage() {
                             capabilities={capabilities}
                             selected={side === 'A' ? modelA : modelB}
                             onSelect={side === 'A' ? setModelA : setModelB}
-                            onRefresh={loadCapabilities}
+                            onRefresh={ws.refreshCapabilities}
                             capabilitiesStatus={capabilitiesStatus}
                             capabilitiesError={capabilitiesError}
                             formatLabel={cap => capabilityBaseLabel(cap.base)}
@@ -506,7 +539,7 @@ export default function LlmDebatePage() {
                             capabilities={capabilities}
                             selected={modelRef}
                             onSelect={setModelRef}
-                            onRefresh={loadCapabilities}
+                            onRefresh={ws.refreshCapabilities}
                             capabilitiesStatus={capabilitiesStatus}
                             capabilitiesError={capabilitiesError}
                             formatLabel={cap => capabilityBaseLabel(cap.base)}
@@ -627,6 +660,7 @@ export default function LlmDebatePage() {
                               ? 'Referee deliberating…'
                               : `Turn ${debateCount + 1}${selectedJob.referee_enabled ? ` / ${selectedJob.referee_turns}` : ''}`
                             : selectedJob.status.replace(/_/g, ' ')}
+                          {isRunning && ws.status === 'connected' ? ' · live' : ''}
                           {polling ? ' · syncing…' : ''}
                         </p>
                       </div>
@@ -654,7 +688,7 @@ export default function LlmDebatePage() {
                       </div>
                     </div>
 
-                    <div className="min-h-0 flex-1 overflow-hidden px-3 py-2 sm:px-6">
+                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-2 sm:px-6">
                       <DebateTranscript job={selectedJob} isRunning={isRunning} />
                     </div>
 

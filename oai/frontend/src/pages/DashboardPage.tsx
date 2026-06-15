@@ -4,26 +4,6 @@ import { useAuth } from '../contexts/AuthContext'
 
 const apps = [
   {
-    id: 'llm-compare',
-    icon: GitCompareArrows,
-    title: 'LLM Compare',
-    description: 'Run the same prompt on multiple models in parallel',
-    href: '/app/llm-compare',
-    gradient: 'from-sky-500/20 to-indigo-500/20',
-    iconBg: 'bg-sky-500/20',
-    iconColor: 'text-sky-400',
-  },
-  {
-    id: 'llm-debate',
-    icon: MessageCircleMore,
-    title: 'LLM Debate',
-    description: 'Two models debate turn by turn with an optional referee',
-    href: '/app/llm-debate',
-    gradient: 'from-emerald-500/20 to-teal-500/20',
-    iconBg: 'bg-emerald-500/20',
-    iconColor: 'text-emerald-400',
-  },
-  {
     id: 'chat',
     icon: Bot,
     title: 'LLM Chat',
@@ -102,6 +82,26 @@ const apps = [
     gradient: 'from-amber-500/20 to-orange-500/20',
     iconBg: 'bg-amber-500/20',
     iconColor: 'text-amber-400',
+  },
+  {
+    id: 'llm-compare',
+    icon: GitCompareArrows,
+    title: 'LLM Compare',
+    description: 'Run the same prompt on multiple models in parallel',
+    href: '/app/llm-compare',
+    gradient: 'from-sky-500/20 to-indigo-500/20',
+    iconBg: 'bg-sky-500/20',
+    iconColor: 'text-sky-400',
+  },
+  {
+    id: 'llm-debate',
+    icon: MessageCircleMore,
+    title: 'LLM Debate',
+    description: 'Two models debate turn by turn with an optional referee',
+    href: '/app/llm-debate',
+    gradient: 'from-emerald-500/20 to-teal-500/20',
+    iconBg: 'bg-emerald-500/20',
+    iconColor: 'text-emerald-400',
   },
 ] as const
 

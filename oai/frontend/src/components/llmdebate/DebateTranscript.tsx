@@ -44,7 +44,7 @@ export function DebateTranscript({ job, isRunning }: DebateTranscriptProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-1 py-2">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-1 py-2">
       <AnimatePresence initial={false}>
         {job.messages.map((msg, i) => (
           <DebateBubble

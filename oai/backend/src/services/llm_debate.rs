@@ -9,11 +9,159 @@ use crate::{
     offload::{base_capability, task_status, ChatMessage, OffloadClient, TaskId},
     services::{llm_text_capabilities, offload_factory, offload_job::CancelOutcome},
     state::AppState,
+    ws::events::ServerEvent,
 };
+
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::mpsc::UnboundedSender;
+
+/// Agent flushes streaming log to OffloadMQ about every 2s; poll slightly faster.
+const WS_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 pub const DEFAULT_REFEREE_SYSTEM: &str = "You are an impartial debate referee. You will be given a transcript of a debate between two participants labeled \"Model A\" and \"Model B\". Analyze the quality of their arguments, reasoning, and overall performance. Declare a winner with a brief justification.";
 
 pub const DEFAULT_REFEREE_COMMAND: &str = "The debate has concluded. Review the full transcript above and declare a winner. Be concise: state who won (Model A or Model B, or a draw) and why in 2–3 sentences.";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebateMessageView {
+    pub side: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebateJobView {
+    pub job_id: String,
+    pub status: String,
+    pub model_a: String,
+    pub model_b: String,
+    pub system_a: String,
+    pub system_b: String,
+    pub initial_prompt: String,
+    pub referee_enabled: bool,
+    pub model_ref: Option<String>,
+    pub system_ref: Option<String>,
+    pub command_ref: Option<String>,
+    pub referee_turns: i32,
+    pub messages: Vec<DebateMessageView>,
+    pub phase: String,
+    pub current_turn: Option<String>,
+    pub active_log: Option<String>,
+    pub stage: Option<String>,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub fn job_view(job: llm_debate::LlmDebateJob) -> Result<DebateJobView, AppError> {
+    let messages = parse_job_messages(&job)?
+        .into_iter()
+        .map(|m| DebateMessageView {
+            side: m.side,
+            content: m.content,
+        })
+        .collect();
+    Ok(DebateJobView {
+        job_id: job.id.to_string(),
+        status: job.status,
+        model_a: job.model_a,
+        model_b: job.model_b,
+        system_a: job.system_a,
+        system_b: job.system_b,
+        initial_prompt: job.initial_prompt,
+        referee_enabled: job.referee_enabled,
+        model_ref: job.model_ref,
+        system_ref: job.system_ref,
+        command_ref: job.command_ref,
+        referee_turns: job.referee_turns,
+        messages,
+        phase: job.phase,
+        current_turn: job.current_turn,
+        active_log: job.active_log,
+        stage: job.stage,
+        error: job.error,
+        created_at: job.created_at.to_rfc3339(),
+        updated_at: job.updated_at.to_rfc3339(),
+    })
+}
+
+pub async fn list_capabilities_ws(
+    req_id: String,
+    tx: &UnboundedSender<ServerEvent>,
+    state: &Arc<AppState>,
+) {
+    match list_capabilities(state).await {
+        Ok(capabilities) => {
+            let _ = tx.send(ServerEvent::Capabilities { req_id, capabilities });
+        }
+        Err(e) => send_ws_error(tx, Some(&req_id), &e.to_string()),
+    }
+}
+
+pub async fn watch_job_ws(
+    req_id: String,
+    job_id_str: String,
+    tx: &UnboundedSender<ServerEvent>,
+    state: &Arc<AppState>,
+    user_id: i64,
+) {
+    let job_id = match job_id_str.parse::<i64>() {
+        Ok(id) => id,
+        Err(_) => {
+            send_ws_error(tx, Some(&req_id), "invalid job_id");
+            return;
+        }
+    };
+
+    loop {
+        let mut job = match llm_debate::get_job(&state.db, job_id, user_id).await {
+            Ok(Some(j)) => j,
+            Ok(None) => {
+                send_ws_error(tx, Some(&req_id), "job not found");
+                return;
+            }
+            Err(e) => {
+                send_ws_error(tx, Some(&req_id), &e.to_string());
+                return;
+            }
+        };
+
+        if !task_status::is_terminal(&job.status) {
+            if let Err(e) = reconcile_job(state, &mut job).await {
+                send_ws_error(tx, Some(&req_id), &e.to_string());
+                return;
+            }
+        }
+
+        let terminal = task_status::is_terminal(&job.status);
+        match job_view(job) {
+            Ok(view) => {
+                let _ = tx.send(ServerEvent::DebateUpdate {
+                    req_id: req_id.clone(),
+                    job: view,
+                    terminal,
+                });
+            }
+            Err(e) => {
+                send_ws_error(tx, Some(&req_id), &e.to_string());
+                return;
+            }
+        }
+
+        if terminal {
+            return;
+        }
+
+        tokio::time::sleep(WS_POLL_INTERVAL).await;
+    }
+}
+
+fn send_ws_error(tx: &UnboundedSender<ServerEvent>, req_id: Option<&str>, message: &str) {
+    let _ = tx.send(ServerEvent::Error {
+        req_id: req_id.map(str::to_string),
+        message: message.to_string(),
+    });
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DebateMessage {

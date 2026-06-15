@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::offload::LlmCapabilityInfo;
+use crate::services::llm_debate::DebateJobView;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -48,6 +49,12 @@ pub enum ServerEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         log: Option<String>,
     },
+    #[serde(rename = "debate:update")]
+    DebateUpdate {
+        req_id: String,
+        job: DebateJobView,
+        terminal: bool,
+    },
     Error {
         #[serde(skip_serializing_if = "Option::is_none")]
         req_id: Option<String>,
@@ -74,6 +81,14 @@ pub enum ClientCommand {
         #[serde(skip_serializing_if = "Option::is_none")]
         runtime_secs: Option<u32>,
     },
+    Ping,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DebateClientCommand {
+    ListCapabilities { req_id: String },
+    WatchJob { req_id: String, job_id: String },
     Ping,
 }
 

@@ -9,7 +9,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    db::{llm_debate, prompts},
+    db::prompts,
     error::AppError,
     middleware::AuthenticatedUser,
     routes::job_common::{parse_id, CancelJobResponse, StartJobResponse},
@@ -132,42 +132,18 @@ pub async fn start_job(
     Ok((StatusCode::CREATED, Json(StartJobResponse::submitted(job_id))))
 }
 
-#[derive(Serialize)]
-pub struct DebateMessageResponse {
-    pub side: String,
-    pub content: String,
-}
-
-#[derive(Serialize)]
-pub struct JobDetailsResponse {
-    pub job_id: String,
-    pub status: String,
-    pub model_a: String,
-    pub model_b: String,
-    pub system_a: String,
-    pub system_b: String,
-    pub initial_prompt: String,
-    pub referee_enabled: bool,
-    pub model_ref: Option<String>,
-    pub system_ref: Option<String>,
-    pub command_ref: Option<String>,
-    pub referee_turns: i32,
-    pub messages: Vec<DebateMessageResponse>,
-    pub phase: String,
-    pub current_turn: Option<String>,
-    pub active_log: Option<String>,
-    pub stage: Option<String>,
-    pub error: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
+pub type JobDetailsResponse = service::DebateJobView;
 
 pub async fn list_jobs(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
 ) -> Result<Json<Vec<JobDetailsResponse>>, AppError> {
     let jobs = service::list_user_jobs(&state, user_id, 100).await?;
-    Ok(Json(jobs.into_iter().map(job_details_response).collect()))
+    let out = jobs
+        .into_iter()
+        .map(service::job_view)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Json(out))
 }
 
 pub async fn get_job(
@@ -177,7 +153,7 @@ pub async fn get_job(
 ) -> Result<Json<JobDetailsResponse>, AppError> {
     let job_id = parse_id(&job_id_str, "job_id")?;
     let job = service::user_job_detail(&state, job_id, user_id).await?;
-    Ok(Json(job_details_response(job)))
+    Ok(Json(service::job_view(job)?))
 }
 
 pub async fn poll_job(
@@ -187,7 +163,7 @@ pub async fn poll_job(
 ) -> Result<Json<JobDetailsResponse>, AppError> {
     let job_id = parse_id(&job_id_str, "job_id")?;
     let job = service::poll_job(&state, user_id, job_id).await?;
-    Ok(Json(job_details_response(job)))
+    Ok(Json(service::job_view(job)?))
 }
 
 pub async fn cancel_job(
@@ -218,37 +194,4 @@ pub async fn delete_job(
     let job_id = parse_id(&job_id_str, "job_id")?;
     service::delete_job(&state, user_id, job_id).await?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-fn job_details_response(job: llm_debate::LlmDebateJob) -> JobDetailsResponse {
-    let messages = service::parse_job_messages(&job)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|m| DebateMessageResponse {
-            side: m.side,
-            content: m.content,
-        })
-        .collect();
-    JobDetailsResponse {
-        job_id: job.id.to_string(),
-        status: job.status,
-        model_a: job.model_a,
-        model_b: job.model_b,
-        system_a: job.system_a,
-        system_b: job.system_b,
-        initial_prompt: job.initial_prompt,
-        referee_enabled: job.referee_enabled,
-        model_ref: job.model_ref,
-        system_ref: job.system_ref,
-        command_ref: job.command_ref,
-        referee_turns: job.referee_turns,
-        messages,
-        phase: job.phase,
-        current_turn: job.current_turn,
-        active_log: job.active_log,
-        stage: job.stage,
-        error: job.error,
-        created_at: job.created_at.to_rfc3339(),
-        updated_at: job.updated_at.to_rfc3339(),
-    }
 }
