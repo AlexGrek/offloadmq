@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
+import { imageJobIsExecuting, imageJobStatusLabel } from '@/lib/imggen'
 
 /**
  * Modern linear progress bar for an in-flight image/video job.
@@ -16,20 +17,24 @@ import { cn } from '@/lib/utils'
  */
 
 const STATUS_LABEL: Record<string, string> = {
+  submitted: 'In queue',
   pending: 'Pending',
   queued: 'Queued',
-  assigned: 'Assigned to agent',
+  assigned: 'Assigned',
   starting: 'Starting',
   running: 'Generating',
   cancelRequested: 'Canceling',
 }
 
-function statusLabel(status: string): string {
-  return STATUS_LABEL[status] ?? status.replace(/_/g, ' ')
-}
+/** Statuses where the task is still waiting (not yet executing on an agent). */
+const QUEUE_STATUSES = new Set(['submitted', 'pending', 'queued', 'assigned'])
 
-/** Statuses where the task is genuinely executing (not still waiting in queue). */
-const RUNNING_STATUSES = new Set(['starting', 'running'])
+function isExecutingStatus(status: string, startedAt?: string | null): boolean {
+  if (imageJobIsExecuting(status)) return true
+  // `startedAt` is set on first `starting`/`running` poll — use as fallback when
+  // `job.status` in the API response lags behind the offload cache.
+  return startedAt != null && !QUEUE_STATUSES.has(status)
+}
 
 function formatElapsed(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))
@@ -65,7 +70,7 @@ export function JobProgressBar({
     return () => window.clearInterval(t)
   }, [])
 
-  const isRunning = RUNNING_STATUSES.has(status)
+  const isRunning = isExecutingStatus(status, startedAt)
   const startedMs = startedAt ? new Date(startedAt).getTime() : null
   const elapsedSec = startedMs != null ? (now - startedMs) / 1000 : null
 
@@ -83,7 +88,7 @@ export function JobProgressBar({
   // Cap the visible fill at 99% until the job actually completes.
   const displayPct = determinate ? Math.min(Math.round(raw * 100), 99) : 0
 
-  const label = statusLabel(status)
+  const label = STATUS_LABEL[status] ?? imageJobStatusLabel(status)
 
   // Right-hand readout: percentage when determinate, elapsed time when running
   // without an estimate, otherwise nothing (still waiting in queue).

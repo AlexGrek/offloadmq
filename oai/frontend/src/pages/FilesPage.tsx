@@ -11,6 +11,7 @@ import {
   Play,
   RefreshCw,
   Trash2,
+  Video,
   Volume2,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
@@ -23,12 +24,14 @@ import type { ImggenRouteState } from '../lib/imggen'
 import { deleteTtsJob, ttsAudioUrl } from '../api/tts'
 import { FilePropertiesDialog } from '../components/files/FilePropertiesDialog'
 import { ImageLightbox } from '@/components/ImageLightbox'
+import { VideoLightbox } from '@/components/VideoLightbox'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 type DirectionFilter = 'all' | 'input' | 'output' | 'audio'
+type MediaFilter = 'all' | 'image' | 'video'
 
 const SCOPE_LABELS: Record<CleanupFilesScope, string> = {
   uploads: 'upload(s)',
@@ -64,6 +67,7 @@ export default function FilesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<DirectionFilter>('all')
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all')
   const [query, setQuery] = useState('')
   const [mediaRevision, setMediaRevision] = useState(0)
   const [info, setInfo] = useState<string | null>(null)
@@ -114,24 +118,34 @@ export default function FilesPage() {
     })
   }, [data, filter, query])
 
-  const imageFiles = useMemo(() => files.filter(f => !f.is_audio), [files])
+  const imageFiles = useMemo(() => {
+    const visual = files.filter(f => !f.is_audio)
+    switch (mediaFilter) {
+      case 'image':
+        return visual.filter(f => f.is_image)
+      case 'video':
+        return visual.filter(f => f.is_video)
+      default:
+        return visual
+    }
+  }, [files, mediaFilter])
   const audioFiles = useMemo(() => files.filter(f => f.is_audio), [files])
   const summary = data?.summary
 
   return (
     <>
     <main
-      className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-y-auto overscroll-contain p-6"
+      className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-6 sm:py-5"
       data-testid="files-page"
     >
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold">My Files</h1>
+      <div className="mb-5 flex flex-col gap-4 sm:mb-6 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="font-display text-xl font-bold sm:text-2xl">My Files</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Files are created by image tasks. Use cleanup to remove uploads or generated outputs.
+            Files from image, video, and speech tasks. Use cleanup to remove uploads or outputs.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1 self-end sm:self-auto">
           <FilesCleanupMenu
             token={token}
             onCompleted={(res, scope) => {
@@ -144,19 +158,21 @@ export default function FilesPage() {
           />
           <Button
             variant="ghost"
-            size="sm"
+            size="icon-sm"
+            className="size-11 sm:size-8"
             onClick={load}
             disabled={loading}
+            title="Refresh"
+            aria-label="Refresh"
             data-testid="files-refresh"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            <span className="ml-1.5 hidden sm:inline">Refresh</span>
+            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </div>
 
       {/* Storage summary */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="files-summary">
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:mb-6 sm:gap-3 sm:grid-cols-4" data-testid="files-summary">
         <SummaryStat label="Used space" value={formatBytes(summary?.used_bytes ?? 0)} accent />
         <SummaryStat label="Files" value={String(summary?.file_count ?? 0)} />
         <SummaryStat label="Uploads" value={formatBytes(summary?.input_bytes ?? 0)} />
@@ -164,13 +180,21 @@ export default function FilesPage() {
       </div>
 
       {/* Controls */}
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-1">
+      <div className="mb-4 flex flex-col gap-3">
+        <Input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search by filename…"
+          className="w-full min-h-11 sm:max-w-xs"
+          data-testid="files-search"
+        />
+        <div className="flex gap-1" role="group" aria-label="File type">
           {(['all', 'input', 'output', 'audio'] as const).map(f => (
             <Button
               key={f}
               variant={filter === f ? 'default' : 'ghost'}
               size="sm"
+              className="min-h-11 flex-1 px-2 text-xs sm:min-h-8 sm:flex-none sm:px-3 sm:text-sm"
               onClick={() => setFilter(f)}
               data-testid={`files-filter-${f}`}
             >
@@ -184,13 +208,27 @@ export default function FilesPage() {
             </Button>
           ))}
         </div>
-        <Input
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search by filename…"
-          className="sm:max-w-xs"
-          data-testid="files-search"
-        />
+        {filter !== 'audio' ? (
+          <div
+            className="flex gap-1"
+            role="group"
+            aria-label="Media type"
+            data-testid="files-media-filters"
+          >
+            {(['all', 'image', 'video'] as const).map(f => (
+              <Button
+                key={f}
+                variant={mediaFilter === f ? 'secondary' : 'ghost'}
+                size="sm"
+                className="min-h-11 flex-1 px-2 text-xs sm:min-h-8 sm:flex-none sm:px-3 sm:text-sm"
+                onClick={() => setMediaFilter(f)}
+                data-testid={`files-media-filter-${f}`}
+              >
+                {f === 'all' ? 'All media' : f === 'image' ? 'Images' : 'Videos'}
+              </Button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {info && (
@@ -212,13 +250,13 @@ export default function FilesPage() {
       )}
 
       {!loading && files.length === 0 && !error && (
-        <div className="rounded-2xl border border-dashed border-border py-16 text-center text-sm text-muted-foreground">
+        <div className="rounded-2xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground sm:py-16">
           No files yet.
         </div>
       )}
 
       {imageFiles.length > 0 && (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4">
           {imageFiles.map(file => (
             <FileTile
               key={file.id}
@@ -230,7 +268,11 @@ export default function FilesPage() {
                   ? imageThumbnailUrl(file.id, token, mediaRevision)
                   : undefined
               }
-              fullSrc={file.is_image ? imageFileUrl(file.id, token, mediaRevision) : undefined}
+              fullSrc={
+                file.is_image || file.is_video
+                  ? imageFileUrl(file.id, token, mediaRevision)
+                  : undefined
+              }
               onImageMutated={() => {
                 setMediaRevision(v => v + 1)
                 load()
@@ -387,15 +429,16 @@ function AudioList({
         return (
           <li
             key={file.id}
-            className="flex items-center gap-3 bg-background px-3 py-2 hover:bg-muted/40 transition-colors"
+            className="flex items-center gap-2 bg-background px-2 py-2.5 hover:bg-muted/40 transition-colors sm:gap-3 sm:px-3"
             data-testid={`files-audio-row-${file.id}`}
           >
             <button
               type="button"
               onClick={() => togglePlay(file)}
               disabled={isLoading || isDeleting}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 transition-colors disabled:opacity-50"
+              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 transition-colors disabled:opacity-50"
               title={isPlaying ? 'Stop' : 'Play'}
+              aria-label={isPlaying ? 'Stop' : 'Play'}
               data-testid={`files-audio-play-${file.id}`}
             >
               {isLoading ? (
@@ -410,43 +453,48 @@ function AudioList({
               <p className="truncate text-sm font-medium" title={file.filename}>
                 {file.filename}
               </p>
-              <p className="text-[11px] text-muted-foreground">
-                {formatBytes(file.size_bytes)} · {file.content_type}
+              <p className="truncate text-[11px] text-muted-foreground">
+                {formatBytes(file.size_bytes)}
+                <span className="hidden min-[380px]:inline"> · {file.content_type}</span>
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => onShowProperties(file.filename)}
-              className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Show generation properties"
-              data-testid={`files-audio-info-${file.id}`}
-              aria-label="Show generation properties"
-            >
-              <Info className="size-4" />
-            </button>
-            <a
-              href={ttsAudioUrl(file.id, token)}
-              download={file.filename}
-              className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Download"
-              data-testid={`files-audio-download-${file.id}`}
-            >
-              <Download className="size-4" />
-            </a>
-            <button
-              type="button"
-              onClick={() => void handleDelete(file)}
-              disabled={isDeleting}
-              className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-              title="Delete"
-              data-testid={`files-audio-delete-${file.id}`}
-            >
-              {isDeleting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Trash2 className="size-4" />
-              )}
-            </button>
+            <div className="flex shrink-0 items-center">
+              <button
+                type="button"
+                onClick={() => onShowProperties(file.filename)}
+                className="inline-flex size-11 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors sm:size-8"
+                title="Show generation properties"
+                data-testid={`files-audio-info-${file.id}`}
+                aria-label="Show generation properties"
+              >
+                <Info className="size-4" />
+              </button>
+              <a
+                href={ttsAudioUrl(file.id, token)}
+                download={file.filename}
+                className="inline-flex size-11 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors sm:size-8"
+                title="Download"
+                aria-label="Download"
+                data-testid={`files-audio-download-${file.id}`}
+              >
+                <Download className="size-4" />
+              </a>
+              <button
+                type="button"
+                onClick={() => void handleDelete(file)}
+                disabled={isDeleting}
+                className="inline-flex size-11 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50 sm:size-8"
+                title="Delete"
+                aria-label="Delete"
+                data-testid={`files-audio-delete-${file.id}`}
+              >
+                {isDeleting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
+              </button>
+            </div>
           </li>
         )
       })}
@@ -464,14 +512,14 @@ function SummaryStat({
   accent?: boolean
 }) {
   return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className={`rounded-lg p-2 ${accent ? 'bg-emerald-500/20' : 'bg-muted'}`}>
-          <HardDrive className={`h-4 w-4 ${accent ? 'text-emerald-400' : 'text-muted-foreground'}`} />
+    <Card className="min-w-0">
+      <CardContent className="flex items-center gap-2.5 p-3 sm:gap-3 sm:p-4">
+        <div className={`shrink-0 rounded-lg p-2 ${accent ? 'bg-emerald-500/20' : 'bg-muted'}`}>
+          <HardDrive className={`size-4 ${accent ? 'text-emerald-400' : 'text-muted-foreground'}`} />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-lg font-semibold">{value}</p>
-          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="truncate text-base font-semibold sm:text-lg">{value}</p>
+          <p className="truncate text-[11px] text-muted-foreground sm:text-xs">{label}</p>
         </div>
       </CardContent>
     </Card>
@@ -505,15 +553,17 @@ function FileTile({
 }) {
   const showInfo = file.direction === 'output'
   const meta = (
-    <div className="flex items-start gap-2 border-t border-border px-3 py-2">
+    <div className="flex items-start gap-1 border-t border-border px-2 py-2 sm:gap-2 sm:px-3">
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-medium" title={file.filename}>
-          {file.is_image || file.is_video ? (
-            <ImageIcon className="mr-1 inline h-3 w-3 align-text-bottom text-muted-foreground" />
+          {file.is_video ? (
+            <Video className="mr-1 inline size-3 align-text-bottom text-muted-foreground" />
+          ) : file.is_image ? (
+            <ImageIcon className="mr-1 inline size-3 align-text-bottom text-muted-foreground" />
           ) : null}
           {file.filename}
         </p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
+        <p className="mt-0.5 truncate text-[10px] text-muted-foreground sm:text-[11px]">
           {file.width > 0 && file.height > 0 ? `${file.width}×${file.height} · ` : ''}
           {formatBytes(file.size_bytes)}
         </p>
@@ -526,7 +576,7 @@ function FileTile({
             e.stopPropagation()
             onShowProperties()
           }}
-          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors sm:size-8"
           title="Show generation properties"
           data-testid={`file-tile-info-${file.id}`}
           aria-label="Show generation properties"
@@ -559,6 +609,62 @@ function FileTile({
   const tileClass =
     'group flex flex-col overflow-hidden rounded-xl border border-border transition-all hover:shadow-md hover:border-border/60'
 
+  const thumbOverlay = (
+    <span className="absolute left-2 top-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] font-medium capitalize backdrop-blur">
+      {file.direction === 'output' ? 'Generated' : 'Upload'}
+    </span>
+  )
+
+  const thumbContent = (
+    <div className="relative flex aspect-square items-center justify-center bg-muted/40">
+      <img
+        key={`${file.id}-${mediaRevision}`}
+        src={thumbSrc}
+        alt=""
+        aria-hidden
+        loading="lazy"
+        className="h-full w-full object-cover transition-transform group-hover:scale-[1.03]"
+      />
+      {thumbOverlay}
+      {file.is_video ? (
+        <span
+          className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25"
+          aria-hidden
+        >
+          <Play className="size-8 text-white/90 drop-shadow-md sm:size-10" fill="currentColor" />
+        </span>
+      ) : null}
+    </div>
+  )
+
+  if (file.is_video && fullSrc && token) {
+    const caption =
+      file.width > 0 && file.height > 0
+        ? `${file.filename} — ${file.width}×${file.height}`
+        : file.filename
+    return (
+      <div className={tileClass} data-testid={`file-tile-${file.id}`}>
+        <VideoLightbox
+          src={fullSrc}
+          alt={file.filename}
+          caption={caption}
+          triggerClassName="w-full"
+          testId={`file-tile-${file.id}`}
+          actions={{
+            fileId: file.id,
+            filename: file.filename,
+            direction: file.direction,
+            token,
+            onDeleted: onImageMutated,
+          }}
+        >
+          {thumbContent}
+        </VideoLightbox>
+        {meta}
+      </div>
+    )
+  }
+
   if (file.is_image && fullSrc && token) {
     const caption =
       file.width > 0 && file.height > 0
@@ -585,19 +691,7 @@ function FileTile({
             onSendToImg2Video: onAnimate ? () => onAnimate(file) : undefined,
           }}
         >
-          <div className="relative flex aspect-square items-center justify-center bg-muted/40">
-            <img
-              key={`${file.id}-${mediaRevision}`}
-              src={thumbSrc}
-              alt=""
-              aria-hidden
-              loading="lazy"
-              className="h-full w-full object-cover transition-transform group-hover:scale-[1.03]"
-            />
-            <span className="absolute left-2 top-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] font-medium capitalize backdrop-blur">
-              {file.direction === 'output' ? 'Generated' : 'Upload'}
-            </span>
-          </div>
+          {thumbContent}
         </ImageLightbox>
         {meta}
       </div>

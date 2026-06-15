@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Download,
   Loader2,
@@ -30,6 +31,11 @@ import { Label } from '../components/ui/label'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import { capabilityBaseLabel } from '../lib/modelAvailability'
 import { pickListedCapability } from '../lib/capability-picker'
+import {
+  applyStoredTtsParamsToNewForm,
+  applyTtsParamsToNewForm,
+  type TtsRouteState,
+} from '../lib/tts'
 import { TtsHistorySidebar, TTS_NEW_PANEL } from '../components/tts/TtsHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -87,6 +93,8 @@ function sanitizeFilenameSlug(input: string, maxChars = 50): string {
 
 export default function TtsPage() {
   const { token } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
 
   const [capabilities, setCapabilities] = useState<TtsCapability[]>([])
   const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('idle')
@@ -187,6 +195,55 @@ export default function TtsPage() {
     setActivePanel(TTS_NEW_PANEL)
     setError(null)
   }
+
+  const ttsFormHandlers = useMemo(
+    () => ({
+      setText,
+      setSelectedCap,
+      setSelectedVoice,
+    }),
+    [],
+  )
+
+  const copyTtsToNewForm = useCallback(
+    (job: Pick<TtsJob, 'text' | 'capability' | 'voice'>) => {
+      applyTtsParamsToNewForm(
+        {
+          text: job.text,
+          capability: job.capability,
+          voice: job.voice,
+        },
+        ttsFormHandlers,
+        capabilities,
+      )
+      setActivePanel(TTS_NEW_PANEL)
+      setError(null)
+    },
+    [capabilities, ttsFormHandlers],
+  )
+
+  useEffect(() => {
+    const state = location.state as TtsRouteState | null
+    if (!state?.generateAgain || !token) return
+
+    const { jobId, parameters } = state.generateAgain
+    navigate(location.pathname, { replace: true, state: null })
+
+    void (async () => {
+      if (jobId) {
+        try {
+          const job = await getTtsJob(token, jobId)
+          copyTtsToNewForm(job)
+          return
+        } catch {
+          // job removed — fall back to stored metadata
+        }
+      }
+      applyStoredTtsParamsToNewForm(parameters, ttsFormHandlers, capabilities)
+      setActivePanel(TTS_NEW_PANEL)
+      setError(null)
+    })()
+  }, [location.state, location.pathname, navigate, token, copyTtsToNewForm, ttsFormHandlers, capabilities])
 
   async function selectJob(jobId: string) {
     if (!token) return
@@ -310,12 +367,7 @@ export default function TtsPage() {
 
   function editFromJob() {
     if (!selectedJob) return
-    setText(selectedJob.text)
-    if (selectedJob.capability && capabilities.some(c => c.base === selectedJob.capability)) {
-      setSelectedCap(selectedJob.capability)
-    }
-    if (selectedJob.voice) setSelectedVoice(selectedJob.voice)
-    setActivePanel(TTS_NEW_PANEL)
+    copyTtsToNewForm(selectedJob)
   }
 
   const canSubmit = useMemo(

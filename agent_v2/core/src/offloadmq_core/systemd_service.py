@@ -38,18 +38,16 @@ def install_systemd_unit(*, host: str = "0.0.0.0", port: int = 8090) -> dict[str
     if sys.platform != "linux":
         return {"ok": False, "message": "systemd install is only supported on Linux"}
 
-    omq = shutil.which("omq") or shutil.which("uv")
+    # When running as a frozen PyInstaller binary, sys.executable IS the omq
+    # binary. For source installs (uv run omq), fall back to PATH lookup.
+    omq: str | None = sys.executable if Path(sys.executable).name == "omq" else shutil.which("omq")
     if not omq:
-        return {"ok": False, "message": "Could not find omq or uv in PATH"}
+        return {"ok": False, "message": "Could not find omq binary in PATH — install it first"}
 
-    cwd = Path.cwd()
     unit_path = _unit_path()
     unit_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if omq.endswith("uv"):
-        exec_start = f"{omq} run omq webui --host {host} --port {port} --start"
-    else:
-        exec_start = f"{omq} webui --host {host} --port {port} --start"
+    exec_start = f"{omq} webui --host {host} --port {port} --start"
 
     content = f"""[Unit]
 Description=OffloadMQ Agent v2
@@ -57,7 +55,7 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory={cwd}
+WorkingDirectory={Path.home()}
 ExecStart={exec_start}
 Restart=on-failure
 Environment=PATH={os.environ.get('PATH', '')}
