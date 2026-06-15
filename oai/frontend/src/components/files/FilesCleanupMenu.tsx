@@ -68,19 +68,20 @@ export function FilesCleanupMenu({ token, onCompleted }: FilesCleanupMenuProps) 
         type="button"
         variant="outline"
         size="sm"
+        className="min-h-11 sm:min-h-8"
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
         data-testid="files-cleanup-open"
       >
         Cleanup
         <ChevronDown
-          className={cn('ml-1 h-3.5 w-3.5 opacity-60 transition-transform', open && 'rotate-180')}
+          className={cn('ml-1 size-3.5 opacity-60 transition-transform', open && 'rotate-180')}
         />
       </Button>
 
       {open && (
         <div
-          className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-border bg-popover p-4 text-sm shadow-md"
+          className="absolute right-0 top-full z-50 mt-1.5 w-[min(18rem,calc(100vw-1.5rem))] rounded-xl border border-border bg-popover p-4 text-sm shadow-md"
           role="menu"
           data-testid="files-cleanup-panel"
         >
@@ -156,7 +157,7 @@ function CleanupButton({
       type="button"
       variant="destructive"
       size="sm"
-      className="w-full justify-start px-3"
+      className="min-h-11 w-full justify-start px-3 sm:min-h-8"
       data-testid={testId}
       disabled={disabled}
       onClick={onClick}

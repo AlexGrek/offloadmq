@@ -1267,6 +1267,11 @@ async fn store_output_video(
         },
     )
     .await?;
+    if let Err(e) = record_image_generation_parameters(state, user_id, job, &filename).await {
+        tracing::warn!(
+            "failed to record generation parameters for video {file_id}: {e}"
+        );
+    }
     recalc_user_storage(state, user_id).await?;
     record_event(
         state,

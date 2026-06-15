@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Copy, Loader2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Copy, Loader2, Sparkles } from 'lucide-react'
 import {
   Dialog,
   DialogBody,
@@ -10,6 +11,8 @@ import {
 } from '../ui/dialog'
 import { Button } from '../ui/button'
 import { getFileProperties, type FileProperties } from '../../api/files'
+import { pipelineParamsFromStored, storedImggenWorkflow, type ImggenRouteState } from '../../lib/imggen'
+import { canGenerateAgainFromTtsStored, type TtsRouteState } from '../../lib/tts'
 
 type Props = {
   open: boolean
@@ -70,6 +73,7 @@ function isMultiline(value: unknown): boolean {
 }
 
 export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Props) {
+  const navigate = useNavigate()
   const [data, setData] = useState<FileProperties | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -89,6 +93,31 @@ export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Pr
       .finally(() => setLoading(false))
   }, [open, filename, token])
 
+  function handleGenerateAgain() {
+    if (!data) return
+    const parameters = data.parameters
+    const jobId =
+      typeof parameters.job_id === 'string' && parameters.job_id.trim() !== ''
+        ? parameters.job_id.trim()
+        : undefined
+    onOpenChange(false)
+
+    if (data.source === 'image' && storedImggenWorkflow(parameters)) {
+      const state: ImggenRouteState = {
+        generateAgain: { jobId, parameters },
+      }
+      navigate('/app/images', { state })
+      return
+    }
+
+    if (data.source === 'audio' && canGenerateAgainFromTtsStored(parameters)) {
+      const state: TtsRouteState = {
+        generateAgain: { jobId, parameters },
+      }
+      navigate('/app/tts', { state })
+    }
+  }
+
   function handleCopy() {
     if (!data) return
     void navigator.clipboard
@@ -100,6 +129,11 @@ export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Pr
   }
 
   const params = (data?.parameters ?? {}) as Record<string, unknown>
+  const canGenerateAgain =
+    (data?.source === 'image' &&
+      storedImggenWorkflow(params) != null &&
+      pipelineParamsFromStored(params).prompt.trim() !== '') ||
+    (data?.source === 'audio' && canGenerateAgainFromTtsStored(params))
   const order = data ? KEY_ORDER[data.source] ?? [] : []
   const knownKeys = new Set(order)
   const otherKeys = Object.keys(params)
@@ -108,14 +142,14 @@ export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Pr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="truncate">{filename ?? 'Properties'}</DialogTitle>
+      <DialogContent className="flex max-h-[min(90dvh,40rem)] flex-col gap-0 p-0 sm:max-w-2xl">
+        <DialogHeader className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
+          <DialogTitle className="truncate pr-6">{filename ?? 'Properties'}</DialogTitle>
           <DialogDescription>
             How this file was generated. This record is preserved even after the file is deleted.
           </DialogDescription>
         </DialogHeader>
-        <DialogBody className="max-h-[60vh] overflow-y-auto">
+        <DialogBody className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
           {loading ? (
             <div className="flex justify-center py-6">
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -143,20 +177,35 @@ export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Pr
                   </>
                 )}
               </dl>
-              <div className="flex items-center justify-between border-t border-border pt-3">
+              <div className="flex flex-col gap-3 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-[11px] text-muted-foreground">
                   Source: <span className="font-mono">{data.source}</span>
                 </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopy}
-                  className="gap-1.5"
-                >
-                  <Copy className="size-3.5" />
-                  {copied ? 'Copied!' : 'Copy JSON'}
-                </Button>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-1">
+                  {canGenerateAgain ? (
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={handleGenerateAgain}
+                      className="min-h-11 w-full gap-1.5 sm:min-h-8 sm:w-auto"
+                      data-testid="file-properties-generate-again"
+                    >
+                      <Sparkles className="size-3.5" />
+                      Generate again
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopy}
+                    className="min-h-11 w-full gap-1.5 sm:min-h-8 sm:w-auto"
+                  >
+                    <Copy className="size-3.5" />
+                    {copied ? 'Copied!' : 'Copy JSON'}
+                  </Button>
+                </div>
               </div>
             </div>
           ) : null}

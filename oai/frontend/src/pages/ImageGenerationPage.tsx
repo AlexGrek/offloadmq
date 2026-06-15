@@ -81,12 +81,14 @@ import {
   randomTxt2imgPrompt,
   randomTxt2videoPrompt,
   applyPipelineParamsToNewForm,
+  applyStoredGenerationParamsToNewForm,
   filterCapabilitiesByWorkflow,
   fitsOriginalResolution,
   isInputImageMode,
   isVideoMode,
   jobPromptTitle,
   jobTechMeta,
+  pipelineParamsFromStored,
   proportionalCounterpart,
   proportionalPresets,
   proportionalSize,
@@ -97,6 +99,7 @@ import {
   rescaleDataPrep,
   type ImgGenMode,
   type ImggenRouteState,
+  type ApplyPipelineToNewFormHandlers,
   type RescaleState,
 } from '../lib/imggen'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
@@ -547,6 +550,39 @@ export default function ImageGenerationPage() {
     sendOutputToInputMode(file, 'img2video')
   }
 
+  const pipelineFormHandlers = useMemo(
+    (): ApplyPipelineToNewFormHandlers => ({
+      setMode,
+      setPrompt,
+      setNegativePrompt,
+      setOverrideNegative,
+      setCapability,
+      setWidth,
+      setHeight,
+      setSeed,
+      setVideoLength,
+      setRescale,
+      setOriginalResolution,
+      setKeepProportions,
+      setUploadedInput,
+      setInputPreviewUrl,
+      rescaleUserEditedRef,
+    }),
+    [],
+  )
+
+  const copyPipelineToNewForm = useCallback(
+    (job: ImageJobDetails) => {
+      const previewUrl =
+        job.input_image_id && token ? imageFileUrl(job.input_image_id, token) : null
+      applyPipelineParamsToNewForm(job, pipelineFormHandlers, previewUrl, capabilities)
+      setActivePanel(IMGGEN_NEW_PANEL)
+      setInfo('Pipeline parameters copied to New job. Adjust and submit when ready.')
+      setError(null)
+    },
+    [token, capabilities, pipelineFormHandlers],
+  )
+
   useEffect(() => {
     const state = location.state as ImggenRouteState | null
     if (!state) return
@@ -559,12 +595,47 @@ export default function ImageGenerationPage() {
       return
     }
 
+    if (state.generateAgain) {
+      const { jobId, parameters } = state.generateAgain
+      navigate(location.pathname, { replace: true, state: null })
+      if (!token) return
+      void (async () => {
+        if (jobId) {
+          try {
+            const job = await getImageJob(token, jobId)
+            copyPipelineToNewForm(job)
+            return
+          } catch {
+            // job removed — fall back to stored metadata
+          }
+        }
+        const p = pipelineParamsFromStored(parameters)
+        const previewUrl = p.input_image_id ? imageFileUrl(p.input_image_id, token) : null
+        applyStoredGenerationParamsToNewForm(parameters, pipelineFormHandlers, {
+          imagePreviewUrl: previewUrl,
+          availableCapabilities: capabilities,
+        })
+        setActivePanel(IMGGEN_NEW_PANEL)
+        setInfo('Pipeline parameters copied to New job. Adjust and submit when ready.')
+        setError(null)
+      })()
+      return
+    }
+
     const incoming = state.useInputImage
     if (!incoming?.image?.image_id) return
 
     sendOutputToInputMode(incoming.image, incoming.mode)
     navigate(location.pathname, { replace: true, state: null })
-  }, [location.state, location.pathname, navigate])
+  }, [
+    location.state,
+    location.pathname,
+    navigate,
+    token,
+    copyPipelineToNewForm,
+    pipelineFormHandlers,
+    capabilities,
+  ])
 
   const runPoll = useCallback(
     async (jobId: string) => {
@@ -774,35 +845,7 @@ export default function ImageGenerationPage() {
 
   function editPromptFromJob() {
     if (!selectedJob) return
-    const previewUrl =
-      selectedJob.input_image_id && token
-        ? imageFileUrl(selectedJob.input_image_id, token)
-        : null
-    applyPipelineParamsToNewForm(
-      selectedJob,
-      {
-        setMode,
-        setPrompt,
-        setNegativePrompt,
-        setOverrideNegative,
-        setCapability,
-        setWidth,
-        setHeight,
-        setSeed,
-        setVideoLength,
-        setRescale,
-        setOriginalResolution,
-        setKeepProportions,
-        setUploadedInput,
-        setInputPreviewUrl,
-        rescaleUserEditedRef,
-      },
-      previewUrl,
-      capabilities,
-    )
-    setActivePanel(IMGGEN_NEW_PANEL)
-    setInfo('Pipeline parameters copied to New job. Adjust and submit when ready.')
-    setError(null)
+    copyPipelineToNewForm(selectedJob)
   }
 
   function rescaleForSubmit(): ImagePipelineRescaleParams | null {

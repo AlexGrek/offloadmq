@@ -18,6 +18,11 @@ export type ImggenRouteState = {
     mode: 'img2img' | 'img2video'
     image: UploadedImage
   }
+  /** Prefill the New job form from file metadata (My Files properties). */
+  generateAgain?: {
+    jobId?: string
+    parameters: Record<string, unknown>
+  }
 }
 
 export function isVideoMode(mode: ImgGenMode): boolean {
@@ -242,7 +247,19 @@ function rescaleFromParams(r: ImagePipelineRescaleParams | null | undefined): Re
   }
 }
 
-export function uploadedInputFromJobFile(file: ImageJobFile): UploadedImage {
+export function uploadedInputFromJobFile(
+  file: Pick<
+    ImageJobFile,
+    | 'image_id'
+    | 'filename'
+    | 'content_type'
+    | 'width'
+    | 'height'
+    | 'size_bytes'
+    | 'rescaled'
+    | 'reencoded'
+  >,
+): UploadedImage {
   return {
     image_id: file.image_id,
     filename: file.filename,
@@ -279,19 +296,103 @@ export interface ApplyPipelineToNewFormHandlers {
   rescaleUserEditedRef: { current: boolean }
 }
 
-/** Copy a job's stored pipeline parameters into the New job form. */
-export function applyPipelineParamsToNewForm(
-  job: ImageJobDetails,
+function workflowToMode(workflow: string): ImgGenMode {
+  if (workflow === 'img2img') return 'img2img'
+  if (workflow === 'txt2video') return 'txt2video'
+  if (workflow === 'img2video') return 'img2video'
+  return 'txt2img'
+}
+
+function asParamRecord(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+/** Build pipeline params from a `generation_parameters` row (file properties API). */
+export function pipelineParamsFromStored(stored: Record<string, unknown>): ImagePipelineParams {
+  const nested = asParamRecord(stored.pipeline_params)
+  const workflowRaw = String(nested?.workflow ?? stored.workflow ?? 'txt2img')
+  const width = Number(nested?.width ?? stored.width ?? 1024)
+  const height = Number(nested?.height ?? stored.height ?? 1024)
+  const seedRaw = nested?.seed ?? stored.seed
+  const inputRaw = nested?.input_image_id ?? stored.input_image_id
+  return {
+    capability: String(nested?.capability ?? stored.capability ?? ''),
+    prompt: String(nested?.prompt ?? stored.prompt ?? ''),
+    negative_prompt:
+      nested?.negative_prompt != null
+        ? String(nested.negative_prompt)
+        : stored.negative_prompt != null
+          ? String(stored.negative_prompt)
+          : null,
+    override_negative: Boolean(nested?.override_negative),
+    width: Number.isFinite(width) ? width : 1024,
+    height: Number.isFinite(height) ? height : 1024,
+    seed: seedRaw != null && seedRaw !== '' ? Number(seedRaw) : null,
+    workflow: workflowToMode(workflowRaw),
+    input_image_id: inputRaw != null && inputRaw !== '' ? String(inputRaw) : null,
+    data_preparation: (nested?.data_preparation ??
+      null) as ImagePipelineParams['data_preparation'],
+    rescale: (nested?.rescale ?? null) as ImagePipelineParams['rescale'],
+    video_length:
+      nested?.video_length != null ? Number(nested.video_length) : null,
+  }
+}
+
+export function storedImggenWorkflow(
+  stored: Record<string, unknown>,
+): ImgGenMode | null {
+  const workflow = pipelineParamsFromStored(stored).workflow
+  if (
+    workflow === 'txt2img' ||
+    workflow === 'img2img' ||
+    workflow === 'txt2video' ||
+    workflow === 'img2video'
+  ) {
+    return workflow
+  }
+  return null
+}
+
+function stubUploadedInput(
+  imageId: string,
+  width: number,
+  height: number,
+): UploadedImage {
+  return {
+    image_id: imageId,
+    filename: 'input',
+    content_type: 'image/jpeg',
+    width,
+    height,
+    size_bytes: 0,
+    rescaled: false,
+    reencoded: false,
+  }
+}
+
+function applyPipelineParamsCore(
+  p: ImagePipelineParams,
+  inputFile:
+    | Pick<
+        ImageJobFile,
+        | 'image_id'
+        | 'filename'
+        | 'content_type'
+        | 'width'
+        | 'height'
+        | 'size_bytes'
+        | 'rescaled'
+        | 'reencoded'
+      >
+    | null
+    | undefined,
   handlers: ApplyPipelineToNewFormHandlers,
   imagePreviewUrl?: string | null,
   availableCapabilities?: readonly { base: string }[],
 ): void {
-  const p = pipelineParamsFromJob(job)
-  const mode: ImgGenMode =
-    p.workflow === 'img2img' ? 'img2img'
-    : p.workflow === 'txt2video' ? 'txt2video'
-    : p.workflow === 'img2video' ? 'img2video'
-    : 'txt2img'
+  const mode = workflowToMode(p.workflow)
   handlers.setMode(mode)
   handlers.setPrompt(p.prompt)
   handlers.setNegativePrompt(p.negative_prompt?.trim() ?? '')
@@ -299,6 +400,8 @@ export function applyPipelineParamsToNewForm(
   if (availableCapabilities?.length) {
     const cap = pickListedCapability(p.capability, availableCapabilities)
     if (cap) handlers.setCapability(cap)
+  } else if (p.capability) {
+    handlers.setCapability(p.capability)
   }
   handlers.setWidth(p.width)
   handlers.setHeight(p.height)
@@ -306,10 +409,6 @@ export function applyPipelineParamsToNewForm(
   handlers.setVideoLength(String(p.video_length ?? 25))
   handlers.rescaleUserEditedRef.current = true
   handlers.setRescale(rescaleFromParams(p.rescale))
-  const inputFile =
-    (mode === 'img2img' || mode === 'img2video') && p.input_image_id
-      ? job.files.find(f => f.direction === 'input')
-      : undefined
   if (inputFile) {
     handlers.setUploadedInput(uploadedInputFromJobFile(inputFile))
     handlers.setInputPreviewUrl(imagePreviewUrl ?? null)
@@ -317,9 +416,6 @@ export function applyPipelineParamsToNewForm(
     handlers.setUploadedInput(null)
     handlers.setInputPreviewUrl(null)
   }
-  // Re-derive the "original resolution" toggle: img2img job whose generation dims match a
-  // sub-4K input image (and no active rescale) was generated at the input's native size.
-  // Not applicable to img2video.
   handlers.setOriginalResolution(
     mode === 'img2img' &&
       !!inputFile &&
@@ -328,8 +424,58 @@ export function applyPipelineParamsToNewForm(
       p.height === inputFile.height &&
       !p.rescale?.enabled,
   )
-  // Lock proportions for img2img with an input image; not for video modes.
   handlers.setKeepProportions(mode === 'img2img' && !!inputFile)
+}
+
+/** Copy a job's stored pipeline parameters into the New job form. */
+export function applyPipelineParamsToNewForm(
+  job: ImageJobDetails,
+  handlers: ApplyPipelineToNewFormHandlers,
+  imagePreviewUrl?: string | null,
+  availableCapabilities?: readonly { base: string }[],
+): void {
+  const p = pipelineParamsFromJob(job)
+  const mode = workflowToMode(p.workflow)
+  const inputFile =
+    (mode === 'img2img' || mode === 'img2video') && p.input_image_id
+      ? job.files.find(f => f.direction === 'input')
+      : undefined
+  applyPipelineParamsCore(p, inputFile, handlers, imagePreviewUrl, availableCapabilities)
+}
+
+/** Copy file metadata (`generation_parameters`) into the New job form. */
+export function applyStoredGenerationParamsToNewForm(
+  stored: Record<string, unknown>,
+  handlers: ApplyPipelineToNewFormHandlers,
+  options?: {
+    inputFile?: Pick<
+      ImageJobFile,
+      | 'image_id'
+      | 'filename'
+      | 'content_type'
+      | 'width'
+      | 'height'
+      | 'size_bytes'
+      | 'rescaled'
+      | 'reencoded'
+    > | null
+    imagePreviewUrl?: string | null
+    availableCapabilities?: readonly { base: string }[]
+  },
+): void {
+  const p = pipelineParamsFromStored(stored)
+  const mode = workflowToMode(p.workflow)
+  let inputFile = options?.inputFile ?? null
+  if (!inputFile && (mode === 'img2img' || mode === 'img2video') && p.input_image_id) {
+    inputFile = stubUploadedInput(p.input_image_id, p.width, p.height)
+  }
+  applyPipelineParamsCore(
+    p,
+    inputFile,
+    handlers,
+    options?.imagePreviewUrl,
+    options?.availableCapabilities,
+  )
 }
 
 /** Rotating starter prompts for txt2img — one is picked at random on the frontend. */
