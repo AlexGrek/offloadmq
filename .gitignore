@@ -18,3 +18,4 @@ agent_v2/**/build/
 agent_v2/**/dist/
 agent_v2/**/*.spec
 agent_v2/installer-out/
+oai/.buildx-cache-new/*
