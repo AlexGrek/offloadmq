@@ -16,4 +16,6 @@ pub mod health;
 pub mod images;
 pub mod tts;
 pub mod music_generation;
+pub mod llm_compare;
+pub mod llm_debate;
 pub mod names;

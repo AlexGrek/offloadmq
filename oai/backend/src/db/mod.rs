@@ -14,6 +14,8 @@ pub mod image_worker_logs;
 pub mod migrator;
 pub mod tts;
 pub mod music_generation;
+pub mod llm_compare;
+pub mod llm_debate;
 pub mod users;
 
 use anyhow::Result;

@@ -14,6 +14,8 @@ import NudeDetectorPage from './pages/NudeDetectorPage'
 import RunnersPage from './pages/RunnersPage'
 import TtsPage from './pages/TtsPage'
 import MusicGenerationPage from './pages/MusicGenerationPage'
+import LlmComparePage from './pages/LlmComparePage'
+import LlmDebatePage from './pages/LlmDebatePage'
 import FilesPage from './pages/FilesPage'
 import SettingsPage from './pages/SettingsPage'
 import ServerConfigPage from './pages/ServerConfigPage'
@@ -48,6 +50,8 @@ export default function App() {
             <Route path="runners" element={<RunnersPage />} />
             <Route path="tts" element={<TtsPage />} />
             <Route path="music" element={<MusicGenerationPage />} />
+            <Route path="llm-compare" element={<LlmComparePage />} />
+            <Route path="llm-debate" element={<LlmDebatePage />} />
             <Route path="files" element={<FilesPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/server" element={<ServerConfigPage />} />

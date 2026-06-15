@@ -6,3 +6,5 @@ pub mod image_pipeline_worker;
 pub mod llm_capability_cleanup_worker;
 pub mod tts_worker;
 pub mod music_generation_worker;
+pub mod llm_compare_worker;
+pub mod llm_debate_worker;

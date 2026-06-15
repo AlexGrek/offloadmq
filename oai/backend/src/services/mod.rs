@@ -18,3 +18,6 @@ pub mod runners;
 pub mod storage;
 pub mod tts;
 pub mod music_generation;
+pub mod llm_compare;
+pub mod llm_debate;
+pub mod llm_text_capabilities;

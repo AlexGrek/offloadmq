@@ -191,6 +191,32 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/music-gen/jobs/{id}/audio/{track}",
             get(routes::music_generation::get_audio),
         )
+        .route(
+            "/api/llm-compare/capabilities",
+            get(routes::llm_compare::list_capabilities),
+        )
+        .route("/api/llm-compare/jobs", post(routes::llm_compare::start_job))
+        .route("/api/llm-compare/jobs", get(routes::llm_compare::list_jobs))
+        .route(
+            "/api/llm-compare/jobs/{id}",
+            get(routes::llm_compare::get_job).delete(routes::llm_compare::delete_job),
+        )
+        .route("/api/llm-compare/jobs/{id}/poll", post(routes::llm_compare::poll_job))
+        .route("/api/llm-compare/jobs/{id}/cancel", post(routes::llm_compare::cancel_job))
+        .route("/api/llm-compare/jobs/{id}/retry", post(routes::llm_compare::retry_job))
+        .route(
+            "/api/llm-debate/capabilities",
+            get(routes::llm_debate::list_capabilities),
+        )
+        .route("/api/llm-debate/jobs", post(routes::llm_debate::start_job))
+        .route("/api/llm-debate/jobs", get(routes::llm_debate::list_jobs))
+        .route(
+            "/api/llm-debate/jobs/{id}",
+            get(routes::llm_debate::get_job).delete(routes::llm_debate::delete_job),
+        )
+        .route("/api/llm-debate/jobs/{id}/poll", post(routes::llm_debate::poll_job))
+        .route("/api/llm-debate/jobs/{id}/cancel", post(routes::llm_debate::cancel_job))
+        .route("/api/llm-debate/jobs/{id}/retry", post(routes::llm_debate::retry_job))
         .layer(from_fn_with_state(state.clone(), middleware::jwt_auth_middleware));
 
     let admin = Router::new()
