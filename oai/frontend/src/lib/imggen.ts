@@ -181,6 +181,28 @@ export function lastOutputImageId(job: { files: { direction: string; image_id: s
   return outputs[outputs.length - 1].image_id
 }
 
+/** Human-readable pipeline job status — distinguishes queue wait from agent work. */
+export function imageJobStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    submitted: 'In queue',
+    pending: 'Pending',
+    queued: 'Queued',
+    assigned: 'Assigned',
+    starting: 'Starting',
+    running: 'Generating',
+    cancelRequested: 'Canceling',
+    completed: 'Completed',
+    failed: 'Failed',
+    canceled: 'Canceled',
+  }
+  return labels[status] ?? status.replace(/_/g, ' ')
+}
+
+/** True when an agent is actively executing (not merely queued). */
+export function imageJobIsExecuting(status: string): boolean {
+  return status === 'starting' || status === 'running'
+}
+
 const POLL_EVENT_STEPS = new Set(['offload.poll', 'worker.offload.poll'])
 
 export function isPipelinePollEvent(event: ImageJobEvent): boolean {

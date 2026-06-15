@@ -95,6 +95,7 @@ import {
 
   pipelineEventsWithoutPolls,
   pipelineStatusLine,
+  imageJobStatusLabel,
   parseVideoLength,
   rescaleDataPrep,
   type ImgGenMode,
@@ -131,7 +132,7 @@ const DEFAULT_RESCALE: RescaleState = {
 
 export default function ImageGenerationPage() {
   const { token } = useAuth()
-  const { refreshRunningImageJobs } = useProgress()
+  const { refreshRunningImageJobs, runningImageJobs } = useProgress()
   const isMobile = useIsMobile()
   const location = useLocation()
   const navigate = useNavigate()
@@ -751,6 +752,8 @@ export default function ImageGenerationPage() {
       await refreshJob(res.job_id)
       setActivePoll({ job_id: res.job_id, status: res.status, stage: null, error: null, output_images: [] })
       setInfo(`Job ${res.job_id} submitted. Polling for results…`)
+      void refreshRunningImageJobs()
+      void runPoll(res.job_id)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -819,18 +822,6 @@ export default function ImageGenerationPage() {
       setJobDetailLoading(false)
     }
   }
-
-  // Auto-poll while viewing a job that is still in progress.
-  useEffect(() => {
-    if (!token || !viewedJobId) return
-    const status = activePoll?.status ?? selectedJob?.status
-    if (status && TERMINAL.has(status)) return
-
-    const id = window.setInterval(() => {
-      void runPoll(viewedJobId)
-    }, POLL_MS)
-    return () => window.clearInterval(id)
-  }, [token, viewedJobId, activePoll?.status, selectedJob?.status, runPoll])
 
   useEffect(() => {
     return () => {
@@ -910,6 +901,9 @@ export default function ImageGenerationPage() {
             }
           : null,
       )
+      if (details && !TERMINAL.has(details.status)) {
+        void runPoll(jobId)
+      }
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -917,10 +911,23 @@ export default function ImageGenerationPage() {
     }
   }
 
+  const jobStatusOverrides = useMemo(() => {
+    const overrides: Record<string, string> = {}
+    for (const row of runningImageJobs) {
+      if (row.job_id && row.status) overrides[row.job_id] = row.status
+    }
+    return overrides
+  }, [runningImageJobs])
+
   const displayStatus =
     viewingJob && selectedJob?.job_id === viewedJobId
-      ? activePoll?.status ?? selectedJob?.status
+      ? jobStatusOverrides[viewedJobId] ?? activePoll?.status ?? selectedJob?.status
       : undefined
+  const displayStage = useMemo(() => {
+    if (!viewedJobId) return activePoll?.stage ?? null
+    const row = runningImageJobs.find(r => r.job_id === viewedJobId)
+    return row?.stage ?? activePoll?.stage ?? null
+  }, [viewedJobId, runningImageJobs, activePoll?.stage])
   const isRunning =
     viewingJob && displayStatus != null && !TERMINAL.has(displayStatus)
   const canRetryJob =
@@ -937,8 +944,19 @@ export default function ImageGenerationPage() {
 
   const pipelineStatus = useMemo(() => {
     if (!selectedJob || !displayStatus) return ''
-    return pipelineStatusLine(displayStatus, activePoll?.stage, selectedJob.events)
-  }, [selectedJob, displayStatus, activePoll?.stage])
+    return pipelineStatusLine(displayStatus, displayStage, selectedJob.events)
+  }, [selectedJob, displayStatus, displayStage])
+
+  // Auto-poll while viewing a job that is still in progress.
+  useEffect(() => {
+    if (!token || !viewedJobId) return
+    if (displayStatus && TERMINAL.has(displayStatus)) return
+
+    const id = window.setInterval(() => {
+      void runPoll(viewedJobId)
+    }, POLL_MS)
+    return () => window.clearInterval(id)
+  }, [token, viewedJobId, displayStatus, runPoll])
 
   const outputFiles = useMemo(
     () => (selectedJob ? selectedJob.files.filter(f => f.direction === 'output') : []),
@@ -1004,6 +1022,7 @@ export default function ImageGenerationPage() {
           token={token}
           mediaRevision={mediaRevision}
           loading={jobsLoading}
+          statusOverrides={jobStatusOverrides}
           onSelectNew={() => {
             selectNew()
             if (isMobile) setSidebarOpen(false)
@@ -1679,7 +1698,7 @@ export default function ImageGenerationPage() {
               <div className="flex aspect-video w-full items-center justify-center bg-muted/30 px-6">
                 <JobProgressBar
                   status={displayStatus ?? selectedJob.status}
-                  stage={activePoll?.stage}
+                  stage={displayStage}
                   startedAt={activePoll?.started_at}
                   typicalRuntimeSeconds={activePoll?.typical_runtime_seconds}
                 />
@@ -1701,7 +1720,7 @@ export default function ImageGenerationPage() {
                 {jobPromptTitle(selectedJob.prompt, 120)}
               </h2>
               <p className="font-mono text-xs text-muted-foreground" data-testid="imggen-job-tech-meta">
-                {jobTechMeta(selectedJob)} · {selectedJob.status.replace(/_/g, ' ')}
+                {jobTechMeta(selectedJob)} · {imageJobStatusLabel(displayStatus ?? selectedJob.status)}
               </p>
             </div>
 

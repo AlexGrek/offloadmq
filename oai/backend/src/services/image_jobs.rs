@@ -382,14 +382,7 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
     };
     record_event(state, job.id, "offload.poll", "ok", Some(&poll_summary(&poll))).await?;
     let typical_runtime_seconds = poll.typical_runtime_seconds.map(|d| d.as_secs_f64());
-    match poll.status.as_str() {
-        "completed" => fetch_and_store_outputs(state, user_id, &job, poll.output).await?,
-        "failed" | "canceled" => mark_failed(state, job.id, &poll).await?,
-        "cancelRequested" => {
-            image_generation::update_job_status(&state.db, job.id, "cancelRequested", None).await?;
-        }
-        _ => {}
-    }
+    apply_poll_outcome_to_job(state, &job, &poll).await?;
 
     // Re-read the offload task to pick up `started_at` (set by poll_and_persist
     // the first time the agent began executing).
@@ -1036,6 +1029,22 @@ async fn mark_failed(
     record_event(state, job_id, "job.finalize", "error", Some(err)).await
 }
 
+/// Mirror OffloadMQ poll status into `image_generation_jobs.status` for in-flight tasks.
+async fn apply_poll_outcome_to_job(
+    state: &AppState,
+    job: &image_generation::ImageGenerationJob,
+    poll: &OffloadPollResponse,
+) -> Result<(), AppError> {
+    match poll.status.as_str() {
+        "completed" => fetch_and_store_outputs(state, job.user_id, job, poll.output.clone()).await?,
+        "failed" | "canceled" => mark_failed(state, job.id, poll).await?,
+        status => {
+            image_generation::update_job_status(&state.db, job.id, status, None).await?;
+        }
+    }
+    Ok(())
+}
+
 async fn send_offload_cancel(
     state: &AppState,
     cap: &str,
@@ -1092,11 +1101,7 @@ async fn background_poll_once(
         }
     };
     let _ = record_event(state, job.id, "worker.offload.poll", "ok", Some(&poll_summary(&poll))).await;
-    match poll.status.as_str() {
-        "completed" => fetch_and_store_outputs(state, job.user_id, job, poll.output).await?,
-        "failed" | "canceled" => mark_failed(state, job.id, &poll).await?,
-        _ => image_generation::update_job_status(&state.db, job.id, poll.status.as_str(), None).await?,
-    }
+    apply_poll_outcome_to_job(state, job, &poll).await?;
     Ok(())
 }
 

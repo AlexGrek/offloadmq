@@ -1,7 +1,7 @@
 import { Loader2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { imageThumbnailUrl, type ImageJobDetails } from '../../api/images'
-import { jobPromptTitle, jobTechMeta, lastOutputImageId } from '../../lib/imggen'
+import { jobPromptTitle, jobTechMeta, imageJobIsExecuting, imageJobStatusLabel, lastOutputImageId } from '../../lib/imggen'
 import { WorkflowBadge } from './WorkflowBadge'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
@@ -15,13 +15,15 @@ type ImageJobHistorySidebarProps = {
   /** Bust thumbnail cache after image delete / storage changes. */
   mediaRevision?: number
   loading?: boolean
+  /** Live status from progress drawer poll cache (`last_poll_status`). */
+  statusOverrides?: Record<string, string>
   onSelectNew: () => void
   onSelectJob: (jobId: string) => void
 }
 
 function statusLabel(status: string): string | null {
   if (TERMINAL.has(status)) return null
-  return status.replace(/_/g, ' ')
+  return imageJobStatusLabel(status)
 }
 
 export function ImageJobHistorySidebar({
@@ -30,6 +32,7 @@ export function ImageJobHistorySidebar({
   token,
   mediaRevision = 0,
   loading,
+  statusOverrides,
   onSelectNew,
   onSelectJob,
 }: ImageJobHistorySidebarProps) {
@@ -67,7 +70,9 @@ export function ImageJobHistorySidebar({
                 ? imageThumbnailUrl(outputId, token, mediaRevision)
                 : null
               const active = activePanel === job.job_id
-              const inProgress = statusLabel(job.status)
+              const jobStatus = statusOverrides?.[job.job_id] ?? job.status
+              const inProgress = statusLabel(jobStatus)
+              const executing = imageJobIsExecuting(jobStatus)
 
               return (
                 <li key={job.job_id}>
@@ -119,15 +124,24 @@ export function ImageJobHistorySidebar({
                       </span>
                       {inProgress ? (
                         <span className="inline-flex w-fit items-center gap-1 text-[10px] text-muted-foreground">
-                          <span className="size-1.5 animate-pulse rounded-full bg-primary/80" />
+                          <span
+                            className={cn(
+                              'size-1.5 rounded-full',
+                              executing
+                                ? 'animate-pulse bg-primary/80'
+                                : 'bg-muted-foreground/50',
+                            )}
+                          />
                           {inProgress}
                         </span>
-                      ) : job.status === 'failed' ? (
+                      ) : jobStatus === 'failed' ? (
                         <span className="text-[10px] font-medium text-destructive">Failed</span>
-                      ) : job.status === 'completed' ? (
+                      ) : jobStatus === 'completed' ? (
                         <span className="text-[10px] text-muted-foreground">Completed</span>
                       ) : (
-                        <span className="text-[10px] capitalize text-muted-foreground">{job.status}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {imageJobStatusLabel(jobStatus)}
+                        </span>
                       )}
                     </div>
                   </button>
