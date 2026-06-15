@@ -888,6 +888,8 @@ export default function ImageGenerationPage() {
               status: details.status,
               stage: null,
               error: details.error,
+              started_at: details.started_at ?? null,
+              typical_runtime_seconds: details.typical_runtime_seconds ?? null,
               output_images: details.files
                 .filter(f => f.direction === 'output')
                 .map(f => ({
@@ -928,6 +930,25 @@ export default function ImageGenerationPage() {
     const row = runningImageJobs.find(r => r.job_id === viewedJobId)
     return row?.stage ?? activePoll?.stage ?? null
   }, [viewedJobId, runningImageJobs, activePoll?.stage])
+  const progressBarMeta = useMemo(() => {
+    if (!viewedJobId) {
+      return {
+        startedAt: activePoll?.started_at ?? null,
+        typicalRuntimeSeconds: activePoll?.typical_runtime_seconds ?? null,
+      }
+    }
+    const poll = activePoll?.job_id === viewedJobId ? activePoll : null
+    const row = runningImageJobs.find(r => r.job_id === viewedJobId)
+    const job = selectedJob?.job_id === viewedJobId ? selectedJob : null
+    return {
+      startedAt: poll?.started_at ?? job?.started_at ?? row?.started_at ?? null,
+      typicalRuntimeSeconds:
+        poll?.typical_runtime_seconds ??
+        job?.typical_runtime_seconds ??
+        row?.typical_runtime_seconds ??
+        null,
+    }
+  }, [viewedJobId, activePoll, runningImageJobs, selectedJob])
   const isRunning =
     viewingJob && displayStatus != null && !TERMINAL.has(displayStatus)
   const canRetryJob =
@@ -1699,8 +1720,8 @@ export default function ImageGenerationPage() {
                 <JobProgressBar
                   status={displayStatus ?? selectedJob.status}
                   stage={displayStage}
-                  startedAt={activePoll?.started_at}
-                  typicalRuntimeSeconds={activePoll?.typical_runtime_seconds}
+                  startedAt={progressBarMeta.startedAt}
+                  typicalRuntimeSeconds={progressBarMeta.typicalRuntimeSeconds}
                 />
               </div>
             ) : displayStatus === 'failed' ? (

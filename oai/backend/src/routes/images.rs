@@ -78,6 +78,8 @@ pub struct JobDetailsResponse {
     pub error: Option<String>,
     pub offload_cap: Option<String>,
     pub offload_task_id: Option<String>,
+    pub started_at: Option<String>,
+    pub typical_runtime_seconds: Option<f64>,
     pub files: Vec<JobFile>,
     pub events: Vec<JobEvent>,
 }
@@ -354,6 +356,8 @@ pub fn job_details_response(detail: JobDetail) -> JobDetailsResponse {
         events,
         offload_cap,
         offload_task_id,
+        started_at,
+        typical_runtime_seconds,
     } = detail;
     let pipeline_params = image_jobs::pipeline_params_for_job(&job);
     let display_name = image_jobs::display_name_for_job(&job);
@@ -373,6 +377,8 @@ pub fn job_details_response(detail: JobDetail) -> JobDetailsResponse {
         error: job.error,
         offload_cap,
         offload_task_id,
+        started_at: started_at.map(|d| d.to_rfc3339()),
+        typical_runtime_seconds,
         files: files.into_iter().map(map_job_file).collect(),
         events: events.into_iter().map(map_job_event).collect(),
     }

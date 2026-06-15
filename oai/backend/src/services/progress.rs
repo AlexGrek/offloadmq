@@ -19,6 +19,8 @@ pub struct RunningJobItem {
     pub job_id: String,
     pub offload_cap: String,
     pub offload_task_id: String,
+    pub started_at: Option<String>,
+    pub typical_runtime_seconds: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -45,6 +47,8 @@ pub async fn list_running_image_jobs(
             job_id: job.id.to_string(),
             offload_cap: task.offload_cap,
             offload_task_id: task.offload_task_id,
+            started_at: task.started_at.map(|d| d.to_rfc3339()),
+            typical_runtime_seconds: task.typical_runtime_seconds.filter(|s| *s > 0.0),
         })
         .collect();
     Ok(RunningJobsResponse { jobs })

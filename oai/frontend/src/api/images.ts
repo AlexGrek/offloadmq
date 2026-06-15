@@ -118,6 +118,8 @@ export interface ImageJobDetails {
   error: string | null
   offload_cap: string | null
   offload_task_id: string | null
+  started_at?: string | null
+  typical_runtime_seconds?: number | null
   files: ImageJobFile[]
   events: ImageJobEvent[]
 }

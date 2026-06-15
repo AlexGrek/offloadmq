@@ -198,6 +198,7 @@ pub async fn create_offload_task(
         last_poll_output: ActiveValue::Set(None),
         submitted_at: ActiveValue::Set(now),
         started_at: ActiveValue::Set(None),
+        typical_runtime_seconds: ActiveValue::Set(None),
         updated_at: ActiveValue::Set(now),
     };
     model.insert(db).await.map_err(AppError::Database)
@@ -239,9 +240,10 @@ pub async fn update_offload_task_poll(
     stage: Option<&str>,
     log: Option<&str>,
     output: Option<&str>,
+    typical_runtime_seconds: Option<f64>,
 ) -> Result<(), AppError> {
     let now = chrono::Utc::now().fixed_offset();
-    let model = image_offload_tasks::ActiveModel {
+    let mut model = image_offload_tasks::ActiveModel {
         id: ActiveValue::Set(id),
         last_poll_status: ActiveValue::Set(status.map(str::to_string)),
         last_poll_stage: ActiveValue::Set(stage.map(str::to_string)),
@@ -250,6 +252,9 @@ pub async fn update_offload_task_poll(
         updated_at: ActiveValue::Set(now),
         ..Default::default()
     };
+    if let Some(secs) = typical_runtime_seconds.filter(|s| *s > 0.0) {
+        model.typical_runtime_seconds = ActiveValue::Set(Some(secs));
+    }
     model.update(db).await.map_err(AppError::Database)?;
     Ok(())
 }

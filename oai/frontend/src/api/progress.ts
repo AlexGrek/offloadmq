@@ -11,6 +11,8 @@ export interface RunningJobItem {
   job_id: string
   offload_cap: string
   offload_task_id: string
+  started_at?: string | null
+  typical_runtime_seconds?: number | null
 }
 
 export interface RunningJobsResponse {

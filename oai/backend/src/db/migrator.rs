@@ -31,6 +31,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260604_000023_create_prompt_entries::Migration),
             Box::new(m20260613_000024_image_offload_task_started_at::Migration),
             Box::new(m20260615_000025_create_llm_compare_debate_jobs::Migration),
+            Box::new(m20260615_000026_image_offload_typical_runtime::Migration),
         ]
     }
 }
@@ -2518,5 +2519,52 @@ mod m20260615_000025_create_llm_compare_debate_jobs {
         ActiveLog,
         Stage,
         Error,
+    }
+}
+
+mod m20260615_000026_image_offload_typical_runtime {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260615_000026_image_offload_typical_runtime"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageOffloadTasks::Table)
+                        .add_column(
+                            ColumnDef::new(ImageOffloadTasks::TypicalRuntimeSeconds)
+                                .double()
+                                .null(),
+                        )
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageOffloadTasks::Table)
+                        .drop_column(ImageOffloadTasks::TypicalRuntimeSeconds)
+                        .to_owned(),
+                )
+                .await
+        }
+    }
+
+    #[derive(DeriveIden)]
+    enum ImageOffloadTasks {
+        Table,
+        TypicalRuntimeSeconds,
     }
 }

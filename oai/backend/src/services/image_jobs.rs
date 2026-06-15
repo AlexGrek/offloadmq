@@ -25,6 +25,10 @@ use crate::{
     state::AppState,
 };
 
+/// OAI persists at most one generated output file per job, even when OffloadMQ
+/// returns multiple images in the poll payload.
+const MAX_OUTPUT_FILES_PER_JOB: usize = 1;
+
 /// Input contract for starting a generation job (the service's command type).
 #[derive(Deserialize)]
 pub struct StartJobParams {
@@ -68,6 +72,8 @@ pub struct JobDetail {
     pub events: Vec<image_generation::ImagePipelineEvent>,
     pub offload_cap: Option<String>,
     pub offload_task_id: Option<String>,
+    pub started_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    pub typical_runtime_seconds: Option<f64>,
 }
 
 /// Placement metadata for a stored image — everything `store_image` needs that
@@ -350,13 +356,14 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
         if job.status == "completed" {
             reconcile_job_outputs_if_missing(state, &job, user_id).await?;
         }
+        let progress = offload_progress_meta(&task);
         return Ok(PolledJob {
             output_files: output_files(state, job.id).await?,
             status: job.status,
-            stage: None,
+            stage: task.last_poll_stage,
             error: job.error,
-            started_at: None,
-            typical_runtime_seconds: None,
+            started_at: progress.0,
+            typical_runtime_seconds: progress.1,
         });
     }
 
@@ -368,27 +375,28 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
                 let job = image_generation::get_job(&state.db, job.id, user_id)
                     .await?
                     .ok_or(AppError::NotFound)?;
+                let progress = offload_progress_meta(&task);
                 return Ok(PolledJob {
                     output_files: output_files(state, job.id).await?,
                     status: job.status,
-                    stage: None,
+                    stage: task.last_poll_stage,
                     error: job.error,
-                    started_at: None,
-                    typical_runtime_seconds: None,
+                    started_at: progress.0,
+                    typical_runtime_seconds: progress.1,
                 });
             }
             return Err(e);
         }
     };
     record_event(state, job.id, "offload.poll", "ok", Some(&poll_summary(&poll))).await?;
-    let typical_runtime_seconds = poll.typical_runtime_seconds.map(|d| d.as_secs_f64());
     apply_poll_outcome_to_job(state, &job, &poll).await?;
 
     // Re-read the offload task to pick up `started_at` (set by poll_and_persist
     // the first time the agent began executing).
-    let started_at = image_generation::get_offload_task_by_job(&state.db, job.id)
+    let task = image_generation::get_offload_task_by_job(&state.db, job.id)
         .await?
-        .and_then(|t| t.started_at);
+        .ok_or_else(|| AppError::BadRequest("job has no offload task".into()))?;
+    let (started_at, typical_runtime_seconds) = offload_progress_meta(&task);
     let job = image_generation::get_job(&state.db, job.id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -730,15 +738,21 @@ async fn job_detail(
     state: &AppState,
     job: image_generation::ImageGenerationJob,
 ) -> Result<JobDetail, AppError> {
-    let files = image_generation::list_job_files(&state.db, job.id).await?;
+    let files = limit_job_output_files(image_generation::list_job_files(&state.db, job.id).await?);
     let events = image_generation::list_pipeline_events(&state.db, job.id).await?;
     let offload = image_generation::get_offload_task_by_job(&state.db, job.id).await?;
+    let (started_at, typical_runtime_seconds) = offload
+        .as_ref()
+        .map(offload_progress_meta)
+        .unwrap_or((None, None));
     Ok(JobDetail {
         job,
         files,
         events,
         offload_cap: offload.as_ref().map(|t| t.offload_cap.clone()),
         offload_task_id: offload.map(|t| t.offload_task_id),
+        started_at,
+        typical_runtime_seconds,
     })
 }
 
@@ -757,7 +771,7 @@ async fn output_files(
     state: &AppState,
     job_id: i64,
 ) -> Result<Vec<image_generation::ImageFile>, AppError> {
-    let files = image_generation::list_job_files(&state.db, job_id).await?;
+    let files = limit_job_output_files(image_generation::list_job_files(&state.db, job_id).await?);
     Ok(files.into_iter().filter(|f| f.direction == "output").collect())
 }
 
@@ -982,6 +996,18 @@ fn poll_summary(poll: &OffloadPollResponse) -> String {
     format!("status={} stage={}", poll.status, poll.stage.clone().unwrap_or_default())
 }
 
+fn offload_progress_meta(
+    task: &image_generation::ImageOffloadTask,
+) -> (
+    Option<chrono::DateTime<chrono::FixedOffset>>,
+    Option<f64>,
+) {
+    (
+        task.started_at,
+        task.typical_runtime_seconds.filter(|s| *s > 0.0),
+    )
+}
+
 /// Polls the offload task and writes the latest poll snapshot to the DB.
 async fn poll_and_persist(
     state: &AppState,
@@ -1001,6 +1027,7 @@ async fn poll_and_persist(
         poll.stage.as_deref(),
         poll.log.as_deref(),
         poll.output.as_ref().map(|v| v.to_string()).as_deref(),
+        poll.typical_runtime_seconds.map(|d| d.as_secs_f64()),
     )
     .await?;
     // Stamp the real execution-start time the first time the agent actually
@@ -1113,6 +1140,14 @@ async fn fetch_and_store_outputs(
     job: &image_generation::ImageGenerationJob,
     output: Option<Value>,
 ) -> Result<(), AppError> {
+    let existing = image_generation::list_job_files(&state.db, job.id).await?;
+    if existing.iter().any(|f| f.direction == "output") {
+        if job.status != "completed" {
+            image_generation::update_job_status(&state.db, job.id, "completed", None).await?;
+        }
+        return Ok(());
+    }
+
     let offload = image_generation::get_offload_task_by_job(&state.db, job.id)
         .await?
         .ok_or_else(|| AppError::BadRequest("missing offload row".into()))?;
@@ -1136,7 +1171,8 @@ async fn fetch_and_store_outputs(
         store_output_video(state, &client, user_id, job, &output_bucket, &video).await?;
     } else {
         let images = collect_output_images(output.as_ref(), offload.last_poll_output.as_deref());
-        let Some(image) = images.last() else {
+        let image_count = images.len();
+        let Some(image) = images.into_iter().last() else {
             record_event(
                 state,
                 job.id,
@@ -1147,20 +1183,19 @@ async fn fetch_and_store_outputs(
             .await?;
             return Ok(());
         };
-        if images.len() > 1 {
+        if image_count > MAX_OUTPUT_FILES_PER_JOB {
             record_event(
                 state,
                 job.id,
                 "download.outputs",
                 "ok",
                 Some(&format!(
-                    "offload returned {} images; storing last only",
-                    images.len()
+                    "offload returned {image_count} images; storing last only"
                 )),
             )
             .await?;
         }
-        store_output_image(state, &client, user_id, job, &output_bucket, 0, image).await?;
+        store_output_image(state, &client, user_id, job, &output_bucket, 0, &image).await?;
     }
 
     image_generation::update_job_status(&state.db, job.id, "completed", None).await?;
@@ -1196,6 +1231,19 @@ fn images_array(value: Option<&Value>) -> Vec<Value> {
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default()
+}
+
+/// When duplicate output rows exist (race/legacy), expose only the latest one.
+fn limit_job_output_files(
+    files: Vec<image_generation::ImageFile>,
+) -> Vec<image_generation::ImageFile> {
+    let last_output = files.iter().filter(|f| f.direction == "output").last().cloned();
+    let mut kept: Vec<_> = files.into_iter().filter(|f| f.direction != "output").collect();
+    if let Some(out) = last_output {
+        kept.push(out);
+    }
+    kept.sort_by_key(|f| f.created_at);
+    kept
 }
 
 /// Extracts the `video` object from a poll payload, falling back to the cached last-poll output.
@@ -1517,4 +1565,75 @@ async fn get_owned_input_file(
     image_generation::get_image_file(&state.db, image_id, user_id)
         .await?
         .ok_or(AppError::NotFound)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image_generation::ImageFile;
+
+    fn output_file(id: i64, created_ms: i64) -> ImageFile {
+        ImageFile {
+            id,
+            user_id: 1,
+            job_id: Some(10),
+            direction: "output".to_string(),
+            source: "offload_download".to_string(),
+            storage_path: format!("out/{id}.jpg"),
+            thumbnail_storage_path: None,
+            thumbnail_stored_bytes: 0,
+            filename: format!("out_{id}.jpg"),
+            content_type: "image/jpeg".to_string(),
+            original_bytes: None,
+            stored_bytes: 1,
+            original_width: None,
+            original_height: None,
+            stored_width: 1,
+            stored_height: 1,
+            exif_orientation: None,
+            rescaled: false,
+            reencoded: false,
+            sha256: "abc".to_string(),
+            offload_bucket_uid: None,
+            offload_file_uid: None,
+            created_at: chrono::DateTime::from_timestamp_millis(created_ms)
+                .expect("valid test timestamp")
+                .fixed_offset(),
+        }
+    }
+
+    #[test]
+    fn collect_output_images_prefers_live_poll_payload() {
+        let live = serde_json::json!({
+            "images": [
+                {"file_uid": "a"},
+                {"file_uid": "b"}
+            ]
+        });
+        let cached = r#"{"images":[{"file_uid":"c"}]}"#;
+        let images = collect_output_images(Some(&live), Some(cached));
+        assert_eq!(images.len(), 2);
+        assert_eq!(images.last().unwrap()["file_uid"], "b");
+    }
+
+    #[test]
+    fn limit_job_output_files_keeps_latest_output_only() {
+        let files = limit_job_output_files(vec![
+            output_file(1, 100),
+            output_file(2, 200),
+            output_file(3, 300),
+        ]);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].id, 3);
+    }
+
+    #[test]
+    fn limit_job_output_files_preserves_non_outputs() {
+        let mut input = output_file(9, 50);
+        input.direction = "input".to_string();
+        let files = limit_job_output_files(vec![input.clone(), output_file(1, 100), output_file(2, 200)]);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].direction, "input");
+        assert_eq!(files[1].id, 2);
+    }
 }
