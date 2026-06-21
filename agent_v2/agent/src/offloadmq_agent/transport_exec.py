@@ -98,3 +98,25 @@ class CaptureTransport:
         return self._inner.upload_file(
             bucket_uid, filename, content, content_type, timeout=timeout
         )
+
+    def update_agent_info(
+        self,
+        capabilities: list[str],
+        tier: int,
+        capacity: int,
+        *,
+        display_name: str | None = None,
+        app_version: str = "2.0.0",
+    ) -> None:
+        # Forward to the inner sync transport so slavemode's in-executor
+        # rescan_and_push() actually reaches the server's HTTP info/update
+        # endpoint. Without this, rescan_and_push()'s
+        # `hasattr(transport, "update_agent_info")` guard sees only the
+        # CaptureTransport (which lacks the method) and silently drops the push.
+        self._inner.update_agent_info(
+            capabilities,
+            tier,
+            capacity,
+            display_name=display_name,
+            app_version=app_version,
+        )

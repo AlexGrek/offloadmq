@@ -984,9 +984,10 @@ class Orchestrator:
             skipped = self._skipped_rescans
             self._skipped_rescans = 0
         # Always rescan after slavemode tasks — they call rescan_and_push() internally
-        # which pushes to server but does NOT update _last_detected. Without this, the
-        # next orchestrator push (e.g. from a settings change) would overwrite the server
-        # with stale pre-slavemode data. Also rescan if ticks were skipped while busy.
+        # (now reaching the server via CaptureTransport.update_agent_info), but that
+        # push does NOT refresh the orchestrator's _last_detected. Without this rescan,
+        # the next orchestrator push (e.g. from a settings change) would overwrite the
+        # server with stale pre-slavemode data. Also rescan if ticks were skipped while busy.
         if skipped > 0 or task.capability.startswith("slavemode."):
             self._trigger_rescan_async()
 
