@@ -211,12 +211,17 @@ class OffloadMQClient:
         stage: str,
         log: str,
     ) -> None:
-        from offloadmq_agent.wire import TaskId, TaskProgressReport
+        from offloadmq_agent.wire import (
+            TaskId,
+            TaskProgressReport,
+            progress_wire_status,
+        )
 
         report = TaskProgressReport(
             id=TaskId(id=task_id, cap=capability),
             stage=stage or None,
             log_update=log or None,
+            status=progress_wire_status(stage or None, bool(log)),
         )
         await self._ws_send("update_progress", report.to_wire())
 

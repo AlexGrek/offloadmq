@@ -10,6 +10,7 @@ from offloadmq_agent.wire import (
     TaskProgressReport,
     TaskResultReport,
     TaskResultStatus,
+    progress_wire_status as _progress_wire_status,
 )
 from offloadmq_agent.transport_exec import AgentTransport
 
@@ -121,17 +122,6 @@ def _retry_post(
             logger.info(f"Transient error, retrying in {sleep_time:.1f}s: {exc}")
             time.sleep(sleep_time)
             delay = min(delay * 2, max_delay)
-
-
-def _progress_wire_status(stage: Optional[str], has_log: bool) -> Optional[str]:
-    """JSON TaskStatus strings for the progress API (serde camelCase on the server)."""
-    if stage == "cancelled":
-        return None
-    if stage == "starting":
-        return "starting"
-    if has_log or stage is not None:
-        return "running"
-    return None
 
 
 def _post_progress(

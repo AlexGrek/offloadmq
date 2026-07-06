@@ -58,6 +58,22 @@ class TaskResultReport(BaseModel):
         }
 
 
+def progress_wire_status(stage: str | None, has_log: bool) -> str | None:
+    """JSON TaskStatus strings for the progress API (serde camelCase on the server).
+
+    Any progress report from an executing agent implies the task is running;
+    without this the server keeps the task in `assigned` and status-driven
+    consumers (e.g. OAI's execution-anchored progress bar) never see it start.
+    """
+    if stage == "cancelled":
+        return None
+    if stage == "starting":
+        return "starting"
+    if has_log or stage is not None:
+        return "running"
+    return None
+
+
 class TaskProgressReport(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
