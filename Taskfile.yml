@@ -140,7 +140,7 @@ tasks:
         echo "==> Pre-pulling images on cluster nodes..."
         helm template {{.RELEASE}} {{.CHART_DIR}} "${HELM_ARGS[@]}" \
           --set imagePullPolicy.preLoadImages=true \
-          | kubectl apply -f -
+          | kubectl apply -n {{.NAMESPACE}} -f -
         job="offloadmq-image-pull-{{.TAG}}"
         timeout=120; elapsed=0
         while [ $elapsed -lt $timeout ]; do
