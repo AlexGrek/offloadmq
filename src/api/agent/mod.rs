@@ -780,8 +780,19 @@ async fn handle_agent_websocket(socket: WebSocket, agent: Agent, app_state: Arc<
                     None
                 };
 
+                // Re-fetch the agent record fresh from storage on every dispatched
+                // action instead of reusing the connect-time `agent` clone. Without
+                // this, a rescanned capability list sent via `info/update` would be
+                // clobbered by the very next heartbeat/poll writing the stale
+                // snapshot back through `update_agent_last_contact` (which persists
+                // the whole agent object) — silently reverting new capabilities
+                // until the agent reconnects.
+                let current_agent = app_state.storage.get_agent(&uid).unwrap_or_else(|| agent.clone());
+
                 let response_text =
-                    match ws_dispatch(&action, &params, &agent, &app_state, upload_data).await {
+                    match ws_dispatch(&action, &params, &current_agent, &app_state, upload_data)
+                        .await
+                    {
                         Ok((status, data)) => ws_ok(&req_id, status, data),
                         Err(e) => {
                             if e.should_log() {
