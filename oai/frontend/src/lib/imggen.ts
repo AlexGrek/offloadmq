@@ -203,6 +203,21 @@ export function imageJobIsExecuting(status: string): boolean {
   return status === 'starting' || status === 'running'
 }
 
+/**
+ * Compact human-readable duration, e.g. `42s`, `3m 05s`, `1h 02m`. Used for
+ * the queue-wait / execution-time readouts — never sums the two into a total.
+ */
+export function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  if (h > 0) return `${h}h ${pad(m)}m`
+  if (m > 0) return `${m}m ${pad(sec)}s`
+  return `${sec}s`
+}
+
 const POLL_EVENT_STEPS = new Set(['offload.poll', 'worker.offload.poll'])
 
 export function isPipelinePollEvent(event: ImageJobEvent): boolean {

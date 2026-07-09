@@ -49,6 +49,14 @@ pub struct PollResponse {
     pub started_at: Option<String>,
     /// Heuristic execution-time estimate in seconds (null when unknown).
     pub typical_runtime_seconds: Option<f64>,
+    /// RFC3339 timestamp of when the task was submitted to OffloadMQ.
+    pub submitted_at: Option<String>,
+    /// Time spent waiting in queue before an agent began execution, in seconds.
+    /// Distinct from `execution_seconds` — the two are never summed.
+    pub queued_seconds: Option<f64>,
+    /// Time spent actually executing on an agent, in seconds (null until the
+    /// task reaches a terminal status).
+    pub execution_seconds: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -80,6 +88,13 @@ pub struct JobDetailsResponse {
     pub offload_task_id: Option<String>,
     pub started_at: Option<String>,
     pub typical_runtime_seconds: Option<f64>,
+    pub submitted_at: Option<String>,
+    /// Time spent waiting in queue before an agent began execution, in seconds.
+    /// Distinct from `execution_seconds` — the two are never summed.
+    pub queued_seconds: Option<f64>,
+    /// Time spent actually executing on an agent, in seconds (null until the
+    /// task reaches a terminal status).
+    pub execution_seconds: Option<f64>,
     pub files: Vec<JobFile>,
     pub events: Vec<JobEvent>,
 }
@@ -187,6 +202,9 @@ pub async fn poll_job(
         output_images: polled.output_files.into_iter().map(map_image_ref).collect(),
         started_at: polled.started_at.map(|d| d.to_rfc3339()),
         typical_runtime_seconds: polled.typical_runtime_seconds,
+        submitted_at: polled.submitted_at.map(|d| d.to_rfc3339()),
+        queued_seconds: polled.queued_seconds,
+        execution_seconds: polled.execution_seconds,
     }))
 }
 
@@ -358,6 +376,9 @@ pub fn job_details_response(detail: JobDetail) -> JobDetailsResponse {
         offload_task_id,
         started_at,
         typical_runtime_seconds,
+        submitted_at,
+        queued_seconds,
+        execution_seconds,
     } = detail;
     let pipeline_params = image_jobs::pipeline_params_for_job(&job);
     let display_name = image_jobs::display_name_for_job(&job);
@@ -379,6 +400,9 @@ pub fn job_details_response(detail: JobDetail) -> JobDetailsResponse {
         offload_task_id,
         started_at: started_at.map(|d| d.to_rfc3339()),
         typical_runtime_seconds,
+        submitted_at: submitted_at.map(|d| d.to_rfc3339()),
+        queued_seconds,
+        execution_seconds,
         files: files.into_iter().map(map_job_file).collect(),
         events: events.into_iter().map(map_job_event).collect(),
     }

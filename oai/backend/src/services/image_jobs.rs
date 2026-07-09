@@ -63,6 +63,12 @@ pub struct PolledJob {
     pub started_at: Option<chrono::DateTime<chrono::FixedOffset>>,
     /// Heuristic execution-time estimate in seconds (None when unknown).
     pub typical_runtime_seconds: Option<f64>,
+    /// When the task was submitted to OffloadMQ (queue-wait anchor).
+    pub submitted_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    /// Time spent waiting in queue before an agent began execution (seconds).
+    pub queued_seconds: Option<f64>,
+    /// Time spent actually executing on an agent (seconds). Only set once terminal.
+    pub execution_seconds: Option<f64>,
 }
 
 /// A job plus its files and pipeline events, used to build detail responses.
@@ -74,6 +80,9 @@ pub struct JobDetail {
     pub offload_task_id: Option<String>,
     pub started_at: Option<chrono::DateTime<chrono::FixedOffset>>,
     pub typical_runtime_seconds: Option<f64>,
+    pub submitted_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    pub queued_seconds: Option<f64>,
+    pub execution_seconds: Option<f64>,
 }
 
 /// Placement metadata for a stored image — everything `store_image` needs that
@@ -317,6 +326,9 @@ pub async fn cancel_job(state: &AppState, user_id: i64, job_id: i64) -> Result<C
         }
     };
     image_generation::update_job_status(&state.db, job.id, &resp.status, None).await?;
+    if is_terminal(&resp.status) {
+        image_generation::mark_offload_task_finished(&state.db, task.id).await?;
+    }
     record_event(
         state,
         job.id,
@@ -362,8 +374,11 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
             status: job.status,
             stage: task.last_poll_stage,
             error: job.error,
-            started_at: progress.0,
-            typical_runtime_seconds: progress.1,
+            started_at: progress.started_at,
+            typical_runtime_seconds: progress.typical_runtime_seconds,
+            submitted_at: progress.submitted_at,
+            queued_seconds: progress.queued_seconds,
+            execution_seconds: progress.execution_seconds,
         });
     }
 
@@ -381,8 +396,11 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
                     status: job.status,
                     stage: task.last_poll_stage,
                     error: job.error,
-                    started_at: progress.0,
-                    typical_runtime_seconds: progress.1,
+                    started_at: progress.started_at,
+                    typical_runtime_seconds: progress.typical_runtime_seconds,
+                    submitted_at: progress.submitted_at,
+                    queued_seconds: progress.queued_seconds,
+                    execution_seconds: progress.execution_seconds,
                 });
             }
             return Err(e);
@@ -391,12 +409,12 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
     record_event(state, job.id, "offload.poll", "ok", Some(&poll_summary(&poll))).await?;
     apply_poll_outcome_to_job(state, &job, &poll).await?;
 
-    // Re-read the offload task to pick up `started_at` (set by poll_and_persist
-    // the first time the agent began executing).
+    // Re-read the offload task to pick up `started_at`/`finished_at` (set by
+    // poll_and_persist the first time the agent began/finished executing).
     let task = image_generation::get_offload_task_by_job(&state.db, job.id)
         .await?
         .ok_or_else(|| AppError::BadRequest("job has no offload task".into()))?;
-    let (started_at, typical_runtime_seconds) = offload_progress_meta(&task);
+    let progress = offload_progress_meta(&task);
     let job = image_generation::get_job(&state.db, job.id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -405,8 +423,11 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
         status: job.status,
         stage: poll.stage,
         error: job.error,
-        started_at,
-        typical_runtime_seconds,
+        started_at: progress.started_at,
+        typical_runtime_seconds: progress.typical_runtime_seconds,
+        submitted_at: progress.submitted_at,
+        queued_seconds: progress.queued_seconds,
+        execution_seconds: progress.execution_seconds,
     })
 }
 
@@ -741,18 +762,18 @@ async fn job_detail(
     let files = limit_job_output_files(image_generation::list_job_files(&state.db, job.id).await?);
     let events = image_generation::list_pipeline_events(&state.db, job.id).await?;
     let offload = image_generation::get_offload_task_by_job(&state.db, job.id).await?;
-    let (started_at, typical_runtime_seconds) = offload
-        .as_ref()
-        .map(offload_progress_meta)
-        .unwrap_or((None, None));
+    let progress = offload.as_ref().map(offload_progress_meta);
     Ok(JobDetail {
         job,
         files,
         events,
         offload_cap: offload.as_ref().map(|t| t.offload_cap.clone()),
         offload_task_id: offload.map(|t| t.offload_task_id),
-        started_at,
-        typical_runtime_seconds,
+        started_at: progress.as_ref().and_then(|p| p.started_at),
+        typical_runtime_seconds: progress.as_ref().and_then(|p| p.typical_runtime_seconds),
+        submitted_at: progress.as_ref().and_then(|p| p.submitted_at),
+        queued_seconds: progress.as_ref().and_then(|p| p.queued_seconds),
+        execution_seconds: progress.and_then(|p| p.execution_seconds),
     })
 }
 
@@ -988,6 +1009,9 @@ fn offload_message_indicates_missing(msg: &str) -> bool {
 
 async fn mark_poll_unreachable(state: &AppState, job_id: i64, reason: &str) -> Result<(), AppError> {
     image_generation::update_job_status(&state.db, job_id, "failed", Some(reason)).await?;
+    if let Some(task) = image_generation::get_offload_task_by_job(&state.db, job_id).await? {
+        image_generation::mark_offload_task_finished(&state.db, task.id).await?;
+    }
     record_event(state, job_id, "offload.poll", "error", Some(reason)).await?;
     record_event(state, job_id, "job.finalize", "error", Some(reason)).await
 }
@@ -996,16 +1020,33 @@ fn poll_summary(poll: &OffloadPollResponse) -> String {
     format!("status={} stage={}", poll.status, poll.stage.clone().unwrap_or_default())
 }
 
-fn offload_progress_meta(
-    task: &image_generation::ImageOffloadTask,
-) -> (
-    Option<chrono::DateTime<chrono::FixedOffset>>,
-    Option<f64>,
-) {
-    (
-        task.started_at,
-        task.typical_runtime_seconds.filter(|s| *s > 0.0),
-    )
+/// Queue-wait and execution timing derived from an offload task row. Kept as
+/// two distinct durations (never summed into a "total") per product intent:
+/// `queued_seconds` measures time waiting for an agent, `execution_seconds`
+/// measures time actually running on one.
+struct OffloadTiming {
+    started_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    typical_runtime_seconds: Option<f64>,
+    submitted_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    queued_seconds: Option<f64>,
+    execution_seconds: Option<f64>,
+}
+
+fn offload_progress_meta(task: &image_generation::ImageOffloadTask) -> OffloadTiming {
+    let queued_seconds = task
+        .started_at
+        .map(|started| (started - task.submitted_at).num_milliseconds() as f64 / 1000.0);
+    let execution_seconds = task
+        .started_at
+        .zip(task.finished_at)
+        .map(|(started, finished)| (finished - started).num_milliseconds() as f64 / 1000.0);
+    OffloadTiming {
+        started_at: task.started_at,
+        typical_runtime_seconds: task.typical_runtime_seconds.filter(|s| *s > 0.0),
+        submitted_at: Some(task.submitted_at),
+        queued_seconds,
+        execution_seconds,
+    }
 }
 
 /// Polls the offload task and writes the latest poll snapshot to the DB.
@@ -1035,6 +1076,12 @@ async fn poll_and_persist(
     // measures run time rather than queue wait. Set-once via IS NULL filter.
     if matches!(poll.status.as_str(), "starting" | "running") {
         image_generation::mark_offload_task_started(&state.db, task.id).await?;
+    }
+    // Stamp the finish time the first time the task reaches a terminal status,
+    // so execution duration (finished_at - started_at) can be computed and
+    // displayed separately from queue-wait time. Set-once via IS NULL filter.
+    if is_terminal(&poll.status) {
+        image_generation::mark_offload_task_finished(&state.db, task.id).await?;
     }
     Ok(poll)
 }

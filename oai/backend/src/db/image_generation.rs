@@ -198,6 +198,7 @@ pub async fn create_offload_task(
         last_poll_output: ActiveValue::Set(None),
         submitted_at: ActiveValue::Set(now),
         started_at: ActiveValue::Set(None),
+        finished_at: ActiveValue::Set(None),
         typical_runtime_seconds: ActiveValue::Set(None),
         updated_at: ActiveValue::Set(now),
     };
@@ -270,6 +271,23 @@ pub async fn mark_offload_task_started(
         .col_expr(image_offload_tasks::Column::StartedAt, Expr::value(now))
         .filter(image_offload_tasks::Column::Id.eq(id))
         .filter(image_offload_tasks::Column::StartedAt.is_null())
+        .exec(db)
+        .await
+        .map_err(AppError::Database)?;
+    Ok(())
+}
+
+/// Stamp `finished_at = now` the first time a task is observed in a terminal
+/// status. The `IS NULL` filter makes this set-once and idempotent across polls.
+pub async fn mark_offload_task_finished(
+    db: &DatabaseConnection,
+    id: i64,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().fixed_offset();
+    ImageOffloadTaskEntity::update_many()
+        .col_expr(image_offload_tasks::Column::FinishedAt, Expr::value(now))
+        .filter(image_offload_tasks::Column::Id.eq(id))
+        .filter(image_offload_tasks::Column::FinishedAt.is_null())
         .exec(db)
         .await
         .map_err(AppError::Database)?;

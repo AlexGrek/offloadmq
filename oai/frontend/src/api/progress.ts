@@ -13,6 +13,7 @@ export interface RunningJobItem {
   offload_task_id: string
   started_at?: string | null
   typical_runtime_seconds?: number | null
+  submitted_at?: string | null
 }
 
 export interface RunningJobsResponse {

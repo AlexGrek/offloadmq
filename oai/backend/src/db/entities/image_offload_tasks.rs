@@ -18,6 +18,9 @@ pub struct Model {
     /// When the task first began executing on an agent (status `starting`/`running`),
     /// as opposed to `submitted_at` (queue time). Drives the run-time progress bar.
     pub started_at: Option<DateTimeWithTimeZone>,
+    /// When the task first reached a terminal status (`completed`/`failed`/`canceled`).
+    /// Combined with `started_at`, gives the actual execution duration.
+    pub finished_at: Option<DateTimeWithTimeZone>,
     /// Heuristic execution-time estimate in seconds from OffloadMQ (null until known).
     pub typical_runtime_seconds: Option<f64>,
     pub updated_at: DateTimeWithTimeZone,

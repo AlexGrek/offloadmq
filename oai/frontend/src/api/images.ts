@@ -79,6 +79,12 @@ export interface PollImageJobResponse {
   started_at?: string | null
   /** Heuristic execution-time estimate in seconds; null when unknown. */
   typical_runtime_seconds?: number | null
+  /** RFC3339 time the task was submitted to OffloadMQ. */
+  submitted_at?: string | null
+  /** Time spent waiting in queue before an agent began execution, in seconds. */
+  queued_seconds?: number | null
+  /** Time spent actually executing on an agent, in seconds; null until terminal. */
+  execution_seconds?: number | null
 }
 
 export interface ImageJobEvent {
@@ -120,6 +126,11 @@ export interface ImageJobDetails {
   offload_task_id: string | null
   started_at?: string | null
   typical_runtime_seconds?: number | null
+  submitted_at?: string | null
+  /** Time spent waiting in queue before an agent began execution, in seconds. */
+  queued_seconds?: number | null
+  /** Time spent actually executing on an agent, in seconds; null until terminal. */
+  execution_seconds?: number | null
   files: ImageJobFile[]
   events: ImageJobEvent[]
 }

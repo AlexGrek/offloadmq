@@ -52,6 +52,8 @@ export interface JobProgressBarProps {
   startedAt?: string | null
   /** Heuristic execution-time estimate in seconds; null when unknown. */
   typicalRuntimeSeconds?: number | null
+  /** RFC3339 timestamp of when the task was submitted; drives the queued-time readout. */
+  submittedAt?: string | null
   className?: string
 }
 
@@ -60,6 +62,7 @@ export function JobProgressBar({
   stage,
   startedAt,
   typicalRuntimeSeconds,
+  submittedAt,
   className,
 }: JobProgressBarProps) {
   const [now, setNow] = useState(() => Date.now())
@@ -87,14 +90,23 @@ export function JobProgressBar({
   const overrun = determinate && raw > 1
   // Cap the visible fill at 99% until the job actually completes.
   const displayPct = determinate ? Math.min(Math.round(raw * 100), 99) : 0
+  const remainingSec =
+    determinate && elapsedSec != null ? Math.max(0, typicalRuntimeSeconds! - elapsedSec) : null
 
   const label = STATUS_LABEL[status] ?? imageJobStatusLabel(status)
 
-  // Right-hand readout: percentage when determinate, elapsed time when running
-  // without an estimate, otherwise nothing (still waiting in queue).
+  // Right-hand readout: remaining time (+ percent) when determinate, elapsed
+  // time when running without an estimate, queued time while still waiting.
   let readout: string | null = null
-  if (determinate) readout = overrun ? 'finishing…' : `${displayPct}%`
-  else if (isRunning && elapsedSec != null) readout = formatElapsed(elapsedSec)
+  if (determinate && remainingSec != null) {
+    readout = overrun ? 'finishing…' : `${formatElapsed(remainingSec)} left · ${displayPct}%`
+  } else if (isRunning && elapsedSec != null) {
+    readout = formatElapsed(elapsedSec)
+  } else if (!isRunning && submittedAt) {
+    const submittedMs = new Date(submittedAt).getTime()
+    const queuedSec = (now - submittedMs) / 1000
+    if (queuedSec >= 0) readout = `queued ${formatElapsed(queuedSec)}`
+  }
 
   return (
     <div

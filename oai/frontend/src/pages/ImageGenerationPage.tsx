@@ -890,6 +890,9 @@ export default function ImageGenerationPage() {
               error: details.error,
               started_at: details.started_at ?? null,
               typical_runtime_seconds: details.typical_runtime_seconds ?? null,
+              submitted_at: details.submitted_at ?? null,
+              queued_seconds: details.queued_seconds ?? null,
+              execution_seconds: details.execution_seconds ?? null,
               output_images: details.files
                 .filter(f => f.direction === 'output')
                 .map(f => ({
@@ -935,6 +938,7 @@ export default function ImageGenerationPage() {
       return {
         startedAt: activePoll?.started_at ?? null,
         typicalRuntimeSeconds: activePoll?.typical_runtime_seconds ?? null,
+        submittedAt: activePoll?.submitted_at ?? null,
       }
     }
     const poll = activePoll?.job_id === viewedJobId ? activePoll : null
@@ -947,6 +951,7 @@ export default function ImageGenerationPage() {
         job?.typical_runtime_seconds ??
         row?.typical_runtime_seconds ??
         null,
+      submittedAt: poll?.submitted_at ?? job?.submitted_at ?? row?.submitted_at ?? null,
     }
   }, [viewedJobId, activePoll, runningImageJobs, selectedJob])
   const isRunning =
