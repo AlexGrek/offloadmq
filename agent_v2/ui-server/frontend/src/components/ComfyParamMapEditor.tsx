@@ -2,7 +2,20 @@ import { useCallback, useMemo, useState } from "react";
 
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import type { InputOption, ParamMap, ParamTarget, StandardField } from "@/types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type {
+  InputOption,
+  ParamMap,
+  ParamNotes,
+  ParamTarget,
+  StandardField,
+} from "@/types";
 
 const CUSTOM_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
@@ -57,6 +70,7 @@ function FieldRow({
   fieldKey,
   label,
   help,
+  note,
   locked,
   targets,
   inputOptions,
@@ -66,6 +80,7 @@ function FieldRow({
   fieldKey: string;
   label: string;
   help: string;
+  note?: string;
   locked: boolean;
   targets: ParamTarget[];
   inputOptions: InputOption[];
@@ -95,6 +110,11 @@ function FieldRow({
         <div>
           <div className="text-sm font-medium">{label}</div>
           <div className="text-[0.65rem] text-muted-foreground font-mono mt-0.5">{help}</div>
+          {note && targets.length === 0 && !locked && (
+            <div className="text-xs text-amber-500/90 mt-1 max-w-md">
+              Auto-detect left this unwired: {note}
+            </div>
+          )}
           <div className="text-[0.65rem] text-muted-foreground/60 mt-1">
             param key: <code className="text-muted-foreground">{fieldKey}</code>
           </div>
@@ -115,18 +135,32 @@ function FieldRow({
           ) : (
             targets.map((pair, idx) => (
               <div key={idx} className="flex flex-wrap items-center gap-2">
-                <select
-                  value={pairSelectValue(pair)}
-                  onChange={(e) => setRow(idx, e.target.value)}
-                  className="flex-1 min-w-60 h-8 rounded-md border border-input bg-background px-2 text-xs"
+                <Select
+                  value={pairSelectValue(pair) || undefined}
+                  onValueChange={(v) => setRow(idx, v)}
                 >
-                  <option value="">-- pick node input --</option>
-                  {inputOptions.map((opt) => (
-                    <option key={optValue(opt)} value={optValue(opt)}>
-                      {opt.node_id} {opt.class_type} .{opt.input_name} ({opt.kind}) = {opt.preview}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger size="sm" className="flex-1 min-w-60">
+                    <SelectValue placeholder="-- pick node input --" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {inputOptions.map((opt) => (
+                      <SelectItem key={optValue(opt)} value={optValue(opt)}>
+                        <span className="font-mono">
+                          {opt.node_id} {opt.class_type}.{opt.input_name}
+                        </span>
+                        <span
+                          className={
+                            opt.kind === "wire"
+                              ? "text-amber-500/80"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          ({opt.kind}) = {opt.preview}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button type="button" size="sm" variant="outline" onClick={() => removeRow(idx)}>
                   Remove
                 </Button>
@@ -168,6 +202,8 @@ export function ComfyParamMapEditor({
   const [standardFields, setStandardFields] = useState<StandardField[]>([]);
   const [inputOptions, setInputOptions] = useState<InputOption[]>([]);
   const [localParams, setLocalParams] = useState<ParamMap>({});
+  // Only auto-detect produces notes; a plain Load clears them.
+  const [notes, setNotes] = useState<ParamNotes>({});
 
   const standardKeys = useMemo(() => standardFields.map((f) => f.key), [standardFields]);
 
@@ -196,6 +232,7 @@ export function ComfyParamMapEditor({
     setStandardFields([]);
     setInputOptions([]);
     setLocalParams({});
+    setNotes({});
     setLoadErr(null);
     setSaveErr(null);
     const w = workflows.find((x) => `${x.namespace}::${x.name}` === compositeKey);
@@ -260,7 +297,8 @@ export function ComfyParamMapEditor({
   async function autodetect() {
     if (
       !window.confirm(
-        "Overwrite this task type params.json with auto-detect merged on top of FIXME stubs?",
+        "Overwrite this task type's params.json with freshly auto-detected targets? " +
+          "Fields that cannot be resolved from the graph are left unwired.",
       )
     ) {
       return;
@@ -268,13 +306,14 @@ export function ComfyParamMapEditor({
     setSaveErr(null);
     setSaving(true);
     try {
-      await api.autodetectComfyParamMap({
+      const r = await api.autodetectComfyParamMap({
         workflow_name: selectedWf?.name ?? "",
         namespace: selectedWf?.namespace ?? "",
         task_type: effectiveTaskType,
         param_map_json: "{}",
       });
       await loadParamMap();
+      setNotes(r.notes ?? {});
     } catch (e) {
       setSaveErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -318,36 +357,37 @@ export function ComfyParamMapEditor({
       <div className="flex flex-wrap gap-2 items-end">
         <div>
           <label className="block text-[0.65rem] text-muted-foreground mb-1">Workflow</label>
-          <select
-            value={wfKey}
-            onChange={(e) => onChangeWorkflow(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm min-w-44"
-          >
-            <option value="">-- select --</option>
-            {workflows.map((w) => {
-              const key = `${w.namespace}::${w.name}`;
-              const label = w.namespace ? `[${w.namespace}] ${w.name}` : w.name;
-              return (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              );
-            })}
-          </select>
+          <Select value={wfKey || undefined} onValueChange={onChangeWorkflow}>
+            <SelectTrigger className="min-w-44">
+              <SelectValue placeholder="-- select --" />
+            </SelectTrigger>
+            <SelectContent>
+              {workflows.map((w) => {
+                const key = `${w.namespace}::${w.name}`;
+                const label = w.namespace ? `[${w.namespace}] ${w.name}` : w.name;
+                return (
+                  <SelectItem key={key} value={key}>
+                    {label}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <label className="block text-[0.65rem] text-muted-foreground mb-1">Task type</label>
-          <select
-            value={effectiveTaskType}
-            onChange={(e) => setTaskType(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm min-w-35"
-          >
-            {taskTypesForWf.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+          <Select value={effectiveTaskType} onValueChange={setTaskType}>
+            <SelectTrigger className="min-w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {taskTypesForWf.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <Button type="button" variant="secondary" size="sm" onClick={loadParamMap}>
           Load
@@ -393,6 +433,7 @@ export function ComfyParamMapEditor({
                 fieldKey={f.key}
                 label={f.label}
                 help={f.help}
+                note={notes[f.key]}
                 locked={locked}
                 targets={targets}
                 inputOptions={inputOptions}
@@ -430,6 +471,7 @@ export function ComfyParamMapEditor({
                   fieldKey={key}
                   label={key}
                   help="Maps payload.secondary_prompts or matching injection key"
+                  note={notes[key]}
                   locked={locked}
                   targets={targets}
                   inputOptions={inputOptions}

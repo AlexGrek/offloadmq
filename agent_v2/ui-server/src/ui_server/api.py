@@ -356,6 +356,10 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
             "standard_fields": _param_ui_standard_rows(task_type),
             "extra_keys": extra_keys,
             "input_options": _build_comfy_input_options(graph),
+            # Notes explain why a field is left unwired. Only autodetect produces
+            # them; they are not persisted. Present here so both responses share
+            # one shape.
+            "notes": {},
         }
 
     @router.post("/comfy/workflows/param-map")
@@ -388,8 +392,7 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
         from offloadmq_core.comfy_service import (
             _resolve_workflow_graph_path,
             _validate_comfy_api_workflow,
-            default_params,
-            guess_params,
+            guess_params_ex,
         )
 
         try:
@@ -398,11 +401,11 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
             )
             graph = json.loads(graph_path.read_text())
             _validate_comfy_api_workflow(graph)
-            merged = {**default_params(payload.task_type), **guess_params(graph, payload.task_type)}
+            params, notes = guess_params_ex(graph, payload.task_type)
             pmap = graph_path.with_suffix(".params.json")
-            pmap.write_text(json.dumps(merged, indent=2))
+            pmap.write_text(json.dumps(params, indent=2))
             orch.start_background_scan()
-            return {"ok": True, "paramMap": merged}
+            return {"ok": True, "paramMap": params, "notes": notes}
         except (ValueError, json.JSONDecodeError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -14,6 +14,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Sheet,
   SheetBody,
   SheetContent,
@@ -22,6 +29,7 @@ import {
 } from "@/components/ui/sheet";
 import { SaveIndicator } from "@/components/SaveIndicator";
 import { useDebouncedSave } from "@/hooks/useDebouncedSave";
+import type { ParamNotes } from "@/types";
 
 type Workflow = { name: string; namespace: string; task_types: string[] };
 
@@ -29,6 +37,9 @@ const DEFAULT_TASK_TYPES = [
   "txt2img", "img2img", "inpaint", "outpaint", "upscale",
   "face_swap", "txt2video", "img2video", "txt2music",
 ];
+
+/** Fields auto-detect could not wire, and why. Shown after a workflow is added. */
+type UnwiredReport = { workflow: string; notes: ParamNotes };
 
 function AddWorkflowDialog({
   open,
@@ -39,7 +50,7 @@ function AddWorkflowDialog({
   open: boolean;
   standardTaskTypes: string[];
   onClose: () => void;
-  onAdded: () => void;
+  onAdded: (unwired: UnwiredReport | null) => void;
 }) {
   const [name, setName] = useState("");
   const [taskType, setTaskType] = useState(standardTaskTypes[0] ?? "txt2img");
@@ -79,6 +90,7 @@ function AddWorkflowDialog({
     if (!name.trim()) { setError("Workflow name is required"); return; }
     if (!graphJson.trim()) { setError("Graph JSON is required"); return; }
     setSaving(true);
+    const label = `${namespace.trim() || "imggen"}.${name.trim()} / ${taskType}`;
     try {
       await api.addComfyWorkflow({
         workflow_name: name.trim(),
@@ -86,18 +98,22 @@ function AddWorkflowDialog({
         namespace: namespace.trim(),
         graph_json: graphJson.trim(),
       });
+      let unwired: UnwiredReport | null = null;
       try {
-        await api.autodetectComfyParamMap({
+        const r = await api.autodetectComfyParamMap({
           workflow_name: name.trim(),
           task_type: taskType,
           namespace: namespace.trim(),
           param_map_json: "{}",
         });
+        if (r.notes && Object.keys(r.notes).length > 0) {
+          unwired = { workflow: label, notes: r.notes };
+        }
       } catch {
         // non-fatal
       }
       reset();
-      onAdded();
+      onAdded(unwired);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -123,15 +139,16 @@ function AddWorkflowDialog({
             </div>
             <div className="space-y-1">
               <Label>Task type</Label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                value={taskType}
-                onChange={(e) => setTaskType(e.target.value)}
-              >
-                {standardTaskTypes.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
+              <Select value={taskType} onValueChange={setTaskType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {standardTaskTypes.map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="space-y-1">
@@ -166,7 +183,7 @@ function AddWorkflowDialog({
               )}
             </div>
             <textarea
-              className="w-full h-40 rounded-md border border-input bg-transparent px-3 py-2 text-xs font-mono shadow-sm resize-y"
+              className="w-full h-40 rounded-md border border-input bg-background text-foreground px-3 py-2 text-xs font-mono shadow-sm resize-y"
               placeholder='{"1": {"class_type": "...", "inputs": {...}}, ...}'
               value={graphJson}
               onChange={(e) => setGraphJson(e.target.value)}
@@ -193,6 +210,7 @@ export function ComfyPage() {
   const [standardTaskTypes, setStandardTaskTypes] = useState<string[]>(DEFAULT_TASK_TYPES);
   const [showAdd, setShowAdd] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [unwired, setUnwired] = useState<UnwiredReport | null>(null);
   const standardTaskTypesRef = useRef<string[]>([]);
 
   // Param map drawer state
@@ -256,6 +274,33 @@ export function ComfyPage() {
         </CardContent>
       </Card>
 
+      {unwired && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-4 py-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-500">
+                Added {unwired.workflow} — {Object.keys(unwired.notes).length} field
+                {Object.keys(unwired.notes).length === 1 ? "" : "s"} need manual wiring
+              </p>
+              <ul className="space-y-0.5">
+                {Object.entries(unwired.notes).map(([field, why]) => (
+                  <li key={field} className="text-xs text-muted-foreground">
+                    <code className="text-foreground">{field}</code> — {why}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground pt-1">
+                These stay at the workflow&apos;s built-in defaults. Use{" "}
+                <strong>Edit params</strong> to wire them by hand.
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setUnwired(null)}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Workflows</CardTitle>
@@ -316,8 +361,9 @@ export function ComfyPage() {
         open={showAdd}
         standardTaskTypes={standardTaskTypes}
         onClose={() => setShowAdd(false)}
-        onAdded={() => {
+        onAdded={(report) => {
           setShowAdd(false);
+          setUnwired(report);
           refreshWorkflows();
         }}
       />

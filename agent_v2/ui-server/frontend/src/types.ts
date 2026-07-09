@@ -114,10 +114,15 @@ export interface StandardField {
   help: string;
 }
 
+/** Why a field was left unwired, keyed by param field name. Produced by
+ *  auto-detect only — never persisted to params.json. */
+export type ParamNotes = Record<string, string>;
+
 export interface ParamMapData {
   ok: boolean;
   params: ParamMap;
   standard_fields: StandardField[];
   extra_keys: string[];
   input_options: InputOption[];
+  notes: ParamNotes;
 }

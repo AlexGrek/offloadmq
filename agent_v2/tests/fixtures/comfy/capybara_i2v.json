@@ -1,0 +1,362 @@
+{
+  "114": {
+    "inputs": {
+      "filename_prefix": "video/ComfyUI",
+      "format": "auto",
+      "codec": "auto",
+      "video": [
+        "103:113",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Save Video"
+    }
+  },
+  "126": {
+    "inputs": {
+      "image": "NetaYume_Lumina_3.5_00103_.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "127": {
+    "inputs": {
+      "url": "http://127.0.0.1:11434",
+      "model": "gemma4:latest",
+      "keep_alive": 5,
+      "keep_alive_unit": "minutes"
+    },
+    "class_type": "OllamaConnectivityV2",
+    "_meta": {
+      "title": "Ollama Connectivity"
+    }
+  },
+  "128": {
+    "inputs": {
+      "system": "You are an AI artist.",
+      "prompt": "<text 53 chars>",
+      "think": false,
+      "keep_context": false,
+      "format": "text",
+      "connectivity": [
+        "127",
+        0
+      ],
+      "images": [
+        "126",
+        0
+      ]
+    },
+    "class_type": "OllamaGenerateV2",
+    "_meta": {
+      "title": "Ollama Generate"
+    }
+  },
+  "129": {
+    "inputs": {
+      "string_a": [
+        "128",
+        0
+      ],
+      "string_b": "<text 88 chars>",
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate Text"
+    }
+  },
+  "103:17": {
+    "inputs": {
+      "scheduler": "simple",
+      "steps": 20,
+      "denoise": 1,
+      "model": [
+        "103:12",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "BasicScheduler"
+    }
+  },
+  "103:91": {
+    "inputs": {
+      "cfg": 6,
+      "model": [
+        "103:67",
+        0
+      ],
+      "positive": [
+        "103:115",
+        0
+      ],
+      "negative": [
+        "103:115",
+        1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG Guider"
+    }
+  },
+  "103:13": {
+    "inputs": {
+      "noise": [
+        "103:25",
+        0
+      ],
+      "guider": [
+        "103:91",
+        0
+      ],
+      "sampler": [
+        "103:16",
+        0
+      ],
+      "sigmas": [
+        "103:17",
+        0
+      ],
+      "latent_image": [
+        "103:115",
+        2
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "103:44": {
+    "inputs": {
+      "text": [
+        "129",
+        0
+      ],
+      "clip": [
+        "103:11",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "103:67": {
+    "inputs": {
+      "shift": 7,
+      "model": [
+        "103:12",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3"
+    }
+  },
+  "103:12": {
+    "inputs": {
+      "unet_name": "capybara_v0.1.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "103:11": {
+    "inputs": {
+      "clip_name1": "qwen_2.5_vl_7b.safetensors",
+      "clip_name2": "byt5_small_glyphxl_fp16.safetensors",
+      "type": "hunyuan_video_15",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "DualCLIPLoader"
+    }
+  },
+  "103:10": {
+    "inputs": {
+      "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "103:93": {
+    "inputs": {
+      "text": "<text 53 chars>",
+      "clip": [
+        "103:11",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "103:16": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "103:25": {
+    "inputs": {
+      "noise_seed": 962108759100986
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "RandomNoise"
+    }
+  },
+  "103:8": {
+    "inputs": {
+      "samples": [
+        "103:13",
+        0
+      ],
+      "vae": [
+        "103:10",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "103:113": {
+    "inputs": {
+      "fps": 24,
+      "bit_depth": 8,
+      "images": [
+        "103:8",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "103:119": {
+    "inputs": {
+      "crop": "center",
+      "clip_vision": [
+        "103:117",
+        0
+      ],
+      "image": [
+        "126",
+        0
+      ]
+    },
+    "class_type": "CLIPVisionEncode",
+    "_meta": {
+      "title": "CLIP Vision Encode"
+    }
+  },
+  "103:118": {
+    "inputs": {
+      "target_width": [
+        "103:121",
+        0
+      ],
+      "target_height": [
+        "103:122",
+        0
+      ],
+      "padding_color": "white",
+      "interpolation": "area",
+      "image": [
+        "126",
+        0
+      ]
+    },
+    "class_type": "ResizeAndPadImage",
+    "_meta": {
+      "title": "Resize And Pad Image"
+    }
+  },
+  "103:117": {
+    "inputs": {
+      "clip_name": "sigclip_vision_patch14_384.safetensors"
+    },
+    "class_type": "CLIPVisionLoader",
+    "_meta": {
+      "title": "Load CLIP Vision"
+    }
+  },
+  "103:115": {
+    "inputs": {
+      "width": [
+        "103:121",
+        0
+      ],
+      "height": [
+        "103:122",
+        0
+      ],
+      "length": 81,
+      "batch_size": 1,
+      "positive": [
+        "103:44",
+        0
+      ],
+      "negative": [
+        "103:93",
+        0
+      ],
+      "vae": [
+        "103:10",
+        0
+      ],
+      "start_image": [
+        "103:118",
+        0
+      ],
+      "clip_vision_output": [
+        "103:119",
+        0
+      ]
+    },
+    "class_type": "HunyuanVideo15ImageToVideo",
+    "_meta": {
+      "title": "HunyuanVideo15ImageToVideo"
+    }
+  },
+  "103:122": {
+    "inputs": {
+      "value": 640
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Height"
+    }
+  },
+  "103:121": {
+    "inputs": {
+      "value": 640
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Width"
+    }
+  }
+}

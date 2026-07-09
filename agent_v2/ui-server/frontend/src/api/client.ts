@@ -168,10 +168,14 @@ export const api = {
     namespace: string;
     param_map_json: string;
   }) =>
-    request<{ ok: boolean; paramMap: import("@/types").ParamMap }>(
-      "/comfy/workflows/param-map/autodetect",
-      { method: "POST", body: JSON.stringify(p) }
-    ),
+    request<{
+      ok: boolean;
+      paramMap: import("@/types").ParamMap;
+      notes: import("@/types").ParamNotes;
+    }>("/comfy/workflows/param-map/autodetect", {
+      method: "POST",
+      body: JSON.stringify(p),
+    }),
 
   getSystemInfo: () =>
     request<{ sysinfo: Record<string, unknown> }>("/system/info"),

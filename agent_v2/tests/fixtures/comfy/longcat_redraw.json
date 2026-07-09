@@ -1,0 +1,244 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "LongCat-Image",
+      "images": [
+        "13:8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "14": {
+    "inputs": {
+      "aspect_ratio": "1:1 (Square)",
+      "megapixels": 0.5
+    },
+    "class_type": "ResolutionSelector",
+    "_meta": {
+      "title": "Resolution Selector"
+    }
+  },
+  "18": {
+    "inputs": {
+      "url": "http://127.0.0.1:11434",
+      "model": "<text 44 chars>",
+      "keep_alive": 0,
+      "keep_alive_unit": "minutes",
+      "🔄 Reconnect": null
+    },
+    "class_type": "OllamaConnectivityV2",
+    "_meta": {
+      "title": "Ollama Connectivity"
+    }
+  },
+  "19": {
+    "inputs": {
+      "system": "<text 219 chars>",
+      "prompt": "<text 689 chars>",
+      "think": false,
+      "keep_context": false,
+      "format": "text",
+      "connectivity": [
+        "18",
+        0
+      ],
+      "images": [
+        "21",
+        0
+      ]
+    },
+    "class_type": "OllamaGenerateV2",
+    "_meta": {
+      "title": "Ollama Generate"
+    }
+  },
+  "20": {
+    "inputs": {
+      "preview_markdown": "<text 519 chars>",
+      "preview_text": "<text 519 chars>",
+      "previewMode": null,
+      "source": [
+        "19",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text"
+    }
+  },
+  "21": {
+    "inputs": {
+      "image": "<text 51 chars>"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "13:1": {
+    "inputs": {
+      "unet_name": "longcat_image_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "13:2": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "longcat_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "13:3": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "13:11": {
+    "inputs": {
+      "guidance": 4,
+      "conditioning": [
+        "13:4",
+        0
+      ]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "FluxGuidance"
+    }
+  },
+  "13:12": {
+    "inputs": {
+      "guidance": 4,
+      "conditioning": [
+        "13:5",
+        0
+      ]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "FluxGuidance"
+    }
+  },
+  "13:10": {
+    "inputs": {
+      "strength": 1,
+      "model": [
+        "13:1",
+        0
+      ]
+    },
+    "class_type": "CFGNorm",
+    "_meta": {
+      "title": "CFGNorm"
+    }
+  },
+  "13:6": {
+    "inputs": {
+      "width": [
+        "14",
+        0
+      ],
+      "height": [
+        "14",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "13:8": {
+    "inputs": {
+      "samples": [
+        "13:7",
+        0
+      ],
+      "vae": [
+        "13:3",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "13:4": {
+    "inputs": {
+      "text": [
+        "19",
+        0
+      ],
+      "clip": [
+        "13:2",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "13:7": {
+    "inputs": {
+      "seed": 66290682210402,
+      "steps": 20,
+      "cfg": 4,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "13:10",
+        0
+      ],
+      "positive": [
+        "13:11",
+        0
+      ],
+      "negative": [
+        "13:12",
+        0
+      ],
+      "latent_image": [
+        "13:6",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "13:5": {
+    "inputs": {
+      "text": "<text 201 chars>",
+      "clip": [
+        "13:2",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  }
+}
