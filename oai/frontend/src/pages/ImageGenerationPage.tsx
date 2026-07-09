@@ -96,6 +96,7 @@ import {
   pipelineEventsWithoutPolls,
   pipelineStatusLine,
   imageJobStatusLabel,
+  formatDuration,
   parseVideoLength,
   rescaleDataPrep,
   type ImgGenMode,
@@ -1727,6 +1728,7 @@ export default function ImageGenerationPage() {
                   stage={displayStage}
                   startedAt={progressBarMeta.startedAt}
                   typicalRuntimeSeconds={progressBarMeta.typicalRuntimeSeconds}
+                  submittedAt={progressBarMeta.submittedAt}
                 />
               </div>
             ) : displayStatus === 'failed' ? (
@@ -1748,6 +1750,20 @@ export default function ImageGenerationPage() {
               <p className="font-mono text-xs text-muted-foreground" data-testid="imggen-job-tech-meta">
                 {jobTechMeta(selectedJob)} · {imageJobStatusLabel(displayStatus ?? selectedJob.status)}
               </p>
+              {(selectedJob.queued_seconds != null || selectedJob.execution_seconds != null) && (
+                <p className="font-mono text-xs text-muted-foreground" data-testid="imggen-job-timing">
+                  {[
+                    selectedJob.queued_seconds != null
+                      ? `Queued ${formatDuration(selectedJob.queued_seconds)}`
+                      : null,
+                    selectedJob.execution_seconds != null
+                      ? `Ran ${formatDuration(selectedJob.execution_seconds)}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              )}
             </div>
 
             <CardContent className="space-y-4 pt-4">
