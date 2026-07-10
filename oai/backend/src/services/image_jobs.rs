@@ -656,18 +656,35 @@ pub async fn list_user_files(
     Ok(UserFileListing { files, used_bytes: user.used_storage_bytes })
 }
 
+/// Number of the user's most recent runs to consider when ranking models by usage.
+const USAGE_HISTORY_RUNS: u64 = 20;
+
+async fn recent_capability_usage(
+    state: &AppState,
+    user_id: i64,
+) -> Result<HashMap<String, u32>, AppError> {
+    let recent_jobs = image_generation::list_jobs(&state.db, user_id, USAGE_HISTORY_RUNS).await?;
+    let mut usage = HashMap::new();
+    for job in recent_jobs {
+        *usage.entry(job.capability).or_insert(0) += 1;
+    }
+    Ok(usage)
+}
+
 pub async fn list_imggen_capabilities(
     state: &AppState,
+    user_id: i64,
 ) -> Result<Vec<LlmCapabilityInfo>, AppError> {
     use std::collections::HashSet;
 
+    let usage = recent_capability_usage(state, user_id).await?;
     let settings = app_settings::get(&state.db).await?;
     let api_key = settings.client_api_token.clone().unwrap_or_default();
 
     if api_key.is_empty() {
         // No client token — return known caps from DB, all marked offline.
         let online_bases = HashSet::new();
-        return imggen_capabilities::list_for_display(&state.db, &online_bases).await;
+        return imggen_capabilities::list_for_display(&state.db, &online_bases, &usage).await;
     }
 
     let client = OffloadClient::new(state.http.clone(), settings.offloadmq_url, api_key);
@@ -677,12 +694,19 @@ pub async fn list_imggen_capabilities(
         .await
         .unwrap_or_default()
         .into_iter()
-        .map(|c| LlmCapabilityInfo { base: c.base, tags: c.tags, raw: c.raw, online: true, last_available_at: now.clone() })
+        .map(|c| LlmCapabilityInfo {
+            base: c.base,
+            tags: c.tags,
+            raw: c.raw,
+            online: true,
+            last_available_at: now.clone(),
+            usage_count: 0,
+        })
         .collect();
 
     imggen_capabilities::sync_online(&state.db, &online_caps).await?;
     let online_bases: HashSet<String> = online_caps.iter().map(|c| c.base.clone()).collect();
-    imggen_capabilities::list_for_display(&state.db, &online_bases).await
+    imggen_capabilities::list_for_display(&state.db, &online_bases, &usage).await
 }
 
 pub async fn user_job_detail(

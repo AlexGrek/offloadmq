@@ -106,6 +106,7 @@ pub struct ImgGenCapability {
     pub raw: String,
     pub online: bool,
     pub last_available_at: String,
+    pub usage_count: u32,
 }
 
 #[derive(Serialize)]
@@ -279,9 +280,9 @@ pub async fn list_jobs(
 
 pub async fn list_imggen_capabilities(
     State(state): State<Arc<AppState>>,
-    AuthenticatedUser(_user_id): AuthenticatedUser,
+    AuthenticatedUser(user_id): AuthenticatedUser,
 ) -> Result<Json<Vec<ImgGenCapability>>, AppError> {
-    let caps = image_jobs::list_imggen_capabilities(&state).await?;
+    let caps = image_jobs::list_imggen_capabilities(&state, user_id).await?;
     Ok(Json(
         caps.into_iter()
             .map(|c| ImgGenCapability {
@@ -290,6 +291,7 @@ pub async fn list_imggen_capabilities(
                 raw: c.raw,
                 online: c.online,
                 last_available_at: c.last_available_at,
+                usage_count: c.usage_count,
             })
             .collect(),
     ))

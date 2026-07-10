@@ -69,16 +69,6 @@ pub async fn list_for_display(
         .collect()
 }
 
-pub async fn delete_stale(db: &DatabaseConnection) -> Result<u64, AppError> {
-    let cutoff = (Utc::now() - STALE_AFTER).fixed_offset();
-    let result = Entity::delete_many()
-        .filter(Column::LastAvailableAt.lt(cutoff))
-        .exec(db)
-        .await
-        .map_err(AppError::Database)?;
-    Ok(result.rows_affected)
-}
-
 fn row_to_info(row: Model, online: bool) -> Result<LlmCapabilityInfo, AppError> {
     let tags: Vec<String> =
         serde_json::from_str(&row.tags_json).map_err(|e| AppError::Internal(e.to_string()))?;
@@ -88,7 +78,18 @@ fn row_to_info(row: Model, online: bool) -> Result<LlmCapabilityInfo, AppError> 
         raw: row.raw,
         online,
         last_available_at: row.last_available_at.to_rfc3339(),
+        usage_count: 0,
     })
+}
+
+pub async fn delete_stale(db: &DatabaseConnection) -> Result<u64, AppError> {
+    let cutoff = (Utc::now() - STALE_AFTER).fixed_offset();
+    let result = Entity::delete_many()
+        .filter(Column::LastAvailableAt.lt(cutoff))
+        .exec(db)
+        .await
+        .map_err(AppError::Database)?;
+    Ok(result.rows_affected)
 }
 
 #[cfg(test)]

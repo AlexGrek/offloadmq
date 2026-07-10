@@ -141,6 +141,7 @@ export interface ImgGenCapability {
   raw: string
   online: boolean
   last_available_at: string // RFC3339
+  usage_count: number // times used in the requesting user's last 20 runs
 }
 
 export function uploadImage(token: string, file: File): Promise<UploadedImage> {

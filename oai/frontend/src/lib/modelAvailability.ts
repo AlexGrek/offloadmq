@@ -25,6 +25,10 @@ export function unavailableModelDotOpacity(lastAvailableAt: string, nowMs = Date
 export function sortCapabilitiesForPicker(caps: LlmCapabilityInfo[]): LlmCapabilityInfo[] {
   return [...caps].sort((a, b) => {
     if (a.online !== b.online) return a.online ? -1 : 1
+    if (a.online && b.online) {
+      const usageDiff = b.usage_count - a.usage_count
+      if (usageDiff !== 0) return usageDiff
+    }
     const ta = Date.parse(a.last_available_at)
     const tb = Date.parse(b.last_available_at)
     const diff = (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta)

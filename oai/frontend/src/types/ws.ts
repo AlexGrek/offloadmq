@@ -6,6 +6,7 @@ export interface LlmCapabilityInfo {
   raw: string     // "llm.mistral[7b;quantized]"
   online: boolean
   last_available_at: string // RFC3339 — last time OffloadMQ reported this model online
+  usage_count: number // times used in the requesting user's last 20 runs (0 if not tracked)
 }
 
 // ── Server → Client ──────────────────────────────────────────────────────────

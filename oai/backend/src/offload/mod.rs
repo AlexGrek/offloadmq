@@ -15,6 +15,10 @@ pub struct LlmCapabilityInfo {
     pub online: bool,
     /// RFC3339 timestamp of the last time this model was seen online.
     pub last_available_at: String,
+    /// Times this capability was used in the requesting user's last 20 runs.
+    /// Only populated for imggen capabilities today; 0 elsewhere.
+    #[serde(default)]
+    pub usage_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +83,7 @@ impl OffloadClient {
                 raw: c.raw,
                 online: true,
                 last_available_at: chrono::Utc::now().to_rfc3339(),
+                usage_count: 0,
             })
             .collect())
     }

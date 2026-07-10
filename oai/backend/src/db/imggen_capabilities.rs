@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use sea_orm::{
@@ -41,10 +41,12 @@ pub async fn sync_online(
     Ok(())
 }
 
-/// All stored imggen models for the picker: online first, then by most recent availability.
+/// All stored imggen models for the picker: online first sorted by usage count
+/// (from the caller's recent run history), then offline by most recent availability.
 pub async fn list_for_display(
     db: &DatabaseConnection,
     online_bases: &HashSet<String>,
+    usage_counts: &HashMap<String, u32>,
 ) -> Result<Vec<LlmCapabilityInfo>, AppError> {
     let mut rows: Vec<Model> = Entity::find().all(db).await.map_err(AppError::Database)?;
     rows.sort_by(|a, b| {
@@ -53,7 +55,15 @@ pub async fn list_for_display(
         match (a_on, b_on) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
-            (true, true) | (false, false) => b
+            (true, true) => {
+                let a_usage = usage_counts.get(&a.base).copied().unwrap_or(0);
+                let b_usage = usage_counts.get(&b.base).copied().unwrap_or(0);
+                b_usage
+                    .cmp(&a_usage)
+                    .then_with(|| b.last_available_at.cmp(&a.last_available_at))
+                    .then_with(|| a.base.cmp(&b.base))
+            }
+            (false, false) => b
                 .last_available_at
                 .cmp(&a.last_available_at)
                 .then_with(|| a.base.cmp(&b.base)),
@@ -62,12 +72,13 @@ pub async fn list_for_display(
     rows.into_iter()
         .map(|row| {
             let online = online_bases.contains(&row.base);
-            row_to_info(row, online)
+            let usage_count = usage_counts.get(&row.base).copied().unwrap_or(0);
+            row_to_info(row, online, usage_count)
         })
         .collect()
 }
 
-fn row_to_info(row: Model, online: bool) -> Result<LlmCapabilityInfo, AppError> {
+fn row_to_info(row: Model, online: bool, usage_count: u32) -> Result<LlmCapabilityInfo, AppError> {
     let tags: Vec<String> =
         serde_json::from_str(&row.tags_json).map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(LlmCapabilityInfo {
@@ -76,5 +87,6 @@ fn row_to_info(row: Model, online: bool) -> Result<LlmCapabilityInfo, AppError> 
         raw: row.raw,
         online,
         last_available_at: row.last_available_at.to_rfc3339(),
+        usage_count,
     })
 }
