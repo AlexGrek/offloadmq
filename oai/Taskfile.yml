@@ -33,6 +33,12 @@ tasks:
       if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists vips; then
         export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/share/pkgconfig:${PKG_CONFIG_PATH}"
         echo "==> libvips detected: $(pkg-config --modversion vips)"
+        # rs-vips's build.rs only emits `-lvips` (no `-L` search path), so on
+        # Homebrew macOS the linker can't find it unless LIBRARY_PATH points
+        # at vips's (and its deps') lib dirs. Derive them from pkg-config so
+        # this survives `brew upgrade` changing the Cellar version path.
+        VIPS_LIBDIRS=$(pkg-config --libs-only-L vips 2>/dev/null | tr ' ' '\n' | sed -n 's/^-L//p' | tr '\n' ':')
+        export LIBRARY_PATH="${VIPS_LIBDIRS}${LIBRARY_PATH}"
       else
         echo "ERROR: libvips is required but was not detected via pkg-config."
         echo "  macOS:  brew install vips"
@@ -63,6 +69,12 @@ tasks:
       if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists vips; then
         export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/share/pkgconfig:${PKG_CONFIG_PATH}"
         echo "==> libvips detected: $(pkg-config --modversion vips)"
+        # rs-vips's build.rs only emits `-lvips` (no `-L` search path), so on
+        # Homebrew macOS the linker can't find it unless LIBRARY_PATH points
+        # at vips's (and its deps') lib dirs. Derive them from pkg-config so
+        # this survives `brew upgrade` changing the Cellar version path.
+        VIPS_LIBDIRS=$(pkg-config --libs-only-L vips 2>/dev/null | tr ' ' '\n' | sed -n 's/^-L//p' | tr '\n' ':')
+        export LIBRARY_PATH="${VIPS_LIBDIRS}${LIBRARY_PATH}"
       else
         echo "ERROR: libvips is required but was not detected via pkg-config."
         echo "  macOS:  brew install vips"
@@ -144,6 +156,12 @@ tasks:
       if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists vips; then
         export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/share/pkgconfig:${PKG_CONFIG_PATH}"
         echo "==> libvips detected: $(pkg-config --modversion vips)"
+        # rs-vips's build.rs only emits `-lvips` (no `-L` search path), so on
+        # Homebrew macOS the linker can't find it unless LIBRARY_PATH points
+        # at vips's (and its deps') lib dirs. Derive them from pkg-config so
+        # this survives `brew upgrade` changing the Cellar version path.
+        VIPS_LIBDIRS=$(pkg-config --libs-only-L vips 2>/dev/null | tr ' ' '\n' | sed -n 's/^-L//p' | tr '\n' ':')
+        export LIBRARY_PATH="${VIPS_LIBDIRS}${LIBRARY_PATH}"
       else
         echo "ERROR: libvips is required but was not detected via pkg-config."
         echo "  macOS:  brew install vips"
