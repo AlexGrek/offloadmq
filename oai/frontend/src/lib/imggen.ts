@@ -473,10 +473,13 @@ export function applyPipelineParamsToNewForm(
 ): void {
   const p = pipelineParamsFromJob(job)
   const mode = workflowToMode(p.workflow)
-  const inputFile =
+  let inputFile: UploadedImage | ImageJobFile | undefined =
     (mode === 'img2img' || mode === 'img2video') && p.input_image_id
       ? job.files.find(f => f.direction === 'input')
       : undefined
+  if (!inputFile && (mode === 'img2img' || mode === 'img2video') && p.input_image_id) {
+    inputFile = stubUploadedInput(p.input_image_id, p.width, p.height)
+  }
   applyPipelineParamsCore(p, inputFile, handlers, imagePreviewUrl, availableCapabilities)
 }
 
