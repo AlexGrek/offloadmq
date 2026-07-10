@@ -47,6 +47,7 @@ impl UnassignedTask {
             output: None,
             log: None,
             typical_runtime_seconds: None,
+            typical_runtime_parameters: None,
         }
     }
 
@@ -107,6 +108,8 @@ pub struct AssignedTask {
     pub stage: Option<String>,
     #[serde(default)]
     pub typical_runtime_seconds: Option<std::time::Duration>,
+    #[serde(default)]
+    pub typical_runtime_parameters: Option<TypicalRuntimeParameters>,
     /// When the task entered `CancelRequested`. Drives escalation to `Failed`
     /// if the agent never acknowledges the cancel signal.
     #[serde(default)]
@@ -163,6 +166,7 @@ impl AssignedTask {
             output: self.result,
             log: self.log,
             typical_runtime_seconds: self.typical_runtime_seconds,
+            typical_runtime_parameters: self.typical_runtime_parameters,
         }
     }
 }

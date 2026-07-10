@@ -116,3 +116,32 @@ pub fn capability_attrs(cap: &str) -> Vec<&str> {
         vec![]
     }
 }
+
+/// Helper to parse a u64 from a JSON Value (supporting both numbers and string numbers)
+pub fn val_to_u64(val: &serde_json::Value) -> Option<u64> {
+    if let Some(n) = val.as_u64() {
+        return Some(n);
+    }
+    if let Some(s) = val.as_str() {
+        return s.parse::<u64>().ok();
+    }
+    None
+}
+
+/// Extract image generation/video generation resolution (width, height) from task payload
+pub fn extract_image_resolution(payload: &serde_json::Value) -> Option<(u64, u64)> {
+    if let Some(res) = payload.get("resolution") {
+        if let (Some(w), Some(h)) = (res.get("width"), res.get("height")) {
+            if let (Some(w_val), Some(h_val)) = (val_to_u64(w), val_to_u64(h)) {
+                return Some((w_val, h_val));
+            }
+        }
+    }
+    if let (Some(w), Some(h)) = (payload.get("width"), payload.get("height")) {
+        if let (Some(w_val), Some(h_val)) = (val_to_u64(w), val_to_u64(h)) {
+            return Some((w_val, h_val));
+        }
+    }
+    None
+}
+

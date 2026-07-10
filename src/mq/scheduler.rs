@@ -197,6 +197,7 @@ pub async fn report_non_urgent_task<'a>(
         success,
         buckets_used,
         has_files,
+        &got.data.payload,
     );
 
     if let Err(e) = heuristic_storage.log_task_completion(&record) {

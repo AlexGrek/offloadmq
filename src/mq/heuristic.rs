@@ -14,7 +14,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{
     models::Agent,
-    schema::{TaskId, mb_to_gb_rounded},
+    schema::{TaskId, mb_to_gb_rounded, TypicalRuntimeParameters},
     utils::base_capability,
 };
 
@@ -53,6 +53,12 @@ pub struct HeuristicRecord {
     pub completed_at: DateTime<Utc>,
     /// Time-sortable unique ID for this record (date-indexable part of composite key)
     pub record_id: String,
+    /// Total image generation size (width * height) in pixels
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<u64>,
+    /// Video generation length in frames/seconds/etc
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -77,6 +83,10 @@ struct HeuristicRecordDe {
     notes: String,
     completed_at: DateTime<Utc>,
     record_id: String,
+    #[serde(default)]
+    total_size: Option<u64>,
+    #[serde(default)]
+    length: Option<u64>,
 }
 
 impl From<HeuristicRecordDe> for HeuristicRecord {
@@ -101,6 +111,8 @@ impl From<HeuristicRecordDe> for HeuristicRecord {
             notes: d.notes,
             completed_at: d.completed_at,
             record_id: d.record_id,
+            total_size: d.total_size,
+            length: d.length,
         }
     }
 }
@@ -120,7 +132,13 @@ impl HeuristicRecord {
         success: bool,
         buckets_used: Vec<String>,
         has_files: bool,
+        payload: &serde_json::Value,
     ) -> Self {
+        let params = TypicalRuntimeParameters::from_payload(&task_id.cap, payload);
+        let (total_size, length) = match params {
+            Some(p) => (p.total_size, p.length),
+            None => (None, None),
+        };
         Self {
             capability: base_capability(&task_id.cap).to_string(),
             runner_id: agent.uid.clone(),
@@ -137,6 +155,8 @@ impl HeuristicRecord {
             notes: String::new(),
             completed_at: Utc::now(),
             record_id: crate::utils::time_sortable_uid(),
+            total_size,
+            length,
         }
     }
 
@@ -196,3 +216,41 @@ pub fn estimate_duration(
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_typical_runtime_parameters_from_payload() {
+        // Test non-imggen capability
+        let payload = json!({
+            "resolution": { "width": 1024, "height": 1024 },
+            "length": 16
+        });
+        assert_eq!(
+            TypicalRuntimeParameters::from_payload("llm.qwen3", &payload),
+            None
+        );
+
+        // Test imggen capability with resolution object
+        let payload = json!({
+            "resolution": { "width": 512, "height": 512 },
+            "length": 30
+        });
+        let params = TypicalRuntimeParameters::from_payload("imggen.flux", &payload).unwrap();
+        assert_eq!(params.total_size, Some(262144));
+        assert_eq!(params.length, Some(30));
+
+        // Test imggen capability with direct width/height strings
+        let payload = json!({
+            "width": "1000",
+            "height": "1000"
+        });
+        let params = TypicalRuntimeParameters::from_payload("imggen.flux[vision]", &payload).unwrap();
+        assert_eq!(params.total_size, Some(1000000));
+        assert_eq!(params.length, None);
+    }
+}
+

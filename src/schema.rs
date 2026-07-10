@@ -396,6 +396,34 @@ pub struct TaskSubmissionResponse {
     task: TaskId,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TypicalRuntimeParameters {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length: Option<u64>,
+}
+
+impl TypicalRuntimeParameters {
+    pub fn from_payload(capability: &str, payload: &serde_json::Value) -> Option<Self> {
+        let base = crate::utils::base_capability(capability);
+        let is_imggen = base.starts_with("imggen.");
+        if !is_imggen {
+            return None;
+        }
+
+        let total_size = crate::utils::extract_image_resolution(payload).map(|(w, h)| w * h);
+        let length = payload.get("length").and_then(crate::utils::val_to_u64);
+
+        if total_size.is_some() || length.is_some() {
+            Some(Self { total_size, length })
+        } else {
+            None
+        }
+    }
+}
+
 /// Response body for a client polling the status of a task (`GET /tasks/{cap}/{id}`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -414,6 +442,9 @@ pub struct TaskStatusResponse {
 
     #[serde(default)]
     pub typical_runtime_seconds: Option<std::time::Duration>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "typicalRuntimeParameters")]
+    pub typical_runtime_parameters: Option<TypicalRuntimeParameters>,
 }
 
 /// The message pushed to an agent via WebSocket to assign a new task.

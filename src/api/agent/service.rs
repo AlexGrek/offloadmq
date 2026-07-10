@@ -15,7 +15,7 @@ use crate::{
     schema::{
         AgentLoginRequest, AgentLoginResponse, AgentRegistrationRequest, AgentRegistrationResponse,
         AgentUpdateRequest, BucketStatResponse, DownloadedFile, FileStatEntry, TaskId,
-        TaskResultReport, TaskStatus, TaskUpdate,
+        TaskResultReport, TaskStatus, TaskUpdate, TypicalRuntimeParameters,
     },
     state::{AppState, StreamEvent, TaskLifecycleEvent, TaskQueueKind},
     utils::base_capability,
@@ -239,6 +239,7 @@ pub async fn take_task(
 
     if let Some(mut picked) = try_pick_up_urgent_task(&state.urgent, agent, &task_id).await? {
         picked.typical_runtime_seconds = estimate;
+        picked.typical_runtime_parameters = TypicalRuntimeParameters::from_payload(&task_id.cap, &picked.data.payload);
         if let Some(d) = estimate {
             state.urgent.set_runtime_estimate(&task_id, d).await;
         }
@@ -272,6 +273,7 @@ pub async fn take_task(
         .await?;
         log_runner_history(agent, &task_id, &state.storage.heuristics);
         assigned.typical_runtime_seconds = estimate;
+        assigned.typical_runtime_parameters = TypicalRuntimeParameters::from_payload(&task_id.cap, &assigned.data.payload);
         if let Err(e) = state.storage.tasks.update_assigned(&assigned) {
             debug!("Failed to persist runtime estimate for task {task_id}: {e}");
         }
