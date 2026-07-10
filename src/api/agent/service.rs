@@ -231,15 +231,16 @@ pub async fn take_task(
     info!("Agent {} picking up task {task_id}", agent.uid_short);
     let cap = base_capability(&task_id.cap);
     let machine_id = agent.system_info.machine_id.as_deref().unwrap_or("");
-    let estimate = state
-        .storage
-        .heuristics
-        .estimate_duration(cap, machine_id)
-        .unwrap_or(None);
 
     if let Some(mut picked) = try_pick_up_urgent_task(&state.urgent, agent, &task_id).await? {
+        let params = TypicalRuntimeParameters::from_payload(&task_id.cap, &picked.data.payload);
+        let estimate = state
+            .storage
+            .heuristics
+            .estimate_duration(cap, machine_id, params.as_ref())
+            .unwrap_or(None);
         picked.typical_runtime_seconds = estimate;
-        picked.typical_runtime_parameters = TypicalRuntimeParameters::from_payload(&task_id.cap, &picked.data.payload);
+        picked.typical_runtime_parameters = params;
         if let Some(d) = estimate {
             state.urgent.set_runtime_estimate(&task_id, d).await;
         }
@@ -272,8 +273,14 @@ pub async fn take_task(
         )
         .await?;
         log_runner_history(agent, &task_id, &state.storage.heuristics);
+        let params = TypicalRuntimeParameters::from_payload(&task_id.cap, &assigned.data.payload);
+        let estimate = state
+            .storage
+            .heuristics
+            .estimate_duration(cap, machine_id, params.as_ref())
+            .unwrap_or(None);
         assigned.typical_runtime_seconds = estimate;
-        assigned.typical_runtime_parameters = TypicalRuntimeParameters::from_payload(&task_id.cap, &assigned.data.payload);
+        assigned.typical_runtime_parameters = params;
         if let Err(e) = state.storage.tasks.update_assigned(&assigned) {
             debug!("Failed to persist runtime estimate for task {task_id}: {e}");
         }

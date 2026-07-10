@@ -492,12 +492,14 @@ impl HeuristicStorage {
         &self,
         capability: &str,
         machine_id: &str,
+        current_params: Option<&crate::schema::TypicalRuntimeParameters>,
     ) -> Result<Option<std::time::Duration>> {
         let machine_records = self.query_by_machine_and_capability(machine_id, capability)?;
         let all_records = self.query_by_capability(capability)?;
         Ok(crate::mq::heuristic::estimate_duration(
             &machine_records,
             &all_records,
+            current_params,
         ))
     }
 

@@ -443,6 +443,9 @@ pub struct TaskStatusResponse {
     #[serde(default)]
     pub typical_runtime_seconds: Option<std::time::Duration>,
 
+    /// Informational: the effort parameters (resolution/length) extracted from
+    /// this task's own payload. `typical_runtime_seconds` above is already scaled
+    /// by these — consumers do not need to re-derive or apply any scaling themselves.
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "typicalRuntimeParameters")]
     pub typical_runtime_parameters: Option<TypicalRuntimeParameters>,
 }

@@ -8,12 +8,19 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{error::AppError, state::AppState};
+use crate::{error::AppError, schema::TypicalRuntimeParameters, state::AppState};
 
 #[derive(Deserialize)]
 pub struct EstimateDurationQuery {
     pub capability: String,
     pub machine_id: String,
+    /// Optional effort params to exercise the effort-scaled estimate directly
+    /// (width*height in pixels). Omit both to get today's plain-average behavior.
+    #[serde(default)]
+    pub total_size: Option<u64>,
+    /// Optional video length in frames, paired with `total_size`.
+    #[serde(default)]
+    pub length: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -93,10 +100,16 @@ pub async fn estimate_duration(
     State(state): State<Arc<AppState>>,
     Query(params): Query<EstimateDurationQuery>,
 ) -> Result<impl IntoResponse, AppError> {
+    let current_params = (params.total_size.is_some() || params.length.is_some()).then(|| {
+        TypicalRuntimeParameters {
+            total_size: params.total_size,
+            length: params.length,
+        }
+    });
     let duration = state
         .storage
         .heuristics
-        .estimate_duration(&params.capability, &params.machine_id)
+        .estimate_duration(&params.capability, &params.machine_id, current_params.as_ref())
         .map_err(AppError::Internal)?;
 
     Ok(Json(json!({
