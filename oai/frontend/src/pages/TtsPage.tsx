@@ -53,6 +53,7 @@ function ttsPickerCapabilities(caps: TtsCapability[]): PickerCapability[] {
     raw: c.raw,
     online: c.online,
     last_available_at: c.last_available_at,
+    usage_count: 0,
   }))
 }
 
