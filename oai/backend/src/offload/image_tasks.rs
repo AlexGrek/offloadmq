@@ -19,6 +19,15 @@ pub struct OffloadTaskId {
     pub id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TypicalRuntimeParameters {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length: Option<u64>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct OffloadPollResponse {
     pub status: String,
@@ -30,6 +39,8 @@ pub struct OffloadPollResponse {
     /// drive the time-based progress bar. Absent when no history exists.
     #[serde(default, rename = "typicalRuntimeSeconds")]
     pub typical_runtime_seconds: Option<std::time::Duration>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "typicalRuntimeParameters")]
+    pub typical_runtime_parameters: Option<TypicalRuntimeParameters>,
 }
 
 #[derive(Debug, Deserialize)]

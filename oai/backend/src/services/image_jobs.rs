@@ -382,7 +382,7 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
         });
     }
 
-    let poll = match poll_and_persist(state, &task).await {
+    let poll = match poll_and_persist(state, &task, &job).await {
         Ok(p) => p,
         Err(e) => {
             if let Some(reason) = offload_task_missing_message(&e) {
@@ -1053,6 +1053,7 @@ fn offload_progress_meta(task: &image_generation::ImageOffloadTask) -> OffloadTi
 async fn poll_and_persist(
     state: &AppState,
     task: &image_generation::ImageOffloadTask,
+    job: &image_generation::ImageGenerationJob,
 ) -> Result<OffloadPollResponse, AppError> {
     let client = offload_factory::image_client(state).await?;
     let poll = client
@@ -1061,6 +1062,28 @@ async fn poll_and_persist(
             id: task.offload_task_id.clone(),
         })
         .await?;
+
+    let mut adjusted_secs = poll.typical_runtime_seconds.map(|d| d.as_secs_f64());
+    if let (Some(secs), Some(params)) = (adjusted_secs, &poll.typical_runtime_parameters) {
+        let mut scaled_secs = secs;
+        if let Some(typical_size) = params.total_size {
+            let job_size = (job.width as u64) * (job.height as u64);
+            if typical_size > 0 {
+                scaled_secs *= (job_size as f64) / (typical_size as f64);
+            }
+        }
+        
+        if let Some(typical_length) = params.length {
+            let pipeline_params = image_pipeline_params::parse_stored_pipeline_params(job);
+            if let Some(job_length) = pipeline_params.video_length {
+                if typical_length > 0 {
+                    scaled_secs *= (job_length as f64) / (typical_length as f64);
+                }
+            }
+        }
+        adjusted_secs = Some(scaled_secs);
+    }
+
     image_generation::update_offload_task_poll(
         &state.db,
         task.id,
@@ -1068,7 +1091,7 @@ async fn poll_and_persist(
         poll.stage.as_deref(),
         poll.log.as_deref(),
         poll.output.as_ref().map(|v| v.to_string()).as_deref(),
-        poll.typical_runtime_seconds.map(|d| d.as_secs_f64()),
+        adjusted_secs,
     )
     .await?;
     // Stamp the real execution-start time the first time the agent actually
@@ -1164,7 +1187,7 @@ async fn background_poll_once(
             }
         }
     }
-    let poll = match poll_and_persist(state, &task).await {
+    let poll = match poll_and_persist(state, &task, job).await {
         Ok(p) => p,
         Err(e) => {
             if let Some(reason) = offload_task_missing_message(&e) {
