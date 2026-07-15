@@ -12,6 +12,7 @@ import {
   PanelLeftOpen,
   RefreshCw,
   RotateCcw,
+  Search,
   Square,
   Trash2,
   Pencil,
@@ -178,6 +179,14 @@ export default function ImageGenerationPage() {
   const [jobsLoading, setJobsLoading] = useState(true)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [promptGenOpen, setPromptGenOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+
+  const filteredJobs = useMemo(() => {
+    if (!searchQuery.trim()) return jobs
+    const q = searchQuery.toLowerCase()
+    return jobs.filter(j => j.prompt.toLowerCase().includes(q))
+  }, [jobs, searchQuery])
   const [nudeDetectTarget, setNudeDetectTarget] = useState<{
     imageId: string
     filename: string
@@ -1030,21 +1039,46 @@ export default function ImageGenerationPage() {
         onClose={() => setSidebarOpen(false)}
         testId="imggen-pipelines-sidebar"
         headerAction={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => void refreshJobs()}
-            disabled={jobsLoading}
-            title="Refresh pipelines"
-            aria-label="Refresh pipelines"
-            data-testid="imggen-pipelines-refresh"
-          >
-            <RefreshCw className={jobsLoading ? 'animate-spin' : undefined} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setIsSearchOpen(v => !v)}
+              title="Search pipelines"
+              aria-label="Search pipelines"
+            >
+              <Search className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => void refreshJobs()}
+              disabled={jobsLoading}
+              title="Refresh pipelines"
+              aria-label="Refresh pipelines"
+              data-testid="imggen-pipelines-refresh"
+            >
+              <RefreshCw className={jobsLoading ? 'animate-spin' : undefined} />
+            </Button>
+          </div>
         }
       >
+        {isSearchOpen && (
+          <div className="px-3 py-2 border-b">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search by prompt..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-8 h-8 text-sm"
+                autoFocus
+              />
+            </div>
+          </div>
+        )}
         <ImageJobHistorySidebar
-          jobs={jobs}
+          jobs={filteredJobs}
           activePanel={activePanel}
           token={token}
           mediaRevision={mediaRevision}
