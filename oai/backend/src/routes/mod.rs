@@ -14,6 +14,7 @@ pub mod tasks;
 pub mod files;
 pub mod health;
 pub mod images;
+pub mod img_utils;
 pub mod tts;
 pub mod music_generation;
 pub mod llm_compare;

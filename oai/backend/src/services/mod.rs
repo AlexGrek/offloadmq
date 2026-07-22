@@ -12,6 +12,7 @@ pub mod image_job_names;
 pub mod image_paths;
 pub mod image_pipeline_params;
 pub mod image_processing;
+pub mod img_utils;
 pub mod offload_factory;
 pub mod offload_job;
 pub mod runners;

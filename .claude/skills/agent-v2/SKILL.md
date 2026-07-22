@@ -134,6 +134,7 @@ worker threads.
 |---|---|
 | `docker` | `exec/docker.py` |
 | `imggen` | `exec/imggen/` |
+| `img-utils` | `exec/imgutils/` (thin wrapper over `imggen.executor.run_comfy_image_task`) |
 | `txt2music` | `exec/musicgen/` |
 | `onnx` | `exec/onnx.py` |
 | `custom` | `exec/custom.py` |
@@ -174,7 +175,7 @@ def execute_foo(
     payload: dict,
     data: Path,
     job_timeout: int = 600,
-    output_bucket: str | None = None,  # imggen/txt2music only
+    output_bucket: str | None = None,  # imggen/img-utils/txt2music only
 ) -> bool: ...
 ```
 

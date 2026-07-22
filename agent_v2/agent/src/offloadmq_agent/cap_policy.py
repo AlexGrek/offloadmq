@@ -35,7 +35,16 @@ def is_sensitive_capability(cap: str) -> bool:
 
 
 def is_regular_capability(cap: str) -> bool:
-    prefixes = ("llm.", "imggen.", "txt2music.", "tts.", "debug.", "custom.", "onnx.")
+    prefixes = (
+        "llm.",
+        "imggen.",
+        "img-utils.",
+        "txt2music.",
+        "tts.",
+        "debug.",
+        "custom.",
+        "onnx.",
+    )
     return any(cap.startswith(p) for p in prefixes)
 
 

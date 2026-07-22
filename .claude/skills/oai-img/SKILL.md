@@ -3,9 +3,11 @@ name: oai-img
 description: >-
   OAI image generation — ImageGenerationPage, txt2img/img2img, upload/buckets,
   dataPreparation rescale, job poll/cancel, pipeline events, background worker,
-  ProgressContext, ToolDebug, imggen.* OffloadMQ tasks. Use when working on
-  oai/frontend imggen files, oai/backend image routes/services/jobs (image_jobs.rs,
-  routes/images.rs, image_pipeline_worker), or image pipeline debugging.
+  ProgressContext, ToolDebug, imggen.* OffloadMQ tasks. Also Image Tools at
+  /app/img-utils (img-utils.* one-shot transforms: depth map, face swap). Use when
+  working on oai/frontend imggen or imgutils files, oai/backend image routes/services/jobs
+  (image_jobs.rs, routes/images.rs, routes/img_utils.rs, image_pipeline_worker), or image
+  pipeline debugging.
 ---
 
 # OAI Image Generation — Engineering Context
@@ -380,3 +382,51 @@ Record in `image_jobs.rs` via `record_event`; add to timeline unless poll noise 
 
 - `oai/itests/tests/test_admin.py` — 403 on `/api/admin/images/jobs`, `/api/admin/images/files`
 - No `test_images.py` yet — add when stabilizing REST contract
+
+---
+
+## Image Tools (`/app/img-utils`) — the `img-utils.*` sibling feature
+
+A second, much smaller feature living in this skill's territory. Where image generation is
+a bespoke multi-file pipeline, Image Tools is a plain **offload-job framework** feature
+(`db/offload_jobs.rs` + `services/offload_job.rs` + `worker_runtime`) — see
+`.claude/skills/oai-new-feature/SKILL.md` for that shape.
+
+**What it is:** one-shot ComfyUI transforms with no prompt — images in, one image out.
+Bundled: `img-utils.depth` (Lotus depth map) and `img-utils.face_swap` (ReActor).
+Wire contract: `docs/img-utils-api.md`.
+
+**File map**
+
+| Layer | File |
+|-------|------|
+| Page | `frontend/src/pages/ImgUtilsPage.tsx` |
+| Sidebar | `frontend/src/components/imgutils/ImgUtilsHistorySidebar.tsx` |
+| API client | `frontend/src/api/imgUtils.ts` |
+| Routes | `backend/src/routes/img_utils.rs` |
+| Service | `backend/src/services/img_utils.rs` |
+| DB | `backend/src/db/img_utils.rs`, `db/entities/img_utils_jobs.rs` |
+| Worker | `backend/src/jobs/img_utils_worker.rs` (`IMG_UTILS_WORKER_TICK_SECS`, `IMG_UTILS_WORKER_BATCH_SIZE`) |
+
+**Key differences from image generation**
+
+1. **No `image_generation_jobs` row.** `img_utils_jobs` is its own table; there are no
+   pipeline events and no `image_offload_tasks` row, so there is no Progress-drawer entry
+   and no ToolDebug view. The page's own 3 s auto-poll is the only progress signal.
+2. **Reuses `image_files` for both ends.** Inputs come from the shared
+   `POST /api/images/upload`; the result is stored via
+   `image_jobs::store_offload_output_image` with `job_id = None` and
+   `direction = "output"`, so it is served by `/api/images/files/{id}`, gets a thumbnail,
+   counts toward the user's quota, and shows up in **My Files**.
+3. **Tools are discovered, not hardcoded.** `GET /api/img-utils/capabilities` lists
+   whatever `img-utils.*` agents are online. Adding a workflow on an agent adds a tool to
+   the UI with no OAI change. Only two name-based special cases exist: a utility whose
+   name starts with `face_swap` gets a second upload slot
+   (`utility_needs_source_image` in `services/img_utils.rs`, `needs_source_image` in the
+   DTO), and `UTILITY_HINTS` in `ImgUtilsPage.tsx` holds the blurbs.
+4. **Two buckets per job.** Input bucket is created with `rm_after_task=true`; the output
+   bucket is persisted in `img_utils_jobs.output_bucket_uid`. Bucket files are named
+   `input_<image_id>.jpg` / `source_<image_id>.jpg` so the same upload can fill both slots
+   without colliding on the agent.
+5. **`delete_job` removes the output image only** — the input is a user upload shared with
+   the rest of the app.

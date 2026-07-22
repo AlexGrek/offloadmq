@@ -9,6 +9,24 @@ workflows/
     <task-type>.params.json   # parameter mapping (payload fields → node inputs)
 ```
 
+## Namespaced families
+
+Two directory names are reserved as *namespaces* rather than workflow names —
+their children map to a different capability prefix:
+
+```
+workflows/
+  txt2music/<workflow-name>/  → txt2music.<workflow-name>[...]
+  img-utils/<utility>/        → img-utils.<utility>[...]
+```
+
+`img-utils` holds single-purpose image transforms (depth map, face swap, …). The
+utility directory name *is* the capability, and it doubles as the default task
+type, so `img-utils/depth/depth.json` registers `img-utils.depth[depth]` and a
+client may omit `workflow` from the payload. An agent advertises `img-utils.depth`
+only if that directory exists — installing the workflow is what enables the
+capability. See [../../docs/img-utils-api.md](../../docs/img-utils-api.md).
+
 ## Example
 
 For capability `imggen.wan-2.1-outpaint[txt2img;img2img]`:

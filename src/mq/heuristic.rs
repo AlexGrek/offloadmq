@@ -335,6 +335,14 @@ mod tests {
         let params = TypicalRuntimeParameters::from_payload("imggen.flux[vision]", &payload).unwrap();
         assert_eq!(params.total_size, Some(1000000));
         assert_eq!(params.length, None);
+
+        // img-utils scales with the input resolution the same way imggen does
+        let payload = json!({
+            "resolution": { "width": 768, "height": 512 }
+        });
+        let params = TypicalRuntimeParameters::from_payload("img-utils.depth", &payload).unwrap();
+        assert_eq!(params.total_size, Some(393216));
+        assert_eq!(params.length, None);
     }
 
     fn rec(ms: f64, success: bool, total_size: Option<u64>, length: Option<u64>) -> HeuristicRecord {

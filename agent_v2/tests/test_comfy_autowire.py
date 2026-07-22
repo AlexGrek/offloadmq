@@ -257,6 +257,30 @@ def test_ace_step() -> None:
 
 
 # --------------------------------------------------------------------------
+# img-utils utilities — input images only
+# --------------------------------------------------------------------------
+
+
+def test_lotus_depth() -> None:
+    params, notes = guess_params_ex(load("lotus_depth"), "depth")
+
+    # Node 12 is the only LoadImage; everything else is fixed by the workflow.
+    assert params == {"input_image": [["12", "image"]]}
+
+    # A depth utility has no prompt, resolution or seed to expose — and because
+    # none of those keys are emitted, none of them need a note either.
+    assert notes == {}
+
+
+def test_reactor_face_swap() -> None:
+    params, _ = guess_params_ex(load("reactor_face_swap"), "face_swap")
+
+    # ReActor's `input_image` is the photo being edited, `source_image` the donor.
+    assert params["input_image"] == [["1", "image"]]
+    assert params["face_swap"] == [["2", "image"]]
+
+
+# --------------------------------------------------------------------------
 # Invariants that hold for every fixture
 # --------------------------------------------------------------------------
 
@@ -267,6 +291,8 @@ _ALL = [
     ("capybara_edit", "img2img"),
     ("longcat_redraw", "txt2img"),
     ("ace_step", "txt2music"),
+    ("lotus_depth", "depth"),
+    ("reactor_face_swap", "face_swap"),
 ]
 
 

@@ -136,11 +136,12 @@ def _parse_kokoro_voices(response: "Any") -> list[str]:
 
 
 def check_comfyui() -> CapResult:
-    """Check ComfyUI availability and enumerate imggen/txt2music/video capabilities.
+    """Check ComfyUI availability and enumerate imggen/img-utils/txt2music capabilities.
 
     imggen:    flat subdirs of workflows/ → imggen.<name>[task_types...]
                task_types include txt2img, img2img, txt2video, img2video as present
     txt2music: workflows/txt2music/<name>/ → txt2music.<name>[task_types...]
+    img-utils: workflows/img-utils/<utility>/ → img-utils.<utility>[task_types...]
     """
     import requests
 
@@ -154,7 +155,7 @@ def check_comfyui() -> CapResult:
     except requests.RequestException as e:
         return CapResult(
             [], False,
-            "imggen.*, txt2music.*, txt2video.*, img2video.*",
+            "imggen.*, img-utils.*, txt2music.*, txt2video.*, img2video.*",
             f"ComfyUI API not reachable at {url}: {type(e).__name__}",
         )
 
@@ -163,20 +164,20 @@ def check_comfyui() -> CapResult:
     if not caps:
         return CapResult(
             [], False,
-            "imggen.*, txt2music.*, txt2video.*, img2video.*",
+            "imggen.*, img-utils.*, txt2music.*, txt2video.*, img2video.*",
             f"ComfyUI reachable at {url} but no workflow templates found in {workflows_dir}",
         )
 
     label = ", ".join(caps)
     return CapResult(
         caps, True,
-        "imggen.*, txt2music.*, txt2video.*, img2video.*",
+        "imggen.*, img-utils.*, txt2music.*, txt2video.*, img2video.*",
         f"ComfyUI reachable at {url} — {len(caps)} workflow(s): {label}",
     )
 
 
 # Namespaced capability prefixes that live in a subdirectory of workflows/.
-_NAMESPACED_CAP_PREFIXES = ("txt2music",)
+_NAMESPACED_CAP_PREFIXES = ("txt2music", "img-utils")
 
 
 def _discover_workflow_caps(workflows_dir: Path | str) -> list[str]:

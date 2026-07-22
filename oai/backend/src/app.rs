@@ -193,6 +193,28 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             get(routes::music_generation::get_audio),
         )
         .route(
+            "/api/img-utils/capabilities",
+            get(routes::img_utils::list_capabilities),
+        )
+        .route("/api/img-utils/jobs", post(routes::img_utils::start_job))
+        .route("/api/img-utils/jobs", get(routes::img_utils::list_jobs))
+        .route(
+            "/api/img-utils/jobs/{id}",
+            get(routes::img_utils::get_job).delete(routes::img_utils::delete_job),
+        )
+        .route(
+            "/api/img-utils/jobs/{id}/poll",
+            post(routes::img_utils::poll_job),
+        )
+        .route(
+            "/api/img-utils/jobs/{id}/cancel",
+            post(routes::img_utils::cancel_job),
+        )
+        .route(
+            "/api/img-utils/jobs/{id}/retry",
+            post(routes::img_utils::retry_job),
+        )
+        .route(
             "/api/llm-compare/capabilities",
             get(routes::llm_compare::list_capabilities),
         )

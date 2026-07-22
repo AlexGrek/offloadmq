@@ -18,6 +18,7 @@ def register_routed_executors() -> None:
     for prefix in (
         "docker",
         "imggen",
+        "img-utils",
         "txt2music",
         "onnx",
         "custom",

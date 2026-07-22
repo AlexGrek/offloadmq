@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Activity, Bot, Eye, FolderOpen, GitCompareArrows, ImagePlus, MessageCircleMore, Music, ShieldAlert, Volume2 } from 'lucide-react'
+import { Activity, Bot, Eye, FolderOpen, GitCompareArrows, ImagePlus, MessageCircleMore, Music, ShieldAlert, Volume2, Wand2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const apps = [
@@ -32,6 +32,16 @@ const apps = [
     gradient: 'from-sky-500/20 to-cyan-500/20',
     iconBg: 'bg-sky-500/20',
     iconColor: 'text-sky-400',
+  },
+  {
+    id: 'img-utils',
+    icon: Wand2,
+    title: 'Image Tools',
+    description: 'One-shot transforms: depth maps, face swap — image in, image out',
+    href: '/app/img-utils',
+    gradient: 'from-cyan-500/20 to-blue-500/20',
+    iconBg: 'bg-cyan-500/20',
+    iconColor: 'text-cyan-400',
   },
   {
     id: 'nude-detect',

@@ -11,6 +11,7 @@ import ChatPage from './pages/ChatPage'
 import ImageGenerationPage from './pages/ImageGenerationPage'
 import DescribeImagePage from './pages/DescribeImagePage'
 import NudeDetectorPage from './pages/NudeDetectorPage'
+import ImgUtilsPage from './pages/ImgUtilsPage'
 import RunnersPage from './pages/RunnersPage'
 import TtsPage from './pages/TtsPage'
 import MusicGenerationPage from './pages/MusicGenerationPage'
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="images" element={<ImageGenerationPage />} />
             <Route path="describe" element={<DescribeImagePage />} />
             <Route path="nude-detect" element={<NudeDetectorPage />} />
+            <Route path="img-utils" element={<ImgUtilsPage />} />
             <Route path="runners" element={<RunnersPage />} />
             <Route path="tts" element={<TtsPage />} />
             <Route path="music" element={<MusicGenerationPage />} />

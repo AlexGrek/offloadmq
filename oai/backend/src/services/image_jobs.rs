@@ -129,6 +129,54 @@ pub async fn upload_input_image(
     .await
 }
 
+/// Persist an image produced by an OffloadMQ task that has no
+/// `image_generation_jobs` row — the `img-utils` transforms own their own job
+/// table but reuse `image_files` (and therefore the existing
+/// `/api/images/files/{id}` serving, thumbnails and quota accounting).
+///
+/// `image` is one entry of the task output's `images` array: either
+/// `{file_uid, filename}` (bucket) or `{data_base64, content_type}` (inline).
+pub async fn store_offload_output_image(
+    state: &AppState,
+    user_id: i64,
+    source: &str,
+    output_bucket: &str,
+    image: &Value,
+    metadata_text: &str,
+) -> Result<image_generation::ImageFile, AppError> {
+    storage::operator(state)?;
+    let file_uid = image["file_uid"].as_str();
+    let filename = image["filename"]
+        .as_str()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("{source}.jpg"));
+
+    let client =
+        offload_factory::image_client_from_settings(state, app_settings::get(&state.db).await?)?;
+    let processed =
+        process_output_image(&client, output_bucket, image, file_uid.unwrap_or_default(), metadata_text)
+            .await?;
+
+    let image_id = state.next_id();
+    let storage_path = image_paths::standalone_output_path(user_id, image_id);
+    store_image(
+        state,
+        StoredImageSpec {
+            image_id,
+            user_id,
+            job_id: None,
+            direction: "output",
+            source,
+            storage_path: &storage_path,
+            filename: &filename,
+            offload_bucket_uid: Some(output_bucket),
+            offload_file_uid: file_uid,
+        },
+        &processed,
+    )
+    .await
+}
+
 /// Re-submit a terminal job using its stored `pipeline_params` (retry or generate again).
 pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i64, AppError> {
     let job = image_generation::get_job(&state.db, job_id, user_id)

@@ -11,6 +11,7 @@ pub mod image_analysis;
 pub mod nude_detect;
 pub mod image_generation;
 pub mod image_worker_logs;
+pub mod img_utils;
 pub mod migrator;
 pub mod tts;
 pub mod music_generation;

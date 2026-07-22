@@ -13,6 +13,7 @@ pub mod image_generation_jobs;
 pub mod image_offload_tasks;
 pub mod image_pipeline_events;
 pub mod image_worker_logs;
+pub mod img_utils_jobs;
 pub mod tts_jobs;
 pub mod music_generation_jobs;
 pub mod llm_compare_jobs;

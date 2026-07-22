@@ -1,4 +1,11 @@
-"""imggen task executor — entry point for ComfyUI-backed image/video generation."""
+"""imggen task executor — entry point for ComfyUI-backed image/video generation.
+
+The body is shared with the ``img-utils.*`` family (see
+:mod:`offloadmq_agent.exec.imgutils`): both submit a ComfyUI graph, wait for it,
+and collect image output. They differ only in the capability prefix, the
+workflows sub-directory, and whether the payload's ``workflow`` field is
+mandatory.
+"""
 
 from pathlib import Path
 from typing import Any
@@ -13,39 +20,45 @@ from .workflow import load_workflow_template, inject_params, build_injection_val
 from .output import build_output
 
 
-def execute_imggen_comfyui(
+def run_comfy_image_task(
     transport: AgentTransport,
     task_id: TaskId,
     capability: str,
     payload: dict[str, Any],
     data_path: Path,
-    output_bucket: str | None = None,
-    job_timeout: int = 600,
+    output_bucket: str | None,
+    job_timeout: int,
+    *,
+    prefix: str,
+    namespace: str | None = None,
+    default_task_type: str | None = None,
 ) -> bool:
-    """Execute an imggen task via ComfyUI.
+    """Run one ComfyUI graph for a ``<prefix>.<workflow-name>`` capability.
 
-    capability format: imggen.<workflow-name>  (base, no brackets)
-    payload: see docs/comfy-api.md
+    ``prefix`` is the capability family including the trailing dot (``"imggen."``).
+    ``namespace`` is the workflows sub-directory holding the workflow, or ``None``
+    for the flat layout.  When ``default_task_type`` is given, a payload without a
+    ``workflow`` field falls back to it instead of failing.
     """
     try:
         if not output_bucket:
             raise ValueError(
-                "imggen tasks require an 'output_bucket' field — "
+                f"{prefix.rstrip('.')} tasks require an 'output_bucket' field — "
                 "create a bucket via the client storage API and pass its UID in the task"
             )
 
         if not isinstance(payload, dict):
             raise ValueError(f"Payload must be a dict, got {type(payload).__name__}")
 
-        task_type = payload.get("workflow")
+        workflow_name = capability.removeprefix(prefix)
+        if not workflow_name or workflow_name == capability:
+            raise ValueError(f"Capability '{capability}' is not a valid {prefix}* capability")
+
+        task_type = payload.get("workflow") or default_task_type
         if not task_type:
             raise ValueError("Payload missing required 'workflow' field")
 
-        workflow_name = capability.removeprefix("imggen.")
-        if not workflow_name or workflow_name == capability:
-            raise ValueError(f"Capability '{capability}' is not a valid imggen capability")
-
-        graph, param_map = load_workflow_template(workflow_name, task_type)
+        graph, param_map = load_workflow_template(workflow_name, task_type, namespace=namespace)
         inject_values = build_injection_values(payload, task_type, data_path)
         graph = inject_params(graph, param_map, inject_values)
 
@@ -82,3 +95,29 @@ def execute_imggen_comfyui(
         report = make_failure_report(task_id, capability, error_msg)
 
     return report_result(transport, report)
+
+
+def execute_imggen_comfyui(
+    transport: AgentTransport,
+    task_id: TaskId,
+    capability: str,
+    payload: dict[str, Any],
+    data_path: Path,
+    output_bucket: str | None = None,
+    job_timeout: int = 600,
+) -> bool:
+    """Execute an imggen task via ComfyUI.
+
+    capability format: imggen.<workflow-name>  (base, no brackets)
+    payload: see docs/comfy-api.md
+    """
+    return run_comfy_image_task(
+        transport,
+        task_id,
+        capability,
+        payload,
+        data_path,
+        output_bucket,
+        job_timeout,
+        prefix="imggen.",
+    )

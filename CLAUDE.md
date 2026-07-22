@@ -152,6 +152,25 @@ Attributes are semicolon-separated strings inside brackets. Examples:
 
 **Custom Capabilities:** Agents can register arbitrary capabilities with extended attributes that declare the payload schema (field names and types). See [docs/custom-capabilities.md](docs/custom-capabilities.md) for the full convention.
 
+### ComfyUI Capability Families
+
+Three capability prefixes are backed by ComfyUI workflow templates on the agent. Reference
+copies live in `offload-agent/workflows/`; operators copy the ones they want into the
+agent's own directory (`$OFFLOAD_WORKFLOWS_DIR`, else `~/.offload-agent/workflows/`) — they
+are not installed automatically. A flat sub-directory is an `imggen` workflow; `txt2music/`
+and `img-utils/` are reserved as *namespaces* whose children map to those prefixes instead.
+
+| Prefix | Layout | Contract |
+|--------|--------|----------|
+| `imggen.<workflow>` | `workflows/<workflow>/<task-type>.json` | [docs/comfy-api.md](docs/comfy-api.md) |
+| `txt2music.<workflow>` | `workflows/txt2music/<workflow>/<task-type>.json` | [docs/comfy-api.md](docs/comfy-api.md) |
+| `img-utils.<utility>` | `workflows/img-utils/<utility>/<task-type>.json` | [docs/img-utils-api.md](docs/img-utils-api.md) |
+
+`img-utils.*` are single-purpose transforms (depth map, face swap) — no prompt, images in
+and one image out. A utility is advertised **only if its workflow directory exists**, so
+installing the workflow is what enables the capability; there is no config flag. The
+utility name doubles as the default task type, so clients may omit `payload.workflow`.
+
 ### Key Data Flow
 
 1. Agents register (`POST /agent/register`) with capabilities that may include extended attributes in brackets
@@ -343,15 +362,15 @@ Paths are relative to `oai/`.
 
 Paths are relative to `oai/`.
 
-**Frontend:** `frontend/src/pages/ImageGenerationPage.tsx`, `frontend/src/pages/ImageWorkerLogsPage.tsx`, `frontend/src/pages/FilesPage.tsx`, `frontend/src/components/imggen/**`, `frontend/src/lib/imggen.ts`, `frontend/src/api/images.ts`, `frontend/src/api/promptgen.ts`, `frontend/src/hooks/useRunningImageJobs.ts`, `frontend/src/contexts/ProgressContext.tsx`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (image rows)
+**Frontend:** `frontend/src/pages/ImageGenerationPage.tsx`, `frontend/src/pages/ImgUtilsPage.tsx`, `frontend/src/pages/ImageWorkerLogsPage.tsx`, `frontend/src/pages/FilesPage.tsx`, `frontend/src/components/imggen/**`, `frontend/src/components/imgutils/**`, `frontend/src/api/imgUtils.ts`, `frontend/src/lib/imggen.ts`, `frontend/src/api/images.ts`, `frontend/src/api/promptgen.ts`, `frontend/src/hooks/useRunningImageJobs.ts`, `frontend/src/contexts/ProgressContext.tsx`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (image rows)
 
-**Backend:** `backend/src/routes/images.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/routes/promptgen.rs`, `backend/src/services/image_jobs.rs`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/services/promptgen.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
+**Backend:** `backend/src/routes/images.rs`, `backend/src/routes/img_utils.rs`, `backend/src/services/img_utils.rs`, `backend/src/db/img_utils.rs`, `backend/src/jobs/img_utils_worker.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/routes/promptgen.rs`, `backend/src/services/image_jobs.rs`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/services/promptgen.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
 
 #### Skill summaries
 
 - **oai-frontend** — React 19 + TypeScript SPA, shadcn/ui, Tailwind v4, routing, API clients, dark/light mode, AppShell layout.
 - **oai-chat** — LLM chat at `/app/chat`: WebSocket protocol, WorkloadContext, system prompts, cancel, ToolDebug, OffloadMQ submit/poll.
-- **oai-img** — Image generation at `/app/images`: txt2img/img2img, buckets, dataPreparation, job poll/cancel, pipeline worker, Progress drawer.
+- **oai-img** — Image generation at `/app/images`: txt2img/img2img, buckets, dataPreparation, job poll/cancel, pipeline worker, Progress drawer. Also Image Tools at `/app/img-utils` (`img-utils.*` one-shot transforms — depth, face swap).
 - **oai-backend** — Rust/Axum backend: routes, services, DB migrations (SeaORM), middleware, OffloadMQ client, background workers.
 - **oai-itests** — Python integration tests (httpx + pytest-xdist) against the live backend; one test file per route group; no mocking.
 - **oai-devops** — Helm/Kubernetes deploy, Garage init job, Docker publish, troubleshooting (`garage-init`, `wait-garage-creds`, ImagePullBackOff).

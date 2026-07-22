@@ -164,7 +164,7 @@ def _run_sync_pipeline(
             return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
 
     try:
-        if capability.startswith("imggen.") or capability.startswith("txt2music."):
+        if capability.startswith(("imggen.", "img-utils.", "txt2music.")):
             executor(
                 transport,
                 task_id,

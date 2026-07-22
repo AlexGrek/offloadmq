@@ -25,7 +25,7 @@ __all__ = [
 WF_SAFE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 # Namespaced capability prefixes — workflows live in a subdirectory with this name.
-_NAMESPACED_PREFIXES: tuple[str, ...] = ("txt2music",)
+_NAMESPACED_PREFIXES: tuple[str, ...] = ("txt2music", "img-utils")
 
 STANDARD_TASK_TYPES = [
     "txt2img",
@@ -37,6 +37,7 @@ STANDARD_TASK_TYPES = [
     "txt2video",
     "img2video",
     "txt2music",
+    "depth",
 ]
 
 
@@ -198,6 +199,14 @@ _PARAM_UI_ROWS: Dict[str, List[Dict[str, str]]] = {
     "img2video": _param_ui_txt_base_rows()
     + [
         {"key": "length", "label": "Video length (frames)", "help": "payload.length"},
+        {
+            "key": "input_image",
+            "label": "Input image (main)",
+            "help": "payload.input_image (bucket file)",
+        },
+    ],
+    # img-utils utilities — input images only, no prompt.
+    "depth": [
         {
             "key": "input_image",
             "label": "Input image (main)",

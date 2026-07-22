@@ -25,6 +25,11 @@ def route_executor(cap: str) -> ExecutorFn | None:
 
         return execute_imggen_comfyui
 
+    if cap.startswith("img-utils."):
+        from offloadmq_agent.exec.imgutils import execute_imgutils_comfyui
+
+        return execute_imgutils_comfyui
+
     if cap.startswith("txt2music."):
         from offloadmq_agent.exec.musicgen import execute_musicgen_comfyui
 

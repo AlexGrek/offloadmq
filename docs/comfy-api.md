@@ -3,6 +3,9 @@
 Payload contract between clients and agents for `imggen.*` tasks.
 The server is transparent to task payloads — it routes tasks by capability string and passes the payload through unchanged.
 
+> Single-purpose transforms (depth map, face swap) live under the sibling `img-utils.*`
+> family — same transport and output shape, no prompt. See [img-utils-api.md](img-utils-api.md).
+
 ---
 
 ## Capability Naming

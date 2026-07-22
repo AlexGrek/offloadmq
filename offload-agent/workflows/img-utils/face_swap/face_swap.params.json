@@ -1,0 +1,10 @@
+{
+  "input_image": [["1", "image"]],
+  "face_swap": [["2", "image"]],
+  "face_restore_visibility": [["3", "face_restore_visibility"]],
+  "codeformer_weight": [["3", "codeformer_weight"]],
+  "input_faces_index": [["3", "input_faces_index"]],
+  "source_faces_index": [["3", "source_faces_index"]],
+  "detect_gender_input": [["3", "detect_gender_input"]],
+  "detect_gender_source": [["3", "detect_gender_source"]]
+}

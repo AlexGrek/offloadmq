@@ -216,12 +216,17 @@ _STANDARD_KEYS: Dict[str, Tuple[str, ...]] = {
     "face_swap": _TXT_BASE + ("input_image", "face_swap"),
     "txt2video": _TXT_BASE + ("length",),
     "img2video": _TXT_BASE + ("length", "input_image"),
+    "depth": ("input_image",),
 }
 
 _IMAGE_TASK_TYPES: frozenset[str] = frozenset(
     {"img2img", "inpaint", "outpaint", "upscale", "face_swap", "img2video"}
 )
 _VIDEO_TASK_TYPES: frozenset[str] = frozenset({"txt2video", "img2video"})
+
+# img-utils utilities transform an input image with no prompt, no latent sizing
+# and (usually) no seed — autowiring only has to find the LoadImage node(s).
+_IMG_UTILS_TASK_TYPES: frozenset[str] = frozenset({"depth"})
 
 
 # --------------------------------------------------------------------------
@@ -756,6 +761,17 @@ def _guess_txt2music(graph: Graph, live: set[str]) -> Tuple[Dict[str, Any], Note
 # --------------------------------------------------------------------------
 
 
+def _guess_img_utils(graph: Graph, live: set[str], task_type: str) -> Tuple[Dict[str, Any], Notes]:
+    """Param map for an ``img-utils.*`` utility: input images and nothing else."""
+    params: Dict[str, Any] = {}
+    img_params, notes = _resolve_images(graph, live, task_type)
+    for key, targets in img_params.items():
+        params[key] = [list(t) for t in targets]
+    for key in _STANDARD_KEYS.get(task_type, ("input_image",)):
+        params.setdefault(key, [])
+    return params, notes
+
+
 def guess_params_ex(graph: Graph, task_type: str) -> Tuple[Dict[str, Any], Notes]:
     """Auto-detect the param map plus per-field explanations for unresolved fields.
 
@@ -771,6 +787,9 @@ def guess_params_ex(graph: Graph, task_type: str) -> Tuple[Dict[str, Any], Notes
 
     if task_type == "txt2music":
         return _guess_txt2music(graph, live)
+
+    if task_type in _IMG_UTILS_TASK_TYPES:
+        return _guess_img_utils(graph, live, task_type)
 
     params: Dict[str, Any] = {}
     notes: Notes = {}

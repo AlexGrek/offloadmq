@@ -14,6 +14,13 @@ pub fn main_image_path(user_id: i64, direction: &str, job_id: Option<i64>, image
     }
 }
 
+/// Output image produced by a feature that has no `image_generation_jobs` row of
+/// its own (e.g. `img-utils` transforms), so `main_image_path` has no job id to
+/// nest under.
+pub fn standalone_output_path(user_id: i64, image_id: i64) -> String {
+    format!("users/{user_id}/images/output/standalone/{image_id}.jpg")
+}
+
 /// Raw video output path — preserves the agent-reported filename extension (e.g. `.mp4`).
 pub fn video_output_path(user_id: i64, job_id: i64, file_id: i64, filename: &str) -> String {
     let ext = filename

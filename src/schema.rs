@@ -407,9 +407,13 @@ pub struct TypicalRuntimeParameters {
 
 impl TypicalRuntimeParameters {
     pub fn from_payload(capability: &str, payload: &serde_json::Value) -> Option<Self> {
+        // Families whose runtime scales with the pixel count / frame count the
+        // client asks for, so past runs can be normalised by effort before
+        // being averaged. Everything else falls back to a plain average.
         let base = crate::utils::base_capability(capability);
-        let is_imggen = base.starts_with("imggen.");
-        if !is_imggen {
+        let scales_with_effort =
+            base.starts_with("imggen.") || base.starts_with("img-utils.");
+        if !scales_with_effort {
             return None;
         }
 
