@@ -31,10 +31,14 @@ if ($Tag) {
 
 Write-Host "==> Releasing offloadmq $Version"
 
-# Tag and push (skip creation if tag already exists)
+# Tag and push (skip creation if tag already exists).
+# Use `git tag --list` rather than `git rev-parse <tag> 2>$null`: on a tag that does
+# not exist yet — i.e. every new release — rev-parse writes to stderr, and Windows
+# PowerShell 5.1 turns native stderr into a NativeCommandError that $ErrorActionPreference
+# = "Stop" treats as terminating. `git tag --list` prints nothing and exits 0 instead.
 $TagName = "release-$Version"
-$TagExists = git rev-parse $TagName 2>$null
-if ($LASTEXITCODE -eq 0) {
+$TagExists = git tag --list $TagName
+if ($TagExists) {
     Write-Host "-> Tag $TagName already exists, skipping creation"
 } else {
     git tag $TagName
