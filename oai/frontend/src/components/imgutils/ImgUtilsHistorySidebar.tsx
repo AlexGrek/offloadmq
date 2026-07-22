@@ -1,5 +1,5 @@
 import { Loader2, Plus, Wand2 } from 'lucide-react'
-import { utilityLabel, type ImgUtilsJob } from '@/api/imgUtils'
+import { prettyLabel, type ImgUtilsJob } from '@/api/imgUtils'
 import { imageThumbnailUrl } from '@/api/images'
 import { cn } from '@/lib/utils'
 
@@ -92,7 +92,7 @@ export function ImgUtilsHistorySidebar({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs font-medium">
-                        {utilityLabel(job.utility)}
+                        {prettyLabel(job.workflow)}
                       </p>
                       <p className="truncate text-[10px] text-muted-foreground capitalize">
                         {jobSummary(job)}

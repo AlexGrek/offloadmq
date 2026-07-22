@@ -2,15 +2,43 @@ import { apiRequest as request } from './http'
 
 /** One `img-utils.*` capability advertised by an online agent. */
 export interface ImgUtilCapability {
-  /** Base capability, e.g. `img-utils.depth`. */
+  /** Base capability, e.g. `img-utils.image_lotus_depth_v1_1`. */
   base: string
-  /** Capability minus the `img-utils.` prefix, e.g. `depth`. */
+  /** Capability minus the `img-utils.` prefix — the workflow pack, named after
+   *  the model (`image_lotus_depth_v1_1`), *not* the operation. */
   utility: string
-  /** Task types the agent declared in brackets — usable as `workflow`. */
+  /** Operations the pack installs (`["depth"]`) — the values `workflow` accepts. */
   workflows: string[]
   raw: string
-  /** True when the utility consumes a second "source" image (face reference). */
+  /** True when one of the operations consumes a second "source" image. */
   needs_source_image: boolean
+}
+
+/** A pack/operation pair — what the user actually picks. */
+export interface ImgUtilTool {
+  capability: string
+  /** Pack directory, e.g. `image_lotus_depth_v1_1`. */
+  pack: string
+  /** Operation, e.g. `depth` — sent as `workflow`. */
+  workflow: string
+  needsSourceImage: boolean
+}
+
+/** Flatten capabilities into one entry per operation the user can run. */
+export function toolsFromCapabilities(caps: ImgUtilCapability[]): ImgUtilTool[] {
+  return caps.flatMap(cap =>
+    (cap.workflows.length > 0 ? cap.workflows : [cap.utility]).map(workflow => ({
+      capability: cap.base,
+      pack: cap.utility,
+      workflow,
+      needsSourceImage: /^face[_-]swap/.test(workflow),
+    })),
+  )
+}
+
+/** Stable key for a tool — a pack may install more than one operation. */
+export function toolKey(tool: ImgUtilTool): string {
+  return `${tool.capability}::${tool.workflow}`
 }
 
 export interface ImgUtilsJob {
@@ -104,8 +132,8 @@ export function deleteImgUtilsJob(token: string, jobId: string): Promise<void> {
   })
 }
 
-/** Human label for a utility slug (`face_swap` → `Face swap`). */
-export function utilityLabel(utility: string): string {
-  const words = utility.replace(/[-_]+/g, ' ').trim()
+/** Human label for a slug (`face_swap` → `Face swap`). */
+export function prettyLabel(slug: string): string {
+  const words = slug.replace(/[-_]+/g, ' ').trim()
   return words.charAt(0).toUpperCase() + words.slice(1)
 }

@@ -16,7 +16,7 @@ from offloadmq_agent.wire import TaskId
 from offloadmq_agent.transport_exec import AgentTransport
 from offloadmq_agent.exec.reporting import TaskCancelled, make_failure_report, make_success_report, report_cancelled, report_progress, report_result
 from .comfyui import queue_prompt, wait_for_completion
-from .workflow import load_workflow_template, inject_params, build_injection_values
+from .workflow import load_workflow_template, inject_params, build_injection_values, list_task_types
 from .output import build_output
 
 
@@ -56,7 +56,12 @@ def run_comfy_image_task(
 
         task_type = payload.get("workflow") or default_task_type
         if not task_type:
-            raise ValueError("Payload missing required 'workflow' field")
+            installed = list_task_types(workflow_name, namespace=namespace)
+            available = ", ".join(installed) if installed else "none installed"
+            raise ValueError(
+                f"Payload missing required 'workflow' field — "
+                f"'{workflow_name}' provides: {available}"
+            )
 
         graph, param_map = load_workflow_template(workflow_name, task_type, namespace=namespace)
         inject_values = build_injection_values(payload, task_type, data_path)

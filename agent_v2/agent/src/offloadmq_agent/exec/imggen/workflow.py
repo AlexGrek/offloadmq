@@ -63,6 +63,29 @@ def _find_workflows_dir() -> Path:
 WORKFLOWS_DIR = _find_workflows_dir()
 
 
+def list_task_types(workflow_name: str, namespace: str | None = None) -> list[str]:
+    """Task types installed for one workflow — the ``<task-type>.json`` stems.
+
+    Mirrors what capability discovery advertises in brackets. Returns ``[]`` when
+    the directory is missing or unreadable; callers treat that as "cannot resolve"
+    and let ``load_workflow_template`` raise the descriptive error.
+    """
+    try:
+        workflow_name = _safe_path_component(workflow_name, "workflow_name")
+        if namespace:
+            namespace = _safe_path_component(namespace, "namespace")
+            base = WORKFLOWS_DIR / namespace / workflow_name
+        else:
+            base = WORKFLOWS_DIR / workflow_name
+        return sorted(
+            p.stem
+            for p in base.glob("*.json")
+            if not p.name.endswith(".params.json") and _SAFE_NAME_RE.match(p.stem)
+        )
+    except (ValueError, OSError):
+        return []
+
+
 def load_workflow_template(
     workflow_name: str,
     task_type: str,

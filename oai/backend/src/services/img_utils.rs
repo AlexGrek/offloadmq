@@ -32,20 +32,23 @@ pub const CAPABILITY_PREFIX: &str = "img-utils.";
 /// One `img-utils.*` capability advertised by an online agent.
 #[derive(Debug, Serialize)]
 pub struct ImgUtilCapability {
-    /// Base capability, e.g. `img-utils.depth`.
+    /// Base capability, e.g. `img-utils.image_lotus_depth_v1_1`.
     pub base: String,
-    /// Capability minus the prefix, e.g. `depth`.
+    /// Capability minus the prefix — the workflow pack, named after the model
+    /// (`image_lotus_depth_v1_1`), *not* the operation.
     pub utility: String,
-    /// Task types the agent declared in brackets — usable as `workflow`.
+    /// Operations the pack installs, from the agent's bracket attributes
+    /// (`["depth"]`). These are the values `workflow` accepts.
     pub workflows: Vec<String>,
     pub raw: String,
-    /// True when the utility consumes a second "source" image (face reference).
+    /// True when one of the operations consumes a second "source" image.
     pub needs_source_image: bool,
 }
 
 pub struct StartJobParams {
     pub capability: String,
-    /// Task type; defaults to the utility name when omitted.
+    /// Operation to run. When omitted it is resolved from the capability's
+    /// advertised operations — unambiguous for the usual single-operation pack.
     pub workflow: Option<String>,
     pub input_image_id: i64,
     pub source_image_id: Option<i64>,
@@ -53,10 +56,12 @@ pub struct StartJobParams {
     pub options: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-/// Utilities that take a second image. Kept as a prefix match so future variants
-/// (`face_swap_hq`, …) are covered without another release.
-fn utility_needs_source_image(utility: &str) -> bool {
-    utility.starts_with("face_swap") || utility.starts_with("face-swap")
+/// Whether an operation takes a second image. Keyed on the *operation* rather
+/// than the pack directory: a pack is named after its model, so
+/// `img-utils.face_swap_reactor` and `img-utils.roop` must both be recognised
+/// via their `face_swap` task type.
+fn workflow_needs_source_image(workflow: &str) -> bool {
+    workflow.starts_with("face_swap") || workflow.starts_with("face-swap")
 }
 
 /// Drives the generic poll/cancel/reconcile lifecycle for img-utils jobs.
@@ -150,7 +155,7 @@ pub async fn list_capabilities(state: &AppState) -> Result<Vec<ImgUtilCapability
                 .unwrap_or(&c.base)
                 .to_string();
             ImgUtilCapability {
-                needs_source_image: utility_needs_source_image(&utility),
+                needs_source_image: c.tags.iter().any(|t| workflow_needs_source_image(t)),
                 utility,
                 base: c.base,
                 workflows: c.tags,
@@ -177,17 +182,16 @@ pub async fn start_job(
     if utility.is_empty() {
         return Err(AppError::BadRequest("capability is missing a utility name".into()));
     }
-    let workflow = params
-        .workflow
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(&utility)
-        .to_string();
+    let workflow = match params.workflow.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(w) => w.to_string(),
+        // The pack directory is named after the model, so it is never a usable
+        // task type — ask the agent which operations it actually installed.
+        None => resolve_sole_workflow(state, &capability).await?,
+    };
 
-    if utility_needs_source_image(&utility) && params.source_image_id.is_none() {
+    if workflow_needs_source_image(&workflow) && params.source_image_id.is_none() {
         return Err(AppError::BadRequest(format!(
-            "{utility} requires a source (face reference) image"
+            "{workflow} requires a source (face reference) image"
         )));
     }
 
@@ -268,6 +272,28 @@ pub async fn start_job(
     .await?;
 
     Ok(job_id)
+}
+
+/// The single operation a pack installs, for callers that did not name one.
+/// Errors rather than guessing when a pack offers several — running the wrong
+/// transform silently would be worse than a 400.
+async fn resolve_sole_workflow(state: &AppState, capability: &str) -> Result<String, AppError> {
+    let caps = list_capabilities(state).await?;
+    let Some(cap) = caps.into_iter().find(|c| c.base == capability) else {
+        return Err(AppError::BadRequest(format!(
+            "no online agent provides `{capability}`"
+        )));
+    };
+    match cap.workflows.as_slice() {
+        [only] => Ok(only.clone()),
+        [] => Err(AppError::BadRequest(format!(
+            "`{capability}` declares no operations"
+        ))),
+        many => Err(AppError::BadRequest(format!(
+            "`{capability}` provides several operations ({}) — specify `workflow`",
+            many.join(", ")
+        ))),
+    }
 }
 
 /// Upload one stored image into the task's input bucket under a collision-free

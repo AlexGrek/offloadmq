@@ -216,7 +216,6 @@ _STANDARD_KEYS: Dict[str, Tuple[str, ...]] = {
     "face_swap": _TXT_BASE + ("input_image", "face_swap"),
     "txt2video": _TXT_BASE + ("length",),
     "img2video": _TXT_BASE + ("length", "input_image"),
-    "depth": ("input_image",),
 }
 
 _IMAGE_TASK_TYPES: frozenset[str] = frozenset(
@@ -224,8 +223,20 @@ _IMAGE_TASK_TYPES: frozenset[str] = frozenset(
 )
 _VIDEO_TASK_TYPES: frozenset[str] = frozenset({"txt2video", "img2video"})
 
-# img-utils utilities transform an input image with no prompt, no latent sizing
-# and (usually) no seed — autowiring only has to find the LoadImage node(s).
+IMG_UTILS_NAMESPACE = "img-utils"
+
+# img-utils operations transform an input image with no prompt, no latent sizing
+# and no seed — autowiring only has to find the LoadImage node(s), and emitting
+# prompt/width/height keys would make the editor warn about fields the workflow
+# genuinely does not have.
+_IMG_UTILS_KEYS: Dict[str, Tuple[str, ...]] = {
+    "depth": ("input_image",),
+    "face_swap": ("input_image", "face_swap"),
+}
+
+# Task types that mean img-utils even without a namespace. `face_swap` is
+# deliberately absent — it is also a legitimate imggen task type, where the
+# prompt/resolution keys *are* wanted.
 _IMG_UTILS_TASK_TYPES: frozenset[str] = frozenset({"depth"})
 
 

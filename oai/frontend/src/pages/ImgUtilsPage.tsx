@@ -18,10 +18,12 @@ import {
   listImgUtilsCapabilities,
   listImgUtilsJobs,
   pollImgUtilsJob,
+  prettyLabel,
   retryImgUtilsJob,
   startImgUtilsJob,
-  utilityLabel,
-  type ImgUtilCapability,
+  toolKey,
+  toolsFromCapabilities,
+  type ImgUtilTool,
   type ImgUtilsJob,
 } from '../api/imgUtils'
 import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
@@ -47,22 +49,24 @@ type Slot = {
   error: string | null
 }
 
-/** Short blurb per known utility; unknown ones fall back to a generic line. */
-const UTILITY_HINTS: Record<string, string> = {
+/** Short blurb per known operation; unknown ones fall back to a generic line.
+ *  Keyed on the operation (`depth`), not the pack directory — packs are named
+ *  after the model (`image_lotus_depth_v1_1`). */
+const OPERATION_HINTS: Record<string, string> = {
   depth: 'Estimate a depth map from the image.',
   face_swap: 'Replace the face in the target image with the face from the reference image.',
 }
 
-function utilityHint(utility: string): string {
-  return UTILITY_HINTS[utility] ?? 'Run this ComfyUI transform on the uploaded image.'
+function operationHint(workflow: string): string {
+  return OPERATION_HINTS[workflow] ?? 'Run this ComfyUI transform on the uploaded image.'
 }
 
 export default function ImgUtilsPage() {
   const { token } = useAuth()
 
-  const [capabilities, setCapabilities] = useState<ImgUtilCapability[]>([])
+  const [tools, setTools] = useState<ImgUtilTool[]>([])
   const [capsLoading, setCapsLoading] = useState(true)
-  const [selectedCap, setSelectedCap] = useState<string>('')
+  const [selectedTool, setSelectedTool] = useState<string>('')
 
   const [input, setInput] = useState<Slot | null>(null)
   const [source, setSource] = useState<Slot | null>(null)
@@ -97,17 +101,18 @@ export default function ImgUtilsPage() {
   const viewingJob = activePanel !== IMGUTILS_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
 
-  const activeCap = capabilities.find(c => c.base === selectedCap) ?? null
-  const needsSource = activeCap?.needs_source_image ?? false
+  const activeTool = tools.find(t => toolKey(t) === selectedTool) ?? null
+  const needsSource = activeTool?.needsSourceImage ?? false
 
   const loadCapabilities = useCallback(async () => {
     if (!token) return
     setCapsLoading(true)
     try {
       const res = await listImgUtilsCapabilities(token)
-      setCapabilities(res.capabilities)
-      setSelectedCap(prev =>
-        res.capabilities.some(c => c.base === prev) ? prev : (res.capabilities[0]?.base ?? ''),
+      const next = toolsFromCapabilities(res.capabilities)
+      setTools(next)
+      setSelectedTool(prev =>
+        next.some(t => toolKey(t) === prev) ? prev : (next[0] ? toolKey(next[0]) : ''),
       )
     } catch (e) {
       setError((e as Error).message)
@@ -200,7 +205,10 @@ export default function ImgUtilsPage() {
     setJobDetailLoading(true)
     try {
       const res = await startImgUtilsJob(token, {
-        capability: selectedCap,
+        capability: activeTool!.capability,
+        // Always explicit: the pack directory is not a usable task type, and a
+        // pack may install more than one operation.
+        workflow: activeTool!.workflow,
         input_image_id: input!.uploaded!.image_id,
         source_image_id: needsSource ? source!.uploaded!.image_id : undefined,
       })
@@ -298,7 +306,7 @@ export default function ImgUtilsPage() {
   const inputReady = Boolean(input?.uploaded && !input.error)
   const sourceReady = Boolean(source?.uploaded && !source.error)
   const canSubmit =
-    Boolean(selectedCap) && inputReady && (!needsSource || sourceReady) && !submitting
+    Boolean(activeTool) && inputReady && (!needsSource || sourceReady) && !submitting
 
   const status = selectedJob?.status
   const isRunning = status != null && !TERMINAL.has(status)
@@ -344,7 +352,7 @@ export default function ImgUtilsPage() {
             {sidebarOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
           </Button>
           <h1 className="min-w-0 flex-1 truncate font-display text-sm font-semibold">
-            {viewingJob && selectedJob ? utilityLabel(selectedJob.utility) : 'New transform'}
+            {viewingJob && selectedJob ? prettyLabel(selectedJob.workflow) : 'New transform'}
           </h1>
           {viewingJob && selectedJob ? (
             <Button
@@ -385,9 +393,9 @@ export default function ImgUtilsPage() {
                   <span className="text-muted-foreground">
                     {capsLoading
                       ? 'Checking agents…'
-                      : capabilities.length === 0
+                      : tools.length === 0
                         ? 'No img-utils.* capability online — check OffloadMQ agents'
-                        : `${capabilities.length} tool(s) online`}
+                        : `${tools.length} tool(s) online`}
                   </span>
                   <button
                     type="button"
@@ -405,27 +413,33 @@ export default function ImgUtilsPage() {
                   <div className="space-y-1.5" data-testid="imgutils-tool-picker">
                     <Label>Tool</Label>
                     <div className="flex flex-wrap gap-2">
-                      {capabilities.map(cap => (
-                        <button
-                          key={cap.base}
-                          type="button"
-                          onClick={() => setSelectedCap(cap.base)}
-                          className={cn(
-                            'rounded-lg px-3 py-2 text-sm transition-colors',
-                            cap.base === selectedCap
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted/60 text-muted-foreground hover:bg-muted',
-                          )}
-                          data-testid={`imgutils-tool-${cap.utility}`}
-                        >
-                          {utilityLabel(cap.utility)}
-                        </button>
-                      ))}
+                      {tools.map(tool => {
+                        const key = toolKey(tool)
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => setSelectedTool(key)}
+                            className={cn(
+                              'rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                              key === selectedTool
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-muted/60 text-muted-foreground hover:bg-muted',
+                            )}
+                            data-testid={`imgutils-tool-${tool.workflow}`}
+                          >
+                            <span className="block">{prettyLabel(tool.workflow)}</span>
+                            <span className="block truncate text-[10px] opacity-70">
+                              {tool.pack}
+                            </span>
+                          </button>
+                        )
+                      })}
                     </div>
-                    {activeCap ? (
+                    {activeTool ? (
                       <p className="text-xs text-muted-foreground">
-                        {utilityHint(activeCap.utility)}{' '}
-                        <code className="text-[11px]">{activeCap.base}</code>
+                        {operationHint(activeTool.workflow)}{' '}
+                        <code className="text-[11px]">{activeTool.capability}</code>
                       </p>
                     ) : null}
                   </div>
@@ -474,7 +488,7 @@ export default function ImgUtilsPage() {
                     ) : (
                       <>
                         <Wand2 className="mr-2 size-4" />
-                        Run {activeCap ? utilityLabel(activeCap.utility) : 'transform'}
+                        Run {activeTool ? prettyLabel(activeTool.workflow) : 'transform'}
                       </>
                     )}
                   </Button>
@@ -508,7 +522,7 @@ export default function ImgUtilsPage() {
 
                     <div className="space-y-0.5">
                       <h2 className="font-display text-base font-semibold">
-                        {utilityLabel(selectedJob.utility)}
+                        {prettyLabel(selectedJob.workflow)}
                       </h2>
                       <p className="font-mono text-xs text-muted-foreground">
                         {selectedJob.capability} · {selectedJob.status.replace(/_/g, ' ')}
