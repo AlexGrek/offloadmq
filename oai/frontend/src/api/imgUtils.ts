@@ -1,4 +1,10 @@
 import { apiRequest as request } from './http'
+import type { UploadedImage } from './images'
+
+/** React Router location state for `/app/img-utils` deep links from other pages. */
+export type ImgUtilsRouteState = {
+  useInputImage?: UploadedImage
+}
 
 /** One `img-utils.*` capability advertised by an online agent. */
 export interface ImgUtilCapability {

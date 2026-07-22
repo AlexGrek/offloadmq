@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Download, Pencil, ShieldAlert, Star, Trash2, Video, X } from 'lucide-react'
+import { Download, Pencil, ShieldAlert, Star, Trash2, Video, Wand2, X } from 'lucide-react'
 import {
   deleteImage,
   getImageStarred,
@@ -30,6 +30,7 @@ export type ImageLightboxActions = {
   onStarredChange?: (starred: boolean) => void
   onSendToImg2Img?: () => void
   onSendToImg2Video?: () => void
+  onSendToImgUtils?: () => void
   onNudeDetect?: () => void
 }
 
@@ -293,6 +294,20 @@ export function ImageLightbox({
                 >
                   <Video className="size-3" />
                   Animate
+                </button>
+              ) : null}
+              {actions.onSendToImgUtils ? (
+                <button
+                  type="button"
+                  className={glassButton}
+                  onClick={() => {
+                    actions.onSendToImgUtils!()
+                    setOpen(false)
+                  }}
+                  data-testid={testId ? `${testId}-imgutils` : 'image-lightbox-imgutils'}
+                >
+                  <Wand2 className="size-3" />
+                  Image Tools
                 </button>
               ) : null}
               <button

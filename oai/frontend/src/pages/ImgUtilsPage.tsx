@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
+  FolderOpen,
   ImageUp,
   Loader2,
   PanelLeftClose,
@@ -23,6 +25,7 @@ import {
   startImgUtilsJob,
   toolKey,
   toolsFromCapabilities,
+  type ImgUtilsRouteState,
   type ImgUtilTool,
   type ImgUtilsJob,
 } from '../api/imgUtils'
@@ -33,6 +36,7 @@ import {
   IMGUTILS_NEW_PANEL,
   ImgUtilsHistorySidebar,
 } from '../components/imgutils/ImgUtilsHistorySidebar'
+import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { JobErrorBanner } from '../components/JobErrorBanner'
@@ -63,6 +67,8 @@ function operationHint(workflow: string): string {
 
 export default function ImgUtilsPage() {
   const { token } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
 
   const [tools, setTools] = useState<ImgUtilTool[]>([])
   const [capsLoading, setCapsLoading] = useState(true)
@@ -70,6 +76,7 @@ export default function ImgUtilsPage() {
 
   const [input, setInput] = useState<Slot | null>(null)
   const [source, setSource] = useState<Slot | null>(null)
+  const [pickerTarget, setPickerTarget] = useState<'input' | 'source' | null>(null)
 
   const [jobs, setJobs] = useState<ImgUtilsJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -186,6 +193,24 @@ export default function ImgUtilsPage() {
       setSlot({ preview, uploaded: null, error: (e as Error).message })
     }
   }
+
+  function pickFromLibrary(image: UploadedImage, setSlot: (slot: Slot | null) => void) {
+    if (!token) return
+    setSlot({ preview: imageFileUrl(image.image_id, token), uploaded: image, error: null })
+    setError(null)
+  }
+
+  // Deep link from another page (lightbox "Image Tools", generation results) —
+  // land on the New transform panel with the image preloaded as input.
+  useEffect(() => {
+    if (!token) return
+    const state = location.state as ImgUtilsRouteState | null
+    const image = state?.useInputImage
+    if (!image) return
+    pickFromLibrary(image, setInput)
+    setActivePanel(IMGUTILS_NEW_PANEL)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [token, location.state, location.pathname, navigate])
 
   function clearSlots() {
     for (const slot of [input, source]) {
@@ -454,6 +479,7 @@ export default function ImgUtilsPage() {
                     slot={input}
                     testId="imgutils-input"
                     onPick={file => void pickFile(file, setInput)}
+                    onPickFromLibrary={() => setPickerTarget('input')}
                     onClear={() => {
                       if (input) URL.revokeObjectURL(input.preview)
                       setInput(null)
@@ -467,6 +493,7 @@ export default function ImgUtilsPage() {
                       slot={source}
                       testId="imgutils-source"
                       onPick={file => void pickFile(file, setSource)}
+                      onPickFromLibrary={() => setPickerTarget('source')}
                       onClear={() => {
                         if (source) URL.revokeObjectURL(source.preview)
                         setSource(null)
@@ -608,6 +635,17 @@ export default function ImgUtilsPage() {
           </div>
         </main>
       </div>
+
+      {token && (
+        <ImagePickerModal
+          open={pickerTarget !== null}
+          onClose={() => setPickerTarget(null)}
+          onSelect={image => {
+            pickFromLibrary(image, pickerTarget === 'source' ? setSource : setInput)
+          }}
+          token={token}
+        />
+      )}
     </div>
   )
 }
@@ -618,10 +656,19 @@ type ImageSlotProps = {
   slot: Slot | null
   testId: string
   onPick: (file: File) => void
+  onPickFromLibrary: () => void
   onClear: () => void
 }
 
-function ImageSlot({ label, hint, slot, testId, onPick, onClear }: ImageSlotProps) {
+function ImageSlot({
+  label,
+  hint,
+  slot,
+  testId,
+  onPick,
+  onPickFromLibrary,
+  onClear,
+}: ImageSlotProps) {
   const [dragOver, setDragOver] = useState(false)
 
   function handleFiles(files: FileList | null) {
@@ -658,36 +705,49 @@ function ImageSlot({ label, hint, slot, testId, onPick, onClear }: ImageSlotProp
           )}
         </div>
       ) : (
-        <label
-          className={cn(
-            'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl bg-muted/50 px-6 py-8 text-muted-foreground transition-colors hover:bg-muted/70',
-            dragOver && 'bg-primary/5 ring-2 ring-primary/30',
-          )}
-          onDragOver={e => {
-            e.preventDefault()
-            setDragOver(true)
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={e => {
-            e.preventDefault()
-            setDragOver(false)
-            handleFiles(e.dataTransfer.files)
-          }}
-          data-testid={`${testId}-drop-zone`}
-        >
-          <ImageUp className="size-7 text-muted-foreground/60" />
-          <span className="text-sm font-medium">Click or drag an image here</span>
-          <span className="text-xs">{hint}</span>
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={e => {
-              handleFiles(e.target.files)
-              e.target.value = ''
+        <div className="space-y-2">
+          <label
+            className={cn(
+              'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl bg-muted/50 px-6 py-8 text-muted-foreground transition-colors hover:bg-muted/70',
+              dragOver && 'bg-primary/5 ring-2 ring-primary/30',
+            )}
+            onDragOver={e => {
+              e.preventDefault()
+              setDragOver(true)
             }}
-          />
-        </label>
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => {
+              e.preventDefault()
+              setDragOver(false)
+              handleFiles(e.dataTransfer.files)
+            }}
+            data-testid={`${testId}-drop-zone`}
+          >
+            <ImageUp className="size-7 text-muted-foreground/60" />
+            <span className="text-sm font-medium">Click or drag an image here</span>
+            <span className="text-xs">{hint}</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => {
+                handleFiles(e.target.files)
+                e.target.value = ''
+              }}
+            />
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={onPickFromLibrary}
+            data-testid={`${testId}-pick-library`}
+          >
+            <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
+            From library
+          </Button>
+        </div>
       )}
     </div>
   )

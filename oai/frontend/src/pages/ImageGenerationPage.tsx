@@ -107,6 +107,7 @@ import {
 } from '../lib/imggen'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import type { ImagePipelineRescaleParams, StartImageJobRequest } from '../api/images'
+import type { ImgUtilsRouteState } from '../api/imgUtils'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 const MAX_GENERATE_MULTIPLE = 10
@@ -477,6 +478,7 @@ export default function ImageGenerationPage() {
       direction: string,
       onSendToImg2Img?: () => void,
       onSendToImg2Video?: () => void,
+      onSendToImgUtils?: () => void,
     ) =>
       token
         ? {
@@ -487,6 +489,7 @@ export default function ImageGenerationPage() {
             onDeleted: onImageMutated,
             onSendToImg2Img,
             onSendToImg2Video,
+            onSendToImgUtils,
             onNudeDetect: () => setNudeDetectTarget({ imageId, filename }),
           }
         : undefined,
@@ -559,6 +562,20 @@ export default function ImageGenerationPage() {
     reencoded: boolean
   }) {
     sendOutputToInputMode(file, 'img2video')
+  }
+
+  function sendToImgUtils(file: {
+    image_id: string
+    filename: string
+    content_type: string
+    width: number
+    height: number
+    size_bytes: number
+    rescaled: boolean
+    reencoded: boolean
+  }) {
+    const state: ImgUtilsRouteState = { useInputImage: file }
+    navigate('/app/img-utils', { state })
   }
 
   const pipelineFormHandlers = useMemo(
@@ -1705,6 +1722,7 @@ export default function ImageGenerationPage() {
                         file.direction,
                         () => sendToImg2Img(file),
                         () => sendToImg2Video(file),
+                        () => sendToImgUtils(file),
                       )}
                     >
                       <img
@@ -1743,6 +1761,7 @@ export default function ImageGenerationPage() {
                         file.direction,
                         () => sendToImg2Img(file),
                         () => sendToImg2Video(file),
+                        () => sendToImgUtils(file),
                       )}
                     >
                       <img
@@ -1838,6 +1857,17 @@ export default function ImageGenerationPage() {
                   >
                     <Video className="mr-1 h-4 w-4" />
                     Animate
+                  </Button>
+                )}
+                {canAnimateOutput && animateOutputFile && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => sendToImgUtils(animateOutputFile)}
+                    data-testid="imggen-send-to-imgutils"
+                  >
+                    <Wand2 className="mr-1 h-4 w-4" />
+                    Image Tools
                   </Button>
                 )}
                 {canRetryJob && (
