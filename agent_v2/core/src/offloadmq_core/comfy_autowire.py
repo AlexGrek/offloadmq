@@ -773,22 +773,28 @@ def _guess_txt2music(graph: Graph, live: set[str]) -> Tuple[Dict[str, Any], Note
 
 
 def _guess_img_utils(graph: Graph, live: set[str], task_type: str) -> Tuple[Dict[str, Any], Notes]:
-    """Param map for an ``img-utils.*`` utility: input images and nothing else."""
+    """Param map for an ``img-utils.*`` operation: input images and nothing else."""
     params: Dict[str, Any] = {}
     img_params, notes = _resolve_images(graph, live, task_type)
     for key, targets in img_params.items():
         params[key] = [list(t) for t in targets]
-    for key in _STANDARD_KEYS.get(task_type, ("input_image",)):
+    for key in _IMG_UTILS_KEYS.get(task_type, ("input_image",)):
         params.setdefault(key, [])
     return params, notes
 
 
-def guess_params_ex(graph: Graph, task_type: str) -> Tuple[Dict[str, Any], Notes]:
+def guess_params_ex(
+    graph: Graph, task_type: str, namespace: str = ""
+) -> Tuple[Dict[str, Any], Notes]:
     """Auto-detect the param map plus per-field explanations for unresolved fields.
 
     Returns ``(params, notes)``.  ``params`` maps each payload key to a list of
     ``[node_id, input_name]`` targets — empty when the value cannot be written, in
     which case ``notes[key]`` says why.
+
+    ``namespace`` is the workflows sub-directory the graph lives in. It matters
+    because a task type alone is ambiguous: ``face_swap`` under ``img-utils`` has
+    no prompt, while a flat (imggen) ``face_swap`` model does.
     """
     if not isinstance(graph, dict) or not graph:
         return {}, {}
@@ -799,7 +805,7 @@ def guess_params_ex(graph: Graph, task_type: str) -> Tuple[Dict[str, Any], Notes
     if task_type == "txt2music":
         return _guess_txt2music(graph, live)
 
-    if task_type in _IMG_UTILS_TASK_TYPES:
+    if namespace == IMG_UTILS_NAMESPACE or task_type in _IMG_UTILS_TASK_TYPES:
         return _guess_img_utils(graph, live, task_type)
 
     params: Dict[str, Any] = {}
@@ -896,7 +902,7 @@ def guess_params_ex(graph: Graph, task_type: str) -> Tuple[Dict[str, Any], Notes
     return params, notes
 
 
-def guess_params(graph: Graph, task_type: str) -> Dict[str, Any]:
+def guess_params(graph: Graph, task_type: str, namespace: str = "") -> Dict[str, Any]:
     """Auto-detect param → node-input mappings from a Comfy API-format graph."""
-    params, _ = guess_params_ex(graph, task_type)
+    params, _ = guess_params_ex(graph, task_type, namespace)
     return params

@@ -205,14 +205,6 @@ _PARAM_UI_ROWS: Dict[str, List[Dict[str, str]]] = {
             "help": "payload.input_image (bucket file)",
         },
     ],
-    # img-utils utilities — input images only, no prompt.
-    "depth": [
-        {
-            "key": "input_image",
-            "label": "Input image (main)",
-            "help": "payload.input_image (bucket file)",
-        },
-    ],
     "txt2music": [
         {"key": "tags", "label": "Style / genre tags", "help": "payload.tags"},
         {"key": "lyrics", "label": "Lyrics", "help": "payload.lyrics"},
@@ -228,15 +220,40 @@ _PARAM_UI_ROWS: Dict[str, List[Dict[str, str]]] = {
 }
 
 
-def _param_ui_standard_rows(task_type: str) -> List[Dict[str, str]]:
+_INPUT_IMAGE_ROW = {
+    "key": "input_image",
+    "label": "Input image (main)",
+    "help": "payload.input_image (bucket file)",
+}
+_FACE_REF_ROW = {
+    "key": "face_swap",
+    "label": "Face reference image",
+    "help": "payload.face_swap (bucket file)",
+}
+
+# img-utils operations take images and nothing else — no prompt, no resolution,
+# no seed. Keyed separately from _PARAM_UI_ROWS because a task type alone is
+# ambiguous: `face_swap` under img-utils has no prompt, a flat imggen
+# `face_swap` model does.
+_IMG_UTILS_PARAM_UI_ROWS: Dict[str, List[Dict[str, str]]] = {
+    "depth": [_INPUT_IMAGE_ROW],
+    "face_swap": [_INPUT_IMAGE_ROW, _FACE_REF_ROW],
+}
+
+IMG_UTILS_NAMESPACE = "img-utils"
+
+
+def _param_ui_standard_rows(task_type: str, namespace: str = "") -> List[Dict[str, str]]:
+    if namespace == IMG_UTILS_NAMESPACE:
+        return list(_IMG_UTILS_PARAM_UI_ROWS.get(task_type, [_INPUT_IMAGE_ROW]))
     rows = _PARAM_UI_ROWS.get(task_type)
     if rows is None:
         return []
     return list(rows)
 
 
-def _standard_param_field_keys(task_type: str) -> set:
-    return {r["key"] for r in _param_ui_standard_rows(task_type)}
+def _standard_param_field_keys(task_type: str, namespace: str = "") -> set:
+    return {r["key"] for r in _param_ui_standard_rows(task_type, namespace)}
 
 
 def _preview_comfy_slot_value(val: Any) -> str:

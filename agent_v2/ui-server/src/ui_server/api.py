@@ -347,13 +347,13 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
             except json.JSONDecodeError:
                 pass
 
-        std_keys = _standard_param_field_keys(task_type)
+        std_keys = _standard_param_field_keys(task_type, namespace)
         extra_keys = sorted(k for k in params if k not in std_keys and _PARAM_FIELD_KEY_RE.match(k))
 
         return {
             "ok": True,
             "params": params,
-            "standard_fields": _param_ui_standard_rows(task_type),
+            "standard_fields": _param_ui_standard_rows(task_type, namespace),
             "extra_keys": extra_keys,
             "input_options": _build_comfy_input_options(graph),
             # Notes explain why a field is left unwired. Only autodetect produces
@@ -401,7 +401,7 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
             )
             graph = json.loads(graph_path.read_text())
             _validate_comfy_api_workflow(graph)
-            params, notes = guess_params_ex(graph, payload.task_type)
+            params, notes = guess_params_ex(graph, payload.task_type, payload.namespace)
             pmap = graph_path.with_suffix(".params.json")
             pmap.write_text(json.dumps(params, indent=2))
             orch.start_background_scan()
