@@ -14,6 +14,13 @@ export type PromptGenClientCommand =
       query: string
       prompt: string
     }
+  | {
+      type: 'generate_video_prompt'
+      req_id: string
+      capability: string
+      /** OAI image id (snowflake, as string) of the uploaded frame. */
+      image_id: string
+    }
   | { type: 'ping' }
 
 export interface PromptGenTaskId {

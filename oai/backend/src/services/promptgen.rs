@@ -11,14 +11,14 @@ use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-    db::{llm_capabilities, prompts},
+    db::{image_generation, llm_capabilities, prompts},
     error::AppError,
     offload::{
         base_capability,
         task_status::{extract_error_text, extract_llm_text, is_terminal},
         ChatMessage, LlmCapabilityInfo, OffloadClient, TaskId,
     },
-    services::offload_factory,
+    services::{image_processing, offload_factory, storage},
     state::AppState,
     ws::events::ServerEvent,
 };
@@ -29,6 +29,20 @@ const MODES: [&str; 4] = ["txt2img", "img2img", "txt2video", "img2video"];
 
 /// Placeholder in the query template replaced with the user's prompt.
 pub const PLACEHOLDER: &str = "{}";
+
+/// Video prompt generator (img2video "Video prompt generator" button): fixed
+/// system + user text sent to a vision LLM with the input frame attached.
+/// Unlike [`generate`], there is no user-editable query template — the button
+/// only needs to pick a model.
+const VIDEO_PROMPT_SYSTEM: &str = r#"You are image analyzer. You are shown a frame of the video. You have to guess what happens next in the video. Respond with video description only, only the character and what they do, examples:
+
+    The man takes his hat off and sits on the sofa.
+    Woman screams and gets beaten.
+    Children laugh and throw a ball up in the sky.
+
+Omit "on this image" or "in this video", as well as any "I think" statements. You are not a person, you are the machine and have to give short structured answers. Only one single variant."#;
+
+const VIDEO_PROMPT_USER: &str = "Write what happens next in this video, given this frame";
 
 /// OffloadMQ task limits: fail fast when no agent picks the task up (modal UX),
 /// cap a single inference well under the chat defaults.
@@ -217,6 +231,92 @@ async fn run_generate_ws(
     .await
     .map_err(|e| e.to_string())?;
 
+    queue_and_poll(req_id, task_id, tx, state, scope).await
+}
+
+pub async fn generate_video_prompt_ws(
+    req_id: String,
+    capability: String,
+    image_id: String,
+    tx: &UnboundedSender<ServerEvent>,
+    state: &Arc<AppState>,
+    user_id: i64,
+    scope: &Arc<crate::ws::promptgen::ConnectionScope>,
+) {
+    if let Err(message) =
+        run_generate_video_ws(&req_id, capability, image_id, tx, state, user_id, scope).await
+    {
+        send_error(tx, &req_id, &message);
+    }
+}
+
+async fn run_generate_video_ws(
+    req_id: &str,
+    capability: String,
+    image_id: String,
+    tx: &UnboundedSender<ServerEvent>,
+    state: &Arc<AppState>,
+    user_id: i64,
+    scope: &Arc<crate::ws::promptgen::ConnectionScope>,
+) -> Result<(), String> {
+    let task_id = submit_video_prompt_task(state, user_id, &capability, &image_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    queue_and_poll(req_id, task_id, tx, state, scope).await
+}
+
+/// Stage the input frame in a one-shot OffloadMQ bucket and submit a vision
+/// task with the fixed [`VIDEO_PROMPT_SYSTEM`] / [`VIDEO_PROMPT_USER`] messages.
+async fn submit_video_prompt_task(
+    state: &AppState,
+    user_id: i64,
+    capability: &str,
+    image_id: &str,
+) -> Result<TaskId, AppError> {
+    let capability = capability.trim();
+    if capability.is_empty() {
+        return Err(AppError::BadRequest("capability is required".into()));
+    }
+    let capability = base_capability(capability).to_string();
+
+    let image_id: i64 = image_id
+        .parse()
+        .map_err(|_| AppError::BadRequest("invalid image_id".into()))?;
+    let input = image_generation::get_image_file(&state.db, image_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let img_client = offload_factory::image_client(state).await?;
+    let bucket = img_client.create_bucket(true).await?;
+
+    let op = storage::operator(state)?;
+    let bytes = storage::read(op, &input.storage_path).await?;
+    let processed = image_processing::process_image(bytes, Some(input.content_type.clone()))?;
+    img_client
+        .upload_bucket_file(&bucket.bucket_uid, processed.bytes, &input.filename, &processed.content_type)
+        .await?;
+
+    let chat_client = offload_factory::chat_client(state).await?;
+    let messages = vec![
+        serde_json::json!({ "role": "system", "content": VIDEO_PROMPT_SYSTEM }),
+        serde_json::json!({ "role": "user", "content": VIDEO_PROMPT_USER }),
+    ];
+    chat_client
+        .submit_vision_task(&capability, messages, &bucket.bucket_uid, None)
+        .await
+}
+
+/// Shared tail of the WS generate flows: announce `task:queued`, track the task
+/// on the connection scope (canceled if the client already closed), and spawn
+/// the poll loop that streams progress/result back over the socket.
+async fn queue_and_poll(
+    req_id: &str,
+    task_id: TaskId,
+    tx: &UnboundedSender<ServerEvent>,
+    state: &Arc<AppState>,
+    scope: &Arc<crate::ws::promptgen::ConnectionScope>,
+) -> Result<(), String> {
     if !scope.is_open() {
         let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
         let _ = client.cancel_task(&task_id).await;

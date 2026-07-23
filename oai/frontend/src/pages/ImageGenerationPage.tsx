@@ -71,6 +71,7 @@ import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImgGenModelPicker } from '../components/imggen/ImgGenModelPicker'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { PromptGeneratorModal } from '../components/imggen/PromptGeneratorModal'
+import { VideoPromptGenerator } from '../components/imggen/VideoPromptGenerator'
 import {
   ToolDebugHeaderButton,
   ToolDebugModal,
@@ -1316,6 +1317,18 @@ export default function ImageGenerationPage() {
                         className="max-h-48 w-full object-contain bg-muted/30"
                       />
                     </ImageLightbox>
+                  )}
+                  {mode === 'img2video' && uploadedInput && (
+                    <VideoPromptGenerator
+                      token={token}
+                      imageId={uploadedInput.image_id}
+                      onGenerated={text => {
+                        setPrompt(text)
+                        setInfo('Video prompt generated from the input frame.')
+                        setError(null)
+                      }}
+                      onError={message => setError(message)}
+                    />
                   )}
                 </div>
               )}

@@ -103,5 +103,13 @@ pub enum PromptGenClientCommand {
         query: String,
         prompt: String,
     },
+    /// Vision variant: describes what happens next in the video given a single
+    /// frame. System + user text are fixed server-side (see `services::promptgen`).
+    GenerateVideoPrompt {
+        req_id: String,
+        capability: String,
+        /// OAI image id (snowflake, as string) of the uploaded frame.
+        image_id: String,
+    },
     Ping,
 }

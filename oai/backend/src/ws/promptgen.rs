@@ -205,5 +205,20 @@ async fn handle_text(
                 .await;
             });
         }
+        PromptGenClientCommand::GenerateVideoPrompt {
+            req_id,
+            capability,
+            image_id,
+        } => {
+            let tx = tx.clone();
+            let state = state.clone();
+            let scope = scope.clone();
+            tokio::spawn(async move {
+                promptgen::generate_video_prompt_ws(
+                    req_id, capability, image_id, &tx, &state, user_id, &scope,
+                )
+                .await;
+            });
+        }
     }
 }
