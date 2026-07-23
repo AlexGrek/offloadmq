@@ -162,7 +162,24 @@
       "Bash(git stash *)",
       "Bash(node -e 'const d=JSON.parse\\(require\\(\"fs\"\\).readFileSync\\(0\\)\\);const c={};for\\(const f of d\\)for\\(const m of f.messages\\)c[m.ruleId]=\\(c[m.ruleId]||0\\)+1;console.log\\(Object.keys\\(c\\).length?c:\"clean\"\\)')",
       "Bash(task dev:backend)",
-      "Bash(rustc --version)"
+      "Bash(rustc --version)",
+      "Bash(git -C /Users/vedmedik/dev/offloadmq log -1 --format='%h %ci')",
+      "Bash(git -C /Users/vedmedik/dev/offloadmq log -1 --format='%h' HEAD)",
+      "Bash(git -C /Users/vedmedik/dev/offloadmq log --oneline -3)",
+      "Bash(git -C /Users/vedmedik/dev/offloadmq status --short)",
+      "Bash(git -C /Users/vedmedik/dev/offloadmq show --stat a32f902)",
+      "Bash(kubectl logs *)",
+      "Bash(kubectl exec *)",
+      "Bash(curl -s https://oai.alexgr.space/)",
+      "Bash(curl -s https://oai.alexgr.space/assets/index--CajTjtX.js -o /tmp/oai_bundle.js)",
+      "Bash(python3 -c \"import websockets; print\\('py-websockets ok'\\)\")",
+      "Bash(node -e \"console.log\\(require\\('ws'\\)\\)\")",
+      "Bash(node /private/tmp/claude-502/-Users-vedmedik-dev-offloadmq/8a00c9d8-f7fe-46b0-9d65-4cab85df4c02/scratchpad/diag_video_promptgen.mjs)",
+      "Bash(npx --yes playwright --version)",
+      "Bash(npx --yes playwright install chromium --with-deps)",
+      "Bash(npm init *)",
+      "Bash(npx playwright *)",
+      "Bash(node_modules/.bin/playwright install *)"
     ],
     "additionalDirectories": [
       "/tmp"

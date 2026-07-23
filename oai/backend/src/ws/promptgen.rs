@@ -210,6 +210,10 @@ async fn handle_text(
             capability,
             image_id,
         } => {
+            tracing::debug!(
+                user_id, req_id = %req_id, capability = %capability, image_id = %image_id,
+                "ws: generate_video_prompt received"
+            );
             let tx = tx.clone();
             let state = state.clone();
             let scope = scope.clone();

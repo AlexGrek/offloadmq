@@ -259,9 +259,14 @@ async fn run_generate_video_ws(
     user_id: i64,
     scope: &Arc<crate::ws::promptgen::ConnectionScope>,
 ) -> Result<(), String> {
+    tracing::debug!(user_id, %capability, %image_id, req_id, "video prompt generator: submitting");
     let task_id = submit_video_prompt_task(state, user_id, &capability, &image_id)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            tracing::warn!(user_id, %capability, %image_id, req_id, error = %e, "video prompt generator: submit failed");
+            e.to_string()
+        })?;
+    tracing::debug!(user_id, cap = %task_id.cap, id = %task_id.id, req_id, "video prompt generator: task queued");
 
     queue_and_poll(req_id, task_id, tx, state, scope).await
 }
@@ -366,6 +371,7 @@ async fn poll_loop_ws(
 
         if let Some(limit) = deadline_secs {
             if started_at.elapsed().as_secs() >= limit {
+                tracing::warn!(req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, limit, "promptgen: task timed out");
                 let _ = client.cancel_task(&task_id).await;
                 let _ = tx.send(ServerEvent::TaskFailed {
                     req_id: ctx.req_id.clone(),
@@ -382,6 +388,7 @@ async fn poll_loop_ws(
         let resp = match client.poll_task(&task_id).await {
             Ok(r) => r,
             Err(e) => {
+                tracing::warn!(req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, error = %e, "promptgen: poll request failed");
                 let _ = tx.send(ServerEvent::Error {
                     req_id: Some(ctx.req_id.clone()),
                     message: e.to_string(),
@@ -395,6 +402,10 @@ async fn poll_loop_ws(
             "completed" => {
                 let text = extract_llm_text(&resp.output);
                 if text.trim().is_empty() {
+                    tracing::warn!(
+                        req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id,
+                        "promptgen: model returned an empty response"
+                    );
                     let _ = tx.send(ServerEvent::TaskFailed {
                         req_id: ctx.req_id.clone(),
                         cap: ctx.cap.clone(),
@@ -403,6 +414,10 @@ async fn poll_loop_ws(
                         log: resp.log,
                     });
                 } else {
+                    tracing::debug!(
+                        req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, chars = text.trim().len(),
+                        "promptgen: completed"
+                    );
                     let _ = tx.send(ServerEvent::TaskResult {
                         req_id: ctx.req_id.clone(),
                         cap: ctx.cap.clone(),
@@ -415,17 +430,20 @@ async fn poll_loop_ws(
                 return;
             }
             "failed" => {
+                let error = extract_error_text(&resp.output, "Unknown error");
+                tracing::warn!(req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, %error, "promptgen: task failed");
                 let _ = tx.send(ServerEvent::TaskFailed {
                     req_id: ctx.req_id.clone(),
                     cap: ctx.cap.clone(),
                     id: ctx.id.clone(),
-                    error: extract_error_text(&resp.output, "Unknown error"),
+                    error,
                     log: resp.log,
                 });
                 scope.untrack(&task_id);
                 return;
             }
             "canceled" => {
+                tracing::debug!(req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, "promptgen: task canceled");
                 let _ = tx.send(ServerEvent::TaskFailed {
                     req_id: ctx.req_id.clone(),
                     cap: ctx.cap.clone(),
