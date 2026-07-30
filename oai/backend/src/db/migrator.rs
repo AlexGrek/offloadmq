@@ -35,6 +35,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260709_000027_image_offload_task_finished_at::Migration),
             Box::new(m20260722_000028_create_img_utils_jobs::Migration),
             Box::new(m20260730_000029_create_movie_jobs::Migration),
+            Box::new(m20260731_000030_movie_split_video_capability::Migration),
         ]
     }
 }
@@ -2814,8 +2815,7 @@ mod m20260730_000029_create_movie_jobs {
                         )
                         .col(ColumnDef::new(MovieJobs::DirectorModel).text().not_null())
                         .col(ColumnDef::new(MovieJobs::SceneModel).text().not_null())
-                        .col(ColumnDef::new(MovieJobs::Txt2VideoCapability).text().not_null())
-                        .col(ColumnDef::new(MovieJobs::Img2VideoCapability).text().null())
+                        .col(ColumnDef::new(MovieJobs::VideoCapability).text().not_null())
                         .col(ColumnDef::new(MovieJobs::DirectorSystem).text().not_null())
                         .col(ColumnDef::new(MovieJobs::SceneSystem).text().not_null())
                         .col(ColumnDef::new(MovieJobs::InitialImageId).big_integer().null())
@@ -2912,8 +2912,7 @@ mod m20260730_000029_create_movie_jobs {
         ExpandPrompt,
         DirectorModel,
         SceneModel,
-        Txt2VideoCapability,
-        Img2VideoCapability,
+        VideoCapability,
         DirectorSystem,
         SceneSystem,
         InitialImageId,
@@ -2928,5 +2927,101 @@ mod m20260730_000029_create_movie_jobs {
         Error,
         MovieFileId,
         RawOutline,
+    }
+}
+
+/// Split the single `video_capability` into per-workflow capabilities: `txt2video`
+/// and `img2video` are usually different agent-side models, so one column cannot
+/// serve both. Existing rows ran with a single capability used for *both*
+/// workflows, so it is copied into both columns to preserve their behavior.
+mod m20260731_000030_movie_split_video_capability {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260731_000030_movie_split_video_capability"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(MovieJobs::Table)
+                        .add_column(ColumnDef::new(MovieJobs::Img2VideoCapability).text().null())
+                        .to_owned(),
+                )
+                .await?;
+
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(MovieJobs::Table)
+                        .rename_column(MovieJobs::VideoCapability, MovieJobs::Txt2VideoCapability)
+                        .to_owned(),
+                )
+                .await?;
+
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "UPDATE movie_jobs SET img2video_capability = txt2video_capability \
+                     WHERE img2video_capability IS NULL",
+                )
+                .await
+                .map(|_| ())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(MovieJobs::Table)
+                        .rename_column(MovieJobs::Txt2VideoCapability, MovieJobs::VideoCapability)
+                        .to_owned(),
+                )
+                .await?;
+
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(MovieJobs::Table)
+                        .drop_column(MovieJobs::Img2VideoCapability)
+                        .to_owned(),
+                )
+                .await
+        }
+    }
+
+    // Explicit idens: the derived snake_case of `Txt2VideoCapability` is
+    // `txt2_video_capability` (extra underscore after the digit), which would not
+    // match the `movie_jobs` entity's `txt2video_capability` field.
+    #[derive(DeriveIden)]
+    pub enum MovieJobs {
+        Table,
+        VideoCapability,
+        #[sea_orm(iden = "txt2video_capability")]
+        Txt2VideoCapability,
+        #[sea_orm(iden = "img2video_capability")]
+        Img2VideoCapability,
+    }
+}
+
+#[cfg(test)]
+mod movie_migration_idens {
+    use super::m20260731_000030_movie_split_video_capability as m30;
+    use sea_orm_migration::prelude::*;
+
+    /// `DeriveIden` would render `Txt2VideoCapability` as `txt2_video_capability`,
+    /// which does not match the entity field — hence the explicit `iden` attributes.
+    #[test]
+    fn migration_column_idens_match_entity_fields() {
+        assert_eq!(m30::MovieJobs::Txt2VideoCapability.to_string(), "txt2video_capability");
+        assert_eq!(m30::MovieJobs::Img2VideoCapability.to_string(), "img2video_capability");
+        assert_eq!(m30::MovieJobs::VideoCapability.to_string(), "video_capability");
     }
 }
