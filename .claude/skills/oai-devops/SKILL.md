@@ -234,6 +234,28 @@ Local Garage: `task infra:up` (compose). K8s Garage: StatefulSet + init job only
 
 ---
 
+## Background worker cadence (env vars)
+
+Every OAI feature that reconciles in the background exposes a `<PREFIX>_WORKER_TICK_SECS` /
+`<PREFIX>_WORKER_BATCH_SIZE` pair (set via pod env, `oai/helm-chart/templates/deployment.yaml`,
+or shell env locally before `task dev:backend`). Most use the generic
+`jobs::worker_runtime::spawn` loop; image pipeline is bespoke but follows the same convention.
+
+| Feature | Tick env | Batch env | Defaults |
+|---------|----------|-----------|----------|
+| Image pipeline (imggen) | `IMAGE_PIPELINE_WORKER_TICK_SECS` | `IMAGE_PIPELINE_WORKER_BATCH_SIZE` | 20s / 20 |
+| Image analysis (describe) | `IMAGE_ANALYSIS_WORKER_TICK_SECS` | `IMAGE_ANALYSIS_WORKER_BATCH_SIZE` | 10s / 20 |
+| Img Utils | `IMG_UTILS_WORKER_TICK_SECS` | `IMG_UTILS_WORKER_BATCH_SIZE` | 10s / 20 |
+| Chat (stateless reconcile) | `CHAT_WORKER_TICK_SECS` | `CHAT_WORKER_BATCH_SIZE` | 10s / 20 |
+| LLM Debate | `LLM_DEBATE_WORKER_TICK_SECS` | `LLM_DEBATE_WORKER_BATCH_SIZE` | 10s / 20 |
+| LLM Compare | `LLM_COMPARE_WORKER_TICK_SECS` | `LLM_COMPARE_WORKER_BATCH_SIZE` | 10s / 20 |
+| Movie Studio | `MOVIE_WORKER_TICK_SECS` | `MOVIE_WORKER_BATCH_SIZE` | 10s / 20 |
+| Music generation | `MUSIC_GEN_WORKER_TICK_SECS` | `MUSIC_GEN_WORKER_BATCH_SIZE` | 10s / 20 |
+| Nude detect | `NUDE_DETECT_WORKER_TICK_SECS` | `NUDE_DETECT_WORKER_BATCH_SIZE` | 10s / 20 |
+| TTS | `TTS_WORKER_TICK_SECS` | `TTS_WORKER_BATCH_SIZE` | 10s / 20 |
+
+---
+
 ## Files to read before changing deploy
 
 | Topic | Path |

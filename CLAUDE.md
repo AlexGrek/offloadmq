@@ -340,12 +340,13 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 | **oai-itests** | `.claude/skills/oai-itests/SKILL.md` | `oai/itests/**` |
 | **oai-chat** | `.claude/skills/oai-chat/SKILL.md` | Chat feature files (patterns below) |
 | **oai-img** | `.claude/skills/oai-img/SKILL.md` | Image feature files (patterns below) |
+| **oai-movie** | `.claude/skills/oai-movie/SKILL.md` | Movie Studio feature files (patterns below) |
 | **oai-backend** | `.claude/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |
 | **oai-frontend** | `.claude/skills/oai-frontend/SKILL.md` | Any `oai/frontend/**` file, or cross-cutting SPA work |
 
 #### Stacking rules
 
-1. **Feature + parent** — chat work → `oai-chat` + `oai-frontend` and/or `oai-backend`; image work → `oai-img` + `oai-frontend` and/or `oai-backend`.
+1. **Feature + parent** — chat work → `oai-chat` + `oai-frontend` and/or `oai-backend`; image work → `oai-img` + `oai-frontend` and/or `oai-backend`; Movie Studio work → `oai-movie` + `oai-frontend` and/or `oai-backend`.
 2. **Feature wins on overlap** — files listed under `oai-chat` or `oai-img` use that feature skill first; still read `oai-backend` / `oai-frontend` for shared patterns (AppState, routing, layout).
 3. **DevOps** — Helm/Docker/deploy-only changes → `oai-devops` (skip feature skills unless app code changes too).
 4. **Tests** — `oai/itests/**` → `oai-itests` plus the skill for the route/feature under test.
@@ -366,11 +367,20 @@ Paths are relative to `oai/`.
 
 **Backend:** `backend/src/routes/images.rs`, `backend/src/routes/img_utils.rs`, `backend/src/services/img_utils.rs`, `backend/src/db/img_utils.rs`, `backend/src/jobs/img_utils_worker.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/routes/promptgen.rs`, `backend/src/services/image_jobs.rs`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/services/promptgen.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
 
+#### oai-movie — file patterns
+
+Paths are relative to `oai/`.
+
+**Frontend:** `frontend/src/pages/MoviePage.tsx`, `frontend/src/components/movie/**`, `frontend/src/hooks/useWsMovie.ts`, `frontend/src/types/ws-movie.ts`, `frontend/src/api/movie.ts`, `frontend/src/lib/moviePromptBuckets.ts`
+
+**Backend:** `backend/src/services/movie.rs`, `backend/src/services/movie_ffmpeg.rs`, `backend/src/db/movie.rs`, `backend/src/db/entities/movie_jobs.rs`, `backend/src/routes/movie.rs`, `backend/src/ws/movie.rs`, `backend/src/jobs/movie_worker.rs`
+
 #### Skill summaries
 
 - **oai-frontend** — React 19 + TypeScript SPA, shadcn/ui, Tailwind v4, routing, API clients, dark/light mode, AppShell layout.
 - **oai-chat** — LLM chat at `/app/chat`: WebSocket protocol, WorkloadContext, system prompts, cancel, ToolDebug, OffloadMQ submit/poll.
 - **oai-img** — Image generation at `/app/images`: txt2img/img2img, buckets, dataPreparation, job poll/cancel, pipeline worker, Progress drawer. Also Image Tools at `/app/img-utils` (`img-utils.*` one-shot transforms — depth, face swap).
+- **oai-movie** — Multi-scene AI film generator at `/app/movie`: director LLM outline, per-scene vision prompt + video render, long-shot continuity via ffmpeg, final concat.
 - **oai-backend** — Rust/Axum backend: routes, services, DB migrations (SeaORM), middleware, OffloadMQ client, background workers.
 - **oai-itests** — Python integration tests (httpx + pytest-xdist) against the live backend; one test file per route group; no mocking.
 - **oai-devops** — Helm/Kubernetes deploy, Garage init job, Docker publish, troubleshooting (`garage-init`, `wait-garage-creds`, ImagePullBackOff).

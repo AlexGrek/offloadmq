@@ -42,6 +42,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/ws/chat", get(crate::ws::chat::ws_chat))
         .route("/api/ws/promptgen", get(crate::ws::promptgen::ws_promptgen))
         .route("/api/ws/debate", get(crate::ws::debate::ws_debate))
+        .route("/api/ws/movie", get(crate::ws::movie::ws_movie))
         .route("/api/chats", get(routes::chats::list_chats))
         .route("/api/chats", post(routes::chats::create_chat))
         .route("/api/chats/{id}", axum::routing::delete(routes::chats::delete_chat))
@@ -240,6 +241,18 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/llm-debate/jobs/{id}/poll", post(routes::llm_debate::poll_job))
         .route("/api/llm-debate/jobs/{id}/cancel", post(routes::llm_debate::cancel_job))
         .route("/api/llm-debate/jobs/{id}/retry", post(routes::llm_debate::retry_job))
+        .route("/api/movie/capabilities", get(routes::movie::list_capabilities))
+        .route("/api/movie/jobs", post(routes::movie::start_job))
+        .route("/api/movie/jobs", get(routes::movie::list_jobs))
+        .route(
+            "/api/movie/jobs/{id}",
+            get(routes::movie::get_job).delete(routes::movie::delete_job),
+        )
+        .route("/api/movie/jobs/{id}/poll", post(routes::movie::poll_job))
+        .route("/api/movie/jobs/{id}/approve", post(routes::movie::approve))
+        .route("/api/movie/jobs/{id}/stop", post(routes::movie::stop))
+        .route("/api/movie/jobs/{id}/resume", post(routes::movie::resume))
+        .route("/api/movie/jobs/{id}/cancel", post(routes::movie::cancel_job))
         .layer(from_fn_with_state(state.clone(), middleware::jwt_auth_middleware));
 
     let admin = Router::new()

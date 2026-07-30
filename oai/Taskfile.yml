@@ -46,6 +46,16 @@ tasks:
         exit 1
       fi
 
+      # Movie Studio shells out to ffmpeg directly; no build-time link, so check PATH.
+      if command -v ffmpeg >/dev/null 2>&1; then
+        echo "==> ffmpeg detected: $(ffmpeg -version | head -n1)"
+      else
+        echo "ERROR: ffmpeg is required (Movie Studio) but was not found on PATH."
+        echo "  macOS:  brew install ffmpeg"
+        echo "  Linux:  apt-get install ffmpeg"
+        exit 1
+      fi
+
       cleanup() {
         echo ""
         echo "==> Shutting down backend..."
@@ -79,6 +89,14 @@ tasks:
         echo "ERROR: libvips is required but was not detected via pkg-config."
         echo "  macOS:  brew install vips"
         echo "  Linux:  apt-get install libvips-dev pkg-config"
+        exit 1
+      fi
+      if command -v ffmpeg >/dev/null 2>&1; then
+        echo "==> ffmpeg detected: $(ffmpeg -version | head -n1)"
+      else
+        echo "ERROR: ffmpeg is required (Movie Studio) but was not found on PATH."
+        echo "  macOS:  brew install ffmpeg"
+        echo "  Linux:  apt-get install ffmpeg"
         exit 1
       fi
       cargo run
@@ -166,6 +184,14 @@ tasks:
         echo "ERROR: libvips is required but was not detected via pkg-config."
         echo "  macOS:  brew install vips"
         echo "  Linux:  apt-get install libvips-dev pkg-config"
+        exit 1
+      fi
+      if command -v ffmpeg >/dev/null 2>&1; then
+        echo "==> ffmpeg detected: $(ffmpeg -version | head -n1)"
+      else
+        echo "ERROR: ffmpeg is required (Movie Studio) but was not found on PATH."
+        echo "  macOS:  brew install ffmpeg"
+        echo "  Linux:  apt-get install ffmpeg"
         exit 1
       fi
       cargo build --release

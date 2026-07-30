@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Activity, Bot, Eye, FolderOpen, GitCompareArrows, ImagePlus, MessageCircleMore, Music, ShieldAlert, Volume2, Wand2 } from 'lucide-react'
+import { Activity, Bot, Clapperboard, Eye, FolderOpen, GitCompareArrows, ImagePlus, MessageCircleMore, Music, ShieldAlert, Volume2, Wand2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const apps = [
@@ -112,6 +112,16 @@ const apps = [
     gradient: 'from-emerald-500/20 to-teal-500/20',
     iconBg: 'bg-emerald-500/20',
     iconColor: 'text-emerald-400',
+  },
+  {
+    id: 'movie',
+    icon: Clapperboard,
+    title: 'Movie Studio',
+    description: 'Generate a multi-scene AI film from one idea',
+    href: '/app/movie',
+    gradient: 'from-rose-500/20 to-amber-500/20',
+    iconBg: 'bg-rose-500/20',
+    iconColor: 'text-rose-400',
   },
 ] as const
 

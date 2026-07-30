@@ -18,4 +18,5 @@ pub mod tts_jobs;
 pub mod music_generation_jobs;
 pub mod llm_compare_jobs;
 pub mod llm_debate_jobs;
+pub mod movie_jobs;
 pub mod users;

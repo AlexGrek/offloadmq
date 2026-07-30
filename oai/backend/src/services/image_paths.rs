@@ -40,3 +40,8 @@ pub fn thumbnail_path(user_id: i64, image_id: i64) -> String {
 pub fn starred_image_path(user_id: i64, image_id: i64) -> String {
     format!("users/{user_id}/images/starred/{image_id}.jpg")
 }
+
+/// Assembled Movie Studio output — always `.mp4` (ffmpeg concat re-encode).
+pub fn movie_output_path(user_id: i64, job_id: i64, file_id: i64) -> String {
+    format!("users/{user_id}/videos/movies/{job_id}/{file_id}.mp4")
+}

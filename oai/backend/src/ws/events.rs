@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::offload::LlmCapabilityInfo;
 use crate::services::llm_debate::DebateJobView;
+use crate::services::movie::MovieJobView;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -55,6 +56,17 @@ pub enum ServerEvent {
         job: DebateJobView,
         terminal: bool,
     },
+    MovieCapabilities {
+        req_id: String,
+        llm: Vec<LlmCapabilityInfo>,
+        video: Vec<LlmCapabilityInfo>,
+    },
+    #[serde(rename = "movie:update")]
+    MovieUpdate {
+        req_id: String,
+        job: MovieJobView,
+        terminal: bool,
+    },
     Error {
         #[serde(skip_serializing_if = "Option::is_none")]
         req_id: Option<String>,
@@ -87,6 +99,14 @@ pub enum ClientCommand {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DebateClientCommand {
+    ListCapabilities { req_id: String },
+    WatchJob { req_id: String, job_id: String },
+    Ping,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MovieClientCommand {
     ListCapabilities { req_id: String },
     WatchJob { req_id: String, job_id: String },
     Ping,

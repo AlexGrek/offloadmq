@@ -13,6 +13,8 @@ pub mod image_paths;
 pub mod image_pipeline_params;
 pub mod image_processing;
 pub mod img_utils;
+pub mod movie;
+pub mod movie_ffmpeg;
 pub mod offload_factory;
 pub mod offload_job;
 pub mod runners;

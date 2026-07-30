@@ -17,6 +17,7 @@ pub mod tts;
 pub mod music_generation;
 pub mod llm_compare;
 pub mod llm_debate;
+pub mod movie;
 pub mod users;
 
 use anyhow::Result;

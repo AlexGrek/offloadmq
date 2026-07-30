@@ -17,6 +17,7 @@ import TtsPage from './pages/TtsPage'
 import MusicGenerationPage from './pages/MusicGenerationPage'
 import LlmComparePage from './pages/LlmComparePage'
 import LlmDebatePage from './pages/LlmDebatePage'
+import MoviePage from './pages/MoviePage'
 import FilesPage from './pages/FilesPage'
 import SettingsPage from './pages/SettingsPage'
 import ServerConfigPage from './pages/ServerConfigPage'
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="music" element={<MusicGenerationPage />} />
             <Route path="llm-compare" element={<LlmComparePage />} />
             <Route path="llm-debate" element={<LlmDebatePage />} />
+            <Route path="movie" element={<MoviePage />} />
             <Route path="files" element={<FilesPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/server" element={<ServerConfigPage />} />
