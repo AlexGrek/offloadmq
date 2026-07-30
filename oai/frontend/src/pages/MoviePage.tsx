@@ -39,7 +39,7 @@ import { VideoLightbox } from '../components/VideoLightbox'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { nextMovieReqId, useWsMovie } from '../hooks/useWsMovie'
-import { parseVideoLength } from '../lib/imggen'
+import { filterCapabilitiesByWorkflow, parseVideoLength } from '../lib/imggen'
 import { pickListedCapability } from '../lib/capability-picker'
 import { firstSelectableModel } from '../lib/modelAvailability'
 
@@ -71,7 +71,8 @@ export default function MoviePage() {
   const [sceneLength, setSceneLength] = useState('25')
   const [directorModel, setDirectorModel] = useState('')
   const [sceneModel, setSceneModel] = useState('')
-  const [videoCapability, setVideoCapability] = useState('')
+  const [txt2VideoCapability, setTxt2VideoCapability] = useState('')
+  const [img2VideoCapability, setImg2VideoCapability] = useState('')
   const [longShot, setLongShot] = useState(true)
   const [autoApprove, setAutoApprove] = useState(true)
   const [expandPrompt, setExpandPrompt] = useState(true)
@@ -116,8 +117,12 @@ export default function MoviePage() {
       })
     }
     if (video.length > 0) {
-      const firstVideo = firstSelectableModel(video)
-      setVideoCapability(prev => pickListedCapability(prev, video) ?? firstVideo ?? '')
+      const txt2videoCaps = filterCapabilitiesByWorkflow(video, 'txt2video')
+      const img2videoCaps = filterCapabilitiesByWorkflow(video, 'img2video')
+      const firstTxt2Video = firstSelectableModel(txt2videoCaps)
+      const firstImg2Video = firstSelectableModel(img2videoCaps)
+      setTxt2VideoCapability(prev => pickListedCapability(prev, txt2videoCaps) ?? firstTxt2Video ?? '')
+      setImg2VideoCapability(prev => pickListedCapability(prev, img2videoCaps) ?? firstImg2Video ?? '')
     }
   }, [capabilities, ws.capabilitiesStatus])
 
@@ -236,7 +241,8 @@ export default function MoviePage() {
       expand_prompt: expandPrompt,
       director_model: directorModel,
       scene_model: sceneModel,
-      video_capability: videoCapability,
+      txt2video_capability: txt2VideoCapability,
+      img2video_capability: img2VideoCapability || undefined,
       director_system: directorSystem.trim() || undefined,
       scene_system: sceneSystem.trim() || undefined,
       initial_image_id: initialImage?.image_id,
@@ -245,8 +251,12 @@ export default function MoviePage() {
 
   async function onSubmit() {
     if (!token || submitting) return
-    if (!idea.trim() || !directorModel || !sceneModel || !videoCapability) {
-      setError('Fill in the idea and pick all three models.')
+    if (!idea.trim() || !directorModel || !sceneModel || !txt2VideoCapability) {
+      setError('Fill in the idea and pick all the required models.')
+      return
+    }
+    if (needsImg2Video && !img2VideoCapability) {
+      setError('Pick an image-to-video model, or turn off long shot mode and the initial image.')
       return
     }
     setError(null)
@@ -366,7 +376,8 @@ export default function MoviePage() {
     setSceneLength(String(selectedJob.scene_length))
     setDirectorModel(selectedJob.director_model)
     setSceneModel(selectedJob.scene_model)
-    setVideoCapability(selectedJob.video_capability)
+    setTxt2VideoCapability(selectedJob.txt2video_capability)
+    setImg2VideoCapability(selectedJob.img2video_capability ?? '')
     setLongShot(selectedJob.long_shot)
     setAutoApprove(selectedJob.auto_approve)
     setExpandPrompt(selectedJob.expand_prompt)
@@ -377,12 +388,24 @@ export default function MoviePage() {
     setError(null)
   }
 
+  const needsImg2Video = longShot || Boolean(initialImage)
+
   const canSubmit = useMemo(
     () =>
       capabilitiesStatus === 'ready' &&
-      Boolean(idea.trim() && directorModel && sceneModel && videoCapability) &&
+      Boolean(idea.trim() && directorModel && sceneModel && txt2VideoCapability) &&
+      (!needsImg2Video || Boolean(img2VideoCapability)) &&
       !submitting,
-    [idea, directorModel, sceneModel, videoCapability, submitting, capabilitiesStatus],
+    [
+      idea,
+      directorModel,
+      sceneModel,
+      txt2VideoCapability,
+      img2VideoCapability,
+      needsImg2Video,
+      submitting,
+      capabilitiesStatus,
+    ],
   )
 
   const status = selectedJob?.status
@@ -471,8 +494,10 @@ export default function MoviePage() {
                   onDirectorModelChange={setDirectorModel}
                   sceneModel={sceneModel}
                   onSceneModelChange={setSceneModel}
-                  videoCapability={videoCapability}
-                  onVideoCapabilityChange={setVideoCapability}
+                  txt2VideoCapability={txt2VideoCapability}
+                  onTxt2VideoCapabilityChange={setTxt2VideoCapability}
+                  img2VideoCapability={img2VideoCapability}
+                  onImg2VideoCapabilityChange={setImg2VideoCapability}
                   longShot={longShot}
                   onLongShotChange={setLongShot}
                   autoApprove={autoApprove}

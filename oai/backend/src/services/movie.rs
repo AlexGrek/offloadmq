@@ -101,7 +101,8 @@ pub struct MovieJobView {
     pub expand_prompt: bool,
     pub director_model: String,
     pub scene_model: String,
-    pub video_capability: String,
+    pub txt2video_capability: String,
+    pub img2video_capability: Option<String>,
     pub director_system: String,
     pub scene_system: String,
     pub initial_image_id: Option<String>,
@@ -132,7 +133,8 @@ pub struct StartJobParams {
     pub expand_prompt: bool,
     pub director_model: String,
     pub scene_model: String,
-    pub video_capability: String,
+    pub txt2video_capability: String,
+    pub img2video_capability: Option<String>,
     pub director_system: String,
     pub scene_system: String,
     pub initial_image_id: Option<String>,
@@ -189,7 +191,8 @@ pub fn job_view(job: movie::MovieJob) -> Result<MovieJobView, AppError> {
         expand_prompt: job.expand_prompt,
         director_model: job.director_model,
         scene_model: job.scene_model,
-        video_capability: job.video_capability,
+        txt2video_capability: job.txt2video_capability,
+        img2video_capability: job.img2video_capability,
         director_system: job.director_system,
         scene_system: job.scene_system,
         initial_image_id: job.initial_image_id.map(|i| i.to_string()),
@@ -315,9 +318,9 @@ pub async fn start_job(state: &AppState, user_id: i64, req: StartJobParams) -> R
     if scene_model == "llm." {
         return Err(AppError::BadRequest("scene_model is required".into()));
     }
-    let video_capability = normalize_video_capability(&req.video_capability);
-    if video_capability == "imggen." {
-        return Err(AppError::BadRequest("video_capability is required".into()));
+    let txt2video_capability = normalize_video_capability(&req.txt2video_capability);
+    if txt2video_capability == "imggen." {
+        return Err(AppError::BadRequest("txt2video_capability is required".into()));
     }
 
     let initial_image_id = req
@@ -330,6 +333,17 @@ pub async fn start_job(state: &AppState, user_id: i64, req: StartJobParams) -> R
         image_generation::get_image_file(&state.db, id, user_id)
             .await?
             .ok_or(AppError::NotFound)?;
+    }
+
+    let img2video_capability = req
+        .img2video_capability
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .map(normalize_video_capability);
+    if img2video_capability.is_none() && (req.long_shot || initial_image_id.is_some()) {
+        return Err(AppError::BadRequest(
+            "img2video_capability is required when long_shot is enabled or an initial image is supplied".into(),
+        ));
     }
 
     let director_system = req.director_system.trim();
@@ -353,7 +367,8 @@ pub async fn start_job(state: &AppState, user_id: i64, req: StartJobParams) -> R
             expand_prompt: req.expand_prompt,
             director_model: &director_model,
             scene_model: &scene_model,
-            video_capability: &video_capability,
+            txt2video_capability: &txt2video_capability,
+            img2video_capability: img2video_capability.as_deref(),
             director_system,
             scene_system,
             initial_image_id,
@@ -920,12 +935,19 @@ async fn reconcile_video(state: &AppState, job: &mut movie::MovieJob) -> Result<
         }
         let frame_id = scene_frame_source(job, &scenes, idx);
         let workflow = if frame_id.is_some() { "img2video" } else { "txt2video" };
+        let capability = if workflow == "img2video" {
+            job.img2video_capability.clone().ok_or_else(|| {
+                AppError::Internal("scene requires img2video_capability but none is set".into())
+            })?
+        } else {
+            job.txt2video_capability.clone()
+        };
 
         let imggen_job_id = image_jobs::start_job(
             state,
             job.user_id,
             image_jobs::StartJobParams {
-                capability: job.video_capability.clone(),
+                capability,
                 prompt,
                 negative_prompt: None,
                 override_negative: false,

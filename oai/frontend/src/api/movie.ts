@@ -30,7 +30,8 @@ export interface MovieJobView {
   expand_prompt: boolean
   director_model: string
   scene_model: string
-  video_capability: string
+  txt2video_capability: string
+  img2video_capability: string | null
   director_system: string
   scene_system: string
   initial_image_id: string | null
@@ -56,7 +57,8 @@ export interface StartMovieJobRequest {
   expand_prompt?: boolean
   director_model: string
   scene_model: string
-  video_capability: string
+  txt2video_capability: string
+  img2video_capability?: string
   director_system?: string
   scene_system?: string
   initial_image_id?: string

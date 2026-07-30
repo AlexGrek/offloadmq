@@ -10,7 +10,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import type { CapabilitiesStatus } from '../../lib/capabilitiesStatus'
 import { capabilityBaseLabel } from '../../lib/modelAvailability'
-import { parseVideoLength } from '../../lib/imggen'
+import { filterCapabilitiesByWorkflow, parseVideoLength } from '../../lib/imggen'
 import {
   MOVIE_DIRECTOR_SYSTEM_BUCKET,
   MOVIE_IDEA_BUCKET,
@@ -40,8 +40,10 @@ export interface MovieFormProps {
   onDirectorModelChange: (v: string) => void
   sceneModel: string
   onSceneModelChange: (v: string) => void
-  videoCapability: string
-  onVideoCapabilityChange: (v: string) => void
+  txt2VideoCapability: string
+  onTxt2VideoCapabilityChange: (v: string) => void
+  img2VideoCapability: string
+  onImg2VideoCapabilityChange: (v: string) => void
   longShot: boolean
   onLongShotChange: (v: boolean) => void
   autoApprove: boolean
@@ -82,8 +84,10 @@ export function MovieForm({
   onDirectorModelChange,
   sceneModel,
   onSceneModelChange,
-  videoCapability,
-  onVideoCapabilityChange,
+  txt2VideoCapability,
+  onTxt2VideoCapabilityChange,
+  img2VideoCapability,
+  onImg2VideoCapabilityChange,
   longShot,
   onLongShotChange,
   autoApprove,
@@ -204,18 +208,36 @@ export function MovieForm({
             />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
-            <Label>Video model</Label>
+            <Label>Text-to-video model</Label>
             <CapabilityModelPicker
-              capabilities={videoCapabilities}
-              selected={videoCapability}
-              onSelect={onVideoCapabilityChange}
+              capabilities={filterCapabilitiesByWorkflow(videoCapabilities, 'txt2video')}
+              selected={txt2VideoCapability}
+              onSelect={onTxt2VideoCapabilityChange}
               onRefresh={onRefreshCapabilities}
               capabilitiesStatus={capabilitiesStatus}
               capabilitiesError={capabilitiesError}
               formatLabel={cap => capabilityBaseLabel(cap.base)}
-              testIdPrefix="movie-video-model"
+              testIdPrefix="movie-txt2video-model"
             />
           </div>
+          {(longShot || initialImage) && (
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Image-to-video model</Label>
+              <p className="text-xs text-muted-foreground">
+                Needed because long-shot mode and/or an initial image are enabled.
+              </p>
+              <CapabilityModelPicker
+                capabilities={filterCapabilitiesByWorkflow(videoCapabilities, 'img2video')}
+                selected={img2VideoCapability}
+                onSelect={onImg2VideoCapabilityChange}
+                onRefresh={onRefreshCapabilities}
+                capabilitiesStatus={capabilitiesStatus}
+                capabilitiesError={capabilitiesError}
+                formatLabel={cap => capabilityBaseLabel(cap.base)}
+                testIdPrefix="movie-img2video-model"
+              />
+            </div>
+          )}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">

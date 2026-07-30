@@ -2814,7 +2814,8 @@ mod m20260730_000029_create_movie_jobs {
                         )
                         .col(ColumnDef::new(MovieJobs::DirectorModel).text().not_null())
                         .col(ColumnDef::new(MovieJobs::SceneModel).text().not_null())
-                        .col(ColumnDef::new(MovieJobs::VideoCapability).text().not_null())
+                        .col(ColumnDef::new(MovieJobs::Txt2VideoCapability).text().not_null())
+                        .col(ColumnDef::new(MovieJobs::Img2VideoCapability).text().null())
                         .col(ColumnDef::new(MovieJobs::DirectorSystem).text().not_null())
                         .col(ColumnDef::new(MovieJobs::SceneSystem).text().not_null())
                         .col(ColumnDef::new(MovieJobs::InitialImageId).big_integer().null())
@@ -2911,7 +2912,8 @@ mod m20260730_000029_create_movie_jobs {
         ExpandPrompt,
         DirectorModel,
         SceneModel,
-        VideoCapability,
+        Txt2VideoCapability,
+        Img2VideoCapability,
         DirectorSystem,
         SceneSystem,
         InitialImageId,
