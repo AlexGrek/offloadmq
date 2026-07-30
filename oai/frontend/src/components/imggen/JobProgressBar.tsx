@@ -54,6 +54,8 @@ export interface JobProgressBarProps {
   typicalRuntimeSeconds?: number | null
   /** RFC3339 timestamp of when the task was submitted; drives the queued-time readout. */
   submittedAt?: string | null
+  /** Override the status label; pass `null` to hide it (e.g. a status pill is shown elsewhere). */
+  label?: string | null
   className?: string
 }
 
@@ -63,6 +65,7 @@ export function JobProgressBar({
   startedAt,
   typicalRuntimeSeconds,
   submittedAt,
+  label: labelProp,
   className,
 }: JobProgressBarProps) {
   const [now, setNow] = useState(() => Date.now())
@@ -93,7 +96,7 @@ export function JobProgressBar({
   const remainingSec =
     determinate && elapsedSec != null ? Math.max(0, typicalRuntimeSeconds! - elapsedSec) : null
 
-  const label = STATUS_LABEL[status] ?? imageJobStatusLabel(status)
+  const label = labelProp !== undefined ? labelProp : (STATUS_LABEL[status] ?? imageJobStatusLabel(status))
 
   // Right-hand readout: remaining time (+ percent) when determinate, elapsed
   // time when running without an estimate, queued time while still waiting.
@@ -122,7 +125,10 @@ export function JobProgressBar({
         <span className="truncate font-medium text-foreground">
           {label}
           {stage ? (
-            <span className="ml-1 font-normal text-muted-foreground">· {stage}</span>
+            <span className={cn('font-normal text-muted-foreground', label ? 'ml-1' : '')}>
+              {label ? '· ' : ''}
+              {stage}
+            </span>
           ) : null}
         </span>
         {readout ? (

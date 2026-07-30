@@ -647,6 +647,7 @@ export default function MoviePage() {
                           token={token}
                           currentScene={selectedJob.current_scene}
                           activeLog={selectedJob.active_log}
+                          stage={selectedJob.stage}
                         />
                       </div>
                     )}

@@ -655,6 +655,7 @@ mod tests {
             stage: Some("running".to_string()),
             output: None,
             log: Some("partial tokens".to_string()),
+            typical_runtime_seconds: None,
         };
         assert_eq!(progress_stream_text(&resp).as_deref(), Some("partial tokens"));
     }
@@ -668,6 +669,7 @@ mod tests {
                 "message": { "role": "assistant", "content": "hi" }
             })),
             log: None,
+            typical_runtime_seconds: None,
         };
         assert_eq!(progress_stream_text(&resp).as_deref(), Some("hi"));
     }

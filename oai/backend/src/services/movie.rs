@@ -53,6 +53,20 @@ pub struct SceneRecord {
     /// `pending | prompting | rendering | completed | failed`
     pub status: String,
     pub error: Option<String>,
+    /// When this scene's current offload task (LLM or imggen) was submitted —
+    /// queue-wait anchor. `#[serde(default)]` since older `scenes_json` rows
+    /// predate these timing fields.
+    #[serde(default)]
+    pub submitted_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    /// When this scene's current offload task began executing on an agent.
+    #[serde(default)]
+    pub started_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    /// Execution-time estimate for this scene's current task (seconds).
+    #[serde(default)]
+    pub typical_runtime_seconds: Option<f64>,
+    /// Time actually spent executing, set once this scene's render completes.
+    #[serde(default)]
+    pub execution_seconds: Option<f64>,
 }
 
 /// API view of a [`SceneRecord`] — snowflake ids as strings (JS numbers lose
@@ -69,6 +83,10 @@ pub struct SceneView {
     pub last_frame_image_id: Option<String>,
     pub status: String,
     pub error: Option<String>,
+    pub submitted_at: Option<String>,
+    pub started_at: Option<String>,
+    pub typical_runtime_seconds: Option<f64>,
+    pub execution_seconds: Option<f64>,
 }
 
 fn scene_view(scene: &SceneRecord) -> SceneView {
@@ -83,6 +101,10 @@ fn scene_view(scene: &SceneRecord) -> SceneView {
         last_frame_image_id: scene.last_frame_image_id.map(|i| i.to_string()),
         status: scene.status.clone(),
         error: scene.error.clone(),
+        submitted_at: scene.submitted_at.map(|t| t.to_rfc3339()),
+        started_at: scene.started_at.map(|t| t.to_rfc3339()),
+        typical_runtime_seconds: scene.typical_runtime_seconds,
+        execution_seconds: scene.execution_seconds,
     }
 }
 
@@ -612,6 +634,10 @@ fn set_outline(job: &mut movie::MovieJob, outline: &[String]) -> Result<(), AppE
             last_frame_image_id: None,
             status: "pending".into(),
             error: None,
+            submitted_at: None,
+            started_at: None,
+            typical_runtime_seconds: None,
+            execution_seconds: None,
         })
         .collect();
     job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
@@ -847,6 +873,10 @@ async fn reconcile_scene_prompt(state: &AppState, job: &mut movie::MovieJob) -> 
         job.stage = None;
         job.status = "running".into();
         scenes[idx].status = "prompting".into();
+        scenes[idx].submitted_at = Some(chrono::Utc::now().fixed_offset());
+        scenes[idx].started_at = None;
+        scenes[idx].typical_runtime_seconds = None;
+        scenes[idx].execution_seconds = None;
         job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
         return movie::update_job_state(&state.db, job).await;
     }
@@ -874,6 +904,12 @@ async fn reconcile_scene_prompt(state: &AppState, job: &mut movie::MovieJob) -> 
     if let Some(stage) = poll.stage {
         job.stage = Some(stage);
     }
+    if scenes[idx].started_at.is_none() && matches!(poll.status.as_str(), "starting" | "running") {
+        scenes[idx].started_at = Some(chrono::Utc::now().fixed_offset());
+    }
+    if let Some(typical) = poll.typical_runtime_seconds {
+        scenes[idx].typical_runtime_seconds = Some(typical.as_secs_f64());
+    }
 
     match poll.status.as_str() {
         "completed" => {
@@ -894,13 +930,11 @@ async fn reconcile_scene_prompt(state: &AppState, job: &mut movie::MovieJob) -> 
                 job.active_log = None;
                 job.stage = None;
             }
-            job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
         }
         "failed" => {
             let reason = task_status::extract_error_text(&poll.output, "scene director task failed");
             scenes[idx].status = "failed".into();
             scenes[idx].error = Some(reason.clone());
-            job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
             job.status = "failed".into();
             job.error = Some(format!("scene {}: {reason}", idx + 1));
             job.offload_cap = None;
@@ -915,6 +949,7 @@ async fn reconcile_scene_prompt(state: &AppState, job: &mut movie::MovieJob) -> 
             job.status = other.to_string();
         }
     }
+    job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
     movie::update_job_state(&state.db, job).await
 }
 
@@ -966,24 +1001,35 @@ async fn reconcile_video(state: &AppState, job: &mut movie::MovieJob) -> Result<
         scenes[idx].workflow = workflow.to_string();
         scenes[idx].input_image_id = frame_id;
         scenes[idx].imggen_job_id = Some(imggen_job_id);
+        // Timings belong to the imggen job now — drop the scene-director's
+        // prompting-phase values so the progress bar doesn't show stale numbers.
+        scenes[idx].submitted_at = None;
+        scenes[idx].started_at = None;
+        scenes[idx].typical_runtime_seconds = None;
+        scenes[idx].execution_seconds = None;
         job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
         return movie::update_job_state(&state.db, job).await;
     }
 
     let imggen_job_id = scenes[idx].imggen_job_id.expect("checked above");
     let polled = image_jobs::poll_job(state, job.user_id, imggen_job_id).await?;
+    scenes[idx].submitted_at = polled.submitted_at;
+    scenes[idx].started_at = polled.started_at;
+    scenes[idx].typical_runtime_seconds = polled.typical_runtime_seconds;
 
     match polled.status.as_str() {
         "completed" => {
             let Some(video_file) = polled.output_files.iter().find(|f| f.content_type.starts_with("video/")) else {
                 // Output not persisted yet (race with the imggen worker's own
                 // download step) — retry on the next reconcile pass.
-                return Ok(());
+                job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
+                return movie::update_job_state(&state.db, job).await;
             };
             let video_file_id = video_file.id;
             let video_storage_path = video_file.storage_path.clone();
             scenes[idx].video_file_id = Some(video_file_id);
             scenes[idx].status = "completed".into();
+            scenes[idx].execution_seconds = polled.execution_seconds;
 
             let is_last = idx + 1 >= scenes.len();
             if job.long_shot && !is_last {
@@ -1000,7 +1046,6 @@ async fn reconcile_video(state: &AppState, job: &mut movie::MovieJob) -> Result<
                 .await?;
                 scenes[idx].last_frame_image_id = Some(uploaded.id);
             }
-            job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
 
             if is_last {
                 job.phase = "assemble".into();
@@ -1013,15 +1058,15 @@ async fn reconcile_video(state: &AppState, job: &mut movie::MovieJob) -> Result<
             let reason = polled.error.clone().unwrap_or_else(|| "video generation failed".into());
             scenes[idx].status = "failed".into();
             scenes[idx].error = Some(reason.clone());
-            job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
             job.status = "failed".into();
             job.error = Some(format!("scene {}: {reason}", idx + 1));
         }
         _ => {
-            // Still in flight — nothing else to persist; the imggen job itself
-            // already tracked its own progress via `image_jobs::poll_job`.
+            // Still in flight — timings above already captured this pass's
+            // progress snapshot; nothing else to do until it's terminal.
         }
     }
+    job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
     movie::update_job_state(&state.db, job).await
 }
 

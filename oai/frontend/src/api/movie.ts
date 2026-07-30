@@ -14,6 +14,10 @@ export interface SceneView {
   last_frame_image_id: string | null
   status: string
   error: string | null
+  submitted_at: string | null
+  started_at: string | null
+  typical_runtime_seconds: number | null
+  execution_seconds: number | null
 }
 
 export interface MovieJobView {

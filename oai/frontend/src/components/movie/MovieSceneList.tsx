@@ -1,7 +1,11 @@
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatDuration } from '@/lib/imggen'
 import { imageFileUrl } from '../../api/images'
 import type { SceneView } from '../../api/movie'
+import { AiProcessingFrame } from '../AiProcessingFrame'
+import { JobProgressBar } from '../imggen/JobProgressBar'
+import { ReadonlyTextarea } from '../ReadonlyTextarea'
 import { VideoLightbox } from '../VideoLightbox'
 
 export interface MovieSceneListProps {
@@ -9,6 +13,7 @@ export interface MovieSceneListProps {
   token: string | null
   currentScene: number
   activeLog?: string | null
+  stage?: string | null
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -35,7 +40,7 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
-export function MovieSceneList({ scenes, token, currentScene, activeLog }: MovieSceneListProps) {
+export function MovieSceneList({ scenes, token, currentScene, activeLog, stage }: MovieSceneListProps) {
   if (scenes.length === 0) return null
 
   return (
@@ -44,27 +49,47 @@ export function MovieSceneList({ scenes, token, currentScene, activeLog }: Movie
         const isActive =
           scene.index === currentScene &&
           (scene.status === 'prompting' || scene.status === 'rendering')
-        return (
-          <div
-            key={scene.index}
-            className={cn(
-              'space-y-2 rounded-2xl border p-3 transition-colors',
-              isActive ? 'border-primary/40 bg-primary/5' : 'border-border bg-muted/15',
-            )}
-            data-testid={`movie-scene-${scene.index}`}
-          >
+
+        const cardBody = (
+          <div className="space-y-2 p-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-foreground">Scene {scene.index + 1}</span>
-              <StatusPill status={scene.status} />
+              <div className="flex items-center gap-2">
+                {scene.status === 'completed' && scene.execution_seconds != null && (
+                  <span className="text-[10px] text-muted-foreground">
+                    Ran {formatDuration(scene.execution_seconds)}
+                  </span>
+                )}
+                <StatusPill status={scene.status} />
+              </div>
             </div>
             <p className="text-sm text-foreground/90">{scene.outline}</p>
+            {isActive && (
+              <JobProgressBar
+                label={null}
+                status={scene.status}
+                stage={stage}
+                startedAt={scene.started_at}
+                typicalRuntimeSeconds={scene.typical_runtime_seconds}
+                submittedAt={scene.submitted_at}
+                className="max-w-none"
+              />
+            )}
             {scene.prompt && (
-              <p className="line-clamp-3 text-xs text-muted-foreground">{scene.prompt}</p>
+              <ReadonlyTextarea
+                value={scene.prompt}
+                className="text-xs text-muted-foreground"
+                ariaLabel={`Scene ${scene.index + 1} video prompt`}
+                testId={`movie-scene-${scene.index}-prompt`}
+              />
             )}
             {isActive && activeLog && (
-              <p className="line-clamp-4 whitespace-pre-wrap font-mono text-[10px] text-muted-foreground/80">
-                {activeLog}
-              </p>
+              <ReadonlyTextarea
+                value={activeLog}
+                className="font-mono text-[10px] text-muted-foreground/80"
+                ariaLabel={`Scene ${scene.index + 1} log`}
+                testId={`movie-scene-${scene.index}-log`}
+              />
             )}
             {scene.error && <p className="text-xs text-destructive">{scene.error}</p>}
             {scene.video_file_id && (
@@ -83,6 +108,20 @@ export function MovieSceneList({ scenes, token, currentScene, activeLog }: Movie
                 />
               </VideoLightbox>
             )}
+          </div>
+        )
+
+        return isActive ? (
+          <AiProcessingFrame key={scene.index} testId={`movie-scene-${scene.index}`}>
+            {cardBody}
+          </AiProcessingFrame>
+        ) : (
+          <div
+            key={scene.index}
+            className="rounded-2xl border border-border bg-muted/15 transition-colors"
+            data-testid={`movie-scene-${scene.index}`}
+          >
+            {cardBody}
           </div>
         )
       })}

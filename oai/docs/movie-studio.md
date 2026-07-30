@@ -283,6 +283,10 @@ interface SceneView {
   last_frame_image_id: string | null  // ffmpeg-extracted last frame, long-shot mode only
   status: string                   // pending | prompting | rendering | completed | failed
   error: string | null
+  submitted_at: string | null      // RFC 3339; when this scene's current offload task was submitted (queue-wait anchor)
+  started_at: string | null        // RFC 3339; when this scene's current offload task began executing on an agent
+  typical_runtime_seconds: number | null  // execution-time estimate for the current task, from OffloadMQ
+  execution_seconds: number | null // time actually spent executing; set once this scene's render completes
 }
 ```
 
