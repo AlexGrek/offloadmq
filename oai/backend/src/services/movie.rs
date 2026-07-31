@@ -586,10 +586,39 @@ pub async fn user_job_detail(
     movie::get_job(&state.db, job_id, user_id).await?.ok_or(AppError::NotFound)
 }
 
+/// A job's structural position — changes only on a real state-machine
+/// transition, never on a poll that comes back "still queued/running". Used to
+/// detect when a job has stalled on external work so the drain loop below can
+/// stop without wasting iterations re-polling it.
+type JobFingerprint = (String, String, i32, Option<String>);
+
+fn job_fingerprint(job: &movie::MovieJob) -> JobFingerprint {
+    (
+        job.status.clone(),
+        job.phase.clone(),
+        job.current_scene,
+        job.offload_task_id.clone(),
+    )
+}
+
+/// Cap on structural transitions drained per job per tick, so a job cycling
+/// through several no-op phases can't loop indefinitely within one pass.
+const MAX_DRAIN_STEPS: u32 = 8;
+
 pub async fn run_background_reconcile_pass(state: &AppState, batch: u64) -> Result<(), AppError> {
     let jobs = movie::list_inflight_jobs(&state.db, batch).await?;
     for mut job in jobs {
-        let _ = reconcile_job(state, &mut job).await;
+        let job_id = job.id;
+        for _ in 0..MAX_DRAIN_STEPS {
+            let before = job_fingerprint(&job);
+            if let Err(e) = reconcile_job(state, &mut job).await {
+                tracing::warn!("movie worker: job {job_id} reconcile failed: {e}");
+                break;
+            }
+            if job_fingerprint(&job) == before {
+                break;
+            }
+        }
     }
     Ok(())
 }
@@ -783,8 +812,11 @@ async fn reconcile_director(state: &AppState, job: &mut movie::MovieJob) -> Resu
             job.offload_cap = None;
             job.offload_task_id = None;
         }
-        other => {
-            job.status = other.to_string();
+        _ => {
+            // Still queued/assigned/starting upstream — keep the job movie-owned as
+            // `running` so it stays visible to list_inflight_jobs; the raw detail is
+            // already captured above via job.stage/job.active_log where applicable.
+            job.status = "running".into();
         }
     }
     movie::update_job_state(&state.db, job).await
@@ -945,8 +977,11 @@ async fn reconcile_scene_prompt(state: &AppState, job: &mut movie::MovieJob) -> 
             job.offload_cap = None;
             job.offload_task_id = None;
         }
-        other => {
-            job.status = other.to_string();
+        _ => {
+            // Still queued/assigned/starting upstream — keep the job movie-owned as
+            // `running` so it stays visible to list_inflight_jobs; the raw detail is
+            // already captured above via job.stage/job.active_log where applicable.
+            job.status = "running".into();
         }
     }
     job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;

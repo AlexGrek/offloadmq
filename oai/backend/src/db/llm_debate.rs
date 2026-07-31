@@ -8,6 +8,7 @@ use sea_orm::{
 use crate::{
     db::entities::llm_debate_jobs::{self, Entity as LlmDebateJobEntity},
     error::AppError,
+    offload::task_status,
 };
 
 pub type LlmDebateJob = llm_debate_jobs::Model;
@@ -93,7 +94,7 @@ pub async fn list_inflight_jobs(
     LlmDebateJobEntity::find()
         .filter(
             llm_debate_jobs::Column::Status
-                .is_in(["running", "submitted", "pending"].map(str::to_string)),
+                .is_in(task_status::WORKER_PICKUP_STATUSES.map(str::to_string)),
         )
         .order_by_asc(llm_debate_jobs::Column::UpdatedAt)
         .limit(limit)

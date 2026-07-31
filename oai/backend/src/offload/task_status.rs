@@ -25,6 +25,12 @@ pub fn is_terminal(status: &str) -> bool {
     matches!(status, "completed" | "failed" | "canceled")
 }
 
+/// Statuses a background worker must still pick up. Covers the movie/debate-owned
+/// `running` plus every non-terminal upstream OffloadMQ status, so a job whose
+/// status was ever written straight from a poll response is never orphaned.
+pub const WORKER_PICKUP_STATUSES: [&str; 7] =
+    ["running", "submitted", "pending", "queued", "assigned", "starting", "cancelRequested"];
+
 pub const OFFLOAD_TASK_MISSING: &str =
     "OffloadMQ task not found (likely deleted or archived on the server)";
 

@@ -9,6 +9,7 @@ use sea_orm::{
 use crate::{
     db::entities::movie_jobs::{self, Entity as MovieJobEntity},
     error::AppError,
+    offload::task_status,
 };
 
 pub type MovieJob = movie_jobs::Model;
@@ -100,15 +101,20 @@ pub async fn list_jobs(
         .map_err(AppError::Database)
 }
 
-/// Only `running` jobs are eligible for background reconciliation —
-/// `awaitingApproval` and `paused` jobs must be invisible to the worker so it
+/// Jobs eligible for background reconciliation: `running` plus every non-terminal
+/// upstream OffloadMQ status a poll can leave behind (`WORKER_PICKUP_STATUSES`) —
+/// listed defensively in case a row was ever persisted with a raw poll status.
+/// `awaitingApproval` and `paused` jobs must stay invisible to the worker so it
 /// never advances a job the user is holding.
 pub async fn list_inflight_jobs(
     db: &DatabaseConnection,
     limit: u64,
 ) -> Result<Vec<MovieJob>, AppError> {
     MovieJobEntity::find()
-        .filter(movie_jobs::Column::Status.eq("running"))
+        .filter(
+            movie_jobs::Column::Status
+                .is_in(task_status::WORKER_PICKUP_STATUSES.map(str::to_string)),
+        )
         .order_by_asc(movie_jobs::Column::UpdatedAt)
         .limit(limit)
         .all(db)

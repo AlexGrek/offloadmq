@@ -398,8 +398,11 @@ async fn reconcile_job(state: &AppState, job: &mut llm_debate::LlmDebateJob) -> 
             job.offload_cap = None;
             job.offload_task_id = None;
         }
-        other => {
-            job.status = other.to_string();
+        _ => {
+            // Still queued/assigned/starting upstream — keep the job debate-owned as
+            // `running` so it stays visible to list_inflight_jobs; the raw detail is
+            // already captured above via job.stage/job.active_log where applicable.
+            job.status = "running".into();
         }
     }
     llm_debate::update_job_state(&state.db, job).await
@@ -597,13 +600,42 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
     .await
 }
 
+/// A job's structural position — changes only on a real state-machine
+/// transition, never on a poll that comes back "still queued/running". Used to
+/// detect when a job has stalled on external work so the drain loop below can
+/// stop without wasting iterations re-polling it.
+type JobFingerprint = (String, String, Option<String>, Option<String>);
+
+fn job_fingerprint(job: &llm_debate::LlmDebateJob) -> JobFingerprint {
+    (
+        job.status.clone(),
+        job.phase.clone(),
+        job.current_turn.clone(),
+        job.offload_task_id.clone(),
+    )
+}
+
+/// Cap on structural transitions drained per job per tick, so a job cycling
+/// through several no-op phases can't loop indefinitely within one pass.
+const MAX_DRAIN_STEPS: u32 = 8;
+
 pub async fn run_background_reconcile_pass(
     state: &AppState,
     batch: u64,
 ) -> Result<(), AppError> {
     let jobs = llm_debate::list_inflight_jobs(&state.db, batch).await?;
     for mut job in jobs {
-        let _ = reconcile_job(state, &mut job).await;
+        let job_id = job.id;
+        for _ in 0..MAX_DRAIN_STEPS {
+            let before = job_fingerprint(&job);
+            if let Err(e) = reconcile_job(state, &mut job).await {
+                tracing::warn!("debate worker: job {job_id} reconcile failed: {e}");
+                break;
+            }
+            if job_fingerprint(&job) == before {
+                break;
+            }
+        }
     }
     Ok(())
 }
