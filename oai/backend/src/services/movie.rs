@@ -504,6 +504,46 @@ pub async fn resume(state: &AppState, user_id: i64, job_id: i64) -> Result<movie
     Ok(job)
 }
 
+/// Resubmit whatever stage failed, instead of restarting the whole movie.
+/// Unlike `resume` (which only needs to clear stale task links left by a
+/// user-initiated `stop`), a `director`/`scene_prompt` failure also leaves the
+/// current scene's own `status`/`error` set to `"failed"` — those must be
+/// reset too so the resubmitted work isn't shadowed by stale failure state.
+pub async fn retry(state: &AppState, user_id: i64, job_id: i64) -> Result<movie::MovieJob, AppError> {
+    let mut job = movie::get_job(&state.db, job_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if job.status != "failed" {
+        return Err(AppError::BadRequest(format!(
+            "job is not failed (status={})",
+            job.status
+        )));
+    }
+
+    // `assemble` never advances `current_scene` past a real index, and its own
+    // failure isn't scene-specific — only reset per-scene state for the two
+    // phases that key work off `current_scene`.
+    if matches!(job.phase.as_str(), "video" | "scene_prompt") {
+        let mut scenes = parse_scenes(&job)?;
+        let idx = job.current_scene as usize;
+        if let Some(scene) = scenes.get_mut(idx) {
+            scene.imggen_job_id = None;
+            scene.status = "pending".into();
+            scene.error = None;
+        }
+        job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
+    }
+
+    job.offload_cap = None;
+    job.offload_task_id = None;
+    job.active_log = None;
+    job.stage = None;
+    job.error = None;
+    job.status = "running".into();
+    movie::update_job_state(&state.db, &job).await?;
+    Ok(job)
+}
+
 pub async fn cancel_job(state: &AppState, user_id: i64, job_id: i64) -> Result<CancelOutcome, AppError> {
     let mut job = movie::get_job(&state.db, job_id, user_id)
         .await?

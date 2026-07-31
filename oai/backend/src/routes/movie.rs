@@ -187,6 +187,16 @@ pub async fn resume(
     Ok(Json(service::job_view(job)?))
 }
 
+pub async fn retry(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(job_id_str): Path<String>,
+) -> Result<Json<JobDetailsResponse>, AppError> {
+    let job_id = parse_id(&job_id_str, "job_id")?;
+    let job = service::retry(&state, user_id, job_id).await?;
+    Ok(Json(service::job_view(job)?))
+}
+
 pub async fn cancel_job(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,

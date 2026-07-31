@@ -252,6 +252,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/movie/jobs/{id}/approve", post(routes::movie::approve))
         .route("/api/movie/jobs/{id}/stop", post(routes::movie::stop))
         .route("/api/movie/jobs/{id}/resume", post(routes::movie::resume))
+        .route("/api/movie/jobs/{id}/retry", post(routes::movie::retry))
         .route("/api/movie/jobs/{id}/cancel", post(routes::movie::cancel_job))
         .layer(from_fn_with_state(state.clone(), middleware::jwt_auth_middleware));
 

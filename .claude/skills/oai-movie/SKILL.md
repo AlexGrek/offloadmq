@@ -231,6 +231,11 @@ already been filtered out.
    removes only the assembled `movie.mp4` row; per-scene clips (and any long-shot last-frame
    images) belong to their own nested imggen job rows and are left alone. Don't expect a movie
    delete to clean those up.
+8. **`retry` only works from `status == "failed"`, `resume` only from `"paused"` — they don't
+   overlap.** Unlike `resume`, `retry` also clears the current scene's own `status`/`error`
+   (a `director`/`scene_prompt` failure leaves that scene marked `"failed"`, which `stop` never
+   produces), and always clears `job.error`. Same non-regeneration guarantee as `resume`:
+   earlier `"completed"` scenes are never touched.
 
 ---
 

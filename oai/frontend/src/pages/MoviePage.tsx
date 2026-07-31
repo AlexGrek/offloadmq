@@ -8,6 +8,7 @@ import {
   Pencil,
   Play,
   RefreshCw,
+  RotateCcw,
   Square,
   Trash2,
   X,
@@ -19,6 +20,7 @@ import {
   listMovieJobs,
   pollMovieJob,
   resumeMovieJob,
+  retryMovieJob,
   startMovieJob,
   stopMovieJob,
   type MovieJobView,
@@ -92,6 +94,7 @@ export default function MoviePage() {
   const [canceling, setCanceling] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [resuming, setResuming] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
   const [error, setError] = useState<string | null>(null)
 
@@ -331,6 +334,20 @@ export default function MoviePage() {
     }
   }
 
+  async function onRetry(jobId: string) {
+    if (!token) return
+    setRetrying(true)
+    setError(null)
+    try {
+      const job = await retryMovieJob(token, jobId)
+      applyJobUpdate(job, viewedJobId)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   async function onCancel(jobId: string) {
     if (!token) return
     setCanceling(true)
@@ -411,6 +428,7 @@ export default function MoviePage() {
   const status = selectedJob?.status
   const isRunning = status === 'running'
   const isPaused = status === 'paused'
+  const isFailed = status === 'failed'
   const isNonTerminal = status != null && !TERMINAL.has(status)
   const isCompleted = status === 'completed'
 
@@ -584,6 +602,19 @@ export default function MoviePage() {
                         >
                           {resuming ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : <Play className="mr-1 size-3.5" />}
                           Resume
+                        </Button>
+                      )}
+                      {isFailed && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="min-h-10"
+                          disabled={retrying}
+                          onClick={() => void onRetry(selectedJob.job_id)}
+                          data-testid="movie-retry-btn"
+                        >
+                          {retrying ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : <RotateCcw className="mr-1 size-3.5" />}
+                          Retry
                         </Button>
                       )}
                       {isNonTerminal && (

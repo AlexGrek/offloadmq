@@ -123,6 +123,22 @@ is already terminal.
 
 ---
 
+## Retry
+
+`POST /api/movie/jobs/{id}/retry` resubmits whatever stage failed, instead of forcing a full
+restart of the movie:
+- Rejected (400) unless `job.status == "failed"`.
+- If `phase == "video"` or `phase == "scene_prompt"`, the current scene's `imggen_job_id` is
+  cleared and its `status`/`error` reset to `pending`/`None` — a `director` failure needs no
+  per-scene reset since that phase doesn't touch `scenes_json`, and `assemble` failures aren't
+  scene-specific (the failing scene isn't necessarily `current_scene`).
+- Clears `offload_cap`, `offload_task_id`, `active_log`, `stage`, `error`; sets `status=running`.
+- The next reconcile (WS watch, page poll, or the background worker) resubmits the failed
+  phase's offload task from scratch — completed earlier scenes are untouched, same guarantee as
+  `resume`.
+
+---
+
 ## Long-shot mode (`long_shot: bool`)
 
 Per-scene frame seeding (`scene_frame_source`, used both to pick the scene-director's optional
@@ -175,6 +191,7 @@ Bearer auth (`AuthenticatedUser`). All paths under `/api/movie`.
 | POST | `/api/movie/jobs/{id}/approve` | `{ outline?: string[] }` | `MovieJobView` |
 | POST | `/api/movie/jobs/{id}/stop` | — | `MovieJobView` |
 | POST | `/api/movie/jobs/{id}/resume` | — | `MovieJobView` |
+| POST | `/api/movie/jobs/{id}/retry` | — | `MovieJobView` |
 | POST | `/api/movie/jobs/{id}/cancel` | — | `{ job_id, status, message }` |
 | DELETE | `/api/movie/jobs/{id}` | — | 204 — also deletes the assembled `image_files` row + blobs if present |
 

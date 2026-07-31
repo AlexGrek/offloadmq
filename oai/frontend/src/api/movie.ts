@@ -135,6 +135,12 @@ export function resumeMovieJob(token: string, jobId: string): Promise<MovieJobVi
   })
 }
 
+export function retryMovieJob(token: string, jobId: string): Promise<MovieJobView> {
+  return request(`/api/movie/jobs/${encodeURIComponent(jobId)}/retry`, token, {
+    method: 'POST',
+  })
+}
+
 export function cancelMovieJob(
   token: string,
   jobId: string,
