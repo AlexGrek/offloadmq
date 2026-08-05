@@ -191,6 +191,29 @@ requests.post(f"{BASE}/api/task/submit", json={
 
 ---
 
+## OAI integration
+
+The OAI web app exposes this as **Basic resize** under **Image Tools** (`/app/img-utils`),
+alongside the `img-utils.*` transforms — same job table, same history sidebar, same
+poll/cancel/retry endpoints ([img-utils-api.md](img-utils-api.md#oai-integration)). The tool
+appears in the picker whenever an agent advertising `image_resize` is online, which in
+practice means whenever any agent is.
+
+Differences from an `img-utils.*` tool inside OAI:
+
+- The job's `workflow` column holds the synthetic name `basic_resize`; nothing is sent to
+  the agent under that name, since this payload has no `workflow` field.
+- The resize parameters are stored (normalized) as the job's `options`, so **Retry**
+  replays the same settings. For ComfyUI tools `options` becomes `secondary_prompts`; here
+  the options *are* the payload.
+- `width`/`height` are capped at **1920 px**, because OAI downscales every stored image to
+  that on the way into `image_files` — a larger request could not be delivered. The backend
+  rejects larger values (`services/image_resize.rs`) and the form caps them.
+- OAI normalizes the *input* upload too (JPEG q90, ≤1920 px). Resize therefore operates on
+  the stored copy, not the user's original bytes.
+
+---
+
 ## Implementation
 
 Agent side: [`agent_v2/agent/src/offloadmq_agent/exec/image_resize.py`](../agent_v2/agent/src/offloadmq_agent/exec/image_resize.py).

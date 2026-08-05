@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Columns2,
@@ -18,20 +18,26 @@ import {
 } from 'lucide-react'
 import {
   cancelImgUtilsJob,
+  defaultResizeForm,
   deleteImgUtilsJob,
+  describeResizeOptions,
   getImgUtilsJob,
   listImgUtilsCapabilities,
   listImgUtilsJobs,
   pollImgUtilsJob,
   prettyLabel,
+  resizeFormError,
+  resizeOptionsFromForm,
   retryImgUtilsJob,
   startImgUtilsJob,
   toolKey,
   toolsFromCapabilities,
+  RESIZE_WORKFLOW,
   type ImgUtilsRouteState,
   type ImgUtilTool,
   type ImgUtilsJob,
   type JobImageRef,
+  type ResizeFormState,
 } from '../api/imgUtils'
 import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
 import { Button } from '../components/ui/button'
@@ -40,6 +46,7 @@ import {
   IMGUTILS_NEW_PANEL,
   ImgUtilsHistorySidebar,
 } from '../components/imgutils/ImgUtilsHistorySidebar'
+import ResizeControls from '../components/imgutils/ResizeControls'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImageLightbox, type ImageLightboxActions } from '../components/ImageLightbox'
@@ -67,6 +74,8 @@ type Slot = {
 const OPERATION_HINTS: Record<string, string> = {
   depth: 'Estimate a depth map from the image.',
   face_swap: 'Replace the face in the target image with the face from the reference image.',
+  [RESIZE_WORKFLOW]:
+    'Scale the image with Pillow — no GPU or ComfyUI needed, so any online agent can run it.',
 }
 
 function operationHint(workflow: string): string {
@@ -85,6 +94,9 @@ export default function ImgUtilsPage() {
   const [input, setInput] = useState<Slot | null>(null)
   const [source, setSource] = useState<Slot | null>(null)
   const [pickerTarget, setPickerTarget] = useState<'input' | 'source' | null>(null)
+  // Only meaningful for the built-in resize tool; kept across tool switches so
+  // flipping back and forth does not lose the settings.
+  const [resizeForm, setResizeForm] = useState<ResizeFormState>(() => defaultResizeForm([]))
 
   const [jobs, setJobs] = useState<ImgUtilsJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -125,8 +137,24 @@ export default function ImgUtilsPage() {
   const viewingJob = activePanel !== IMGUTILS_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
 
-  const activeTool = tools.find(t => toolKey(t) === selectedTool) ?? null
+  const activeTool = useMemo(
+    () => tools.find(t => toolKey(t) === selectedTool) ?? null,
+    [tools, selectedTool],
+  )
   const needsSource = activeTool?.needsSourceImage ?? false
+  const isResize = activeTool?.kind === 'resize'
+
+  // Agents publish their resampling filters in the capability brackets, so a
+  // stored choice can go stale when the tool — or the agent behind it — changes.
+  // Reconciled on read rather than written back, so no render cascade.
+  const resizeState = useMemo<ResizeFormState>(() => {
+    const methods = activeTool?.methods ?? []
+    const method =
+      resizeForm.method && methods.includes(resizeForm.method)
+        ? resizeForm.method
+        : defaultResizeForm(methods).method
+    return method === resizeForm.method ? resizeForm : { ...resizeForm, method }
+  }, [resizeForm, activeTool])
 
   const loadCapabilities = useCallback(async () => {
     if (!token) return
@@ -302,6 +330,8 @@ export default function ImgUtilsPage() {
         workflow: activeTool!.workflow,
         input_image_id: input!.uploaded!.image_id,
         source_image_id: needsSource ? source!.uploaded!.image_id : undefined,
+        // Resize carries its parameters here; ComfyUI tools have none from the UI.
+        options: isResize ? resizeOptionsFromForm(resizeState) : undefined,
       })
       clearSlots()
       setActivePanel(res.job_id)
@@ -396,8 +426,13 @@ export default function ImgUtilsPage() {
 
   const inputReady = Boolean(input?.uploaded && !input.error)
   const sourceReady = Boolean(source?.uploaded && !source.error)
+  const resizeError = isResize ? resizeFormError(resizeState) : null
   const canSubmit =
-    Boolean(activeTool) && inputReady && (!needsSource || sourceReady) && !submitting
+    Boolean(activeTool) &&
+    inputReady &&
+    (!needsSource || sourceReady) &&
+    !resizeError &&
+    !submitting
 
   const status = selectedJob?.status
   const isRunning = status != null && !TERMINAL.has(status)
@@ -487,7 +522,7 @@ export default function ImgUtilsPage() {
                     Image Tools
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    One-shot ComfyUI transforms — no prompt, just images in and an image out.
+                    One-shot transforms — no prompt, just an image in and an image out.
                   </p>
                 </header>
 
@@ -496,7 +531,7 @@ export default function ImgUtilsPage() {
                     {capsLoading
                       ? 'Checking agents…'
                       : tools.length === 0
-                        ? 'No img-utils.* capability online — check OffloadMQ agents'
+                        ? 'No image tools online — check OffloadMQ agents'
                         : `${tools.length} tool(s) online`}
                   </span>
                   <button
@@ -562,6 +597,20 @@ export default function ImgUtilsPage() {
                       setInput(null)
                     }}
                   />
+
+                  {isResize ? (
+                    <ResizeControls
+                      state={resizeState}
+                      onChange={patch => setResizeForm(prev => ({ ...prev, ...patch }))}
+                      methods={activeTool?.methods ?? []}
+                      inputSize={
+                        input?.uploaded
+                          ? { width: input.uploaded.width, height: input.uploaded.height }
+                          : null
+                      }
+                      error={resizeError}
+                    />
+                  ) : null}
 
                   {needsSource ? (
                     <ImageSlot
@@ -677,6 +726,17 @@ export default function ImgUtilsPage() {
                       <p className="font-mono text-xs text-muted-foreground">
                         {selectedJob.capability} · {selectedJob.status.replace(/_/g, ' ')}
                       </p>
+                      {selectedJob.workflow === RESIZE_WORKFLOW ? (
+                        <p
+                          className="text-xs text-muted-foreground"
+                          data-testid="imgutils-resize-summary"
+                        >
+                          {describeResizeOptions(selectedJob.options)}
+                          {outputImage
+                            ? ` → ${outputImage.width}×${outputImage.height}`
+                            : ''}
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">

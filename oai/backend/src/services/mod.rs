@@ -12,6 +12,7 @@ pub mod image_job_names;
 pub mod image_paths;
 pub mod image_pipeline_params;
 pub mod image_processing;
+pub mod image_resize;
 pub mod img_utils;
 pub mod movie;
 pub mod movie_ffmpeg;

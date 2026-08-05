@@ -1,12 +1,21 @@
-//! `img-utils` job orchestration: single-purpose ComfyUI image transforms
-//! (depth map, face swap, …). A job stages one or two stored images into an
-//! OffloadMQ input bucket, submits an `img-utils.<utility>` task with an output
-//! bucket, and downloads the produced image back into `image_files` on
-//! completion.
+//! Image Tools job orchestration. A job stages one or two stored images into an
+//! OffloadMQ input bucket, submits a task with an output bucket, and downloads
+//! the produced image back into `image_files` on completion.
 //!
-//! The poll/cancel/reconcile state machine is the shared [`offload_job`] driver;
-//! this module supplies only the img-utils-specific pieces. Output arrives as
-//! bucket files, so — like music generation — it polls with the image client.
+//! Two capability families share this lifecycle:
+//!
+//! * `img-utils.*` — single-purpose ComfyUI transforms (depth map, face swap).
+//!   The tool exists only if the operator installed its workflow, and the knobs
+//!   travel as `payload.secondary_prompts`.
+//! * `image_resize` — the built-in Pillow resize ("Basic resize"). Needs no
+//!   ComfyUI, so it is online wherever any agent is, and its knobs are flat
+//!   payload fields validated by [`image_resize::ResizeOptions`].
+//!
+//! Both produce the same `images[]` output shape, so everything downstream of
+//! submit is shared. The poll/cancel/reconcile state machine is the generic
+//! [`offload_job`] driver; this module supplies only the feature-specific
+//! pieces. Output arrives as bucket files, so — like music generation — it
+//! polls with the image client.
 
 use async_trait::async_trait;
 use serde::Serialize;
@@ -20,6 +29,7 @@ use crate::{
     offload::task_status::{self, NormalizedPoll, OffloadPoller},
     services::{
         image_jobs, image_processing,
+        image_resize::ResizeOptions,
         offload_factory,
         offload_job::{self, CancelOutcome, JobReconciler},
         storage,
@@ -29,20 +39,45 @@ use crate::{
 
 pub const CAPABILITY_PREFIX: &str = "img-utils.";
 
-/// One `img-utils.*` capability advertised by an online agent.
+/// The agent's built-in Pillow resize. A *bare* capability — it has no sub-name
+/// because there is a single implementation; the resampling filters it supports
+/// are its bracket attributes instead.
+pub const RESIZE_CAPABILITY: &str = "image_resize";
+
+/// Synthetic operation name stored in `img_utils_jobs.workflow` for resize jobs.
+/// Nothing is sent to the agent under this name (the payload has no `workflow`
+/// field) — it exists so listings, labels and retry treat resize like any other
+/// tool. `prettyLabel` renders it as "Basic resize".
+pub const RESIZE_WORKFLOW: &str = "basic_resize";
+
+/// Which family a capability belongs to. Serialized to the client so the page
+/// knows whether to render the resize controls or a plain image-in form.
+pub const KIND_COMFY: &str = "comfy";
+pub const KIND_RESIZE: &str = "resize";
+
+pub fn is_resize_capability(capability: &str) -> bool {
+    capability == RESIZE_CAPABILITY
+}
+
+/// One Image Tools capability advertised by an online agent.
 #[derive(Debug, Serialize)]
 pub struct ImgUtilCapability {
-    /// Base capability, e.g. `img-utils.image_lotus_depth_v1_1`.
+    /// Base capability, e.g. `img-utils.image_lotus_depth_v1_1` or `image_resize`.
     pub base: String,
     /// Capability minus the prefix — the workflow pack, named after the model
-    /// (`image_lotus_depth_v1_1`), *not* the operation.
+    /// (`image_lotus_depth_v1_1`), *not* the operation. `image_resize` for resize.
     pub utility: String,
     /// Operations the pack installs, from the agent's bracket attributes
-    /// (`["depth"]`). These are the values `workflow` accepts.
+    /// (`["depth"]`). These are the values `workflow` accepts. Resize reports a
+    /// single synthetic operation, [`RESIZE_WORKFLOW`].
     pub workflows: Vec<String>,
     pub raw: String,
     /// True when one of the operations consumes a second "source" image.
     pub needs_source_image: bool,
+    /// [`KIND_COMFY`] or [`KIND_RESIZE`].
+    pub kind: &'static str,
+    /// Resampling filters this agent offers — resize only, empty otherwise.
+    pub methods: Vec<String>,
 }
 
 pub struct StartJobParams {
@@ -52,7 +87,8 @@ pub struct StartJobParams {
     pub workflow: Option<String>,
     pub input_image_id: i64,
     pub source_image_id: Option<i64>,
-    /// Extra workflow knobs forwarded verbatim as `payload.secondary_prompts`.
+    /// ComfyUI tools: extra workflow knobs forwarded verbatim as
+    /// `payload.secondary_prompts`. Resize: the resize parameters.
     pub options: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
@@ -76,7 +112,7 @@ impl JobReconciler for ImgUtilsReconciler {
     }
 
     fn failure_fallback(&self) -> &'static str {
-        "img-utils task failed"
+        "image task failed"
     }
 
     async fn poller(&self, state: &AppState) -> Result<Box<dyn OffloadPoller>, AppError> {
@@ -122,14 +158,14 @@ impl JobReconciler for ImgUtilsReconciler {
         };
 
         let Some(output) = poll.output.as_ref() else {
-            return fail("img-utils task returned no output").await;
+            return fail("image task returned no output").await;
         };
         let Some(image) = output
             .get("images")
             .and_then(|v| v.as_array())
             .and_then(|a| a.last())
         else {
-            return fail("img-utils task returned no output images").await;
+            return fail("image task returned no output images").await;
         };
         // No reference to fetch means retrying can never succeed — fail now rather
         // than let the background worker re-poll this job forever.
@@ -146,10 +182,15 @@ impl JobReconciler for ImgUtilsReconciler {
             return fail("img-utils task output has no bucket to download from").await;
         };
 
+        let source = if is_resize_capability(&job.capability) {
+            RESIZE_CAPABILITY.to_string()
+        } else {
+            format!("img-utils/{}", job.utility)
+        };
         let file = image_jobs::store_offload_output_image(
             state,
             job.user_id,
-            &format!("img-utils/{}", job.utility),
+            &source,
             bucket,
             image,
             // Embedded in the stored JPEG's EXIF as the image's provenance.
@@ -160,26 +201,69 @@ impl JobReconciler for ImgUtilsReconciler {
     }
 }
 
+/// Every Image Tools capability online right now — both families, in one round
+/// trip to OffloadMQ.
 pub async fn list_capabilities(state: &AppState) -> Result<Vec<ImgUtilCapability>, AppError> {
     let client = offload_factory::chat_client(state).await?;
-    let caps = client.list_capabilities_with_prefix(CAPABILITY_PREFIX).await?;
-    Ok(caps
-        .into_iter()
-        .map(|c| {
-            let utility = c
-                .base
-                .strip_prefix(CAPABILITY_PREFIX)
-                .unwrap_or(&c.base)
-                .to_string();
-            ImgUtilCapability {
-                needs_source_image: c.tags.iter().any(|t| workflow_needs_source_image(t)),
-                utility,
+    let raw = client.list_capabilities_raw().await?;
+
+    let mut caps: Vec<ImgUtilCapability> =
+        crate::offload::parse_capabilities_with_prefix(&raw, CAPABILITY_PREFIX)
+            .into_iter()
+            .map(|c| {
+                let utility = c
+                    .base
+                    .strip_prefix(CAPABILITY_PREFIX)
+                    .unwrap_or(&c.base)
+                    .to_string();
+                ImgUtilCapability {
+                    needs_source_image: c.tags.iter().any(|t| workflow_needs_source_image(t)),
+                    utility,
+                    base: c.base,
+                    workflows: c.tags,
+                    raw: c.raw,
+                    kind: KIND_COMFY,
+                    methods: Vec::new(),
+                }
+            })
+            .collect();
+
+    // A bare capability, so match it exactly: `image_resize_v2` on some future
+    // agent must not be mistaken for this one.
+    caps.extend(
+        crate::offload::parse_capabilities_with_prefix(&raw, RESIZE_CAPABILITY)
+            .into_iter()
+            .filter(|c| is_resize_capability(&c.base))
+            .map(|c| ImgUtilCapability {
                 base: c.base,
-                workflows: c.tags,
+                utility: RESIZE_CAPABILITY.to_string(),
+                workflows: vec![RESIZE_WORKFLOW.to_string()],
                 raw: c.raw,
-            }
-        })
-        .collect())
+                needs_source_image: false,
+                kind: KIND_RESIZE,
+                // Bracket attributes are the resampling filters, not operations.
+                methods: c.tags,
+            }),
+    );
+
+    Ok(caps)
+}
+
+/// The resampling filters the online `image_resize` agents advertise. Empty when
+/// none is online or none published any — the caller then skips method checks
+/// rather than blocking a submit on a capability listing that may be stale.
+async fn resize_methods(state: &AppState) -> Vec<String> {
+    match list_capabilities(state).await {
+        Ok(caps) => caps
+            .into_iter()
+            .find(|c| c.kind == KIND_RESIZE)
+            .map(|c| c.methods)
+            .unwrap_or_default(),
+        Err(e) => {
+            tracing::warn!("img_utils: could not list capabilities for resize methods: {e}");
+            Vec::new()
+        }
+    }
 }
 
 pub async fn start_job(
@@ -190,20 +274,30 @@ pub async fn start_job(
     storage::operator(state)?;
 
     let capability = crate::offload::base_capability(&params.capability).to_string();
-    if !capability.starts_with(CAPABILITY_PREFIX) {
+    let resize = is_resize_capability(&capability);
+    if !resize && !capability.starts_with(CAPABILITY_PREFIX) {
         return Err(AppError::BadRequest(format!(
-            "capability must start with `{CAPABILITY_PREFIX}`"
+            "capability must be `{RESIZE_CAPABILITY}` or start with `{CAPABILITY_PREFIX}`"
         )));
     }
-    let utility = capability[CAPABILITY_PREFIX.len()..].to_string();
+    let utility = if resize {
+        RESIZE_CAPABILITY.to_string()
+    } else {
+        capability[CAPABILITY_PREFIX.len()..].to_string()
+    };
     if utility.is_empty() {
         return Err(AppError::BadRequest("capability is missing a utility name".into()));
     }
-    let workflow = match params.workflow.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        Some(w) => w.to_string(),
-        // The pack directory is named after the model, so it is never a usable
-        // task type — ask the agent which operations it actually installed.
-        None => resolve_sole_workflow(state, &capability).await?,
+    let workflow = if resize {
+        // Resize has exactly one operation and sends no `workflow` to the agent.
+        RESIZE_WORKFLOW.to_string()
+    } else {
+        match params.workflow.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            Some(w) => w.to_string(),
+            // The pack directory is named after the model, so it is never a usable
+            // task type — ask the agent which operations it actually installed.
+            None => resolve_sole_workflow(state, &capability).await?,
+        }
     };
 
     if workflow_needs_source_image(&workflow) && params.source_image_id.is_none() {
@@ -211,6 +305,17 @@ pub async fn start_job(
             "{workflow} requires a source (face reference) image"
         )));
     }
+
+    // Validate up front: a typo should be a 400 on submit, not a job that queues
+    // for minutes and then fails on the agent.
+    let resize_options = if resize {
+        Some(ResizeOptions::parse(
+            params.options.as_ref(),
+            &resize_methods(state).await,
+        )?)
+    } else {
+        None
+    };
 
     let input = image_generation::get_image_file(&state.db, params.input_image_id, user_id)
         .await?
@@ -224,10 +329,14 @@ pub async fn start_job(
         None => None,
     };
 
-    let options_json = params
-        .options
+    // Resize stores the *normalized* options, so retry replays something already
+    // validated and the job detail shows exactly what ran.
+    let stored_options = match resize_options.as_ref() {
+        Some(opts) => Some(opts.to_map()),
+        None => params.options.clone().filter(|m| !m.is_empty()),
+    };
+    let options_json = stored_options
         .as_ref()
-        .filter(|m| !m.is_empty())
         .map(serde_json::to_string)
         .transpose()
         .map_err(|e| AppError::Internal(format!("serialize options: {e}")))?;
@@ -262,13 +371,16 @@ pub async fn start_job(
         None => None,
     };
 
-    let payload = build_task_payload(
-        &workflow,
-        &input_name,
-        source_name.as_deref(),
-        &input,
-        params.options.as_ref(),
-    );
+    let payload = match resize_options.as_ref() {
+        Some(opts) => opts.to_task_payload(&input_name),
+        None => build_task_payload(
+            &workflow,
+            &input_name,
+            source_name.as_deref(),
+            &input,
+            params.options.as_ref(),
+        ),
+    };
     let (task_id, _) = client
         .submit_img_task(
             &capability,

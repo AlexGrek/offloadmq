@@ -4,7 +4,8 @@ description: >-
   OAI image generation — ImageGenerationPage, txt2img/img2img, upload/buckets,
   dataPreparation rescale, job poll/cancel, pipeline events, background worker,
   ProgressContext, ToolDebug, imggen.* OffloadMQ tasks. Also Image Tools at
-  /app/img-utils (img-utils.* one-shot transforms: depth map, face swap). Use when
+  /app/img-utils (one-shot transforms: img-utils.* depth map and face swap, plus the
+  built-in image_resize "Basic resize"). Use when
   working on oai/frontend imggen or imgutils files, oai/backend image routes/services/jobs
   (image_jobs.rs, routes/images.rs, routes/img_utils.rs, image_pipeline_worker), or image
   pipeline debugging.
@@ -392,9 +393,13 @@ a bespoke multi-file pipeline, Image Tools is a plain **offload-job framework** 
 (`db/offload_jobs.rs` + `services/offload_job.rs` + `worker_runtime`) — see
 `.claude/skills/oai-new-feature/SKILL.md` for that shape.
 
-**What it is:** one-shot ComfyUI transforms with no prompt — images in, one image out.
-Bundled: `img-utils.depth` (Lotus depth map) and `img-utils.face_swap` (ReActor).
-Wire contract: `docs/img-utils-api.md`.
+**What it is:** one-shot transforms with no prompt — an image in, one image out.
+**Two capability families** share the page, the `img_utils_jobs` table and every endpoint:
+
+| Family | `kind` | Tools | Contract |
+|--------|--------|-------|----------|
+| `img-utils.*` | `comfy` | `img-utils.depth` (Lotus), `img-utils.face_swap` (ReActor) — need ComfyUI + an installed workflow | `docs/img-utils-api.md` |
+| `image_resize` | `resize` | **Basic resize** — Pillow only, no GPU, so it is online wherever any agent is | `docs/image-resize-api.md` |
 
 **File map**
 
@@ -402,11 +407,28 @@ Wire contract: `docs/img-utils-api.md`.
 |-------|------|
 | Page | `frontend/src/pages/ImgUtilsPage.tsx` |
 | Sidebar | `frontend/src/components/imgutils/ImgUtilsHistorySidebar.tsx` |
-| API client | `frontend/src/api/imgUtils.ts` |
+| Resize form | `frontend/src/components/imgutils/ResizeControls.tsx` |
+| API client | `frontend/src/api/imgUtils.ts` (resize form model + `resizeOptionsFromForm`) |
 | Routes | `backend/src/routes/img_utils.rs` |
 | Service | `backend/src/services/img_utils.rs` |
+| Resize payload rules | `backend/src/services/image_resize.rs` (`ResizeOptions`, unit-tested) |
 | DB | `backend/src/db/img_utils.rs`, `db/entities/img_utils_jobs.rs` |
 | Worker | `backend/src/jobs/img_utils_worker.rs` (`IMG_UTILS_WORKER_TICK_SECS`, `IMG_UTILS_WORKER_BATCH_SIZE`) |
+
+**Basic resize specifics**
+
+- `img_utils_jobs.workflow` holds the synthetic `basic_resize` (`RESIZE_WORKFLOW`); the
+  agent payload has no `workflow` field, so the name never leaves OAI. `prettyLabel`
+  renders it as "Basic resize".
+- Options are the payload (flat `method`/`mode`/`width`/`height`/`scale`/`format`/
+  `quality`/`allow_upscale`), **not** `secondary_prompts`. They are validated on submit and
+  stored normalized, so **Retry** replays them.
+- `method` is checked against the filters the online agent published in its brackets
+  (`image_resize[nearest;box;…]`), surfaced as `ImgUtilCapability.methods`.
+- Dimensions are capped at `MAX_IMAGE_EDGE` (1920) — OAI downscales every stored image to
+  that, so a bigger request could never be delivered.
+- `list_capabilities` fetches both families in **one** round trip via
+  `OffloadClient::list_capabilities_raw` + `parse_capabilities_with_prefix`.
 
 **Key differences from image generation**
 
@@ -423,8 +445,8 @@ Wire contract: `docs/img-utils-api.md`.
    `direction = "output"`, so it is served by `/api/images/files/{id}`, gets a thumbnail,
    counts toward the user's quota, and shows up in **My Files**.
 3. **Tools are discovered, not hardcoded.** `GET /api/img-utils/capabilities` lists
-   whatever `img-utils.*` agents are online. Adding a workflow on an agent adds a tool to
-   the UI with no OAI change. Only two name-based special cases exist: a utility whose
+   whatever `img-utils.*` agents are online (plus `image_resize`). Adding a workflow on an
+   agent adds a tool to the UI with no OAI change. Only two name-based special cases exist: a utility whose
    name starts with `face_swap` gets a second upload slot
    (`utility_needs_source_image` in `services/img_utils.rs`, `needs_source_image` in the
    DTO), and `UTILITY_HINTS` in `ImgUtilsPage.tsx` holds the blurbs.

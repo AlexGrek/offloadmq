@@ -193,8 +193,10 @@ in the UI, and `UTILITY_HINTS` in `ImgUtilsPage.tsx` holds the one-line blurbs.
 
 ## OAI integration
 
-The OAI web app exposes these tools at `/app/img-utils` ("Image Tools"). See the
-`oai-img` skill for the frontend/backend layout; the route group is:
+The OAI web app exposes these tools at `/app/img-utils` ("Image Tools"), together with
+**Basic resize** — the built-in [`image_resize`](image-resize-api.md) capability, which
+shares this route group and job table but needs no ComfyUI. See the `oai-img` skill for
+the frontend/backend layout; the route group is:
 
 ```text
 GET    /api/img-utils/capabilities
