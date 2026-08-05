@@ -37,6 +37,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260730_000029_create_movie_jobs::Migration),
             Box::new(m20260731_000030_movie_split_video_capability::Migration),
             Box::new(m20260805_000031_img_utils_progress_timing::Migration),
+            Box::new(m20260806_000032_image_analysis_external_resize::Migration),
         ]
     }
 }
@@ -3081,5 +3082,55 @@ mod movie_migration_idens {
         assert_eq!(m30::MovieJobs::Txt2VideoCapability.to_string(), "txt2video_capability");
         assert_eq!(m30::MovieJobs::Img2VideoCapability.to_string(), "img2video_capability");
         assert_eq!(m30::MovieJobs::VideoCapability.to_string(), "video_capability");
+    }
+}
+
+/// Records whether a describe job shrank its input with an `image_resize`
+/// pre-step on an agent rather than locally, so retry replays the same choice.
+mod m20260806_000032_image_analysis_external_resize {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260806_000032_image_analysis_external_resize"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageAnalysisJobs::Table)
+                        .add_column(
+                            ColumnDef::new(ImageAnalysisJobs::ExternalResize)
+                                .boolean()
+                                .not_null()
+                                .default(false),
+                        )
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImageAnalysisJobs::Table)
+                        .drop_column(ImageAnalysisJobs::ExternalResize)
+                        .to_owned(),
+                )
+                .await
+        }
+    }
+
+    #[derive(DeriveIden)]
+    enum ImageAnalysisJobs {
+        Table,
+        ExternalResize,
     }
 }

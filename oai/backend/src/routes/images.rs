@@ -13,6 +13,7 @@ use crate::{
     error::AppError,
     middleware::AuthenticatedUser,
     services::{
+        external_resize,
         image_jobs::{self, JobDetail, StartJobParams},
         image_pipeline_params::ImagePipelineParams,
     },
@@ -276,6 +277,27 @@ pub async fn list_jobs(
 ) -> Result<Json<Vec<JobDetailsResponse>>, AppError> {
     let details = image_jobs::list_user_job_details(&state, user_id, 50).await?;
     Ok(Json(details.into_iter().map(job_details_response).collect()))
+}
+
+/// Whether the "External resize" option can be offered, and the upload size at
+/// which it should default on. Shared by image generation (img2img / img2video)
+/// and Describe image, so both read the threshold from one place.
+#[derive(Serialize)]
+pub struct ExternalResizeInfo {
+    /// True when an online agent advertises `image_resize`.
+    pub available: bool,
+    /// Uploads above this many bytes get the box ticked by default.
+    pub threshold_bytes: i64,
+}
+
+pub async fn external_resize_info(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(_): AuthenticatedUser,
+) -> Json<ExternalResizeInfo> {
+    Json(ExternalResizeInfo {
+        available: external_resize::is_available(&state).await,
+        threshold_bytes: external_resize::EXTERNAL_RESIZE_THRESHOLD_BYTES,
+    })
 }
 
 pub async fn list_imggen_capabilities(

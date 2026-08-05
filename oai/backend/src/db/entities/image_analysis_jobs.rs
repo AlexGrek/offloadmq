@@ -22,6 +22,9 @@ pub struct Model {
     /// OffloadMQ `dataPreparation` map (glob → action) serialized as JSON; applied
     /// to the input image before the vision task runs. `None` = no preprocessing.
     pub data_preparation: Option<String>,
+    /// Whether the input was shrunk by an `image_resize` pre-step on an agent
+    /// instead of locally. Recorded so retry replays the same choice.
+    pub external_resize: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -40,6 +40,12 @@ pub struct ImagePipelineParams {
     /// Number of frames for video generation workflows (txt2video / img2video).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub video_length: Option<i32>,
+    /// Whether the input image was shrunk by an `image_resize` pre-step on an
+    /// agent instead of locally. Recorded so "Edit prompt" and retry replay it,
+    /// and so the promote step can rebuild this job's real task. Jobs created
+    /// before the option existed deserialize as `false`.
+    #[serde(default)]
+    pub external_resize: bool,
 }
 
 impl ImagePipelineParams {
@@ -65,6 +71,8 @@ impl ImagePipelineParams {
             input_image_id: job.input_image_id.map(|id| id.to_string()),
             data_preparation: None,
             video_length: None,
+            // Predates the option, so it can never have been used.
+            external_resize: false,
             rescale: if job.workflow == "img2img" {
                 Some(RescaleParams {
                     enabled: true,

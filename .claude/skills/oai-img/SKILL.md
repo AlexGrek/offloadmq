@@ -135,6 +135,34 @@ sequenceDiagram
 
 **Offload submit** (`offload/image_tasks.rs` `submit_img_task`): `urgent: false`, `file_bucket`, `output_bucket`, `dataPreparation`, `fetchFiles` for outputs.
 
+### External resize (img2img / img2video / Describe image)
+
+Optional **pre-step** that shrinks the input on an `image_resize` agent instead of in the
+pod. It exists because `process_image` bypasses decode+resize for JPEGs over
+`MAX_TRANSCODE_BYTES` (8 MB) / `MAX_TRANSCODE_EDGE` (6000 px) and stores them **verbatim at
+full size** — which the job would otherwise ship whole to the GPU/vision agent.
+
+```text
+start_job(external_resize) → submit `image_resize`  ← the job's offload task row
+  → poll completed → promote: submit the real task with
+    file_bucket = the resize task's output bucket   ← row is *replaced*, not added
+  → poll completed → normal result handling
+```
+
+- **Phase marker is the capability** — the in-flight task is the pre-step iff
+  `external_resize::is_pre_step(offload_cap)`. No phase column.
+- imggen: `image_jobs::promote_after_resize`, row swapped via
+  `image_generation::replace_offload_task` (one task row per job is assumed by
+  `get_offload_task_by_job` and all the progress-meta code).
+- describe: `image_analysis::promote_after_resize`, intercepted at the top of the generic
+  driver's `on_completed`.
+- Persisted for retry / "Edit prompt": `ImagePipelineParams.external_resize` (JSON, no
+  migration) and `image_analysis_jobs.external_resize` (column, migration `…_000032`).
+- UI: `components/ExternalResizeToggle.tsx`, gated on
+  `GET /api/images/external-resize`, default-on above **9 MB** (`externalResizeDefault`
+  in `api/images.ts`). Set from `applyInputDefaults` (imggen) / `onUpload` (describe).
+- Wire contract + rationale: `docs/image-resize-api.md`.
+
 **Capabilities:** prefix `imggen.` via `POST …/capabilities/list/online_ext`. Tags in brackets e.g. `[txt2img;img2img]` — `filterCapabilitiesByWorkflow` matches workflow; if none match, shows all caps.
 
 **img2img resolution toggles** (page state, near Width/Height; helpers in `lib/imggen.ts`):
@@ -160,6 +188,7 @@ sequenceDiagram
 | Method | Path | Notes |
 |--------|------|-------|
 | POST | `/api/images/upload` | multipart `file`; max **32MB** |
+| GET | `/api/images/external-resize` | `{ available, threshold_bytes }` for the External resize checkbox |
 | POST | `/api/images/jobs` | `StartJobParams` → `{ job_id, status: "submitted" }` |
 | GET | `/api/images/jobs` | last **50** jobs, full detail |
 | GET | `/api/images/jobs/{id}` | job + files + events + offload ids |
@@ -329,6 +358,8 @@ promptgen-generate, promptgen-status, promptgen-stop,
 promptgen-result, promptgen-regenerate, promptgen-error,
 imggen-width, imggen-height, imggen-swap-dims, imggen-copy-from-input,
 imggen-resolution-toggles, imggen-original-resolution, imggen-keep-proportions,
+imggen-external-resize, imggen-external-resize-checkbox,
+describe-external-resize, describe-external-resize-checkbox,
 imggen-submit-job,
 imggen-job-detail, imggen-poll-job, imggen-cancel-job,
 imggen-pipeline, imggen-pipeline-toggle, imggen-pipeline-status,

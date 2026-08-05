@@ -27,7 +27,15 @@ import {
   type DescribeCapability,
   type DescribeJob,
 } from '../api/describe'
-import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
+import {
+  externalResizeDefault,
+  getExternalResizeInfo,
+  imageFileUrl,
+  uploadImage,
+  type ExternalResizeInfo,
+  type UploadedImage,
+} from '../api/images'
+import { ExternalResizeToggle } from '../components/ExternalResizeToggle'
 import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { Button } from '../components/ui/button'
@@ -84,6 +92,10 @@ export default function DescribeImagePage() {
   const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
 
   const [uploadedInput, setUploadedInput] = useState<UploadedImage | null>(null)
+  // External resize: shrink the image on an `image_resize` agent rather than in
+  // the backend. Only offered while such an agent is online.
+  const [externalResizeInfo, setExternalResizeInfo] = useState<ExternalResizeInfo | null>(null)
+  const [externalResize, setExternalResize] = useState(false)
   const previewUrlRef = useRef<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -130,6 +142,17 @@ export default function DescribeImagePage() {
       })
   }, [token])
 
+  // Availability + threshold for the External resize option. A failure is not
+  // worth surfacing: the option simply stays hidden.
+  const loadExternalResizeInfo = useCallback(async () => {
+    if (!token) return
+    try {
+      setExternalResizeInfo(await getExternalResizeInfo(token))
+    } catch {
+      setExternalResizeInfo(null)
+    }
+  }, [token])
+
   const loadJobs = useCallback(async () => {
     if (!token) return
     try {
@@ -145,7 +168,8 @@ export default function DescribeImagePage() {
   useEffect(() => {
     loadCapabilities()
     void loadJobs()
-  }, [loadCapabilities, loadJobs])
+    void loadExternalResizeInfo()
+  }, [loadCapabilities, loadJobs, loadExternalResizeInfo])
 
   useEffect(() => {
     return () => {
@@ -211,6 +235,11 @@ export default function DescribeImagePage() {
     try {
       const img = await uploadImage(token, file)
       setUploadedInput(img)
+      // Large uploads are stored at full size by the backend, so they are the
+      // ones worth handing to an agent.
+      setExternalResize(
+        externalResizeDefault(img.size_bytes, externalResizeInfo?.threshold_bytes ?? Infinity),
+      )
     } catch (e) {
       setError((e as Error).message)
       clearInput()
@@ -232,6 +261,7 @@ export default function DescribeImagePage() {
         image_id: uploadedInput.image_id,
         // null -> send the OAI-normalized upload without extra agent-side rescale.
         data_preparation: rescaleDataPrep(rescale.enabled, rescale),
+        external_resize: externalResize,
       })
       setActivePanel(res.job_id)
       clearInput()
@@ -557,6 +587,16 @@ export default function DescribeImagePage() {
                       1920px.
                     </p>
                   </div>
+
+                  {externalResizeInfo?.available && uploadedInput && (
+                    <ExternalResizeToggle
+                      checked={externalResize}
+                      onChange={setExternalResize}
+                      sizeBytes={uploadedInput.size_bytes}
+                      thresholdBytes={externalResizeInfo.threshold_bytes}
+                      testId="describe-external-resize"
+                    />
+                  )}
 
                   {/* Submit */}
                   <Button

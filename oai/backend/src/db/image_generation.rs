@@ -205,6 +205,41 @@ pub async fn create_offload_task(
     model.insert(db).await.map_err(AppError::Database)
 }
 
+/// Repoint a job's offload task row at a newly submitted task, clearing every
+/// poll and timing field.
+///
+/// Used when an external-resize pre-step completes and the real task takes over.
+/// The row is *replaced* rather than a second one inserted because
+/// [`get_offload_task_by_job`] assumes one row per job — and because the progress
+/// bar should measure the task actually running now, not the finished pre-step.
+pub async fn replace_offload_task(
+    db: &DatabaseConnection,
+    task_id: i64,
+    offload_cap: &str,
+    offload_task_id: &str,
+    submit_payload: &str,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().fixed_offset();
+    let model = image_offload_tasks::ActiveModel {
+        id: ActiveValue::Set(task_id),
+        offload_cap: ActiveValue::Set(offload_cap.to_string()),
+        offload_task_id: ActiveValue::Set(offload_task_id.to_string()),
+        submit_payload: ActiveValue::Set(submit_payload.to_string()),
+        last_poll_status: ActiveValue::Set(None),
+        last_poll_stage: ActiveValue::Set(None),
+        last_poll_log: ActiveValue::Set(None),
+        last_poll_output: ActiveValue::Set(None),
+        submitted_at: ActiveValue::Set(now),
+        started_at: ActiveValue::Set(None),
+        finished_at: ActiveValue::Set(None),
+        typical_runtime_seconds: ActiveValue::Set(None),
+        updated_at: ActiveValue::Set(now),
+        ..Default::default()
+    };
+    model.update(db).await.map_err(AppError::Database)?;
+    Ok(())
+}
+
 /// Active image jobs for a user plus their linked OffloadMQ task rows (debug panel).
 pub async fn list_user_active_offload_tasks(
     db: &DatabaseConnection,

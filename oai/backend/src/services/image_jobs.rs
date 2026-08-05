@@ -17,6 +17,7 @@ use crate::{
         LlmCapabilityInfo, OffloadClient,
     },
     services::{
+        external_resize,
         image_job_names,
         image_paths,
         image_pipeline_params::{self, ImagePipelineParams, RescaleParams},
@@ -51,6 +52,11 @@ pub struct StartJobParams {
     /// Number of frames for video generation workflows.
     #[serde(default)]
     pub video_length: Option<i32>,
+    /// Shrink the input image with an `image_resize` pre-step on an agent instead
+    /// of locally. Only meaningful for the img2img / img2video workflows — a job
+    /// with no input image ignores it. See [`external_resize`].
+    #[serde(default)]
+    pub external_resize: bool,
 }
 
 /// Result of polling a job — domain data the route maps to its response DTO.
@@ -260,6 +266,38 @@ pub async fn start_job(
     record_event(state, job_id, "job.created", "ok", None).await?;
 
     let client = offload_factory::image_client(state).await?;
+
+    // External resize turns this into a two-task job: the pre-step runs first and
+    // the real task is submitted from `promote_after_resize` once it completes.
+    // Nothing else is created yet — the output bucket belongs to the real task.
+    if pipeline_params.external_resize {
+        let input = input.as_ref().expect("external_resize implies an input image");
+        let pre = external_resize::submit(state, &client, input).await?;
+        image_generation::create_offload_task(
+            &state.db,
+            state.next_id(),
+            job_id,
+            &pre.task_id.cap,
+            &pre.task_id.id,
+            &pre.submit_payload.to_string(),
+        )
+        .await?;
+        image_generation::update_job_status(&state.db, job_id, "submitted", None).await?;
+        record_event(
+            state,
+            job_id,
+            "offload.resize.submit",
+            "ok",
+            Some(&format!(
+                "cap={} id={} out_bucket={}",
+                pre.task_id.cap, pre.task_id.id, pre.output_bucket
+            )),
+        )
+        .await?;
+        link_fresh_input(state, user_id, job_id, input).await?;
+        return Ok(job_id);
+    }
+
     let output_bucket = client.create_bucket(false).await?;
     record_event(
         state,
@@ -306,16 +344,26 @@ pub async fn start_job(
     )
     .await?;
 
-    // Only re-link freshly uploaded inputs (job_id == None).
-    // Generated outputs already have a job_id; re-linking them would move them
-    // out of their original job's file list and into this job's output gallery.
     if let Some(input) = &input {
-        if input.job_id.is_none() {
-            image_generation::set_image_file_job(&state.db, input.id, user_id, job_id).await?;
-        }
+        link_fresh_input(state, user_id, job_id, input).await?;
     }
 
     Ok(job_id)
+}
+
+/// Only re-link freshly uploaded inputs (job_id == None). Generated outputs
+/// already have a job_id; re-linking them would move them out of their original
+/// job's file list and into this job's output gallery.
+async fn link_fresh_input(
+    state: &AppState,
+    user_id: i64,
+    job_id: i64,
+    input: &image_generation::ImageFile,
+) -> Result<(), AppError> {
+    if input.job_id.is_none() {
+        image_generation::set_image_file_job(&state.db, input.id, user_id, job_id).await?;
+    }
+    Ok(())
 }
 
 /// Removes a pipeline from history: deletes job-linked storage files, then the job row.
@@ -455,7 +503,7 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
         }
     };
     record_event(state, job.id, "offload.poll", "ok", Some(&poll_summary(&poll))).await?;
-    apply_poll_outcome_to_job(state, &job, &poll).await?;
+    apply_poll_outcome_to_job(state, &job, &task, &poll).await?;
 
     // Re-read the offload task to pick up `started_at`/`finished_at` (set by
     // poll_and_persist the first time the agent began/finished executing).
@@ -908,6 +956,7 @@ fn start_params_from_pipeline(p: &ImagePipelineParams) -> StartJobParams {
         data_preparation: p.data_preparation.clone(),
         rescale: p.rescale.clone(),
         video_length: p.video_length,
+        external_resize: p.external_resize,
     }
 }
 
@@ -929,6 +978,7 @@ fn build_pipeline_params(
         data_preparation: req.data_preparation.clone(),
         rescale: req.rescale.clone(),
         video_length: req.video_length,
+        external_resize: req.external_resize && input_image_id.is_some(),
     }
 }
 
@@ -1180,9 +1230,15 @@ async fn mark_failed(
 async fn apply_poll_outcome_to_job(
     state: &AppState,
     job: &image_generation::ImageGenerationJob,
+    task: &image_generation::ImageOffloadTask,
     poll: &OffloadPollResponse,
 ) -> Result<(), AppError> {
     match poll.status.as_str() {
+        // A completed pre-step is not a finished job: it hands its output bucket
+        // to the real task, which is submitted now and polled from here on.
+        "completed" if external_resize::is_pre_step(&task.offload_cap) => {
+            promote_after_resize(state, job, task, poll).await?
+        }
         "completed" => fetch_and_store_outputs(state, job.user_id, job, poll.output.clone()).await?,
         "failed" | "canceled" => mark_failed(state, job.id, poll).await?,
         status => {
@@ -1190,6 +1246,97 @@ async fn apply_poll_outcome_to_job(
         }
     }
     Ok(())
+}
+
+/// Submit the job's real task now that the resize pre-step has produced a smaller
+/// input, and repoint the job's offload task row at it.
+///
+/// The resized image is never downloaded: it already sits in an OffloadMQ bucket,
+/// which becomes the real task's input bucket directly.
+async fn promote_after_resize(
+    state: &AppState,
+    job: &image_generation::ImageGenerationJob,
+    task: &image_generation::ImageOffloadTask,
+    poll: &OffloadPollResponse,
+) -> Result<(), AppError> {
+    let fallback = external_resize::bucket_from_submit_payload(&task.submit_payload);
+    let Some(resized) = external_resize::completed_output(poll.output.as_ref(), fallback.as_deref())
+    else {
+        // Retrying cannot help — the pre-step finished and produced nothing to use.
+        let msg = "external resize finished without an output image";
+        record_event(state, job.id, "offload.resize.promote", "error", Some(msg)).await?;
+        image_generation::update_job_status(&state.db, job.id, "failed", Some(msg)).await?;
+        return Ok(());
+    };
+
+    let params = pipeline_params_for_job(job);
+    let client = offload_factory::image_client(state).await?;
+    let output_bucket = client.create_bucket(false).await?;
+    record_event(
+        state,
+        job.id,
+        "offload.output_bucket.create",
+        "ok",
+        Some(&format!("bucket={}", output_bucket.bucket_uid)),
+    )
+    .await?;
+
+    let payload = build_promoted_payload(&params, &resized.filename);
+    let data_prep = data_preparation_map(&params.data_preparation);
+    let (task_id, submit_payload) = client
+        .submit_img_task(
+            &crate::offload::base_capability(&params.capability).to_string(),
+            payload,
+            Some(&resized.bucket_uid),
+            &output_bucket.bucket_uid,
+            data_prep.as_ref(),
+        )
+        .await?;
+
+    image_generation::replace_offload_task(
+        &state.db,
+        task.id,
+        &task_id.cap,
+        &task_id.id,
+        &submit_payload.to_string(),
+    )
+    .await?;
+    image_generation::update_job_status(&state.db, job.id, "submitted", None).await?;
+    record_event(
+        state,
+        job.id,
+        "offload.submit",
+        "ok",
+        Some(&format!(
+            "cap={} id={} resized_input={} (after external resize)",
+            task_id.cap, task_id.id, resized.filename
+        )),
+    )
+    .await?;
+    Ok(())
+}
+
+/// The real task's payload, rebuilt from the job's stored pipeline params and
+/// pointed at the resized file rather than the original upload.
+fn build_promoted_payload(params: &ImagePipelineParams, input_filename: &str) -> Value {
+    let mut payload = serde_json::json!({
+        "workflow": params.workflow,
+        "prompt": params.prompt.trim(),
+        "resolution": { "width": params.width, "height": params.height },
+        "input_image": input_filename,
+    });
+    if params.override_negative {
+        if let Some(neg) = params.negative_prompt.as_deref().filter(|s| !s.trim().is_empty()) {
+            payload["secondary_prompts"] = serde_json::json!({ "negative": neg });
+        }
+    }
+    if let Some(seed) = params.seed {
+        payload["seed"] = serde_json::json!(seed);
+    }
+    if let Some(length) = params.video_length {
+        payload["length"] = serde_json::json!(length);
+    }
+    payload
 }
 
 async fn send_offload_cancel(
@@ -1248,7 +1395,7 @@ async fn background_poll_once(
         }
     };
     let _ = record_event(state, job.id, "worker.offload.poll", "ok", Some(&poll_summary(&poll))).await;
-    apply_poll_outcome_to_job(state, job, &poll).await?;
+    apply_poll_outcome_to_job(state, job, &task, &poll).await?;
     Ok(())
 }
 

@@ -34,6 +34,8 @@ export interface ImagePipelineParams {
   data_preparation?: Record<string, string> | null
   rescale?: ImagePipelineRescaleParams | null
   video_length?: number | null
+  /** Whether the input was shrunk by an `image_resize` agent pre-step. */
+  external_resize?: boolean
 }
 
 export interface StartImageJobRequest {
@@ -53,6 +55,32 @@ export interface StartImageJobRequest {
   rescale?: ImagePipelineRescaleParams | null
   /** Number of frames for video generation workflows. */
   video_length?: number | null
+  /** Shrink the input image with an `image_resize` task on an agent before the
+   *  generation task runs, instead of decoding it in the backend. img2img /
+   *  img2video only — ignored when there is no input image. */
+  external_resize?: boolean
+}
+
+/** Whether the External resize option can be offered, and when it defaults on. */
+export interface ExternalResizeInfo {
+  /** True when an online agent advertises `image_resize`. */
+  available: boolean
+  /** Uploads larger than this get the option ticked automatically. */
+  threshold_bytes: number
+}
+
+export function getExternalResizeInfo(token: string): Promise<ExternalResizeInfo> {
+  return request('/api/images/external-resize', token)
+}
+
+/** Whether External resize should start ticked for a given stored input size.
+ *  Pass `Infinity` as the threshold while the info request is still in flight —
+ *  the option is hidden then anyway. */
+export function externalResizeDefault(
+  sizeBytes: number | null | undefined,
+  thresholdBytes: number,
+): boolean {
+  return sizeBytes != null && sizeBytes > thresholdBytes
 }
 
 export interface StartImageJobResponse {

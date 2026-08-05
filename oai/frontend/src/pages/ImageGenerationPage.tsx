@@ -45,6 +45,8 @@ import { useProgress } from '../contexts/ProgressContext'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { getSettings } from '../api/admin'
 import {
+  externalResizeDefault,
+  getExternalResizeInfo,
   getImageJob,
   imageFileUrl,
   listImgGenCapabilities,
@@ -54,6 +56,7 @@ import {
   pollImageJob,
   retryImageJob,
   startImageJob,
+  type ExternalResizeInfo,
   type ImgGenCapability,
   type ImageJobDetails,
   type PollImageJobResponse,
@@ -106,6 +109,7 @@ import {
   type ApplyPipelineToNewFormHandlers,
   type RescaleState,
 } from '../lib/imggen'
+import { ExternalResizeToggle } from '../components/ExternalResizeToggle'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import type { ImagePipelineRescaleParams, StartImageJobRequest } from '../api/images'
 import type { ImgUtilsRouteState } from '../api/imgUtils'
@@ -160,6 +164,11 @@ export default function ImageGenerationPage() {
   // proportional dimension presets. Default-on whenever an input is present.
   const [keepProportions, setKeepProportions] = useState(false)
   const rescaleUserEditedRef = useRef(false)
+
+  // External resize: hand the input downscale to an `image_resize` agent rather
+  // than decoding it in the backend. Offered only while such an agent is online.
+  const [externalResizeInfo, setExternalResizeInfo] = useState<ExternalResizeInfo | null>(null)
+  const [externalResize, setExternalResize] = useState(false)
 
   const [uploadedInput, setUploadedInput] = useState<UploadedImage | null>(null)
   const [inputPreviewUrl, setInputPreviewUrl] = useState<string | null>(null)
@@ -265,6 +274,17 @@ export default function ImageGenerationPage() {
     }
   }, [width, height, rescale.mode, mode])
 
+  // Availability + threshold for the External resize option. A failure here is
+  // not worth surfacing: the option simply stays hidden.
+  const loadExternalResizeInfo = useCallback(async () => {
+    if (!token) return
+    try {
+      setExternalResizeInfo(await getExternalResizeInfo(token))
+    } catch {
+      setExternalResizeInfo(null)
+    }
+  }, [token])
+
   const loadCapabilities = useCallback(async () => {
     if (!token) return
     setCapabilitiesStatus('loading')
@@ -312,8 +332,9 @@ export default function ImageGenerationPage() {
       }
       await refreshJobs()
       await loadCapabilities()
+      await loadExternalResizeInfo()
     })()
-  }, [token, loadCapabilities, refreshJobs])
+  }, [token, loadCapabilities, loadExternalResizeInfo, refreshJobs])
 
   const refreshCapabilities = useCallback(() => {
     void loadCapabilities()
@@ -348,6 +369,12 @@ export default function ImageGenerationPage() {
   // it independently. `forMode` defaults to current `mode` but must be passed explicitly when
   // called from switchMode (where React state hasn't flushed yet).
   function applyInputDefaults(img: UploadedImage, forMode: ImgGenMode = mode): boolean {
+    // Big uploads are the ones the backend stored at full size, so they are
+    // exactly the ones worth shrinking on an agent.
+    setExternalResize(
+      isInputImageMode(forMode) &&
+        externalResizeDefault(img.size_bytes, externalResizeInfo?.threshold_bytes ?? Infinity),
+    )
     if (forMode !== 'img2img') {
       setKeepProportions(false)
       setOriginalResolution(false)
@@ -595,6 +622,7 @@ export default function ImageGenerationPage() {
       setKeepProportions,
       setUploadedInput,
       setInputPreviewUrl,
+      setExternalResize,
       rescaleUserEditedRef,
     }),
     [],
@@ -899,6 +927,7 @@ export default function ImageGenerationPage() {
       data_preparation: dataPrep,
       rescale: rescaleForSubmit(),
       video_length: isVideoMode(mode) ? parseVideoLength(videoLength) : null,
+      external_resize: isInputImageMode(mode) && externalResize,
     }
   }
 
@@ -1317,6 +1346,15 @@ export default function ImageGenerationPage() {
                         className="max-h-48 w-full object-contain bg-muted/30"
                       />
                     </ImageLightbox>
+                  )}
+                  {externalResizeInfo?.available && uploadedInput && (
+                    <ExternalResizeToggle
+                      checked={externalResize}
+                      onChange={setExternalResize}
+                      sizeBytes={uploadedInput.size_bytes}
+                      thresholdBytes={externalResizeInfo.threshold_bytes}
+                      testId="imggen-external-resize"
+                    />
                   )}
                   {mode === 'img2video' && uploadedInput && (
                     <VideoPromptGenerator

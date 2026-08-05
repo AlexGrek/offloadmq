@@ -70,6 +70,8 @@ pub struct NewJobInput<'a> {
     pub input_image_id: Option<i64>,
     /// JSON-serialized OffloadMQ `dataPreparation` map, or `None` for no preprocessing.
     pub data_preparation: Option<&'a str>,
+    /// Whether an `image_resize` pre-step shrinks the input before the vision task.
+    pub external_resize: bool,
 }
 
 pub async fn create_job(
@@ -93,6 +95,7 @@ pub async fn create_job(
         stage: ActiveValue::Set(None),
         error: ActiveValue::Set(None),
         data_preparation: ActiveValue::Set(input.data_preparation.map(str::to_string)),
+        external_resize: ActiveValue::Set(input.external_resize),
     };
     model.insert(db).await.map_err(AppError::Database)
 }

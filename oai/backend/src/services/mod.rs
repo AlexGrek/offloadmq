@@ -3,6 +3,7 @@ pub mod chat_attachments;
 pub mod connection;
 pub mod k8s_self;
 pub mod debug_offload;
+pub mod external_resize;
 pub mod image_analysis;
 pub mod nude_detect;
 pub mod progress;

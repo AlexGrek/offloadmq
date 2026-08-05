@@ -212,6 +212,45 @@ Differences from an `img-utils.*` tool inside OAI:
 - OAI normalizes the *input* upload too (JPEG q90, ≤1920 px). Resize therefore operates on
   the stored copy, not the user's original bytes.
 
+### "External resize" — the pre-step in img2img, img2video and Describe image
+
+`image_resize` is also used behind the scenes, as an optional **pre-step** on jobs that
+take an input image.
+
+The reason is a gap in OAI's local processing: `process_image` deliberately *bypasses*
+decode + resize for JPEGs over `MAX_TRANSCODE_BYTES` (8 MB) or `MAX_TRANSCODE_EDGE`
+(6000 px), because pulling a 48 MP photo through libvips can exceed pod memory. Those
+uploads are stored **verbatim, at full size** — and then shipped whole to whichever agent
+runs the job, which for these three features is the expensive GPU/vision one.
+
+Ticking **External resize** hands that downscale to a cheap `image_resize` agent instead.
+Nothing is decoded in the pod, and the real task only ever downloads the small file:
+
+```text
+start_job(external_resize = true)
+  → stage the raw stored bytes → submit `image_resize`     ← the job's offload task
+  → poll … completed
+  → promote: submit the real task with file_bucket = the resize task's output bucket
+  → poll … completed → normal result handling
+```
+
+The resized image never round-trips through OAI — the pre-step's own output bucket becomes
+the real task's input bucket. There is no "phase" column either: the in-flight task **is**
+the pre-step exactly when its capability is `image_resize`.
+
+| | |
+|---|---|
+| Checkbox | Shown only while an `image_resize` agent is online (`GET /api/images/external-resize`) |
+| Default on | Stored upload larger than **9 MB** — just above the point where local processing gives up |
+| Resize target | `fit` inside 1920×1920, `allow_upscale: false`, JPEG q90 — the same box `process_image` would have used |
+| Replayed on | "Edit prompt", retry (imggen `pipeline_params.external_resize`, `image_analysis_jobs.external_resize`) |
+| Cancel | Cancels whichever task is in flight, pre-step included |
+| Not applicable | txt2img / txt2video — no input image, so the flag is ignored |
+
+Backend: [`services/external_resize.rs`](../oai/backend/src/services/external_resize.rs)
+(submit + extract), with the promote step living in each pipeline
+(`image_jobs::promote_after_resize`, `image_analysis::promote_after_resize`).
+
 ---
 
 ## Implementation

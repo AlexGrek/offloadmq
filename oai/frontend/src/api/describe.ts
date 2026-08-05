@@ -24,6 +24,9 @@ export interface StartDescribeJobRequest {
   image_id: string
   /** OffloadMQ `dataPreparation` map (glob → action) to rescale the image before analysis. */
   data_preparation?: Record<string, string> | null
+  /** Shrink the image with an `image_resize` task on an agent before the vision
+   *  task runs, instead of decoding it in the backend. */
+  external_resize?: boolean
 }
 
 export interface StartDescribeJobResponse {

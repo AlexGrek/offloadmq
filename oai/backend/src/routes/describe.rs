@@ -41,6 +41,11 @@ pub struct StartJobRequest {
     /// `{"*": "scale/max[px=1024]"}` — rescales the image before analysis.
     #[serde(default)]
     pub data_preparation: Option<HashMap<String, String>>,
+    /// Shrink the input on an agent (`image_resize`) instead of decoding it in
+    /// the pod. Worth it for uploads big enough that local processing stored
+    /// them at full size.
+    #[serde(default)]
+    pub external_resize: bool,
 }
 
 pub async fn start_job(
@@ -71,6 +76,7 @@ pub async fn start_job(
             prompt: req.prompt,
             image_id,
             data_preparation: req.data_preparation,
+            external_resize: req.external_resize,
         },
     )
     .await?;

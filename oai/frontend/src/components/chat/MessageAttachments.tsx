@@ -2,13 +2,8 @@ import { FileText } from 'lucide-react'
 import type { ChatAttachment } from '@/api/chatAttachments'
 import { documentDownloadUrl } from '@/api/chatAttachments'
 import { imageFileUrl, imageThumbnailUrl } from '@/api/images'
+import { formatBytes } from '@/lib/format'
 import { cn } from '@/lib/utils'
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
 
 /** Renders a message's attachments: image thumbnails (open full-size) + document chips. */
 export function MessageAttachments({

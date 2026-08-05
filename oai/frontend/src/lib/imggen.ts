@@ -330,6 +330,7 @@ export interface ApplyPipelineToNewFormHandlers {
   setKeepProportions: (v: boolean) => void
   setUploadedInput: (v: UploadedImage | null) => void
   setInputPreviewUrl: (v: string | null) => void
+  setExternalResize: (v: boolean) => void
   rescaleUserEditedRef: { current: boolean }
 }
 
@@ -462,6 +463,9 @@ function applyPipelineParamsCore(
       !p.rescale?.enabled,
   )
   handlers.setKeepProportions(mode === 'img2img' && !!inputFile)
+  // Replay the original choice rather than re-deriving it from the file size:
+  // the job ran that way, so "Edit prompt" and retry should too.
+  handlers.setExternalResize(!!inputFile && !!p.external_resize)
 }
 
 /** Copy a job's stored pipeline parameters into the New job form. */

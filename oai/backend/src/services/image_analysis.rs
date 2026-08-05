@@ -18,7 +18,7 @@ use crate::{
         LlmCapabilityInfo,
     },
     services::{
-        image_processing,
+        external_resize, image_processing,
         offload_factory,
         offload_job::{self, CancelOutcome, JobReconciler},
         storage,
@@ -33,6 +33,10 @@ pub struct StartJobParams {
     /// OffloadMQ `dataPreparation` map (glob → action) applied to the input image
     /// before the vision task runs. Empty / `None` = send the image as-is.
     pub data_preparation: Option<HashMap<String, String>>,
+    /// Shrink the input with an `image_resize` task on an agent instead of
+    /// decoding it locally. See [`external_resize`] for why that matters for
+    /// uploads big enough to bypass local processing.
+    pub external_resize: bool,
 }
 
 pub struct JobDetail {
@@ -64,6 +68,12 @@ impl JobReconciler for ImageAnalysisReconciler {
         job: &image_analysis::ImageAnalysisJob,
         poll: &NormalizedPoll,
     ) -> Result<(), AppError> {
+        // A finished resize pre-step is not a finished job: it hands its output
+        // bucket to the vision task, which is submitted now and polled from here on.
+        if job.offload_cap.as_deref().is_some_and(external_resize::is_pre_step) {
+            return promote_after_resize(state, job, poll).await;
+        }
+
         let text = task_status::extract_llm_text(&poll.output);
         if text.is_empty() {
             offload_jobs::update_status::<ImageAnalysisJobEntity>(
@@ -136,11 +146,29 @@ pub async fn start_job(
             capability: &capability,
             input_image_id: Some(input.id),
             data_preparation: data_prep_json.as_deref(),
+            external_resize: req.external_resize,
         },
     )
     .await?;
 
     let img_client = offload_factory::image_client(state).await?;
+
+    // External resize makes this a two-task job: an `image_resize` pre-step runs
+    // first and `promote_after_resize` submits the vision task once it lands. The
+    // stored bytes go up untouched — not decoding them here is the whole point.
+    if req.external_resize {
+        let pre = external_resize::submit(state, &img_client, &input).await?;
+        offload_jobs::set_offload_task::<ImageAnalysisJobEntity>(
+            &state.db,
+            job_id,
+            &pre.task_id.cap,
+            &pre.task_id.id,
+            Some(&pre.output_bucket),
+        )
+        .await?;
+        return Ok(job_id);
+    }
+
     let bucket = img_client.create_bucket(true).await?;
 
     let op = storage::operator(state)?;
@@ -155,10 +183,26 @@ pub async fn start_job(
         .upload_bucket_file(&bucket.bucket_uid, bytes, &input.filename, &content_type)
         .await?;
 
+    submit_vision_task(state, job_id, &capability, prompt, &bucket.bucket_uid, data_prep.as_ref())
+        .await?;
+
+    Ok(job_id)
+}
+
+/// Submit the vision task against a bucket that already holds the input image,
+/// and point the job's offload task at it.
+async fn submit_vision_task(
+    state: &AppState,
+    job_id: i64,
+    capability: &str,
+    prompt: &str,
+    bucket_uid: &str,
+    data_prep: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> Result<(), AppError> {
     let chat_client = offload_factory::chat_client(state).await?;
     let messages = vec![serde_json::json!({ "role": "user", "content": prompt })];
     let task_id = chat_client
-        .submit_vision_task(&capability, messages, &bucket.bucket_uid, data_prep.as_ref())
+        .submit_vision_task(capability, messages, bucket_uid, data_prep)
         .await?;
 
     offload_jobs::set_offload_task::<ImageAnalysisJobEntity>(
@@ -166,11 +210,48 @@ pub async fn start_job(
         job_id,
         &task_id.cap,
         &task_id.id,
-        Some(&bucket.bucket_uid),
+        Some(bucket_uid),
     )
-    .await?;
+    .await
+}
 
-    Ok(job_id)
+/// Hand the resize pre-step's output bucket to the vision task.
+///
+/// The resized image already sits in an OffloadMQ bucket, so it is used as the
+/// vision task's `file_bucket` directly — it never round-trips through OAI.
+async fn promote_after_resize(
+    state: &AppState,
+    job: &image_analysis::ImageAnalysisJob,
+    poll: &NormalizedPoll,
+) -> Result<(), AppError> {
+    // The pre-step's own output bucket was recorded on the job at submit time.
+    let resized =
+        external_resize::completed_output(poll.output.as_ref(), job.offload_bucket_uid.as_deref());
+    let Some(resized) = resized else {
+        // The pre-step finished and produced nothing usable; re-polling cannot fix it.
+        return offload_jobs::update_status::<ImageAnalysisJobEntity>(
+            &state.db,
+            job.id,
+            "failed",
+            None,
+            Some("external resize finished without an output image"),
+        )
+        .await;
+    };
+
+    let data_prep = job
+        .data_preparation
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(s).ok());
+    submit_vision_task(
+        state,
+        job.id,
+        &job.capability,
+        &job.prompt,
+        &resized.bucket_uid,
+        data_prep.as_ref(),
+    )
+    .await
 }
 
 pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i64, AppError> {
@@ -198,6 +279,7 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
             prompt: job.prompt.clone(),
             image_id,
             data_preparation,
+            external_resize: job.external_resize,
         },
     )
     .await
