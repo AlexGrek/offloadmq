@@ -36,6 +36,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260722_000028_create_img_utils_jobs::Migration),
             Box::new(m20260730_000029_create_movie_jobs::Migration),
             Box::new(m20260731_000030_movie_split_video_capability::Migration),
+            Box::new(m20260805_000031_img_utils_progress_timing::Migration),
         ]
     }
 }
@@ -3008,6 +3009,63 @@ mod m20260731_000030_movie_split_video_capability {
         Txt2VideoCapability,
         #[sea_orm(iden = "img2video_capability")]
         Img2VideoCapability,
+    }
+}
+
+/// Progress-bar timing for img-utils jobs. `started_at` is stamped once, the
+/// first time a poll shows the task actually executing on an agent (so the bar
+/// measures run time, not queue wait); `typical_runtime_seconds` mirrors the
+/// OffloadMQ runtime estimate. Same pair the image pipeline keeps on
+/// `image_offload_tasks`, but img-utils has no offload-task table of its own.
+mod m20260805_000031_img_utils_progress_timing {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260805_000031_img_utils_progress_timing"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImgUtilsJobs::Table)
+                        .add_column(
+                            ColumnDef::new(ImgUtilsJobs::StartedAt)
+                                .timestamp_with_time_zone()
+                                .null(),
+                        )
+                        .add_column(
+                            ColumnDef::new(ImgUtilsJobs::TypicalRuntimeSeconds).double().null(),
+                        )
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(ImgUtilsJobs::Table)
+                        .drop_column(ImgUtilsJobs::StartedAt)
+                        .drop_column(ImgUtilsJobs::TypicalRuntimeSeconds)
+                        .to_owned(),
+                )
+                .await
+        }
+    }
+
+    #[derive(DeriveIden)]
+    enum ImgUtilsJobs {
+        Table,
+        StartedAt,
+        TypicalRuntimeSeconds,
     }
 }
 

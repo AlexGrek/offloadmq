@@ -2,7 +2,10 @@
 //! [`crate::db::offload_jobs`]; only the feature-specific writes (`create_job`,
 //! `set_output_image`) and the framework trait impls live here.
 
-use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
+use sea_orm::{
+    sea_query::Expr, ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
+    QueryFilter,
+};
 
 use crate::{
     db::{
@@ -96,8 +99,42 @@ pub async fn create_job(
         output_image_id: ActiveValue::Set(None),
         stage: ActiveValue::Set(None),
         error: ActiveValue::Set(None),
+        started_at: ActiveValue::Set(None),
+        typical_runtime_seconds: ActiveValue::Set(None),
     };
     model.insert(db).await.map_err(AppError::Database)
+}
+
+/// Record progress-bar inputs observed on a poll.
+///
+/// `started_at` is set-once via the `IS NULL` filter, so it keeps the moment the
+/// agent actually began work even though every later poll calls this again.
+/// `typical_runtime_seconds` is refreshed whenever the server reports one.
+pub async fn record_progress(
+    db: &DatabaseConnection,
+    job_id: i64,
+    executing: bool,
+    typical_runtime_seconds: Option<f64>,
+) -> Result<(), AppError> {
+    if executing {
+        let now = chrono::Utc::now().fixed_offset();
+        ImgUtilsJobEntity::update_many()
+            .col_expr(img_utils_jobs::Column::StartedAt, Expr::value(now))
+            .filter(img_utils_jobs::Column::Id.eq(job_id))
+            .filter(img_utils_jobs::Column::StartedAt.is_null())
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+    }
+    if let Some(secs) = typical_runtime_seconds.filter(|s| *s > 0.0) {
+        ImgUtilsJobEntity::update_many()
+            .col_expr(img_utils_jobs::Column::TypicalRuntimeSeconds, Expr::value(secs))
+            .filter(img_utils_jobs::Column::Id.eq(job_id))
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+    }
+    Ok(())
 }
 
 /// Attach the produced image and flip the job to `completed`.

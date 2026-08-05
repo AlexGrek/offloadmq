@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
+  Columns2,
   FolderOpen,
   ImageUp,
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   RefreshCw,
   RotateCcw,
   Square,
   Trash2,
+  Video,
   Wand2,
   X,
 } from 'lucide-react'
@@ -28,6 +31,7 @@ import {
   type ImgUtilsRouteState,
   type ImgUtilTool,
   type ImgUtilsJob,
+  type JobImageRef,
 } from '../api/imgUtils'
 import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
 import { Button } from '../components/ui/button'
@@ -37,10 +41,14 @@ import {
   ImgUtilsHistorySidebar,
 } from '../components/imgutils/ImgUtilsHistorySidebar'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
+import { JobProgressBar } from '../components/imggen/JobProgressBar'
+import { ImageLightbox, type ImageLightboxActions } from '../components/ImageLightbox'
+import { NudeDetectModal } from '../components/nudedetect/NudeDetectModal'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
+import { imageJobStatusLabel, type ImggenRouteState } from '../lib/imggen'
 import { cn } from '../lib/utils'
 
 const POLL_INTERVAL_MS = 3000
@@ -90,6 +98,15 @@ export default function ImgUtilsPage() {
   const [deleting, setDeleting] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Before/after view of the transform — the img2img compare on the generation page.
+  const [compareMode, setCompareMode] = useState(false)
+  const [nudeDetectTarget, setNudeDetectTarget] = useState<{
+    imageId: string
+    filename: string
+  } | null>(null)
+  // Bumped after a lightbox mutation (delete/star) so <img> URLs miss the cache.
+  const [mediaRevision, setMediaRevision] = useState(0)
 
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
@@ -199,6 +216,55 @@ export default function ImgUtilsPage() {
     setSlot({ preview: imageFileUrl(image.image_id, token), uploaded: image, error: null })
     setError(null)
   }
+
+  /** Feed an image back into this page's New-transform form (lightbox "Image Tools"). */
+  function applyAsInput(image: UploadedImage) {
+    pickFromLibrary(image, setInput)
+    setSource(null)
+    setActivePanel(IMGUTILS_NEW_PANEL)
+  }
+
+  /** Hand an image to image generation as an img2img / img2video input. */
+  const sendToImggen = useCallback(
+    (image: UploadedImage, mode: 'img2img' | 'img2video') => {
+      const state: ImggenRouteState = { useInputImage: { mode, image } }
+      navigate('/app/images', { state })
+    },
+    [navigate],
+  )
+
+  const onImageMutated = useCallback(async () => {
+    setMediaRevision(v => v + 1)
+    if (viewedJobId) {
+      try {
+        await refreshJob(viewedJobId)
+      } catch (e) {
+        setError((e as Error).message)
+      }
+    }
+  }, [viewedJobId, refreshJob])
+
+  /** Lightbox action set shared by the result, the compare panes and the input. */
+  const lightboxActions = useCallback(
+    (image: JobImageRef): ImageLightboxActions | undefined =>
+      token
+        ? {
+            imageId: image.image_id,
+            filename: image.filename,
+            direction: image.direction,
+            token,
+            onDeleted: onImageMutated,
+            onSendToImg2Img: () => sendToImggen(image, 'img2img'),
+            onSendToImg2Video: () => sendToImggen(image, 'img2video'),
+            onSendToImgUtils: () => applyAsInput(image),
+            onNudeDetect: () =>
+              setNudeDetectTarget({ imageId: image.image_id, filename: image.filename }),
+          }
+        : undefined,
+    // `applyAsInput` only touches setState, so it needs no dependency tracking.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [token, onImageMutated, sendToImggen],
+  )
 
   // Deep link from another page (lightbox "Image Tools", generation results) —
   // land on the New transform panel with the image preloaded as input.
@@ -336,7 +402,18 @@ export default function ImgUtilsPage() {
   const status = selectedJob?.status
   const isRunning = status != null && !TERMINAL.has(status)
   const canRetry = status === 'failed' || status === 'canceled'
+  const outputImage = selectedJob?.output_image ?? null
+  const inputImage = selectedJob?.input_image ?? null
+  // Metadata only comes back from the single-job endpoints; fall back to the bare
+  // id so a listing-sourced row still renders (without lightbox actions).
+  const shownImage = outputImage ?? inputImage
   const shownImageId = selectedJob?.output_image_id ?? selectedJob?.input_image_id ?? null
+  const canCompare = outputImage != null && inputImage != null
+
+  // A fresh job has nothing to compare yet — never carry the toggle across jobs.
+  useEffect(() => {
+    setCompareMode(false)
+  }, [selectedJob?.job_id])
 
   return (
     <div
@@ -536,10 +613,56 @@ export default function ImgUtilsPage() {
                   </div>
                 ) : selectedJob && selectedJob.job_id === viewedJobId ? (
                   <>
-                    {shownImageId && token ? (
+                    {compareMode && canCompare && token ? (
+                      <div
+                        className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-border"
+                        data-testid="imgutils-compare-view"
+                      >
+                        {([
+                          ['Before', inputImage!, 'imgutils-compare-input'],
+                          ['After', outputImage!, 'imgutils-compare-output'],
+                        ] as const).map(([caption, image, testId]) => (
+                          <div key={testId} className="relative overflow-hidden bg-muted/30">
+                            <span className="absolute left-2 top-2 z-10 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
+                              {caption}
+                            </span>
+                            <ImageLightbox
+                              src={imageFileUrl(image.image_id, token, mediaRevision)}
+                              alt={image.filename}
+                              triggerClassName="group block w-full overflow-hidden"
+                              testId={testId}
+                              actions={lightboxActions(image)}
+                            >
+                              <img
+                                src={imageFileUrl(image.image_id, token, mediaRevision)}
+                                alt=""
+                                aria-hidden
+                                className="max-h-[40dvh] w-full object-contain transition-opacity group-hover:opacity-95 sm:max-h-[60vh]"
+                              />
+                            </ImageLightbox>
+                          </div>
+                        ))}
+                      </div>
+                    ) : shownImage && token ? (
+                      <ImageLightbox
+                        src={imageFileUrl(shownImage.image_id, token, mediaRevision)}
+                        alt={shownImage.filename}
+                        caption={`${shownImage.filename} — ${shownImage.width}×${shownImage.height}`}
+                        triggerClassName="group block w-full overflow-hidden rounded-xl bg-muted/30"
+                        testId="imgutils-job-image"
+                        actions={lightboxActions(shownImage)}
+                      >
+                        <img
+                          src={imageFileUrl(shownImage.image_id, token, mediaRevision)}
+                          alt=""
+                          aria-hidden
+                          className="max-h-[60vh] w-full object-contain transition-opacity group-hover:opacity-95"
+                        />
+                      </ImageLightbox>
+                    ) : shownImageId && token ? (
                       <div className="overflow-hidden rounded-xl bg-muted/30">
                         <img
-                          src={imageFileUrl(shownImageId, token)}
+                          src={imageFileUrl(shownImageId, token, mediaRevision)}
                           alt={selectedJob.output_image_id ? 'Result' : 'Input'}
                           className="max-h-[60vh] w-full object-contain"
                           data-testid="imgutils-job-image"
@@ -557,6 +680,49 @@ export default function ImgUtilsPage() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                      {outputImage ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => sendToImggen(outputImage, 'img2img')}
+                            data-testid="imgutils-edit-output"
+                          >
+                            <Pencil className="mr-1 h-4 w-4" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => sendToImggen(outputImage, 'img2video')}
+                            data-testid="imgutils-animate-output"
+                          >
+                            <Video className="mr-1 h-4 w-4" />
+                            Animate
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => applyAsInput(outputImage)}
+                            data-testid="imgutils-use-as-input"
+                          >
+                            <Wand2 className="mr-1 h-4 w-4" />
+                            Use as input
+                          </Button>
+                        </>
+                      ) : null}
+                      {canCompare ? (
+                        <Button
+                          type="button"
+                          variant={compareMode ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setCompareMode(v => !v)}
+                          data-testid="imgutils-compare-toggle"
+                        >
+                          <Columns2 className="mr-1 h-4 w-4" />
+                          {compareMode ? 'Result' : 'Compare'}
+                        </Button>
+                      ) : null}
                       {canRetry ? (
                         <Button
                           variant="default"
@@ -619,9 +785,17 @@ export default function ImgUtilsPage() {
                     ) : selectedJob.status === 'canceled' ? (
                       <p className="text-xs text-muted-foreground">Task canceled.</p>
                     ) : selectedJob.status !== 'completed' ? (
-                      <div className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-                        <Loader2 className="size-4 animate-spin" />
-                        {selectedJob.stage || selectedJob.status || 'Running…'}
+                      <div className="flex justify-center rounded-md bg-muted/30 px-3 py-4">
+                        <JobProgressBar
+                          status={selectedJob.status}
+                          stage={selectedJob.stage}
+                          startedAt={selectedJob.started_at}
+                          typicalRuntimeSeconds={selectedJob.typical_runtime_seconds}
+                          // No separate submit timestamp: the task is created and
+                          // submitted in one request, so `created_at` is the queue entry.
+                          submittedAt={selectedJob.created_at}
+                          label={imageJobStatusLabel(selectedJob.status)}
+                        />
                       </div>
                     ) : null}
                   </>
@@ -646,6 +820,19 @@ export default function ImgUtilsPage() {
           token={token}
         />
       )}
+
+      {nudeDetectTarget && token ? (
+        <NudeDetectModal
+          open
+          onOpenChange={open => {
+            if (!open) setNudeDetectTarget(null)
+          }}
+          token={token}
+          imageId={nudeDetectTarget.imageId}
+          imageUrl={imageFileUrl(nudeDetectTarget.imageId, token, mediaRevision)}
+          filename={nudeDetectTarget.filename}
+        />
+      ) : null}
     </div>
   )
 }

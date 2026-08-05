@@ -412,7 +412,11 @@ Wire contract: `docs/img-utils-api.md`.
 
 1. **No `image_generation_jobs` row.** `img_utils_jobs` is its own table; there are no
    pipeline events and no `image_offload_tasks` row, so there is no Progress-drawer entry
-   and no ToolDebug view. The page's own 3 s auto-poll is the only progress signal.
+   and no ToolDebug view. The page's own 3 s auto-poll is the only progress signal — but
+   `img_utils_jobs.started_at` / `typical_runtime_seconds` (set in `on_poll` of
+   `ImgUtilsReconciler`, mirroring the image pipeline's `mark_offload_task_started`) feed
+   the same `JobProgressBar` component image generation uses, so the running-job bar looks
+   identical on both pages.
 2. **Reuses `image_files` for both ends.** Inputs come from the shared
    `POST /api/images/upload`; the result is stored via
    `image_jobs::store_offload_output_image` with `job_id = None` and
@@ -430,3 +434,15 @@ Wire contract: `docs/img-utils-api.md`.
    without colliding on the agent.
 5. **`delete_job` removes the output image only** — the input is a user upload shared with
    the rest of the app.
+6. **Same `ImageLightbox` as image generation.** The job-detail image (and both panes of
+   compare mode) use `components/ImageLightbox.tsx` with the same action set as
+   `ImageGenerationPage`: Edit → img2img, Animate → img2video (both via
+   `ImggenRouteState.useInputImage`, `navigate('/app/images', { state })`), Image Tools →
+   reload as this page's own input (`applyAsInput`, in-page — no navigation), NSFW scan,
+   star, download, delete (output only). `GET`/`poll` responses resolve `input_image` /
+   `source_image` / `output_image` (`JobImageRef`, extends `UploadedImage`) so the page
+   never needs a second lookup to get filename/dimensions for these actions; the list
+   endpoint leaves them `null`.
+7. **Compare mode** (`imgutils-compare-toggle`, shown once a job has both an input and an
+   output) toggles a two-pane before/after grid — the same pattern as img2img compare on
+   `ImageGenerationPage`, reset to off on every job switch.

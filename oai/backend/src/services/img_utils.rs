@@ -17,7 +17,7 @@ use crate::{
         offload_jobs,
     },
     error::AppError,
-    offload::task_status::{NormalizedPoll, OffloadPoller},
+    offload::task_status::{self, NormalizedPoll, OffloadPoller},
     services::{
         image_jobs, image_processing,
         offload_factory,
@@ -81,6 +81,23 @@ impl JobReconciler for ImgUtilsReconciler {
 
     async fn poller(&self, state: &AppState) -> Result<Box<dyn OffloadPoller>, AppError> {
         Ok(Box::new(offload_factory::image_client(state).await?))
+    }
+
+    /// Keep the progress-bar inputs current: when execution began on an agent,
+    /// and how long this capability usually takes.
+    async fn on_poll(
+        &self,
+        state: &AppState,
+        job: &img_utils::ImgUtilsJob,
+        poll: &NormalizedPoll,
+    ) -> Result<(), AppError> {
+        img_utils::record_progress(
+            &state.db,
+            job.id,
+            task_status::is_executing(&poll.status),
+            poll.typical_runtime_seconds,
+        )
+        .await
     }
 
     async fn on_completed(

@@ -30,6 +30,11 @@ pub struct Model {
     pub output_image_id: Option<i64>,
     pub stage: Option<String>,
     pub error: Option<String>,
+    /// Stamped once, the first time a poll shows the task executing on an agent.
+    /// Anchors the run-time progress bar (queue wait is measured from `created_at`).
+    pub started_at: Option<DateTimeWithTimeZone>,
+    /// Latest OffloadMQ execution-time estimate for this task, in seconds.
+    pub typical_runtime_seconds: Option<f64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

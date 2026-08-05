@@ -108,6 +108,15 @@ pub struct NormalizedPoll {
     pub status: String,
     pub stage: Option<String>,
     pub output: Option<serde_json::Value>,
+    /// Execution-time estimate from the OffloadMQ server, in seconds. `None` when
+    /// the server has no history for the capability. Drives progress bars.
+    pub typical_runtime_seconds: Option<f64>,
+}
+
+/// Statuses that mean the task is executing on an agent rather than waiting in
+/// the queue — the point from which a run-time progress bar should measure.
+pub fn is_executing(status: &str) -> bool {
+    matches!(status, "starting" | "running")
 }
 
 /// Client-agnostic cancel result.
@@ -130,7 +139,12 @@ impl OffloadPoller for OffloadClient {
         let resp = self
             .poll_task(&TaskId { cap: cap.to_string(), id: id.to_string() })
             .await?;
-        Ok(NormalizedPoll { status: resp.status, stage: resp.stage, output: resp.output })
+        Ok(NormalizedPoll {
+            status: resp.status,
+            stage: resp.stage,
+            output: resp.output,
+            typical_runtime_seconds: resp.typical_runtime_seconds.map(|d| d.as_secs_f64()),
+        })
     }
 
     async fn cancel(&self, cap: &str, id: &str) -> Result<NormalizedCancel, AppError> {
@@ -147,7 +161,12 @@ impl OffloadPoller for OffloadImageClient {
         let resp = self
             .poll_task(&OffloadTaskId { cap: cap.to_string(), id: id.to_string() })
             .await?;
-        Ok(NormalizedPoll { status: resp.status, stage: resp.stage, output: resp.output })
+        Ok(NormalizedPoll {
+            status: resp.status,
+            stage: resp.stage,
+            output: resp.output,
+            typical_runtime_seconds: resp.typical_runtime_seconds.map(|d| d.as_secs_f64()),
+        })
     }
 
     async fn cancel(&self, cap: &str, id: &str) -> Result<NormalizedCancel, AppError> {

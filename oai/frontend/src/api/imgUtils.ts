@@ -47,6 +47,13 @@ export function toolKey(tool: ImgUtilTool): string {
   return `${tool.capability}::${tool.workflow}`
 }
 
+/** Stored-image metadata attached to a job's image slots. Superset of
+ *  {@link UploadedImage}, so it can be handed straight to another feature. */
+export interface JobImageRef extends UploadedImage {
+  /** `input` (user upload) or `output` (produced by a job). */
+  direction: string
+}
+
 export interface ImgUtilsJob {
   job_id: string
   status: string
@@ -56,11 +63,20 @@ export interface ImgUtilsJob {
   input_image_id: string | null
   source_image_id: string | null
   output_image_id: string | null
+  /** Resolved image metadata — only present on the single-job endpoints
+   *  (`get`/`poll`); the listing leaves these null. */
+  input_image?: JobImageRef | null
+  source_image?: JobImageRef | null
+  output_image?: JobImageRef | null
   options: Record<string, unknown> | null
   stage: string | null
   error: string | null
   offload_cap: string | null
   offload_task_id: string | null
+  /** RFC3339 time execution began on an agent; null while queued. */
+  started_at?: string | null
+  /** Heuristic execution-time estimate in seconds; null when unknown. */
+  typical_runtime_seconds?: number | null
   created_at: string
   updated_at: string
 }

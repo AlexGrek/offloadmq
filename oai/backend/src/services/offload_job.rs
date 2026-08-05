@@ -54,6 +54,18 @@ where
         job: &<Self::Entity as EntityTrait>::Model,
         poll: &NormalizedPoll,
     ) -> Result<(), AppError>;
+
+    /// Called on *every* poll, before the status transition is applied, for
+    /// features that track extra per-poll fields (execution start, runtime
+    /// estimate). Default: record nothing.
+    async fn on_poll(
+        &self,
+        _state: &AppState,
+        _job: &<Self::Entity as EntityTrait>::Model,
+        _poll: &NormalizedPoll,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
 }
 
 /// Poll a single job once and apply the resulting transition. Used by both the
@@ -71,6 +83,7 @@ where
 {
     let poller = reconciler.poller(state).await?;
     let poll = poller.poll(cap, task_id).await?;
+    reconciler.on_poll(state, job, &poll).await?;
     match poll.status.as_str() {
         "completed" => reconciler.on_completed(state, job, &poll).await?,
         "failed" => {
