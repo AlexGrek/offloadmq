@@ -39,6 +39,7 @@ def is_regular_capability(cap: str) -> bool:
         "llm.",
         "imggen.",
         "img-utils.",
+        "image_resize",  # bare capability — no sub-name, so no trailing dot
         "txt2music.",
         "tts.",
         "debug.",

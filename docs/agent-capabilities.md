@@ -41,6 +41,64 @@ Echo the task payload back. Useful for testing the connection and payload serial
 
 ---
 
+### Image Processing
+
+#### `image_resize`
+
+Resize images with Pillow. No GPU, no ComfyUI, no workflow to install — the capability
+exists purely to keep "make this image smaller" off the generation nodes.
+
+**Always available** — Pillow is a hard dependency of the agent, so this is detected on
+every agent and registered by default (regular/opt-out tier).
+
+Registered with the supported resampling filters as extended attributes:
+
+```
+image_resize[nearest;box;bilinear;hamming;bicubic;lanczos]
+```
+
+Clients submit the base capability `image_resize`. Input images come from the task's
+`file_bucket`; `output_bucket` is required.
+
+**Payload:**
+```json
+{
+  "input_image": "photo.jpg",
+  "method":      "lanczos",
+  "mode":        "fit",
+  "width":       1024,
+  "height":      1024,
+  "format":      "webp",
+  "quality":     90
+}
+```
+
+`mode` is `fit` (aspect preserved, default), `exact` (stretch) or `cover` (fill and
+centre-crop); `scale` may be used instead of `width`/`height`. Omit `input_image` to
+resize every image in the bucket.
+
+**Response:**
+```json
+{
+  "method":        "lanczos",
+  "mode":          "fit",
+  "image_count":   1,
+  "output_bucket": "550e8400-...",
+  "images": [
+    {
+      "filename": "photo.webp", "content_type": "image/webp",
+      "file_uid": "a1b2c3d4-...", "bucket_uid": "550e8400-...",
+      "width": 1024, "height": 683,
+      "original_width": 4000, "original_height": 2667
+    }
+  ]
+}
+```
+
+Full contract: [image-resize-api.md](image-resize-api.md).
+
+---
+
 ### Shell Execution
 
 #### `shell.bash`

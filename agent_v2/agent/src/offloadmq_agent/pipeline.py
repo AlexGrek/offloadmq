@@ -26,6 +26,18 @@ from offloadmq_agent.wire import TaskId
 logger = logging.getLogger(__name__)
 
 
+# Executors that upload their results to a server bucket and therefore take an
+# extra output_bucket argument. "image_resize" is bare — it has no sub-name.
+_OUTPUT_BUCKET_PREFIXES = ("imggen.", "img-utils.", "txt2music.")
+_OUTPUT_BUCKET_CAPS = ("image_resize",)
+
+
+def _takes_output_bucket(capability: str) -> bool:
+    return capability in _OUTPUT_BUCKET_CAPS or capability.startswith(
+        _OUTPUT_BUCKET_PREFIXES
+    )
+
+
 def _task_data(task: Task) -> dict[str, Any]:
     if task.server_task:
         return dict(task.server_task.get("data") or {})
@@ -164,7 +176,7 @@ def _run_sync_pipeline(
             return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
 
     try:
-        if capability.startswith(("imggen.", "img-utils.", "txt2music.")):
+        if _takes_output_bucket(capability):
             executor(
                 transport,
                 task_id,

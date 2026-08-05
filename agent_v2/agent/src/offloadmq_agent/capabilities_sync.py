@@ -33,6 +33,18 @@ def check_debug() -> CapResult:
     )
 
 
+def check_image_resize() -> CapResult:
+    """Pillow-backed image rescaling — a hard dependency, so this never fails."""
+    from offloadmq_agent.exec.image_resize import RESAMPLING_METHODS, capability_string
+
+    return CapResult(
+        [capability_string()], True,
+        "image_resize",
+        f"built-in (Pillow), {len(RESAMPLING_METHODS)} resampling method(s): "
+        f"{', '.join(RESAMPLING_METHODS)}",
+    )
+
+
 def check_bash() -> CapResult:
     if sys.platform == "win32":
         return CapResult(
@@ -350,6 +362,7 @@ def check_ollama() -> CapResult:
 # ---------------------------------------------------------------------------
 _CHECKS: List[Callable[[], CapResult]] = [
     check_debug,
+    check_image_resize,
     check_bash,
     check_docker,
     check_kokoro,

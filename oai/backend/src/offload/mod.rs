@@ -97,6 +97,14 @@ impl OffloadClient {
         &self,
         prefix: &str,
     ) -> Result<Vec<CapabilityInfo>, AppError> {
+        let raw = self.list_capabilities_raw().await?;
+        Ok(parse_capabilities_with_prefix(&raw, prefix))
+    }
+
+    /// Every online capability string, extended attributes included. Callers that
+    /// need more than one prefix should use this and [`parse_capabilities_with_prefix`]
+    /// rather than paying for a round trip per prefix.
+    pub async fn list_capabilities_raw(&self) -> Result<Vec<String>, AppError> {
         let url = format!("{}/api/capabilities/list/online_ext", self.base_url);
         let body = serde_json::json!({ "apiKey": self.api_key });
         let resp = self
@@ -112,9 +120,7 @@ impl OffloadClient {
                 resp.status()
             )));
         }
-        let raw: Vec<String> =
-            resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))?;
-        Ok(parse_capabilities_with_prefix(&raw, prefix))
+        resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))
     }
 
     pub async fn submit_chat(
@@ -400,7 +406,7 @@ pub fn base_capability(cap: &str) -> &str {
     cap.split_once('[').map(|(base, _)| base).unwrap_or(cap)
 }
 
-fn parse_capabilities_with_prefix(raw: &[String], prefix: &str) -> Vec<CapabilityInfo> {
+pub fn parse_capabilities_with_prefix(raw: &[String], prefix: &str) -> Vec<CapabilityInfo> {
     raw.iter()
         .filter(|s| s.starts_with(prefix))
         .map(|s| {

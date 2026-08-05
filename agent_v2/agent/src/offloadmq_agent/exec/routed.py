@@ -19,6 +19,7 @@ def register_routed_executors() -> None:
         "docker",
         "imggen",
         "img-utils",
+        "image_resize",
         "txt2music",
         "onnx",
         "custom",

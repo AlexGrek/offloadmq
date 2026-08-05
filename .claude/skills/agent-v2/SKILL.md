@@ -135,6 +135,7 @@ worker threads.
 | `docker` | `exec/docker.py` |
 | `imggen` | `exec/imggen/` |
 | `img-utils` | `exec/imgutils/` (thin wrapper over `imggen.executor.run_comfy_image_task`) |
+| `image_resize` | `exec/image_resize.py` — bare cap (no sub-name), Pillow only, always available |
 | `txt2music` | `exec/musicgen/` |
 | `onnx` | `exec/onnx.py` |
 | `custom` | `exec/custom.py` |
@@ -175,7 +176,8 @@ def execute_foo(
     payload: dict,
     data: Path,
     job_timeout: int = 600,
-    output_bucket: str | None = None,  # imggen/img-utils/txt2music only
+    output_bucket: str | None = None,  # imggen/img-utils/txt2music/image_resize only
+                                       # (gated by pipeline._takes_output_bucket)
 ) -> bool: ...
 ```
 

@@ -25,6 +25,13 @@ def route_executor(cap: str) -> ExecutorFn | None:
 
         return execute_imggen_comfyui
 
+    # image_resize takes no sub-name: there is one implementation (Pillow) and the
+    # variation lives in the extended attributes instead.
+    if cap == "image_resize":
+        from offloadmq_agent.exec.image_resize import execute_image_resize
+
+        return execute_image_resize
+
     if cap.startswith("img-utils."):
         from offloadmq_agent.exec.imgutils import execute_imgutils_comfyui
 
