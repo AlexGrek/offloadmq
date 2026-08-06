@@ -348,7 +348,7 @@ export function ComfyParamMapEditor({
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        Map imggen payload fields to Comfy node inputs. Each dropdown shows the node id, class type,
+        Map payload fields to Comfy node inputs. Each dropdown shows the node id, class type,
         input name, whether the value is a literal or a wire, and a short preview of the default.
         Use this when auto-detect missed nodes or used the wrong slot.
       </p>

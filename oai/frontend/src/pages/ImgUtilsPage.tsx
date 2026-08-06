@@ -130,10 +130,14 @@ export default function ImgUtilsPage() {
 
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
-  // Mobile: the sidebar is a full-screen overlay — collapse it on entering a narrow viewport.
-  useEffect(() => {
+  // Mobile: the sidebar is a full-screen overlay — collapse it when the viewport
+  // becomes narrow. Done as a render-phase adjustment (React's "reset state when a
+  // value changes" pattern) rather than an effect, so it never double-renders.
+  const [prevIsMobile, setPrevIsMobile] = useState(isMobile)
+  if (isMobile !== prevIsMobile) {
+    setPrevIsMobile(isMobile)
     if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
+  }
 
   const previewsRef = useRef<string[]>([])
   useEffect(() => {
@@ -167,7 +171,9 @@ export default function ImgUtilsPage() {
 
   const loadCapabilities = useCallback(async () => {
     if (!token) return
-    setCapsLoading(true)
+    // `capsLoading` starts true and the Refresh button flips it back on, so the
+    // spinner is already showing whenever this runs — no synchronous setState here
+    // (which, inside the mount effect, would be a cascading render).
     try {
       const res = await listImgUtilsCapabilities(token)
       const next = toolsFromCapabilities(res.capabilities)
@@ -304,16 +310,30 @@ export default function ImgUtilsPage() {
   )
 
   // Deep link from another page (lightbox "Image Tools", generation results) —
-  // land on the New transform panel with the image preloaded as input.
-  useEffect(() => {
-    if (!token) return
-    const state = location.state as ImgUtilsRouteState | null
-    const image = state?.useInputImage
-    if (!image) return
-    pickFromLibrary(image, setInput)
+  // land on the New transform panel with the image preloaded as input. The image
+  // is consumed during render (gated by a ref so it fires once per navigation);
+  // the effect only clears the one-shot router state, which can't run in render.
+  // Keeping the setState out of the effect avoids a cascading render.
+  const deepLinkImage = token
+    ? ((location.state as ImgUtilsRouteState | null)?.useInputImage ?? null)
+    : null
+  const [consumedDeepLink, setConsumedDeepLink] = useState<string | null>(null)
+  if (!deepLinkImage) {
+    // Router state cleared (below) — arm for the next navigation, incl. the same image.
+    if (consumedDeepLink !== null) setConsumedDeepLink(null)
+  } else if (consumedDeepLink !== deepLinkImage.image_id && token) {
+    setConsumedDeepLink(deepLinkImage.image_id)
+    setInput({
+      preview: imageFileUrl(deepLinkImage.image_id, token),
+      uploaded: deepLinkImage,
+      error: null,
+    })
+    setError(null)
     setActivePanel(IMGUTILS_NEW_PANEL)
-    navigate(location.pathname, { replace: true, state: null })
-  }, [token, location.state, location.pathname, navigate])
+  }
+  useEffect(() => {
+    if (deepLinkImage) navigate(location.pathname, { replace: true, state: null })
+  }, [deepLinkImage, location.pathname, navigate])
 
   function clearSlots() {
     for (const slot of [input, source]) {
@@ -460,9 +480,12 @@ export default function ImgUtilsPage() {
   const canCompare = outputImage != null && inputImage != null
 
   // A fresh job has nothing to compare yet — never carry the toggle across jobs.
-  useEffect(() => {
+  // Render-phase reset (React's "adjust state on change" pattern) rather than an effect.
+  const [compareJobId, setCompareJobId] = useState(selectedJob?.job_id)
+  if (selectedJob?.job_id !== compareJobId) {
+    setCompareJobId(selectedJob?.job_id)
     setCompareMode(false)
-  }, [selectedJob?.job_id])
+  }
 
   return (
     <div
@@ -551,7 +574,10 @@ export default function ImgUtilsPage() {
                   <button
                     type="button"
                     className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
-                    onClick={() => void loadCapabilities()}
+                    onClick={() => {
+                      setCapsLoading(true)
+                      void loadCapabilities()
+                    }}
                     disabled={capsLoading}
                     data-testid="imgutils-refresh-capabilities"
                   >

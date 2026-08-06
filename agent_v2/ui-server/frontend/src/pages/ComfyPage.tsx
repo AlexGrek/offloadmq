@@ -38,6 +38,18 @@ const DEFAULT_TASK_TYPES = [
   "face_swap", "txt2video", "img2video", "txt2music",
 ];
 
+/** Suggested namespace for a task type. img-utils operations (image-in transforms
+ *  with no prompt) and txt2music live in their own namespace subdirectory, so
+ *  picking one of these should default the namespace instead of dumping it into
+ *  the flat imggen.* space — where it would autowire prompt/resolution fields the
+ *  workflow doesn't have. */
+const NAMESPACE_FOR_TASK: Record<string, string> = {
+  depth: "img-utils",
+  face_swap: "img-utils",
+  upscale: "img-utils",
+  txt2music: "txt2music",
+};
+
 /** Fields auto-detect could not wire, and why. Shown after a workflow is added. */
 type UnwiredReport = { workflow: string; notes: ParamNotes };
 
@@ -139,7 +151,15 @@ function AddWorkflowDialog({
             </div>
             <div className="space-y-1">
               <Label>Task type</Label>
-              <Select value={taskType} onValueChange={setTaskType}>
+              <Select
+                value={taskType}
+                onValueChange={(t) => {
+                  setTaskType(t);
+                  // Auto-fill the namespace so img-utils / txt2music workflows land
+                  // in the right subdirectory (and autowire the right fields).
+                  setNamespace(NAMESPACE_FOR_TASK[t] ?? "");
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -154,7 +174,9 @@ function AddWorkflowDialog({
           <div className="space-y-1">
             <Label>
               Namespace{" "}
-              <span className="text-muted-foreground font-normal">(optional — e.g. txt2music)</span>
+              <span className="text-muted-foreground font-normal">
+                (auto-filled from task type — img-utils for depth/face_swap/upscale, blank for imggen.*)
+              </span>
             </Label>
             <Input
               placeholder="leave blank for imggen.*"
