@@ -200,8 +200,13 @@ export default function ImgUtilsPage() {
   }, [token])
 
   useEffect(() => {
-    void loadCapabilities()
-    void loadJobs()
+    // Kick the initial fetches off a microtask so their setState lands in the
+    // async continuation, never synchronously in the effect body.
+    void (async () => {
+      await Promise.resolve()
+      void loadCapabilities()
+      void loadJobs()
+    })()
   }, [loadCapabilities, loadJobs])
 
   const refreshJob = useCallback(
