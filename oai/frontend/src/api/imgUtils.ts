@@ -39,9 +39,22 @@ export interface ImgUtilTool {
   /** Operation, e.g. `depth` — sent as `workflow`. */
   workflow: string
   needsSourceImage: boolean
+  /** True when the operation takes a `scale_multiplier` knob (upscale). */
+  takesScale: boolean
   kind: ImgUtilKind
   /** Resampling filters offered by this tool — `resize` only. */
   methods: string[]
+}
+
+/** Whether an operation consumes a second "source" image (face reference). */
+export function takesSourceImage(workflow: string): boolean {
+  return /^face[_-]swap/.test(workflow)
+}
+
+/** Whether an operation takes a `scale_multiplier` knob (SeedVR2 upscale, …).
+ *  Keyed on the operation name, like {@link takesSourceImage}. */
+export function takesScaleMultiplier(workflow: string): boolean {
+  return /^upscale/.test(workflow)
 }
 
 /** Flatten capabilities into one entry per operation the user can run. */
@@ -51,13 +64,20 @@ export function toolsFromCapabilities(caps: ImgUtilCapability[]): ImgUtilTool[] 
       capability: cap.base,
       pack: cap.utility,
       workflow,
-      // Resize has no second slot regardless of what its attributes look like.
-      needsSourceImage: cap.kind !== 'resize' && /^face[_-]swap/.test(workflow),
+      // Resize has no second slot / scale knob regardless of its attributes.
+      needsSourceImage: cap.kind !== 'resize' && takesSourceImage(workflow),
+      takesScale: cap.kind !== 'resize' && takesScaleMultiplier(workflow),
       kind: cap.kind,
       methods: cap.methods ?? [],
     })),
   )
 }
+
+/** Default scale multiplier for upscale tools (SeedVR2's own default). */
+export const DEFAULT_SCALE_MULTIPLIER = 4
+/** Bounds enforced by the scale control. */
+export const MIN_SCALE_MULTIPLIER = 1
+export const MAX_SCALE_MULTIPLIER = 8
 
 /** Stable key for a tool — a pack may install more than one operation. */
 export function toolKey(tool: ImgUtilTool): string {

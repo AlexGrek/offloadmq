@@ -14,25 +14,30 @@ capability names *one tool* that either exists on the agent or does not.
 ## Capability Naming
 
 ```
-img-utils.<utility>[<task-type>;<task-type>;...]
+img-utils.<pack>[<operation>;<operation>;...]
 ```
 
 | Part | Example | Meaning |
 |------|---------|---------|
 | `img-utils.` | — | Fixed prefix identifying the capability family |
-| `<utility>` | `depth` | The tool. Also the name of the workflow directory on the agent |
-| `[<task-type>;...]` | `[depth]` | Task types available for this utility (the JSON files in that directory) |
+| `<pack>` | `image_lotus_depth_v1_1` | The workflow directory on the agent, named after the **model/pack** |
+| `[<operation>;...]` | `[depth]` | Operations the pack installs — one per `<operation>.json` file in that directory. The directory name is *not* itself an operation. |
 
 **Agents register with extended attributes:**
 ```
-img-utils.depth[depth]
-img-utils.face_swap[face_swap]
+img-utils.image_lotus_depth_v1_1[depth]
+img-utils.face_swap_reactor[face_swap]
+img-utils.seedvr2_upscale_image[upscale]
 ```
 
 **Clients submit with base capability only (no brackets):**
 ```
-img-utils.depth
+img-utils.image_lotus_depth_v1_1
 ```
+
+Because a pack usually installs exactly one operation, the client may omit `workflow`
+and the agent runs the pack's sole operation; it errors out asking for `workflow`
+only when a pack installs more than one.
 
 ### Enabling a utility on an agent
 
@@ -42,17 +47,21 @@ workflow is what turns the capability on:
 ```
 workflows/
   img-utils/
-    depth/
-      depth.json           # ComfyUI API-format workflow graph
-      depth.params.json    # payload fields → node inputs
-    face_swap/
+    image_lotus_depth_v1_1/       # pack directory = model name
+      depth.json                  # ComfyUI API-format workflow graph (operation = file name)
+      depth.params.json           # payload fields → node inputs
+    face_swap_reactor/
       face_swap.json
       face_swap.params.json
+    seedvr2_upscale_image/
+      upscale.json
+      upscale.params.json
 ```
 
-Removing (or never adding) `workflows/img-utils/depth/` means the agent never registers
-`img-utils.depth`. There is no separate config flag. ComfyUI must also be reachable —
-the same `check_comfyui` probe gates `imggen`, `txt2music` and `img-utils` alike.
+Removing (or never adding) `workflows/img-utils/image_lotus_depth_v1_1/` means the agent
+never registers `img-utils.image_lotus_depth_v1_1`. There is no separate config flag.
+ComfyUI must also be reachable — the same `check_comfyui` probe gates `imggen`,
+`txt2music` and `img-utils` alike.
 
 The agent resolves its workflows directory in this order: `$OFFLOAD_WORKFLOWS_DIR`,
 `~/.offload-agent/workflows` (the persistent location for packaged agents),
@@ -80,7 +89,7 @@ Submitted as the `payload` field of `POST /api/task/submit`.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `workflow` | string | No | Task type. **Defaults to the utility name**, so `img-utils.depth` runs `depth.json` when omitted. Must be one of the task types in the agent's extended attributes. |
+| `workflow` | string | No | Operation to run (the `<operation>.json` in the pack directory). **Defaults to the pack's sole operation**, so a single-operation pack runs it when `workflow` is omitted. Must be one of the operations in the agent's extended attributes. |
 | `input_image` | string | **Yes** | Filename of the main image in the linked file bucket. |
 | `face_swap` | string | Only for face-swap | Filename of the face-reference image in the bucket. |
 | `resolution` | object | No | `{"width": int, "height": int}`. Not injected by the bundled workflows — the output tracks the input size — but the server uses it to scale its runtime estimate. |
@@ -95,12 +104,17 @@ bucket, pass the bucket UID in `file_bucket`, and reference files by name.
 
 | Capability | `workflow` | Inputs | Notes |
 |-----------|-----------|--------|-------|
-| `img-utils.depth` | `depth` | `input_image` | Lotus depth model (`lotus-depth-d-v1-1.safetensors`), 1 step, inverted output. |
-| `img-utils.face_swap` | `face_swap` | `input_image` (target), `face_swap` (donor) | ReActor (`inswapper_128.onnx` + `GFPGANv1.3.onnx`). |
+| `img-utils.image_lotus_depth_v1_1` | `depth` | `input_image` | Lotus depth model (`lotus-depth-d-v1-1.safetensors`), 1 step, inverted output. |
+| `img-utils.face_swap_reactor` | `face_swap` | `input_image` (target), `face_swap` (donor) | ReActor (`inswapper_128.onnx` + `GFPGANv1.3.onnx`). |
+| `img-utils.seedvr2_upscale_image` | `upscale` | `input_image` | SeedVR2 upscaler. Takes a `scale_multiplier` knob (default 4). |
 
-`img-utils.face_swap` additionally accepts these `secondary_prompts` keys, mapped by its
-params file: `face_restore_visibility`, `codeformer_weight`, `input_faces_index`,
+`face_swap` additionally accepts these `secondary_prompts` keys, mapped by its params
+file: `face_restore_visibility`, `codeformer_weight`, `input_faces_index`,
 `source_faces_index`, `detect_gender_input`, `detect_gender_source`.
+
+`upscale` accepts a `secondary_prompts.scale_multiplier` number (mapped to the
+`ResizeImageMaskNode`'s `resize_type.multiplier` input) — how many times larger the
+output is on each edge.
 
 ---
 
@@ -150,7 +164,7 @@ with open("source.jpg", "rb") as f:
 
 resp = requests.post(f"{BASE}/api/task/submit", json={
     "apiKey":        KEY,
-    "capability":    "img-utils.depth",
+    "capability":    "img-utils.image_lotus_depth_v1_1",
     "file_bucket":   [in_bucket],
     "output_bucket": out_bucket,
     "payload": {"input_image": "source.jpg"},
@@ -163,7 +177,7 @@ task = resp.json()["id"]
 ```python
 requests.post(f"{BASE}/api/task/submit", json={
     "apiKey":        KEY,
-    "capability":    "img-utils.face_swap",
+    "capability":    "img-utils.face_swap_reactor",
     "file_bucket":   [in_bucket],
     "output_bucket": out_bucket,
     "payload": {
@@ -174,20 +188,38 @@ requests.post(f"{BASE}/api/task/submit", json={
 })
 ```
 
+## Example — upscale
+
+```python
+requests.post(f"{BASE}/api/task/submit", json={
+    "apiKey":        KEY,
+    "capability":    "img-utils.seedvr2_upscale_image",
+    "file_bucket":   [in_bucket],
+    "output_bucket": out_bucket,
+    "payload": {
+        "input_image": "source.jpg",
+        "secondary_prompts": {"scale_multiplier": 4},
+    },
+})
+```
+
 ---
 
 ## Adding a new utility
 
 1. Export the workflow from ComfyUI in **API format**.
-2. Save it as `workflows/img-utils/<utility>/<utility>.json`.
-3. Generate `<utility>.params.json` — the agent web UI's Comfy page autowires it, or write
-   it by hand mapping `input_image` (and `face_swap`) to the `LoadImage` node ids.
-4. Restart / rescan the agent: it registers `img-utils.<utility>[<utility>]`.
+2. Save it as `workflows/img-utils/<pack>/<operation>.json` — the directory named after the
+   model/pack, the file after the operation.
+3. Generate `<operation>.params.json` — the agent web UI's Comfy page autowires it (pick the
+   `img-utils` namespace so it emits image/scale fields only), or write it by hand mapping
+   `input_image` (and `face_swap` / `scale_multiplier`) to the right node ids.
+4. Restart / rescan the agent: it registers `img-utils.<pack>[<operation>]`.
 
 No agent code change is needed. OAI picks the new tool up automatically —
-`GET /api/img-utils/capabilities` lists whatever is online. Only two things are
-special-cased by name: utilities starting with `face_swap` are asked for a second image
-in the UI, and `UTILITY_HINTS` in `ImgUtilsPage.tsx` holds the one-line blurbs.
+`GET /api/img-utils/capabilities` lists whatever is online. Only a few things are
+special-cased **by operation name**: operations starting with `face_swap` are asked for a
+second image in the UI, operations starting with `upscale` get a scale-multiplier control,
+and `OPERATION_HINTS` in `ImgUtilsPage.tsx` holds the one-line blurbs.
 
 ---
 

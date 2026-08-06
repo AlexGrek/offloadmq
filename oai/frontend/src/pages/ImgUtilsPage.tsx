@@ -30,8 +30,12 @@ import {
   resizeOptionsFromForm,
   retryImgUtilsJob,
   startImgUtilsJob,
+  takesScaleMultiplier,
   toolKey,
   toolsFromCapabilities,
+  DEFAULT_SCALE_MULTIPLIER,
+  MAX_SCALE_MULTIPLIER,
+  MIN_SCALE_MULTIPLIER,
   RESIZE_WORKFLOW,
   type ImgUtilsRouteState,
   type ImgUtilTool,
@@ -41,6 +45,7 @@ import {
 } from '../api/imgUtils'
 import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
 import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import {
   IMGUTILS_NEW_PANEL,
@@ -74,6 +79,7 @@ type Slot = {
 const OPERATION_HINTS: Record<string, string> = {
   depth: 'Estimate a depth map from the image.',
   face_swap: 'Replace the face in the target image with the face from the reference image.',
+  upscale: 'Upscale the image with SeedVR2 by the chosen multiplier.',
   [RESIZE_WORKFLOW]:
     'Scale the image with Pillow — no GPU or ComfyUI needed, so any online agent can run it.',
 }
@@ -97,6 +103,8 @@ export default function ImgUtilsPage() {
   // Only meaningful for the built-in resize tool; kept across tool switches so
   // flipping back and forth does not lose the settings.
   const [resizeForm, setResizeForm] = useState<ResizeFormState>(() => defaultResizeForm([]))
+  // Only meaningful for upscale tools; kept across tool switches like resizeForm.
+  const [scaleMultiplier, setScaleMultiplier] = useState<number>(DEFAULT_SCALE_MULTIPLIER)
 
   const [jobs, setJobs] = useState<ImgUtilsJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -142,6 +150,7 @@ export default function ImgUtilsPage() {
     [tools, selectedTool],
   )
   const needsSource = activeTool?.needsSourceImage ?? false
+  const takesScale = activeTool?.takesScale ?? false
   const isResize = activeTool?.kind === 'resize'
 
   // Agents publish their resampling filters in the capability brackets, so a
@@ -330,8 +339,13 @@ export default function ImgUtilsPage() {
         workflow: activeTool!.workflow,
         input_image_id: input!.uploaded!.image_id,
         source_image_id: needsSource ? source!.uploaded!.image_id : undefined,
-        // Resize carries its parameters here; ComfyUI tools have none from the UI.
-        options: isResize ? resizeOptionsFromForm(resizeState) : undefined,
+        // Resize carries its resize params here; upscale carries its multiplier;
+        // depth/face_swap have no knobs from the UI.
+        options: isResize
+          ? resizeOptionsFromForm(resizeState)
+          : takesScale
+            ? { scale_multiplier: scaleMultiplier }
+            : undefined,
       })
       clearSlots()
       setActivePanel(res.job_id)
@@ -612,6 +626,54 @@ export default function ImgUtilsPage() {
                     />
                   ) : null}
 
+                  {takesScale ? (
+                    <div
+                      className="space-y-2 rounded-xl border border-border p-3"
+                      data-testid="imgutils-scale"
+                    >
+                      <Label htmlFor="imgutils-scale-input">Scale multiplier</Label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {[2, 4, 6, 8].map(preset => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setScaleMultiplier(preset)}
+                            className={cn(
+                              'rounded-md px-3 py-1.5 text-sm transition-colors',
+                              scaleMultiplier === preset
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-muted/60 text-muted-foreground hover:bg-muted',
+                            )}
+                            data-testid={`imgutils-scale-preset-${preset}`}
+                          >
+                            {preset}×
+                          </button>
+                        ))}
+                        <Input
+                          id="imgutils-scale-input"
+                          type="number"
+                          min={MIN_SCALE_MULTIPLIER}
+                          max={MAX_SCALE_MULTIPLIER}
+                          step={1}
+                          value={scaleMultiplier}
+                          onChange={e => {
+                            const n = Number(e.target.value)
+                            if (Number.isFinite(n)) {
+                              setScaleMultiplier(
+                                Math.min(MAX_SCALE_MULTIPLIER, Math.max(MIN_SCALE_MULTIPLIER, n)),
+                              )
+                            }
+                          }}
+                          className="h-9 w-24"
+                          data-testid="imgutils-scale-value"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Output is roughly {scaleMultiplier}× the input on each edge.
+                      </p>
+                    </div>
+                  ) : null}
+
                   {needsSource ? (
                     <ImageSlot
                       label="Face reference"
@@ -732,6 +794,17 @@ export default function ImgUtilsPage() {
                           data-testid="imgutils-resize-summary"
                         >
                           {describeResizeOptions(selectedJob.options)}
+                          {outputImage
+                            ? ` → ${outputImage.width}×${outputImage.height}`
+                            : ''}
+                        </p>
+                      ) : takesScaleMultiplier(selectedJob.workflow) &&
+                        typeof selectedJob.options?.scale_multiplier === 'number' ? (
+                        <p
+                          className="text-xs text-muted-foreground"
+                          data-testid="imgutils-scale-summary"
+                        >
+                          {selectedJob.options.scale_multiplier}× upscale
                           {outputImage
                             ? ` → ${outputImage.width}×${outputImage.height}`
                             : ''}

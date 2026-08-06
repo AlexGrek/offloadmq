@@ -230,14 +230,20 @@ _FACE_REF_ROW = {
     "label": "Face reference image",
     "help": "payload.face_swap (bucket file)",
 }
+_SCALE_MULTIPLIER_ROW = {
+    "key": "scale_multiplier",
+    "label": "Scale multiplier",
+    "help": "payload.secondary_prompts.scale_multiplier",
+}
 
-# img-utils operations take images and nothing else — no prompt, no resolution,
-# no seed. Keyed separately from _PARAM_UI_ROWS because a task type alone is
-# ambiguous: `face_swap` under img-utils has no prompt, a flat imggen
-# `face_swap` model does.
+# img-utils operations take images (plus, for upscale, one scalar) and nothing
+# else — no prompt, no resolution, no seed. Keyed separately from _PARAM_UI_ROWS
+# because a task type alone is ambiguous: `face_swap`/`upscale` under img-utils
+# have no prompt, while the flat imggen models of the same name do.
 _IMG_UTILS_PARAM_UI_ROWS: Dict[str, List[Dict[str, str]]] = {
     "depth": [_INPUT_IMAGE_ROW],
     "face_swap": [_INPUT_IMAGE_ROW, _FACE_REF_ROW],
+    "upscale": [_INPUT_IMAGE_ROW, _SCALE_MULTIPLIER_ROW],
 }
 
 IMG_UTILS_NAMESPACE = "img-utils"

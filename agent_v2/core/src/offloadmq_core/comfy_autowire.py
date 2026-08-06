@@ -232,7 +232,20 @@ IMG_UTILS_NAMESPACE = "img-utils"
 _IMG_UTILS_KEYS: Dict[str, Tuple[str, ...]] = {
     "depth": ("input_image",),
     "face_swap": ("input_image", "face_swap"),
+    "upscale": ("input_image", "scale_multiplier"),
 }
+
+# Inputs that carry an img-utils upscale factor, most-specific first. The SeedVR2
+# ResizeImageMaskNode names it ``resize_type.multiplier``; the rest cover the
+# common ImageScaleBy-style nodes.
+_SCALE_MULTIPLIER_INPUTS: Tuple[str, ...] = (
+    "resize_type.multiplier",
+    "multiplier",
+    "scale_by",
+    "rescale_factor",
+    "upscale_factor",
+    "scale",
+)
 
 # Task types that mean img-utils even without a namespace. `face_swap` is
 # deliberately absent — it is also a legitimate imggen task type, where the
@@ -695,6 +708,16 @@ def _resolve_upscale(graph: Graph, live: set[str]) -> Tuple[List[Target], str]:
     return [], "no node with an upscale factor input found"
 
 
+def _resolve_scale_multiplier(graph: Graph, live: set[str]) -> Tuple[List[Target], str]:
+    for nid in node_order(live):
+        inputs = _inputs(graph, nid)
+        for name in _SCALE_MULTIPLIER_INPUTS:
+            if name in inputs:
+                target, why = _try_resolve(graph, nid, name)
+                return ([target] if target else [], why)
+    return [], "no node with a scale-multiplier input found"
+
+
 def _resolve_length(graph: Graph, live: set[str]) -> Tuple[List[Target], str]:
     for nid in node_order(live):
         inputs = _inputs(graph, nid)
@@ -778,7 +801,13 @@ def _guess_img_utils(graph: Graph, live: set[str], task_type: str) -> Tuple[Dict
     img_params, notes = _resolve_images(graph, live, task_type)
     for key, targets in img_params.items():
         params[key] = [list(t) for t in targets]
-    for key in _IMG_UTILS_KEYS.get(task_type, ("input_image",)):
+    keys = _IMG_UTILS_KEYS.get(task_type, ("input_image",))
+    if "scale_multiplier" in keys:
+        targets, why = _resolve_scale_multiplier(graph, live)
+        params["scale_multiplier"] = [list(t) for t in targets]
+        if not targets and why:
+            notes["scale_multiplier"] = why
+    for key in keys:
         params.setdefault(key, [])
     return params, notes
 

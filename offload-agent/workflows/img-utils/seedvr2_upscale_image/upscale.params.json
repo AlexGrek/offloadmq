@@ -1,0 +1,4 @@
+{
+  "input_image": [["1", "image"]],
+  "scale_multiplier": [["66:57", "resize_type.multiplier"]]
+}
