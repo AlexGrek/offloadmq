@@ -39,6 +39,10 @@ ingress:
 config:
   staticDir: "/app/static"
   rustLog: "info"
+  # Max glibc malloc arenas. Each is up to 64 MB and is never released back to
+  # the OS, so leaving this unbounded lets transient image buffers set a
+  # permanent RSS floor. 2 keeps that floor well inside the memory limit.
+  mallocArenaMax: 2
 
 secret:
   jwtSecret: "change-me-in-production"

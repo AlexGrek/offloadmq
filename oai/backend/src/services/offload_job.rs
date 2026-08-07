@@ -24,6 +24,33 @@ pub struct CancelOutcome {
     pub message: String,
 }
 
+/// Why a single reconcile attempt failed.
+enum ReconcileFailure {
+    /// The task finished, but its result can never be persisted — an output too
+    /// large for the processing limit, or bytes that will not decode. Every
+    /// retry re-downloads the same payload and fails identically, so the job is
+    /// marked failed instead of being left in flight forever.
+    Permanent(String),
+    /// OffloadMQ unreachable, storage blip, API token not configured yet — the
+    /// job stays in flight and the next tick retries it.
+    Transient(AppError),
+}
+
+/// Classify an error raised while persisting a *completed* task's result.
+///
+/// Only `BadRequest` is permanent: it is what the processing layer returns when
+/// the payload itself is unusable. Everything else (`ExternalService`,
+/// `Database`, `Internal`) describes the environment rather than the payload and
+/// is worth retrying. Errors from building the poller or polling are never
+/// routed here — an unset API key surfaces as `BadRequest` too, and must not
+/// fail every in-flight job.
+fn classify_completed_failure(e: AppError) -> ReconcileFailure {
+    match e {
+        AppError::BadRequest(msg) => ReconcileFailure::Permanent(msg),
+        other => ReconcileFailure::Transient(other),
+    }
+}
+
 /// Per-feature glue for the generic driver. Implement on a zero-sized marker
 /// type (e.g. `struct TtsReconciler;`).
 #[async_trait]
@@ -76,24 +103,38 @@ async fn reconcile_one<R>(
     job: &<R::Entity as EntityTrait>::Model,
     cap: &str,
     task_id: &str,
-) -> Result<(), AppError>
+) -> Result<(), ReconcileFailure>
 where
     R: JobReconciler,
     <R::Entity as EntityTrait>::Model: OffloadJobModel,
 {
-    let poller = reconciler.poller(state).await?;
-    let poll = poller.poll(cap, task_id).await?;
-    reconciler.on_poll(state, job, &poll).await?;
+    let poller = reconciler
+        .poller(state)
+        .await
+        .map_err(ReconcileFailure::Transient)?;
+    let poll = poller
+        .poll(cap, task_id)
+        .await
+        .map_err(ReconcileFailure::Transient)?;
+    reconciler
+        .on_poll(state, job, &poll)
+        .await
+        .map_err(ReconcileFailure::Transient)?;
     match poll.status.as_str() {
-        "completed" => reconciler.on_completed(state, job, &poll).await?,
+        "completed" => reconciler
+            .on_completed(state, job, &poll)
+            .await
+            .map_err(classify_completed_failure)?,
         "failed" => {
             let err = task_status::extract_error_text(&poll.output, reconciler.failure_fallback());
             offload_jobs::update_status::<R::Entity>(&state.db, job.id(), "failed", None, Some(&err))
-                .await?;
+                .await
+                .map_err(ReconcileFailure::Transient)?;
         }
         "canceled" => {
             offload_jobs::update_status::<R::Entity>(&state.db, job.id(), "canceled", None, None)
-                .await?;
+                .await
+                .map_err(ReconcileFailure::Transient)?;
         }
         other => {
             offload_jobs::update_status::<R::Entity>(
@@ -103,7 +144,8 @@ where
                 poll.stage.as_deref(),
                 None,
             )
-            .await?;
+            .await
+            .map_err(ReconcileFailure::Transient)?;
         }
     }
     Ok(())
@@ -134,11 +176,31 @@ where
         return Ok(job);
     };
     if let Err(e) = reconcile_one(reconciler, state, &job, &cap, &task_id).await {
-        if let Some(reason) = task_status::offload_task_missing_message(&e) {
-            offload_jobs::update_status::<R::Entity>(&state.db, job_id, "failed", None, Some(&reason))
+        match e {
+            ReconcileFailure::Permanent(reason) => {
+                offload_jobs::update_status::<R::Entity>(
+                    &state.db,
+                    job_id,
+                    "failed",
+                    None,
+                    Some(&reason),
+                )
                 .await?;
-        } else {
-            return Err(e);
+            }
+            ReconcileFailure::Transient(e) => {
+                if let Some(reason) = task_status::offload_task_missing_message(&e) {
+                    offload_jobs::update_status::<R::Entity>(
+                        &state.db,
+                        job_id,
+                        "failed",
+                        None,
+                        Some(&reason),
+                    )
+                    .await?;
+                } else {
+                    return Err(e);
+                }
+            }
         }
     }
     offload_jobs::get_job::<R::Entity>(&state.db, job_id, user_id)
@@ -238,7 +300,22 @@ where
         };
         match reconcile_one(reconciler, state, &job, &cap, &task_id).await {
             Ok(()) => {}
-            Err(e) => {
+            Err(ReconcileFailure::Permanent(reason)) => {
+                tracing::warn!(
+                    "{} job {} failed permanently, not retrying: {reason}",
+                    reconciler.label(),
+                    job.id()
+                );
+                let _ = offload_jobs::update_status::<R::Entity>(
+                    &state.db,
+                    job.id(),
+                    "failed",
+                    None,
+                    Some(&reason),
+                )
+                .await;
+            }
+            Err(ReconcileFailure::Transient(e)) => {
                 if let Some(reason) = task_status::offload_task_missing_message(&e) {
                     let _ = offload_jobs::update_status::<R::Entity>(
                         &state.db,

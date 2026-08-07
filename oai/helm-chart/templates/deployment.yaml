@@ -62,6 +62,11 @@ spec:
               value: {{ .Values.config.staticDir | quote }}
             - name: RUST_LOG
               value: {{ .Values.config.rustLog | quote }}
+            # glibc gives each contending thread its own 64 MB malloc arena and
+            # never returns them to the OS, so a burst of large image buffers
+            # permanently raises RSS. Capping the arena count bounds that floor.
+            - name: MALLOC_ARENA_MAX
+              value: {{ .Values.config.mallocArenaMax | quote }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

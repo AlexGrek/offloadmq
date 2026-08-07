@@ -10,3 +10,4 @@ pub mod music_generation_worker;
 pub mod llm_compare_worker;
 pub mod llm_debate_worker;
 pub mod movie_worker;
+pub mod stale_job_reaper;

@@ -163,6 +163,65 @@ where
     Ok(())
 }
 
+/// Mirrors [`crate::offload::task_status::is_terminal`], as a slice so it can be
+/// pushed into a SQL `NOT IN`.
+const TERMINAL_STATUSES: [&str; 3] = ["completed", "failed", "canceled"];
+
+/// Mark long-abandoned non-terminal rows failed, returning how many were reaped.
+///
+/// Rows strand outside every worker's pickup set: a pod restart between the row
+/// insert and the OffloadMQ submit leaves a job `created`/`queued` with no task
+/// id, and the pickup queries below only match rows that were actually
+/// submitted. Nothing revisits them, so without a reaper they stay non-terminal
+/// forever and keep rendering as in-flight in the UI.
+///
+/// Takes columns explicitly rather than via [`OffloadJobEntity`] so the bespoke
+/// job tables (image generation, movie, llm compare/debate) can reuse it.
+pub async fn fail_stale_rows<E>(
+    db: &DatabaseConnection,
+    status_col: E::Column,
+    updated_at_col: E::Column,
+    error_col: E::Column,
+    cutoff: chrono::DateTime<chrono::FixedOffset>,
+    reason: &str,
+) -> Result<u64, AppError>
+where
+    E: EntityTrait,
+{
+    let now = chrono::Utc::now().fixed_offset();
+    let result = E::update_many()
+        .col_expr(status_col, Expr::value("failed".to_string()))
+        .col_expr(error_col, Expr::value(Some(reason.to_string())))
+        .col_expr(updated_at_col, Expr::value(now))
+        .filter(status_col.is_not_in(TERMINAL_STATUSES.map(str::to_string)))
+        .filter(updated_at_col.lt(cutoff))
+        .exec(db)
+        .await
+        .map_err(AppError::Database)?;
+    Ok(result.rows_affected)
+}
+
+/// [`fail_stale_rows`] for entities already on the offload-job framework.
+pub async fn fail_stale_jobs<E>(
+    db: &DatabaseConnection,
+    cutoff: chrono::DateTime<chrono::FixedOffset>,
+    reason: &str,
+) -> Result<u64, AppError>
+where
+    E: OffloadJobEntity,
+    E::Model: OffloadJobModel,
+{
+    fail_stale_rows::<E>(
+        db,
+        E::col_status(),
+        E::col_updated_at(),
+        E::col_error(),
+        cutoff,
+        reason,
+    )
+    .await
+}
+
 /// All non-terminal jobs, oldest-touched first — the background worker's queue.
 pub async fn list_jobs_for_background_worker<E>(
     db: &DatabaseConnection,
