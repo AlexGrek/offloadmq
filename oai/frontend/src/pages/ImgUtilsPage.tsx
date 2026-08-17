@@ -64,6 +64,7 @@ import { imageJobStatusLabel, type ImggenRouteState } from '../lib/imggen'
 import { cn } from '../lib/utils'
 
 const POLL_INTERVAL_MS = 3000
+const LIST_REFRESH_INTERVAL_MS = 5000
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 
 /** One upload slot: local preview while the file uploads, then the stored image. */
@@ -462,6 +463,19 @@ export default function ImgUtilsPage() {
     }, POLL_INTERVAL_MS)
     return () => window.clearInterval(id)
   }, [token, viewedJobId, selectedJob?.status, onPollNow])
+
+  // The poll above only advances the job being *viewed*. Other in-flight jobs are
+  // driven to completion by the backend worker, so the sidebar just needs to
+  // re-read them — a plain DB listing, no OffloadMQ round trip, hence the slower
+  // interval. Without this their rows sit at their submit-time status until reload.
+  const hasPendingJobs = jobs.some(j => !TERMINAL.has(j.status))
+  useEffect(() => {
+    if (!token || !hasPendingJobs) return
+    const id = window.setInterval(() => {
+      void loadJobs()
+    }, LIST_REFRESH_INTERVAL_MS)
+    return () => window.clearInterval(id)
+  }, [token, hasPendingJobs, loadJobs])
 
   const inputReady = Boolean(input?.uploaded && !input.error)
   const sourceReady = Boolean(source?.uploaded && !source.error)

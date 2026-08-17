@@ -218,6 +218,12 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
                         status=TaskStatus.CANCELLED,
                         error="Cancelled by user",
                     )
+                # Flip the server-side status to `running` the moment Ollama
+                # starts responding, instead of waiting for the first buffered
+                # token flush (up to 2 s of generation away, and much longer
+                # when the model still has to load). Empty message → no log
+                # update, so the streamed reply text stays clean.
+                await ctx.progress("running", "")
                 was_cancelled = await _stream_with_cancel(resp, collected, ctx)
     except Exception as exc:
         return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))

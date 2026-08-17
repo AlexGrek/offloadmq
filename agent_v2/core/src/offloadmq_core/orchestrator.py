@@ -949,13 +949,17 @@ class Orchestrator:
                 task.id,
                 LogEntry(level=LogLevel.PROGRESS, stage=stage, message=message),
             )
-            loop = self._loop
-            client = self._client
-            if loop and client:
-                asyncio.run_coroutine_threadsafe(
-                    client.report_progress(task.capability, task.id, stage, message),
-                    loop,
-                )
+            self._send_progress(task, stage, message)
+
+        # Announce the pickup before the executor runs. The server assigns a
+        # pushed task and only leaves `assigned` when a progress update carries a
+        # Starting/Running status, so without this a native async executor that
+        # is slow to emit its first progress (llm.* waits for the model to load
+        # and the first tokens to stream) leaves the task stuck at `assigned` for
+        # its whole run. The routed pipeline has its own report_starting; this is
+        # the equivalent for every executor, sent with an empty log so it never
+        # pollutes log-streaming consumers (OAI chat renders `log` as the reply).
+        self._send_progress(task, "starting", "")
 
         pool.submit(
             task,
@@ -966,6 +970,16 @@ class Orchestrator:
             progress_reporter=progress_reporter,
             agent_transport=self._sync_transport,
         )
+
+    def _send_progress(self, task: Task, stage: str, message: str) -> None:
+        """Forward a progress update to the server (no local store write)."""
+        loop = self._loop
+        client = self._client
+        if loop and client:
+            asyncio.run_coroutine_threadsafe(
+                client.report_progress(task.capability, task.id, stage, message),
+                loop,
+            )
 
     def _on_log(self, task_id: str, entry: LogEntry) -> None:
         self._store.append_log(task_id, entry)
