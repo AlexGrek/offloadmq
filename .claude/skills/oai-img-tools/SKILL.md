@@ -133,11 +133,13 @@ DELETE /api/img-utils/jobs/{id}              removes OUTPUT image only (input is
 `options?` (map). **comfy tools:** `options` → `secondary_prompts`. **resize:** `options` are
 the flat resize params, validated + normalized on submit.
 
-**Two buckets per job:** input bucket `rm_after_task=true` (OffloadMQ reaps it when the agent
-resolves the task); output bucket persisted in `img_utils_jobs.output_bucket_uid` and deleted
-best-effort by `release_output_bucket` once the output image is stored — otherwise it would sit
-on the server for its full 24 h TTL. Bucket files named `input_<id>.jpg` / `source_<id>.jpg`
-so the same upload can fill both slots without colliding on the agent.
+**Two buckets per job:** input bucket `rm_after_task=true`; output bucket persisted in
+`img_utils_jobs.output_bucket_uid` (that column is the job's `bucket_uid()`, which the generic
+driver releases via `offload_job::release_bucket` on *every* terminal transition — completed,
+failed, canceled, task-missing). The input bucket is OffloadMQ's to reap: on agent resolve, or
+otherwise via the server's spent-bucket sweep (`src/storage/bucket_reaper.rs`). Nothing waits
+for the 24 h TTL. Bucket files are named `input_<id>.jpg` / `source_<id>.jpg` so the same upload
+can fill both slots without colliding on the agent.
 
 **Reuses `image_files`:** inputs from the shared `POST /api/images/upload`; output stored via
 `image_jobs::store_offload_output_image` (`direction="output"`), so it is served by
@@ -220,6 +222,7 @@ Note: `eslint .` has a large **pre-existing** project-wide baseline (react-hooks
    selects jobs for a worker must use `task_status::WORKER_PICKUP_STATUSES` — a hand-written
    subset orphans those rows, and they then only finish while their page is open.
 5. **Output-only delete** — the input image is a shared user upload; `delete_job` leaves it.
+   (Bucket cleanup is unrelated and automatic — see "Two buckets per job".)
 6. **Resize dimensions cap at 1920** (`MAX_IMAGE_EDGE`) — OAI downscales every stored image to
    that, so a larger request could never be delivered; `method` is checked against the agent's
    advertised filters.

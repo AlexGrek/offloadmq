@@ -3,6 +3,8 @@ use opendal::{Operator, services};
 
 use crate::config::StorageConfig;
 
+pub mod bucket_reaper;
+
 /// Thin wrapper around an opendal Operator providing bucket-scoped file operations.
 /// Files are stored at path `{bucket_id}/{file_id}` inside the configured root.
 #[derive(Clone)]

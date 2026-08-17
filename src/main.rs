@@ -330,9 +330,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     _ = interval.tick() => {
+                        // First reclaim buckets whose task is over: `rm_after_task`
+                        // is only auto-honoured when an agent resolves the task, so
+                        // cancels, timeouts and orphaned assignments leave theirs
+                        // behind for this sweep rather than for the TTL below.
+                        let spent = crate::storage::bucket_reaper::sweep_spent_buckets(&state).await;
+
                         let ttl = state.config.storage.bucket_ttl_minutes;
                         let expired = state.storage.buckets.list_expired_buckets(ttl);
                         if expired.is_empty() {
+                            if spent.deleted > 0 || spent.errors > 0 {
+                                enqueue_service_message(
+                                    &state,
+                                    "bg",
+                                    "storage-cleanup-job",
+                                    serde_json::json!({
+                                        "expired_found": 0,
+                                        "deleted": 0,
+                                        "errors": 0,
+                                        "spent_deleted": spent.deleted,
+                                        "spent_errors": spent.errors,
+                                    }),
+                                ).await;
+                            }
                             continue;
                         }
                         info!("Storage cleanup: purging {} expired bucket(s)", expired.len());
@@ -363,6 +383,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "expired_found": expired.len(),
                                 "deleted": deleted,
                                 "errors": errors,
+                                "spent_deleted": spent.deleted,
+                                "spent_errors": spent.errors,
                             }),
                         ).await;
                     }

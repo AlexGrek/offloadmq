@@ -267,6 +267,13 @@ Clients can create temporary buckets to stage files alongside task submissions.
 
 **Cleanup worker** (spawned in [src/main.rs](src/main.rs)):
 - Runs on startup and every 3 hours
+- First reaps *spent* buckets ([src/storage/bucket_reaper.rs](src/storage/bucket_reaper.rs)): an
+  `rm_after_task` bucket whose recorded tasks have all reached a terminal state (or no longer
+  exist). Agent resolve deletes these inline, but a task cancelled while queued, timed out, or
+  orphaned by an offline agent never reaches that path — this sweep is what keeps the
+  `rm_after_task` promise for those. Buckets with no recorded task, or younger than 10 minutes,
+  are left to the TTL.
+- Then purges buckets past their TTL
 - Deletes files from the storage backend, then removes bucket metadata from Sled
 
 ### Core Types
@@ -445,7 +452,10 @@ task kill            # Kill ports 3000/5173 and stop infra
 - Authenticated routes (JWT middleware): `/api/me`, WebSocket chat, task submission
 - Static assets (React build) served via `tower-http::ServeDir` with SPA fallback
 
-**Offload-job framework** — the "submit task → poll → persist" features (describe, nude_detect, tts, music_generation) share a generic backbone instead of each re-implementing the lifecycle: [db/offload_jobs.rs](oai/backend/src/db/offload_jobs.rs) (generic DB ops + `OffloadJobEntity`/`OffloadJobModel` traits), [services/offload_job.rs](oai/backend/src/services/offload_job.rs) (generic poll/cancel/reconcile + `JobReconciler` trait), [offload/task_status.rs](oai/backend/src/offload/task_status.rs) (shared status helpers + `OffloadPoller`), [jobs/worker_runtime.rs](oai/backend/src/jobs/worker_runtime.rs) (generic worker loop), and [routes/job_common.rs](oai/backend/src/routes/job_common.rs) (shared DTOs + `parse_id`). Each feature supplies only its trait impls, `start_job`, and the completed-result handler. Chat (WS) and image generation (multi-file pipeline) are intentionally bespoke. On the frontend, all authenticated API clients share [api/http.ts](oai/frontend/src/api/http.ts) (`apiRequest`). **Building a new such feature: use the `oai-new-feature` skill.**
+**Offload-job framework** — the "submit task → poll → persist" features (describe, nude_detect, tts, music_generation) share a generic backbone instead of each re-implementing the lifecycle: [db/offload_jobs.rs](oai/backend/src/db/offload_jobs.rs) (generic DB ops + `OffloadJobEntity`/`OffloadJobModel` traits), [services/offload_job.rs](oai/backend/src/services/offload_job.rs) (generic poll/cancel/reconcile + `JobReconciler` trait), [offload/task_status.rs](oai/backend/src/offload/task_status.rs) (shared status helpers + `OffloadPoller`), [jobs/worker_runtime.rs](oai/backend/src/jobs/worker_runtime.rs) (generic worker loop), and [routes/job_common.rs](oai/backend/src/routes/job_common.rs) (shared DTOs + `parse_id`). Each feature supplies only its trait impls, `start_job`, and the completed-result handler. The
+driver also owns bucket lifetime: a job's `bucket_uid()` is released on every terminal transition,
+so no finished job leaves an OffloadMQ bucket behind (image generation does the same in
+`image_jobs::release_job_buckets`, covering both its output and input buckets). Chat (WS) and image generation (multi-file pipeline) are intentionally bespoke. On the frontend, all authenticated API clients share [api/http.ts](oai/frontend/src/api/http.ts) (`apiRequest`). **Building a new such feature: use the `oai-new-feature` skill.**
 
 **Frontend** ([oai/frontend/](oai/frontend/)) — React 19 + React Router 7 + TypeScript + Vite + shadcn/ui
 
