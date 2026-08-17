@@ -1,14 +1,26 @@
-//! Pure image decoding/normalization using libvips for memory-efficient processing of
-//! large inputs. No DB, no storage, no network — just bytes in, normalized JPEG + metadata out.
-//! libvips processes images in strips rather than loading the full decoded pixel buffer into RAM,
-//! preventing OOM kills when users upload large inputs (e.g. 48 MP camera shots).
+//! Image decoding/normalization for large inputs. No DB, no storage, no network —
+//! just bytes in, normalized JPEG + metadata out.
+//!
+//! Every resize/reencode is delegated to the `vipsthumbnail` / `vipsheader` CLI tools
+//! (package `libvips-tools`), spawned as subprocesses rather than linked in-process.
+//! libvips itself still streams large images in tiles/strips rather than loading the
+//! full decoded pixel buffer into RAM, preventing OOM kills on large inputs (e.g. 48 MP
+//! camera shots) — but doing that work in a child process means a crash or runaway
+//! allocation there can't take the whole server down with it. All subprocess spawns in
+//! this module (vips*, ffmpeg) are serialized through [`SUBPROCESS_GATE`] so at most one
+//! runs at a time, bounding worst-case CPU/RAM on the pod regardless of request concurrency.
 
-use std::{io::Cursor, process::Command, sync::OnceLock, time::{SystemTime, UNIX_EPOCH}};
-
-use rs_vips::{
-    Vips, VipsImage,
-    voption::{Setter, VOption},
+use std::{
+    io::Cursor,
+    path::{Path, PathBuf},
+    process::{Command, Output},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
+
 use sha2::{Digest, Sha256};
 
 use crate::error::AppError;
@@ -23,25 +35,9 @@ pub const MAX_TRANSCODE_BYTES: usize = 8 * 1024 * 1024;
 /// JPEG inputs with any dimension above this also bypass decode + re-encode.
 pub const MAX_TRANSCODE_EDGE: u32 = 6000;
 
-static VIPS_INIT: OnceLock<Result<(), String>> = OnceLock::new();
-
-fn ensure_vips_initialized() -> Result<(), AppError> {
-    VIPS_INIT
-        .get_or_init(|| {
-            Vips::init("oai-backend").map_err(|e| format!("vips init failed: {e}"))?;
-            // Small internal cache — pod memory safety.
-            Vips::cache_set_max(64);
-            Vips::cache_set_max_mem(64 * 1024 * 1024);
-            Vips::cache_set_max_files(32);
-            // One libvips thread per operation; multiple requests can be in flight concurrently
-            // because each creates its own VipsImage objects.
-            Vips::concurrency_set(1);
-            Ok(())
-        })
-        .as_ref()
-        .map_err(|e| AppError::Internal(e.clone()))
-        .copied()
-}
+/// Serializes every resize/reencode subprocess this module spawns (`vipsthumbnail`,
+/// `vipsheader`, `ffmpeg`) so only one child process is ever running at a time.
+static SUBPROCESS_GATE: Mutex<()> = Mutex::new(());
 
 pub struct ProcessedImage {
     pub bytes: Vec<u8>,
@@ -80,11 +76,8 @@ pub fn process_generated_image(
     Ok(out)
 }
 
-/// Decodes arbitrary input via libvips, applies EXIF orientation, downscales to
+/// Decodes arbitrary input via `vipsthumbnail`, applies EXIF orientation, downscales to
 /// `MAX_IMAGE_EDGE` if needed, encodes as JPEG (quality 90), and builds a thumbnail.
-///
-/// libvips streams large images in tiles/strips — it never holds the full decoded
-/// pixel buffer in RAM, which prevents OOM kills on large inputs.
 ///
 /// EXIF orientation is always baked into the pixel data and stripped from the output, so
 /// viewers never need to apply a rotation transform on the stored file.
@@ -93,8 +86,6 @@ pub fn process_image(
     // Kept as a forward-compatible hint; the format is auto-detected from magic bytes below.
     _content_type_hint: Option<String>,
 ) -> Result<ProcessedImage, AppError> {
-    ensure_vips_initialized()?;
-
     if bytes.is_empty() {
         return Err(AppError::BadRequest("empty image".into()));
     }
@@ -106,31 +97,27 @@ pub fn process_image(
     // Record the original EXIF tag for metadata storage before decoding.
     let exif_orientation_val = exif_orientation_int(&bytes);
 
-    // Format is auto-detected from magic bytes — content_type_hint is not needed.
-    let img = VipsImage::new_from_buffer(&bytes, "")
-        .map_err(|e| AppError::BadRequest(format!("decode image failed: {e}")))?;
-    // Apply EXIF rotation: bakes the transform into pixels and clears the orientation tag.
-    // Always called — even for orientation=1 (no-op) — so the output never relies on
-    // a viewer applying the EXIF rotation.
-    let img = img
-        .autorot()
-        .map_err(|e| AppError::Internal(format!("autorot failed: {e}")))?;
+    let input = TempFile::write(&bytes, ".bin")?;
 
-    // Measure post-rotation dimensions. `autorot`, `get_width` and `get_height` are
-    // header-only — no pixels are decoded yet.
-    let ow = img.get_width() as u32;
-    let oh = img.get_height() as u32;
+    // Header-only read (no pixels decoded) for the raw, pre-rotation dimensions.
+    let raw_w = vips_header_dim(&input.0, "width")?;
+    let raw_h = vips_header_dim(&input.0, "height")?;
+    // Orientations 5-8 carry a 90/270 degree rotation component, which swaps the axes
+    // once baked into pixels. 1-4 are mirror/180-degree only and don't swap.
+    let (ow, oh) = match exif_orientation_val {
+        Some(5..=8) => (raw_h, raw_w),
+        _ => (raw_w, raw_h),
+    };
 
-    // Bypass decode + re-encode for oversized JPEG inputs. `new_from_buffer` decodes a JPEG
-    // fully into RAM for random access, and the resize + JPEG encode below pull every pixel
-    // through — a 48 MP / multi-MB photo can exceed pod memory and trigger an OOM kill. For
-    // big JPEGs we store the original bytes verbatim (no resize, no re-encode) and build only
-    // a shrink-on-load thumbnail, which never materializes the full source. Non-JPEG inputs
-    // are always transcoded because the pipeline requires JPEG output.
+    // Bypass decode + re-encode for oversized JPEG inputs: resizing/encoding pulls every
+    // pixel through the pipeline, and a 48 MP / multi-MB photo can exceed pod memory. For
+    // big JPEGs we store the original bytes verbatim (no resize, no re-encode) and build
+    // only a shrink-on-load thumbnail. Non-JPEG inputs are always transcoded because the
+    // pipeline requires JPEG output.
     if is_jpeg_magic(&bytes)
         && (original_len > MAX_TRANSCODE_BYTES || ow.max(oh) > MAX_TRANSCODE_EDGE)
     {
-        let thumbnail_bytes = encode_thumbnail_shrink_on_load(&bytes)?;
+        let (thumbnail_bytes, _, _) = vips_thumbnail(&input.0, THUMBNAIL_MAX_EDGE, JPEG_QUALITY)?;
         let sha256 = sha256_hex(&bytes);
         return Ok(ProcessedImage {
             bytes,
@@ -148,23 +135,11 @@ pub fn process_image(
         });
     }
 
-    let (img, rescaled) = if ow.max(oh) > MAX_IMAGE_EDGE {
-        let scale = (MAX_IMAGE_EDGE as f64) / (ow.max(oh) as f64);
-        let resized = img
-            .resize(scale)
-            .map_err(|e| AppError::Internal(format!("resize failed: {e}")))?;
-        (resized, true)
-    } else {
-        (img, false)
-    };
-
-    let sw = img.get_width() as u32;
-    let sh = img.get_height() as u32;
-
-    // Always encode through libvips: bakes orientation into pixels, strips all EXIF.
-    let encoded = vips_to_jpeg(&img, JPEG_QUALITY)?;
+    // `vipsthumbnail` decodes, auto-rotates, shrinks to fit the box (never upscales —
+    // the trailing `>` in the size spec) and strips all metadata in one subprocess call.
+    let (encoded, sw, sh) = vips_thumbnail(&input.0, MAX_IMAGE_EDGE, JPEG_QUALITY)?;
     let sha256 = sha256_hex(&encoded);
-    let thumbnail_bytes = encode_thumbnail_vips(&img)?;
+    let (thumbnail_bytes, _, _) = vips_thumbnail(&input.0, THUMBNAIL_MAX_EDGE, JPEG_QUALITY)?;
 
     Ok(ProcessedImage {
         bytes: encoded,
@@ -174,7 +149,7 @@ pub fn process_image(
         original_width: Some(ow as i32),
         original_height: Some(oh as i32),
         original_bytes: Some(original_len as i64),
-        rescaled,
+        rescaled: ow.max(oh) > MAX_IMAGE_EDGE,
         reencoded: true,
         exif_orientation: exif_orientation_val,
         sha256,
@@ -192,10 +167,9 @@ pub fn ensure_jpeg_response(bytes: Vec<u8>, content_type: &str) -> Result<Vec<u8
 
 /// Build a thumbnail from an existing main JPEG on disk (backfill path).
 pub fn thumbnail_from_main_jpeg(bytes: &[u8]) -> Result<Vec<u8>, AppError> {
-    ensure_vips_initialized()?;
-    let img = VipsImage::new_from_buffer(bytes, "")
-        .map_err(|e| AppError::BadRequest(format!("decode thumbnail source failed: {e}")))?;
-    encode_thumbnail_vips(&img)
+    let input = TempFile::write(bytes, ".jpg")?;
+    let (thumbnail_bytes, _, _) = vips_thumbnail(&input.0, THUMBNAIL_MAX_EDGE, JPEG_QUALITY)?;
+    Ok(thumbnail_bytes)
 }
 
 /// Extract a JPEG thumbnail from a video blob via ffmpeg (first frame at ~0.5s).
@@ -204,58 +178,22 @@ pub fn thumbnail_from_video(bytes: &[u8]) -> Result<Vec<u8>, AppError> {
         return Err(AppError::BadRequest("empty video".into()));
     }
 
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp = std::env::temp_dir();
-    let input = tmp.join(format!("oai-vid-{stamp}.bin"));
-    let output = tmp.join(format!("oai-vid-thumb-{stamp}.jpg"));
-
-    std::fs::write(&input, bytes)
-        .map_err(|e| AppError::Internal(format!("write temp video failed: {e}")))?;
+    let input = TempFile::write(bytes, ".bin")?;
+    let output = TempFile::new(".jpg");
 
     let scale = format!(
         "scale={}:{}:force_original_aspect_ratio=decrease",
         THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE
     );
-    let status = Command::new("ffmpeg")
-        .args([
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-ss",
-            "0.5",
-            "-i",
-        ])
-        .arg(input.as_os_str())
-        .args([
-            "-vframes",
-            "1",
-            "-vf",
-            &scale,
-            "-q:v",
-            "2",
-            "-y",
-        ])
-        .arg(output.as_os_str())
-        .status()
-        .map_err(|e| AppError::Internal(format!("ffmpeg spawn failed: {e}")))?;
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-hide_banner", "-loglevel", "error", "-ss", "0.5", "-i"])
+        .arg(&input.0)
+        .args(["-vframes", "1", "-vf", &scale, "-q:v", "2", "-y"])
+        .arg(&output.0);
+    run_gated(cmd)?;
 
-    let _ = std::fs::remove_file(&input);
-
-    if !status.success() {
-        let _ = std::fs::remove_file(&output);
-        return Err(AppError::Internal(
-            "ffmpeg video thumbnail extraction failed".into(),
-        ));
-    }
-
-    let thumb = std::fs::read(&output).map_err(|e| {
-        let _ = std::fs::remove_file(&output);
-        AppError::Internal(format!("read ffmpeg thumbnail failed: {e}"))
-    })?;
-    let _ = std::fs::remove_file(&output);
+    let thumb = std::fs::read(&output.0)
+        .map_err(|e| AppError::Internal(format!("read ffmpeg thumbnail failed: {e}")))?;
 
     if !is_jpeg_blob(&thumb, "image/jpeg") {
         return Err(AppError::Internal(
@@ -278,43 +216,86 @@ fn is_jpeg_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF
 }
 
-/// Memory-safe thumbnail for an oversized source. libvips `thumbnail_buffer` uses
-/// shrink-on-load, so it never fully decodes the source into RAM. EXIF orientation is
-/// applied (thumbnail is upright) and the result is downsized to fit a `THUMBNAIL_MAX_EDGE`
-/// box. Used by the [`process_image`] passthrough path for large JPEGs.
-fn encode_thumbnail_shrink_on_load(bytes: &[u8]) -> Result<Vec<u8>, AppError> {
-    let thumb = VipsImage::thumbnail_buffer_with_opts(
-        bytes,
-        THUMBNAIL_MAX_EDGE as i32,
-        VOption::new()
-            .set("height", THUMBNAIL_MAX_EDGE as i32)
-            .set("size", "down"),
-    )
-    .map_err(|e| AppError::Internal(format!("thumbnail_buffer failed: {e}")))?;
-    vips_to_jpeg(&thumb, JPEG_QUALITY)
+/// Runs `vipsthumbnail` on `input`, shrinking it to fit inside a `max_edge x max_edge`
+/// box (aspect preserved, never upscaled) and encoding as JPEG at `quality` with all
+/// metadata stripped. Returns the encoded bytes plus the output's actual dimensions,
+/// read back via a header-only `vipsheader` call (no full pixel decode).
+fn vips_thumbnail(input: &Path, max_edge: u32, quality: u8) -> Result<(Vec<u8>, u32, u32), AppError> {
+    let out = TempFile::new(".jpg");
+    let size = format!("{max_edge}x{max_edge}>");
+    let out_arg = format!("{}[Q={quality},strip]", out.0.display());
+
+    let mut cmd = Command::new("vipsthumbnail");
+    cmd.arg(input).args(["--size", &size, "-o", &out_arg]);
+    run_gated(cmd)?;
+
+    let bytes = std::fs::read(&out.0)
+        .map_err(|e| AppError::Internal(format!("read vipsthumbnail output failed: {e}")))?;
+    let w = vips_header_dim(&out.0, "width")?;
+    let h = vips_header_dim(&out.0, "height")?;
+    Ok((bytes, w, h))
 }
 
-fn vips_to_jpeg(img: &VipsImage, quality: u8) -> Result<Vec<u8>, AppError> {
-    img.write_to_buffer_with_opts(
-        ".jpg",
-        VOption::new()
-            .set("q", i32::from(quality))
-            .set("strip", true),
-    )
-    .map_err(|e| AppError::Internal(format!("vips jpeg encode failed: {e}")))
+/// Header-only dimension read (`vipsheader -f width|height`) — never decodes pixels.
+fn vips_header_dim(path: &Path, field: &str) -> Result<u32, AppError> {
+    let mut cmd = Command::new("vipsheader");
+    cmd.args(["-f", field]).arg(path);
+    let output = run_gated(cmd)?;
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u32>()
+        .map_err(|e| AppError::Internal(format!("vipsheader parse failed: {e}")))
 }
 
-fn encode_thumbnail_vips(img: &VipsImage) -> Result<Vec<u8>, AppError> {
-    let w = img.get_width() as u32;
-    let h = img.get_height() as u32;
-    if w.max(h) > THUMBNAIL_MAX_EDGE {
-        let scale = (THUMBNAIL_MAX_EDGE as f64) / (w.max(h) as f64);
-        let resized = img
-            .resize(scale)
-            .map_err(|e| AppError::Internal(format!("thumbnail resize failed: {e}")))?;
-        vips_to_jpeg(&resized, JPEG_QUALITY)
-    } else {
-        vips_to_jpeg(img, JPEG_QUALITY)
+/// Spawns `cmd`, holding [`SUBPROCESS_GATE`] for the child's lifetime so only one
+/// resize/reencode subprocess runs at a time.
+fn run_gated(mut cmd: Command) -> Result<Output, AppError> {
+    let program = cmd.get_program().to_string_lossy().into_owned();
+    let _permit = SUBPROCESS_GATE.lock().unwrap_or_else(|e| e.into_inner());
+    let output = cmd
+        .output()
+        .map_err(|e| AppError::Internal(format!("{program} spawn failed: {e}")))?;
+    if !output.status.success() {
+        return Err(AppError::Internal(format!(
+            "{program} failed ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(output)
+}
+
+/// A temp file on disk, removed on drop. CLI image tools need real file paths rather
+/// than stdin/stdout streaming.
+struct TempFile(PathBuf);
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+impl TempFile {
+    fn new(suffix: &str) -> Self {
+        let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!(
+            "oai-img-{}-{stamp}-{n}{suffix}",
+            std::process::id()
+        ));
+        Self(path)
+    }
+
+    fn write(bytes: &[u8], suffix: &str) -> Result<Self, AppError> {
+        let file = Self::new(suffix);
+        std::fs::write(&file.0, bytes)
+            .map_err(|e| AppError::Internal(format!("write temp file failed: {e}")))?;
+        Ok(file)
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
     }
 }
 
