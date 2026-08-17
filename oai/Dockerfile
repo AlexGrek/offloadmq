@@ -4,7 +4,7 @@
 ARG TARGETPLATFORM=linux/amd64
 FROM --platform=$TARGETPLATFORM rust:1.91-slim-bookworm AS builder
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev libvips-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY backend/Cargo.toml backend/Cargo.lock ./
@@ -24,7 +24,9 @@ FROM --platform=$TARGETPLATFORM debian:bookworm-slim
 # Baked here in the slim stage only, so it never busts the cargo build cache.
 # Reported by GET /api/version and matched against the frontend's VITE_APP_VERSION.
 ARG OAI_BUILD_VERSION=dev
-RUN apt-get update && apt-get install -y ca-certificates ffmpeg libvips42 && rm -rf /var/lib/apt/lists/*
+# libvips-tools provides the vips/vipsthumbnail/vipsheader CLIs that image_processing.rs
+# shells out to for resize/reencode — spawned as subprocesses, not linked in-process.
+RUN apt-get update && apt-get install -y ca-certificates ffmpeg libvips-tools && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder /app/oai-backend ./oai-backend
