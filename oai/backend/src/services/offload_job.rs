@@ -95,6 +95,71 @@ where
     }
 }
 
+/// Drop the OffloadMQ bucket a finished job owned.
+///
+/// Buckets are a metered resource on the server (a per-key count cap and a size
+/// cap), and the only thing that would otherwise remove them is the 24 h TTL
+/// sweep. Input buckets carry `rm_after_task` so the server reaps them when the
+/// agent resolves the task, but that never fires for a task canceled while
+/// queued — and output buckets, which must survive until we download from them,
+/// carry no such flag at all. So every terminal transition releases the bucket
+/// here, explicitly.
+///
+/// Best-effort by design: the job has already reached its final state and its
+/// result is stored, so a cleanup failure must not undo any of that. The worst
+/// case is the bucket surviving to its TTL, exactly as before.
+async fn release_bucket<M: OffloadJobModel>(poller: &dyn OffloadPoller, label: &str, job: &M) {
+    let Some(bucket) = job.bucket_uid() else {
+        return;
+    };
+    if let Err(e) = poller.delete_bucket(bucket).await {
+        tracing::warn!(
+            "{label}: failed to release bucket {bucket} of job {}: {e}",
+            job.id()
+        );
+    }
+}
+
+/// [`release_bucket`] for the finalizing paths that have no poller in hand.
+/// Builds one only when there is actually a bucket to release.
+async fn release_bucket_for<R>(reconciler: &R, state: &AppState, job: &<R::Entity as EntityTrait>::Model)
+where
+    R: JobReconciler,
+    <R::Entity as EntityTrait>::Model: OffloadJobModel,
+{
+    if job.bucket_uid().is_none() {
+        return;
+    }
+    match reconciler.poller(state).await {
+        Ok(poller) => release_bucket(poller.as_ref(), reconciler.label(), job).await,
+        Err(e) => tracing::warn!(
+            "{}: no client to release the bucket of job {}: {e}",
+            reconciler.label(),
+            job.id()
+        ),
+    }
+}
+
+/// Mark a job failed and hand its bucket back — the finalization used by the
+/// paths outside [`reconcile_one`] (a result that can never be persisted, an
+/// upstream task that no longer exists). Nothing will read the bucket after
+/// this, so keeping it would strand server storage until the TTL.
+async fn fail_and_release<R>(
+    reconciler: &R,
+    state: &AppState,
+    job: &<R::Entity as EntityTrait>::Model,
+    reason: &str,
+) -> Result<(), AppError>
+where
+    R: JobReconciler,
+    <R::Entity as EntityTrait>::Model: OffloadJobModel,
+{
+    offload_jobs::update_status::<R::Entity>(&state.db, job.id(), "failed", None, Some(reason))
+        .await?;
+    release_bucket_for(reconciler, state, job).await;
+    Ok(())
+}
+
 /// Poll a single job once and apply the resulting transition. Used by both the
 /// foreground `poll_job` and the background `reconcile_pass`.
 async fn reconcile_one<R>(
@@ -121,20 +186,27 @@ where
         .await
         .map_err(ReconcileFailure::Transient)?;
     match poll.status.as_str() {
-        "completed" => reconciler
-            .on_completed(state, job, &poll)
-            .await
-            .map_err(classify_completed_failure)?,
+        "completed" => {
+            reconciler
+                .on_completed(state, job, &poll)
+                .await
+                .map_err(classify_completed_failure)?;
+            // Only once the result is safely persisted: a failure above leaves
+            // the job in flight, and the next attempt still needs the bucket.
+            release_bucket(poller.as_ref(), reconciler.label(), job).await;
+        }
         "failed" => {
             let err = task_status::extract_error_text(&poll.output, reconciler.failure_fallback());
             offload_jobs::update_status::<R::Entity>(&state.db, job.id(), "failed", None, Some(&err))
                 .await
                 .map_err(ReconcileFailure::Transient)?;
+            release_bucket(poller.as_ref(), reconciler.label(), job).await;
         }
         "canceled" => {
             offload_jobs::update_status::<R::Entity>(&state.db, job.id(), "canceled", None, None)
                 .await
                 .map_err(ReconcileFailure::Transient)?;
+            release_bucket(poller.as_ref(), reconciler.label(), job).await;
         }
         other => {
             offload_jobs::update_status::<R::Entity>(
@@ -178,25 +250,11 @@ where
     if let Err(e) = reconcile_one(reconciler, state, &job, &cap, &task_id).await {
         match e {
             ReconcileFailure::Permanent(reason) => {
-                offload_jobs::update_status::<R::Entity>(
-                    &state.db,
-                    job_id,
-                    "failed",
-                    None,
-                    Some(&reason),
-                )
-                .await?;
+                fail_and_release(reconciler, state, &job, &reason).await?;
             }
             ReconcileFailure::Transient(e) => {
                 if let Some(reason) = task_status::offload_task_missing_message(&e) {
-                    offload_jobs::update_status::<R::Entity>(
-                        &state.db,
-                        job_id,
-                        "failed",
-                        None,
-                        Some(&reason),
-                    )
-                    .await?;
+                    fail_and_release(reconciler, state, &job, &reason).await?;
                 } else {
                     return Err(e);
                 }
@@ -237,6 +295,7 @@ where
         let message = "Canceled before OffloadMQ task was created";
         offload_jobs::update_status::<R::Entity>(&state.db, job.id(), "canceled", None, Some(message))
             .await?;
+        release_bucket_for(reconciler, state, &job).await;
         return Ok(CancelOutcome {
             job_id: job.id(),
             status: "canceled".into(),
@@ -249,6 +308,11 @@ where
         Ok(resp) => {
             offload_jobs::update_status::<R::Entity>(&state.db, job.id(), &resp.status, None, None)
                 .await?;
+            // `cancelRequested` is not the end: the agent may still be working,
+            // and the poll that observes `canceled` releases the bucket then.
+            if task_status::is_terminal(&resp.status) {
+                release_bucket(poller.as_ref(), reconciler.label(), &job).await;
+            }
             Ok(CancelOutcome {
                 job_id: job.id(),
                 status: resp.status,
@@ -265,6 +329,7 @@ where
                     Some(&reason),
                 )
                 .await?;
+                release_bucket(poller.as_ref(), reconciler.label(), &job).await;
                 Ok(CancelOutcome {
                     job_id: job.id(),
                     status: "failed".into(),
@@ -306,25 +371,11 @@ where
                     reconciler.label(),
                     job.id()
                 );
-                let _ = offload_jobs::update_status::<R::Entity>(
-                    &state.db,
-                    job.id(),
-                    "failed",
-                    None,
-                    Some(&reason),
-                )
-                .await;
+                let _ = fail_and_release(reconciler, state, &job, &reason).await;
             }
             Err(ReconcileFailure::Transient(e)) => {
                 if let Some(reason) = task_status::offload_task_missing_message(&e) {
-                    let _ = offload_jobs::update_status::<R::Entity>(
-                        &state.db,
-                        job.id(),
-                        "failed",
-                        None,
-                        Some(&reason),
-                    )
-                    .await;
+                    let _ = fail_and_release(reconciler, state, &job, &reason).await;
                 } else {
                     tracing::warn!(
                         "{} poll failed for job {}: {e}",

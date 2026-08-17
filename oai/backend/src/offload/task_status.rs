@@ -131,6 +131,11 @@ pub struct NormalizedCancel {
 pub trait OffloadPoller: Send + Sync {
     async fn poll(&self, cap: &str, id: &str) -> Result<NormalizedPoll, AppError>;
     async fn cancel(&self, cap: &str, id: &str) -> Result<NormalizedCancel, AppError>;
+    /// Release a bucket the finished job owned. Both clients speak the same
+    /// storage API with the same key, so this is here rather than on the
+    /// concrete client: bucket cleanup must work for chat-polled features
+    /// (image analysis, nude detect) exactly as it does for image-polled ones.
+    async fn delete_bucket(&self, bucket_uid: &str) -> Result<(), AppError>;
 }
 
 #[async_trait]
@@ -153,6 +158,10 @@ impl OffloadPoller for OffloadClient {
             .await?;
         Ok(NormalizedCancel { status: resp.status, message: resp.message })
     }
+
+    async fn delete_bucket(&self, bucket_uid: &str) -> Result<(), AppError> {
+        OffloadClient::delete_bucket(self, bucket_uid).await
+    }
 }
 
 #[async_trait]
@@ -174,6 +183,10 @@ impl OffloadPoller for OffloadImageClient {
             .cancel_task(&OffloadTaskId { cap: cap.to_string(), id: id.to_string() })
             .await?;
         Ok(NormalizedCancel { status: resp.status, message: resp.message })
+    }
+
+    async fn delete_bucket(&self, bucket_uid: &str) -> Result<(), AppError> {
+        OffloadImageClient::delete_bucket(self, bucket_uid).await
     }
 }
 

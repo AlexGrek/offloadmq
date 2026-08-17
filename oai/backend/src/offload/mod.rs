@@ -357,6 +357,42 @@ impl OffloadClient {
     pub async fn cancel_task(&self, task_id: &TaskId) -> Result<CancelTaskResponse, AppError> {
         post_cancel(&self.http, &self.base_url, &self.api_key, &task_id.cap, &task_id.id).await
     }
+
+    pub async fn delete_bucket(&self, bucket_uid: &str) -> Result<(), AppError> {
+        delete_bucket(&self.http, &self.base_url, &self.api_key, bucket_uid).await
+    }
+}
+
+/// Delete a bucket through the client storage API.
+///
+/// Shared by both clients: they carry the same base URL and key, and bucket
+/// cleanup must not depend on which one a feature happens to poll with. A
+/// bucket that is already gone (its `rm_after_task` reap, the server's TTL
+/// sweep, or an earlier release) is the outcome we wanted, so 404 is success.
+pub(crate) async fn delete_bucket(
+    http: &Client,
+    base_url: &str,
+    api_key: &str,
+    bucket_uid: &str,
+) -> Result<(), AppError> {
+    let url = format!("{base_url}/api/storage/bucket/{bucket_uid}");
+    let resp = http
+        .delete(&url)
+        .header("X-API-Key", api_key)
+        .send()
+        .await
+        .map_err(|e| AppError::ExternalService(e.to_string()))?;
+    if resp.status().as_u16() == 404 {
+        return Ok(());
+    }
+    if !resp.status().is_success() {
+        let status = resp.status().as_u16();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AppError::ExternalService(format!(
+            "delete bucket failed (HTTP {status}): {text}"
+        )));
+    }
+    Ok(())
 }
 
 pub(crate) async fn post_cancel(

@@ -75,26 +75,10 @@ impl OffloadImageClient {
             .map_err(|e| AppError::ExternalService(e.to_string()))
     }
 
-    /// Drop a bucket and its files. Only *output* buckets need this — input
-    /// buckets are created with `rm_after_task` and OffloadMQ reaps them itself
-    /// once the agent resolves the task. Without it an output bucket lingers on
-    /// the server until its TTL expires, long after we downloaded the result.
+    /// Drop a bucket and its files once the job that owns it is finished, so it
+    /// does not sit on the server for its full TTL.
     pub async fn delete_bucket(&self, bucket_uid: &str) -> Result<(), AppError> {
-        let url = format!("{}/api/storage/bucket/{}", self.base_url, bucket_uid);
-        let resp = self
-            .http
-            .delete(&url)
-            .header("X-API-Key", &self.api_key)
-            .send()
-            .await
-            .map_err(|e| AppError::ExternalService(e.to_string()))?;
-        if !resp.status().is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::ExternalService(format!(
-                "delete bucket failed: {text}"
-            )));
-        }
-        Ok(())
+        crate::offload::delete_bucket(&self.http, &self.base_url, &self.api_key, bucket_uid).await
     }
 
     pub async fn upload_bucket_file(

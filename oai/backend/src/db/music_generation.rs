@@ -27,6 +27,9 @@ impl OffloadJobModel for music_generation_jobs::Model {
     fn offload_task_id(&self) -> Option<&str> {
         self.offload_task_id.as_deref()
     }
+    fn bucket_uid(&self) -> Option<&str> {
+        self.output_bucket_uid.as_deref()
+    }
 }
 
 impl OffloadJobEntity for MusicJobEntity {

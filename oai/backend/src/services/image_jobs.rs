@@ -424,6 +424,9 @@ pub async fn cancel_job(state: &AppState, user_id: i64, job_id: i64) -> Result<C
     image_generation::update_job_status(&state.db, job.id, &resp.status, None).await?;
     if is_terminal(&resp.status) {
         image_generation::mark_offload_task_finished(&state.db, task.id).await?;
+        // `cancelRequested` is not the end — the poll that sees `canceled`
+        // frees the buckets then.
+        release_job_buckets(state, job.id).await;
     }
     record_event(
         state,
@@ -1137,6 +1140,7 @@ async fn mark_poll_unreachable(state: &AppState, job_id: i64, reason: &str) -> R
     if let Some(task) = image_generation::get_offload_task_by_job(&state.db, job_id).await? {
         image_generation::mark_offload_task_finished(&state.db, task.id).await?;
     }
+    release_job_buckets(state, job_id).await;
     record_event(state, job_id, "offload.poll", "error", Some(reason)).await?;
     record_event(state, job_id, "job.finalize", "error", Some(reason)).await
 }
@@ -1226,6 +1230,8 @@ async fn mark_failed(
 ) -> Result<(), AppError> {
     let err = extract_offload_error(poll);
     image_generation::update_job_status(&state.db, job_id, poll.status.as_str(), Some(err)).await?;
+    // Nothing will be downloaded from a failed or canceled task.
+    release_job_buckets(state, job_id).await;
     record_event(state, job_id, "job.finalize", "error", Some(err)).await
 }
 
@@ -1269,6 +1275,9 @@ async fn promote_after_resize(
         let msg = "external resize finished without an output image";
         record_event(state, job.id, "offload.resize.promote", "error", Some(msg)).await?;
         image_generation::update_job_status(&state.db, job.id, "failed", Some(msg)).await?;
+        // The pre-step's own buckets die with the job — the offload row still
+        // describes them here, before `replace_offload_task` would overwrite it.
+        release_job_buckets(state, job.id).await;
         return Ok(());
     };
 
@@ -1415,6 +1424,9 @@ async fn fetch_and_store_outputs(
         if job.status != "completed" {
             image_generation::update_job_status(&state.db, job.id, "completed", None).await?;
         }
+        // Outputs were stored by an earlier pass; if it did not get as far as
+        // freeing the buckets (a restart mid-finalize), do it now.
+        release_job_buckets(state, job.id).await;
         return Ok(());
     }
 
@@ -1470,7 +1482,63 @@ async fn fetch_and_store_outputs(
 
     image_generation::update_job_status(&state.db, job.id, "completed", None).await?;
     record_event(state, job.id, "job.finalize", "ok", Some("completed")).await?;
+    // The outputs are in our own storage now, so the task's buckets are dead
+    // weight on the server.
+    release_job_buckets(state, job.id).await;
     Ok(())
+}
+
+/// Every bucket named in a stored submit body: the output bucket the agent
+/// writes into, plus the input bucket staged for it (`file_bucket`).
+fn buckets_in_submit_payload(raw: &str) -> Vec<String> {
+    let Ok(payload) = serde_json::from_str::<Value>(raw) else {
+        return Vec::new();
+    };
+    let mut buckets: Vec<String> = payload["output_bucket"]
+        .as_str()
+        .map(|s| vec![s.to_string()])
+        .unwrap_or_default();
+    if let Some(inputs) = payload["file_bucket"].as_array() {
+        buckets.extend(inputs.iter().filter_map(|v| v.as_str()).map(ToOwned::to_owned));
+    }
+    buckets
+}
+
+/// Release the OffloadMQ buckets of a job that just reached a terminal state.
+///
+/// Input buckets are staged with `rm_after_task`, but that only fires when an
+/// agent resolves the task — a job canceled while queued, or one whose task
+/// vanished, would leave them behind. Output buckets carry no such flag at all,
+/// since they must outlive the task long enough for us to download from them.
+/// So both are dropped here, once nothing will read them again.
+///
+/// Best-effort: the job is already final and its files are stored, so a failure
+/// only means the bucket waits for the server's TTL sweep, as it used to.
+async fn release_job_buckets(state: &AppState, job_id: i64) {
+    let offload = match image_generation::get_offload_task_by_job(&state.db, job_id).await {
+        Ok(Some(t)) => t,
+        Ok(None) => return,
+        Err(e) => {
+            tracing::warn!("imggen: cannot read offload row of job {job_id} to free buckets: {e}");
+            return;
+        }
+    };
+    let buckets = buckets_in_submit_payload(&offload.submit_payload);
+    if buckets.is_empty() {
+        return;
+    }
+    let client = match offload_factory::image_client(state).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("imggen: no client to free buckets of job {job_id}: {e}");
+            return;
+        }
+    };
+    for bucket in buckets {
+        if let Err(e) = client.delete_bucket(&bucket).await {
+            tracing::warn!("imggen: failed to free bucket {bucket} of job {job_id}: {e}");
+        }
+    }
 }
 
 fn output_bucket_of(offload: &image_generation::ImageOffloadTask) -> Result<String, AppError> {

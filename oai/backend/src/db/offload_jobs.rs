@@ -24,6 +24,14 @@ pub trait OffloadJobModel {
     fn status(&self) -> &str;
     fn offload_cap(&self) -> Option<&str>;
     fn offload_task_id(&self) -> Option<&str>;
+    /// The OffloadMQ bucket this job owns, if any — the value behind
+    /// [`OffloadJobEntity::col_bucket`]. The generic driver releases it when the
+    /// job reaches a terminal state, so a finished job never leaves a bucket
+    /// behind for the server's TTL sweep to find. `None` for bucket-less
+    /// features (tts).
+    fn bucket_uid(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// Maps an entity's lifecycle columns so the generic queries below can be built

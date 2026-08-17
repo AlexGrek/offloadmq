@@ -133,8 +133,10 @@ DELETE /api/img-utils/jobs/{id}              removes OUTPUT image only (input is
 `options?` (map). **comfy tools:** `options` → `secondary_prompts`. **resize:** `options` are
 the flat resize params, validated + normalized on submit.
 
-**Two buckets per job:** input bucket `rm_after_task=true`; output bucket persisted in
-`img_utils_jobs.output_bucket_uid`. Bucket files named `input_<id>.jpg` / `source_<id>.jpg`
+**Two buckets per job:** input bucket `rm_after_task=true` (OffloadMQ reaps it when the agent
+resolves the task); output bucket persisted in `img_utils_jobs.output_bucket_uid` and deleted
+best-effort by `release_output_bucket` once the output image is stored — otherwise it would sit
+on the server for its full 24 h TTL. Bucket files named `input_<id>.jpg` / `source_<id>.jpg`
 so the same upload can fill both slots without colliding on the agent.
 
 **Reuses `image_files`:** inputs from the shared `POST /api/images/upload`; output stored via
@@ -167,9 +169,12 @@ Name-based flags mirror the backend, keyed on the operation:
 - `prettyLabel(slug)` renders the operation label (`RESIZE_WORKFLOW` `basic_resize` → "Basic resize").
 - `OPERATION_HINTS` in `ImgUtilsPage.tsx` holds the one-line blurbs (keyed on operation).
 
-**Progress:** no Progress-drawer entry and no ToolDebug (no `image_offload_tasks` row). The page's
-own **3 s auto-poll** is the only signal; `img_utils_jobs.started_at` / `typical_runtime_seconds`
-(set in `ImgUtilsReconciler::on_poll`) feed the same `JobProgressBar` image generation uses.
+**Progress:** no Progress-drawer entry and no ToolDebug (no `image_offload_tasks` row). The page
+**3 s auto-polls the viewed job** (foreground poll → MQ) and **5 s re-lists** while any row is
+non-terminal (plain DB read; the `img_utils` worker is what advances those rows). Jobs finish
+whether or not the page is open — the page is a view, not the driver.
+`img_utils_jobs.started_at` / `typical_runtime_seconds` (set in `ImgUtilsReconciler::on_poll`)
+feed the same `JobProgressBar` image generation uses.
 
 **Lightbox / compare:** same `ImageLightbox` + before/after compare (`imgutils-compare-toggle`,
 reset on job switch) as `ImageGenerationPage`. `GET`/`poll` resolve `input_image` / `source_image`
@@ -208,7 +213,12 @@ Note: `eslint .` has a large **pre-existing** project-wide baseline (react-hooks
    Add-workflow dropdown auto-fills it; the param editor threads `selectedWf.namespace`.
 3. **Knobs are forwarded verbatim** as `secondary_prompts` for comfy tools; the backend does not
    validate them (resize is the exception — `ResizeOptions` is validated + normalized).
-4. **No Progress drawer / no ToolDebug** for img-utils jobs — only the page's 3 s poll.
+4. **No Progress drawer / no ToolDebug** for img-utils jobs — the page's polls plus the
+   background worker are the whole story.
+   **Worker pickup statuses:** a poll mirrors the upstream status into the row verbatim, so
+   in-flight rows sit at `queued`/`assigned`/`starting` as often as `running`. Any query that
+   selects jobs for a worker must use `task_status::WORKER_PICKUP_STATUSES` — a hand-written
+   subset orphans those rows, and they then only finish while their page is open.
 5. **Output-only delete** — the input image is a shared user upload; `delete_job` leaves it.
 6. **Resize dimensions cap at 1920** (`MAX_IMAGE_EDGE`) — OAI downscales every stored image to
    that, so a larger request could never be delivered; `method` is checked against the agent's
