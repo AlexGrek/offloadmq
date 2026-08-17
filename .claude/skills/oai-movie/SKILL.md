@@ -47,14 +47,15 @@ task kill
 - Needs both an **`llm.*`** agent (director + scene-director) and an **`imggen.*`** video-capable
   agent (`txt2video`/`img2video`) online on OffloadMQ
 - **ffmpeg must be installed locally** — the backend shells out to it directly
-  (`services/movie_ffmpeg.rs`, `Command::new("ffmpeg")`), same as it links against libvips for
-  image processing. `oai/Taskfile.yml`'s `dev`, `dev:backend`, and `build:backend` tasks now
-  each run a `command -v ffmpeg` presence check (inline bash, right after the existing libvips
-  check) and fail fast with an install hint if it's missing:
+  (`services/movie_ffmpeg.rs`, `Command::new("ffmpeg")`), same as `image_processing.rs` shells
+  out to the `vipsthumbnail`/`vipsheader` CLI for image processing (neither links against a
+  system lib at build time anymore). `oai/Taskfile.yml`'s `dev`, `dev:backend`, and
+  `build:backend` tasks each run a `command -v ffmpeg` presence check (inline bash, right after
+  the vips CLI check) and fail fast with an install hint if it's missing:
   - macOS: `brew install ffmpeg`
   - Linux: `apt-get install ffmpeg`
   - Already a Docker runtime dependency (see `oai/Dockerfile` — `apt-get install -y
-    ca-certificates ffmpeg libvips42`), so production is covered regardless.
+    ca-certificates ffmpeg libvips-tools`), so production is covered regardless.
 
 ---
 
@@ -222,7 +223,8 @@ already been filtered out.
 5. **ffmpeg is a runtime spawn, not a link dependency.** Even with the `task dev` presence
    check in place, a stale PATH or a container without ffmpeg fails at the first
    `movie_ffmpeg` call reached (last-frame extraction or concat) as an `AppError::Internal`
-   spawn error, not a build/link error like a missing libvips would be.
+   spawn error — same failure mode as a missing `vipsthumbnail` in `image_processing.rs`,
+   since neither is a build-time link dependency anymore.
 6. **`movie_capabilities` has no explicit serde rename.** It serializes as `movie_capabilities`
    under the enum's default `rename_all = "snake_case"`, unlike most other movie/debate events
    which use an explicit `#[serde(rename = "...")]` with a colon (`movie:update`,

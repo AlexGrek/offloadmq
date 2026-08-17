@@ -284,7 +284,7 @@ Backend: `image_jobs::cancel_job` → `OffloadImageClient::cancel_task` → `upd
 |------|----------------|
 | Upload input | `users/{user_id}/images/input/{image_id}.jpg` |
 | Job output | `users/{user_id}/images/output/{job_id}/{image_id}.jpg` |
-| Processing | `image_processing::process_image` — libvips; max edge **1920**, JPEG q=90; EXIF orientation baked in, EXIF stripped |
+| Processing | `image_processing::process_image` — `vipsthumbnail`/`vipsheader` CLI subprocesses; max edge **1920**, JPEG q=90; EXIF orientation baked in, EXIF stripped |
 
 `imageFileUrl(imageId, token)` → `/api/images/files/{id}?token=…` for `<img>` / links.
 
@@ -292,7 +292,7 @@ Backend: `image_jobs::cancel_job` → `OffloadImageClient::cancel_task` → `upd
 
 **Reconcile:** completed job without files → worker/user poll retries download; admin `POST …/reconcile`.
 
-**libvips dependency:** `image_processing.rs` uses `rs-vips` (wraps libvips). Dev requires `brew install vips` (macOS) or `apt-get install libvips-dev` (Linux). Docker image installs `libvips42` in the runtime stage. `task dev` / `task build:backend` check for the system lib and fail fast with a hint if missing.
+**vips CLI dependency:** `image_processing.rs` shells out to the `vipsthumbnail`/`vipsheader` binaries as subprocesses — no libvips linking at build time. Every resize/reencode spawn (plus the `ffmpeg` video-thumbnail spawn) is serialized through a process-wide gate (`SUBPROCESS_GATE` in `image_processing.rs`) so only one runs at a time. Dev requires `brew install vips` (macOS) or `apt-get install libvips-tools` (Linux) — the CLI must be on `PATH` at runtime. Docker image installs `libvips-tools` in the runtime stage. `task dev` / `task build:backend` check for the CLI on `PATH` and fail fast with a hint if missing.
 
 ---
 
@@ -403,10 +403,10 @@ Record in `image_jobs.rs` via `record_event`; add to timeline unless poll noise 
 3. **Cancel needs offload row** — short window after submit.
 4. **Capabilities empty** — missing client token or no `imggen.*` agents.
 5. **Debug uses `OffloadClient` (chat factory)** — same MQ poll endpoint as images.
-6. **Img2img rescale ≠ upload resize** — OAI normalizes upload to 1920px via libvips; MQ `dataPreparation` scales bucket files for the agent.
+6. **Img2img rescale ≠ upload resize** — OAI normalizes upload to 1920px via `vipsthumbnail`; MQ `dataPreparation` scales bucket files for the agent.
 7. **Progress drawer does not poll MQ** — only DB; use page poll or worker for fresh state.
 8. **No dedicated image itests** — admin 403 tests only; extend `oai/itests` when adding contract tests.
-9. **libvips must be installed** — `image_processing.rs` links against the system libvips. Missing lib = linker error. Run `task install` or `brew install vips` before `task dev` or `cargo build`.
+9. **The vips CLI must be on `PATH` at runtime** — `image_processing.rs` shells out to `vipsthumbnail`/`vipsheader` as subprocesses (no build-time linking). Missing binary = runtime `AppError::Internal("... spawn failed")` on the first upload/job, not a build failure. Run `task install` or `brew install vips` (macOS) / `apt-get install libvips-tools` (Linux) before `task dev`.
 
 ---
 
