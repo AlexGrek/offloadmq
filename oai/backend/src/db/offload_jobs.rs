@@ -11,11 +11,11 @@
 //! the per-feature `db/<feature>.rs` module since they touch unique columns.
 
 use sea_orm::{
-    sea_query::Expr, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect,
+    sea_query::Expr, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect,
 };
 
-use crate::error::AppError;
+use crate::{error::AppError, offload::task_status::WORKER_PICKUP_STATUSES};
 
 /// Read access to the lifecycle fields every job model shares. Implemented on
 /// each entity's `Model`.
@@ -223,6 +223,13 @@ where
 }
 
 /// All non-terminal jobs, oldest-touched first — the background worker's queue.
+///
+/// The status set must be [`WORKER_PICKUP_STATUSES`] and nothing narrower: a poll
+/// writes the upstream OffloadMQ status into the row verbatim, so a job caught
+/// mid-flight sits at `queued` / `assigned` / `starting` just as often as at
+/// `running`. Listing only a subset silently orphans those rows — the worker
+/// stops picking them up, and only a foreground poll (which fetches by id) can
+/// still finish them, i.e. the job completes only while its page is open.
 pub async fn list_jobs_for_background_worker<E>(
     db: &DatabaseConnection,
     limit: u64,
@@ -232,13 +239,7 @@ where
     E::Model: OffloadJobModel,
 {
     E::find()
-        .filter(
-            Condition::any()
-                .add(E::col_status().eq("submitted"))
-                .add(E::col_status().eq("pending"))
-                .add(E::col_status().eq("running"))
-                .add(E::col_status().eq("cancelRequested")),
-        )
+        .filter(E::col_status().is_in(WORKER_PICKUP_STATUSES.map(str::to_string)))
         .order_by_asc(E::col_updated_at())
         .limit(limit)
         .all(db)

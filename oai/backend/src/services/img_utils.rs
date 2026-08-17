@@ -197,7 +197,30 @@ impl JobReconciler for ImgUtilsReconciler {
             &job.capability,
         )
         .await?;
-        img_utils::set_output_image(&state.db, job.id, file.id).await
+        img_utils::set_output_image(&state.db, job.id, file.id).await?;
+        // Only now that the result is safely in our own storage: the bucket has
+        // served its purpose and nothing ever reads it again, so release the
+        // server-side quota instead of waiting out its 24 h TTL. Deleted after
+        // the DB link is written — a failure before that point re-polls and
+        // re-downloads, which needs the bucket still there.
+        release_output_bucket(state, bucket).await;
+        Ok(())
+    }
+}
+
+/// Best-effort delete of a finished job's output bucket. A failure here costs
+/// only some server-side storage until the bucket's TTL expires, so it must
+/// never fail the job that already produced its image.
+async fn release_output_bucket(state: &AppState, bucket: &str) {
+    let client = match offload_factory::image_client(state).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("img_utils: cannot build client to delete bucket {bucket}: {e}");
+            return;
+        }
+    };
+    if let Err(e) = client.delete_bucket(bucket).await {
+        tracing::warn!("img_utils: failed to delete output bucket {bucket}: {e}");
     }
 }
 

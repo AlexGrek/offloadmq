@@ -1,6 +1,6 @@
 use sea_orm::{
     sea_query::Expr, ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, Condition,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 
 use crate::{
@@ -11,6 +11,7 @@ use crate::{
         image_pipeline_events::{self, Entity as ImagePipelineEventEntity},
     },
     error::AppError,
+    offload::task_status,
 };
 
 pub type ImageGenerationJob = image_generation_jobs::Model;
@@ -432,20 +433,20 @@ pub async fn set_image_file_job(
     Ok(())
 }
 
+/// The pipeline worker's queue: every in-flight job (any status a poll can leave
+/// behind — see `WORKER_PICKUP_STATUSES`), plus the pipeline-local `created` and
+/// the `completed` rows re-checked for missing output files.
 pub async fn list_jobs_for_background_worker(
     db: &DatabaseConnection,
     limit: u64,
 ) -> Result<Vec<ImageGenerationJob>, AppError> {
+    let statuses: Vec<String> = task_status::WORKER_PICKUP_STATUSES
+        .iter()
+        .chain(["created", "completed"].iter())
+        .map(|s| s.to_string())
+        .collect();
     ImageGenerationJobEntity::find()
-        .filter(
-            Condition::any()
-                .add(image_generation_jobs::Column::Status.eq("created"))
-                .add(image_generation_jobs::Column::Status.eq("submitted"))
-                .add(image_generation_jobs::Column::Status.eq("pending"))
-                .add(image_generation_jobs::Column::Status.eq("running"))
-                .add(image_generation_jobs::Column::Status.eq("cancelRequested"))
-                .add(image_generation_jobs::Column::Status.eq("completed")),
-        )
+        .filter(image_generation_jobs::Column::Status.is_in(statuses))
         .order_by_asc(image_generation_jobs::Column::UpdatedAt)
         .limit(limit)
         .all(db)

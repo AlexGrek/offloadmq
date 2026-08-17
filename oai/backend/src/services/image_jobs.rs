@@ -857,13 +857,16 @@ pub async fn run_background_reconcile_pass(
     let jobs = image_generation::list_jobs_for_background_worker(&state.db, batch_size).await?;
     for job in jobs {
         let outcome = match job.status.as_str() {
-            "created" | "submitted" | "pending" | "running" | "cancelRequested" => {
-                ("worker.poll", background_poll_once(state, &job).await)
-            }
             "completed" => (
                 "worker.reconcile",
                 reconcile_job_outputs_if_missing(state, &job, job.user_id).await,
             ),
+            // Everything else the pickup query returns is in flight — including the
+            // raw upstream statuses (`queued`/`assigned`/`starting`) a poll mirrors
+            // into the row. Matching a narrower list here would silently drop them.
+            status if !is_terminal(status) => {
+                ("worker.poll", background_poll_once(state, &job).await)
+            }
             _ => continue,
         };
         if let (step, Err(e)) = outcome {
