@@ -219,9 +219,9 @@ For each non-urgent task matching capability:
      - Skip task (reserve for higher-tier agents)
   4. Else:
      - Include task in available pool
-  5. Randomly select from eligible tasks
+  5. Select the OLDEST eligible task (FIFO by createdAt, task id as tie-break)
 ```
-This ensures high-performance agents get priority while lower-tier agents still receive tasks when no higher-tier agents are online.
+This ensures high-performance agents get priority while lower-tier agents still receive tasks when no higher-tier agents are online. Within the eligible pool the order is strict FIFO — the longest-waiting task is always handed out first, so a queue that fills faster than it drains never starves its earliest entries.
 
 **Task Pickup** ([src/api/agent/mod.rs](src/api/agent/mod.rs) lines 130-145):
 1. Agent calls `POST /private/agent/take/{cap}/{id}`
@@ -339,15 +339,16 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 | **oai-devops** | `.claude/skills/oai-devops/SKILL.md` | `oai/helm-chart/**`, `oai/Dockerfile`, `oai/docker-compose*.yml`, `oai/Taskfile.yml` (deploy/docker/infra tasks) |
 | **oai-itests** | `.claude/skills/oai-itests/SKILL.md` | `oai/itests/**` |
 | **oai-chat** | `.claude/skills/oai-chat/SKILL.md` | Chat feature files (patterns below) |
-| **oai-img** | `.claude/skills/oai-img/SKILL.md` | Image feature files (patterns below) |
+| **oai-img** | `.claude/skills/oai-img/SKILL.md` | Image generation feature files (patterns below) |
+| **oai-img-tools** | `.claude/skills/oai-img-tools/SKILL.md` | Image Tools (`img-utils.*` / resize) feature files (patterns below) |
 | **oai-movie** | `.claude/skills/oai-movie/SKILL.md` | Movie Studio feature files (patterns below) |
 | **oai-backend** | `.claude/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |
 | **oai-frontend** | `.claude/skills/oai-frontend/SKILL.md` | Any `oai/frontend/**` file, or cross-cutting SPA work |
 
 #### Stacking rules
 
-1. **Feature + parent** — chat work → `oai-chat` + `oai-frontend` and/or `oai-backend`; image work → `oai-img` + `oai-frontend` and/or `oai-backend`; Movie Studio work → `oai-movie` + `oai-frontend` and/or `oai-backend`.
-2. **Feature wins on overlap** — files listed under `oai-chat` or `oai-img` use that feature skill first; still read `oai-backend` / `oai-frontend` for shared patterns (AppState, routing, layout).
+1. **Feature + parent** — chat work → `oai-chat` + `oai-frontend` and/or `oai-backend`; image generation → `oai-img` + `oai-frontend` and/or `oai-backend`; Image Tools (`/app/img-utils`) → `oai-img-tools` + `oai-frontend` and/or `oai-backend`; Movie Studio work → `oai-movie` + `oai-frontend` and/or `oai-backend`.
+2. **Feature wins on overlap** — files listed under `oai-chat`, `oai-img`, or `oai-img-tools` use that feature skill first; still read `oai-backend` / `oai-frontend` for shared patterns (AppState, routing, layout). `oai-img` (generation) and `oai-img-tools` (`/app/img-utils` transforms) are distinct features — match by the file, not by "image".
 3. **DevOps** — Helm/Docker/deploy-only changes → `oai-devops` (skip feature skills unless app code changes too).
 4. **Tests** — `oai/itests/**` → `oai-itests` plus the skill for the route/feature under test.
 
@@ -363,9 +364,19 @@ Paths are relative to `oai/`.
 
 Paths are relative to `oai/`.
 
-**Frontend:** `frontend/src/pages/ImageGenerationPage.tsx`, `frontend/src/pages/ImgUtilsPage.tsx`, `frontend/src/pages/ImageWorkerLogsPage.tsx`, `frontend/src/pages/FilesPage.tsx`, `frontend/src/components/imggen/**`, `frontend/src/components/imgutils/**`, `frontend/src/api/imgUtils.ts`, `frontend/src/lib/imggen.ts`, `frontend/src/api/images.ts`, `frontend/src/api/promptgen.ts`, `frontend/src/hooks/useRunningImageJobs.ts`, `frontend/src/contexts/ProgressContext.tsx`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (image rows)
+**Frontend:** `frontend/src/pages/ImageGenerationPage.tsx`, `frontend/src/pages/ImageWorkerLogsPage.tsx`, `frontend/src/pages/FilesPage.tsx`, `frontend/src/components/imggen/**`, `frontend/src/lib/imggen.ts`, `frontend/src/api/images.ts`, `frontend/src/api/promptgen.ts`, `frontend/src/hooks/useRunningImageJobs.ts`, `frontend/src/contexts/ProgressContext.tsx`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (image rows)
 
-**Backend:** `backend/src/routes/images.rs`, `backend/src/routes/img_utils.rs`, `backend/src/services/img_utils.rs`, `backend/src/db/img_utils.rs`, `backend/src/jobs/img_utils_worker.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/routes/promptgen.rs`, `backend/src/services/image_jobs.rs`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/services/promptgen.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
+**Backend:** `backend/src/routes/images.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/routes/promptgen.rs`, `backend/src/services/image_jobs.rs`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/services/promptgen.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
+
+#### oai-img-tools — file patterns
+
+Paths are relative to `oai/`. The `/app/img-utils` "Image Tools" feature (`img-utils.*` ComfyUI transforms + built-in `image_resize`). The agent-side workflow install / autowiring lives in `agent_v2/**` (stack with `agent-v2`).
+
+**Frontend:** `frontend/src/pages/ImgUtilsPage.tsx`, `frontend/src/components/imgutils/**`, `frontend/src/api/imgUtils.ts`
+
+**Backend:** `backend/src/routes/img_utils.rs`, `backend/src/services/img_utils.rs`, `backend/src/services/image_resize.rs`, `backend/src/db/img_utils.rs`, `backend/src/db/entities/img_utils_jobs.rs`, `backend/src/jobs/img_utils_worker.rs` (shared offload-job backbone: `backend/src/db/offload_jobs.rs`, `backend/src/services/offload_job.rs`, `backend/src/jobs/worker_runtime.rs`)
+
+**Agent:** `agent_v2/agent/src/offloadmq_agent/exec/imgutils/**`, `agent_v2/core/src/offloadmq_core/comfy_autowire.py` (img-utils keys), `comfy_service.py` (img-utils param rows), `agent_v2/ui-server/frontend/src/pages/ComfyPage.tsx` (namespace auto-fill), `offload-agent/workflows/img-utils/**` (reference workflows)
 
 #### oai-movie — file patterns
 
@@ -379,7 +390,8 @@ Paths are relative to `oai/`.
 
 - **oai-frontend** — React 19 + TypeScript SPA, shadcn/ui, Tailwind v4, routing, API clients, dark/light mode, AppShell layout.
 - **oai-chat** — LLM chat at `/app/chat`: WebSocket protocol, WorkloadContext, system prompts, cancel, ToolDebug, OffloadMQ submit/poll.
-- **oai-img** — Image generation at `/app/images`: txt2img/img2img, buckets, dataPreparation, job poll/cancel, pipeline worker, Progress drawer. Also Image Tools at `/app/img-utils` (one-shot transforms — `img-utils.*` depth and face swap, plus the built-in `image_resize` "Basic resize").
+- **oai-img** — Image generation at `/app/images`: txt2img/img2img, buckets, dataPreparation, job poll/cancel, pipeline worker, Progress drawer.
+- **oai-img-tools** — Image Tools at `/app/img-utils`: one-shot transforms (image in, one out, no prompt). Two families sharing the page/table/endpoints — `img-utils.*` ComfyUI tools (depth, face swap, SeedVR2 upscale) and built-in `image_resize` "Basic resize". Spans the agent workflow install/autowiring, the OAI offload-job backend, and `ImgUtilsPage`. Pack=model / operation=file convention; scalar knobs via `secondary_prompts`.
 - **oai-movie** — Multi-scene AI film generator at `/app/movie`: director LLM outline, per-scene vision prompt + video render, long-shot continuity via ffmpeg, final concat.
 - **oai-backend** — Rust/Axum backend: routes, services, DB migrations (SeaORM), middleware, OffloadMQ client, background workers.
 - **oai-itests** — Python integration tests (httpx + pytest-xdist) against the live backend; one test file per route group; no mocking.

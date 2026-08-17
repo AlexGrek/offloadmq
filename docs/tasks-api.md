@@ -890,7 +890,7 @@ Same structure as urgent polling, but tasks come from persistent DB.
 When multiple agents can handle a task:
 1. Find the **highest tier** among all online agents with the required capability
 2. If your tier < max tier, **skip this task** (reserved for higher-tier agents)
-3. If your tier >= max tier, you're eligible; receive a random eligible task
+3. If your tier >= max tier, you're eligible; you receive the **oldest** eligible task (strict FIFO by `createdAt`, task id as tie-break)
 4. This ensures premium agents get priority while fallback agents still get work
 
 **Notes**

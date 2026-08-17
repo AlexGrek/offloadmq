@@ -417,12 +417,18 @@ Record in `image_jobs.rs` via `record_event`; add to timeline unless poll noise 
 
 ---
 
-## Image Tools (`/app/img-utils`) — the `img-utils.*` sibling feature
+## Image Tools (`/app/img-utils`) — moved to its own skill
 
-A second, much smaller feature living in this skill's territory. Where image generation is
-a bespoke multi-file pipeline, Image Tools is a plain **offload-job framework** feature
-(`db/offload_jobs.rs` + `services/offload_job.rs` + `worker_runtime`) — see
-`.claude/skills/oai-new-feature/SKILL.md` for that shape.
+The `img-utils.*` / `image_resize` "Image Tools" feature (one-shot transforms: depth, face
+swap, SeedVR2 upscale, Basic resize) now has a **dedicated skill**:
+`.claude/skills/oai-img-tools/SKILL.md`. Read that when touching
+`frontend/src/pages/ImgUtilsPage.tsx`, `components/imgutils/**`, `api/imgUtils.ts`,
+`backend/src/{routes,services,db}/img_utils.rs`, `jobs/img_utils_worker.rs`, or the agent's
+img-utils workflow/autowiring. The overview below is kept as a quick orientation only.
+
+Where image generation is a bespoke multi-file pipeline, Image Tools is a plain
+**offload-job framework** feature (`db/offload_jobs.rs` + `services/offload_job.rs` +
+`worker_runtime`) — see `.claude/skills/oai-new-feature/SKILL.md` for that shape.
 
 **What it is:** one-shot transforms with no prompt — an image in, one image out.
 **Two capability families** share the page, the `img_utils_jobs` table and every endpoint:
