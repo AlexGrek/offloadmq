@@ -565,6 +565,7 @@ export default function ImageGenerationPage() {
       reencoded: boolean
     },
     targetMode: 'img2img' | 'img2video',
+    sourcePrompt?: string,
   ) {
     switchMode(targetMode)
     const img: UploadedImage = {
@@ -581,6 +582,7 @@ export default function ImageGenerationPage() {
     const original = applyInputDefaults(img, targetMode)
     setInputPreviewUrl(null)
     setActivePanel(IMGGEN_NEW_PANEL)
+    if (sourcePrompt) setPrompt(sourcePrompt)
     if (targetMode === 'img2video') {
       setInfo(
         `Input set to "${file.filename}" (${file.width}×${file.height}). Image to Video mode — adjust and submit when ready.`,
@@ -608,17 +610,20 @@ export default function ImageGenerationPage() {
     sendOutputToInputMode(file, 'img2img')
   }
 
-  function sendToImg2Video(file: {
-    image_id: string
-    filename: string
-    content_type: string
-    width: number
-    height: number
-    size_bytes: number
-    rescaled: boolean
-    reencoded: boolean
-  }) {
-    sendOutputToInputMode(file, 'img2video')
+  function sendToImg2Video(
+    file: {
+      image_id: string
+      filename: string
+      content_type: string
+      width: number
+      height: number
+      size_bytes: number
+      rescaled: boolean
+      reencoded: boolean
+    },
+    sourcePrompt?: string,
+  ) {
+    sendOutputToInputMode(file, 'img2video', sourcePrompt)
   }
 
   function sendToImgUtils(file: { image_id: string; filename: string; width: number; height: number }) {
@@ -1871,7 +1876,7 @@ export default function ImageGenerationPage() {
                         file.filename,
                         file.direction,
                         () => sendToImg2Img(file),
-                        () => sendToImg2Video(file),
+                        () => sendToImg2Video(file, selectedJob.prompt),
                         true,
                       )}
                     >
@@ -1922,7 +1927,7 @@ export default function ImageGenerationPage() {
                         file.filename,
                         file.direction,
                         () => sendToImg2Img(file),
-                        () => sendToImg2Video(file),
+                        () => sendToImg2Video(file, selectedJob.prompt),
                         true,
                       )}
                     >
@@ -2032,7 +2037,7 @@ export default function ImageGenerationPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => sendToImg2Video(animateOutputFile)}
+                      onClick={() => sendToImg2Video(animateOutputFile, selectedJob.prompt)}
                       data-testid="imggen-animate-output"
                     >
                       <Video className="mr-1 h-4 w-4" />
