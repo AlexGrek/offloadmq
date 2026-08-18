@@ -23,7 +23,10 @@ import {
   Wand2,
   X,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { MorphCollapse, MorphIn } from '@/components/Morph'
+import { useMorph } from '@/lib/motion'
 import { ImageLightbox } from '@/components/ImageLightbox'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
@@ -129,6 +132,26 @@ const BURST_SPARKS = [
 ]
 const POLL_MS = 5000
 
+const MODE_TABS: { mode: ImgGenMode; label: string; icon: LucideIcon }[] = [
+  { mode: 'txt2img', label: 'Txt2Img', icon: Sparkles },
+  { mode: 'img2img', label: 'Img2Img', icon: ImagePlus },
+  { mode: 'txt2video', label: 'Txt2Video', icon: Video },
+  { mode: 'img2video', label: 'Img2Video', icon: Video },
+]
+
+function submitLabelFor(mode: ImgGenMode): string {
+  switch (mode) {
+    case 'img2img':
+      return 'Edit Image'
+    case 'txt2video':
+      return 'Generate Video'
+    case 'img2video':
+      return 'Animate Image'
+    default:
+      return 'Generate Image'
+  }
+}
+
 const DEFAULT_RESCALE: RescaleState = {
   enabled: false,
   mode: 'exact',
@@ -142,6 +165,7 @@ export default function ImageGenerationPage() {
   const { token } = useAuth()
   const { refreshRunningImageJobs, runningImageJobs } = useProgress()
   const isMobile = useIsMobile()
+  const morph = useMorph()
   const location = useLocation()
   const navigate = useNavigate()
   const [mode, setMode] = useState<ImgGenMode>('txt2img')
@@ -205,6 +229,7 @@ export default function ImageGenerationPage() {
   const [mediaRevision, setMediaRevision] = useState(0)
   const [submitBurst, setSubmitBurst] = useState(false)
   const [compareMode, setCompareMode] = useState(false)
+  const [rescaleOpen, setRescaleOpen] = useState(false)
   const [generateMultipleOpen, setGenerateMultipleOpen] = useState(false)
   const [generateMultipleCountInput, setGenerateMultipleCountInput] = useState(
     String(DEFAULT_GENERATE_MULTIPLE),
@@ -1199,8 +1224,17 @@ export default function ImageGenerationPage() {
         <main className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-5 px-3 py-4 sm:px-6 sm:py-5">
 
-        {activePanel === IMGGEN_NEW_PANEL && (
-        <section data-testid="imggen-new-panel" className="flex flex-col gap-5">
+        <AnimatePresence mode="wait" initial={false}>
+        {activePanel === IMGGEN_NEW_PANEL ? (
+        <motion.section
+          key="imggen-new"
+          data-testid="imggen-new-panel"
+          className="flex flex-col gap-5"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8, transition: { duration: morph.reduced ? 0 : 0.1 } }}
+          transition={morph.fade}
+        >
           <header className="space-y-1">
             <h2 className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
               <Wand2 className="h-4 w-4" />
@@ -1214,45 +1248,38 @@ export default function ImageGenerationPage() {
           </header>
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap gap-2" data-testid="imggen-mode-tabs">
-              <Button
-                variant={mode === 'txt2img' ? 'default' : 'outline'}
-                size="sm"
-                className="min-h-10 flex-1 sm:flex-none"
-                onClick={() => switchMode('txt2img')}
-              >
-                <Sparkles className="mr-1 h-3.5 w-3.5" />
-                Txt2Img
-              </Button>
-              <Button
-                variant={mode === 'img2img' ? 'default' : 'outline'}
-                size="sm"
-                className="min-h-10 flex-1 sm:flex-none"
-                onClick={() => switchMode('img2img')}
-                data-testid="imggen-mode-img2img"
-              >
-                <ImagePlus className="mr-1 h-3.5 w-3.5" />
-                Img2Img
-              </Button>
-              <Button
-                variant={mode === 'txt2video' ? 'default' : 'outline'}
-                size="sm"
-                className="min-h-10 flex-1 sm:flex-none"
-                onClick={() => switchMode('txt2video')}
-                data-testid="imggen-mode-txt2video"
-              >
-                <Video className="mr-1 h-3.5 w-3.5" />
-                Txt2Video
-              </Button>
-              <Button
-                variant={mode === 'img2video' ? 'default' : 'outline'}
-                size="sm"
-                className="min-h-10 flex-1 sm:flex-none"
-                onClick={() => switchMode('img2video')}
-                data-testid="imggen-mode-img2video"
-              >
-                <Video className="mr-1 h-3.5 w-3.5" />
-                Img2Video
-              </Button>
+              {MODE_TABS.map(tab => {
+                const Icon = tab.icon
+                const active = mode === tab.mode
+                return (
+                  <motion.button
+                    key={tab.mode}
+                    type="button"
+                    layout
+                    transition={morph.spring}
+                    onClick={() => switchMode(tab.mode)}
+                    data-testid={`imggen-mode-${tab.mode}`}
+                    className={cn(
+                      'relative isolate flex min-h-10 flex-1 items-center justify-center gap-1 rounded-lg border px-3 text-sm font-medium sm:flex-none',
+                      'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      active
+                        ? 'border-transparent text-primary-foreground'
+                        : 'border-border bg-background text-foreground hover:bg-muted',
+                    )}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="imggen-mode-pill"
+                        transition={morph.spring}
+                        aria-hidden
+                        className="absolute inset-0 -z-10 rounded-lg bg-primary"
+                      />
+                    )}
+                    <Icon className="size-3.5" />
+                    {tab.label}
+                  </motion.button>
+                )
+              })}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -1273,8 +1300,12 @@ export default function ImageGenerationPage() {
                 )}
               </div>
 
-              {isInputImageMode(mode) && (
-                <div className="space-y-3 sm:col-span-2" data-testid="imggen-input-section">
+              <MorphCollapse
+                show={isInputImageMode(mode)}
+                className="sm:col-span-2"
+                data-testid="imggen-input-section"
+              >
+                <div className="space-y-3">
                   <Label>Input image</Label>
                   <div className="flex flex-wrap items-start gap-2">
                     <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm transition-colors hover:bg-muted/50">
@@ -1304,18 +1335,21 @@ export default function ImageGenerationPage() {
                       <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
                       From library
                     </Button>
-                    {uploadedInput && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>
-                          {uploadedInput.filename} ({uploadedInput.width}×{uploadedInput.height})
-                        </span>
-                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={clearInput}>
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
+                    <MorphIn show={Boolean(uploadedInput)}>
+                      {uploadedInput && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>
+                            {uploadedInput.filename} ({uploadedInput.width}×{uploadedInput.height})
+                          </span>
+                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={clearInput}>
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
+                    </MorphIn>
                   </div>
-                  {(inputPreviewUrl || uploadedInput) && (
+                  <MorphCollapse show={Boolean(inputPreviewUrl || uploadedInput)}>
+                    {(inputPreviewUrl || uploadedInput) && (
                     <ImageLightbox
                       src={
                         uploadedInput
@@ -1346,30 +1380,35 @@ export default function ImageGenerationPage() {
                         className="max-h-48 w-full object-contain bg-muted/30"
                       />
                     </ImageLightbox>
-                  )}
-                  {externalResizeInfo?.available && uploadedInput && (
-                    <ExternalResizeToggle
-                      checked={externalResize}
-                      onChange={setExternalResize}
-                      sizeBytes={uploadedInput.size_bytes}
-                      thresholdBytes={externalResizeInfo.threshold_bytes}
-                      testId="imggen-external-resize"
-                    />
-                  )}
-                  {mode === 'img2video' && uploadedInput && (
-                    <VideoPromptGenerator
-                      token={token}
-                      imageId={uploadedInput.image_id}
-                      onGenerated={text => {
-                        setPrompt(text)
-                        setInfo('Video prompt generated from the input frame.')
-                        setError(null)
-                      }}
-                      onError={message => setError(message)}
-                    />
-                  )}
+                    )}
+                  </MorphCollapse>
+                  <MorphCollapse show={Boolean(externalResizeInfo?.available && uploadedInput)}>
+                    {externalResizeInfo?.available && uploadedInput && (
+                      <ExternalResizeToggle
+                        checked={externalResize}
+                        onChange={setExternalResize}
+                        sizeBytes={uploadedInput.size_bytes}
+                        thresholdBytes={externalResizeInfo.threshold_bytes}
+                        testId="imggen-external-resize"
+                      />
+                    )}
+                  </MorphCollapse>
+                  <MorphCollapse show={mode === 'img2video' && Boolean(uploadedInput)}>
+                    {uploadedInput && (
+                      <VideoPromptGenerator
+                        token={token}
+                        imageId={uploadedInput.image_id}
+                        onGenerated={text => {
+                          setPrompt(text)
+                          setInfo('Video prompt generated from the input frame.')
+                          setError(null)
+                        }}
+                        onError={message => setError(message)}
+                      />
+                    )}
+                  </MorphCollapse>
                 </div>
-              )}
+              </MorphCollapse>
 
               <div className="space-y-1.5 sm:col-span-2">
                 <div className="flex items-center justify-between gap-2">
@@ -1418,8 +1457,8 @@ export default function ImageGenerationPage() {
                 />
               </div>
 
-              <div className="space-y-1.5 sm:col-span-2">
-                <div className="flex items-center justify-between gap-2">
+              <div className="sm:col-span-2">
+                <div className="flex items-center justify-between gap-2 pb-1.5">
                   <Label htmlFor="negative-prompt">Negative prompt</Label>
                   <Button
                     type="button"
@@ -1432,7 +1471,7 @@ export default function ImageGenerationPage() {
                     {overrideNegative ? 'use model default' : 'override'}
                   </Button>
                 </div>
-                {overrideNegative ? (
+                <MorphCollapse show={overrideNegative}>
                   <PromptTextarea
                     id="negative-prompt"
                     value={negativePrompt}
@@ -1443,9 +1482,10 @@ export default function ImageGenerationPage() {
                     placeholder="e.g. blurry, deformed, low quality"
                     data-testid="imggen-negative-prompt"
                   />
-                ) : (
+                </MorphCollapse>
+                <MorphCollapse show={!overrideNegative}>
                   <p className="text-xs text-muted-foreground">Using workflow default negative prompt.</p>
-                )}
+                </MorphCollapse>
               </div>
 
               <div className="space-y-2 sm:col-span-2" data-testid="imggen-dimensions">
@@ -1523,31 +1563,47 @@ export default function ImageGenerationPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {dimensionPresets.map(([w, h]) => (
-                    <button
-                      key={`${w}x${h}`}
-                      type="button"
-                      disabled={originalResolution}
-                      onClick={() => {
-                        if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
-                        setWidth(w)
-                        setHeight(h)
-                      }}
-                      className={cn(
-                        'h-7 rounded-md border border-input bg-background px-2 text-xs transition-colors hover:bg-muted/50',
-                        width === w && height === h && 'border-primary bg-primary/10 text-primary',
-                        originalResolution && 'cursor-not-allowed opacity-50 hover:bg-background',
-                      )}
-                      data-testid={`imggen-preset-${w}x${h}`}
-                    >
-                      {w}×{h}
-                    </button>
-                  ))}
+                  {dimensionPresets.map(([w, h]) => {
+                    const activePreset = width === w && height === h
+                    return (
+                      <button
+                        key={`${w}x${h}`}
+                        type="button"
+                        disabled={originalResolution}
+                        onClick={() => {
+                          if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                          setWidth(w)
+                          setHeight(h)
+                        }}
+                        className={cn(
+                          'relative isolate h-7 rounded-md border px-2 text-xs transition-colors',
+                          activePreset
+                            ? 'border-transparent text-primary'
+                            : 'border-input bg-background hover:bg-muted/50',
+                          originalResolution && 'cursor-not-allowed opacity-50 hover:bg-background',
+                        )}
+                        data-testid={`imggen-preset-${w}x${h}`}
+                      >
+                        {activePreset && (
+                          <motion.span
+                            layoutId="imggen-preset-pill"
+                            transition={morph.spring}
+                            aria-hidden
+                            className="absolute inset-0 -z-10 rounded-md border border-primary bg-primary/10"
+                          />
+                        )}
+                        {w}×{h}
+                      </button>
+                    )
+                  })}
                 </div>
-                {mode === 'img2img' && uploadedInput && (
-                  <div className="flex flex-col gap-1.5 pt-0.5" data-testid="imggen-resolution-toggles">
-
-                    {canUseOriginalResolution && (
+                <MorphCollapse
+                  show={mode === 'img2img' && Boolean(uploadedInput)}
+                  data-testid="imggen-resolution-toggles"
+                >
+                  {uploadedInput && (
+                  <div className="flex flex-col gap-1.5 pt-0.5">
+                    <MorphCollapse show={canUseOriginalResolution}>
                       <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
                         <input
                           type="checkbox"
@@ -1565,7 +1621,7 @@ export default function ImageGenerationPage() {
                         />
                         Original resolution ({uploadedInput.width}×{uploadedInput.height})
                       </label>
-                    )}
+                    </MorphCollapse>
                     <label
                       className={cn(
                         'flex w-fit items-center gap-2 text-sm text-muted-foreground',
@@ -1593,14 +1649,15 @@ export default function ImageGenerationPage() {
                       {originalResolution && ' (locked to original)'}
                     </label>
                   </div>
-                )}
+                  )}
+                </MorphCollapse>
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="seed">Seed (optional)</Label>
                 <Input id="seed" value={seed} onChange={e => setSeed(e.target.value)} placeholder="empty = random" />
               </div>
-              {isVideoMode(mode) && (
-                <div className="space-y-1.5 sm:col-span-2">
+              <MorphCollapse show={isVideoMode(mode)} className="sm:col-span-2">
+                <div className="space-y-1.5">
                   <Label htmlFor="video-length">Length (frames)</Label>
                   <Input
                     id="video-length"
@@ -1613,16 +1670,26 @@ export default function ImageGenerationPage() {
                     data-testid="imggen-video-length"
                   />
                 </div>
-              )}
+              </MorphCollapse>
             </div>
 
-            {mode === 'img2img' && !originalResolution && (
-              <details className="group" data-testid="imggen-advanced">
-
-                <summary className="flex cursor-pointer select-none list-none items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
-                  <ChevronDown className="size-3 -rotate-90 transition-transform group-open:rotate-0" />
-                  Offload rescaling
-                </summary>
+            <MorphCollapse
+              show={mode === 'img2img' && !originalResolution}
+              data-testid="imggen-advanced"
+            >
+              <button
+                type="button"
+                onClick={() => setRescaleOpen(v => !v)}
+                aria-expanded={rescaleOpen}
+                className="flex select-none items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                data-testid="imggen-advanced-toggle"
+              >
+                <ChevronDown
+                  className={cn('size-3 transition-transform', rescaleOpen ? 'rotate-0' : '-rotate-90')}
+                />
+                Offload rescaling
+              </button>
+              <MorphCollapse show={rescaleOpen}>
                 <div className="mt-2">
                   <RescaleControls
                     state={rescale}
@@ -1638,8 +1705,8 @@ export default function ImageGenerationPage() {
                     label="Rescale before workflow"
                   />
                 </div>
-              </details>
-            )}
+              </MorphCollapse>
+            </MorphCollapse>
 
             <div className="relative flex flex-col items-center gap-1 sm:w-auto">
               <motion.div
@@ -1647,16 +1714,19 @@ export default function ImageGenerationPage() {
                 animate={submitBurst ? { scale: [1, 1.06, 0.97, 1] } : {}}
                 transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
               >
-                <Button
-                  className="relative min-h-11 w-full overflow-hidden sm:w-auto"
-                  onClick={() => {
-                    setSubmitBurst(true)
-                    window.setTimeout(() => setSubmitBurst(false), 900)
-                    void onSubmit()
-                  }}
-                  disabled={!canSubmit || submitting}
-                  data-testid="imggen-submit-job"
-                >
+                <Button asChild className="relative min-h-11 w-full overflow-hidden sm:w-auto">
+                  <motion.button
+                    type="button"
+                    layout
+                    transition={morph.spring}
+                    onClick={() => {
+                      setSubmitBurst(true)
+                      window.setTimeout(() => setSubmitBurst(false), 900)
+                      void onSubmit()
+                    }}
+                    disabled={!canSubmit || submitting}
+                    data-testid="imggen-submit-job"
+                  >
                   <AnimatePresence>
                     {submitBurst && (
                       <motion.span
@@ -1670,11 +1740,33 @@ export default function ImageGenerationPage() {
                       />
                     )}
                   </AnimatePresence>
-                  {submitting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-                  {mode === 'img2img' ? 'Edit Image'
-                    : mode === 'txt2video' ? 'Generate Video'
-                    : mode === 'img2video' ? 'Animate Image'
-                    : 'Generate Image'}
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    {submitting ? (
+                      <motion.span
+                        key="submitting"
+                        layout="position"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="flex items-center gap-1.5"
+                      >
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Submitting…
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key={submitLabelFor(mode)}
+                        layout="position"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="flex items-center gap-1.5"
+                      >
+                        {submitLabelFor(mode)}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                  </motion.button>
                 </Button>
               </motion.div>
 
@@ -1709,22 +1801,21 @@ export default function ImageGenerationPage() {
               </AnimatePresence>
             </div>
 
-            {info && activePanel === IMGGEN_NEW_PANEL && (
+            <MorphCollapse show={Boolean(info) && activePanel === IMGGEN_NEW_PANEL}>
               <p className="text-xs text-muted-foreground">{info}</p>
-            )}
-            {error && activePanel === IMGGEN_NEW_PANEL && (
-              <JobErrorBanner message={error} testId="imggen-error" />
-            )}
+            </MorphCollapse>
+            <MorphCollapse show={Boolean(error) && activePanel === IMGGEN_NEW_PANEL}>
+              {error && <JobErrorBanner message={error} testId="imggen-error" />}
+            </MorphCollapse>
           </div>
-        </section>
-        )}
-
-        {viewingJob && (
+        </motion.section>
+        ) : (
           <motion.div
             key={activePanel}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            exit={{ opacity: 0, y: -8, transition: { duration: morph.reduced ? 0 : 0.1 } }}
+            transition={morph.fade}
           >
           {error && <JobErrorBanner message={error} testId="imggen-job-error" />}
           {jobDetailLoading ? (
@@ -1735,8 +1826,18 @@ export default function ImageGenerationPage() {
           <Card data-testid="imggen-job-detail" className="overflow-hidden">
 
             {/* ── Output / compare area — full-bleed at top ── */}
+            <div className="relative">
+            <AnimatePresence mode="popLayout" initial={false}>
             {compareMode && canCompare ? (
-              <div className="grid grid-cols-2 gap-px bg-border" data-testid="imggen-compare-view">
+              <motion.div
+                key="compare"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={morph.fade}
+                className="grid grid-cols-2 gap-px bg-border"
+                data-testid="imggen-compare-view"
+              >
                 <div className="relative overflow-hidden bg-muted/10">
                   <span className="absolute left-2 top-2 z-10 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
                     Before
@@ -1761,8 +1862,12 @@ export default function ImageGenerationPage() {
                     After
                   </span>
                   {outputFiles.map(file => (
-                    <ImageLightbox
+                    <motion.div
                       key={file.image_id}
+                      layoutId={`imggen-output-media-${file.image_id}`}
+                      transition={morph.soft}
+                    >
+                    <ImageLightbox
                       src={imageFileUrl(file.image_id, token, mediaRevision)}
                       alt={file.filename}
                       triggerClassName="group block w-full overflow-hidden"
@@ -1783,11 +1888,19 @@ export default function ImageGenerationPage() {
                         className="w-full object-contain max-h-[40dvh] sm:max-h-[65vh] transition-opacity group-hover:opacity-95"
                       />
                     </ImageLightbox>
+                    </motion.div>
                   ))}
                 </div>
-              </div>
+              </motion.div>
             ) : outputFiles.length > 0 ? (
-              <div className={outputFiles.length > 1 ? 'grid grid-cols-2 gap-px bg-border' : undefined}>
+              <motion.div
+                key="outputs"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={morph.fade}
+                className={outputFiles.length > 1 ? 'grid grid-cols-2 gap-px bg-border' : undefined}
+              >
                 {outputFiles.map(file =>
                   file.content_type.startsWith('video/') ? (
                     <div key={file.image_id} className="w-full bg-muted/20" data-testid={`imggen-output-${file.image_id}`}>
@@ -1799,8 +1912,12 @@ export default function ImageGenerationPage() {
                       />
                     </div>
                   ) : (
-                    <ImageLightbox
+                    <motion.div
                       key={file.image_id}
+                      layoutId={`imggen-output-media-${file.image_id}`}
+                      transition={morph.soft}
+                    >
+                    <ImageLightbox
                       src={imageFileUrl(file.image_id, token, mediaRevision)}
                       alt={file.filename}
                       caption={`${file.filename} — ${file.width}×${file.height}`}
@@ -1822,11 +1939,19 @@ export default function ImageGenerationPage() {
                         className="w-full object-contain max-h-[70vh] transition-opacity group-hover:opacity-95"
                       />
                     </ImageLightbox>
+                    </motion.div>
                   )
                 )}
-              </div>
+              </motion.div>
             ) : isRunning ? (
-              <div className="flex aspect-video w-full items-center justify-center bg-muted/30 px-6">
+              <motion.div
+                key="progress"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={morph.fade}
+                className="flex aspect-video w-full items-center justify-center bg-muted/30 px-6"
+              >
                 <JobProgressBar
                   status={displayStatus ?? selectedJob.status}
                   stage={displayStage}
@@ -1834,17 +1959,24 @@ export default function ImageGenerationPage() {
                   typicalRuntimeSeconds={progressBarMeta.typicalRuntimeSeconds}
                   submittedAt={progressBarMeta.submittedAt}
                 />
-              </div>
-            ) : displayStatus === 'failed' ? (
-              !error ? (
-                <div className="flex aspect-video w-full items-center justify-center bg-destructive/5 px-6">
-                  <JobErrorBanner
-                    message={selectedJob.error || 'Generation failed'}
-                    testId="imggen-job-failed"
-                  />
-                </div>
-              ) : null
+              </motion.div>
+            ) : displayStatus === 'failed' && !error ? (
+              <motion.div
+                key="failed"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={morph.fade}
+                className="flex aspect-video w-full items-center justify-center bg-destructive/5 px-6"
+              >
+                <JobErrorBanner
+                  message={selectedJob.error || 'Generation failed'}
+                  testId="imggen-job-failed"
+                />
+              </motion.div>
             ) : null}
+            </AnimatePresence>
+            </div>
 
             {/* ── Compact title + meta ── */}
             <div className="border-b border-border px-4 py-3 space-y-0.5">
@@ -1873,17 +2005,19 @@ export default function ImageGenerationPage() {
             <CardContent className="space-y-4 pt-4">
 
               {/* ── Actions ── */}
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={editPromptFromJob}
-                  data-testid="imggen-edit-prompt"
-                >
-                  <Pencil className="mr-1 h-4 w-4" />
-                  Edit prompt
-                </Button>
-                {canGenerateAgain && (
+              <motion.div layout transition={morph.spring} className="flex flex-wrap items-center gap-2">
+                <motion.div layout transition={morph.spring}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={editPromptFromJob}
+                    data-testid="imggen-edit-prompt"
+                  >
+                    <Pencil className="mr-1 h-4 w-4" />
+                    Edit prompt
+                  </Button>
+                </motion.div>
+                <MorphIn show={canGenerateAgain}>
                   <Button
                     variant="default"
                     size="sm"
@@ -1898,30 +2032,34 @@ export default function ImageGenerationPage() {
                     )}
                     Generate again
                   </Button>
-                )}
-                {canAnimateOutput && animateOutputFile && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => sendToImg2Video(animateOutputFile)}
-                    data-testid="imggen-animate-output"
-                  >
-                    <Video className="mr-1 h-4 w-4" />
-                    Animate
-                  </Button>
-                )}
-                {canAnimateOutput && animateOutputFile && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => sendToImgUtils(animateOutputFile)}
-                    data-testid="imggen-send-to-imgutils"
-                  >
-                    <Wand2 className="mr-1 h-4 w-4" />
-                    Image Tools
-                  </Button>
-                )}
-                {canRetryJob && (
+                </MorphIn>
+                <MorphIn show={canAnimateOutput}>
+                  {animateOutputFile && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => sendToImg2Video(animateOutputFile)}
+                      data-testid="imggen-animate-output"
+                    >
+                      <Video className="mr-1 h-4 w-4" />
+                      Animate
+                    </Button>
+                  )}
+                </MorphIn>
+                <MorphIn show={canAnimateOutput}>
+                  {animateOutputFile && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => sendToImgUtils(animateOutputFile)}
+                      data-testid="imggen-send-to-imgutils"
+                    >
+                      <Wand2 className="mr-1 h-4 w-4" />
+                      Image Tools
+                    </Button>
+                  )}
+                </MorphIn>
+                <MorphIn show={canRetryJob}>
                   <Button
                     variant="default"
                     size="sm"
@@ -1936,18 +2074,20 @@ export default function ImageGenerationPage() {
                     )}
                     Retry
                   </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => viewedJobId && void runPoll(viewedJobId)}
-                  disabled={!viewedJobId || polling}
-                  data-testid="imggen-poll-job"
-                >
-                  {polling ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
-                  Poll now
-                </Button>
-                {isRunning && (
+                </MorphIn>
+                <motion.div layout transition={morph.spring}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => viewedJobId && void runPoll(viewedJobId)}
+                    disabled={!viewedJobId || polling}
+                    data-testid="imggen-poll-job"
+                  >
+                    {polling ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
+                    Poll now
+                  </Button>
+                </motion.div>
+                <MorphIn show={isRunning}>
                   <Button
                     variant="destructive"
                     size="sm"
@@ -1957,14 +2097,14 @@ export default function ImageGenerationPage() {
                     <Square className="mr-1 h-4 w-4 fill-current" />
                     Cancel
                   </Button>
-                )}
-                {isRunning && (
+                </MorphIn>
+                <MorphIn show={isRunning}>
                   <span className="flex items-center text-xs text-muted-foreground">
                     <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                     Auto-polling every {POLL_MS / 1000}s…
                   </span>
-                )}
-                {canCompare && (
+                </MorphIn>
+                <MorphIn show={canCompare}>
                   <Button
                     type="button"
                     variant={compareMode ? 'default' : 'outline'}
@@ -1975,9 +2115,11 @@ export default function ImageGenerationPage() {
                     <Columns2 className="mr-1 h-4 w-4" />
                     {compareMode ? 'Result' : 'Compare'}
                   </Button>
-                )}
-              </div>
-              {info && <p className="text-xs text-muted-foreground">{info}</p>}
+                </MorphIn>
+              </motion.div>
+              <MorphCollapse show={Boolean(info)}>
+                <p className="text-xs text-muted-foreground">{info}</p>
+              </MorphCollapse>
 
               {/* ── Pipeline accordion ── */}
               <div className="space-y-2" data-testid="imggen-pipeline">
@@ -2001,7 +2143,7 @@ export default function ImageGenerationPage() {
                     </p>
                   </div>
                 </button>
-                {timelineOpen && (
+                <MorphCollapse show={timelineOpen}>
                   <div
                     className="ml-6 rounded-lg border border-border p-3"
                     data-testid="imggen-pipeline-timeline"
@@ -2032,7 +2174,7 @@ export default function ImageGenerationPage() {
                       </ol>
                     )}
                   </div>
-                )}
+                </MorphCollapse>
               </div>
 
               {/* ── Prompt ── */}
@@ -2045,7 +2187,8 @@ export default function ImageGenerationPage() {
               <PipelineJobParamsPanel job={selectedJob} />
 
               {/* ── Input image (compact param row) ── */}
-              {selectedJob.input_image_id && (
+              <MorphCollapse show={Boolean(selectedJob.input_image_id)}>
+                {selectedJob.input_image_id && (
                 <div className="flex items-center gap-3">
                   <span className="w-24 shrink-0 text-xs font-medium text-muted-foreground">
                     Input image
@@ -2065,7 +2208,8 @@ export default function ImageGenerationPage() {
                     />
                   </ImageLightbox>
                 </div>
-              )}
+                )}
+              </MorphCollapse>
 
             </CardContent>
           </Card>
@@ -2074,6 +2218,7 @@ export default function ImageGenerationPage() {
           )}
           </motion.div>
         )}
+        </AnimatePresence>
           </div>
         </main>
       </div>

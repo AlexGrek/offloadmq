@@ -21,6 +21,7 @@ import { pickListedCapability } from '@/lib/capability-picker'
 import type { CapabilitiesStatus } from '@/lib/capabilitiesStatus'
 import type { PromptGenTaskId } from '@/types/ws-promptgen'
 import { isVideoMode, type ImgGenMode } from '@/lib/imggen'
+import { MORPH_SPRING } from '@/lib/motion'
 
 /** `{}` in the query template is replaced with the user's idea server-side. */
 const PLACEHOLDER = '{}'
@@ -45,8 +46,6 @@ const STATUS_LABELS: Record<string, string> = {
   running: 'Generating…',
   cancelRequested: 'Stopping…',
 }
-
-const MORPH_SPRING = { type: 'spring', stiffness: 420, damping: 34 } as const
 
 type Phase = 'idle' | 'running' | 'done'
 

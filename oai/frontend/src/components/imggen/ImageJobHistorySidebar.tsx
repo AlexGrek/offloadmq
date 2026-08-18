@@ -1,8 +1,10 @@
+import { motion } from 'framer-motion'
 import { Loader2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { imageThumbnailUrl, type ImageJobDetails } from '../../api/images'
 import { jobPromptTitle, jobTechMeta, imageJobIsExecuting, imageJobStatusLabel, lastOutputImageId } from '../../lib/imggen'
 import { WorkflowBadge } from './WorkflowBadge'
+import { useMorph } from '@/lib/motion'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 export const IMGGEN_NEW_PANEL = 'new' as const
@@ -37,6 +39,7 @@ export function ImageJobHistorySidebar({
   onSelectJob,
 }: ImageJobHistorySidebarProps) {
   const isNewActive = activePanel === IMGGEN_NEW_PANEL
+  const morph = useMorph()
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -64,7 +67,7 @@ export function ImageJobHistorySidebar({
           <p className="px-3 py-4 text-center text-xs text-muted-foreground">No jobs yet</p>
         ) : (
           <ul className="space-y-1">
-            {jobs.map(job => {
+            {jobs.map((job, i) => {
               const outputId = lastOutputImageId(job)
               const bgUrl = outputId
                 ? imageThumbnailUrl(outputId, token, mediaRevision)
@@ -75,7 +78,13 @@ export function ImageJobHistorySidebar({
               const executing = imageJobIsExecuting(jobStatus)
 
               return (
-                <li key={job.job_id}>
+                <motion.li
+                  key={job.job_id}
+                  layout
+                  initial={{ opacity: 0, x: -6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={morph.reduced ? { duration: 0 } : { delay: i * 0.03, duration: 0.2 }}
+                >
                   <button
                     type="button"
                     onClick={() => onSelectJob(job.job_id)}
@@ -83,11 +92,17 @@ export function ImageJobHistorySidebar({
                     className={cn(
                       'group/pipeline relative w-full overflow-hidden rounded-lg text-left transition-colors',
                       'min-h-17 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      active
-                        ? 'ring-2 ring-sidebar-primary shadow-sm'
-                        : 'ring-1 ring-sidebar-border hover:ring-sidebar-accent',
+                      active ? 'shadow-sm' : 'ring-1 ring-sidebar-border hover:ring-sidebar-accent',
                     )}
                   >
+                    {active && (
+                      <motion.span
+                        layoutId="imggen-active-pipeline"
+                        transition={morph.spring}
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 z-20 rounded-lg border-2 border-sidebar-primary"
+                      />
+                    )}
                     {bgUrl ? (
                       <>
                         <img
@@ -145,7 +160,7 @@ export function ImageJobHistorySidebar({
                       )}
                     </div>
                   </button>
-                </li>
+                </motion.li>
               )
             })}
           </ul>
