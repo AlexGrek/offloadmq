@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Columns2,
-  FolderOpen,
-  ImageUp,
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -14,98 +12,58 @@ import {
   Trash2,
   Video,
   Wand2,
-  X,
 } from 'lucide-react'
 import {
   cancelImgUtilsJob,
-  defaultResizeForm,
   deleteImgUtilsJob,
   describeResizeOptions,
   getImgUtilsJob,
-  listImgUtilsCapabilities,
   listImgUtilsJobs,
   pollImgUtilsJob,
   prettyLabel,
-  resizeFormError,
-  resizeOptionsFromForm,
   retryImgUtilsJob,
   startImgUtilsJob,
   takesScaleMultiplier,
-  toolKey,
-  toolsFromCapabilities,
-  DEFAULT_SCALE_MULTIPLIER,
-  MAX_SCALE_MULTIPLIER,
-  MIN_SCALE_MULTIPLIER,
   RESIZE_WORKFLOW,
-  type ImgUtilsRouteState,
-  type ImgUtilTool,
   type ImgUtilsJob,
   type JobImageRef,
-  type ResizeFormState,
 } from '../api/imgUtils'
-import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
+import { imageFileUrl, type UploadedImage } from '../api/images'
 import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
-import { Label } from '../components/ui/label'
 import {
   IMGUTILS_NEW_PANEL,
   ImgUtilsHistorySidebar,
 } from '../components/imgutils/ImgUtilsHistorySidebar'
 import ResizeControls from '../components/imgutils/ResizeControls'
+import { ImageSlot } from '../components/imgutils/ImageSlot'
+import { useImageSlot } from '../hooks/useImageSlot'
+import { ImgUtilsToolPicker } from '../components/imgutils/ImgUtilsToolPicker'
+import { ScaleControl } from '../components/imgutils/ScaleControl'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImageLightbox, type ImageLightboxActions } from '../components/ImageLightbox'
 import { NudeDetectModal } from '../components/nudedetect/NudeDetectModal'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useImgUtilsTools } from '../hooks/useImgUtilsTools'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
 import { imageJobStatusLabel, type ImggenRouteState } from '../lib/imggen'
-import { cn } from '../lib/utils'
 
 const POLL_INTERVAL_MS = 3000
 const LIST_REFRESH_INTERVAL_MS = 5000
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 
-/** One upload slot: local preview while the file uploads, then the stored image. */
-type Slot = {
-  preview: string
-  uploaded: UploadedImage | null
-  error: string | null
-}
-
-/** Short blurb per known operation; unknown ones fall back to a generic line.
- *  Keyed on the operation (`depth`), not the pack directory — packs are named
- *  after the model (`image_lotus_depth_v1_1`). */
-const OPERATION_HINTS: Record<string, string> = {
-  depth: 'Estimate a depth map from the image.',
-  face_swap: 'Replace the face in the target image with the face from the reference image.',
-  upscale: 'Upscale the image with SeedVR2 by the chosen multiplier.',
-  [RESIZE_WORKFLOW]:
-    'Scale the image with Pillow — no GPU or ComfyUI needed, so any online agent can run it.',
-}
-
-function operationHint(workflow: string): string {
-  return OPERATION_HINTS[workflow] ?? 'Run this ComfyUI transform on the uploaded image.'
-}
-
 export default function ImgUtilsPage() {
   const { token } = useAuth()
-  const location = useLocation()
   const navigate = useNavigate()
 
-  const [tools, setTools] = useState<ImgUtilTool[]>([])
-  const [capsLoading, setCapsLoading] = useState(true)
-  const [selectedTool, setSelectedTool] = useState<string>('')
+  // Online tools + their knobs; shared with the quick-transform popup.
+  const tools = useImgUtilsTools(token)
 
-  const [input, setInput] = useState<Slot | null>(null)
-  const [source, setSource] = useState<Slot | null>(null)
+  const input = useImageSlot(token)
+  const source = useImageSlot(token)
   const [pickerTarget, setPickerTarget] = useState<'input' | 'source' | null>(null)
-  // Only meaningful for the built-in resize tool; kept across tool switches so
-  // flipping back and forth does not lose the settings.
-  const [resizeForm, setResizeForm] = useState<ResizeFormState>(() => defaultResizeForm([]))
-  // Only meaningful for upscale tools; kept across tool switches like resizeForm.
-  const [scaleMultiplier, setScaleMultiplier] = useState<number>(DEFAULT_SCALE_MULTIPLIER)
 
   const [jobs, setJobs] = useState<ImgUtilsJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -140,54 +98,10 @@ export default function ImgUtilsPage() {
     if (isMobile) setSidebarOpen(false)
   }
 
-  const previewsRef = useRef<string[]>([])
-  useEffect(() => {
-    return () => {
-      previewsRef.current.forEach(URL.revokeObjectURL)
-    }
-  }, [])
-
   const viewingJob = activePanel !== IMGUTILS_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
 
-  const activeTool = useMemo(
-    () => tools.find(t => toolKey(t) === selectedTool) ?? null,
-    [tools, selectedTool],
-  )
-  const needsSource = activeTool?.needsSourceImage ?? false
-  const takesScale = activeTool?.takesScale ?? false
-  const isResize = activeTool?.kind === 'resize'
-
-  // Agents publish their resampling filters in the capability brackets, so a
-  // stored choice can go stale when the tool — or the agent behind it — changes.
-  // Reconciled on read rather than written back, so no render cascade.
-  const resizeState = useMemo<ResizeFormState>(() => {
-    const methods = activeTool?.methods ?? []
-    const method =
-      resizeForm.method && methods.includes(resizeForm.method)
-        ? resizeForm.method
-        : defaultResizeForm(methods).method
-    return method === resizeForm.method ? resizeForm : { ...resizeForm, method }
-  }, [resizeForm, activeTool])
-
-  const loadCapabilities = useCallback(async () => {
-    if (!token) return
-    // `capsLoading` starts true and the Refresh button flips it back on, so the
-    // spinner is already showing whenever this runs — no synchronous setState here
-    // (which, inside the mount effect, would be a cascading render).
-    try {
-      const res = await listImgUtilsCapabilities(token)
-      const next = toolsFromCapabilities(res.capabilities)
-      setTools(next)
-      setSelectedTool(prev =>
-        next.some(t => toolKey(t) === prev) ? prev : (next[0] ? toolKey(next[0]) : ''),
-      )
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setCapsLoading(false)
-    }
-  }, [token])
+  const { activeTool, needsSource, takesScale, isResize } = tools
 
   const loadJobs = useCallback(async () => {
     if (!token) return
@@ -205,10 +119,9 @@ export default function ImgUtilsPage() {
     // async continuation, never synchronously in the effect body.
     void (async () => {
       await Promise.resolve()
-      void loadCapabilities()
       void loadJobs()
     })()
-  }, [loadCapabilities, loadJobs])
+  }, [loadJobs])
 
   const refreshJob = useCallback(
     async (jobId: string) => {
@@ -246,30 +159,11 @@ export default function ImgUtilsPage() {
     }
   }
 
-  async function pickFile(file: File, setSlot: (slot: Slot | null) => void) {
-    if (!token) return
-    const preview = URL.createObjectURL(file)
-    previewsRef.current.push(preview)
-    setSlot({ preview, uploaded: null, error: null })
-    setError(null)
-    try {
-      const uploaded = await uploadImage(token, file)
-      setSlot({ preview, uploaded, error: null })
-    } catch (e) {
-      setSlot({ preview, uploaded: null, error: (e as Error).message })
-    }
-  }
-
-  function pickFromLibrary(image: UploadedImage, setSlot: (slot: Slot | null) => void) {
-    if (!token) return
-    setSlot({ preview: imageFileUrl(image.image_id, token), uploaded: image, error: null })
-    setError(null)
-  }
-
-  /** Feed an image back into this page's New-transform form (lightbox "Image Tools"). */
+  /** Feed an image back into this page's New-transform form. */
   function applyAsInput(image: UploadedImage) {
-    pickFromLibrary(image, setInput)
-    setSource(null)
+    input.pickStored(image)
+    source.clear()
+    setError(null)
     setActivePanel(IMGUTILS_NEW_PANEL)
   }
 
@@ -305,50 +199,13 @@ export default function ImgUtilsPage() {
             onDeleted: onImageMutated,
             onSendToImg2Img: () => sendToImggen(image, 'img2img'),
             onSendToImg2Video: () => sendToImggen(image, 'img2video'),
-            onSendToImgUtils: () => applyAsInput(image),
+            imgUtils: { onResult: onImageMutated },
             onNudeDetect: () =>
               setNudeDetectTarget({ imageId: image.image_id, filename: image.filename }),
           }
         : undefined,
-    // `applyAsInput` only touches setState, so it needs no dependency tracking.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [token, onImageMutated, sendToImggen],
   )
-
-  // Deep link from another page (lightbox "Image Tools", generation results) —
-  // land on the New transform panel with the image preloaded as input. The image
-  // is consumed during render (gated by a ref so it fires once per navigation);
-  // the effect only clears the one-shot router state, which can't run in render.
-  // Keeping the setState out of the effect avoids a cascading render.
-  const deepLinkImage = token
-    ? ((location.state as ImgUtilsRouteState | null)?.useInputImage ?? null)
-    : null
-  const [consumedDeepLink, setConsumedDeepLink] = useState<string | null>(null)
-  if (!deepLinkImage) {
-    // Router state cleared (below) — arm for the next navigation, incl. the same image.
-    if (consumedDeepLink !== null) setConsumedDeepLink(null)
-  } else if (consumedDeepLink !== deepLinkImage.image_id && token) {
-    setConsumedDeepLink(deepLinkImage.image_id)
-    setInput({
-      preview: imageFileUrl(deepLinkImage.image_id, token),
-      uploaded: deepLinkImage,
-      error: null,
-    })
-    setError(null)
-    setActivePanel(IMGUTILS_NEW_PANEL)
-  }
-  useEffect(() => {
-    if (deepLinkImage) navigate(location.pathname, { replace: true, state: null })
-  }, [deepLinkImage, location.pathname, navigate])
-
-  function clearSlots() {
-    for (const slot of [input, source]) {
-      if (slot) URL.revokeObjectURL(slot.preview)
-    }
-    previewsRef.current = []
-    setInput(null)
-    setSource(null)
-  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -363,17 +220,12 @@ export default function ImgUtilsPage() {
         // Always explicit: the pack directory is not a usable task type, and a
         // pack may install more than one operation.
         workflow: activeTool!.workflow,
-        input_image_id: input!.uploaded!.image_id,
-        source_image_id: needsSource ? source!.uploaded!.image_id : undefined,
-        // Resize carries its resize params here; upscale carries its multiplier;
-        // depth/face_swap have no knobs from the UI.
-        options: isResize
-          ? resizeOptionsFromForm(resizeState)
-          : takesScale
-            ? { scale_multiplier: scaleMultiplier }
-            : undefined,
+        input_image_id: input.slot!.uploaded!.image_id,
+        source_image_id: needsSource ? source.slot!.uploaded!.image_id : undefined,
+        options: tools.buildOptions(),
       })
-      clearSlots()
+      input.clear()
+      source.clear()
       setActivePanel(res.job_id)
       await refreshJob(res.job_id)
       await loadJobs()
@@ -477,9 +329,9 @@ export default function ImgUtilsPage() {
     return () => window.clearInterval(id)
   }, [token, hasPendingJobs, loadJobs])
 
-  const inputReady = Boolean(input?.uploaded && !input.error)
-  const sourceReady = Boolean(source?.uploaded && !source.error)
-  const resizeError = isResize ? resizeFormError(resizeState) : null
+  const inputReady = Boolean(input.slot?.uploaded && !input.slot.error)
+  const sourceReady = Boolean(source.slot?.uploaded && !source.slot.error)
+  const resizeError = tools.resizeError
   const canSubmit =
     Boolean(activeTool) &&
     inputReady &&
@@ -582,63 +434,15 @@ export default function ImgUtilsPage() {
                   </p>
                 </header>
 
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-muted-foreground">
-                    {capsLoading
-                      ? 'Checking agents…'
-                      : tools.length === 0
-                        ? 'No image tools online — check OffloadMQ agents'
-                        : `${tools.length} tool(s) online`}
-                  </span>
-                  <button
-                    type="button"
-                    className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      setCapsLoading(true)
-                      void loadCapabilities()
-                    }}
-                    disabled={capsLoading}
-                    data-testid="imgutils-refresh-capabilities"
-                  >
-                    <RefreshCw className={cn('size-3', capsLoading && 'animate-spin')} />
-                    Refresh
-                  </button>
-                </div>
-
                 <form onSubmit={e => void onSubmit(e)} className="space-y-5">
-                  <div className="space-y-1.5" data-testid="imgutils-tool-picker">
-                    <Label>Tool</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {tools.map(tool => {
-                        const key = toolKey(tool)
-                        return (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => setSelectedTool(key)}
-                            className={cn(
-                              'rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                              key === selectedTool
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-muted/60 text-muted-foreground hover:bg-muted',
-                            )}
-                            data-testid={`imgutils-tool-${tool.workflow}`}
-                          >
-                            <span className="block">{prettyLabel(tool.workflow)}</span>
-                            <span className="block truncate text-[10px] opacity-70">
-                              {tool.pack}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                    {activeTool ? (
-                      <p className="text-xs text-muted-foreground">
-                        {operationHint(activeTool.workflow)}{' '}
-                        <code className="text-[11px]">{activeTool.capability}</code>
-                      </p>
-                    ) : null}
-                  </div>
+                  <ImgUtilsToolPicker
+                    tools={tools.tools}
+                    loading={tools.loading}
+                    selectedKey={tools.selectedKey}
+                    activeTool={activeTool}
+                    onSelect={tools.setSelectedKey}
+                    onRefresh={tools.reload}
+                  />
 
                   <ImageSlot
                     label={needsSource ? 'Target image' : 'Image'}
@@ -647,24 +451,21 @@ export default function ImgUtilsPage() {
                         ? 'The photo whose face gets replaced'
                         : 'PNG, JPEG, WebP or GIF'
                     }
-                    slot={input}
+                    slot={input.slot}
                     testId="imgutils-input"
-                    onPick={file => void pickFile(file, setInput)}
+                    onPick={file => void input.pickFile(file)}
                     onPickFromLibrary={() => setPickerTarget('input')}
-                    onClear={() => {
-                      if (input) URL.revokeObjectURL(input.preview)
-                      setInput(null)
-                    }}
+                    onClear={input.clear}
                   />
 
                   {isResize ? (
                     <ResizeControls
-                      state={resizeState}
-                      onChange={patch => setResizeForm(prev => ({ ...prev, ...patch }))}
+                      state={tools.resizeState}
+                      onChange={tools.patchResize}
                       methods={activeTool?.methods ?? []}
                       inputSize={
-                        input?.uploaded
-                          ? { width: input.uploaded.width, height: input.uploaded.height }
+                        input.slot?.uploaded
+                          ? { width: input.slot.uploaded.width, height: input.slot.uploaded.height }
                           : null
                       }
                       error={resizeError}
@@ -672,65 +473,21 @@ export default function ImgUtilsPage() {
                   ) : null}
 
                   {takesScale ? (
-                    <div
-                      className="space-y-2 rounded-xl border border-border p-3"
-                      data-testid="imgutils-scale"
-                    >
-                      <Label htmlFor="imgutils-scale-input">Scale multiplier</Label>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {[2, 4, 6, 8].map(preset => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() => setScaleMultiplier(preset)}
-                            className={cn(
-                              'rounded-md px-3 py-1.5 text-sm transition-colors',
-                              scaleMultiplier === preset
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-muted/60 text-muted-foreground hover:bg-muted',
-                            )}
-                            data-testid={`imgutils-scale-preset-${preset}`}
-                          >
-                            {preset}×
-                          </button>
-                        ))}
-                        <Input
-                          id="imgutils-scale-input"
-                          type="number"
-                          min={MIN_SCALE_MULTIPLIER}
-                          max={MAX_SCALE_MULTIPLIER}
-                          step={1}
-                          value={scaleMultiplier}
-                          onChange={e => {
-                            const n = Number(e.target.value)
-                            if (Number.isFinite(n)) {
-                              setScaleMultiplier(
-                                Math.min(MAX_SCALE_MULTIPLIER, Math.max(MIN_SCALE_MULTIPLIER, n)),
-                              )
-                            }
-                          }}
-                          className="h-9 w-24"
-                          data-testid="imgutils-scale-value"
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Output is roughly {scaleMultiplier}× the input on each edge.
-                      </p>
-                    </div>
+                    <ScaleControl
+                      value={tools.scaleMultiplier}
+                      onChange={tools.setScaleMultiplier}
+                    />
                   ) : null}
 
                   {needsSource ? (
                     <ImageSlot
                       label="Face reference"
                       hint="The face to transfer onto the target"
-                      slot={source}
+                      slot={source.slot}
                       testId="imgutils-source"
-                      onPick={file => void pickFile(file, setSource)}
+                      onPick={file => void source.pickFile(file)}
                       onPickFromLibrary={() => setPickerTarget('source')}
-                      onClear={() => {
-                        if (source) URL.revokeObjectURL(source.preview)
-                        setSource(null)
-                      }}
+                      onClear={source.clear}
                     />
                   ) : null}
 
@@ -993,7 +750,7 @@ export default function ImgUtilsPage() {
           open={pickerTarget !== null}
           onClose={() => setPickerTarget(null)}
           onSelect={image => {
-            pickFromLibrary(image, pickerTarget === 'source' ? setSource : setInput)
+            ;(pickerTarget === 'source' ? source : input).pickStored(image)
           }}
           token={token}
         />
@@ -1011,109 +768,6 @@ export default function ImgUtilsPage() {
           filename={nudeDetectTarget.filename}
         />
       ) : null}
-    </div>
-  )
-}
-
-type ImageSlotProps = {
-  label: string
-  hint: string
-  slot: Slot | null
-  testId: string
-  onPick: (file: File) => void
-  onPickFromLibrary: () => void
-  onClear: () => void
-}
-
-function ImageSlot({
-  label,
-  hint,
-  slot,
-  testId,
-  onPick,
-  onPickFromLibrary,
-  onClear,
-}: ImageSlotProps) {
-  const [dragOver, setDragOver] = useState(false)
-
-  function handleFiles(files: FileList | null) {
-    const file = Array.from(files ?? []).find(f => f.type.startsWith('image/'))
-    if (file) onPick(file)
-  }
-
-  return (
-    <div className="space-y-1.5" data-testid={testId}>
-      <Label>{label}</Label>
-      {slot ? (
-        <div className="flex items-start gap-3">
-          <div className="relative w-24">
-            <img src={slot.preview} alt="" className="size-24 rounded-lg object-cover" />
-            {!slot.uploaded && !slot.error ? (
-              <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/60">
-                <Loader2 className="size-4 animate-spin" />
-              </div>
-            ) : null}
-            <button
-              type="button"
-              className="absolute -right-1 -top-1 rounded-full bg-destructive p-0.5 text-destructive-foreground"
-              onClick={onClear}
-              aria-label={`Remove ${label}`}
-              data-testid={`${testId}-clear`}
-            >
-              <X className="size-3" />
-            </button>
-          </div>
-          {slot.error ? (
-            <p className="text-xs text-destructive">{slot.error}</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">{hint}</p>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <label
-            className={cn(
-              'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl bg-muted/50 px-6 py-8 text-muted-foreground transition-colors hover:bg-muted/70',
-              dragOver && 'bg-primary/5 ring-2 ring-primary/30',
-            )}
-            onDragOver={e => {
-              e.preventDefault()
-              setDragOver(true)
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={e => {
-              e.preventDefault()
-              setDragOver(false)
-              handleFiles(e.dataTransfer.files)
-            }}
-            data-testid={`${testId}-drop-zone`}
-          >
-            <ImageUp className="size-7 text-muted-foreground/60" />
-            <span className="text-sm font-medium">Click or drag an image here</span>
-            <span className="text-xs">{hint}</span>
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={e => {
-                handleFiles(e.target.files)
-                e.target.value = ''
-              }}
-            />
-          </label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={onPickFromLibrary}
-            data-testid={`${testId}-pick-library`}
-          >
-            <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
-            From library
-          </Button>
-        </div>
-      )}
     </div>
   )
 }

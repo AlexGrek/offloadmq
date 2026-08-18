@@ -11,6 +11,8 @@ import {
   getImageStarred,
   setImageStarred,
 } from '@/api/images'
+import type { JobImageRef } from '@/api/imgUtils'
+import { ImgUtilsQuickModal } from '@/components/imgutils/ImgUtilsQuickModal'
 import {
   Dialog,
   DialogClose,
@@ -30,7 +32,9 @@ export type ImageLightboxActions = {
   onStarredChange?: (starred: boolean) => void
   onSendToImg2Img?: () => void
   onSendToImg2Video?: () => void
-  onSendToImgUtils?: () => void
+  /** Enables the in-place Image Tools popup (upscale, face swap, depth, resize).
+   *  `onResult` fires with whatever the transform produced. */
+  imgUtils?: { onResult?: (image: JobImageRef) => void | Promise<void> }
   onNudeDetect?: () => void
 }
 
@@ -69,6 +73,7 @@ export function ImageLightbox({
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [chromeVisible, setChromeVisible] = useState(true)
+  const [imgUtilsOpen, setImgUtilsOpen] = useState(false)
   const hideTimer = useRef<number | null>(null)
 
   const canDelete = actions?.direction === 'output'
@@ -168,6 +173,7 @@ export function ImageLightbox({
   const stop = useCallback((e: { stopPropagation: () => void }) => e.stopPropagation(), [])
 
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <button
@@ -296,14 +302,13 @@ export function ImageLightbox({
                   Animate
                 </button>
               ) : null}
-              {actions.onSendToImgUtils ? (
+              {actions.imgUtils ? (
                 <button
                   type="button"
                   className={glassButton}
-                  onClick={() => {
-                    actions.onSendToImgUtils!()
-                    setOpen(false)
-                  }}
+                  // Deliberately leaves the lightbox open — the popup stacks on
+                  // top of it, so closing it returns to the same image.
+                  onClick={() => setImgUtilsOpen(true)}
                   data-testid={testId ? `${testId}-imgutils` : 'image-lightbox-imgutils'}
                 >
                   <Wand2 className="size-3" />
@@ -350,5 +355,19 @@ export function ImageLightbox({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Sibling of the lightbox dialog on purpose: rendered inside it, clicks in
+        the popup would bubble through React's tree to the backdrop handler that
+        closes the lightbox. */}
+    {actions?.imgUtils && actions.token ? (
+      <ImgUtilsQuickModal
+        open={imgUtilsOpen}
+        onOpenChange={setImgUtilsOpen}
+        token={actions.token}
+        image={{ image_id: actions.imageId, filename: actions.filename }}
+        onResult={actions.imgUtils.onResult}
+      />
+    ) : null}
+    </>
   )
 }

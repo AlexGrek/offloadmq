@@ -21,7 +21,6 @@ import { FilesCleanupMenu } from '../components/files/FilesCleanupMenu'
 import { imageFileUrl, imageThumbnailUrl } from '../api/images'
 import type { UploadedImage } from '../api/images'
 import type { ImggenRouteState } from '../lib/imggen'
-import type { ImgUtilsRouteState } from '../api/imgUtils'
 import { deleteTtsJob, ttsAudioUrl } from '../api/tts'
 import { FilePropertiesDialog } from '../components/files/FilePropertiesDialog'
 import { ImageLightbox } from '@/components/ImageLightbox'
@@ -84,14 +83,6 @@ export default function FilesPage() {
         useInputImage: { mode, image: userFileToUploadedImage(file) },
       }
       navigate('/app/images', { state })
-    },
-    [navigate],
-  )
-
-  const navigateToImgUtils = useCallback(
-    (file: UserFile) => {
-      const state: ImgUtilsRouteState = { useInputImage: userFileToUploadedImage(file) }
-      navigate('/app/img-utils', { state })
     },
     [navigate],
   )
@@ -292,7 +283,7 @@ export default function FilesPage() {
               }
               onEdit={file => navigateToImggen(file, 'img2img')}
               onAnimate={file => navigateToImggen(file, 'img2video')}
-              onImgUtils={file => navigateToImgUtils(file)}
+              imgUtilsEnabled={file.is_image}
             />
           ))}
         </div>
@@ -547,7 +538,7 @@ function FileTile({
   onNudeDetect,
   onEdit,
   onAnimate,
-  onImgUtils,
+  imgUtilsEnabled,
 }: {
   file: UserFile
   token: string | null
@@ -561,7 +552,8 @@ function FileTile({
   onNudeDetect?: (imageId: string, filename: string) => void
   onEdit?: (file: UserFile) => void
   onAnimate?: (file: UserFile) => void
-  onImgUtils?: (file: UserFile) => void
+  /** Enables the lightbox's in-place Image Tools popup. */
+  imgUtilsEnabled?: boolean
 }) {
   const showInfo = file.direction === 'output'
   const meta = (
@@ -701,7 +693,7 @@ function FileTile({
               : undefined,
             onSendToImg2Img: onEdit ? () => onEdit(file) : undefined,
             onSendToImg2Video: onAnimate ? () => onAnimate(file) : undefined,
-            onSendToImgUtils: onImgUtils ? () => onImgUtils(file) : undefined,
+            imgUtils: imgUtilsEnabled ? { onResult: onImageMutated } : undefined,
           }}
         >
           {thumbContent}

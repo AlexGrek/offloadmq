@@ -115,7 +115,10 @@ import {
 import { ExternalResizeToggle } from '../components/ExternalResizeToggle'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import type { ImagePipelineRescaleParams, StartImageJobRequest } from '../api/images'
-import type { ImgUtilsRouteState } from '../api/imgUtils'
+import {
+  ImgUtilsQuickModal,
+  type QuickTransformTarget,
+} from '@/components/imgutils/ImgUtilsQuickModal'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 const MAX_GENERATE_MULTIPLE = 10
@@ -226,6 +229,7 @@ export default function ImageGenerationPage() {
     imageId: string
     filename: string
   } | null>(null)
+  const [imgUtilsTarget, setImgUtilsTarget] = useState<QuickTransformTarget | null>(null)
   const [mediaRevision, setMediaRevision] = useState(0)
   const [submitBurst, setSubmitBurst] = useState(false)
   const [compareMode, setCompareMode] = useState(false)
@@ -531,7 +535,7 @@ export default function ImageGenerationPage() {
       direction: string,
       onSendToImg2Img?: () => void,
       onSendToImg2Video?: () => void,
-      onSendToImgUtils?: () => void,
+      withImgUtils?: boolean,
     ) =>
       token
         ? {
@@ -542,7 +546,7 @@ export default function ImageGenerationPage() {
             onDeleted: onImageMutated,
             onSendToImg2Img,
             onSendToImg2Video,
-            onSendToImgUtils,
+            imgUtils: withImgUtils ? { onResult: onImageMutated } : undefined,
             onNudeDetect: () => setNudeDetectTarget({ imageId, filename }),
           }
         : undefined,
@@ -617,18 +621,8 @@ export default function ImageGenerationPage() {
     sendOutputToInputMode(file, 'img2video')
   }
 
-  function sendToImgUtils(file: {
-    image_id: string
-    filename: string
-    content_type: string
-    width: number
-    height: number
-    size_bytes: number
-    rescaled: boolean
-    reencoded: boolean
-  }) {
-    const state: ImgUtilsRouteState = { useInputImage: file }
-    navigate('/app/img-utils', { state })
+  function sendToImgUtils(file: { image_id: string; filename: string; width: number; height: number }) {
+    setImgUtilsTarget(file)
   }
 
   const pipelineFormHandlers = useMemo(
@@ -1878,7 +1872,7 @@ export default function ImageGenerationPage() {
                         file.direction,
                         () => sendToImg2Img(file),
                         () => sendToImg2Video(file),
-                        () => sendToImgUtils(file),
+                        true,
                       )}
                     >
                       <img
@@ -1929,7 +1923,7 @@ export default function ImageGenerationPage() {
                         file.direction,
                         () => sendToImg2Img(file),
                         () => sendToImg2Video(file),
-                        () => sendToImgUtils(file),
+                        true,
                       )}
                     >
                       <img
@@ -2256,6 +2250,15 @@ export default function ImageGenerationPage() {
         filename={nudeDetectTarget.filename}
       />
     ) : null}
+    <ImgUtilsQuickModal
+      open={imgUtilsTarget != null}
+      onOpenChange={open => {
+        if (!open) setImgUtilsTarget(null)
+      }}
+      token={token}
+      image={imgUtilsTarget}
+      onResult={onImageMutated}
+    />
     <Dialog open={generateMultipleOpen} onOpenChange={setGenerateMultipleOpen}>
       <DialogContent className="sm:max-w-sm" data-testid="imggen-generate-multiple-dialog">
         <DialogHeader>

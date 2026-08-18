@@ -1,11 +1,6 @@
 import { apiRequest as request } from './http'
 import type { UploadedImage } from './images'
 
-/** React Router location state for `/app/img-utils` deep links from other pages. */
-export type ImgUtilsRouteState = {
-  useInputImage?: UploadedImage
-}
-
 /** Which family a tool belongs to: a ComfyUI `img-utils.*` pack, or the built-in
  *  Pillow `image_resize`. Resize takes flat payload parameters instead of a
  *  workflow, so the form differs. */
