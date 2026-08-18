@@ -21,6 +21,7 @@ import { imageFileUrl, type UploadedImage } from '../../api/images'
 import { Button } from '../ui/button'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -228,7 +229,7 @@ export function ImgUtilsQuickModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <DialogBody className="space-y-4">
           {/* Current input — swaps to the result when a finished transform is chained. */}
           {previewUrl && target ? (
             <div className="overflow-hidden rounded-lg bg-muted/40">
@@ -418,7 +419,7 @@ export function ImgUtilsQuickModal({
               </Link>
             </Button>
           </div>
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
 
