@@ -4,7 +4,7 @@ These capabilities let the server instruct the agent to perform control operatio
 on itself — capability rescans, config reloads, etc.
 
 Security: a slavemode capability only executes if it is explicitly listed in the
-``slavemode-allowed-caps`` config key (a JSON array of strings).  If the key is
+``slavemode_allowed_caps`` config key (a JSON array of strings).  If the key is
 absent or empty, all slavemode tasks are rejected.
 
 Slavemode caps are not part of the regular ``capabilities`` config list. They are
@@ -12,14 +12,15 @@ advertised to the server only when allow-listed here; registration merges regula
 selected caps with these allow-listed slavemode caps.
 
 Example config:
-    "slavemode-allowed-caps": ["slavemode.force-rescan", "slavemode.special-caps-ctrl"]
+    "slavemode_allowed_caps": ["slavemode.force-rescan", "slavemode.special-caps-ctrl"]
 """
 
 import logging
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from offloadmq_agent.settings_util import load_agent_settings as load_config
+from offloadmq_agent.slavemode_policy import CONFIG_KEY, is_cap_allowed
 from offloadmq_agent.custom_caps import delete_custom_cap, discover_custom_caps, save_custom_cap_yaml
 from offloadmq_agent.wire import TaskId
 from offloadmq_agent.transport_exec import AgentTransport
@@ -28,46 +29,14 @@ from offloadmq_agent.exec.reporting import make_failure_report, make_success_rep
 
 logger = logging.getLogger("agent")
 
-CONFIG_KEY = "slavemode-allowed-caps"
-
-# All slavemode capabilities implemented in this module.
-ALL_SLAVEMODE_CAPS = [
-    "slavemode.force-rescan",
-    "slavemode.ollama-delete",
-    "slavemode.ollama-list",
-    "slavemode.ollama-pull",
-    "slavemode.onnx-models-delete",
-    "slavemode.onnx-models-list",
-    "slavemode.onnx-models-prepare",
-    "slavemode.special-caps-ctrl",
-]
-
-SLAVEMODE_PREFIX = "slavemode."
-
-
-def strip_slavemode_caps(caps: List[str]) -> List[str]:
-    """Drop slavemode.* entries; they are not regular selectable capabilities."""
-    return [c for c in caps if not c.startswith(SLAVEMODE_PREFIX)]
-
-
-def slavemode_caps_for_registration(cfg: dict[str, Any]) -> List[str]:
-    """Implemented slavemode caps that are allow-listed (what we advertise to the server)."""
-    allowed: list[Any] = cfg.get(CONFIG_KEY) or []
-    allowed_set = set(str(x) for x in allowed)
-    return sorted(c for c in ALL_SLAVEMODE_CAPS if c in allowed_set)
-
-
-def merge_registration_caps(regular_caps: List[str], cfg: dict[str, Any]) -> List[str]:
-    """Regular (non-slavemode) caps plus allow-listed slavemode caps for register/update."""
-    base = strip_slavemode_caps(regular_caps)
-    return sorted(set(base) | set(slavemode_caps_for_registration(cfg)))
-
 
 def _is_allowed(capability: str) -> bool:
-    """Return True only if capability is in the slavemode allow-list."""
-    cfg = load_config()
-    allowed: list[Any] = cfg.get(CONFIG_KEY) or []
-    return capability in allowed
+    """Return True only if capability is in the slavemode allow-list.
+
+    Reads the same key, via the same helper, that registration uses to decide
+    what to advertise — so a cap can never be advertised yet refused here.
+    """
+    return is_cap_allowed(load_config(), capability)
 
 
 def _force_rescan(transport: AgentTransport, task_id: TaskId, capability: str) -> bool:

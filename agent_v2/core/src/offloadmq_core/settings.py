@@ -40,8 +40,9 @@ class Settings(BaseModel):
     mac_startup_enabled: bool = False
     keep_awake_enabled: bool = False
 
-    # Internal flags
+    # Internal flags — mark one-time slavemode default seeding as done.
     onnx_slavemode_initialized: bool = False
+    ollama_slavemode_initialized: bool = False
 
     # Credentials populated after registration (not user-edited).
     agent_id: str = ""

@@ -232,6 +232,7 @@ class Orchestrator:
                 "sensitive_allowed_caps",
                 "slavemode_allowed_caps",
                 "onnx_slavemode_initialized",
+                "ollama_slavemode_initialized",
             )
             if k in cfg
         }

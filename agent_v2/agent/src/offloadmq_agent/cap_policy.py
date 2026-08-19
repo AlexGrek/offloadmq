@@ -68,10 +68,17 @@ def _apply_default_ollama_slavemode(
     detected_caps: list[str],
     log_fn: Callable[[str], None] | None = None,
 ) -> bool:
-    if _cfg_list(cfg, "slavemode_allowed_caps", "slavemode-allowed-caps"):
+    # Seed once, then never again: without the flag, an operator who clears the
+    # allow-list ("Deny all") gets it silently repopulated on the next rescan.
+    if cfg.get("ollama_slavemode_initialized") or cfg.get("_ollama_slavemode_initialized"):
         return False
     if not any(c.startswith("llm.") for c in detected_caps):
         return False
+    cfg["ollama_slavemode_initialized"] = True
+    if _cfg_list(cfg, "slavemode_allowed_caps", "slavemode-allowed-caps"):
+        # Pre-existing choice from before the flag existed — record that seeding
+        # has happened but leave the operator's list untouched.
+        return True
     cfg["slavemode_allowed_caps"] = sorted(_OLLAMA_SLAVEMODE_DEFAULTS)
     if log_fn:
         log_fn("[caps] Auto-enabled Ollama slavemode caps (first launch with Ollama)")

@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 import requests
 
-from .config import load_config
+from offloadmq_agent.settings_util import load_agent_settings as load_config
 
 logger = logging.getLogger("agent")
 
