@@ -1,5 +1,6 @@
 pub mod service;
 pub mod storage;
+pub mod watch;
 
 use std::sync::Arc;
 

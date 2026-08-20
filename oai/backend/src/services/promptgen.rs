@@ -335,6 +335,7 @@ async fn queue_and_poll(
     });
 
     scope.track(task_id.clone());
+    state.watch.track(&task_id.cap, &task_id.id).await;
     let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
     let deadline_secs = Some(TIMEOUT_SECS as u64);
     let ctx = PollContext {
@@ -343,10 +344,11 @@ async fn queue_and_poll(
         id: task_id.id.clone(),
     };
     let scope = scope.clone();
-    tokio::spawn(poll_loop_ws(ctx, task_id, client, tx.clone(), deadline_secs, scope));
+    tokio::spawn(poll_loop_ws(ctx, task_id, client, tx.clone(), deadline_secs, scope, state.clone()));
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn poll_loop_ws(
     ctx: PollContext,
     task_id: TaskId,
@@ -354,18 +356,24 @@ async fn poll_loop_ws(
     tx: UnboundedSender<ServerEvent>,
     deadline_secs: Option<u64>,
     scope: Arc<crate::ws::promptgen::ConnectionScope>,
+    state: Arc<AppState>,
 ) {
     let started_at = tokio::time::Instant::now();
     let mut first = true;
+    let mut events = state.watch.subscribe();
     loop {
         if !scope.is_open() {
             let _ = client.cancel_task(&task_id).await;
             scope.untrack(&task_id);
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
             return;
         }
 
         if !first {
-            tokio::time::sleep(POLL_INTERVAL).await;
+            tokio::select! {
+                _ = tokio::time::sleep(POLL_INTERVAL) => {}
+                _ = events.recv() => {}
+            }
         }
         first = false;
 
@@ -381,6 +389,7 @@ async fn poll_loop_ws(
                     log: None,
                 });
                 scope.untrack(&task_id);
+                state.watch.untrack(&task_id.cap, &task_id.id).await;
                 return;
             }
         }
@@ -394,6 +403,7 @@ async fn poll_loop_ws(
                     message: e.to_string(),
                 });
                 scope.untrack(&task_id);
+                state.watch.untrack(&task_id.cap, &task_id.id).await;
                 return;
             }
         };
@@ -427,6 +437,7 @@ async fn poll_loop_ws(
                     });
                 }
                 scope.untrack(&task_id);
+                state.watch.untrack(&task_id.cap, &task_id.id).await;
                 return;
             }
             "failed" => {
@@ -440,6 +451,7 @@ async fn poll_loop_ws(
                     log: resp.log,
                 });
                 scope.untrack(&task_id);
+                state.watch.untrack(&task_id.cap, &task_id.id).await;
                 return;
             }
             "canceled" => {
@@ -452,6 +464,7 @@ async fn poll_loop_ws(
                     log: resp.log,
                 });
                 scope.untrack(&task_id);
+                state.watch.untrack(&task_id.cap, &task_id.id).await;
                 return;
             }
             "cancelRequested" => {

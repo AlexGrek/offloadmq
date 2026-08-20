@@ -113,6 +113,7 @@ pub async fn watch_job_ws(
         }
     };
 
+    let mut events = state.watch.subscribe();
     loop {
         let mut job = match llm_debate::get_job(&state.db, job_id, user_id).await {
             Ok(Some(j)) => j,
@@ -152,7 +153,10 @@ pub async fn watch_job_ws(
             return;
         }
 
-        tokio::time::sleep(WS_POLL_INTERVAL).await;
+        tokio::select! {
+            _ = tokio::time::sleep(WS_POLL_INTERVAL) => {}
+            _ = events.recv() => {}
+        }
     }
 }
 
@@ -271,6 +275,7 @@ fn system_for_side<'a>(job: &'a llm_debate::LlmDebateJob, side: &str) -> &'a str
 }
 
 async fn submit_turn(
+    state: &AppState,
     client: &OffloadClient,
     job: &mut llm_debate::LlmDebateJob,
     side: &str,
@@ -294,6 +299,7 @@ async fn submit_turn(
         .submit_chat(&capability, chat_messages, None, None, None, None)
         .await?;
 
+    state.watch.track(&task_id.cap, &task_id.id).await;
     job.current_turn = Some(side.to_string());
     job.offload_cap = Some(task_id.cap);
     job.offload_task_id = Some(task_id.id);
@@ -313,7 +319,7 @@ async fn reconcile_job(state: &AppState, job: &mut llm_debate::LlmDebateJob) -> 
     let client = offload_factory::chat_client(state).await?;
     if job.offload_cap.is_none() && job.offload_task_id.is_none() && job.messages_json == "[]" {
         let initial = job.initial_prompt.trim().to_string();
-        submit_turn(&client, job, "A", &initial, &[]).await?;
+        submit_turn(state, &client, job, "A", &initial, &[]).await?;
         return llm_debate::update_job_state(&state.db, job).await;
     }
 
@@ -332,6 +338,7 @@ async fn reconcile_job(state: &AppState, job: &mut llm_debate::LlmDebateJob) -> 
                 job.error = Some(reason);
                 job.offload_cap = None;
                 job.offload_task_id = None;
+                state.watch.untrack(&task_id.cap, &task_id.id).await;
                 return llm_debate::update_job_state(&state.db, job).await;
             }
             return Err(e);
@@ -347,6 +354,7 @@ async fn reconcile_job(state: &AppState, job: &mut llm_debate::LlmDebateJob) -> 
     match poll.status.as_str() {
         "completed" => {
             let text = task_status::extract_llm_text(&poll.output);
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
             if text.is_empty() {
                 job.status = "failed".into();
                 job.error = Some("model returned empty response".into());
@@ -375,11 +383,11 @@ async fn reconcile_job(state: &AppState, job: &mut llm_debate::LlmDebateJob) -> 
                         && job.model_ref.is_some()
                         && debate_count >= job.referee_turns as usize;
                     if should_referee {
-                        submit_turn(&client, job, "REF", "", &messages).await?;
+                        submit_turn(state, &client, job, "REF", "", &messages).await?;
                     } else {
                         let next_side = if side == "A" { "B" } else { "A" };
                         let last_content = messages.last().map(|m| m.content.as_str()).unwrap_or("");
-                        submit_turn(&client, job, next_side, last_content, &messages).await?;
+                        submit_turn(state, &client, job, next_side, last_content, &messages).await?;
                     }
                 }
             }
@@ -392,11 +400,13 @@ async fn reconcile_job(state: &AppState, job: &mut llm_debate::LlmDebateJob) -> 
             ));
             job.offload_cap = None;
             job.offload_task_id = None;
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "canceled" => {
             job.status = "canceled".into();
             job.offload_cap = None;
             job.offload_task_id = None;
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         _ => {
             // Still queued/assigned/starting upstream — keep the job debate-owned as
@@ -482,7 +492,7 @@ pub async fn start_job(
     .await?;
 
     let client = offload_factory::chat_client(state).await?;
-    submit_turn(&client, &mut job, "A", initial, &[]).await?;
+    submit_turn(state, &client, &mut job, "A", initial, &[]).await?;
     llm_debate::update_job_state(&state.db, &job).await?;
 
     Ok(job_id)
@@ -538,6 +548,9 @@ pub async fn cancel_job(
         }
     } else {
         job.status = "canceled".into();
+    }
+    if let (Some(cap), Some(id)) = (&job.offload_cap, &job.offload_task_id) {
+        state.watch.untrack(cap, id).await;
     }
     job.offload_cap = None;
     job.offload_task_id = None;

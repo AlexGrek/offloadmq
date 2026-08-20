@@ -13,7 +13,7 @@ use crate::{
 pub async fn chat_client(state: &AppState) -> Result<OffloadClient, AppError> {
     let settings = app_settings::get(&state.db).await?;
     let api_key = settings.client_api_token.unwrap_or_default();
-    Ok(OffloadClient::new(state.http.clone(), settings.offloadmq_url, api_key))
+    Ok(OffloadClient::new(state.http.clone(), settings.offloadmq_url, api_key, state.watch.clone()))
 }
 
 /// Client for the image pipeline. Requires a configured client API token.
@@ -32,5 +32,10 @@ pub fn image_client_from_settings(
             "missing OffloadMQ client API token in admin settings".into(),
         ));
     }
-    Ok(OffloadImageClient::new(state.http.clone(), settings.offloadmq_url, api_key))
+    Ok(OffloadImageClient::new(
+        state.http.clone(),
+        settings.offloadmq_url,
+        api_key,
+        state.watch.clone(),
+    ))
 }

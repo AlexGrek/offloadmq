@@ -272,6 +272,7 @@ pub async fn watch_job_ws(
         }
     };
 
+    let mut events = state.watch.subscribe();
     loop {
         let mut job = match movie::get_job(&state.db, job_id, user_id).await {
             Ok(Some(j)) => j,
@@ -310,7 +311,10 @@ pub async fn watch_job_ws(
         if terminal {
             return;
         }
-        tokio::time::sleep(WS_POLL_INTERVAL).await;
+        tokio::select! {
+            _ = tokio::time::sleep(WS_POLL_INTERVAL) => {}
+            _ = events.recv() => {}
+        }
     }
 }
 
@@ -586,8 +590,9 @@ async fn cancel_inflight_task(state: &AppState, user_id: i64, job: &movie::Movie
     }
     if let (Some(cap), Some(id)) = (job.offload_cap.clone(), job.offload_task_id.clone()) {
         if let Ok(client) = offload_factory::chat_client(state).await {
-            let _ = client.cancel_task(&TaskId { cap, id }).await;
+            let _ = client.cancel_task(&TaskId { cap: cap.clone(), id: id.clone() }).await;
         }
+        state.watch.untrack(&cap, &id).await;
     }
 }
 
@@ -795,6 +800,7 @@ async fn reconcile_director(state: &AppState, job: &mut movie::MovieJob) -> Resu
             ChatMessage { role: "user".into(), content: user_content },
         ];
         let task_id = client.submit_chat(&job.director_model, messages, None, None, None, None).await?;
+        state.watch.track(&task_id.cap, &task_id.id).await;
         job.offload_cap = Some(task_id.cap);
         job.offload_task_id = Some(task_id.id);
         job.active_log = None;
@@ -806,8 +812,9 @@ async fn reconcile_director(state: &AppState, job: &mut movie::MovieJob) -> Resu
     let (Some(cap), Some(id)) = (job.offload_cap.clone(), job.offload_task_id.clone()) else {
         return Ok(());
     };
+    let task_id = TaskId { cap, id };
     let client = offload_factory::chat_client(state).await?;
-    let poll = match client.poll_task(&TaskId { cap, id }).await {
+    let poll = match client.poll_task(&task_id).await {
         Ok(p) => p,
         Err(e) => {
             if let Some(reason) = task_status::offload_task_missing_message(&e) {
@@ -815,6 +822,7 @@ async fn reconcile_director(state: &AppState, job: &mut movie::MovieJob) -> Resu
                 job.error = Some(reason);
                 job.offload_cap = None;
                 job.offload_task_id = None;
+                state.watch.untrack(&task_id.cap, &task_id.id).await;
                 return movie::update_job_state(&state.db, job).await;
             }
             return Err(e);
@@ -830,6 +838,7 @@ async fn reconcile_director(state: &AppState, job: &mut movie::MovieJob) -> Resu
     match poll.status.as_str() {
         "completed" => {
             let text = task_status::extract_llm_text(&poll.output);
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
             if text.trim().is_empty() {
                 job.status = "failed".into();
                 job.error = Some("director returned an empty outline".into());
@@ -846,11 +855,13 @@ async fn reconcile_director(state: &AppState, job: &mut movie::MovieJob) -> Resu
             job.error = Some(task_status::extract_error_text(&poll.output, "director task failed"));
             job.offload_cap = None;
             job.offload_task_id = None;
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "canceled" => {
             job.status = "canceled".into();
             job.offload_cap = None;
             job.offload_task_id = None;
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         _ => {
             // Still queued/assigned/starting upstream — keep the job movie-owned as
@@ -939,6 +950,7 @@ async fn reconcile_scene_prompt(state: &AppState, job: &mut movie::MovieJob) -> 
             chat_client.submit_chat(&job.scene_model, messages, None, None, None, None).await?
         };
 
+        state.watch.track(&task_id.cap, &task_id.id).await;
         job.offload_cap = Some(task_id.cap);
         job.offload_task_id = Some(task_id.id);
         job.active_log = None;
@@ -956,8 +968,9 @@ async fn reconcile_scene_prompt(state: &AppState, job: &mut movie::MovieJob) -> 
     let (Some(cap), Some(id)) = (job.offload_cap.clone(), job.offload_task_id.clone()) else {
         return Ok(());
     };
+    let task_id = TaskId { cap, id };
     let client = offload_factory::chat_client(state).await?;
-    let poll = match client.poll_task(&TaskId { cap, id }).await {
+    let poll = match client.poll_task(&task_id).await {
         Ok(p) => p,
         Err(e) => {
             if let Some(reason) = task_status::offload_task_missing_message(&e) {
@@ -965,6 +978,7 @@ async fn reconcile_scene_prompt(state: &AppState, job: &mut movie::MovieJob) -> 
                 job.error = Some(reason);
                 job.offload_cap = None;
                 job.offload_task_id = None;
+                state.watch.untrack(&task_id.cap, &task_id.id).await;
                 return movie::update_job_state(&state.db, job).await;
             }
             return Err(e);
@@ -986,6 +1000,7 @@ async fn reconcile_scene_prompt(state: &AppState, job: &mut movie::MovieJob) -> 
     match poll.status.as_str() {
         "completed" => {
             let text = task_status::extract_llm_text(&poll.output);
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
             if text.trim().is_empty() {
                 scenes[idx].status = "failed".into();
                 scenes[idx].error = Some("scene director returned an empty prompt".into());
@@ -1011,11 +1026,13 @@ async fn reconcile_scene_prompt(state: &AppState, job: &mut movie::MovieJob) -> 
             job.error = Some(format!("scene {}: {reason}", idx + 1));
             job.offload_cap = None;
             job.offload_task_id = None;
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "canceled" => {
             job.status = "canceled".into();
             job.offload_cap = None;
             job.offload_task_id = None;
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         _ => {
             // Still queued/assigned/starting upstream — keep the job movie-owned as

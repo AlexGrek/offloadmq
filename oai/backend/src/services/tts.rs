@@ -176,6 +176,7 @@ pub async fn start_job(
         None,
     )
     .await?;
+    state.watch.track(&task_id.cap, &task_id.id).await;
 
     Ok(job_id)
 }

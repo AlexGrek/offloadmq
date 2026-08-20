@@ -166,6 +166,7 @@ pub async fn start_job(
             Some(&pre.output_bucket),
         )
         .await?;
+        state.watch.track(&pre.task_id.cap, &pre.task_id.id).await;
         return Ok(job_id);
     }
 
@@ -212,7 +213,9 @@ async fn submit_vision_task(
         &task_id.id,
         Some(bucket_uid),
     )
-    .await
+    .await?;
+    state.watch.track(&task_id.cap, &task_id.id).await;
+    Ok(())
 }
 
 /// Hand the resize pre-step's output bucket to the vision task.

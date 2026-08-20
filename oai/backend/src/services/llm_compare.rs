@@ -89,7 +89,7 @@ fn recompute_job_status(slots: &[CompareSlot]) -> (String, Option<String>) {
     }
 }
 
-async fn poll_one_slot(client: &OffloadClient, slot: &mut CompareSlot) -> Result<(), AppError> {
+async fn poll_one_slot(state: &AppState, client: &OffloadClient, slot: &mut CompareSlot) -> Result<(), AppError> {
     if slot_is_terminal(&slot.status) {
         return Ok(());
     }
@@ -110,6 +110,7 @@ async fn poll_one_slot(client: &OffloadClient, slot: &mut CompareSlot) -> Result
             if let Some(reason) = task_status::offload_task_missing_message(&e) {
                 slot.status = "failed".into();
                 slot.error = Some(reason);
+                state.watch.untrack(&task_id.cap, &task_id.id).await;
                 return Ok(());
             }
             return Err(e);
@@ -129,6 +130,7 @@ async fn poll_one_slot(client: &OffloadClient, slot: &mut CompareSlot) -> Result
                 slot.content = Some(text);
                 slot.log = None;
             }
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "failed" => {
             slot.status = "failed".into();
@@ -136,9 +138,11 @@ async fn poll_one_slot(client: &OffloadClient, slot: &mut CompareSlot) -> Result
                 &poll.output,
                 "compare task failed",
             ));
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "canceled" => {
             slot.status = "canceled".into();
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         other => {
             slot.status = other.to_string();
@@ -154,7 +158,7 @@ async fn reconcile_slots(
 ) -> Result<(), AppError> {
     let client = offload_factory::chat_client(state).await?;
     for slot in slots.iter_mut() {
-        poll_one_slot(&client, slot).await?;
+        poll_one_slot(state, &client, slot).await?;
     }
     let (status, error) = recompute_job_status(slots);
     let slots_json = serialize_slots(slots)?;
@@ -224,6 +228,7 @@ pub async fn start_job(
         match client.submit_chat(&slot.model, messages.clone(), None, None, None, None).await {
             Ok(task_id) => {
                 slot.status = "submitted".into();
+                state.watch.track(&task_id.cap, &task_id.id).await;
                 slot.offload_cap = Some(task_id.cap);
                 slot.offload_task_id = Some(task_id.id);
             }
@@ -289,6 +294,9 @@ pub async fn cancel_job(
             };
             match client.cancel_task(&task_id).await {
                 Ok(resp) => {
+                    if task_status::is_terminal(&resp.status) {
+                        state.watch.untrack(&task_id.cap, &task_id.id).await;
+                    }
                     slot.status = resp.status;
                     canceled_any = true;
                 }
@@ -296,6 +304,7 @@ pub async fn cancel_job(
                     if task_status::offload_task_missing_message(&e).is_some() {
                         slot.status = "failed".into();
                         slot.error = Some(task_status::OFFLOAD_TASK_MISSING.to_string());
+                        state.watch.untrack(&task_id.cap, &task_id.id).await;
                     } else {
                         return Err(e);
                     }

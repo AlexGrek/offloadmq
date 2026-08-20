@@ -191,6 +191,7 @@ the original empty mock.
 | `POST /api/task/submit` (urgent) / `POST /api/task/submit_blocking` | `503 Scheduling impossible` if **no online agent** provides the capability; otherwise returns a terminal `{"id": …, "status": "failed", "message": "OffloadMock does not execute tasks"}` |
 | `POST /api/task/poll/{cap}/{id}` | `404 Not found` |
 | `POST /api/task/cancel/{cap}/{id}` | `404 Not found` |
+| `GET /api/task/watch` (WebSocket) | Speaks the real protocol (`hello`/`track`/`untrack`/`sync`/`ping` → `ack`/`update`/`pong`) but, matching the empty-state contract above, every tracked task is reported `missing: true` — never a real status |
 | Agent `poll` / `poll_urgent` | First injected task matching the agent's caps, or `null` |
 | Agent `take` / `resolve` / `progress` | Serves injected tasks; `404` if unknown |
 | `GET /management/tasks/list` | Reflects injected tasks split by urgent/regular × assigned/unassigned |
@@ -236,6 +237,7 @@ the original empty mock.
 | POST | `/task/submit` | body `TaskSubmissionRequest` |
 | POST | `/task/submit_blocking` | urgent only; else `400` |
 | POST | `/task/poll/{cap}/{id}` | body `{apiKey}`; `404` |
+| WS | `/task/watch` | `X-API-Key`/`X-MGMT-API-KEY` header (no query-param auth); real wire protocol, tracked tasks always `missing` |
 | POST | `/task/cancel/{cap}/{id}` | body `{apiKey}`; `404` |
 | POST | `/capabilities/online` | body `{apiKey}` → base caps (filtered by key) |
 | POST | `/capabilities/list/online_ext` | body `{apiKey}` → raw caps (filtered by key) |
@@ -431,6 +433,28 @@ responses are `{"req_id","type":"response","status","data"}` or
 `{"status":"ok"}`. `poll_task` / `poll_task_urgent` return `data: null`; task
 mutations return not-found errors.
 
+### Client task-watch WebSocket
+
+```
+GET /api/task/watch
+X-API-Key: <client key>            (or X-MGMT-API-KEY: <mgmt token>)
+```
+
+Mirrors `src/api/client/watch.rs` byte-for-byte on the wire — same frames
+(`track`/`untrack`/`sync`/`ping` → `hello`/`ack`/`update`/`pong`/`error`),
+same field names, same 1 s tick / 30 s full-resync / 1000-task-per-connection
+defaults (see `docs/tasks-api.md`'s "Watch Tasks (WebSocket)" section for the
+full protocol reference). Auth is header-only, matching the real server —
+there is no `?token=` fallback, so a bad or missing key gets a `403` at the
+upgrade instead of a socket.
+
+Because the mock has no task subsystem, tracking a task never yields a real
+status: the first tick after `track` reports it `missing: true` and the mock
+never mentions it again (a watcher's `missing` flag is sent once per
+disappearance, not every tick — this mock has nothing else to say about it).
+A client written against the real server needs no special-casing to talk to
+the mock; it just never sees anything other than `missing`.
+
 ---
 
 ## Testing surface
@@ -578,6 +602,7 @@ mock module:
 | `src/models.rs` (`Agent`, `ClientApiKey`) | `offloadmock/state.py`, `schemas.py` |
 | `src/error.rs` (`AppError`) | `offloadmock/errors.py` |
 | `src/main.rs` (route tree) | `offloadmock/main.py`, `routers/*` |
+| `src/api/client/watch.rs` (task-watch WS protocol) | `offloadmock/routers/client_ws.py` |
 | `src/middleware/auth.rs` | `offloadmock/deps.py`, `auth.py` |
 | `src/config.rs` | `offloadmock/config.py` |
 

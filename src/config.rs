@@ -194,6 +194,7 @@ pub struct AppConfig {
     pub heuristics: HeuristicsConfig,
     pub stale_agents: StaleAgentsConfig,
     pub agent_ws: AgentWsConfig,
+    pub task_watch: TaskWatchConfig,
 }
 
 impl AppConfig {
@@ -238,6 +239,7 @@ impl AppConfig {
         let heuristics = HeuristicsConfig::from_env();
         let stale_agents = StaleAgentsConfig::from_env();
         let agent_ws = AgentWsConfig::from_env();
+        let task_watch = TaskWatchConfig::from_env();
 
         Ok(Self {
             jwt_secret,
@@ -252,6 +254,43 @@ impl AppConfig {
             heuristics,
             stale_agents,
             agent_ws,
+            task_watch,
         })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TaskWatchConfig {
+    /// Interval between diff ticks on `/api/task/watch` connections
+    /// (env: TASK_WATCH_TICK_MS, default: 1000).
+    pub tick_ms: u64,
+    /// How often a connection re-sends a full snapshot of its tracked set even
+    /// without an explicit `sync`/`track`/`untrack` (env: TASK_WATCH_FULL_SYNC_SECS,
+    /// default: 30).
+    pub full_sync_secs: u64,
+    /// Max tasks a single connection may track at once (env: TASK_WATCH_MAX_TRACKED,
+    /// default: 1000).
+    pub max_tracked: usize,
+}
+
+impl TaskWatchConfig {
+    pub fn from_env() -> Self {
+        let tick_ms = env::var("TASK_WATCH_TICK_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1000u64);
+        let full_sync_secs = env::var("TASK_WATCH_FULL_SYNC_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(30u64);
+        let max_tracked = env::var("TASK_WATCH_MAX_TRACKED")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1000usize);
+        Self {
+            tick_ms,
+            full_sync_secs,
+            max_tracked,
+        }
     }
 }

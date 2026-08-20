@@ -231,6 +231,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     post(api::client::submit_task_blocking),
                 )
                 .route("/task/cancel/{cap}/{id}", post(api::client::cancel_task))
+                .route("/task/watch", get(api::client::watch::task_watch_handler))
                 .route(
                     "/capabilities/online",
                     post(api::client::capabilities_online),

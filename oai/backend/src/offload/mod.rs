@@ -5,6 +5,7 @@ use crate::error::AppError;
 
 pub mod image_tasks;
 pub mod task_status;
+pub mod watch;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmCapabilityInfo {
@@ -70,11 +71,17 @@ pub struct OffloadClient {
     http: Client,
     base_url: String,
     api_key: String,
+    watch: std::sync::Arc<watch::TaskWatch>,
 }
 
 impl OffloadClient {
-    pub fn new(http: Client, base_url: String, api_key: String) -> Self {
-        Self { http, base_url: base_url.trim_end_matches('/').to_string(), api_key }
+    pub fn new(
+        http: Client,
+        base_url: String,
+        api_key: String,
+        watch: std::sync::Arc<watch::TaskWatch>,
+    ) -> Self {
+        Self { http, base_url: base_url.trim_end_matches('/').to_string(), api_key, watch }
     }
 
     pub async fn list_llm_capabilities(&self) -> Result<Vec<LlmCapabilityInfo>, AppError> {
@@ -329,9 +336,19 @@ impl OffloadClient {
         Ok(TaskId { cap, id })
     }
 
+    /// Reads the shared [`watch::TaskWatch`] cache instead of hitting
+    /// `POST /api/task/poll/{cap}/{id}` — see `offload::watch` for why. The
+    /// error convention (`POLL_HTTP_404:` prefix, `offload_task_missing_message`)
+    /// is preserved so every existing caller keeps working unmodified.
     pub async fn poll_task(&self, task_id: &TaskId) -> Result<PollResponse, AppError> {
-        let raw = self.poll_task_raw(task_id).await?;
-        serde_json::from_value(raw).map_err(|e| AppError::ExternalService(e.to_string()))
+        let f = watch::poll_via_watch(&self.watch, &task_id.cap, &task_id.id).await?;
+        Ok(PollResponse {
+            status: f.status,
+            stage: f.stage,
+            output: f.output,
+            log: f.log,
+            typical_runtime_seconds: f.typical_runtime_seconds,
+        })
     }
 
     /// Full OffloadMQ poll JSON — used by OAI debug mode.

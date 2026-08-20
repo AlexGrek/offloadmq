@@ -108,7 +108,21 @@ where
 /// Best-effort by design: the job has already reached its final state and its
 /// result is stored, so a cleanup failure must not undo any of that. The worst
 /// case is the bucket surviving to its TTL, exactly as before.
-async fn release_bucket<M: OffloadJobModel>(poller: &dyn OffloadPoller, label: &str, job: &M) {
+///
+/// Also untracks the job's OffloadMQ task on the shared [`crate::offload::watch::TaskWatch`]
+/// connection — every terminal transition in this file funnels through here
+/// (directly or via [`release_bucket_for`]/[`fail_and_release`]), so this is
+/// the single place that needs to know "this task is done, stop watching it"
+/// for all five offload-job features.
+async fn release_bucket<M: OffloadJobModel>(
+    state: &AppState,
+    poller: &dyn OffloadPoller,
+    label: &str,
+    job: &M,
+) {
+    if let (Some(cap), Some(task_id)) = (job.offload_cap(), job.offload_task_id()) {
+        state.watch.untrack(cap, task_id).await;
+    }
     let Some(bucket) = job.bucket_uid() else {
         return;
     };
@@ -121,22 +135,31 @@ async fn release_bucket<M: OffloadJobModel>(poller: &dyn OffloadPoller, label: &
 }
 
 /// [`release_bucket`] for the finalizing paths that have no poller in hand.
-/// Builds one only when there is actually a bucket to release.
+/// Untracks unconditionally (that doesn't need a poller); builds one only if
+/// there's also a bucket to release.
 async fn release_bucket_for<R>(reconciler: &R, state: &AppState, job: &<R::Entity as EntityTrait>::Model)
 where
     R: JobReconciler,
     <R::Entity as EntityTrait>::Model: OffloadJobModel,
 {
     if job.bucket_uid().is_none() {
+        if let (Some(cap), Some(task_id)) = (job.offload_cap(), job.offload_task_id()) {
+            state.watch.untrack(cap, task_id).await;
+        }
         return;
     }
     match reconciler.poller(state).await {
-        Ok(poller) => release_bucket(poller.as_ref(), reconciler.label(), job).await,
-        Err(e) => tracing::warn!(
-            "{}: no client to release the bucket of job {}: {e}",
-            reconciler.label(),
-            job.id()
-        ),
+        Ok(poller) => release_bucket(state, poller.as_ref(), reconciler.label(), job).await,
+        Err(e) => {
+            if let (Some(cap), Some(task_id)) = (job.offload_cap(), job.offload_task_id()) {
+                state.watch.untrack(cap, task_id).await;
+            }
+            tracing::warn!(
+                "{}: no client to release the bucket of job {}: {e}",
+                reconciler.label(),
+                job.id()
+            );
+        }
     }
 }
 
@@ -193,20 +216,20 @@ where
                 .map_err(classify_completed_failure)?;
             // Only once the result is safely persisted: a failure above leaves
             // the job in flight, and the next attempt still needs the bucket.
-            release_bucket(poller.as_ref(), reconciler.label(), job).await;
+            release_bucket(state, poller.as_ref(), reconciler.label(), job).await;
         }
         "failed" => {
             let err = task_status::extract_error_text(&poll.output, reconciler.failure_fallback());
             offload_jobs::update_status::<R::Entity>(&state.db, job.id(), "failed", None, Some(&err))
                 .await
                 .map_err(ReconcileFailure::Transient)?;
-            release_bucket(poller.as_ref(), reconciler.label(), job).await;
+            release_bucket(state, poller.as_ref(), reconciler.label(), job).await;
         }
         "canceled" => {
             offload_jobs::update_status::<R::Entity>(&state.db, job.id(), "canceled", None, None)
                 .await
                 .map_err(ReconcileFailure::Transient)?;
-            release_bucket(poller.as_ref(), reconciler.label(), job).await;
+            release_bucket(state, poller.as_ref(), reconciler.label(), job).await;
         }
         other => {
             offload_jobs::update_status::<R::Entity>(
@@ -311,7 +334,7 @@ where
             // `cancelRequested` is not the end: the agent may still be working,
             // and the poll that observes `canceled` releases the bucket then.
             if task_status::is_terminal(&resp.status) {
-                release_bucket(poller.as_ref(), reconciler.label(), &job).await;
+                release_bucket(state, poller.as_ref(), reconciler.label(), &job).await;
             }
             Ok(CancelOutcome {
                 job_id: job.id(),
@@ -329,7 +352,7 @@ where
                     Some(&reason),
                 )
                 .await?;
-                release_bucket(poller.as_ref(), reconciler.label(), &job).await;
+                release_bucket(state, poller.as_ref(), reconciler.label(), &job).await;
                 Ok(CancelOutcome {
                     job_id: job.id(),
                     status: "failed".into(),

@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use opendal::Operator;
 use sea_orm::DatabaseConnection;
 
 use crate::middleware::auth::Auth;
+use crate::offload::watch::TaskWatch;
 use crate::snowflake::SnowflakeGenerator;
 
 pub struct AppState {
@@ -10,6 +13,8 @@ pub struct AppState {
     pub snowflake: SnowflakeGenerator,
     pub storage: Option<Operator>,
     pub http: reqwest::Client,
+    /// Single shared OffloadMQ task-watch connection — see `offload::watch`.
+    pub watch: Arc<TaskWatch>,
 }
 
 impl AppState {

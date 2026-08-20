@@ -47,7 +47,8 @@ async fn main() -> Result<()> {
     seed_settings_from_env(&db).await?;
 
     let http = reqwest::Client::new();
-    let state = Arc::new(AppState { db, auth, snowflake, storage, http });
+    let watch = offload::watch::TaskWatch::spawn(db.clone());
+    let state = Arc::new(AppState { db, auth, snowflake, storage, http, watch });
     jobs::image_pipeline_worker::spawn(state.clone());
     jobs::image_analysis_worker::spawn(state.clone());
     jobs::nude_detect_worker::spawn(state.clone());

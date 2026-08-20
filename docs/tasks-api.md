@@ -7,7 +7,7 @@ Complete documentation for task submission, polling, and execution across both c
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Client API](#client-api) — Submit, monitor tasks, discover capabilities
+2. [Client API](#client-api) — Submit, monitor (poll or watch over WebSocket), discover capabilities
 3. [Agent API](#agent-api) — Receive, execute, and report tasks
 4. [Task Lifecycle](#task-lifecycle) — States and transitions
 5. [Status Codes](#status-codes) — Error handling
@@ -25,7 +25,7 @@ Tasks flow through a client-server-agent pipeline:
 4. **Agent claims** the task via `POST /private/agent/take/{cap}/{id}`
 5. **Agent executes** and reports progress via `POST /private/agent/task/progress/{cap}/{id}`
 6. **Agent resolves** the task via `POST /private/agent/task/resolve/{cap}/{id}`
-7. **Client polls** task status via `POST /api/task/poll/{cap}/{id}` to get results
+7. **Client polls** task status via `POST /api/task/poll/{cap}/{id}` to get results — or, for many tasks at once, opens a single `GET /api/task/watch` WebSocket and receives push updates instead (see [Watch Tasks](#watch-tasks-websocket))
 8. *(Optional)* **Client cancels** a task via `POST /api/task/cancel/{cap}/{id}`
 
 ### Key Concepts
@@ -268,7 +268,7 @@ Checks the status of a task by ID. Works for both urgent and regular tasks.
 
 **Response** (200 OK)
 
-Pending task (just submitted, not yet picked up by an agent):
+Pending task (just submitted, not yet picked up by an agent). `stage`, `output`, and `typicalRuntimeParameters` are omitted entirely (not sent as `null`) when unset — only `log` and `typicalRuntimeSeconds` are always present, as `null`:
 ```json
 {
   "id": {
@@ -277,8 +277,6 @@ Pending task (just submitted, not yet picked up by an agent):
   },
   "status": "queued",
   "createdAt": "2026-03-18T14:30:00Z",
-  "stage": null,
-  "output": null,
   "log": null,
   "typicalRuntimeSeconds": null
 }
@@ -294,13 +292,12 @@ Running task (agent has picked it up; estimate available if heuristic data exist
   "status": "running",
   "createdAt": "2026-03-18T14:30:00Z",
   "stage": "inference",
-  "output": null,
   "log": "Loading model from /models/mistral-7b...\nModel loaded in 2.5s\nProcessing prompt...\n",
   "typicalRuntimeSeconds": { "secs": 12, "nanos": 0 }
 }
 ```
 
-Completed task:
+Completed task. `stage` is cleared (and therefore omitted) on every terminal transition:
 ```json
 {
   "id": {
@@ -309,7 +306,6 @@ Completed task:
   },
   "status": "completed",
   "createdAt": "2026-03-18T14:30:00Z",
-  "stage": null,
   "output": {
     "result": "2 + 2 = 4",
     "tokens_used": 15,
@@ -329,7 +325,6 @@ Failed task:
   },
   "status": "failed",
   "createdAt": "2026-03-18T14:30:00Z",
-  "stage": null,
   "output": {
     "error": "Out of memory",
     "error_code": "OOM"
@@ -344,9 +339,9 @@ Failed task:
 | `id` | Task identifier |
 | `status` | Current task status (see Task Lifecycle below) |
 | `createdAt` | ISO 8601 UTC timestamp when the task was submitted. Always present. |
-| `stage` | Optional human-readable current stage (e.g., "inference", "post-processing") |
-| `output` | Task result object (only present if completed or failed) |
-| `log` | Accumulated agent logs (only if agent sent updates) |
+| `stage` | Optional human-readable current stage (e.g., "inference", "post-processing"). **Omitted from the response entirely when unset** — not sent as `null`. |
+| `output` | Task result object. **Omitted entirely** until the task reaches `completed` or `failed`. |
+| `log` | Accumulated agent logs. Always present (as `null` until an agent sends updates). |
 | `typicalRuntimeSeconds` | Estimated typical duration as `{ "secs": N, "nanos": N }`. Set once when an agent claims the task, based on historical heuristic data. `null` if no heuristic data exists yet (fewer than 2 completed runs). Useful for rendering progress bars. |
 
 **Task Status Values**
@@ -355,15 +350,12 @@ Failed task:
 |--------|---------|
 | `pending` | Accepted but not yet queued |
 | `queued` | Waiting for an available agent |
-| `pinned` | Reserved for a specific agent but not yet picked up |
 | `assigned` | Agent has claimed the task |
 | `starting` | Agent is preparing the task (loading models, etc.) |
 | `running` | Task is actively executing |
 | `completed` | Task succeeded, result in `output` |
 | `failed` | Task failed, error in `output` |
 | `cancelRequested` | Client requested cancellation; agent should stop work |
-| `failedRetryPending` | Failed but scheduled for retry |
-| `failedRetryDelayed` | Failed and waiting before retry |
 | `canceled` | Task was cancelled by client |
 
 **Error responses**
@@ -381,6 +373,113 @@ Failed task:
 - Log accumulates as agent sends progress updates
 - Completed/failed tasks are archived after 7 days (configurable)
 - Polling a deleted/archived task returns 404
+- Watching more than a handful of tasks? `POST /api/task/poll/{cap}/{id}` per task per tick doesn't scale well — see [Watch Tasks (WebSocket)](#watch-tasks-websocket) below for a single-connection push alternative
+
+---
+
+### Watch Tasks (WebSocket)
+
+```
+GET /api/task/watch
+X-API-Key: your-client-api-key
+Upgrade: websocket
+```
+
+A single persistent WebSocket connection that replaces repeated calls to `POST /api/task/poll/{cap}/{id}`. The client tells the server which tasks to track; the server runs one internal tick (default every second) that diffs each tracked task against what was last sent *on that connection* and pushes an `update` frame only when something actually changed — an idle tracked set produces no traffic at all. Task log content is sent as append-only deltas rather than being re-sent in full on every change, which is normally the biggest source of poll traffic.
+
+This is a client-side companion to [Poll Task Status](#poll-task-status): both read the same task state, `watch` just amortizes it across one long-lived connection instead of one request per task per tick.
+
+**Authentication**
+
+Unlike the rest of the Client API, auth is via the `X-API-Key` header (not a JSON body — the WebSocket upgrade request has no body). This is the same client API key used everywhere else. `X-MGMT-API-KEY` works the same way as [the management override](#management-override-x-mgmt-api-key) does elsewhere: it bypasses task-ownership checks, so a management-token connection can watch any task regardless of who submitted it. There is no query-parameter auth (contrast with the [agent WebSocket](#communication-model-websocket-push-primary-vs-http-polling-deprecated), which is designed to be opened before an `Authorization` header is available) — a header is always required, so this endpoint is not directly reachable from a browser `WebSocket` constructor.
+
+**Connecting**
+
+```python
+import asyncio, json, websockets
+
+async def main():
+    async with websockets.connect(
+        "wss://mq.example.com/api/task/watch",
+        additional_headers={"X-API-Key": "your-client-api-key"},
+    ) as ws:
+        hello = json.loads(await ws.recv())
+        print("connected:", hello)
+
+        await ws.send(json.dumps({
+            "type": "track",
+            "reqId": "r1",
+            "tasks": [{"cap": "llm.mistral", "id": "01ARZ3NDE4V2XTGZUVY7"}],
+        }))
+
+        async for raw in ws:
+            msg = json.loads(raw)
+            if msg["type"] == "update":
+                for entry in msg["tasks"]:
+                    print(entry)
+
+asyncio.run(main())
+```
+
+**Client → Server frames**
+
+| `type` | Payload | Meaning |
+|--------|---------|---------|
+| `track` | `{ "reqId", "tasks": [{ "cap", "id" }, ...] }` | Add tasks to this connection's tracked set. Answered with `ack`; the next tick sends a full snapshot of the whole tracked set (not just the newly-added tasks). |
+| `untrack` | `{ "reqId", "tasks": [{ "cap", "id" }, ...] }` | Remove tasks from the tracked set. Answered with `ack`. |
+| `sync` | `{ "reqId" }` | Force a full snapshot of the tracked set on the next tick, without changing it. Answered with `ack`. |
+| `ping` | `{}` | Answered with `pong`. |
+
+**Server → Client frames**
+
+```jsonc
+// sent once, immediately after connecting
+{ "type": "hello", "protocol": 1, "tickMs": 1000, "fullSyncSecs": 30, "maxTracked": 1000 }
+
+// one per track/untrack/sync request
+{ "type": "ack", "reqId": "r1", "tracked": 3 }
+
+// sent only when at least one tracked task changed this tick
+{
+  "type": "update",
+  "seq": 7,
+  "full": false,
+  "tasks": [
+    { "id": { "cap": "llm.mistral", "id": "01ARZ3NDE4V2XTGZUVY7" }, "status": "running", "stage": "inference" },
+    { "id": { "cap": "llm.mistral", "id": "01ARZ3NDE4V2XTGZUVY9" }, "logAppend": "next token...\n", "logLen": 812 }
+  ]
+}
+
+// bad frame, or tracked-set limit exceeded
+{ "type": "error", "reqId": "r1", "message": "tracked-set limit of 1000 reached", "code": "limit_exceeded" }
+
+{ "type": "pong" }
+```
+
+**`update` task entry fields**
+
+| Field | Present when | Description |
+|-------|---------------|-------------|
+| `id` | always | `{ cap, id }` |
+| `status` | changed, or full entry | Same values as [Poll Task Status](#poll-task-status)'s `status` |
+| `stage` | changed, or full entry | Same as the poll endpoint's `stage` |
+| `createdAt` | full entry only | ISO 8601 UTC; omitted on delta entries since it never changes |
+| `log` | full entry only | The complete accumulated log |
+| `logAppend` | delta entry, log grew | Only the bytes appended since the last frame sent on *this connection* |
+| `logLen` | any entry with a log | Authoritative total log length. Compare against what you've accumulated locally to detect a missed frame — if the server itself detects its own delta can't be applied (the log shrank, or the cached offset lands mid-character), it downgrades that task to a full entry automatically |
+| `output` | becomes present | Only sent once, when it transitions from absent to present (in practice: on `completed`/`failed`) |
+| `typicalRuntimeSeconds` | changed, or full entry | Plain seconds as a JSON number (`42.0`), **not** the `{ "secs", "nanos" }` shape the HTTP poll endpoint uses |
+| `missing` | task not found | `true` if the task doesn't exist in any store (deleted, archived, or never existed) — the push equivalent of the poll endpoint's 404. Sent once per disappearance, not every tick. |
+
+A full entry (on first track, on `full: true` updates, or whenever the server can't express a change as a delta) carries every field the task currently has; a delta entry carries only what changed. `full: true` on the `update` frame itself means *every* tracked task is being sent in full that tick, which happens right after `track`/`untrack`/`sync`, and periodically anyway (`fullSyncSecs`, default 30s) as a resync safety net.
+
+**Notes**
+
+- One WebSocket serves any number of tracked tasks — track everything you care about on a single connection rather than opening one per task
+- Ownership is enforced per task exactly as it is for `POST /api/task/poll/{cap}/{id}`: a client key can only track tasks it submitted, unless `X-MGMT-API-KEY` is used
+- Urgent tasks are removed from their store as soon as they reach a terminal state (see [Submit Task (Blocking)](#submit-task-blocking)) — a watcher may observe `missing: true` for a completed urgent task rather than a `completed` update, if the completion and the removal land in the same tick
+- There is no HTTP fallback: if the connection drops, reconnect and re-`track` your task set — the server always answers a fresh `track` with a full snapshot, so no update is lost, only delayed
+- `maxTracked` (default 1000, see [Configuration](#configuration)) caps a single connection's tracked set; track a bounded, relevant set of tasks rather than everything a client has ever submitted
 
 ---
 
@@ -1628,6 +1727,9 @@ Server-side task behavior is configured via environment variables:
 | `URGENT_TASK_TTL_SECONDS` | 60 | Urgent task lifetime (in-memory) |
 | `URGENT_EXPIRATION_CHECK_INTERVAL_SECS` | 10 | How often to clean expired urgent tasks |
 | `SERVER_ADDRESS` | `0.0.0.0:3069` | HTTP server bind address |
+| `TASK_WATCH_TICK_MS` | 1000 | Diff-tick interval for `/api/task/watch` connections |
+| `TASK_WATCH_FULL_SYNC_SECS` | 30 | How often a watch connection re-sends a full snapshot even without an explicit `sync`/`track`/`untrack` |
+| `TASK_WATCH_MAX_TRACKED` | 1000 | Max tasks a single `/api/task/watch` connection may track |
 
 ---
 
@@ -1638,7 +1740,8 @@ Server-side task behavior is configured via environment variables:
 3. **Handle timeouts gracefully** — `/submit_blocking` has a 60s limit; plan accordingly
 4. **Validate bucket ownership** — servers enforce it, but clients should double-check
 5. **Resend progress updates** — if an update fails, the task is still running; retry
-6. **Poll with backoff** — don't poll too aggressively; exponential backoff is better
-7. **Clean up old tasks** — archived tasks are deleted after 7 days; plan data retention
-8. **Use tier strategically** — higher tiers get better hardware; price accordingly
+6. **Prefer watch over polling for more than a task or two** — `GET /api/task/watch` amortizes many tasks over one connection; reserve `POST /api/task/poll/{cap}/{id}` for one-off checks
+7. **Poll with backoff** — if you do poll directly, don't poll too aggressively; exponential backoff is better
+8. **Clean up old tasks** — archived tasks are deleted after 7 days; plan data retention
+9. **Use tier strategically** — higher tiers get better hardware; price accordingly
 

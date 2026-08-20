@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     error::AppError,
-    offload::{post_cancel, CancelTaskResponse},
+    offload::{post_cancel, watch::TaskWatch, CancelTaskResponse},
 };
 
 #[derive(Debug, Clone)]
@@ -11,6 +13,7 @@ pub struct OffloadImageClient {
     http: Client,
     base_url: String,
     api_key: String,
+    watch: Arc<TaskWatch>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,8 +47,8 @@ pub struct UploadFileResponse {
 }
 
 impl OffloadImageClient {
-    pub fn new(http: Client, base_url: String, api_key: String) -> Self {
-        Self { http, base_url: base_url.trim_end_matches('/').to_string(), api_key }
+    pub fn new(http: Client, base_url: String, api_key: String, watch: Arc<TaskWatch>) -> Self {
+        Self { http, base_url: base_url.trim_end_matches('/').to_string(), api_key, watch }
     }
 
     pub async fn create_bucket(
@@ -200,25 +203,19 @@ impl OffloadImageClient {
         Ok((OffloadTaskId { cap, id }, body))
     }
 
+    /// Reads the shared [`TaskWatch`] cache instead of hitting
+    /// `POST /api/task/poll/{cap}/{id}` — see `offload::watch` for why. The
+    /// error convention (`POLL_HTTP_404:` prefix, `offload_task_missing_message`)
+    /// is preserved so every existing caller keeps working unmodified.
     pub async fn poll_task(&self, task_id: &OffloadTaskId) -> Result<OffloadPollResponse, AppError> {
-        let cap_encoded = urlencoding::encode(&task_id.cap);
-        let url = format!("{}/api/task/poll/{}/{}", self.base_url, cap_encoded, task_id.id);
-        let body = serde_json::json!({ "apiKey": self.api_key });
-        let resp = self
-            .http
-            .post(&url)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AppError::ExternalService(e.to_string()))?;
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::ExternalService(format!("POLL_HTTP_{status}:{text}")));
-        }
-        resp.json()
-            .await
-            .map_err(|e| AppError::ExternalService(e.to_string()))
+        let f = crate::offload::watch::poll_via_watch(&self.watch, &task_id.cap, &task_id.id).await?;
+        Ok(OffloadPollResponse {
+            status: f.status,
+            stage: f.stage,
+            output: f.output,
+            log: f.log,
+            typical_runtime_seconds: f.typical_runtime_seconds,
+        })
     }
 
     pub async fn cancel_task(&self, task_id: &OffloadTaskId) -> Result<CancelTaskResponse, AppError> {

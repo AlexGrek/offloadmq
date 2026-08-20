@@ -238,6 +238,7 @@ async fn run_chat(
     )
     .await
     .map_err(|e| e.to_string())?;
+    state.watch.track(&task_id.cap, &task_id.id).await;
 
     let _ = tx.send(ServerEvent::TaskQueued {
         req_id: req_id.to_string(),
@@ -265,9 +266,17 @@ async fn poll_loop(
 ) {
     let started_at = tokio::time::Instant::now();
     let mut first = true;
+    let mut events = state.watch.subscribe();
     loop {
         if !first {
-            tokio::time::sleep(POLL_INTERVAL).await;
+            // Whichever fires first: the fixed cadence, or the watch cache
+            // reporting this task changed — either way the loop just retries
+            // the poll immediately after, so this only ever makes it react
+            // faster, never changes what happens.
+            tokio::select! {
+                _ = tokio::time::sleep(POLL_INTERVAL) => {}
+                _ = events.recv() => {}
+            }
         }
         first = false;
 
@@ -343,6 +352,7 @@ async fn finish_success(
 ) {
     let _ = db_chats::finalize_message(&state.db, ctx.assistant_msg_id, &text, "complete").await;
     let _ = db_chats::touch_chat(&state.db, ctx.chat_id).await;
+    state.watch.untrack(&ctx.cap, &ctx.id).await;
     let _ = tx.send(ServerEvent::TaskResult {
         req_id: ctx.req_id.clone(),
         cap: ctx.cap.clone(),
@@ -362,6 +372,7 @@ async fn finish_failure(
     log: Option<String>,
 ) {
     let _ = db_chats::finalize_message(&state.db, ctx.assistant_msg_id, &error, "failed").await;
+    state.watch.untrack(&ctx.cap, &ctx.id).await;
     let _ = tx.send(ServerEvent::TaskFailed {
         req_id: ctx.req_id.clone(),
         cap: ctx.cap.clone(),
@@ -422,6 +433,7 @@ async fn reconcile_pending_message(
                     "failed",
                 )
                 .await;
+                state.watch.untrack(&task_id.cap, &task_id.id).await;
             }
             return Err(e);
         }
@@ -432,13 +444,16 @@ async fn reconcile_pending_message(
             db_chats::finalize_message(&state.db, msg.id, &task_status::extract_llm_text(&resp.output), "complete")
                 .await?;
             let _ = db_chats::touch_chat(&state.db, msg.chat_id).await;
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "failed" => {
             db_chats::finalize_message(&state.db, msg.id, &task_status::extract_error_text(&resp.output, "Unknown error"), "failed")
                 .await?;
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "canceled" => {
             db_chats::finalize_message(&state.db, msg.id, "Task was canceled", "failed").await?;
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "cancelRequested" => {
             let _ = client.cancel_task(&task_id).await;
@@ -452,6 +467,7 @@ async fn reconcile_pending_message(
                 "failed",
             )
             .await?;
+            state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         _ => {}
     }

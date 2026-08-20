@@ -4,6 +4,8 @@ use crate::{db::image_worker_logs, services::image_jobs, state::AppState};
 
 const DEFAULT_TICK_SECS: u64 = 20;
 const DEFAULT_BATCH_SIZE: u64 = 20;
+/// See `jobs::worker_runtime`'s `EVENT_DEBOUNCE` for why this floor exists.
+const EVENT_DEBOUNCE: Duration = Duration::from_millis(500);
 
 pub fn spawn(state: Arc<AppState>) {
     tokio::spawn(async move {
@@ -20,9 +22,19 @@ pub fn spawn(state: Arc<AppState>) {
 
         let mut ticker = tokio::time::interval(Duration::from_secs(tick_secs));
         ticker.tick().await;
+        let mut events = state.watch.subscribe();
+        let mut last_run = tokio::time::Instant::now();
 
         loop {
-            ticker.tick().await;
+            tokio::select! {
+                _ = ticker.tick() => {}
+                _ = events.recv() => {
+                    if last_run.elapsed() < EVENT_DEBOUNCE {
+                        continue;
+                    }
+                }
+            }
+            last_run = tokio::time::Instant::now();
             let run_id = format!("run_{}", state.next_id());
             let started = chrono::Utc::now();
             let started_s = started.to_rfc3339();

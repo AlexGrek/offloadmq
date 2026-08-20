@@ -401,6 +401,7 @@ pub async fn start_job(
         Some(&out_bucket.bucket_uid),
     )
     .await?;
+    state.watch.track(&task_id.cap, &task_id.id).await;
 
     Ok(job_id)
 }

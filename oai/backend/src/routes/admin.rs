@@ -124,6 +124,9 @@ pub async fn update_settings(
         req.management_api_token,
     )
     .await?;
+    // The URL/token may have changed — reconnect the shared task-watch
+    // connection rather than waiting out its backoff.
+    state.watch.reconnect();
     Ok(Json(SettingsResponse {
         offloadmq_url: s.offloadmq_url,
         client_api_token: s.client_api_token,

@@ -282,6 +282,7 @@ pub async fn start_job(
             &pre.submit_payload.to_string(),
         )
         .await?;
+        state.watch.track(&pre.task_id.cap, &pre.task_id.id).await;
         image_generation::update_job_status(&state.db, job_id, "submitted", None).await?;
         record_event(
             state,
@@ -334,6 +335,7 @@ pub async fn start_job(
         &submit_payload.to_string(),
     )
     .await?;
+    state.watch.track(&task_id.cap, &task_id.id).await;
     image_generation::update_job_status(&state.db, job_id, "submitted", None).await?;
     record_event(
         state,
@@ -786,7 +788,8 @@ pub async fn list_imggen_capabilities(
         return imggen_capabilities::list_for_display(&state.db, &online_bases, &usage).await;
     }
 
-    let client = OffloadClient::new(state.http.clone(), settings.offloadmq_url, api_key);
+    let client =
+        OffloadClient::new(state.http.clone(), settings.offloadmq_url, api_key, state.watch.clone());
     let now = chrono::Utc::now().to_rfc3339();
     let online_caps: Vec<LlmCapabilityInfo> = client
         .list_capabilities_with_prefix("imggen.")
@@ -1313,6 +1316,8 @@ async fn promote_after_resize(
         &submit_payload.to_string(),
     )
     .await?;
+    state.watch.untrack(&task.offload_cap, &task.offload_task_id).await;
+    state.watch.track(&task_id.cap, &task_id.id).await;
     image_generation::update_job_status(&state.db, job.id, "submitted", None).await?;
     record_event(
         state,
@@ -1523,6 +1528,7 @@ async fn release_job_buckets(state: &AppState, job_id: i64) {
             return;
         }
     };
+    state.watch.untrack(&offload.offload_cap, &offload.offload_task_id).await;
     let buckets = buckets_in_submit_payload(&offload.submit_payload);
     if buckets.is_empty() {
         return;
