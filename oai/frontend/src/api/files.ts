@@ -19,6 +19,7 @@ export interface UserFile {
   is_image: boolean
   is_video: boolean
   is_audio: boolean
+  is_starred: boolean
 }
 
 export interface StorageSummary {

@@ -48,6 +48,8 @@ pub struct UserFile {
     pub is_video: bool,
     /// True when the content type is audio.
     pub is_audio: bool,
+    /// True when the file is in the user's starred list.
+    pub is_starred: bool,
 }
 
 #[derive(Serialize)]
@@ -104,19 +106,30 @@ pub async fn list_files(
 
     let mut input_bytes = 0i64;
     let mut output_bytes = 0i64;
-    let mut files: Vec<UserFile> = listing
-        .files
-        .into_iter()
-        .map(|f| {
-            let file_bytes = f.stored_bytes + f.thumbnail_stored_bytes;
-            if f.direction == "output" {
-                output_bytes += file_bytes;
-            } else {
-                input_bytes += file_bytes;
+    let mut files: Vec<UserFile> = Vec::with_capacity(listing.files.len());
+
+    let op = crate::services::storage::operator(&state).ok();
+    let starred_checks = listing.files.iter().map(|f| {
+        let op = op.clone();
+        let path = crate::services::image_paths::starred_image_path(user_id, f.id);
+        async move {
+            match op {
+                Some(ref o) => o.exists(&path).await.unwrap_or(false),
+                None => false,
             }
-            map_user_file(f)
-        })
-        .collect();
+        }
+    });
+    let starred_results = futures::future::join_all(starred_checks).await;
+
+    for (f, is_starred) in listing.files.into_iter().zip(starred_results) {
+        let file_bytes = f.stored_bytes + f.thumbnail_stored_bytes;
+        if f.direction == "output" {
+            output_bytes += file_bytes;
+        } else {
+            input_bytes += file_bytes;
+        }
+        files.push(map_user_file(f, is_starred));
+    }
 
     let audio_jobs =
         offload_jobs::list_jobs::<TtsJobEntity>(&state.db, user_id, FILE_LIST_LIMIT).await?;
@@ -142,7 +155,7 @@ pub async fn list_files(
     }))
 }
 
-fn map_user_file(f: image_generation::ImageFile) -> UserFile {
+fn map_user_file(f: image_generation::ImageFile, is_starred: bool) -> UserFile {
     let is_image = f.content_type.starts_with("image/");
     let is_video = f.content_type.starts_with("video/");
     UserFile {
@@ -167,6 +180,7 @@ fn map_user_file(f: image_generation::ImageFile) -> UserFile {
         is_image,
         is_video,
         is_audio: false,
+        is_starred,
     }
 }
 
@@ -237,5 +251,6 @@ fn map_audio_job(job: &crate::db::entities::tts_jobs::Model) -> Option<UserFile>
         is_image: false,
         is_video: false,
         is_audio: true,
+        is_starred: false,
     })
 }

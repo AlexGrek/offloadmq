@@ -30,7 +30,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-type DirectionFilter = 'all' | 'input' | 'output' | 'audio'
+type DirectionFilter = 'all' | 'input' | 'output' | 'audio' | 'starred'
 type MediaFilter = 'all' | 'image' | 'video'
 
 const SCOPE_LABELS: Record<CleanupFilesScope, string> = {
@@ -111,6 +111,8 @@ export default function FilesPage() {
           return true
         case 'audio':
           return f.is_audio
+        case 'starred':
+          return f.is_starred
         case 'input':
         case 'output':
           return !f.is_audio && f.direction === filter
@@ -189,7 +191,7 @@ export default function FilesPage() {
           data-testid="files-search"
         />
         <div className="flex gap-1" role="group" aria-label="File type">
-          {(['all', 'input', 'output', 'audio'] as const).map(f => (
+          {(['all', 'starred', 'input', 'output', 'audio'] as const).map(f => (
             <Button
               key={f}
               variant={filter === f ? 'default' : 'ghost'}
@@ -200,11 +202,13 @@ export default function FilesPage() {
             >
               {f === 'all'
                 ? 'All'
-                : f === 'input'
-                  ? 'Uploads'
-                  : f === 'output'
-                    ? 'Generated'
-                    : 'Audio'}
+                : f === 'starred'
+                  ? 'Starred'
+                  : f === 'input'
+                    ? 'Uploads'
+                    : f === 'output'
+                      ? 'Generated'
+                      : 'Audio'}
             </Button>
           ))}
         </div>
