@@ -9,6 +9,7 @@ import LandingPage from './pages/LandingPage'
 import DashboardPage from './pages/DashboardPage'
 import ChatPage from './pages/ChatPage'
 import ImageGenerationPage from './pages/ImageGenerationPage'
+import PromptPlaceholdersPage from './pages/PromptPlaceholdersPage'
 import DescribeImagePage from './pages/DescribeImagePage'
 import NudeDetectorPage from './pages/NudeDetectorPage'
 import ImgUtilsPage from './pages/ImgUtilsPage'
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="chat" element={<ChatPage />} />
             <Route path="images" element={<ImageGenerationPage />} />
+            <Route path="prompt-placeholders" element={<PromptPlaceholdersPage />} />
             <Route path="describe" element={<DescribeImagePage />} />
             <Route path="nude-detect" element={<NudeDetectorPage />} />
             <Route path="img-utils" element={<ImgUtilsPage />} />

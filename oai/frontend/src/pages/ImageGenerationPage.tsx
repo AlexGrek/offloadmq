@@ -113,7 +113,8 @@ import {
   type RescaleState,
 } from '../lib/imggen'
 import { ExternalResizeToggle } from '../components/ExternalResizeToggle'
-import { createPlaceholderUsage, expandPromptCategoryPlaceholders } from '../lib/promptPlaceholders'
+import { createPlaceholderUsage, expandPromptPlaceholders } from '../lib/promptPlaceholders'
+import { listPromptPlaceholders } from '../api/promptPlaceholders'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import type { ImagePipelineRescaleParams, StartImageJobRequest } from '../api/images'
 import {
@@ -818,6 +819,24 @@ export default function ImageGenerationPage() {
     }
   }
 
+  /**
+   * Custom placeholder defs are additive — a submission must never fail because
+   * this optional fetch failed, so any error falls back to an empty map.
+   */
+  async function fetchCustomPlaceholderDefs(): Promise<Record<string, string[]>> {
+    if (!token) return {}
+    try {
+      const items = await listPromptPlaceholders(token)
+      const defs: Record<string, string[]> = {}
+      for (const item of items) {
+        defs[item.name.trim().toLowerCase()] = item.variants
+      }
+      return defs
+    } catch {
+      return {}
+    }
+  }
+
   async function onSubmit() {
     if (!token || !canSubmit) return
     setSubmitting(true)
@@ -825,7 +844,8 @@ export default function ImageGenerationPage() {
     setError(null)
     setInfo(`Submitting ${isVideoMode(mode) ? 'video generation' : 'image generation'} task to OffloadMQ.`)
     try {
-      const expandedPrompt = expandPromptCategoryPlaceholders(prompt, createPlaceholderUsage())
+      const customDefs = await fetchCustomPlaceholderDefs()
+      const expandedPrompt = expandPromptPlaceholders(prompt, createPlaceholderUsage(), customDefs)
       const [res] = await Promise.all([
         startImageJob(token, buildSubmitRequest(expandedPrompt)),
         new Promise<void>(resolve => window.setTimeout(resolve, 600)),
@@ -859,10 +879,11 @@ export default function ImageGenerationPage() {
     setError(null)
     const submittedIds: string[] = []
     const placeholderUsage = createPlaceholderUsage()
+    const customDefs = await fetchCustomPlaceholderDefs()
     try {
       for (let i = 0; i < count; i++) {
         setInfo(`Submitting job ${i + 1} of ${count}…`)
-        const expandedPrompt = expandPromptCategoryPlaceholders(prompt, placeholderUsage)
+        const expandedPrompt = expandPromptPlaceholders(prompt, placeholderUsage, customDefs)
         const res = await startImageJob(token, buildSubmitRequest(expandedPrompt))
         submittedIds.push(res.job_id)
         await refreshJob(res.job_id)

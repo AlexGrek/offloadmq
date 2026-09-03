@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Activity, Bot, Clapperboard, Eye, FolderOpen, GitCompareArrows, ImagePlus, MessageCircleMore, Music, ShieldAlert, Volume2, Wand2 } from 'lucide-react'
+import { Activity, Bot, Braces, Clapperboard, Eye, FolderOpen, GitCompareArrows, ImagePlus, MessageCircleMore, Music, ShieldAlert, Volume2, Wand2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const apps = [
@@ -122,6 +122,16 @@ const apps = [
     gradient: 'from-rose-500/20 to-amber-500/20',
     iconBg: 'bg-rose-500/20',
     iconColor: 'text-rose-400',
+  },
+  {
+    id: 'prompt-placeholders',
+    icon: Braces,
+    title: 'Prompt Placeholders',
+    description: 'Manage your custom, recursive prompt placeholders',
+    href: '/app/prompt-placeholders',
+    gradient: 'from-purple-500/20 to-indigo-500/20',
+    iconBg: 'bg-purple-500/20',
+    iconColor: 'text-purple-400',
   },
 ] as const
 

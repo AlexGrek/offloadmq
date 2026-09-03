@@ -91,6 +91,16 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             axum::routing::patch(routes::prompts::update_entry)
                 .delete(routes::prompts::delete_entry),
         )
+        .route(
+            "/api/prompt-placeholders",
+            get(routes::prompt_placeholders::list_placeholders)
+                .post(routes::prompt_placeholders::create_placeholder),
+        )
+        .route(
+            "/api/prompt-placeholders/{id}",
+            axum::routing::patch(routes::prompt_placeholders::update_placeholder)
+                .delete(routes::prompt_placeholders::delete_placeholder),
+        )
         .route("/api/files", get(routes::files::list_files))
         .route("/api/files/properties", get(routes::files::get_file_properties))
         .route("/api/files/cleanup", post(routes::files::cleanup_files))

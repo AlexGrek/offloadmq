@@ -4,6 +4,7 @@ pub mod llm_capabilities;
 pub mod chat_attachments;
 pub mod chats;
 pub mod prompts;
+pub mod prompt_placeholders;
 pub mod entities;
 pub mod generation_parameters;
 pub mod offload_jobs;
