@@ -42,6 +42,14 @@ function RandomNamesPanel({
             Two-word phrases for <span className="font-mono">{`{?}`}</span> in prompts. Jobs also get a slug like{' '}
             <span className="font-mono">rusty-nail</span>.
           </p>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+            Also works right in the prompt box for image/video jobs:{' '}
+            <span className="font-mono">{`{color}`}</span>, <span className="font-mono">{`{animal}`}</span>,{' '}
+            <span className="font-mono">{`{adjective}`}</span>, <span className="font-mono">{`{country}`}</span>,{' '}
+            <span className="font-mono">{`{language}`}</span>, <span className="font-mono">{`{name}`}</span>,{' '}
+            <span className="font-mono">{`{starwars}`}</span> resolve on this device, and every job in a
+            "Generate multiple" batch gets a different value.
+          </p>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
           <Button

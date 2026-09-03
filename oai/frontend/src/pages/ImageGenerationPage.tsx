@@ -113,6 +113,7 @@ import {
   type RescaleState,
 } from '../lib/imggen'
 import { ExternalResizeToggle } from '../components/ExternalResizeToggle'
+import { createPlaceholderUsage, expandPromptCategoryPlaceholders } from '../lib/promptPlaceholders'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import type { ImagePipelineRescaleParams, StartImageJobRequest } from '../api/images'
 import {
@@ -824,8 +825,9 @@ export default function ImageGenerationPage() {
     setError(null)
     setInfo(`Submitting ${isVideoMode(mode) ? 'video generation' : 'image generation'} task to OffloadMQ.`)
     try {
+      const expandedPrompt = expandPromptCategoryPlaceholders(prompt, createPlaceholderUsage())
       const [res] = await Promise.all([
-        startImageJob(token, buildSubmitRequest()),
+        startImageJob(token, buildSubmitRequest(expandedPrompt)),
         new Promise<void>(resolve => window.setTimeout(resolve, 600)),
       ])
       setActivePanel(res.job_id)
@@ -856,10 +858,12 @@ export default function ImageGenerationPage() {
     setJobDetailLoading(true)
     setError(null)
     const submittedIds: string[] = []
+    const placeholderUsage = createPlaceholderUsage()
     try {
       for (let i = 0; i < count; i++) {
         setInfo(`Submitting job ${i + 1} of ${count}…`)
-        const res = await startImageJob(token, buildSubmitRequest())
+        const expandedPrompt = expandPromptCategoryPlaceholders(prompt, placeholderUsage)
+        const res = await startImageJob(token, buildSubmitRequest(expandedPrompt))
         submittedIds.push(res.job_id)
         await refreshJob(res.job_id)
       }
@@ -935,12 +939,12 @@ export default function ImageGenerationPage() {
     }
   }
 
-  function buildSubmitRequest(): StartImageJobRequest {
+  function buildSubmitRequest(promptOverride?: string): StartImageJobRequest {
     const dataPrep =
       mode === 'img2img' && !originalResolution ? rescaleDataPrep(rescale.enabled, rescale) : null
     return {
       capability: capability.trim(),
-      prompt: prompt.trim(),
+      prompt: (promptOverride ?? prompt).trim(),
       negative_prompt: overrideNegative ? negativePrompt.trim() || null : null,
       override_negative: overrideNegative,
       width,

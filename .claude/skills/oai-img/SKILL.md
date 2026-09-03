@@ -89,6 +89,8 @@ sequenceDiagram
 | `frontend/src/components/imggen/PromptGeneratorModal.tsx` | LLM prompt generator (modal / mobile bottom sheet) |
 | `frontend/src/api/promptgen.ts` | Prompt generator REST client |
 | `frontend/src/lib/imggen.ts` | `rescaleDataPrep`, capability filter, pipeline UI helpers, `MODE_DEFAULTS` |
+| `frontend/src/lib/promptPlaceholders.ts` | `{color}`/`{animal}`/etc. client-side prompt placeholders (unique-names-generator); `{?}` stays server-side |
+| `frontend/src/components/RandomNamesWidget.tsx` | TopBar widget documenting `{?}` and `{category}` placeholders |
 | `frontend/src/api/images.ts` | REST + `imageFileUrl()` |
 | `frontend/src/hooks/useRunningImageJobs.ts` | Polls running jobs every **5s** |
 | `frontend/src/contexts/ProgressContext.tsx` | Drawer + `refreshRunningImageJobs` |
@@ -180,6 +182,23 @@ start_job(external_resize) → submit `image_resize`  ← the job's offload task
 - **Query template** must contain `{}` — replaced server-side with the idea. Templates are stored **per mode** in prompt-library buckets `imggen-promptgen-{mode}` (`PromptTextarea` recent/starred; recents recorded server-side on generate). Drafts also persist in `localStorage` (`oai_promptgen_query_{mode}`); model in `oai_promptgen_model`.
 - **Flow:** `POST /api/promptgen/generate` `{ mode, capability, query, prompt }` → `{ cap, id }`; modal polls `POST /api/promptgen/poll` every **1.5s**; stop via generic `POST /api/tasks/cancel/{cap}/{id}`. Backend (`services/promptgen.rs`) validates, records the query, submits a non-urgent chat task (`maxWaitSecs 120`), and extracts the final text (`extract_llm_text`).
 - **UI:** framer-motion morphing action element — Generate button → loader pill (with stop) → clickable generated-prompt variant (click = apply to form + close); Regenerate slides in below.
+
+---
+
+## Prompt placeholders (`{?}` and `{category}`)
+
+Two independent substitution mechanisms can appear in the Prompt textarea, both surfaced via the `RandomNamesWidget` hint in `TopBar`:
+
+| Placeholder | Where resolved | Source |
+|-------------|-----------------|--------|
+| `{?}` | **Server**, at job creation | `image_job_names::expand_prompt_placeholders` (`backend/src/services/image_job_names.rs`) — random two-word name (`names` crate), dashes → spaces |
+| `{color}`, `{animal}`, `{adjective}`, `{country}`, `{language}`, `{name}`, `{starwars}` | **Frontend**, before submit | `expandPromptCategoryPlaceholders` (`frontend/src/lib/promptPlaceholders.ts`) — [unique-names-generator](https://www.npmjs.com/package/unique-names-generator) dictionaries |
+
+- Category tokens are matched case-insensitively (`{Color}` works); unknown `{...}` tokens — including `{?}` — are left untouched by the frontend expander so the server still substitutes them.
+- **Uniqueness:** each placeholder occurrence gets a distinct value from its dictionary within the same expansion pass. `ImageGenerationPage` creates one `PlaceholderUsage` map (`createPlaceholderUsage()`) per submit call for a single job (`onSubmit`), but shares **one** map across the whole loop in `onSubmitMultiple` — so a "Generate multiple" batch never repeats a `{color}`/`{animal}`/etc. value across jobs, mirroring how `{?}` already guarantees distinct names within one prompt server-side. The dictionary resets (clears used-set) if a batch is larger than the dictionary size, rather than looping forever.
+- `buildSubmitRequest(promptOverride?)` takes the already-expanded prompt string instead of reading `prompt` state directly, so the textarea itself still shows the raw `{color}`/`{?}` template — only the submitted payload is resolved.
+- Retry / "Generate again" (`onResubmitJob` → `retryImageJob`) replays the **stored, already-expanded** prompt from the original job — no re-expansion, so a retried job keeps the exact values it was first generated with.
+- Adding a category: extend `CATEGORY_DICTIONARIES` in `promptPlaceholders.ts` with another `unique-names-generator` dictionary (or a custom `string[]`).
 
 ---
 
