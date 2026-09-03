@@ -10,6 +10,7 @@ description: >-
 # OAI Integration Tests (oai/itests)
 
 You are working on Python integration tests that run against the live OAI backend (Rust/Axum, port 3001).
+*(Note: Frontend Playwright E2E tests live in `oai/e2e/` instead. To run them, use `cd oai/e2e && npm test` while `task dev` is running.)*
 
 ## Source Code Locations
 

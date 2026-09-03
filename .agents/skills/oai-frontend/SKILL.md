@@ -283,6 +283,13 @@ useEffect(() => {
 
 ---
 
+## Tests
+
+Frontend E2E tests use Playwright and live in `oai/e2e/`.
+- **Run tests:** `cd oai/e2e && npm test`
+- **Run with UI:** `cd oai/e2e && npm run test:ui`
+- Note: Requires the OAI app to be running (`task dev`). Ensure they pass before committing.
+
 ## Complex Tasks — Always Use Todos
 
 For multi-file work, use `TodoWrite` before starting and mark steps complete as you go.

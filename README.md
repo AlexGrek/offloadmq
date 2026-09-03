@@ -92,6 +92,24 @@ task test:stop       # stop server + agent
 task test:logs       # tail logs
 ```
 
+### 🎭 E2E Tests (Playwright)
+
+**OAI Frontend (MANDATORY before committing OAI changes)**
+```bash
+# Requires `task dev` to be running first
+cd oai/e2e
+npm test             # Run Playwright tests
+npm run test:ui      # Run with Playwright UI
+```
+
+**Management Frontend**
+```bash
+# Requires `task dev:frontend` (or similar) to be running first
+cd management-frontend/e2e
+npm test             # Run Playwright tests
+npm run test:ui      # Run with Playwright UI
+```
+
 ## ☸️ Kubernetes Deployment
 
 ### 📋 Prerequisites

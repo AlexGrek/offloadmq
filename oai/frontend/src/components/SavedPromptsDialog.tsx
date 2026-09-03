@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Check, Clock, Loader2, Pencil, Star, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -72,12 +72,15 @@ export function SavedPromptsDialog({
   }, [token, bucket])
 
   // Load only when the dialog opens (and reset transient row state).
-  function handleOpenChange(next: boolean) {
-    onOpenChange(next)
-    if (next) {
+  useEffect(() => {
+    if (open) {
       setEditingId(null)
       void refresh()
     }
+  }, [open, refresh])
+
+  function handleOpenChange(next: boolean) {
+    onOpenChange(next)
   }
 
   function pick(item: PromptItem) {

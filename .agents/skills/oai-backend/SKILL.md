@@ -446,6 +446,13 @@ On first boot, if no user with login `root` exists, one is created. Password fro
 
 ---
 
+## Tests
+
+Backend integration tests (Python/httpx) live in `oai/itests/`.
+Frontend E2E tests (Playwright) live in `oai/e2e/`.
+- **Run E2E tests:** `cd oai/e2e && npm test`
+- Note: Both test suites require `task dev` (or the backend/infra) to be running first.
+
 ## Complex Tasks — Always Use Todos
 
 For multi-file work, use `TodoWrite` before starting and mark steps complete as you go.

@@ -67,6 +67,11 @@ npm install              # Install dependencies
 npm run dev              # Start dev server
 npm run build            # Production build
 npm run lint             # Run ESLint
+
+# E2E Tests (Playwright)
+cd e2e
+npm test                 # Run Playwright smoke tests (requires dev server running)
+npm run test:ui          # Run with Playwright UI
 ```
 
 ### Integration Tests
@@ -420,6 +425,11 @@ task dev
 
 # Production build (backend release binary + frontend dist)
 task build
+
+# E2E Tests (Playwright)
+cd oai/e2e
+npm test             # Run Playwright tests (MANDATORY before committing OAI changes)
+npm run test:ui      # Run with Playwright UI
 
 # Docker
 task docker:build    # Build image locally
