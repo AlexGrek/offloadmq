@@ -41,7 +41,7 @@ export function PromptPlaceholdersPanel({ onClose, className }: PromptPlaceholde
 
   return (
     <div
-      className={cn('flex min-h-0 flex-col gap-5 overflow-y-auto overscroll-contain text-sm', className)}
+      className={cn('flex min-h-0 flex-col gap-5 overflow-auto overscroll-contain text-sm', className)}
       data-testid="prompt-placeholders-panel"
     >
       <div className="flex items-start justify-between gap-2">
