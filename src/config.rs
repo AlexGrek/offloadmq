@@ -156,6 +156,14 @@ pub struct AgentWsConfig {
     pub heartbeat_min_secs: u64,
     /// Max seconds between heartbeats (env: AGENT_WS_HEARTBEAT_MAX_SECS, default: 90).
     pub heartbeat_max_secs: u64,
+    /// How long a task must have been untouched before an agent's heartbeat
+    /// claim may reclaim it (env: AGENT_CLAIM_GRACE_SECS, default: 120).
+    ///
+    /// Only guards the race where a task is pushed while a heartbeat whose
+    /// snapshot predates it is already in flight — that window is milliseconds,
+    /// so the default is generous. Lower it (e.g. in tests) to see reclaims
+    /// promptly; raising it only delays the recovery of a desynced slot.
+    pub claim_grace_secs: i64,
 }
 
 impl AgentWsConfig {
@@ -172,9 +180,14 @@ impl AgentWsConfig {
         if heartbeat_max_secs < heartbeat_min_secs {
             heartbeat_max_secs = heartbeat_min_secs;
         }
+        let claim_grace_secs = env::var("AGENT_CLAIM_GRACE_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(120i64);
         Self {
             heartbeat_min_secs,
             heartbeat_max_secs,
+            claim_grace_secs,
         }
     }
 }

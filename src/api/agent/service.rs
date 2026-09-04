@@ -35,15 +35,6 @@ pub async fn do_agent_ping(
     Ok(())
 }
 
-/// Grace window before a task an agent does not claim is reclaimed from it.
-///
-/// Covers the only benign reason a running task can be missing from a heartbeat
-/// claim: it was pushed to the agent while a heartbeat whose snapshot predates
-/// it was already in flight. Comfortably longer than that race (milliseconds)
-/// and shorter than the agent's 60–90 s heartbeat cadence matters more than the
-/// exact value — a genuinely desynced slot is reclaimed within ~2 heartbeats.
-pub const CLAIM_GRACE_SECS: i64 = 120;
-
 /// Reconcile the server's view of what `agent` is running against the agent's
 /// own report, sent with every heartbeat.
 ///
@@ -56,6 +47,9 @@ pub const CLAIM_GRACE_SECS: i64 = 120;
 /// reclaimed here: un-started tasks go back to the queue, started ones are
 /// failed (their work is gone), and either way the capacity slot is freed.
 ///
+/// A task touched within `agent_ws.claim_grace_secs` is left alone: that covers
+/// the one benign gap, a heartbeat whose snapshot predates a just-pushed task.
+///
 /// Returns the number of tasks reclaimed. Called only when the heartbeat
 /// actually carries a claim — agents that don't report one are left alone.
 pub async fn reconcile_agent_claim(
@@ -64,11 +58,11 @@ pub async fn reconcile_agent_claim(
     state: &Arc<AppState>,
 ) -> Result<usize, AppError> {
     let claimed: HashSet<TaskId> = claimed.into_iter().collect();
-    let disowned =
-        state
-            .storage
-            .tasks
-            .list_disowned_assigned(&agent.uid, &claimed, CLAIM_GRACE_SECS)?;
+    let disowned = state.storage.tasks.list_disowned_assigned(
+        &agent.uid,
+        &claimed,
+        state.config.agent_ws.claim_grace_secs,
+    )?;
     if disowned.is_empty() {
         return Ok(0);
     }

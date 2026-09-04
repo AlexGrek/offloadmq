@@ -966,11 +966,11 @@ class Orchestrator:
             self._store.append_log(
                 task.id, LogEntry(level=LogLevel.ERROR, message=msg)
             )
+            self._schedule_resolve(task, result)
             self._store.finish(task.id, result)
             self._record_error(
                 "ERROR", f"[dispatch] {msg} (task {task.id})"
             )
-            self._schedule_resolve(task, result)
             return
 
         pool = self._pool
@@ -1019,13 +1019,18 @@ class Orchestrator:
         self._store.append_log(task_id, entry)
 
     def _on_done(self, task: Task, result: TaskResult) -> None:
+        # Queue the result for delivery *before* the local record goes terminal.
+        # The heartbeat claim is "tasks still running + results still owed", and
+        # a heartbeat landing between those two steps would omit this task
+        # entirely — letting the server reclaim (and fail) work that just
+        # finished successfully.
+        self._schedule_resolve(task, result)
         self._store.finish(task.id, result)
         if result.status == TaskStatus.FAILED:
             self._record_error(
                 "ERROR",
                 f"[task] {task.capability}/{task.id} failed: {result.error or 'unknown error'}",
             )
-        self._schedule_resolve(task, result)
         self._busy.clear()
         self._set_message("online")
         with self._lock:

@@ -717,12 +717,53 @@ request envelope. Responses are correlated by `req_id`:
 
 | `action` | `params` | Purpose |
 |----------|----------|---------|
-| `heartbeat` (alias `ping`) | — | Agent→server liveness beat. Bumps `last_contact` so the agent stays online even when idle or busy running a job. Sent on a fresh random 60–90 s delay each beat, independent of task execution. |
+| `heartbeat` (alias `ping`) | `{ active?: [{ cap, id }] }` | Agent→server liveness beat. Bumps `last_contact` so the agent stays online even when idle or busy running a job. Sent on a fresh random 60–90 s delay each beat, independent of task execution. The optional `active` **claim** keeps both sides' idea of "busy" in sync — see [Heartbeat claim](#heartbeat-claim-staying-in-sync-about-whats-running). |
 | `update_progress` | `TaskUpdate` | Append log / set stage / move to `starting`\|`running`. **Sending this marks the task started** — see disconnect behavior below. |
 | `resolve_task` | `TaskResultReport` | Report terminal result (frees the slot; the server then pushes your next task). |
 | `upload_file` | `{ bucket_uid, filename }` + a following **binary** frame | Upload an output file. |
 | `get` / `post` | `{ path: [...], body? }` | Generic access to the HTTP agent routes (e.g. bucket stat, info update). |
 | `poll_task` / `poll_task_urgent` / `take_task` | — | Legacy pull actions. Still available for compatibility; unnecessary under push. |
+
+#### Heartbeat claim: staying in sync about what's running
+
+The server counts a task against your `capacity` until you resolve it. If a
+resolve is lost — the socket dropped while you were uploading output, the agent
+process restarted, an executor died — the server keeps that slot occupied
+forever while you sit idle, and you never receive another task.
+
+To prevent that, send the tasks you are **actually** working on with every
+heartbeat:
+
+```jsonc
+{
+  "req_id": "hb-7",
+  "action": "heartbeat",
+  "params": { "active": [{ "cap": "imggen.flux", "id": "01JD…" }] }
+}
+// response
+{ "req_id": "hb-7", "type": "response", "status": 200,
+  "data": { "status": "ok", "reclaimed": 0 } }
+```
+
+The server compares the claim with what it still holds for you and reclaims the
+difference: un-started tasks go back to the queue, started ones are failed, and
+either way the capacity slot is freed and new work is dispatched immediately.
+`data.reclaimed` reports how many tasks that was.
+
+Rules:
+
+- **The claim is authoritative and complete.** Anything you omit is reclaimed.
+  Include tasks whose result you have computed but not yet successfully
+  resolved, or the server will fail work you are still holding.
+- **An empty `active: []` is a real claim** ("I am running nothing") and is how a
+  restarted agent releases the slots of tasks it no longer knows about. Omitting
+  the `active` field entirely sends no claim and leaves the server's view
+  untouched — that is what legacy agents do.
+- **Recently pushed tasks are safe.** A task assigned or updated within the last
+  120 s (tunable via `AGENT_CLAIM_GRACE_SECS`) is never reclaimed, so a heartbeat
+  that raced with a push cannot drop it.
+- Queue results you could not deliver and retry them; until they are
+  acknowledged, keep claiming them.
 
 #### Capacity, disconnect, and reconnect
 
@@ -735,7 +776,9 @@ request envelope. Responses are correlated by `req_id`:
     are returned to the queue and re-dispatched to another agent;
   - tasks you had **started** (`starting`/`running`) stay assigned to you — finish
     them and resolve over a reconnected socket. (Orphan recovery fails them only
-    if the agent stays offline and silent for ~30 min.)
+    if the agent stays offline and silent for ~30 min; if you reconnect without
+    them, the [heartbeat claim](#heartbeat-claim-staying-in-sync-about-whats-running)
+    releases them within a beat or two instead.)
 
 ---
 
