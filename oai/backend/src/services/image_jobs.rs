@@ -142,6 +142,11 @@ pub async fn upload_input_image(
 ///
 /// `image` is one entry of the task output's `images` array: either
 /// `{file_uid, filename}` (bucket) or `{data_base64, content_type}` (inline).
+///
+/// `max_edge` caps the stored resolution — pass [`image_processing::MAX_IMAGE_EDGE`] for
+/// tools whose output should match the standard stored-image cap, or
+/// [`image_processing::NO_MAX_EDGE`] for a tool (e.g. img-utils upscale) whose whole
+/// purpose is to exceed it.
 pub async fn store_offload_output_image(
     state: &AppState,
     user_id: i64,
@@ -149,6 +154,7 @@ pub async fn store_offload_output_image(
     output_bucket: &str,
     image: &Value,
     metadata_text: &str,
+    max_edge: u32,
 ) -> Result<image_generation::ImageFile, AppError> {
     storage::operator(state)?;
     let file_uid = image["file_uid"].as_str();
@@ -159,9 +165,15 @@ pub async fn store_offload_output_image(
 
     let client =
         offload_factory::image_client_from_settings(state, app_settings::get(&state.db).await?)?;
-    let processed =
-        process_output_image(&client, output_bucket, image, file_uid.unwrap_or_default(), metadata_text)
-            .await?;
+    let processed = process_output_image(
+        &client,
+        output_bucket,
+        image,
+        file_uid.unwrap_or_default(),
+        metadata_text,
+        max_edge,
+    )
+    .await?;
 
     let image_id = state.next_id();
     let storage_path = image_paths::standalone_output_path(user_id, image_id);
@@ -1696,8 +1708,15 @@ async fn store_output_image(
         .as_str()
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("output_{}.jpg", idx + 1));
-    let processed =
-        process_output_image(client, output_bucket, image, file_uid, job.prompt.trim()).await?;
+    let processed = process_output_image(
+        client,
+        output_bucket,
+        image,
+        file_uid,
+        job.prompt.trim(),
+        image_processing::MAX_IMAGE_EDGE,
+    )
+    .await?;
 
     let image_id = state.next_id();
     let storage_path = image_paths::main_image_path(user_id, "output", Some(job.id), image_id);
@@ -1777,6 +1796,7 @@ async fn process_output_image(
     image: &Value,
     file_uid: &str,
     prompt: &str,
+    max_edge: u32,
 ) -> Result<ProcessedImage, AppError> {
     if let Some(data_base64) = image["data_base64"].as_str() {
         let bytes = base64::engine::general_purpose::STANDARD
@@ -1786,10 +1806,11 @@ async fn process_output_image(
             bytes,
             image["content_type"].as_str().map(ToOwned::to_owned),
             prompt,
+            max_edge,
         )
     } else {
         let (bytes, content_type) = download_with_retries(client, output_bucket, file_uid, 3).await?;
-        image_processing::process_generated_image(bytes, Some(content_type), prompt)
+        image_processing::process_generated_image(bytes, Some(content_type), prompt, max_edge)
     }
 }
 

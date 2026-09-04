@@ -26,6 +26,11 @@ use sha2::{Digest, Sha256};
 use crate::error::AppError;
 
 pub const MAX_IMAGE_EDGE: u32 = 1920;
+/// Effectively "no cap" for [`vips_thumbnail`]'s shrink-only (`>`) box size — used for
+/// outputs where downscaling to [`MAX_IMAGE_EDGE`] would defeat the point of the tool
+/// (e.g. img-utils upscale). Large enough that no realistic image exceeds it, so it's a
+/// no-op box for anything that would actually get stored.
+pub const NO_MAX_EDGE: u32 = 100_000;
 pub const THUMBNAIL_MAX_EDGE: u32 = 384;
 pub const JPEG_QUALITY: u8 = 90;
 /// Max raw upload size (must match `DefaultBodyLimit` on `POST /api/images/upload`).
@@ -55,14 +60,18 @@ pub struct ProcessedImage {
 }
 
 /// Like [`process_image`], then writes the job prompt into EXIF `ImageDescription`
-/// (generated / OffloadMQ outputs only).
+/// (generated / OffloadMQ outputs only). `max_edge` caps the stored resolution — pass
+/// [`MAX_IMAGE_EDGE`] for the standard cap, or [`NO_MAX_EDGE`] for a tool whose whole
+/// purpose is to exceed it (e.g. img-utils upscale), where crushing the result back
+/// down would throw away the work the tool just did.
 pub fn process_generated_image(
     bytes: Vec<u8>,
     content_type_hint: Option<String>,
     prompt: &str,
+    max_edge: u32,
 ) -> Result<ProcessedImage, AppError> {
     let trimmed = prompt.trim();
-    let mut out = process_image(bytes, content_type_hint)?;
+    let mut out = process_image_capped(bytes, content_type_hint, max_edge)?;
     if !trimmed.is_empty() {
         embed_prompt_exif(&mut out.bytes, trimmed)?;
         // Confirm little_exif wrote a readable ImageDescription tag (kamadak-exif reader).
@@ -83,8 +92,18 @@ pub fn process_generated_image(
 /// viewers never need to apply a rotation transform on the stored file.
 pub fn process_image(
     bytes: Vec<u8>,
+    content_type_hint: Option<String>,
+) -> Result<ProcessedImage, AppError> {
+    process_image_capped(bytes, content_type_hint, MAX_IMAGE_EDGE)
+}
+
+/// Like [`process_image`], but downscales to `max_edge` instead of the default
+/// [`MAX_IMAGE_EDGE`]. See [`process_generated_image`].
+pub fn process_image_capped(
+    bytes: Vec<u8>,
     // Kept as a forward-compatible hint; the format is auto-detected from magic bytes below.
     _content_type_hint: Option<String>,
+    max_edge: u32,
 ) -> Result<ProcessedImage, AppError> {
     if bytes.is_empty() {
         return Err(AppError::BadRequest("empty image".into()));
@@ -137,7 +156,7 @@ pub fn process_image(
 
     // `vipsthumbnail` decodes, auto-rotates, shrinks to fit the box (never upscales —
     // the trailing `>` in the size spec) and strips all metadata in one subprocess call.
-    let (encoded, sw, sh) = vips_thumbnail(&input.0, MAX_IMAGE_EDGE, JPEG_QUALITY)?;
+    let (encoded, sw, sh) = vips_thumbnail(&input.0, max_edge, JPEG_QUALITY)?;
     let sha256 = sha256_hex(&encoded);
     let (thumbnail_bytes, _, _) = vips_thumbnail(&input.0, THUMBNAIL_MAX_EDGE, JPEG_QUALITY)?;
 
@@ -149,7 +168,7 @@ pub fn process_image(
         original_width: Some(ow as i32),
         original_height: Some(oh as i32),
         original_bytes: Some(original_len as i64),
-        rescaled: ow.max(oh) > MAX_IMAGE_EDGE,
+        rescaled: ow.max(oh) > max_edge,
         reencoded: true,
         exif_orientation: exif_orientation_val,
         sha256,
@@ -405,8 +424,13 @@ mod tests {
     #[test]
     fn generated_jpeg_embeds_prompt_in_exif() {
         let prompt = "a red cube on a marble table, studio lighting";
-        let out =
-            process_generated_image(tiny_png(), Some("image/png".into()), prompt).unwrap();
+        let out = process_generated_image(
+            tiny_png(),
+            Some("image/png".into()),
+            prompt,
+            MAX_IMAGE_EDGE,
+        )
+        .unwrap();
         let desc = exif_image_description(&out.bytes).unwrap();
         assert!(desc.contains("red cube"));
     }

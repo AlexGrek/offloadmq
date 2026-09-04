@@ -182,10 +182,15 @@ impl JobReconciler for ImgUtilsReconciler {
             return fail("img-utils task output has no bucket to download from").await;
         };
 
-        let source = if is_resize_capability(&job.capability) {
-            RESIZE_CAPABILITY.to_string()
+        // Resize's own request-side cap already matches MAX_IMAGE_EDGE (see
+        // `image_resize::ResizeOptions`), so storing to that cap is a no-op for it. The
+        // ComfyUI family (upscale, depth, face_swap) gets no cap — crushing e.g. an
+        // upscale result back down to MAX_IMAGE_EDGE would throw away the resolution the
+        // tool was asked to produce.
+        let (source, max_edge) = if is_resize_capability(&job.capability) {
+            (RESIZE_CAPABILITY.to_string(), image_processing::MAX_IMAGE_EDGE)
         } else {
-            format!("img-utils/{}", job.utility)
+            (format!("img-utils/{}", job.utility), image_processing::NO_MAX_EDGE)
         };
         let file = image_jobs::store_offload_output_image(
             state,
@@ -195,6 +200,7 @@ impl JobReconciler for ImgUtilsReconciler {
             image,
             // Embedded in the stored JPEG's EXIF as the image's provenance.
             &job.capability,
+            max_edge,
         )
         .await?;
         // The output bucket is released by the generic driver once this returns
