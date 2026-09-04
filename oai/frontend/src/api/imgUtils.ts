@@ -52,9 +52,11 @@ export function takesScaleMultiplier(workflow: string): boolean {
   return /^upscale/.test(workflow)
 }
 
-/** Flatten capabilities into one entry per operation the user can run. */
+/** Flatten capabilities into one entry per operation the user can run, sorted
+ *  alphabetically by displayed label (tiebroken by pack) so the tool picker
+ *  order stays stable regardless of capability discovery order. */
 export function toolsFromCapabilities(caps: ImgUtilCapability[]): ImgUtilTool[] {
-  return caps.flatMap(cap =>
+  const tools = caps.flatMap(cap =>
     (cap.workflows.length > 0 ? cap.workflows : [cap.utility]).map(workflow => ({
       capability: cap.base,
       pack: cap.utility,
@@ -65,6 +67,11 @@ export function toolsFromCapabilities(caps: ImgUtilCapability[]): ImgUtilTool[] 
       kind: cap.kind,
       methods: cap.methods ?? [],
     })),
+  )
+  return tools.sort(
+    (a, b) =>
+      prettyLabel(a.workflow).localeCompare(prettyLabel(b.workflow)) ||
+      a.pack.localeCompare(b.pack),
   )
 }
 
