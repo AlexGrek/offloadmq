@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Copy,
   Eye,
+  FolderOpen,
   ImageUp,
   Loader2,
   PanelLeftClose,
@@ -37,6 +38,7 @@ import {
 } from '../api/images'
 import { ExternalResizeToggle } from '../components/ExternalResizeToggle'
 import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
+import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { Button } from '../components/ui/button'
 import { Label } from '../components/ui/label'
@@ -100,6 +102,7 @@ export default function DescribeImagePage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const [jobs, setJobs] = useState<DescribeJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -246,6 +249,19 @@ export default function DescribeImagePage() {
     } finally {
       setUploading(false)
     }
+  }
+
+  function selectLibraryImage(img: UploadedImage) {
+    setError(null)
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current)
+      previewUrlRef.current = null
+    }
+    setUploadedInput(img)
+    setImagePreview(imageFileUrl(img.image_id, token))
+    setExternalResize(
+      externalResizeDefault(img.size_bytes, externalResizeInfo?.threshold_bytes ?? Infinity),
+    )
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -524,38 +540,62 @@ export default function DescribeImagePage() {
                           />
                           Change image
                         </label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2"
+                          onClick={() => setPickerOpen(true)}
+                          data-testid="describe-pick-from-library"
+                        >
+                          <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+                          From library
+                        </Button>
                       </div>
                     ) : (
-                      <label
-                        className={cn(
-                          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/30 px-6 py-10 text-muted-foreground transition-colors hover:bg-muted/50',
-                          dragOver && 'border-primary bg-primary/5',
-                        )}
-                        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-                        onDragLeave={() => setDragOver(false)}
-                        onDrop={e => {
-                          e.preventDefault()
-                          setDragOver(false)
-                          const file = e.dataTransfer.files[0]
-                          if (file?.type.startsWith('image/')) void onUpload(file)
-                        }}
-                        data-testid="describe-drop-zone"
-                      >
-                        <ImageUp className="size-8 text-muted-foreground/60" />
-                        <span className="text-sm font-medium">Click or drag an image here</span>
-                        <span className="text-xs">PNG, JPEG, WebP, GIF…</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          disabled={uploading}
-                          onChange={e => {
-                            const file = e.target.files?.[0]
-                            if (file) void onUpload(file)
-                            e.target.value = ''
+                      <div className="space-y-2">
+                        <label
+                          className={cn(
+                            'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/30 px-6 py-10 text-muted-foreground transition-colors hover:bg-muted/50',
+                            dragOver && 'border-primary bg-primary/5',
+                          )}
+                          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                          onDragLeave={() => setDragOver(false)}
+                          onDrop={e => {
+                            e.preventDefault()
+                            setDragOver(false)
+                            const file = e.dataTransfer.files[0]
+                            if (file?.type.startsWith('image/')) void onUpload(file)
                           }}
-                        />
-                      </label>
+                          data-testid="describe-drop-zone"
+                        >
+                          <ImageUp className="size-8 text-muted-foreground/60" />
+                          <span className="text-sm font-medium">Click or drag an image here</span>
+                          <span className="text-xs">PNG, JPEG, WebP, GIF…</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={uploading}
+                            onChange={e => {
+                              const file = e.target.files?.[0]
+                              if (file) void onUpload(file)
+                              e.target.value = ''
+                            }}
+                          />
+                        </label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => setPickerOpen(true)}
+                          data-testid="describe-pick-from-library"
+                        >
+                          <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+                          From library
+                        </Button>
+                      </div>
                     )}
                   </div>
 
@@ -794,6 +834,15 @@ export default function DescribeImagePage() {
           </div>
         </main>
       </div>
+
+      {token && (
+        <ImagePickerModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onSelect={selectLibraryImage}
+          token={token}
+        />
+      )}
     </div>
   )
 }

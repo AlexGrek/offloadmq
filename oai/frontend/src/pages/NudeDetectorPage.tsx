@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  FolderOpen,
   ImageUp,
   Loader2,
   PanelLeftClose,
@@ -24,6 +25,7 @@ import {
 } from '../api/nudeDetect'
 import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
 import { Button } from '../components/ui/button'
+import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { Label } from '../components/ui/label'
 import {
   NUDEDETECT_NEW_PANEL,
@@ -41,7 +43,7 @@ const POLL_INTERVAL_MS = 3000
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 
 type PendingUpload = {
-  file: File
+  file: File | null
   preview: string
   uploaded: UploadedImage | null
   error: string | null
@@ -57,6 +59,7 @@ export default function NudeDetectorPage() {
   const [pending, setPending] = useState<PendingUpload[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const [jobs, setJobs] = useState<NudeDetectJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -197,6 +200,13 @@ export default function NudeDetectorPage() {
       }
     }
     setUploading(false)
+  }
+
+  function addLibraryImage(img: UploadedImage) {
+    if (!token) return
+    const preview = imageFileUrl(img.image_id, token)
+    previewsRef.current.push(preview)
+    setPending(prev => [...prev, { file: null, preview, uploaded: img, error: null }])
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -464,7 +474,50 @@ export default function NudeDetectorPage() {
                             </div>
                           ))}
                         </div>
-                        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              className="hidden"
+                              onChange={e => {
+                                if (e.target.files?.length) void addFiles(e.target.files)
+                                e.target.value = ''
+                              }}
+                            />
+                            Add more images
+                          </label>
+                          <button
+                            type="button"
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => setPickerOpen(true)}
+                            data-testid="nudedetect-pick-from-library"
+                          >
+                            <FolderOpen className="size-3.5" />
+                            From library
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <label
+                          className={cn(
+                            'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl bg-muted/50 px-6 py-10 text-muted-foreground transition-colors hover:bg-muted/70',
+                            dragOver && 'bg-primary/5 ring-2 ring-primary/30',
+                          )}
+                          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                          onDragLeave={() => setDragOver(false)}
+                          onDrop={e => {
+                            e.preventDefault()
+                            setDragOver(false)
+                            if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files)
+                          }}
+                          data-testid="nudedetect-drop-zone"
+                        >
+                          <ImageUp className="size-8 text-muted-foreground/60" />
+                          <span className="text-sm font-medium">Click or drag images here</span>
+                          <span className="text-xs">PNG, JPEG, WebP, GIF — multiple files OK</span>
                           <input
                             type="file"
                             accept="image/*"
@@ -475,38 +528,19 @@ export default function NudeDetectorPage() {
                               e.target.value = ''
                             }}
                           />
-                          Add more images
                         </label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => setPickerOpen(true)}
+                          data-testid="nudedetect-pick-from-library"
+                        >
+                          <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+                          From library
+                        </Button>
                       </div>
-                    ) : (
-                      <label
-                        className={cn(
-                          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl bg-muted/50 px-6 py-10 text-muted-foreground transition-colors hover:bg-muted/70',
-                          dragOver && 'bg-primary/5 ring-2 ring-primary/30',
-                        )}
-                        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-                        onDragLeave={() => setDragOver(false)}
-                        onDrop={e => {
-                          e.preventDefault()
-                          setDragOver(false)
-                          if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files)
-                        }}
-                        data-testid="nudedetect-drop-zone"
-                      >
-                        <ImageUp className="size-8 text-muted-foreground/60" />
-                        <span className="text-sm font-medium">Click or drag images here</span>
-                        <span className="text-xs">PNG, JPEG, WebP, GIF — multiple files OK</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={e => {
-                            if (e.target.files?.length) void addFiles(e.target.files)
-                            e.target.value = ''
-                          }}
-                        />
-                      </label>
                     )}
                   </div>
 
@@ -656,6 +690,15 @@ export default function NudeDetectorPage() {
           </div>
         </main>
       </div>
+
+      {token && (
+        <ImagePickerModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onSelect={addLibraryImage}
+          token={token}
+        />
+      )}
     </div>
   )
 }

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, Eye, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, Eye, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MorphCollapse } from '@/components/Morph'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { fetchRandomNames, type GeneratedName } from '@/api/names'
@@ -95,6 +96,10 @@ export function PromptPlaceholdersPanel({ onClose, className }: PromptPlaceholde
 }
 
 function QuickNamesSection({ token }: { token: string | null }) {
+  // Collapsed by default: generating names is a side effect (and a network
+  // call) that shouldn't fire just because the panel was opened.
+  const [expanded, setExpanded] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const [names, setNames] = useState<GeneratedName[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -107,6 +112,7 @@ function QuickNamesSection({ token }: { token: string | null }) {
     try {
       const res = await fetchRandomNames(token, QUICK_NAMES_BATCH)
       setNames(res.names)
+      setLoaded(true)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to generate names')
     } finally {
@@ -114,9 +120,12 @@ function QuickNamesSection({ token }: { token: string | null }) {
     }
   }, [token])
 
+  // First expand triggers the initial fetch; a failed attempt retries next
+  // time it's expanded rather than looping (`loaded` only flips on success).
   useEffect(() => {
+    if (!expanded || loaded) return
     void loadNames()
-  }, [loadNames])
+  }, [expanded, loaded, loadNames])
 
   useEffect(() => {
     if (!copiedPhrase) return
@@ -131,14 +140,24 @@ function QuickNamesSection({ token }: { token: string | null }) {
   return (
     <section data-testid="random-names-section">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          aria-expanded={expanded}
+          className="flex select-none items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+          data-testid="random-names-section-toggle"
+        >
+          <ChevronDown className={cn('size-3 transition-transform', expanded ? 'rotate-0' : '-rotate-90')} />
           Quick names for <span className="normal-case">{'{?}'}</span>
-        </p>
+        </button>
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
-          onClick={() => void loadNames()}
+          onClick={() => {
+            setExpanded(true)
+            void loadNames()
+          }}
           disabled={loading || !token}
           title="Generate more"
           aria-label="Generate more names"
@@ -147,38 +166,42 @@ function QuickNamesSection({ token }: { token: string | null }) {
           {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
         </Button>
       </div>
-      {error ? (
-        <p className="mt-2 text-xs text-destructive" data-testid="random-names-error">
-          {error}
-        </p>
-      ) : (
-        <ul className="mt-2 space-y-1" data-testid="random-names-list">
-          {names.map(name => {
-            const copied = copiedPhrase === name.phrase
-            return (
-              <li key={name.slug}>
-                <button
-                  type="button"
-                  onClick={() => copyPhrase(name.phrase)}
-                  className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/70"
-                  data-testid={`random-names-item-${name.slug}`}
-                >
-                  <span className="min-w-0">
-                    <span className="font-medium text-foreground">{name.phrase}</span>
-                    <span className="ml-2 font-mono text-[10px] text-muted-foreground">{name.slug}</span>
-                  </span>
-                  {copied ? (
-                    <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                  ) : null}
-                </button>
-              </li>
-            )
-          })}
-          {!loading && names.length === 0 ? (
-            <li className="px-2 py-1 text-xs text-muted-foreground">No names yet.</li>
-          ) : null}
-        </ul>
-      )}
+      <MorphCollapse show={expanded}>
+        <div className="pt-2">
+          {error ? (
+            <p className="text-xs text-destructive" data-testid="random-names-error">
+              {error}
+            </p>
+          ) : (
+            <ul className="space-y-1" data-testid="random-names-list">
+              {names.map(name => {
+                const copied = copiedPhrase === name.phrase
+                return (
+                  <li key={name.slug}>
+                    <button
+                      type="button"
+                      onClick={() => copyPhrase(name.phrase)}
+                      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/70"
+                      data-testid={`random-names-item-${name.slug}`}
+                    >
+                      <span className="min-w-0">
+                        <span className="font-medium text-foreground">{name.phrase}</span>
+                        <span className="ml-2 font-mono text-[10px] text-muted-foreground">{name.slug}</span>
+                      </span>
+                      {copied ? (
+                        <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      ) : null}
+                    </button>
+                  </li>
+                )
+              })}
+              {!loading && names.length === 0 ? (
+                <li className="px-2 py-1 text-xs text-muted-foreground">No names yet.</li>
+              ) : null}
+            </ul>
+          )}
+        </div>
+      </MorphCollapse>
     </section>
   )
 }

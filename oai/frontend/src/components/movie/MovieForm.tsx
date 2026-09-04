@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
-import { Clapperboard, Loader2, Play, Upload, X } from 'lucide-react'
+import { Clapperboard, FolderOpen, Loader2, Play, Upload, X } from 'lucide-react'
 import { uploadImage, imageFileUrl, type UploadedImage } from '../../api/images'
 import type { MovieCapability } from '../../api/movie'
 import { CapabilityModelPicker } from '../CapabilityModelPicker'
+import { ImagePickerModal } from '../imggen/ImagePickerModal'
 import { JobErrorBanner } from '../JobErrorBanner'
 import { PromptTextarea } from '../PromptTextarea'
 import { Button } from '../ui/button'
@@ -107,6 +108,7 @@ export function MovieForm({
 }: MovieFormProps) {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   async function onUpload(file: File) {
     if (!token) return
@@ -322,6 +324,17 @@ export function MovieForm({
                 data-testid="movie-initial-image-input"
               />
             </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => setPickerOpen(true)}
+              data-testid="movie-pick-from-library"
+            >
+              <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+              From library
+            </Button>
             {initialImage && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>
@@ -394,6 +407,15 @@ export function MovieForm({
 
         {error && <JobErrorBanner message={error} testId="movie-error" />}
       </form>
+
+      {token && (
+        <ImagePickerModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onSelect={img => onInitialImageChange(img)}
+          token={token}
+        />
+      )}
     </div>
   )
 }
