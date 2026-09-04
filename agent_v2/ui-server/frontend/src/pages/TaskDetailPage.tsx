@@ -113,7 +113,7 @@ export function TaskDetailPage() {
                 <CardTitle className="text-base text-destructive">Error</CardTitle>
               </CardHeader>
               <CardContent>
-                <pre className="bg-muted overflow-x-auto rounded-md p-3 text-xs">
+                <pre className="bg-muted overflow-x-auto rounded-md p-3 text-xs select-text">
                   {task.error}
                 </pre>
               </CardContent>
@@ -142,7 +142,7 @@ export function TaskDetailPage() {
                 <CardTitle className="text-base">Output</CardTitle>
               </CardHeader>
               <CardContent>
-                <pre className="bg-muted overflow-x-auto rounded-md p-3 text-xs">
+                <pre className="bg-muted overflow-x-auto rounded-md p-3 text-xs select-text">
                   {JSON.stringify(task.result.output, null, 2)}
                 </pre>
               </CardContent>
