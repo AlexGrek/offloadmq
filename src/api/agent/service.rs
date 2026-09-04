@@ -73,15 +73,19 @@ pub async fn reconcile_agent_claim(
         // Un-started work is still good — hand it back to the queue. This only
         // succeeds while the task is `Assigned`; anything the agent had already
         // started is failed instead.
-        let requeued =
-            match try_unassign_non_urgent_task(&state.regular, &state.storage.tasks, &task_id).await
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    warn!("Failed to re-queue disowned task {task_id}: {e}");
-                    false
-                }
-            };
+        let requeued = match try_unassign_non_urgent_task(
+            &state.regular,
+            &state.storage.tasks,
+            &task_id,
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("Failed to re-queue disowned task {task_id}: {e}");
+                false
+            }
+        };
         if !requeued {
             match state
                 .storage

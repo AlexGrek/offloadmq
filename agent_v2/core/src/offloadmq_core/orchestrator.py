@@ -123,6 +123,9 @@ class Orchestrator:
         # agent's capacity slot, so results are kept here and retried on every
         # heartbeat and reconnect until acknowledged, instead of being dropped.
         self._pending_resolves: dict[str, tuple[str, TaskResult]] = {}
+        # Task ids whose resolve is on the wire right now, so a retry sweep and
+        # the original send don't report the same result twice.
+        self._resolving: set[str] = set()
 
     # ==================================================================
     # Local logging + error pool
@@ -1106,6 +1109,21 @@ class Orchestrator:
             self._pending_resolves.pop(task_id, None)
 
     async def _safe_resolve(
+        self, client: OffloadMQClient, capability: str, result: TaskResult
+    ) -> None:
+        with self._lock:
+            if result.task_id in self._resolving:
+                # Already on the wire (the retry sweep raced the original send).
+                # If that attempt fails the result stays queued for the next one.
+                return
+            self._resolving.add(result.task_id)
+        try:
+            await self._deliver_resolve(client, capability, result)
+        finally:
+            with self._lock:
+                self._resolving.discard(result.task_id)
+
+    async def _deliver_resolve(
         self, client: OffloadMQClient, capability: str, result: TaskResult
     ) -> None:
         try:

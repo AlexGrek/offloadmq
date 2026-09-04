@@ -15,6 +15,8 @@ Covered behaviors:
 - cancellation is pushed to the assigned agent as ``{"type": "cancel"}``
 - capacity gate: with ``capacity=1`` only one task is pushed until it resolves
 - disconnect re-queues an *un-started* task to another agent
+- heartbeat claim: a task the agent stops claiming is reclaimed (failed if it had
+  started, re-queued if not) and the freed slot is dispatched to immediately
 """
 import json
 import threading
@@ -28,6 +30,10 @@ SERVER_URL = "http://localhost:3069"
 WS_BASE = "ws://localhost:3069/private/agent/ws"
 AGENT_API_KEY = "ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e"
 CLIENT_API_KEY = "client_secret_key_123"
+
+# Mirrors AGENT_CLAIM_GRACE_SECS in itests/Makefile (the server default is 120).
+# A task must be untouched for this long before a heartbeat claim can reclaim it.
+CLAIM_GRACE_SECS = 3
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +159,33 @@ def ws_progress(ws: websocket.WebSocket, task_id: dict, *, stage: str = "running
         "action": "update_progress",
         "params": {"id": task_id, "stage": stage, "status": "running"},
     }))
+
+
+def ws_request(ws: websocket.WebSocket, action: str, params: dict, timeout: float = 10.0):
+    """Send an RPC frame and wait for the ack for *this* req_id.
+
+    Returns ``(ack, pushes)``: any ``task`` frames that arrived while waiting are
+    handed back rather than dropped — the server pushes freed-up work from
+    inside the very call being acked, so those frames arrive first.
+    """
+    req_id = uuid.uuid4().hex
+    ws.send(json.dumps({"req_id": req_id, "action": action, "params": params}))
+    pushes: list[dict] = []
+    deadline = time.time() + timeout
+    ws.settimeout(1.0)
+    while time.time() < deadline:
+        try:
+            raw = ws.recv()
+        except websocket.WebSocketTimeoutException:
+            continue
+        if not raw:
+            continue
+        msg = json.loads(raw)
+        if msg.get("type") == "task":
+            pushes.append(msg["task"]["id"])
+        elif msg.get("req_id") == req_id and msg.get("type") in ("response", "error"):
+            return msg, pushes
+    raise AssertionError(f"no ack for {action} within {timeout}s")
 
 
 def ws_resolve(
@@ -296,3 +329,93 @@ def test_disconnect_requeues_unstarted_task():
         ws_resolve(ws2, tid, cap)
     finally:
         ws2.close()
+
+
+def test_claimed_task_is_never_reclaimed():
+    """An honest heartbeat must never cost the agent the task it is running."""
+    cap = unique_cap()
+    _, token = register_and_auth([cap], capacity=1)
+    ws = connect_ws(token)
+    try:
+        tid = submit_task(cap)["id"]
+        assert recv_type(ws, "task", timeout=10) is not None
+        ws_progress(ws, tid)
+        time.sleep(0.3)
+
+        # Well past the grace window, but still claimed on every beat.
+        time.sleep(CLAIM_GRACE_SECS + 1)
+        ack, _ = ws_request(ws, "heartbeat", {"active": [tid]})
+        assert ack["data"]["reclaimed"] == 0
+        assert client_poll(tid)["status"] == "running"
+
+        # A beat with no claim at all (legacy agents) leaves the task alone too.
+        ack, _ = ws_request(ws, "heartbeat", {})
+        assert ack["data"]["reclaimed"] == 0
+        assert client_poll(tid)["status"] == "running"
+
+        ws_resolve(ws, tid, cap)
+        time.sleep(0.3)
+        assert client_poll(tid)["status"] == "completed"
+    finally:
+        ws.close()
+
+
+def test_forgotten_task_is_reclaimed_and_frees_the_slot():
+    """A lost resolve must not pin the agent at capacity forever.
+
+    The agent starts a task and then stops reporting it — what a socket dying
+    mid-upload looks like from the server: the work is over, but the result
+    never arrived. The first heartbeat that omits the task is the agent saying
+    "I am not running that", so the server fails it, frees the slot and hands
+    over the work queued behind it.
+    """
+    cap = unique_cap()
+    _, token = register_and_auth([cap], capacity=1)
+    ws = connect_ws(token)
+    try:
+        first = submit_task(cap)["id"]
+        second = submit_task(cap)["id"]
+
+        push = recv_type(ws, "task", timeout=10)
+        assert push is not None and push["task"]["id"]["id"] == first["id"]
+        ws_progress(ws, first)
+        time.sleep(0.3)
+        # Nothing else moves while the server believes the agent is busy.
+        assert collect_pushes(ws, window=1.0) == []
+        assert client_poll(first)["status"] == "running"
+
+        time.sleep(CLAIM_GRACE_SECS + 1)
+        ack, pushes = ws_request(ws, "heartbeat", {"active": []})
+        assert ack["data"]["reclaimed"] == 1
+
+        first_status = client_poll(first)
+        assert first_status["status"] == "failed"
+        assert "no longer reports it" in (first_status.get("log") or "")
+
+        pushes += collect_pushes(ws, window=2.0)
+        assert [p["id"] for p in pushes] == [second["id"]], \
+            "the freed slot should immediately receive the queued task"
+    finally:
+        ws.close()
+
+
+def test_forgotten_unstarted_task_goes_back_to_the_queue():
+    """Reclaiming work the agent never began must not throw it away."""
+    cap = unique_cap()
+    _, token = register_and_auth([cap], capacity=1)
+    ws = connect_ws(token)
+    try:
+        tid = submit_task(cap)["id"]
+        push = recv_type(ws, "task", timeout=10)
+        assert push is not None
+
+        # No progress was ever sent, so the task is still `assigned`.
+        time.sleep(CLAIM_GRACE_SECS + 1)
+        ack, pushes = ws_request(ws, "heartbeat", {"active": []})
+        assert ack["data"]["reclaimed"] == 1
+
+        pushes += collect_pushes(ws, window=2.0)
+        assert [p["id"] for p in pushes] == [tid["id"]], "task was not re-dispatched"
+        assert client_poll(tid)["status"] != "failed"
+    finally:
+        ws.close()
