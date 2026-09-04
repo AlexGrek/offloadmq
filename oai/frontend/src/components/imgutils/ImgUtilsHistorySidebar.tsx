@@ -1,6 +1,7 @@
-import { Loader2, Plus, Wand2 } from 'lucide-react'
+import { Download, Loader2, Plus, Wand2 } from 'lucide-react'
 import { prettyLabel, type ImgUtilsJob } from '@/api/imgUtils'
 import { imageThumbnailUrl } from '@/api/images'
+import { useDownloadedImages } from '@/lib/downloadedImages'
 import { cn } from '@/lib/utils'
 
 export const IMGUTILS_NEW_PANEL = '__new__'
@@ -29,6 +30,7 @@ export function ImgUtilsHistorySidebar({
   onSelectNew,
   onSelectJob,
 }: ImgUtilsHistorySidebarProps) {
+  const downloadedImages = useDownloadedImages()
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <button
@@ -64,6 +66,7 @@ export function ImgUtilsHistorySidebar({
               const active = activePanel === job.job_id
               // Prefer the result once it exists so the list reads as a gallery.
               const thumbId = job.output_image_id ?? job.input_image_id
+              const downloaded = job.output_image_id != null && downloadedImages.has(job.output_image_id)
               return (
                 <li key={job.job_id}>
                   <button
@@ -91,8 +94,13 @@ export function ImgUtilsHistorySidebar({
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium">
-                        {prettyLabel(job.workflow)}
+                      <p className="flex items-center gap-1 truncate text-xs font-medium">
+                        <span className="truncate">{prettyLabel(job.workflow)}</span>
+                        {downloaded && (
+                          <span title="Downloaded" data-testid={`imgutils-item-downloaded-${job.job_id}`}>
+                            <Download className="size-3 shrink-0 text-muted-foreground" aria-label="Downloaded" />
+                          </span>
+                        )}
                       </p>
                       <p className="truncate text-[10px] text-muted-foreground capitalize">
                         {jobSummary(job)}

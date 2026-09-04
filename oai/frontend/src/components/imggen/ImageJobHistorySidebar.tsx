@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion'
-import { Loader2, Plus } from 'lucide-react'
+import { Download, Loader2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { imageThumbnailUrl, type ImageJobDetails } from '../../api/images'
 import { jobPromptTitle, jobTechMeta, imageJobIsExecuting, imageJobStatusLabel, lastOutputImageId } from '../../lib/imggen'
+import { useDownloadedImages } from '@/lib/downloadedImages'
 import { WorkflowBadge } from './WorkflowBadge'
 import { useMorph } from '@/lib/motion'
 
@@ -40,6 +41,7 @@ export function ImageJobHistorySidebar({
 }: ImageJobHistorySidebarProps) {
   const isNewActive = activePanel === IMGGEN_NEW_PANEL
   const morph = useMorph()
+  const downloadedImages = useDownloadedImages()
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -76,6 +78,9 @@ export function ImageJobHistorySidebar({
               const jobStatus = statusOverrides?.[job.job_id] ?? job.status
               const inProgress = statusLabel(jobStatus)
               const executing = imageJobIsExecuting(jobStatus)
+              const downloaded = job.files.some(
+                f => f.direction === 'output' && downloadedImages.has(f.image_id),
+              )
 
               return (
                 <motion.li
@@ -132,7 +137,17 @@ export function ImageJobHistorySidebar({
                         <p className="line-clamp-2 min-w-0 flex-1 text-xs font-semibold leading-snug text-foreground">
                           {jobPromptTitle(job.prompt, 72)}
                         </p>
-                        <WorkflowBadge workflow={job.workflow} />
+                        <div className="flex shrink-0 items-center gap-1">
+                          {downloaded && (
+                            <span
+                              title="Downloaded"
+                              data-testid={`imggen-pipeline-downloaded-${job.job_id}`}
+                            >
+                              <Download className="size-3 text-muted-foreground" aria-label="Downloaded" />
+                            </span>
+                          )}
+                          <WorkflowBadge workflow={job.workflow} />
+                        </div>
                       </div>
                       <span className="truncate font-mono text-[10px] text-muted-foreground/80">
                         {jobTechMeta(job)}

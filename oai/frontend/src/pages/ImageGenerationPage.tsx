@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   ChevronDown,
   Columns2,
+  Download,
   FolderOpen,
   ImagePlus,
   Loader2,
@@ -67,6 +68,7 @@ import {
   uploadImage,
 } from '../api/images'
 import { JobErrorBanner } from '../components/JobErrorBanner'
+import { markImageDownloaded, triggerImageDownload } from '../lib/downloadedImages'
 import RescaleControls from '../components/imggen/RescaleControls'
 import {
   ImageJobHistorySidebar,
@@ -1095,6 +1097,13 @@ export default function ImageGenerationPage() {
     [selectedJob],
   )
 
+  const downloadJobOutputs = useCallback(() => {
+    for (const file of outputFiles) {
+      triggerImageDownload(imageFileUrl(file.image_id, token, mediaRevision), file.filename)
+      markImageDownloaded(file.image_id)
+    }
+  }, [outputFiles, token, mediaRevision])
+
   const animateOutputFile = useMemo(() => {
     const images = outputFiles.filter(f => !f.content_type.startsWith('video/'))
     return images.length > 0 ? images[images.length - 1]! : null
@@ -1221,6 +1230,19 @@ export default function ImageGenerationPage() {
               ) : (
                 <Trash2 className="size-4" />
               )}
+            </Button>
+          )}
+          {viewingJob && selectedJob && outputFiles.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={downloadJobOutputs}
+              title="Download output"
+              aria-label="Download output"
+              data-testid="imggen-download-job"
+            >
+              <Download className="size-4" />
             </Button>
           )}
           <ToolDebugHeaderButton

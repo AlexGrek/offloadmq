@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Columns2,
+  Download,
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -47,6 +48,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { useImgUtilsTools } from '../hooks/useImgUtilsTools'
 import { JobErrorBanner } from '../components/JobErrorBanner'
+import { markImageDownloaded, triggerImageDownload } from '../lib/downloadedImages'
 import { ToolSidebar } from '../components/ToolSidebar'
 import { imageJobStatusLabel, type ImggenRouteState } from '../lib/imggen'
 
@@ -350,6 +352,12 @@ export default function ImgUtilsPage() {
   const shownImageId = selectedJob?.output_image_id ?? selectedJob?.input_image_id ?? null
   const canCompare = outputImage != null && inputImage != null
 
+  const downloadJobOutput = useCallback(() => {
+    if (!token || !outputImage) return
+    triggerImageDownload(imageFileUrl(outputImage.image_id, token), outputImage.filename)
+    markImageDownloaded(outputImage.image_id)
+  }, [token, outputImage])
+
   // A fresh job has nothing to compare yet — never carry the toggle across jobs.
   // Render-phase reset (React's "adjust state on change" pattern) rather than an effect.
   const [compareJobId, setCompareJobId] = useState(selectedJob?.job_id)
@@ -416,6 +424,19 @@ export default function ImgUtilsPage() {
               ) : (
                 <Trash2 className="size-4" />
               )}
+            </Button>
+          ) : null}
+          {viewingJob && outputImage ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={downloadJobOutput}
+              title="Download output"
+              aria-label="Download output"
+              data-testid="imgutils-download-job"
+            >
+              <Download className="size-4" />
             </Button>
           ) : null}
         </header>

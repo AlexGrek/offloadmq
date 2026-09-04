@@ -14,6 +14,11 @@ import {
 import type { JobImageRef } from '@/api/imgUtils'
 import { ImgUtilsQuickModal } from '@/components/imgutils/ImgUtilsQuickModal'
 import {
+  markImageDownloaded,
+  triggerImageDownload,
+  useDownloadedImages,
+} from '@/lib/downloadedImages'
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -77,6 +82,8 @@ export function ImageLightbox({
   const hideTimer = useRef<number | null>(null)
 
   const canDelete = actions?.direction === 'output'
+  const downloadedImages = useDownloadedImages()
+  const downloaded = actions ? downloadedImages.has(actions.imageId) : false
 
   const clearHideTimer = useCallback(() => {
     if (hideTimer.current !== null) {
@@ -131,12 +138,9 @@ export function ImageLightbox({
   }, [open, actions?.token, actions?.imageId])
 
   const onDownload = useCallback(() => {
-    const a = document.createElement('a')
-    a.href = src
-    a.download = actions?.filename ?? alt
-    a.rel = 'noopener'
-    a.click()
-  }, [src, actions?.filename, alt])
+    triggerImageDownload(src, actions?.filename ?? alt)
+    if (actions?.imageId) markImageDownloaded(actions.imageId)
+  }, [src, actions, alt])
 
   const onToggleStar = useCallback(async () => {
     if (!actions?.token) return
@@ -317,12 +321,12 @@ export function ImageLightbox({
               ) : null}
               <button
                 type="button"
-                className={glassButton}
+                className={cn(glassButton, downloaded && 'text-emerald-300 hover:text-emerald-200')}
                 onClick={onDownload}
                 data-testid={testId ? `${testId}-download` : 'image-lightbox-download'}
               >
                 <Download className="size-3" />
-                Download
+                {downloaded ? 'Downloaded' : 'Download'}
               </button>
               <button
                 type="button"
