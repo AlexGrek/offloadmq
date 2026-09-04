@@ -65,8 +65,17 @@ export function RandomNamesWidget() {
                 data-testid="prompt-placeholders-drawer"
               >
                 <div aria-hidden className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-muted-foreground/30" />
-                <div className="min-h-0 flex-1 overflow-hidden p-4 pt-3">
-                  <PromptPlaceholdersPanel onClose={() => setOpen(false)} className="h-full" />
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 pt-3">
+                  {/* `flex-1 min-h-0` (not `h-full`) gives this a real bounded
+                      height: percentage heights don't reliably resolve against
+                      a plain-block parent sized only by flexbox, whereas a
+                      flex-item's own flex-basis is always definite. That's
+                      what makes `overflow-y-auto` below actually able to
+                      scroll instead of finding zero overflow. */}
+                  <PromptPlaceholdersPanel
+                    onClose={() => setOpen(false)}
+                    className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                  />
                 </div>
               </motion.aside>
             </>

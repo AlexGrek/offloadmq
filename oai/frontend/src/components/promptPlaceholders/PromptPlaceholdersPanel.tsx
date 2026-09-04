@@ -41,7 +41,16 @@ export function PromptPlaceholdersPanel({ onClose, className }: PromptPlaceholde
 
   return (
     <div
-      className={cn('flex min-h-0 flex-col gap-5 overflow-auto overscroll-contain text-sm', className)}
+      // No overflow/overscroll classes here: this panel is used both as the
+      // sole scroll region inside a height-bounded drawer (RandomNamesWidget,
+      // which opts in via `className`) and as plain in-flow content on the
+      // standalone page (scrolled by the ambient <main>). Hardcoding
+      // `overflow-auto overscroll-contain` here used to break both — a
+      // non-overflowing `overflow:auto` box with `overscroll-behavior:
+      // contain` swallows wheel/touch input instead of chaining it to a
+      // scrollable ancestor, and on the standalone page this element never
+      // has a bounded height, so it never had real overflow to begin with.
+      className={cn('flex min-h-0 flex-col gap-5 text-sm', className)}
       data-testid="prompt-placeholders-panel"
     >
       <div className="flex items-start justify-between gap-2">
