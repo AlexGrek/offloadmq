@@ -87,6 +87,10 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/prompts/{bucket}", get(routes::prompts::list_library))
         .route("/api/prompts/{bucket}/star", post(routes::prompts::star))
         .route(
+            "/api/prompts/{bucket}/recent",
+            post(routes::prompts::record_recent),
+        )
+        .route(
             "/api/prompt-entries/{id}",
             axum::routing::patch(routes::prompts::update_entry)
                 .delete(routes::prompts::delete_entry),

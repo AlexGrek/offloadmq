@@ -20,6 +20,18 @@ export function listPrompts(token: string, bucket: string): Promise<PromptLibrar
   return request(`/api/prompts/${encodeURIComponent(bucket)}`, token)
 }
 
+/**
+ * Record a use of `content` in a bucket's recent list. Callers decide exactly
+ * when a use counts — e.g. once per user submission, not once per generated
+ * job — so batches of jobs sharing one prompt template don't flood recents.
+ */
+export function recordRecentPrompt(token: string, bucket: string, content: string): Promise<PromptItem> {
+  return request(`/api/prompts/${encodeURIComponent(bucket)}/recent`, token, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
+}
+
 /** Add the given content to a bucket's favorites. */
 export function starPrompt(token: string, bucket: string, content: string): Promise<PromptItem> {
   return request(`/api/prompts/${encodeURIComponent(bucket)}/star`, token, {

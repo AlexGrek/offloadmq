@@ -117,6 +117,9 @@ import {
 import { ExternalResizeToggle } from '../components/ExternalResizeToggle'
 import { createPlaceholderUsage, expandPromptPlaceholders } from '../lib/promptPlaceholders'
 import { listPromptPlaceholders } from '../api/promptPlaceholders'
+import { recordRecentPrompt } from '../api/prompts'
+import { RecentPlaceholders } from '../components/imggen/RecentPlaceholders'
+import { recordPlaceholdersUsed } from '../lib/recentPlaceholders'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import type { ImagePipelineRescaleParams, StartImageJobRequest } from '../api/images'
 import {
@@ -839,12 +842,32 @@ export default function ImageGenerationPage() {
     }
   }
 
+  /**
+   * Records the raw (unexpanded) prompt/negative-prompt as recents, once per
+   * user submission — not once per generated job — so a "generate multiple"
+   * batch doesn't flood recents with per-job placeholder variants. Best-effort:
+   * a failure here shouldn't block job submission.
+   */
+  function recordPromptRecents() {
+    if (!token) return
+    if (prompt.trim()) void recordRecentPrompt(token, 'imggen-prompt', prompt).catch(() => {})
+    if (overrideNegative && negativePrompt.trim()) {
+      void recordRecentPrompt(token, 'imggen-negative', negativePrompt).catch(() => {})
+    }
+    recordPlaceholdersUsed(prompt)
+  }
+
+  function insertRecentPlaceholder(token: string) {
+    setPrompt(p => (p === '' || /\s$/.test(p) ? p + token : `${p} ${token}`))
+  }
+
   async function onSubmit() {
     if (!token || !canSubmit) return
     setSubmitting(true)
     setJobDetailLoading(true)
     setError(null)
     setInfo(`Submitting ${isVideoMode(mode) ? 'video generation' : 'image generation'} task to OffloadMQ.`)
+    recordPromptRecents()
     try {
       const customDefs = await fetchCustomPlaceholderDefs()
       const expandedPrompt = expandPromptPlaceholders(prompt, createPlaceholderUsage(), customDefs)
@@ -879,6 +902,7 @@ export default function ImageGenerationPage() {
     setSubmitting(true)
     setJobDetailLoading(true)
     setError(null)
+    recordPromptRecents()
     const submittedIds: string[] = []
     const placeholderUsage = createPlaceholderUsage()
     const customDefs = await fetchCustomPlaceholderDefs()
@@ -1501,6 +1525,7 @@ export default function ImageGenerationPage() {
                   rows={4}
                   data-testid="imggen-prompt"
                 />
+                <RecentPlaceholders onInsert={insertRecentPlaceholder} />
               </div>
 
               <div className="sm:col-span-2">

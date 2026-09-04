@@ -159,29 +159,12 @@ pub async fn start_job(
     AuthenticatedUser(user_id): AuthenticatedUser,
     Json(req): Json<StartJobParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Record the prompts as recents (best-effort) for cross-job reuse, so the
-    // frontend doesn't need a second request to maintain the recents lists.
-    if !req.prompt.trim().is_empty() {
-        let _ = crate::db::prompts::record_use(
-            &state.db,
-            || state.next_id(),
-            user_id,
-            "imggen-prompt",
-            &req.prompt,
-        )
-        .await;
-    }
-    if let Some(neg) = req.negative_prompt.as_deref().filter(|s| !s.trim().is_empty()) {
-        let _ = crate::db::prompts::record_use(
-            &state.db,
-            || state.next_id(),
-            user_id,
-            "imggen-negative",
-            neg,
-        )
-        .await;
-    }
-
+    // Recents are no longer recorded here: a "generate multiple" submission
+    // calls this endpoint once per job with the placeholders already
+    // expanded, which would flood the recents list with per-job variants
+    // instead of the one template the user typed. The frontend records the
+    // unexpanded prompt itself, once per submission, via
+    // `POST /api/prompts/{bucket}/recent`.
     let job_id = image_jobs::start_job(&state, user_id, req).await?;
     Ok((
         StatusCode::CREATED,

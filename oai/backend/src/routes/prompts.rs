@@ -50,6 +50,22 @@ pub async fn list_library(
     }))
 }
 
+/// `POST /api/prompts/{bucket}/recent` — record a use, moving/inserting the
+/// content at the head of the bucket's recent list. Callers control exactly
+/// when a use is recorded, independent of any other action (e.g. image
+/// generation records once per user submission — not once per job — so a
+/// "generate multiple" batch doesn't flood recents with per-job variants).
+pub async fn record_recent(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(bucket): Path<String>,
+    Json(req): Json<ContentRequest>,
+) -> Result<Json<PromptItem>, AppError> {
+    let row = prompts::record_use(&state.db, || state.next_id(), user_id, &bucket, &req.content)
+        .await?;
+    Ok(Json(to_item(row)))
+}
+
 /// `POST /api/prompts/{bucket}/star` — add the given content to favorites.
 pub async fn star(
     State(state): State<Arc<AppState>>,

@@ -13,6 +13,36 @@ import {
   type ResizeFormState,
 } from '../api/imgUtils'
 
+/** Last-picked tool + its knobs, restored whenever a tool picker (the full
+ *  page or the quick-transform modal) mounts. UI convenience only — never
+ *  the source of truth for whether a tool is actually online. */
+const STORAGE_KEY = 'oai_imgutils_last_tool'
+
+interface StoredToolPrefs {
+  selectedKey: string
+  resizeForm: ResizeFormState
+  scaleMultiplier: number
+}
+
+function readStoredPrefs(): Partial<StoredToolPrefs> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? (parsed as Partial<StoredToolPrefs>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeStoredPrefs(prefs: StoredToolPrefs): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs))
+  } catch {
+    // best-effort — quota/availability issues just mean the pick doesn't survive reload
+  }
+}
+
 export interface ImgUtilsToolsState {
   tools: ImgUtilTool[]
   loading: boolean
@@ -43,10 +73,21 @@ export function useImgUtilsTools(token: string | null, enabled = true): ImgUtils
   const [tools, setTools] = useState<ImgUtilTool[]>([])
   const [loading, setLoading] = useState(enabled)
   const [error, setError] = useState<string | null>(null)
-  const [selectedKey, setSelectedKey] = useState('')
+  // Seeded from the last pick (any host: full page or quick modal) so a
+  // reopened picker starts back where the user left off.
+  const [initialPrefs] = useState(readStoredPrefs)
+  const [selectedKey, setSelectedKey] = useState(() => initialPrefs.selectedKey ?? '')
   // Kept across tool switches so flipping back and forth never loses settings.
-  const [resizeForm, setResizeForm] = useState<ResizeFormState>(() => defaultResizeForm([]))
-  const [scaleMultiplier, setScaleRaw] = useState<number>(DEFAULT_SCALE_MULTIPLIER)
+  const [resizeForm, setResizeForm] = useState<ResizeFormState>(
+    () => initialPrefs.resizeForm ?? defaultResizeForm([]),
+  )
+  const [scaleMultiplier, setScaleRaw] = useState<number>(
+    initialPrefs.scaleMultiplier ?? DEFAULT_SCALE_MULTIPLIER,
+  )
+
+  useEffect(() => {
+    writeStoredPrefs({ selectedKey, resizeForm, scaleMultiplier })
+  }, [selectedKey, resizeForm, scaleMultiplier])
 
   const load = useCallback(async () => {
     if (!token) return
