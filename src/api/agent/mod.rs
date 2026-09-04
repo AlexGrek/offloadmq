@@ -389,9 +389,32 @@ async fn ws_dispatch(
         // ── Heartbeat ────────────────────────────────────────────
         // Agent→server liveness beat (random 60–90s cadence). Bumps the agent's
         // last_contact so it stays online even while idle or busy with a job.
+        //
+        // The beat may also carry `params.active`: the tasks the agent reports
+        // it is *actually* running. That claim is what keeps the two sides in
+        // sync — anything the server still counts against this agent's capacity
+        // but the agent no longer holds (a resolve lost mid-upload, a restarted
+        // agent, a dead executor) is reclaimed, so a desync can't silently pin
+        // the agent at capacity forever. Agents that send no claim (older
+        // versions) are left untouched.
         "heartbeat" | "ping" => {
             service::do_agent_ping(agent.clone(), state, CommunicationMethod::WebSocket).await?;
-            Ok((200, json!({"status": "ok"})))
+            let reclaimed = match params.get("active") {
+                Some(raw) => match serde_json::from_value::<Vec<TaskId>>(raw.clone()) {
+                    Ok(claimed) => service::reconcile_agent_claim(agent, claimed, state).await?,
+                    Err(e) => {
+                        // A malformed claim must never break the heartbeat — the
+                        // beat itself is what keeps the agent counted as online.
+                        warn!(
+                            "Ignoring malformed heartbeat claim from agent {}: {e}",
+                            agent.uid_short
+                        );
+                        0
+                    }
+                },
+                None => 0,
+            };
+            Ok((200, json!({"status": "ok", "reclaimed": reclaimed})))
         }
 
         // ── Poll ─────────────────────────────────────────────────

@@ -28,6 +28,13 @@ from offloadmq_agent.models import (
 # tolerate one fully missed 60–90s heartbeat window plus margin.
 _WS_RECV_TIMEOUT_SECS = 180.0
 
+# How long to wait for the server's ack of a `resolve_task` frame. A resolve is
+# the only send whose loss the agent cannot shrug off — the server keeps the
+# task (and the agent's capacity slot) occupied until it lands — so it is sent
+# as a request/response pair and retried until acknowledged. Generous: the
+# server does DB writes and bucket cleanup before replying.
+_RESOLVE_ACK_TIMEOUT_SECS = 60.0
+
 
 class OffloadMQError(Exception):
     def __init__(
@@ -54,6 +61,8 @@ class OffloadMQClient:
         # Serializes concurrent WS sends (progress/resolve are scheduled from
         # worker threads onto the loop and could otherwise interleave frames).
         self._ws_lock = asyncio.Lock()
+        # req_id -> waiter, for sends that need the server's ack (see _ws_send).
+        self._acks: dict[str, asyncio.Future[dict[str, Any]]] = {}
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._jwt_token}"}
@@ -65,6 +74,7 @@ class OffloadMQClient:
         return self._client_session
 
     async def close(self) -> None:
+        self.fail_pending_acks("connection closed")
         if self._ws is not None and not self._ws.closed:
             try:
                 await self._ws.close()
@@ -186,23 +196,108 @@ class OffloadMQClient:
             elif msg.type == aiohttp.WSMsgType.ERROR:
                 raise OffloadMQError(f"websocket error: {ws.exception()!r}")
 
-    async def _ws_send(self, action: str, params: dict[str, Any]) -> None:
+    async def _ws_send(
+        self,
+        action: str,
+        params: dict[str, Any],
+        *,
+        ack_timeout: float | None = None,
+    ) -> dict[str, Any] | None:
+        """Send one WS request frame.
+
+        Fire-and-forget by default. With ``ack_timeout`` the call instead waits
+        for the server's `response`/`error` envelope for this ``req_id`` (routed
+        back by :meth:`handle_ack` from the receive loop) and raises if the ack
+        never arrives — the caller then knows the frame was lost rather than
+        assuming a queued send means the server acted on it.
+
+        Errors carry the server's HTTP-ish status, so callers can tell "the
+        server rejected this" (status set — do not retry, it was processed) from
+        "this never got there" (``status == 0`` — safe to retry).
+        """
         ws = self._ws
         if ws is None or ws.closed:
             raise OffloadMQError("websocket not connected", status=0)
-        frame = {"req_id": uuid.uuid4().hex, "action": action, "params": params}
-        async with self._ws_lock:
-            await ws.send_json(frame)
+        req_id = uuid.uuid4().hex
+        frame = {"req_id": req_id, "action": action, "params": params}
+        fut: asyncio.Future[dict[str, Any]] | None = None
+        if ack_timeout is not None:
+            fut = asyncio.get_running_loop().create_future()
+            self._acks[req_id] = fut
+        try:
+            async with self._ws_lock:
+                await ws.send_json(frame)
+            if fut is None:
+                return None
+            return await asyncio.wait_for(fut, ack_timeout)
+        except asyncio.TimeoutError as exc:
+            raise OffloadMQError(
+                f"no server ack for '{action}' within {ack_timeout:.0f}s",
+                status=0,
+            ) from exc
+        finally:
+            self._acks.pop(req_id, None)
 
-    async def send_heartbeat(self) -> None:
+    def handle_ack(self, msg: dict[str, Any]) -> bool:
+        """Route a `response`/`error` frame to whoever is waiting on its req_id.
+
+        Called by the receive loop for every ack frame. Returns True if the
+        frame was consumed by a waiter, so the caller can keep its own handling
+        (logging server errors) for unsolicited ones.
+        """
+        req_id = msg.get("req_id")
+        if not isinstance(req_id, str):
+            return False
+        fut = self._acks.pop(req_id, None)
+        if fut is None or fut.done():
+            return False
+        if msg.get("type") == "error":
+            err = msg.get("error") or {}
+            message = err.get("message") if isinstance(err, dict) else None
+            status = msg.get("status")
+            fut.set_exception(
+                OffloadMQError(
+                    str(message or err or "server error"),
+                    # Any status at all means the server *processed* the frame.
+                    status=int(status) if isinstance(status, int) else 500,
+                )
+            )
+        else:
+            fut.set_result(msg)
+        return True
+
+    def fail_pending_acks(self, reason: str) -> None:
+        """Wake every ack waiter with a transport error (status 0 → retryable).
+
+        Without this a resolve waiting on a socket that just died would hang
+        until its timeout, delaying the retry that frees the agent's slot.
+        """
+        pending, self._acks = self._acks, {}
+        for fut in pending.values():
+            if not fut.done():
+                fut.set_exception(OffloadMQError(reason, status=0))
+
+    async def send_heartbeat(
+        self, active: list[dict[str, str]] | None = None
+    ) -> None:
         """Send a liveness heartbeat to the server over the WebSocket.
 
         Mirrors the server→agent heartbeat frames in the other direction: it
         bumps the agent's ``last_contact`` server-side so the agent stays counted
         as online even when idle *or* busy running a job. Fire-and-forget — the
         server replies with a normal ``response`` ack that the receive loop drops.
+
+        ``active`` is the agent's claim: every task it is really working on (or
+        still owes a resolve for), as ``{"cap": ..., "id": ...}``. The server
+        reclaims anything it still counts against this agent that the claim
+        omits, which is what stops a lost resolve from pinning the agent at
+        capacity forever. Omitting the argument sends no claim at all and leaves
+        the server's view untouched.
         """
-        await self._ws_send("heartbeat", {})
+        params: dict[str, Any] = {}
+        if active is not None:
+            params["active"] = active
+        await self._ws_send("heartbeat", params)
 
     async def report_progress(
         self,
@@ -264,10 +359,18 @@ class OffloadMQClient:
                 )
 
     async def resolve(self, capability: str, result: TaskResult) -> None:
+        """Report a task's final result, waiting for the server to acknowledge it.
+
+        Raises :class:`OffloadMQError` with ``status == 0`` if the ack never
+        arrived (socket died, server silent) — the result is still unreported
+        and the caller must retry it.
+        """
         from offloadmq_agent.result_convert import task_result_to_wire
 
         payload = task_result_to_wire(result.task_id, capability, result)
-        await self._ws_send("resolve_task", payload)
+        await self._ws_send(
+            "resolve_task", payload, ack_timeout=_RESOLVE_ACK_TIMEOUT_SECS
+        )
 
     def update_token(self, jwt_token: str) -> None:
         self._jwt_token = jwt_token

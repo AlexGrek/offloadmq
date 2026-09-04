@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
 use chrono::Utc;
 use log::info;
@@ -357,6 +359,79 @@ impl TaskStorage {
         Ok(count)
     }
 
+    /// Task ids `agent_id` still holds in a non-terminal state that the agent
+    /// itself no longer claims.
+    ///
+    /// Agents report the set of tasks they are actually running with every
+    /// heartbeat. A task missing from that set is a **desync**: the agent
+    /// finished it but the resolve never reached the server (a socket that
+    /// dropped mid-upload is the usual way), the agent process restarted and
+    /// forgot it, or its executor died. Left alone such a task holds the
+    /// agent's capacity slot forever and the agent is never dispatched to
+    /// again, so it must be reclaimed.
+    ///
+    /// `grace_secs` covers the one benign gap: a task pushed to the agent while
+    /// a heartbeat whose snapshot predates it was already in flight. Only tasks
+    /// untouched for at least that long are reported.
+    pub fn list_disowned_assigned(
+        &self,
+        agent_id: &str,
+        claimed: &HashSet<TaskId>,
+        grace_secs: i64,
+    ) -> Result<Vec<TaskId>> {
+        let now = Utc::now();
+        let mut disowned: Vec<TaskId> = Vec::new();
+
+        for item in self.assigned.iter() {
+            let (_k, v) = item?;
+            let task: AssignedTask = rmp_serde::from_slice(&v)?;
+            if task.agent_id != agent_id {
+                continue;
+            }
+            // Only actively-held tasks can be disowned. Terminal ones are done;
+            // CancelRequested is handled by `fail_stale_cancel_requested`.
+            match task.status {
+                TaskStatus::Assigned | TaskStatus::Starting | TaskStatus::Running => {}
+                _ => continue,
+            }
+            if claimed.contains(&task.id) {
+                continue;
+            }
+            let last = task
+                .last_update_at
+                .unwrap_or(task.assigned_at)
+                .max(task.assigned_at);
+            if (now - last).num_seconds() >= grace_secs {
+                disowned.push(task.id);
+            }
+        }
+
+        Ok(disowned)
+    }
+
+    /// Fail one assigned task because the agent holding it no longer reports it
+    /// as running. Returns `false` if the task is gone or already terminal — a
+    /// resolve that landed between the scan and now wins, and nothing is
+    /// overwritten.
+    pub fn fail_disowned_assigned(&self, id: &TaskId, agent_id: &str) -> Result<bool> {
+        let mut task = match self.get_assigned(id)? {
+            Some(t) => t,
+            None => return Ok(false),
+        };
+        if task.status.is_terminal() {
+            return Ok(false);
+        }
+        task.change_status(TaskStatus::Failed);
+        task.stage = None;
+        task.append_log(Some(format!(
+            "\n[server] Task failed: agent {} no longer reports it as running (result lost in transit)",
+            agent_id
+        )));
+        self.update_assigned(&task)?;
+        info!("Task {} disowned by agent {}, marked failed", id, agent_id);
+        Ok(true)
+    }
+
     /// Recover tasks abandoned by a dead agent. A task is orphaned when it is in
     /// an active (non-terminal, non-cancel-requested) status, its assigned agent
     /// is offline, and it has not been touched for `silence_secs`. Such tasks are
@@ -421,5 +496,164 @@ impl TaskStorage {
             result.push(task);
         }
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::TaskEvent;
+    use crate::schema::TaskSubmissionRequest;
+    use chrono::TimeDelta;
+
+    /// Minimal scoped temp directory — sled needs a real path and the crate has
+    /// no dev-dependency on `tempfile`.
+    struct TempDirGuard(std::path::PathBuf);
+
+    impl TempDirGuard {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "offloadmq-tasks-test-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            Self(path)
+        }
+
+        fn path(&self) -> &str {
+            self.0.to_str().expect("utf-8 temp path")
+        }
+    }
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn storage() -> (TaskStorage, TempDirGuard) {
+        let guard = TempDirGuard::new();
+        let store = TaskStorage::open(guard.path()).expect("open task storage");
+        (store, guard)
+    }
+
+    /// An assigned task owned by `agent`, in `status`, last touched `age_secs` ago.
+    fn assigned(agent: &str, id: &str, status: TaskStatus, age_secs: i64) -> AssignedTask {
+        let then = Utc::now() - TimeDelta::seconds(age_secs);
+        AssignedTask {
+            id: TaskId {
+                cap: "test.cap".into(),
+                id: id.into(),
+            },
+            data: TaskSubmissionRequest {
+                capability: "test.cap".into(),
+                ..Default::default()
+            },
+            agent_id: agent.into(),
+            status,
+            created_at: then,
+            assigned_at: then,
+            last_update_at: Some(then),
+            history: vec![TaskEvent {
+                timestamp: then,
+                description: "Assigned".into(),
+            }],
+            ..AssignedTask::default()
+        }
+    }
+
+    fn tid(id: &str) -> TaskId {
+        TaskId {
+            cap: "test.cap".into(),
+            id: id.into(),
+        }
+    }
+
+    #[test]
+    fn reports_only_tasks_the_agent_stopped_claiming() {
+        let (store, _guard) = storage();
+        store
+            .update_assigned(&assigned("a1", "claimed", TaskStatus::Running, 600))
+            .unwrap();
+        store
+            .update_assigned(&assigned("a1", "lost", TaskStatus::Running, 600))
+            .unwrap();
+        // Another agent's task must never be reclaimed from this heartbeat.
+        store
+            .update_assigned(&assigned("a2", "other", TaskStatus::Running, 600))
+            .unwrap();
+
+        let claimed = HashSet::from([tid("claimed")]);
+        let disowned = store.list_disowned_assigned("a1", &claimed, 120).unwrap();
+        assert_eq!(disowned, vec![tid("lost")]);
+    }
+
+    #[test]
+    fn grace_protects_a_freshly_pushed_task() {
+        let (store, _guard) = storage();
+        // Pushed 5s ago: a heartbeat whose snapshot predates the push legitimately
+        // omits it, so it must survive.
+        store
+            .update_assigned(&assigned("a1", "fresh", TaskStatus::Assigned, 5))
+            .unwrap();
+
+        let empty = HashSet::new();
+        assert!(
+            store
+                .list_disowned_assigned("a1", &empty, 120)
+                .unwrap()
+                .is_empty()
+        );
+        // …and is reclaimed once it has been quiet past the grace window.
+        assert_eq!(
+            store.list_disowned_assigned("a1", &empty, 1).unwrap(),
+            vec![tid("fresh")]
+        );
+    }
+
+    #[test]
+    fn terminal_and_cancel_requested_tasks_are_left_alone() {
+        let (store, _guard) = storage();
+        store
+            .update_assigned(&assigned("a1", "done", TaskStatus::Completed, 600))
+            .unwrap();
+        store
+            .update_assigned(&assigned("a1", "failed", TaskStatus::Failed, 600))
+            .unwrap();
+        store
+            .update_assigned(&assigned(
+                "a1",
+                "cancelling",
+                TaskStatus::CancelRequested,
+                600,
+            ))
+            .unwrap();
+
+        let empty = HashSet::new();
+        assert!(
+            store
+                .list_disowned_assigned("a1", &empty, 120)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn failing_a_disowned_task_is_terminal_and_idempotent() {
+        let (store, _guard) = storage();
+        store
+            .update_assigned(&assigned("a1", "lost", TaskStatus::Running, 600))
+            .unwrap();
+
+        assert!(store.fail_disowned_assigned(&tid("lost"), "a1").unwrap());
+        let task = store.get_assigned(&tid("lost")).unwrap().unwrap();
+        assert_eq!(task.status, TaskStatus::Failed);
+        assert!(task.finished_at.is_some());
+        assert!(task.log.unwrap().contains("no longer reports it"));
+
+        // A second pass (or a resolve that already landed) must not rewrite it.
+        assert!(!store.fail_disowned_assigned(&tid("lost"), "a1").unwrap());
+        assert!(!store.fail_disowned_assigned(&tid("missing"), "a1").unwrap());
     }
 }

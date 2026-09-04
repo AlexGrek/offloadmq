@@ -112,6 +112,20 @@ class TaskStore:
         with self._lock:
             return sum(1 for r in self._records.values() if not r.is_terminal)
 
+    def active_ids(self) -> set[tuple[str, str]]:
+        """``(capability, task_id)`` of every task still running.
+
+        Feeds the heartbeat's claim to the server, so it must stay cheap (no
+        deep copies of log-heavy records) and must list exactly what this agent
+        is really working on — anything missing is reclaimed server-side.
+        """
+        with self._lock:
+            return {
+                (r.capability, r.id)
+                for r in self._records.values()
+                if not r.is_terminal
+            }
+
     def clear(self) -> None:
         with self._lock:
             self._records.clear()

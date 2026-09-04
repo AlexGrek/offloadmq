@@ -118,6 +118,11 @@ class Orchestrator:
         self._last_detected: list[str] = []
         self._skipped_rescans: int = 0
         self._rescan_guard = threading.Lock()
+        # Results the server has not acknowledged yet, task id -> (capability,
+        # result). A resolve that never lands leaves the server holding the
+        # agent's capacity slot, so results are kept here and retried on every
+        # heartbeat and reconnect until acknowledged, instead of being dropped.
+        self._pending_resolves: dict[str, tuple[str, TaskResult]] = {}
 
     # ==================================================================
     # Local logging + error pool
@@ -818,10 +823,28 @@ class Orchestrator:
     async def _ws_heartbeat_loop(self, client: OffloadMQClient) -> None:
         """Beat to the server every random 60–90s for the life of one session.
 
+        Each beat first retries any result the server has not acknowledged, then
+        reports the agent's current claim (see :meth:`_active_claim`) so the two
+        sides agree on what this agent is running.
+
         A send failure means the socket is gone — stop quietly and let the
         receive loop's clean exit drive the supervisor's reconnect. Never touches
         ``_busy``/active-task state: the agent must heartbeat while jobs run.
+
+        Runs as a task alongside the receive loop, which is what makes the very
+        first pass safe: a resolve waits for an ack that only the receive loop
+        can route back.
         """
+        # Open with an immediate pass rather than waiting out a heartbeat
+        # interval: it hands over results the previous session could not
+        # deliver, and on a restarted agent its empty claim is what tells the
+        # server to release the slots of tasks this process no longer holds.
+        await self._flush_pending_resolves(client)
+        try:
+            await self._send_heartbeat(client)
+        except Exception:  # noqa: BLE001
+            return
+
         while not self._stop.is_set():
             try:
                 await asyncio.sleep(
@@ -831,8 +854,11 @@ class Orchestrator:
                 break
             if self._stop.is_set():
                 break
+            # Retry undelivered results before beating, so the claim we send is
+            # as small (and as truthful) as possible.
+            await self._flush_pending_resolves(client)
             try:
-                await client.send_heartbeat()
+                await self._send_heartbeat(client)
             except Exception:  # noqa: BLE001
                 # Socket closed or transient — the receive loop ends and the
                 # supervisor reconnects. Don't spam the error pool from here.
@@ -863,8 +889,13 @@ class Orchestrator:
                     self._log(f"[ws] cancel requested for task {task_id}")
 
             elif mtype == "error":
-                # An ack for one of our own RPC sends failed. 499 just means the
-                # task was cancelled client-side — informational, not an error.
+                # An ack for one of our own RPC sends failed. Hand it to whoever
+                # is waiting on that req_id first (a resolve needs to know its
+                # frame was processed); only unclaimed errors are logged here.
+                # 499 just means the task was cancelled client-side —
+                # informational, not an error.
+                if client.handle_ack(msg):
+                    continue
                 err = msg.get("error") or {}
                 if msg.get("status") == 499:
                     self._log(f"[ws] {err.get('message', 'task cancelled')}")
@@ -876,7 +907,9 @@ class Orchestrator:
             elif mtype in ("connected", "heartbeat", "response"):
                 # Liveness / RPC acks. Heartbeats are a good moment to drain any
                 # error logs that piled up from background failures.
-                if mtype == "heartbeat" and len(self._errors) > 0:
+                if mtype == "response":
+                    client.handle_ack(msg)
+                elif mtype == "heartbeat" and len(self._errors) > 0:
                     await self._flush_error_pool(client)
             # Unknown frame types are ignored.
 
@@ -1006,20 +1039,66 @@ class Orchestrator:
         if skipped > 0 or task.capability.startswith("slavemode."):
             self._trigger_rescan_async()
 
+    # ==================================================================
+    # Resolve delivery (server/agent busy-state sync)
+    # ==================================================================
+
+    def _active_claim(self) -> list[dict[str, str]]:
+        """The tasks this agent is accountable for, for the heartbeat claim.
+
+        Running tasks *plus* finished ones whose result has not been accepted
+        yet: both still belong to this agent, and dropping either from the claim
+        would have the server reclaim (and fail) work that is still in hand.
+        Everything else it lists is, by definition, a desync the server should
+        clean up.
+        """
+        claim = self._store.active_ids()
+        with self._lock:
+            claim |= {
+                (capability, task_id)
+                for task_id, (capability, _result) in self._pending_resolves.items()
+            }
+        return [{"cap": cap, "id": task_id} for cap, task_id in sorted(claim)]
+
+    async def _send_heartbeat(self, client: OffloadMQClient) -> None:
+        await client.send_heartbeat(self._active_claim())
+
     def _schedule_resolve(self, task: Task, result: TaskResult) -> None:
+        """Queue a finished task's result for delivery, then try to send it now.
+
+        The result is parked in ``_pending_resolves`` first and only removed once
+        the server acknowledges it, so a send that fails (or never happens
+        because we are between sessions) is retried rather than lost. A lost
+        result is what leaves the server holding this agent's capacity slot
+        forever while the agent sits idle.
+        """
+        with self._lock:
+            self._pending_resolves[result.task_id] = (task.capability, result)
         loop = self._loop
         client = self._client
         if loop is None or client is None:
-            # Resolve will be retried via task store on next session — but
-            # for now, record so the server learns about it once we reconnect.
-            self._record_error(
-                "ERROR",
-                f"[resolve] no client to resolve task {task.capability}/{task.id}",
+            self._log(
+                f"[resolve] offline — queued result for {task.capability}/{task.id}, "
+                "will retry on reconnect"
             )
             return
         asyncio.run_coroutine_threadsafe(
             self._safe_resolve(client, task.capability, result), loop
         )
+
+    async def _flush_pending_resolves(self, client: OffloadMQClient) -> None:
+        """Retry every result the server has not acknowledged yet."""
+        with self._lock:
+            pending = list(self._pending_resolves.items())
+        for task_id, (capability, result) in pending:
+            if self._stop.is_set():
+                return
+            self._log(f"[resolve] retrying undelivered result for {capability}/{task_id}")
+            await self._safe_resolve(client, capability, result)
+
+    def _drop_pending_resolve(self, task_id: str) -> None:
+        with self._lock:
+            self._pending_resolves.pop(task_id, None)
 
     async def _safe_resolve(
         self, client: OffloadMQClient, capability: str, result: TaskResult
@@ -1027,17 +1106,36 @@ class Orchestrator:
         try:
             await client.resolve(capability, result)
         except OffloadMQError as exc:
-            self._record_error(
-                "ERROR",
-                f"[resolve] failed for {capability}/{result.task_id}",
-                exc=exc,
+            if exc.status:
+                # The server processed the frame and rejected it (cancelled,
+                # already terminal, …). It has freed the slot on its side, so
+                # retrying would only re-send a result nobody wants.
+                self._drop_pending_resolve(result.task_id)
+                if exc.status == 499:
+                    self._log(f"[resolve] {capability}/{result.task_id} was cancelled server-side")
+                else:
+                    self._record_error(
+                        "ERROR",
+                        f"[resolve] rejected for {capability}/{result.task_id}",
+                        exc=exc,
+                    )
+                return
+            # Never reached the server (socket dead, no ack). Keep it queued —
+            # the next heartbeat or reconnect retries, and until then the claim
+            # keeps the server from reclaiming the task under us.
+            self._log(
+                f"[resolve] undelivered for {capability}/{result.task_id} "
+                f"({exc}); will retry"
             )
+            return
         except Exception as exc:  # noqa: BLE001
             self._record_error(
                 "ERROR",
                 f"[resolve] unexpected error for {capability}/{result.task_id}",
                 exc=exc,
             )
+            return
+        self._drop_pending_resolve(result.task_id)
 
     def _set_message(self, msg: str) -> None:
         with self._lock:

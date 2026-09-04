@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use log::{debug, info, warn};
@@ -9,8 +10,8 @@ use crate::{
     mq::scheduler::{
         find_assignable_non_urgent_tasks_with_capabilities_for_tier,
         find_urgent_tasks_with_capabilities, report_non_urgent_task, report_urgent_task,
-        try_pick_up_non_urgent_task, try_pick_up_urgent_task, update_non_urgent_task,
-        update_urgent_task,
+        try_pick_up_non_urgent_task, try_pick_up_urgent_task, try_unassign_non_urgent_task,
+        update_non_urgent_task, update_urgent_task,
     },
     schema::{
         AgentLoginRequest, AgentLoginResponse, AgentRegistrationRequest, AgentRegistrationResponse,
@@ -32,6 +33,97 @@ pub async fn do_agent_ping(
         .update_agent_last_contact(agent, comm_method)
         .await?;
     Ok(())
+}
+
+/// Grace window before a task an agent does not claim is reclaimed from it.
+///
+/// Covers the only benign reason a running task can be missing from a heartbeat
+/// claim: it was pushed to the agent while a heartbeat whose snapshot predates
+/// it was already in flight. Comfortably longer than that race (milliseconds)
+/// and shorter than the agent's 60–90 s heartbeat cadence matters more than the
+/// exact value — a genuinely desynced slot is reclaimed within ~2 heartbeats.
+pub const CLAIM_GRACE_SECS: i64 = 120;
+
+/// Reconcile the server's view of what `agent` is running against the agent's
+/// own report, sent with every heartbeat.
+///
+/// This is the cure for the busy/idle desync: the server counts a task against
+/// the agent's capacity until it is resolved, but a resolve can be lost (socket
+/// dropped while the agent was uploading its output, agent restarted mid-task,
+/// executor died). The agent then sits idle while the server keeps its slot
+/// occupied and never dispatches to it again. The agent is authoritative about
+/// what it is running, so anything it holds server-side but no longer claims is
+/// reclaimed here: un-started tasks go back to the queue, started ones are
+/// failed (their work is gone), and either way the capacity slot is freed.
+///
+/// Returns the number of tasks reclaimed. Called only when the heartbeat
+/// actually carries a claim — agents that don't report one are left alone.
+pub async fn reconcile_agent_claim(
+    agent: &Agent,
+    claimed: Vec<TaskId>,
+    state: &Arc<AppState>,
+) -> Result<usize, AppError> {
+    let claimed: HashSet<TaskId> = claimed.into_iter().collect();
+    let disowned =
+        state
+            .storage
+            .tasks
+            .list_disowned_assigned(&agent.uid, &claimed, CLAIM_GRACE_SECS)?;
+    if disowned.is_empty() {
+        return Ok(0);
+    }
+
+    let mut reclaimed = 0usize;
+    let mut requeued_caps: HashSet<String> = HashSet::new();
+    for task_id in disowned {
+        // Un-started work is still good — hand it back to the queue. This only
+        // succeeds while the task is `Assigned`; anything the agent had already
+        // started is failed instead.
+        let requeued =
+            match try_unassign_non_urgent_task(&state.regular, &state.storage.tasks, &task_id).await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("Failed to re-queue disowned task {task_id}: {e}");
+                    false
+                }
+            };
+        if !requeued {
+            match state
+                .storage
+                .tasks
+                .fail_disowned_assigned(&task_id, &agent.uid)
+            {
+                // A resolve landed first — the slot is freed on that path.
+                Ok(false) => continue,
+                Ok(true) => {}
+                Err(e) => {
+                    warn!("Failed to fail disowned task {task_id}: {e}");
+                    continue;
+                }
+            }
+        } else {
+            requeued_caps.insert(task_id.cap.clone());
+        }
+        state.agent_load.released(&agent.uid, &task_id);
+        state.registry.untrack_assigned(&agent.uid, &task_id);
+        reclaimed += 1;
+        warn!(
+            "Agent {} no longer holds task {task_id} — {}",
+            agent.uid_short,
+            if requeued { "re-queued" } else { "failed" }
+        );
+    }
+
+    if reclaimed > 0 {
+        // The agent has free slots again: give it work immediately instead of
+        // waiting for the 30 s dispatch backstop.
+        crate::mq::dispatch::dispatch_to_agent(state, &agent.uid).await;
+        for cap in requeued_caps {
+            crate::mq::dispatch::dispatch_for_capability(state, &cap).await;
+        }
+    }
+    Ok(reclaimed)
 }
 
 pub async fn poll_urgent(
