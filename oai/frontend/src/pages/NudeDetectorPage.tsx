@@ -173,7 +173,7 @@ export default function NudeDetectorPage() {
     const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'))
     if (!imageFiles.length) return
 
-    const entries: PendingUpload[] = imageFiles.map(file => ({
+    const entries = imageFiles.map(file => ({
       file,
       preview: URL.createObjectURL(file),
       uploaded: null,
