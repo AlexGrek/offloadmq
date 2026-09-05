@@ -71,8 +71,14 @@ export function PipelineJobParamsPanel({ job }: PipelineJobParamsPanelProps) {
           />
           <ParamRow label="Rescale" value={rescaleLine} />
           <ParamRow label="Data preparation" value={dataPrep} />
+          {p.video_length != null && (
+            <ParamRow label="Length" value={`${p.video_length} frames`} />
+          )}
           {p.input_image_id && (
-            <ParamRow label="Input image" value={p.input_image_id} />
+            <>
+              <ParamRow label="Input image" value={p.input_image_id} />
+              <ParamRow label="External resize" value={p.external_resize ? 'enabled' : 'disabled'} />
+            </>
           )}
           {job.display_name.trim() ? (
             <ParamRow label="Pipeline name" value={job.display_name.trim()} />
