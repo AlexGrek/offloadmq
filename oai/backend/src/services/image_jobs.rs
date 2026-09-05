@@ -365,16 +365,23 @@ pub async fn start_job(
     Ok(job_id)
 }
 
-/// Only re-link freshly uploaded inputs (job_id == None). Generated outputs
-/// already have a job_id; re-linking them would move them out of their original
-/// job's file list and into this job's output gallery.
+/// Only re-link freshly uploaded inputs (`direction == "input"`). Generated
+/// outputs — whether an imggen job's own output or a standalone img-utils /
+/// resize result — are `direction == "output"` and must never be re-linked:
+/// doing so would leave a stray `output` row on this job, which the frontend
+/// (and `fetch_and_store_outputs`'s "already has output" guard) would then
+/// mistake for this job's real result.
+///
+/// `job_id == None` alone is not a safe test for "freshly uploaded": standalone
+/// outputs (`store_offload_output_image`, used by img-utils) are also created
+/// with `job_id: None` since they don't belong to `image_generation_jobs`.
 async fn link_fresh_input(
     state: &AppState,
     user_id: i64,
     job_id: i64,
     input: &image_generation::ImageFile,
 ) -> Result<(), AppError> {
-    if input.job_id.is_none() {
+    if input.direction == "input" {
         image_generation::set_image_file_job(&state.db, input.id, user_id, job_id).await?;
     }
     Ok(())
