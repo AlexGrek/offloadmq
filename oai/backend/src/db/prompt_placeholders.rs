@@ -15,7 +15,6 @@ use crate::{
 pub type Placeholder = prompt_placeholders::Model;
 
 const MAX_NAME_LEN: usize = 64;
-const MAX_VARIANTS: usize = 30;
 const MAX_VARIANT_LEN: usize = 2_000;
 
 /// Names reserved for the 7 builtin categories in the frontend's
@@ -67,9 +66,6 @@ fn normalize_variants(variants: Vec<String>) -> Result<Vec<String>, AppError> {
         .collect();
     if cleaned.is_empty() {
         return Err(AppError::BadRequest("at least one variant is required".into()));
-    }
-    if cleaned.len() > MAX_VARIANTS {
-        return Err(AppError::BadRequest(format!("too many variants (max {MAX_VARIANTS})")));
     }
     if cleaned.iter().any(|v| v.len() > MAX_VARIANT_LEN) {
         return Err(AppError::BadRequest(format!(
