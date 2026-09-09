@@ -19,9 +19,9 @@ service:
 # so reserving CPU blocks scheduling. Memory is still bounded.
 resources:
   requests:
-    memory: 64Mi
+    memory: 128Mi
   limits:
-    memory: 256Mi
+    memory: 512Mi
 
 ingress:
   enabled: true
