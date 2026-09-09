@@ -49,8 +49,12 @@ export type ImageLightboxProps = {
   caption?: ReactNode
   triggerClassName?: string
   testId?: string
-  children: ReactNode
+  /** Omit when using controlled mode (`open`/`onOpenChange`) — no trigger is rendered then. */
+  children?: ReactNode
   actions?: ImageLightboxActions
+  /** Controlled mode: drive the dialog externally (e.g. slideshow auto-advance). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 /** Idle delay before the floating chrome fades away. */
@@ -71,8 +75,19 @@ export function ImageLightbox({
   testId,
   children,
   actions,
+  open: controlledOpen,
+  onOpenChange,
 }: ImageLightboxProps) {
-  const [open, setOpen] = useState(false)
+  const isControlled = controlledOpen !== undefined
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = isControlled ? controlledOpen : internalOpen
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (isControlled) onOpenChange?.(next)
+      else setInternalOpen(next)
+    },
+    [isControlled, onOpenChange],
+  )
   const [starred, setStarred] = useState(false)
   const [starLoading, setStarLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
@@ -106,12 +121,15 @@ export function ImageLightbox({
   }, [scheduleHide])
 
   // Reveal chrome immediately on open, then let it fade after the idle delay.
+  // Also re-fires when the displayed image changes without a close/reopen
+  // (controlled mode, e.g. slideshow auto-advance), so the action bar resurfaces
+  // for each new image.
   useEffect(() => {
     if (open) {
       revealChrome()
     }
     return () => clearHideTimer()
-  }, [open, revealChrome, clearHideTimer])
+  }, [open, actions?.imageId, revealChrome, clearHideTimer])
 
   const onPointerActivity = useCallback(() => {
     revealChrome()
@@ -179,20 +197,22 @@ export function ImageLightbox({
   return (
     <>
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'cursor-zoom-in border-0 bg-transparent p-0 text-left outline-none',
-            'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-            triggerClassName,
-          )}
-          data-testid={testId}
-          aria-label={`View full size: ${alt}`}
-        >
-          {children}
-        </button>
-      </DialogTrigger>
+      {children ? (
+        <DialogTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              'cursor-zoom-in border-0 bg-transparent p-0 text-left outline-none',
+              'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+              triggerClassName,
+            )}
+            data-testid={testId}
+            aria-label={`View full size: ${alt}`}
+          >
+            {children}
+          </button>
+        </DialogTrigger>
+      ) : null}
       <DialogContent
         showClose={false}
         overlayClassName="bg-black/95 backdrop-blur-none"

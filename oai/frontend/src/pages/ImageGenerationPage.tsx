@@ -9,6 +9,7 @@ import {
   FolderOpen,
   ImagePlus,
   Loader2,
+  MonitorPlay,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
@@ -63,6 +64,7 @@ import {
   type ExternalResizeInfo,
   type ImgGenCapability,
   type ImageJobDetails,
+  type ImageJobFile,
   type PollImageJobResponse,
   type UploadedImage,
   uploadImage,
@@ -162,6 +164,12 @@ function submitLabelFor(mode: ImgGenMode): string {
   }
 }
 
+type SlideshowEntry = {
+  file: ImageJobFile
+  jobId: string
+  prompt: string
+}
+
 const DEFAULT_RESCALE: RescaleState = {
   enabled: false,
   mode: 'exact',
@@ -226,6 +234,10 @@ export default function ImageGenerationPage() {
   const [promptGenOpen, setPromptGenOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [slideshowOn, setSlideshowOn] = useState(false)
+  const [slideshowCurrent, setSlideshowCurrent] = useState<SlideshowEntry | null>(null)
+  const slideshowSeenRef = useRef<Set<string>>(new Set())
+  const slideshowQueueRef = useRef<SlideshowEntry[]>([])
 
   const filteredJobs = useMemo(() => {
     if (!searchQuery.trim()) return jobs
@@ -349,6 +361,63 @@ export default function ImageGenerationPage() {
       setJobsLoading(false)
     }
   }, [token])
+
+  const toggleSlideshow = useCallback(() => {
+    setSlideshowOn(prev => {
+      const next = !prev
+      if (next) {
+        // Seed with everything already known so only genuinely new outputs pop the overlay.
+        const seen = new Set<string>()
+        for (const job of jobs) {
+          for (const f of job.files) {
+            if (f.direction === 'output') seen.add(f.image_id)
+          }
+        }
+        slideshowSeenRef.current = seen
+        slideshowQueueRef.current = []
+      } else {
+        slideshowQueueRef.current = []
+        setSlideshowCurrent(null)
+      }
+      return next
+    })
+  }, [jobs])
+
+  // Slideshow: poll for freshly completed output images (not just the viewed job)
+  // and surface each one full-screen as it appears, one per tick.
+  useEffect(() => {
+    if (!slideshowOn || !token) return
+    let cancelled = false
+    const tick = async () => {
+      let list: ImageJobDetails[]
+      try {
+        list = await listImageJobs(token)
+      } catch {
+        return
+      }
+      if (cancelled) return
+      setJobs(list)
+      // Newest-first from the API — walk oldest-to-newest so the queue fills in generation order.
+      for (const job of [...list].reverse()) {
+        for (const file of job.files) {
+          if (file.direction !== 'output') continue
+          if (file.content_type.startsWith('video/')) continue
+          if (slideshowSeenRef.current.has(file.image_id)) continue
+          slideshowSeenRef.current.add(file.image_id)
+          slideshowQueueRef.current.push({ file, jobId: job.job_id, prompt: job.prompt })
+        }
+      }
+      if (slideshowQueueRef.current.length > 0) {
+        setSlideshowCurrent(slideshowQueueRef.current.shift() ?? null)
+      }
+    }
+    void tick()
+    const id = window.setInterval(() => void tick(), POLL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [slideshowOn, token])
 
   useEffect(() => {
     if (!token) {
@@ -1177,6 +1246,18 @@ export default function ImageGenerationPage() {
               aria-label="Search pipelines"
             >
               <Search className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleSlideshow}
+              title={slideshowOn ? 'Stop slideshow' : 'Start slideshow'}
+              aria-label={slideshowOn ? 'Stop slideshow' : 'Start slideshow'}
+              aria-pressed={slideshowOn}
+              data-testid="imggen-slideshow-toggle"
+              className={slideshowOn ? 'text-primary' : undefined}
+            >
+              <MonitorPlay className={slideshowOn ? 'animate-pulse' : undefined} />
             </Button>
             <Button
               variant="ghost"
@@ -2336,6 +2417,42 @@ export default function ImageGenerationPage() {
       image={imgUtilsTarget}
       onResult={onImageMutated}
     />
+    {slideshowOn && slideshowCurrent && token ? (
+      <ImageLightbox
+        open
+        onOpenChange={next => {
+          if (!next) {
+            setSlideshowOn(false)
+            slideshowQueueRef.current = []
+            setSlideshowCurrent(null)
+          }
+        }}
+        src={imageFileUrl(slideshowCurrent.file.image_id, token, mediaRevision)}
+        alt={slideshowCurrent.file.filename}
+        caption={`${jobPromptTitle(slideshowCurrent.prompt, 72)} — ${slideshowCurrent.file.width}×${slideshowCurrent.file.height}`}
+        testId="imggen-slideshow"
+        actions={lightboxActions(
+          slideshowCurrent.file.image_id,
+          slideshowCurrent.file.filename,
+          slideshowCurrent.file.direction,
+          () => {
+            const { file } = slideshowCurrent
+            setSlideshowOn(false)
+            slideshowQueueRef.current = []
+            setSlideshowCurrent(null)
+            sendToImg2Img(file)
+          },
+          () => {
+            const { file, prompt } = slideshowCurrent
+            setSlideshowOn(false)
+            slideshowQueueRef.current = []
+            setSlideshowCurrent(null)
+            sendToImg2Video(file, prompt)
+          },
+          true,
+        )}
+      />
+    ) : null}
     <Dialog open={generateMultipleOpen} onOpenChange={setGenerateMultipleOpen}>
       <DialogContent className="sm:max-w-sm" data-testid="imggen-generate-multiple-dialog">
         <DialogHeader>
