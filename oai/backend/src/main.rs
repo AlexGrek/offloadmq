@@ -61,6 +61,7 @@ async fn main() -> Result<()> {
     jobs::llm_debate_worker::spawn(state.clone());
     jobs::movie_worker::spawn(state.clone());
     jobs::stale_job_reaper::spawn(state.clone());
+    jobs::pipeline_events_cleanup_worker::spawn(state.clone());
 
     let app = app::create_app(state, &static_dir);
     let listener = tokio::net::TcpListener::bind(&addr).await?;

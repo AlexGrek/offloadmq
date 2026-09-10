@@ -1877,6 +1877,13 @@ async fn recalc_user_storage(state: &AppState, user_id: i64) -> Result<(), AppEr
     users::update_used_storage(&state.db, user_id, total).await
 }
 
+/// Reconcile retries forever otherwise on a job whose output can never be
+/// downloaded (e.g. the OffloadMQ output bucket was already reaped) — each
+/// attempt was writing a `download.reconcile` event on every worker tick with
+/// no backoff, so a single stuck job could accumulate hundreds of thousands of
+/// rows over weeks. Give up after this many failures and mark the job failed.
+const MAX_RECONCILE_ATTEMPTS: u64 = 10;
+
 async fn reconcile_job_outputs_if_missing(
     state: &AppState,
     job: &image_generation::ImageGenerationJob,
@@ -1886,6 +1893,15 @@ async fn reconcile_job_outputs_if_missing(
     if files.iter().any(|f| f.direction == "output") {
         return Ok(());
     }
+
+    let prior_failures = image_generation::count_reconcile_failures(&state.db, job.id).await?;
+    if prior_failures >= MAX_RECONCILE_ATTEMPTS {
+        let msg = format!("output reconciliation gave up after {MAX_RECONCILE_ATTEMPTS} attempts");
+        image_generation::update_job_status(&state.db, job.id, "failed", Some(&msg)).await?;
+        release_job_buckets(state, job.id).await;
+        return record_event(state, job.id, "download.reconcile", "error", Some(&msg)).await;
+    }
+
     match fetch_and_store_outputs(state, user_id, job, None).await {
         Ok(()) => record_event(state, job.id, "download.reconcile", "ok", Some("reconcile success")).await,
         Err(e) => {

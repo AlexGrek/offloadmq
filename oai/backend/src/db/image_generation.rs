@@ -1,6 +1,7 @@
 use sea_orm::{
-    sea_query::Expr, ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect,
+    sea_query::{Expr, ExprTrait, Order, Query},
+    ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 
 use crate::{
@@ -176,6 +177,70 @@ pub async fn list_pipeline_events(
         .all(db)
         .await
         .map_err(AppError::Database)
+}
+
+/// Count of failed reconcile attempts recorded for a job, used to cap the
+/// background worker's forever-retry on a job whose output never downloads.
+pub async fn count_reconcile_failures(db: &DatabaseConnection, job_id: i64) -> Result<u64, AppError> {
+    ImagePipelineEventEntity::find()
+        .filter(image_pipeline_events::Column::JobId.eq(job_id))
+        .filter(image_pipeline_events::Column::Step.eq("download.reconcile"))
+        .filter(image_pipeline_events::Column::State.eq("error"))
+        .count(db)
+        .await
+        .map_err(AppError::Database)
+}
+
+#[derive(FromQueryResult)]
+struct JobIdRow {
+    job_id: i64,
+}
+
+/// Finds up to `job_batch` job ids whose pipeline-event count exceeds `keep`,
+/// worst offenders first. Used by the periodic events cleanup pass.
+pub async fn jobs_with_excess_pipeline_events(
+    db: &DatabaseConnection,
+    keep: u64,
+    job_batch: u64,
+) -> Result<Vec<i64>, AppError> {
+    let event_count = Expr::col(image_pipeline_events::Column::Id).count();
+    let stmt = Query::select()
+        .column(image_pipeline_events::Column::JobId)
+        .from(ImagePipelineEventEntity)
+        .group_by_col(image_pipeline_events::Column::JobId)
+        .and_having(event_count.clone().gt(keep))
+        .order_by_expr(event_count, Order::Desc)
+        .limit(job_batch)
+        .to_owned();
+
+    let rows =
+        JobIdRow::find_by_statement(db.get_database_backend().build(&stmt)).all(db).await.map_err(AppError::Database)?;
+    Ok(rows.into_iter().map(|r| r.job_id).collect())
+}
+
+/// Deletes all but the most recent `keep` pipeline events for one job. Returns
+/// the number of rows deleted.
+pub async fn prune_pipeline_events_for_job(
+    db: &DatabaseConnection,
+    job_id: i64,
+    keep: u64,
+) -> Result<u64, AppError> {
+    let keep_ids = Query::select()
+        .column(image_pipeline_events::Column::Id)
+        .from(ImagePipelineEventEntity)
+        .and_where(image_pipeline_events::Column::JobId.eq(job_id))
+        .order_by(image_pipeline_events::Column::CreatedAt, Order::Desc)
+        .order_by(image_pipeline_events::Column::Id, Order::Desc)
+        .limit(keep)
+        .to_owned();
+
+    let result = ImagePipelineEventEntity::delete_many()
+        .filter(image_pipeline_events::Column::JobId.eq(job_id))
+        .filter(Expr::col(image_pipeline_events::Column::Id).not_in_subquery(keep_ids))
+        .exec(db)
+        .await
+        .map_err(AppError::Database)?;
+    Ok(result.rows_affected)
 }
 
 pub async fn create_offload_task(
