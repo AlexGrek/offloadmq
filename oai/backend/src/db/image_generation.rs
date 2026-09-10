@@ -437,6 +437,47 @@ pub async fn list_job_files(db: &DatabaseConnection, job_id: i64) -> Result<Vec<
         .map_err(AppError::Database)
 }
 
+/// Batched sibling of [`list_job_files`] — one query for every job in `job_ids`
+/// instead of one query per job, for building a job list detail response.
+pub async fn list_job_files_for_jobs(
+    db: &DatabaseConnection,
+    job_ids: &[i64],
+) -> Result<Vec<ImageFile>, AppError> {
+    ImageFileEntity::find()
+        .filter(image_files::Column::JobId.is_in(job_ids.iter().copied()))
+        .order_by_asc(image_files::Column::CreatedAt)
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
+/// Batched sibling of [`list_pipeline_events`] — one query for every job in
+/// `job_ids` instead of one query per job.
+pub async fn list_pipeline_events_for_jobs(
+    db: &DatabaseConnection,
+    job_ids: &[i64],
+) -> Result<Vec<ImagePipelineEvent>, AppError> {
+    ImagePipelineEventEntity::find()
+        .filter(image_pipeline_events::Column::JobId.is_in(job_ids.iter().copied()))
+        .order_by_asc(image_pipeline_events::Column::CreatedAt)
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
+/// Batched sibling of [`get_offload_task_by_job`] — one query for every job in
+/// `job_ids` instead of one query per job.
+pub async fn list_offload_tasks_for_jobs(
+    db: &DatabaseConnection,
+    job_ids: &[i64],
+) -> Result<Vec<ImageOffloadTask>, AppError> {
+    ImageOffloadTaskEntity::find()
+        .filter(image_offload_tasks::Column::JobId.is_in(job_ids.iter().copied()))
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
 pub async fn get_image_file(
     db: &DatabaseConnection,
     id: i64,

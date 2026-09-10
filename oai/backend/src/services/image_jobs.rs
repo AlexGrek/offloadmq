@@ -925,13 +925,55 @@ async fn job_detail(
     })
 }
 
+/// Batched sibling of [`job_detail`] for list endpoints: fetches files, events,
+/// and offload tasks for every job in one query each (instead of three queries
+/// per job), then assembles each `JobDetail` from the grouped results.
 async fn collect_details(
     state: &AppState,
     jobs: Vec<image_generation::ImageGenerationJob>,
 ) -> Result<Vec<JobDetail>, AppError> {
+    if jobs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let job_ids: Vec<i64> = jobs.iter().map(|j| j.id).collect();
+
+    let all_files = image_generation::list_job_files_for_jobs(&state.db, &job_ids).await?;
+    let all_events = image_generation::list_pipeline_events_for_jobs(&state.db, &job_ids).await?;
+    let all_offload = image_generation::list_offload_tasks_for_jobs(&state.db, &job_ids).await?;
+
+    let mut files_by_job: HashMap<i64, Vec<image_generation::ImageFile>> = HashMap::new();
+    for f in all_files {
+        if let Some(jid) = f.job_id {
+            files_by_job.entry(jid).or_default().push(f);
+        }
+    }
+    let mut events_by_job: HashMap<i64, Vec<image_generation::ImagePipelineEvent>> = HashMap::new();
+    for e in all_events {
+        events_by_job.entry(e.job_id).or_default().push(e);
+    }
+    let mut offload_by_job: HashMap<i64, image_generation::ImageOffloadTask> = HashMap::new();
+    for t in all_offload {
+        offload_by_job.insert(t.job_id, t);
+    }
+
     let mut out = Vec::with_capacity(jobs.len());
     for job in jobs {
-        out.push(job_detail(state, job).await?);
+        let files = limit_job_output_files(files_by_job.remove(&job.id).unwrap_or_default());
+        let events = events_by_job.remove(&job.id).unwrap_or_default();
+        let offload = offload_by_job.remove(&job.id);
+        let progress = offload.as_ref().map(offload_progress_meta);
+        out.push(JobDetail {
+            offload_cap: offload.as_ref().map(|t| t.offload_cap.clone()),
+            offload_task_id: offload.map(|t| t.offload_task_id),
+            started_at: progress.as_ref().and_then(|p| p.started_at),
+            typical_runtime_seconds: progress.as_ref().and_then(|p| p.typical_runtime_seconds),
+            submitted_at: progress.as_ref().and_then(|p| p.submitted_at),
+            queued_seconds: progress.as_ref().and_then(|p| p.queued_seconds),
+            execution_seconds: progress.and_then(|p| p.execution_seconds),
+            job,
+            files,
+            events,
+        });
     }
     Ok(out)
 }
