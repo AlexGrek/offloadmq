@@ -256,8 +256,25 @@ tasks:
   # ── Helm / Kubernetes ─────────────────────────────────────────────────────
 
   deploy:
-    desc: Install or upgrade the Helm release pinned to current git hash
-    cmd: helm upgrade --install {{.RELEASE}} {{.CHART}} --namespace {{.NAMESPACE}} --create-namespace --set image.tag={{.GIT_HASH}}
+    desc: Install or upgrade the Helm release pinned to current git hash (zero-downtime rollout)
+    cmds:
+      # The Deployment used to be a Helm hook, so the live object carries no
+      # ownership metadata and is absent from the release manifest. Helm refuses
+      # to adopt such a resource, so label it once before the first non-hook
+      # upgrade. Harmless afterwards, and a no-op when the Deployment is absent.
+      - |
+        if kubectl get deployment {{.RELEASE}} -n {{.NAMESPACE}} >/dev/null 2>&1; then
+          kubectl label deployment {{.RELEASE}} -n {{.NAMESPACE}} \
+            app.kubernetes.io/managed-by=Helm --overwrite >/dev/null
+          kubectl annotate deployment {{.RELEASE}} -n {{.NAMESPACE}} \
+            meta.helm.sh/release-name={{.RELEASE}} \
+            meta.helm.sh/release-namespace={{.NAMESPACE}} --overwrite >/dev/null
+          kubectl annotate deployment {{.RELEASE}} -n {{.NAMESPACE}} \
+            helm.sh/hook- helm.sh/hook-weight- helm.sh/hook-delete-policy- >/dev/null 2>&1 || true
+        fi
+      - helm upgrade --install {{.RELEASE}} {{.CHART}} --namespace {{.NAMESPACE}} --create-namespace --set image.tag={{.GIT_HASH}}
+      # Surface a failed/stuck rollout instead of reporting success early.
+      - kubectl rollout status deployment/{{.RELEASE}} -n {{.NAMESPACE}} --timeout=300s
 
   undeploy:
     desc: Uninstall the Helm release

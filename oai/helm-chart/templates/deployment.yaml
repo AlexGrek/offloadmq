@@ -4,15 +4,21 @@ metadata:
   name: {{ include "oai.fullname" . }}
   labels:
     {{- include "oai.labels" . | nindent 4 }}
-  {{- if .Values.garage.enabled }}
-  annotations:
-    # After garage-init hook (weight -5) creates oai-garage-creds.
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "10"
-    "helm.sh/hook-delete-policy": before-hook-creation
-  {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  # Surge first, never drop below the desired count: the replacement pod must be
+  # Ready before the outgoing one is signalled, so an upgrade has no gap where
+  # the Service has zero endpoints. This is why the Deployment is a plain
+  # resource and not a Helm hook — a hook with `before-hook-creation` deletes the
+  # Deployment (and its pod) on every upgrade, which no rollout strategy can
+  # soften. Ordering against garage-init is handled by the wait-garage-creds init
+  # container plus the non-optional secret volume, which the kubelet retries
+  # until the secret exists.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       {{- include "oai.selectorLabels" . | nindent 6 }}
@@ -21,6 +27,7 @@ spec:
       labels:
         {{- include "oai.selectorLabels" . | nindent 8 }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- if .Values.serviceAccount.create }}
       serviceAccountName: {{ include "oai.serviceAccountName" . }}
       automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
@@ -127,6 +134,12 @@ spec:
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 30
+          # Endpoint removal and SIGTERM race each other; without this pause the
+          # proxy can still route to a pod that has already begun shutting down.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "{{ .Values.preStopDrainSeconds }}"]
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- if .Values.garage.enabled }}

@@ -23,6 +23,11 @@ resources:
   limits:
     memory: 512Mi
 
+# Grace window for an outgoing pod: preStop pause (endpoint propagation) plus
+# time for in-flight requests to drain before SIGKILL.
+preStopDrainSeconds: 5
+terminationGracePeriodSeconds: 30
+
 ingress:
   enabled: true
   className: "traefik"

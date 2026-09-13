@@ -204,20 +204,8 @@ export function ImgUtilsQuickModal({
   const previewUrl = target && token ? imageFileUrl(target.image_id, token) : null
 
   return (
-    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        data-testid="imgutils-quick-modal"
-        // The library picker is a plain overlay, not a nested Radix dialog, so
-        // Radix sees its clicks/Escape as "outside" this content and would
-        // otherwise dismiss the quick modal out from under it.
-        onEscapeKeyDown={e => {
-          if (pickerOpen) e.preventDefault()
-        }}
-        onInteractOutside={e => {
-          if (pickerOpen) e.preventDefault()
-        }}
-      >
+      <SheetContent data-testid="imgutils-quick-modal">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2 font-display">
             <Wand2 className="size-4 text-cyan-500" />
@@ -419,21 +407,21 @@ export function ImgUtilsQuickModal({
             </Button>
           </div>
         </SheetBody>
+
+        {/* Nested (not a sibling): Sheet has no transform on its content, so a
+            `fixed` overlay here still covers the full viewport, and being
+            inside SheetContent's own subtree keeps it out of Radix's "outside
+            this dialog" handling — aria-hiding and the pointer-events lockout
+            Radix applies to everything else while the Sheet is open. */}
+        {token ? (
+          <ImagePickerModal
+            open={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            onSelect={source.pickStored}
+            token={token}
+          />
+        ) : null}
       </SheetContent>
     </Sheet>
-
-    {/* Sibling of the Sheet on purpose: it centers itself with a `fixed`
-        overlay, which would be pinned to SheetContent's own box (not the
-        viewport) if nested inside it, since SheetContent is a transformed
-        containing block. */}
-    {token ? (
-      <ImagePickerModal
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={source.pickStored}
-        token={token}
-      />
-    ) : null}
-    </>
   )
 }

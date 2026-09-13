@@ -124,12 +124,15 @@ export function ImagePickerModal({ open, onClose, onSelect, token }: ImagePicker
     <AnimatePresence>
       {open && (
         <motion.div
-          // z-[60]: not portaled like Dialog/Sheet (z-50), so when opened from
-          // inside one (e.g. the img-utils quick-transform drawer) it must
-          // outrank it by z-index alone — DOM order can't be relied on since
-          // this renders in place while Dialog/Sheet content portals to the
-          // end of <body>.
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          // z-[60] + pointer-events-auto: not portaled like Dialog/Sheet (z-50),
+          // so when opened from inside one (e.g. the img-utils quick-transform
+          // drawer) it must outrank it by z-index alone — DOM order can't be
+          // relied on since this renders in place while Dialog/Sheet content
+          // portals to the end of <body>. Radix's open Dialog/Sheet also sets
+          // `body { pointer-events: none }` and re-enables `auto` only on its
+          // own content subtree, so without an explicit override here this
+          // would render on top but be unclickable, inheriting `none` from body.
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 pointer-events-auto"
           variants={backdropVariants}
           initial="hidden"
           animate="visible"
