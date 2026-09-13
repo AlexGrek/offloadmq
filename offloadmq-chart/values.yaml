@@ -80,10 +80,10 @@ persistence:
 resources:
   requests:
     cpu: 50m
-    memory: 64Mi
+    memory: 128Mi
   limits:
     cpu: 200m
-    memory: 256Mi
+    memory: 768Mi
 
 # In-cluster pod log access from the management UI (Kubernetes API + RBAC).
 k8sLogs:
