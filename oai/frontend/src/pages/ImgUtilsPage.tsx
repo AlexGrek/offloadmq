@@ -617,6 +617,9 @@ export default function ImgUtilsPage() {
                           data-testid="imgutils-resize-summary"
                         >
                           {describeResizeOptions(selectedJob.options)}
+                          {inputImage
+                            ? ` · ${inputImage.width}×${inputImage.height}`
+                            : ''}
                           {outputImage
                             ? ` → ${outputImage.width}×${outputImage.height}`
                             : ''}
@@ -628,6 +631,19 @@ export default function ImgUtilsPage() {
                           data-testid="imgutils-scale-summary"
                         >
                           {selectedJob.options.scale_multiplier}× upscale
+                          {inputImage
+                            ? ` · ${inputImage.width}×${inputImage.height}`
+                            : ''}
+                          {outputImage
+                            ? ` → ${outputImage.width}×${outputImage.height}`
+                            : ''}
+                        </p>
+                      ) : inputImage ? (
+                        <p
+                          className="text-xs text-muted-foreground"
+                          data-testid="imgutils-input-resolution"
+                        >
+                          {inputImage.width}×{inputImage.height}
                           {outputImage
                             ? ` → ${outputImage.width}×${outputImage.height}`
                             : ''}
