@@ -1,4 +1,7 @@
-use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, EntityTrait, QueryOrder, QuerySelect};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect,
+};
 
 use crate::{db::entities::image_worker_logs, error::AppError};
 
@@ -33,5 +36,21 @@ pub async fn list_latest(
         .limit(limit)
         .all(db)
         .await
+        .map_err(AppError::Database)
+}
+
+/// Deletes worker-log rows older than `max_age_days`. The worker writes one row
+/// per pass (every 20s by default) and nothing else ever removes them, so
+/// without this the table grows without bound. Returns rows deleted.
+pub async fn delete_older_than(
+    db: &DatabaseConnection,
+    max_age_days: u64,
+) -> Result<u64, AppError> {
+    let cutoff = chrono::Utc::now().fixed_offset() - chrono::Duration::days(max_age_days as i64);
+    image_worker_logs::Entity::delete_many()
+        .filter(image_worker_logs::Column::CreatedAt.lt(cutoff))
+        .exec(db)
+        .await
+        .map(|r| r.rows_affected)
         .map_err(AppError::Database)
 }
