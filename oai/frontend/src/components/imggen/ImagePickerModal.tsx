@@ -124,7 +124,12 @@ export function ImagePickerModal({ open, onClose, onSelect, token }: ImagePicker
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          // z-[60]: not portaled like Dialog/Sheet (z-50), so when opened from
+          // inside one (e.g. the img-utils quick-transform drawer) it must
+          // outrank it by z-index alone — DOM order can't be relied on since
+          // this renders in place while Dialog/Sheet content portals to the
+          // end of <body>.
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
           variants={backdropVariants}
           initial="hidden"
           animate="visible"

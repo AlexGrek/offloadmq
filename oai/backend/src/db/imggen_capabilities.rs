@@ -1,43 +1,49 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
-use sea_orm::{
-    ActiveModelTrait, ActiveValue, DatabaseConnection, EntityTrait, Set,
-};
+use sea_orm::{sea_query::OnConflict, DatabaseConnection, EntityTrait, Set};
 
 use crate::{
-    db::entities::imggen_capabilities::{ActiveModel, Entity, Model},
+    db::entities::imggen_capabilities::{ActiveModel, Column, Entity, Model},
     error::AppError,
     offload::LlmCapabilityInfo,
 };
 
+/// Upserts every online capability in one statement. This used to be a
+/// select-then-update/insert per capability, which on a cross-node database
+/// connection cost two full round trips per model on every picker load.
 pub async fn sync_online(
     db: &DatabaseConnection,
     online: &[LlmCapabilityInfo],
 ) -> Result<(), AppError> {
+    if online.is_empty() {
+        return Ok(());
+    }
     let now = Utc::now().fixed_offset();
+
+    let mut rows = Vec::with_capacity(online.len());
     for cap in online {
         let tags_json =
             serde_json::to_string(&cap.tags).map_err(|e| AppError::Internal(e.to_string()))?;
-        let existing = Entity::find_by_id(&cap.base).one(db).await.map_err(AppError::Database)?;
-        if let Some(row) = existing {
-            let mut active: ActiveModel = row.into();
-            active.tags_json = ActiveValue::Set(tags_json);
-            active.raw = ActiveValue::Set(cap.raw.clone());
-            active.last_available_at = ActiveValue::Set(now);
-            active.update(db).await.map_err(AppError::Database)?;
-        } else {
-            let active = ActiveModel {
-                base: Set(cap.base.clone()),
-                tags_json: Set(tags_json),
-                raw: Set(cap.raw.clone()),
-                last_available_at: Set(now),
-                created_at: Set(now),
-                ..Default::default()
-            };
-            active.insert(db).await.map_err(AppError::Database)?;
-        }
+        rows.push(ActiveModel {
+            base: Set(cap.base.clone()),
+            tags_json: Set(tags_json),
+            raw: Set(cap.raw.clone()),
+            last_available_at: Set(now),
+            created_at: Set(now),
+        });
     }
+
+    // created_at is deliberately not in the update set — it records first sighting.
+    Entity::insert_many(rows)
+        .on_conflict(
+            OnConflict::column(Column::Base)
+                .update_columns([Column::TagsJson, Column::Raw, Column::LastAvailableAt])
+                .to_owned(),
+        )
+        .exec(db)
+        .await
+        .map_err(AppError::Database)?;
     Ok(())
 }
 

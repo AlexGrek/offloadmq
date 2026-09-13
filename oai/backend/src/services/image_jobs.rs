@@ -783,10 +783,11 @@ async fn recent_capability_usage(
     state: &AppState,
     user_id: i64,
 ) -> Result<HashMap<String, u32>, AppError> {
-    let recent_jobs = image_generation::list_jobs(&state.db, user_id, USAGE_HISTORY_RUNS).await?;
+    let recent_caps =
+        image_generation::recent_job_capabilities(&state.db, user_id, USAGE_HISTORY_RUNS).await?;
     let mut usage = HashMap::new();
-    for job in recent_jobs {
-        *usage.entry(job.capability).or_insert(0) += 1;
+    for capability in recent_caps {
+        *usage.entry(capability).or_insert(0) += 1;
     }
     Ok(usage)
 }

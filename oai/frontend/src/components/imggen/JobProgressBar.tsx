@@ -102,7 +102,9 @@ export function JobProgressBar({
   // time when running without an estimate, queued time while still waiting.
   let readout: string | null = null
   if (determinate && remainingSec != null) {
-    readout = overrun ? 'finishing…' : `${formatElapsed(remainingSec)} left · ${displayPct}%`
+    readout = overrun
+      ? `${formatElapsed(elapsedSec!)} · finishing…`
+      : `${formatElapsed(remainingSec)} left · ${displayPct}%`
   } else if (isRunning && elapsedSec != null) {
     readout = formatElapsed(elapsedSec)
   } else if (!isRunning && submittedAt) {

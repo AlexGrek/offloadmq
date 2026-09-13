@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use sea_orm::{
-    sea_query::{Expr, ExprTrait, Order, Query},
+    sea_query::{Condition, Expr, ExprTrait, Order, Query},
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
     FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
 };
@@ -107,6 +109,27 @@ pub async fn list_jobs(
         .filter(image_generation_jobs::Column::UserId.eq(user_id))
         .order_by_desc(image_generation_jobs::Column::CreatedAt)
         .limit(limit)
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
+/// Capabilities of the user's most recent jobs, newest first.
+///
+/// Only that one column is read: the usage tally behind the model picker does
+/// not need the prompts and pipeline JSON that the full rows carry.
+pub async fn recent_job_capabilities(
+    db: &DatabaseConnection,
+    user_id: i64,
+    limit: u64,
+) -> Result<Vec<String>, AppError> {
+    ImageGenerationJobEntity::find()
+        .select_only()
+        .column(image_generation_jobs::Column::Capability)
+        .filter(image_generation_jobs::Column::UserId.eq(user_id))
+        .order_by_desc(image_generation_jobs::Column::CreatedAt)
+        .limit(limit)
+        .into_tuple::<String>()
         .all(db)
         .await
         .map_err(AppError::Database)
@@ -307,21 +330,43 @@ pub async fn replace_offload_task(
 }
 
 /// Active image jobs for a user plus their linked OffloadMQ task rows (debug panel).
+/// Non-terminal jobs that carry an offload task, for the progress drawer.
+///
+/// The terminal-status filter runs in SQL rather than in Rust: the newest rows
+/// are overwhelmingly completed, so filtering afterwards spent the whole 64-row
+/// window on jobs that were then discarded. The offload tasks are fetched in one
+/// batched query instead of one per job.
 pub async fn list_user_active_offload_tasks(
     db: &DatabaseConnection,
     user_id: i64,
 ) -> Result<Vec<(ImageGenerationJob, ImageOffloadTask)>, AppError> {
-    let jobs = list_jobs(db, user_id, 64).await?;
-    let mut out = Vec::new();
-    for job in jobs {
-        if matches!(job.status.as_str(), "completed" | "failed" | "canceled") {
-            continue;
-        }
-        if let Some(task) = get_offload_task_by_job(db, job.id).await? {
-            out.push((job, task));
-        }
+    let jobs = ImageGenerationJobEntity::find()
+        .filter(image_generation_jobs::Column::UserId.eq(user_id))
+        .filter(
+            image_generation_jobs::Column::Status
+                .is_not_in(["completed", "failed", "canceled"]),
+        )
+        .order_by_desc(image_generation_jobs::Column::CreatedAt)
+        .limit(64)
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    if jobs.is_empty() {
+        return Ok(Vec::new());
     }
-    Ok(out)
+
+    let job_ids: Vec<i64> = jobs.iter().map(|j| j.id).collect();
+    let mut tasks_by_job: HashMap<i64, ImageOffloadTask> =
+        list_offload_tasks_for_jobs(db, &job_ids)
+            .await?
+            .into_iter()
+            .map(|t| (t.job_id, t))
+            .collect();
+
+    Ok(jobs
+        .into_iter()
+        .filter_map(|job| tasks_by_job.remove(&job.id).map(|task| (job, task)))
+        .collect())
 }
 
 pub async fn get_offload_task_by_job(
@@ -542,17 +587,48 @@ pub async fn set_image_file_job(
 /// The pipeline worker's queue: every in-flight job (any status a poll can leave
 /// behind — see `WORKER_PICKUP_STATUSES`), plus the pipeline-local `created` and
 /// the `completed` rows re-checked for missing output files.
+/// Jobs the background worker still has work to do on, oldest first.
+///
+/// A `completed` job is only in scope while its output is missing — that is the
+/// reconcile case. Including every completed job instead deadlocked the worker:
+/// the pass is `ORDER BY updated_at ASC LIMIT n`, and reconciling a job that
+/// already has its output is a no-op that never touches `updated_at`, so the
+/// oldest such jobs held the front of the queue permanently and no job behind
+/// them was ever picked up again.
 pub async fn list_jobs_for_background_worker(
     db: &DatabaseConnection,
     limit: u64,
 ) -> Result<Vec<ImageGenerationJob>, AppError> {
-    let statuses: Vec<String> = task_status::WORKER_PICKUP_STATUSES
+    let in_flight: Vec<String> = task_status::WORKER_PICKUP_STATUSES
         .iter()
-        .chain(["created", "completed"].iter())
+        .chain(["created"].iter())
         .map(|s| s.to_string())
         .collect();
+
+    // `job_id IS NOT NULL` is load-bearing: uploads and img-utils outputs carry a
+    // NULL job_id, and a NULL anywhere in a NOT IN list makes the whole predicate
+    // never true — which would exclude every completed job instead of just the
+    // ones already holding an output.
+    let jobs_with_output = Query::select()
+        .column(image_files::Column::JobId)
+        .from(ImageFileEntity)
+        .and_where(image_files::Column::Direction.eq("output"))
+        .and_where(image_files::Column::JobId.is_not_null())
+        .to_owned();
+
+    let needs_work = Condition::any()
+        .add(image_generation_jobs::Column::Status.is_in(in_flight))
+        .add(
+            Condition::all()
+                .add(image_generation_jobs::Column::Status.eq("completed"))
+                .add(
+                    Expr::col(image_generation_jobs::Column::Id)
+                        .not_in_subquery(jobs_with_output),
+                ),
+        );
+
     ImageGenerationJobEntity::find()
-        .filter(image_generation_jobs::Column::Status.is_in(statuses))
+        .filter(needs_work)
         .order_by_asc(image_generation_jobs::Column::UpdatedAt)
         .limit(limit)
         .all(db)
