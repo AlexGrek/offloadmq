@@ -20,13 +20,13 @@ import {
 import { imageFileUrl, type UploadedImage } from '../../api/images'
 import { Button } from '../ui/button'
 import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/dialog'
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '../ui/sheet'
 import { ImagePickerModal } from '../imggen/ImagePickerModal'
 import { JobProgressBar } from '../imggen/JobProgressBar'
 import { JobErrorBanner } from '../JobErrorBanner'
@@ -205,9 +205,8 @@ export function ImgUtilsQuickModal({
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-h-[90dvh] overflow-y-auto sm:max-w-lg"
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
         data-testid="imgutils-quick-modal"
         // The library picker is a plain overlay, not a nested Radix dialog, so
         // Radix sees its clicks/Escape as "outside" this content and would
@@ -219,17 +218,17 @@ export function ImgUtilsQuickModal({
           if (pickerOpen) e.preventDefault()
         }}
       >
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 font-display">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2 font-display">
             <Wand2 className="size-4 text-cyan-500" />
             Image Tools
-          </DialogTitle>
-          <DialogDescription>
+          </SheetTitle>
+          <SheetDescription>
             One-shot transforms — no prompt, just an image in and an image out.
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
 
-        <DialogBody className="space-y-4">
+        <SheetBody className="space-y-4">
           {/* Current input — swaps to the result when a finished transform is chained. */}
           {previewUrl && target ? (
             <div className="overflow-hidden rounded-lg bg-muted/40">
@@ -419,13 +418,13 @@ export function ImgUtilsQuickModal({
               </Link>
             </Button>
           </div>
-        </DialogBody>
-      </DialogContent>
-    </Dialog>
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
 
-    {/* Sibling of the Dialog on purpose: it centers itself with a `fixed`
-        overlay, which would be pinned to DialogContent's own box (not the
-        viewport) if nested inside it, since DialogContent is a transformed
+    {/* Sibling of the Sheet on purpose: it centers itself with a `fixed`
+        overlay, which would be pinned to SheetContent's own box (not the
+        viewport) if nested inside it, since SheetContent is a transformed
         containing block. */}
     {token ? (
       <ImagePickerModal
