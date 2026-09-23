@@ -34,6 +34,19 @@ export interface FileBrowserResponse {
   summary: StorageSummary
 }
 
+export interface ImageLibraryPage {
+  files: UserFile[]
+  has_more: boolean
+}
+
+export interface ImageLibraryParams {
+  offset: number
+  limit?: number
+  direction?: 'all' | 'input' | 'output'
+  query?: string
+  starredOnly?: boolean
+}
+
 export type CleanupFilesScope = 'uploads' | 'generated' | 'all'
 
 export interface CleanupFilesRequest {
@@ -49,6 +62,16 @@ export interface CleanupFilesResponse {
 /** Lists all of the current user's files plus a storage summary. */
 export function listFiles(token: string): Promise<FileBrowserResponse> {
   return request('/api/files', token)
+}
+
+/** Fetch one image-only page for the picker, without the file-browser cap. */
+export function listImageLibrary(token: string, params: ImageLibraryParams): Promise<ImageLibraryPage> {
+  const search = new URLSearchParams({ offset: String(params.offset) })
+  if (params.limit != null) search.set('limit', String(params.limit))
+  if (params.direction && params.direction !== 'all') search.set('direction', params.direction)
+  if (params.query?.trim()) search.set('query', params.query.trim())
+  if (params.starredOnly) search.set('starred_only', 'true')
+  return request(`/api/files/images?${search.toString()}`, token)
 }
 
 export interface FileProperties {

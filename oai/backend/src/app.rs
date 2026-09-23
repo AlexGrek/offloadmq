@@ -106,6 +106,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
                 .delete(routes::prompt_placeholders::delete_placeholder),
         )
         .route("/api/files", get(routes::files::list_files))
+        .route("/api/files/images", get(routes::files::list_image_library))
         .route("/api/files/properties", get(routes::files::get_file_properties))
         .route("/api/files/cleanup", post(routes::files::cleanup_files))
         .route(

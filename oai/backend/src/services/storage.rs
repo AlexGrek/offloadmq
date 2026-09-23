@@ -39,6 +39,15 @@ pub async fn exists(op: &Operator, path: &str) -> Result<bool, AppError> {
         .map_err(|e| AppError::Internal(format!("storage exists check failed: {e}")))
 }
 
+/// Lists object paths beneath a prefix. Used by the media library to resolve a
+/// user's starred-image set without issuing one storage request per file.
+pub async fn list(op: &Operator, path: &str) -> Result<Vec<String>, AppError> {
+    op.list(path)
+        .await
+        .map(|entries| entries.into_iter().map(|entry| entry.path().to_owned()).collect())
+        .map_err(|e| AppError::Internal(format!("storage list failed: {e}")))
+}
+
 /// Deletes a blob if present; missing paths are ignored.
 pub async fn delete(op: &Operator, path: &str) -> Result<(), AppError> {
     match op.delete(path).await {

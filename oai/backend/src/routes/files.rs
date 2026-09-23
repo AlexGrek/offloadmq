@@ -4,6 +4,7 @@
 //! `GET /api/images/files/{id}` with the same ownership check.
 
 use std::sync::Arc;
+use std::collections::HashSet;
 
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,8 @@ use crate::{
 
 /// Cap on how many files a single browse request returns.
 const FILE_LIST_LIMIT: u64 = 500;
+const IMAGE_LIBRARY_DEFAULT_LIMIT: u64 = 60;
+const IMAGE_LIBRARY_MAX_LIMIT: u64 = 100;
 
 #[derive(Serialize)]
 pub struct UserFile {
@@ -65,6 +68,25 @@ pub struct StorageSummary {
 pub struct FileBrowserResponse {
     pub files: Vec<UserFile>,
     pub summary: StorageSummary,
+}
+
+/// Query parameters for the paged image picker. This is deliberately separate
+/// from the legacy all-files endpoint so the Files page keeps its summary and
+/// mixed-media contract.
+#[derive(Deserialize)]
+pub struct ImageLibraryQuery {
+    pub offset: Option<u64>,
+    pub limit: Option<u64>,
+    pub direction: Option<String>,
+    pub query: Option<String>,
+    #[serde(default)]
+    pub starred_only: bool,
+}
+
+#[derive(Serialize)]
+pub struct ImageLibraryResponse {
+    pub files: Vec<UserFile>,
+    pub has_more: bool,
 }
 
 #[derive(Deserialize)]
@@ -153,6 +175,83 @@ pub async fn list_files(
             output_bytes,
         },
     }))
+}
+
+/// Returns one image-only page for the reusable image-library picker.
+pub async fn list_image_library(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Query(query): Query<ImageLibraryQuery>,
+) -> Result<Json<ImageLibraryResponse>, AppError> {
+    let direction = match query.direction.as_deref() {
+        None | Some("all") => None,
+        Some("input" | "output") => query.direction.as_deref(),
+        Some(_) => return Err(AppError::BadRequest("direction must be input or output".into())),
+    };
+    let offset = query.offset.unwrap_or(0).min(1_000_000);
+    let limit = query
+        .limit
+        .unwrap_or(IMAGE_LIBRARY_DEFAULT_LIMIT)
+        .clamp(1, IMAGE_LIBRARY_MAX_LIMIT);
+
+    let starred_ids = if query.starred_only {
+        Some(list_starred_image_ids(&state, user_id).await?)
+    } else {
+        None
+    };
+    let page = image_generation::list_user_image_files_page(
+        &state.db,
+        user_id,
+        direction,
+        query.query.as_deref().map(str::trim),
+        starred_ids.as_ref(),
+        offset,
+        limit + 1,
+    )
+    .await?;
+    let has_more = page.len() > limit as usize;
+    let page = page.into_iter().take(limit as usize).collect::<Vec<_>>();
+
+    let op = crate::services::storage::operator(&state).ok();
+    let starred_checks = page.iter().map(|file| {
+        let op = op.cloned();
+        let starred = starred_ids
+            .as_ref()
+            .is_some_and(|ids| ids.contains(&file.id));
+        let path = crate::services::image_paths::starred_image_path(user_id, file.id);
+        async move {
+            if starred {
+                true
+            } else if let Some(op) = op {
+                op.exists(&path).await.unwrap_or(false)
+            } else {
+                false
+            }
+        }
+    });
+    let starred = futures::future::join_all(starred_checks).await;
+    let files = page
+        .into_iter()
+        .zip(starred)
+        .map(|(file, is_starred)| map_user_file(file, is_starred))
+        .collect();
+
+    Ok(Json(ImageLibraryResponse { files, has_more }))
+}
+
+async fn list_starred_image_ids(state: &AppState, user_id: i64) -> Result<HashSet<i64>, AppError> {
+    let op = crate::services::storage::operator(state)?;
+    let prefix = format!("users/{user_id}/images/starred/");
+    let paths = crate::services::storage::list(op, &prefix).await?;
+    Ok(paths
+        .into_iter()
+        .filter_map(|path| {
+            path.rsplit('/').next()?
+                .strip_suffix(".jpg")?
+                .parse::<i64>()
+                .ok()
+        })
+        .collect())
 }
 
 fn map_user_file(f: image_generation::ImageFile, is_starred: bool) -> UserFile {

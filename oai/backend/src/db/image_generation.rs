@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use sea_orm::{
-    sea_query::{Condition, Expr, ExprTrait, Order, Query},
+    sea_query::{extension::postgres::PgExpr, Condition, Expr, ExprTrait, Order, Query},
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
     FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
 };
@@ -667,6 +667,48 @@ pub async fn list_user_image_files(
     ImageFileEntity::find()
         .filter(image_files::Column::UserId.eq(user_id))
         .order_by_desc(image_files::Column::CreatedAt)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
+/// A filtered, newest-first page of image files for the picker library.
+///
+/// The caller supplies a star-id set only for the starred-only view. Stars are
+/// stored as blobs, so keeping that lookup outside this DB function avoids a
+/// storage request for every row in the normal library path.
+pub async fn list_user_image_files_page(
+    db: &DatabaseConnection,
+    user_id: i64,
+    direction: Option<&str>,
+    filename_query: Option<&str>,
+    starred_ids: Option<&std::collections::HashSet<i64>>,
+    offset: u64,
+    limit: u64,
+) -> Result<Vec<ImageFile>, AppError> {
+    if starred_ids.is_some_and(|ids| ids.is_empty()) {
+        return Ok(Vec::new());
+    }
+
+    let mut query = ImageFileEntity::find()
+        .filter(image_files::Column::UserId.eq(user_id))
+        .filter(Expr::col(image_files::Column::ContentType).like("image/%"));
+
+    if let Some(direction) = direction {
+        query = query.filter(image_files::Column::Direction.eq(direction));
+    }
+    if let Some(filename_query) = filename_query.filter(|value| !value.is_empty()) {
+        query = query.filter(Expr::col(image_files::Column::Filename).ilike(format!("%{filename_query}%")));
+    }
+    if let Some(ids) = starred_ids {
+        query = query.filter(image_files::Column::Id.is_in(ids.iter().copied()));
+    }
+
+    query
+        .order_by_desc(image_files::Column::CreatedAt)
+        .order_by_desc(image_files::Column::Id)
+        .offset(offset)
         .limit(limit)
         .all(db)
         .await
