@@ -8,6 +8,7 @@ Full-stack app with a Rust/Axum backend and a React + TypeScript + Vite frontend
 oai/
 ├── backend/      # Rust + Axum API server (port 3000)
 ├── frontend/     # React + TypeScript + Vite (port 5173)
+├── cli/          # Go command-line client (login, image generation) — see cli/README.md
 ├── Taskfile.yml
 └── README.md
 ```
