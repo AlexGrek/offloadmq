@@ -31,6 +31,7 @@ agent_v2 implements the catalog below (`agent_v2/agent/src/offloadmq_agent/slave
 
 | Capability | Payload | Purpose |
 |---|---|---|
+| `slavemode.agent-update` | `{}` / `{"check": true}` | Self-update the agent binary and restart (Linux CLI under systemd only) |
 | `slavemode.force-rescan` | `{}` | Re-detect capabilities and push the new list to the server |
 | `slavemode.special-caps-ctrl` | `{"get": true}` / `{"set": {...}}` / `{"delete": "<name>"}` | List, create/replace, or remove a custom capability definition |
 | `slavemode.ollama-list` | `{}` | List installed Ollama models |
@@ -54,6 +55,32 @@ To make a fresh node useful without hand-editing config, agent_v2 seeds the allo
 Seeding is recorded via the `ollama_slavemode_initialized` / `onnx_slavemode_initialized` flags,
 so it happens at most once per agent. Clearing the allow-list afterwards (the Slavemode tab's
 **Deny all**) is respected permanently and is never silently repopulated.
+
+### `slavemode.agent-update`
+
+**Purpose:** Update the agent to the latest release from dl.alexgr.space on demand, instead of
+waiting for its next scheduled auto-update check.
+
+Only **advertised** where the agent can actually replace itself: a release-stamped `omq` CLI
+build on Linux, in a user-writable directory, started by systemd. Elsewhere it is withheld from
+registration even if allow-listed. Not seeded by default — enable it per agent.
+
+Always target one agent with `payload.runner` (the agent uid); an unpinned task goes to whichever
+agent with the cap is free.
+
+| Payload | Result |
+|---|---|
+| `{"runner": "<uid>", "check": true}` | `{"current", "latest", "has_update", "updating": false}` — nothing changes |
+| `{"runner": "<uid>"}` | `{"current", "latest", "has_update", "updating": true}` when a newer release exists; `updating: false` if already current |
+
+The task resolves **immediately**; the update runs afterwards on the agent's auto-updater:
+download + `--version` smoke test → wait until the agent is idle (this task's result included) →
+swap binary (previous kept as `omq.prev`) → exit 75 → systemd restarts it. Watch the agent's
+`appVersion` change to confirm it landed. A repeat request while an update is in flight returns
+`updating: true` with the current `phase`. Honoured even when `auto_update_enabled` is off.
+
+The management UI shows an **Agent update** button (check first, then **Update now**) on agents
+advertising this cap.
 
 ### `slavemode.force-rescan`
 
@@ -227,6 +254,7 @@ All slavemode capabilities follow this flow:
 
 2. **Capability dispatch:** Match the capability string to an implementation
    - `slavemode.force-rescan` → run capability detection + push to server
+   - `slavemode.agent-update` → check / start a self-update (see above)
    - Unknown → return error
 
 3. **Report result:** Post task result back to server (success or failure)

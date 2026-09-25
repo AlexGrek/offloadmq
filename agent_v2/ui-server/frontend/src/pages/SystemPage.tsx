@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "@/api/client";
+import { AutoUpdateCard } from "@/components/AutoUpdateCard";
 import { KeepAwakeCard } from "@/components/KeepAwakeCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -262,6 +263,7 @@ export function SystemPage() {
           )}
         </CardContent>
       </Card>
+      <AutoUpdateCard />
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Web UI port</CardTitle>

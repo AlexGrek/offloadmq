@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 ALL_SLAVEMODE_CAPS: list[str] = [
+    "slavemode.agent-update",
     "slavemode.force-rescan",
     "slavemode.ollama-delete",
     "slavemode.ollama-list",
@@ -37,8 +38,17 @@ def is_cap_allowed(cfg: dict[str, Any], capability: str) -> bool:
     return capability in ALL_SLAVEMODE_CAPS and capability in allowed_caps(cfg)
 
 
+#: Only advertised where the process can actually replace itself (Linux CLI
+#: under systemd) — elsewhere it would be a control that can only fail.
+AGENT_UPDATE_CAP = "slavemode.agent-update"
+
+
 def slavemode_caps_for_registration(cfg: dict[str, Any]) -> list[str]:
+    from offloadmq_agent import self_update
+
     allowed_set = allowed_caps(cfg)
+    if not self_update.available():
+        allowed_set.discard(AGENT_UPDATE_CAP)
     return sorted(c for c in ALL_SLAVEMODE_CAPS if c in allowed_set)
 
 

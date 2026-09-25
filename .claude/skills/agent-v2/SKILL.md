@@ -210,7 +210,10 @@ Single object both entry points drive. Settings, task store, executor pool, WS s
 | `agent_log.py` | Ring buffer for UI log tail |
 | `scan_state.py` | Background scan state for capabilities UI |
 | `webui.py` | uvicorn lifecycle |
-| `custom_caps_service.py`, `comfy_service.py`, `updater.py`, `startup_win/mac.py`, `systemd_service.py` | UI-backed ops |
+| `custom_caps_service.py`, `comfy_service.py`, `startup_win/mac.py`, `systemd_service.py` | UI-backed ops |
+| `version.py` | Running version — entry point calls `set_app_version()` with the release stamp; core never imports `cli_manager` |
+| `updater.py` | dl.alexgr.space check + download/verify/swap of `omq-<os>-<arch>` (keeps `<exe>.prev`) |
+| `auto_update.py` | `AutoUpdater` thread owned by the orchestrator — see *Self-update* below |
 
 ### Threading model
 
@@ -230,6 +233,22 @@ caller thread          orchestrator.start() → spawns:
 - Transport is a single persistent **WebSocket** (`/private/agent/ws`) — HTTP
   polling has been removed. The supervisor stays alive until `stop()`,
   reconnecting with exponential backoff (and re-auth) on any socket close.
+
+### Self-update (Linux CLI under systemd only)
+
+`AutoUpdater` runs only when `omq` is a frozen, release-stamped Linux build in a
+user-writable dir **and** `INVOCATION_ID` is set (i.e. systemd started it).
+Every `auto_update_interval_hours` (default 6, ±10% jitter; first check 1–10 min
+after start) it: checks the latest release → downloads it next to the exe and
+smoke-tests `--version` → waits until `orch.try_begin_drain()` succeeds (no active
+task, no undelivered resolve; pushes after that are ignored and the server
+re-queues them via the heartbeat claim) → atomic swap → `orch.stop()` →
+`os._exit(75)`. systemd restarts it (`Restart=on-failure`; new units also set
+`RestartForceExitStatus=75`). Manual: `omq update [--check|--rollback]`,
+`/api/update/auto[/run]`, System page card, and server-side via the opt-in
+`slavemode.agent-update` cap (executor → `offloadmq_agent.self_update` hook →
+`AutoUpdater.handle_remote_request`; only advertised when a handler is registered,
+i.e. self-update is supported). Dev builds (`0.0.0.dev0`) never update.
 
 ### Orchestrator API (implements `OrchestratorAPI`)
 

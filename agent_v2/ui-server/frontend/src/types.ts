@@ -68,6 +68,8 @@ export interface Settings {
   win_startup_enabled: boolean;
   mac_startup_enabled: boolean;
   keep_awake_enabled: boolean;
+  auto_update_enabled: boolean;
+  auto_update_interval_hours: number;
   agent_id: string;
   key: string;
   jwt_token: string;
@@ -125,4 +127,15 @@ export interface ParamMapData {
   extra_keys: string[];
   input_options: InputOption[];
   notes: ParamNotes;
+}
+
+export interface AutoUpdateStatus {
+  phase: "idle" | "unsupported" | "checking" | "downloading" | "waiting-for-idle" | "restarting";
+  current: string;
+  latest: string | null;
+  last_check: string | null;
+  error: string | null;
+  enabled: boolean;
+  interval_hours: number;
+  unsupported_reason: string | null;
 }

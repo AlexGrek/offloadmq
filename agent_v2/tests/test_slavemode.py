@@ -45,6 +45,10 @@ def test_advertised_caps_are_executable(tmp_path: Path, monkeypatch) -> None:
     cfg_file = tmp_path / ".offloadmq-agent.json"
     save_settings(Settings(slavemode_allowed_caps=list(ALL_SLAVEMODE_CAPS)), cfg_file)
     monkeypatch.setattr(settings_util, "SETTINGS_FILE", cfg_file)
+    # agent-update is only advertised where self-update works.
+    from offloadmq_agent import self_update
+
+    monkeypatch.setattr(self_update, "_handler", lambda _check: {})
 
     from offloadmq_agent.exec.slavemode import _is_allowed
 

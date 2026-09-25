@@ -50,6 +50,31 @@ def _force_rescan(transport: AgentTransport, task_id: TaskId, capability: str) -
     return report_result(transport, report)
 
 
+def _agent_update(transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any]) -> bool:
+    """Check for / start a self-update of the agent binary.
+
+    Payload variants:
+      {}                 — install the latest release if newer, then restart
+      { "check": true }  — only report current/latest versions
+
+    The update itself runs on the auto-updater thread *after* this task is
+    resolved: it waits for the agent to be idle (this task included), swaps the
+    binary and exits so systemd restarts it. The result therefore only says
+    whether an update was started; watch the agent's appVersion to see it land.
+    """
+    from offloadmq_agent.self_update import request_update
+
+    check_only = bool(payload.get("check"))
+    try:
+        out = request_update(check_only=check_only)
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        logger.warning(f"[slavemode] agent-update: {msg}")
+        return report_result(transport, make_failure_report(task_id, capability, msg))
+    logger.info(f"[slavemode] agent-update: {out}")
+    return report_result(transport, make_success_report(task_id, capability, out))
+
+
 def _special_caps_ctrl(transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any]) -> bool:
     """Get, set, or delete a special (custom) capability definition.
 
@@ -283,6 +308,8 @@ def execute_slavemode(
         return report_result(transport, report)
 
     match capability:
+        case "slavemode.agent-update":
+            return _agent_update(transport, task_id, capability, payload)
         case "slavemode.force-rescan":
             return _force_rescan(transport, task_id, capability)
         case "slavemode.special-caps-ctrl":

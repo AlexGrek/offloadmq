@@ -40,22 +40,24 @@ from offloadmq_agent.models import (
     TaskResult,
     TaskStatus,
 )
+from offloadmq_agent import self_update
 from offloadmq_agent.slavemode_policy import ALL_SLAVEMODE_CAPS
 from offloadmq_agent.systeminfo import calculate_tier, collect_system_info
 from offloadmq_agent.transport_sync import SyncAgentTransport
 
 from offloadmq_core.agent_log import AgentLogBuffer
+from offloadmq_core.auto_update import AutoUpdater
 from offloadmq_core.error_pool import ErrorPool, PendingLog, Severity
 from offloadmq_core.executor_pool import ExecutorPool
 from offloadmq_core.scan_state import ScanState
 from offloadmq_core.settings import SETTINGS_FILE, Settings, load_settings, save_settings
 from offloadmq_core.task_store import TaskRecord, TaskStore
+from offloadmq_core.version import get_app_version
 
 logger = logging.getLogger(__name__)
 
 _RESCAN_BURST_INTERVAL = 30   # seconds between rescans during startup burst
 _RESCAN_BURST_DURATION = 300  # 5-minute burst window after start
-APP_VERSION = "2.0.0"
 
 # Reconnect backoff: 2 → 4 → 8 → … capped at 60s. Reset on a successful auth.
 _RECONNECT_BACKOFF_BASE = 2.0
@@ -126,6 +128,16 @@ class Orchestrator:
         # Task ids whose resolve is on the wire right now, so a retry sweep and
         # the original send don't report the same result twice.
         self._resolving: set[str] = set()
+        # Set once the auto-updater has claimed an idle moment to restart in:
+        # pushed tasks are left alone from then on (see try_begin_drain).
+        self._draining = False
+        self.auto_update = AutoUpdater(self)
+        # Registered only where self-update can work, which is also what makes
+        # slavemode.agent-update advertisable (see slavemode_policy).
+        self_update.set_handler(
+            None if self.auto_update.unsupported_reason()
+            else self.auto_update.handle_remote_request
+        )
 
     # ==================================================================
     # Local logging + error pool
@@ -450,7 +462,7 @@ class Orchestrator:
                 settings.max_concurrent,
                 display_name=settings.display_name,
                 system_info=sysinfo,
-                app_version=APP_VERSION,
+                app_version=get_app_version(),
             )
             self.update_settings(capabilities=[c for c in caps if not c.startswith("slavemode.")])
             self._log(f"[caps] Pushed {len(caps)} capabilities to server")
@@ -481,7 +493,7 @@ class Orchestrator:
                 settings.max_concurrent,
                 display_name=settings.display_name,
                 system_info=sysinfo,
-                app_version=APP_VERSION,
+                app_version=get_app_version(),
             )
             auth = await OffloadMQClient.authenticate(
                 settings.server, reg.agent_id, reg.key
@@ -513,6 +525,7 @@ class Orchestrator:
                 raise RuntimeError("Agent is not configured (server/api_key missing)")
 
             self._stop.clear()
+            self._draining = False
             self._pool = ExecutorPool(max_workers=settings.max_concurrent)
             self._running = True
             self._status_message = "starting"
@@ -525,8 +538,10 @@ class Orchestrator:
                 target=self._rescan_scheduler_main, name="omq-rescan", daemon=True
             )
             self._rescan_thread.start()
+        self.auto_update.start()
 
     def stop(self) -> None:
+        self.auto_update.stop()
         with self._lock:
             if not self._running:
                 return
@@ -547,6 +562,34 @@ class Orchestrator:
         with self._lock:
             return self._running
 
+    def try_begin_drain(self) -> bool:
+        """Enter drain mode iff nothing is running and every result is delivered.
+
+        Checked and set under the same lock ``_dispatch`` takes, so no task can
+        slip in between the idle check and the flag. While draining, pushed
+        tasks are not started or acknowledged: they stay ``Assigned`` on the
+        server, drop out of our heartbeat claim, and the server re-queues them
+        for another agent (or for us after the restart).
+        """
+        with self._lock:
+            if self._draining:
+                return True
+            if self._store.active_count() or self._pending_resolves or self._resolving:
+                return False
+            self._draining = True
+        self._log("[update] agent idle — draining for restart")
+        return True
+
+    def end_drain(self) -> None:
+        with self._lock:
+            self._draining = False
+
+    def get_auto_update_status(self) -> dict[str, Any]:
+        return self.auto_update.snapshot()
+
+    def trigger_auto_update(self) -> bool:
+        return self.auto_update.check_now()
+
     def status(self) -> dict[str, Any]:
         with self._lock:
             settings = self._settings
@@ -560,6 +603,7 @@ class Orchestrator:
                 "capabilities": settings.all_capabilities,
                 "maxConcurrent": settings.max_concurrent,
                 "activeTasks": self._store.active_count(),
+                "version": get_app_version(),
                 "displayName": settings.display_name,
                 "sysinfo": snap.get("sysinfo", {}),
                 "scanning": snap.get("scanning", False),
@@ -762,7 +806,7 @@ class Orchestrator:
                 settings.max_concurrent,
                 display_name=settings.display_name,
                 system_info=sysinfo,
-                app_version=APP_VERSION,
+                app_version=get_app_version(),
             )
             auth = await OffloadMQClient.authenticate(
                 settings.server, registration.agent_id, registration.key
@@ -791,7 +835,7 @@ class Orchestrator:
             settings.max_concurrent,
             display_name=settings.display_name or "",
             system_info=sysinfo,
-            app_version=APP_VERSION,
+            app_version=get_app_version(),
         )
         return client, auth.token, auth.expires_in
 
@@ -961,7 +1005,16 @@ class Orchestrator:
 
     def _dispatch(self, task: Task) -> None:
         executor = find_executor(task.capability)
-        record, cancel_event = self._store.create(task)
+        with self._lock:
+            draining = self._draining
+            if not draining:
+                record, cancel_event = self._store.create(task)
+        if draining:
+            self._log(
+                f"[update] restarting for update — leaving task {task.id} "
+                "for the server to re-queue"
+            )
+            return
 
         if executor is None:
             msg = f"No executor registered for '{task.capability}'"

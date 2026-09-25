@@ -58,6 +58,10 @@ Type=simple
 WorkingDirectory={Path.home()}
 ExecStart={exec_start}
 Restart=on-failure
+RestartSec=3
+# 75 = restart requested by the auto-updater after swapping in a new binary.
+SuccessExitStatus=75
+RestartForceExitStatus=75
 Environment=PATH={os.environ.get('PATH', '')}
 
 [Install]

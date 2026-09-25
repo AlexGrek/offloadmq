@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from offloadmq_core import Orchestrator, run_blocking
+from offloadmq_core.version import set_app_version
 
 from cli_manager._version import __version__ as _BAKED_VERSION
 
@@ -40,6 +41,11 @@ def _resolve_version() -> str:
             return _BAKED_VERSION
     except Exception:  # noqa: BLE001
         return _BAKED_VERSION
+
+
+# Only a release-stamped version: the package-metadata fallback would make an
+# unstamped local build look like an old release and auto-update itself away.
+set_app_version(_BAKED_VERSION)
 
 
 def _version_callback(value: bool) -> None:
@@ -178,6 +184,48 @@ def status() -> None:
     table.add_row("Capabilities", ", ".join(info["capabilities"]) or "none")
     table.add_row("Max concurrent", str(info["maxConcurrent"]))
     console.print(table)
+
+
+# ------------------------------------------------------------------
+# update
+# ------------------------------------------------------------------
+
+
+@app.command()
+def update(
+    check: bool = typer.Option(False, "--check", help="Only report whether an update exists"),
+    rollback: bool = typer.Option(
+        False, "--rollback", help="Restore the binary replaced by the last update"
+    ),
+) -> None:
+    """Replace this omq binary with the latest release (Linux only).
+
+    Restart the service afterwards: systemctl --user restart offloadmq-agent
+    """
+    from offloadmq_core import updater
+    from offloadmq_core.version import get_app_version
+
+    def log(msg: str) -> None:
+        console.print(f"[dim]{msg}[/dim]")
+
+    current = get_app_version()
+    if rollback:
+        result = updater.rollback(log)
+    elif check:
+        info = updater.check_for_update(current)
+        if "error" in info:
+            console.print(f"[red]{info['error']}[/red]")
+            raise typer.Exit(1)
+        verdict = "[green]update available[/green]" if info["has_update"] else "up to date"
+        console.print(f"current {current} · latest {info['latest']} · {verdict}")
+        return
+    else:
+        result = updater.download_update(current, log)
+
+    if not result["ok"]:
+        console.print(f"[red]{result['error']}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]{result['message']}[/green]")
 
 
 # ------------------------------------------------------------------

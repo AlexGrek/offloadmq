@@ -7,6 +7,7 @@ import AttributeTag from "../AttributeTag";
 import ColorDot from "../ColorDot";
 import ExpandableDeleteButton from "../ExpandableDeleteButton";
 import ForceRescanButton from "./ForceRescanButton";
+import AgentUpdateButton from "./AgentUpdateButton";
 import OllamaManagerModal from "./OllamaManagerModal";
 import OnnxManagerModal from "./OnnxManagerModal";
 import SpecialCapsModal from "./SpecialCapsModal";
@@ -37,6 +38,7 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
 
     const slavemodeCapabilities = (a.capabilities || []).filter(c => stripCapabilityAttrs(c).startsWith('slavemode.'));
     const hasForceRescan = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.force-rescan');
+    const hasAgentUpdate = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.agent-update');
     const hasSpecialCapsCtrl = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.special-caps-ctrl');
     const hasOllamaList = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.ollama-list');
     const hasOllamaDelete = slavemodeCapabilities.some(c => stripCapabilityAttrs(c) === 'slavemode.ollama-delete');
@@ -193,6 +195,7 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
                                     </div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
                                         {hasForceRescan && <ForceRescanButton onDone={onRescanDone} />}
+                                        {hasAgentUpdate && <AgentUpdateButton agentUid={a.uid} onDone={onRescanDone} />}
                                         {hasSpecialCapsCtrl && <SpecialCapsModal agentUid={a.uid} />}
                                         {(hasOllamaList || hasOllamaDelete || hasOllamaPull) && (
                                             <OllamaManagerModal
@@ -211,7 +214,7 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
                                             />
                                         )}
                                         {slavemodeCapabilities
-                                            .filter(c => !['slavemode.force-rescan', 'slavemode.special-caps-ctrl', 'slavemode.ollama-list', 'slavemode.ollama-delete', 'slavemode.ollama-pull', 'slavemode.onnx-models-list', 'slavemode.onnx-models-delete', 'slavemode.onnx-models-prepare'].includes(stripCapabilityAttrs(c)))
+                                            .filter(c => !['slavemode.agent-update', 'slavemode.force-rescan', 'slavemode.special-caps-ctrl', 'slavemode.ollama-list', 'slavemode.ollama-delete', 'slavemode.ollama-pull', 'slavemode.onnx-models-list', 'slavemode.onnx-models-delete', 'slavemode.onnx-models-prepare'].includes(stripCapabilityAttrs(c)))
                                             .map((c, i) => (
                                                 <span key={i} style={{ fontSize: '12px', padding: '2px 8px', borderRadius: '4px', background: 'rgba(217,119,6,0.12)', border: '1px solid rgba(217,119,6,0.3)', color: '#fbbf24', fontFamily: 'monospace' }}>
                                                     {stripCapabilityAttrs(c)}

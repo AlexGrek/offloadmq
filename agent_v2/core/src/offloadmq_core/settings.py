@@ -35,6 +35,10 @@ class Settings(BaseModel):
     # Rescan cadence
     rescan_interval_secs: int = Field(default=180, ge=30)
 
+    # Unattended self-update (Linux CLI under systemd only — see auto_update.py).
+    auto_update_enabled: bool = True
+    auto_update_interval_hours: int = Field(default=6, ge=1)
+
     # OS integration flags (persisted; platform modules apply changes).
     win_startup_enabled: bool = False
     mac_startup_enabled: bool = False

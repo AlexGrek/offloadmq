@@ -1,5 +1,6 @@
 import type {
   AgentStatus,
+  AutoUpdateStatus,
   CapabilitiesState,
   Settings,
   TaskRecord,
@@ -211,4 +212,7 @@ export const api = {
   checkUpdate: () => request<Record<string, unknown>>("/update/check"),
   downloadUpdate: () =>
     request<Record<string, unknown>>("/update/download", { method: "POST" }),
+  getAutoUpdate: () => request<AutoUpdateStatus>("/update/auto"),
+  runAutoUpdate: () =>
+    request<AutoUpdateStatus>("/update/auto/run", { method: "POST" }),
 };

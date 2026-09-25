@@ -25,6 +25,8 @@ class SettingsPayload(BaseModel):
     win_startup_enabled: bool | None = None
     mac_startup_enabled: bool | None = None
     keep_awake_enabled: bool | None = None
+    auto_update_enabled: bool | None = None
+    auto_update_interval_hours: int | None = None
 
 
 class CapabilityPolicyPayload(BaseModel):
@@ -431,23 +433,34 @@ def create_router(orch: OrchestratorAPI) -> APIRouter:
 
     @router.get("/update/check")
     def update_check() -> dict[str, Any]:
-        from offloadmq_core.orchestrator import APP_VERSION
         from offloadmq_core.updater import check_for_update
+        from offloadmq_core.version import get_app_version
 
-        return check_for_update(APP_VERSION)
+        return check_for_update(get_app_version())
 
     @router.post("/update/download")
     def update_download() -> dict[str, Any]:
         from offloadmq_core.updater import download_update
+        from offloadmq_core.version import get_app_version
 
         lines: list[str] = []
-
-        def _log(msg: str) -> None:
-            lines.append(msg)
-
-        result = download_update(_log)
+        result = download_update(get_app_version(), lines.append)
         result["log"] = lines
         return result
+
+    @router.get("/update/auto")
+    def update_auto_status() -> dict[str, Any]:
+        return orch.get_auto_update_status()
+
+    @router.post("/update/auto/run")
+    def update_auto_run() -> dict[str, Any]:
+        if not orch.trigger_auto_update():
+            raise HTTPException(
+                status_code=400,
+                detail=orch.get_auto_update_status().get("unsupported_reason")
+                or "Auto-update is not running (start the agent first)",
+            )
+        return orch.get_auto_update_status()
 
     @router.get("/system/startup-status")
     def startup_status() -> dict[str, Any]:

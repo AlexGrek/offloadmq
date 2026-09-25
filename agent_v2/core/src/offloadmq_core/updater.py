@@ -1,81 +1,115 @@
-"""Update checker and self-updater for offload-agent.
+"""Update checker and self-updater for agent_v2 (``omq``).
 
 Uses the dl.alexgr.space public release API (no auth required):
-  GET /api/v1/pub/release/{bucket}/latest  — latest version info
-  GET /rs/{bucket}/{version}/{os_arch}/{file} — binary download
+  GET /api/v1/pub/release/{bucket}/latest          — latest version info
+  GET /rs/{bucket}/{version}/{os_arch}/{artifact}  — binary download
+
+Artifacts are named ``omq-<os>-<arch>`` / ``omq-gui-<os>-<arch>`` (see
+scripts/release-agent.sh). Self-replacement is currently **Linux + CLI only**:
+the new binary is downloaded next to the running one, smoke-tested with
+``--version``, and swapped in with an atomic rename. The previous binary is
+kept as ``<exe>.prev`` for :func:`rollback`.
+
+``DL_BASE_URL`` / ``DL_BUCKET`` override the source, matching the Taskfile
+upgrade tasks.
 """
+from __future__ import annotations
 
 import json
 import os
 import platform
 import shutil
+import subprocess
 import sys
-import tempfile
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
-DL_BASE = "https://dl.alexgr.space"
-BUCKET = "offload-agent"
+from offloadmq_core.version import is_newer, is_release_version
+
+DL_BASE = os.environ.get("DL_BASE_URL", "https://dl.alexgr.space").rstrip("/")
+BUCKET = os.environ.get("DL_BUCKET", "offload-agent")
+
+LogFn = Callable[[str], None]
 
 
-def _os_arch() -> Optional[str]:
+class UpdateError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class StagedUpdate:
+    version: str
+    path: Path  # downloaded + verified binary, next to ``exe``
+    exe: Path  # binary it will replace
+
+
+def _os_arch() -> str | None:
     m = platform.machine().lower()
+    arch = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(m)
+    if arch is None:
+        return None
     if sys.platform == "darwin":
-        return "darwin-arm64" if m == "arm64" else "darwin-amd64"
+        return f"darwin-{arch}"
     if sys.platform == "linux":
-        return "linux-amd64" if m in ("x86_64", "amd64") else None
+        return f"linux-{arch}"
     if sys.platform == "win32":
-        return "windows-amd64"
+        return f"windows-{arch}"
     return None
 
 
-def _binary_name(os_arch: str) -> str:
+def _is_gui() -> bool:
+    return os.environ.get("OMQ_GUI") == "1"
+
+
+def _artifact_name(os_arch: str) -> str:
+    flavor = "omq-gui" if _is_gui() else "omq"
     ext = ".exe" if sys.platform == "win32" else ""
-    return f"offload-agent-{os_arch}{ext}"
+    return f"{flavor}-{os_arch}{ext}"
 
 
-def _download_url(os_arch: str, version: str = "latest") -> str:
-    return f"{DL_BASE}/rs/{BUCKET}/{version}/{os_arch}/{_binary_name(os_arch)}"
+def _download_url(os_arch: str, version: str) -> str:
+    return f"{DL_BASE}/rs/{BUCKET}/{version}/{os_arch}/{_artifact_name(os_arch)}"
 
 
-def _fetch_latest_info() -> Dict[str, Any]:
-    """Call the public release API and return the parsed JSON."""
+def _current_exe() -> Path:
+    return Path(sys.executable).resolve()
+
+
+def fetch_latest_info() -> dict[str, Any]:
     url = f"{DL_BASE}/api/v1/pub/release/{BUCKET}/latest"
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=10) as resp:
-        result: Dict[str, Any] = json.loads(resp.read())
+        result: dict[str, Any] = json.loads(resp.read())
         return result
 
 
-def check_for_update(current_version: str) -> Dict[str, Any]:
-    """Return update info dict.
+def check_for_update(current_version: str) -> dict[str, Any]:
+    """Return update info.
 
-    Keys on success: current, latest, has_update, notes, targets, download_url
-    Key on failure:  error
+    Keys on success: current, latest, has_update, notes, date, targets,
+    target_available, download_url. Key on failure: error.
     """
     os_arch = _os_arch()
     if not os_arch:
         return {"error": f"Unsupported platform: {sys.platform}/{platform.machine()}"}
 
     try:
-        info = _fetch_latest_info()
-    except Exception as exc:
+        info = fetch_latest_info()
+    except Exception as exc:  # noqa: BLE001
         return {"error": f"Could not reach update server: {exc}"}
 
-    latest: str = info.get("version", "")
+    latest = str(info.get("version", ""))
     if not latest:
         return {"error": "Unexpected response from update server"}
 
-    targets: List[str] = info.get("targets", [])
+    targets: list[str] = list(info.get("targets", []))
     target_available = os_arch in targets
-
-    has_update = current_version != "dev" and latest != current_version
-
     return {
         "current": current_version,
         "latest": latest,
-        "has_update": has_update,
+        "has_update": target_available and is_newer(latest, current_version),
         "notes": info.get("notes", ""),
         "date": info.get("date", ""),
         "targets": targets,
@@ -84,88 +118,157 @@ def check_for_update(current_version: str) -> Dict[str, Any]:
     }
 
 
-def download_update(log_fn: Callable[[str], None]) -> Dict[str, Any]:
-    """Download the latest binary and replace the running executable.
-
-    Only works in frozen (PyInstaller) builds. On macOS/Linux the binary is
-    atomically replaced in-place via rename. On Windows it is saved as .new
-    alongside the current executable (file is locked while running).
-    """
+def self_update_unsupported_reason(current_version: str) -> str | None:
+    """Why this process cannot replace its own binary, or None if it can."""
+    if sys.platform != "linux":
+        return "Self-update is currently Linux-only"
+    if _is_gui():
+        return "Self-update is only supported for the omq CLI, not omq-gui"
     if not getattr(sys, "frozen", False):
-        return {"ok": False, "error": "Self-update only works in a packaged build, not in dev mode"}
+        return "Self-update only works in a packaged build, not from source"
+    if not is_release_version(current_version):
+        return f"Running an unversioned build ({current_version})"
+    if _os_arch() is None:
+        return f"Unsupported architecture: {platform.machine()}"
+    exe_dir = _current_exe().parent
+    if not os.access(exe_dir, os.W_OK):
+        return (
+            f"{exe_dir} is not writable by this user — install omq somewhere "
+            "user-owned (e.g. ~/.local/bin) to enable self-update"
+        )
+    return None
 
+
+def _child_env() -> dict[str, str]:
+    """Environment for launching a *different* frozen binary from a frozen one.
+
+    Without the reset, the child's PyInstaller bootloader sees our ``_PYI_*``
+    variables, believes it is our own child process, and runs out of our
+    extraction dir instead of its own.
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("_PYI_", "_MEI"))}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if orig is not None:
+        env["LD_LIBRARY_PATH"] = orig
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def _smoke_test(binary: Path, expected_version: str) -> None:
+    """Run ``<binary> --version`` and require it to report ``expected_version``.
+
+    Catches a truncated download, a build that needs a newer glibc than this
+    host has, or an import error at startup — before we swap it in.
+    """
+    try:
+        proc = subprocess.run(
+            [str(binary), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=_child_env(),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise UpdateError(f"new binary failed to run: {exc}") from exc
+    out = (proc.stdout + proc.stderr).strip()
+    if proc.returncode != 0:
+        raise UpdateError(f"new binary exited {proc.returncode}: {out[-500:]}")
+    if expected_version.lstrip("v") not in out:
+        raise UpdateError(f"new binary reports {out[-200:]!r}, expected {expected_version}")
+
+
+def stage_update(version: str, log_fn: LogFn) -> StagedUpdate:
+    """Download ``version`` next to the running binary and verify it runs.
+
+    Caller must have checked :func:`self_update_unsupported_reason` first.
+    """
     os_arch = _os_arch()
-    if not os_arch:
-        return {"ok": False, "error": f"Unsupported platform: {sys.platform}/{platform.machine()}"}
+    if os_arch is None:
+        raise UpdateError(f"Unsupported platform: {sys.platform}/{platform.machine()}")
+    exe = _current_exe()
+    # Same directory as the exe, so the final swap is an atomic same-filesystem rename.
+    staged = exe.with_name(f".{exe.name}.update")
+    url = _download_url(os_arch, version)
 
+    log_fn(f"[update] downloading {version} from {url}")
     try:
-        info = _fetch_latest_info()
-    except Exception as exc:
-        return {"ok": False, "error": f"Could not reach update server: {exc}"}
+        with urllib.request.urlopen(url, timeout=120) as resp, open(staged, "wb") as out:
+            total = int(resp.headers.get("Content-Length") or 0)
+            written = 0
+            last_pct = -1
+            while chunk := resp.read(1 << 16):
+                out.write(chunk)
+                written += len(chunk)
+                if total:
+                    pct = written * 100 // total
+                    if pct != last_pct and pct % 25 == 0:
+                        log_fn(f"[update] {pct}% ({written // 1024} / {total // 1024} KiB)")
+                        last_pct = pct
+        if total and written != total:
+            raise UpdateError(f"short download: {written} of {total} bytes")
+        os.chmod(staged, 0o755)
+        _smoke_test(staged, version)
+    except Exception:
+        staged.unlink(missing_ok=True)
+        raise
+    log_fn(f"[update] {version} downloaded and verified")
+    return StagedUpdate(version=version, path=staged, exe=exe)
 
-    latest_version: str = info.get("version", "")
-    if not latest_version:
-        return {"ok": False, "error": "Could not determine latest version"}
 
-    if os_arch not in info.get("targets", []):
-        return {"ok": False, "error": f"No build available for {os_arch}"}
+def install_staged(staged: StagedUpdate, log_fn: LogFn) -> None:
+    """Swap the staged binary in, keeping the current one as ``<exe>.prev``.
 
-    url = _download_url(os_arch, latest_version)
-    current_exe = Path(sys.executable)
-    tmp_path: Optional[Path] = None
-
-    log_fn(f"[update] Downloading {latest_version} from {url} ...")
+    Replacing a running binary is safe on Linux: the old inode stays alive
+    until the process exits; the next start picks up the new file.
+    """
+    prev = staged.exe.with_name(staged.exe.name + ".prev")
+    prev.unlink(missing_ok=True)
     try:
-        # Never use current_exe.parent (e.g. /usr/local/bin): it is often not writable,
-        # and tempfile would fail or confuse users with paths like /usr/local/bin/tmpXXXXXX.
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=".download"
-        ) as tmp:
-            tmp_path = Path(tmp.name)
-            with urllib.request.urlopen(url, timeout=120) as resp:
-                total = int(resp.headers.get("Content-Length") or 0)
-                downloaded = 0
-                last_pct = -1
-                while True:
-                    chunk = resp.read(65536)
-                    if not chunk:
-                        break
-                    tmp.write(chunk)
-                    downloaded += len(chunk)
-                    if total:
-                        pct = downloaded * 100 // total
-                        if pct != last_pct and pct % 10 == 0:
-                            log_fn(f"[update] {pct}%  ({downloaded // 1024} KB / {total // 1024} KB)")
-                            last_pct = pct
+        os.link(staged.exe, prev)
+    except OSError:
+        shutil.copy2(staged.exe, prev)
+    os.replace(staged.path, staged.exe)
+    log_fn(f"[update] installed {staged.version} → {staged.exe} (previous kept as {prev.name})")
 
-        if sys.platform != "win32":
-            os.chmod(tmp_path, 0o755)
 
-        if sys.platform == "win32":
-            new_path = current_exe.with_suffix(".new")
-            shutil.move(str(tmp_path), str(new_path))
-            log_fn(f"[update] Saved as {new_path.name} — replace the executable manually and restart.")
-            return {
-                "ok": True,
-                "version": latest_version,
-                "restart_required": True,
-                "message": f"Downloaded to {new_path.name}. Replace the current executable and restart.",
-            }
-        else:
-            shutil.move(str(tmp_path), str(current_exe))
-            log_fn(f"[update] Replaced binary with {latest_version}. Restart the agent to apply.")
-            return {
-                "ok": True,
-                "version": latest_version,
-                "restart_required": True,
-                "message": f"Updated to {latest_version}. Restart the agent to apply.",
-            }
-
-    except Exception as exc:
-        if tmp_path and tmp_path.exists():
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
+def download_update(current_version: str, log_fn: LogFn) -> dict[str, Any]:
+    """Manual one-shot: fetch the latest build and install it (no restart)."""
+    reason = self_update_unsupported_reason(current_version)
+    if reason:
+        return {"ok": False, "error": reason}
+    info = check_for_update(current_version)
+    if "error" in info:
+        return {"ok": False, "error": info["error"]}
+    if not info["has_update"]:
+        return {"ok": True, "version": current_version, "restart_required": False,
+                "message": f"Already up to date ({current_version})"}
+    try:
+        staged = stage_update(info["latest"], log_fn)
+        install_staged(staged, log_fn)
+    except Exception as exc:  # noqa: BLE001
         log_fn(f"[update] ERROR: {exc}")
         return {"ok": False, "error": str(exc)}
+    return {
+        "ok": True,
+        "version": staged.version,
+        "restart_required": True,
+        "message": f"Updated to {staged.version}. Restart the agent to apply.",
+    }
+
+
+def rollback(log_fn: LogFn) -> dict[str, Any]:
+    """Swap ``<exe>.prev`` back in (the current binary becomes the new .prev)."""
+    exe = _current_exe()
+    prev = exe.with_name(exe.name + ".prev")
+    if not prev.exists():
+        return {"ok": False, "error": f"No previous binary at {prev}"}
+    tmp = exe.with_name(f".{exe.name}.rollback")
+    try:
+        shutil.copy2(prev, tmp)
+        install_staged(StagedUpdate(version="previous", path=tmp, exe=exe), log_fn)
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "message": f"Rolled back {exe}. Restart the agent to apply."}
