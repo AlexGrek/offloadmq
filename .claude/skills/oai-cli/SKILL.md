@@ -25,6 +25,7 @@ Style: flat `package main`, stdlib only (`net/http`, `encoding/json`, `flag`) pl
 | `auth.go` | `login`, `whoami` |
 | `image.go` | `image` sub-dispatch, `capabilities`, `generate`, shared `capabilityInfo`, `printCapabilities`, `pickCapability`, `waitForJob` (poll loop), `finishJob` |
 | `describe.go` | `image describe`, `image describe-capabilities` |
+| `progress.go` | TTY-aware spinner/progress bar, web-UI timing heuristic, `--progress` / `--profress` flags, plain-output fallback |
 | `README.md` | User-facing usage — keep in sync with the usage banner in `main.go` |
 
 Commands today: `login`, `whoami`, `image capabilities|generate|describe|describe-capabilities`. Default server `https://oai.alexgr.space`.
@@ -39,6 +40,7 @@ Commands today: `login`, `whoami`, `image capabilities|generate|describe|describ
 - **IDs are strings** in JSON (snowflake i64 → string). Path-escape them with `url.PathEscape`.
 - **Capabilities**: OAI lists base capabilities (`imggen.x`, `llm.x`); tags describe kind (`txt2img`, `img2video`, `vision`). `pickCapability(caps, preferTag, kind)` picks the first online one with the tag, else any online one — never blindly the first online entry, because imggen also contains img2img/video capabilities.
 - Every job-style feature follows **submit → poll → terminal** (`completed|failed|canceled`); poll every 5s (`pollInterval`, same as the web UI) via `waitForJob`.
+- Job commands enable the live progress renderer by default. Pass API timing metadata through `jobProgressState`; keep stdout pipe-safe for result-producing commands by rendering their progress on stderr.
 
 ## Adding a new command
 
@@ -55,10 +57,13 @@ Out of scope so far (add only on request): chat (WebSocket), TTS, img2img/video,
 
 ```bash
 cd oai/cli
-gofmt -l . ; go vet ./... && go build -o oai .
+gofmt -l .
+go test ./...
+go vet ./...
+go build -o oai .
 ```
 
-There are no Go unit tests. Verification is manual against a real backend:
+`batch_test.go` exercises multi-job generation and description against a mock HTTP server; `progress_test.go` covers the web-UI timing heuristic, flags, terminal sizing, and redirected-output fallback. End-to-end verification against a real backend is still manual:
 
 ```bash
 ./oai login -server http://localhost:3001 -login root    # local: root / 000000

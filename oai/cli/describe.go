@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -27,11 +28,24 @@ type describeStartRequest struct {
 }
 
 type describeJob struct {
-	JobID  string  `json:"job_id"`
-	Status string  `json:"status"`
-	Result *string `json:"result"`
-	Stage  *string `json:"stage"`
-	Error  *string `json:"error"`
+	JobID     string  `json:"job_id"`
+	Status    string  `json:"status"`
+	Result    *string `json:"result"`
+	Stage     *string `json:"stage"`
+	Error     *string `json:"error"`
+	CreatedAt *string `json:"created_at"`
+}
+
+func (j describeJob) progressState() jobProgressState {
+	stage := ""
+	if j.Stage != nil {
+		stage = *j.Stage
+	}
+	return jobProgressState{
+		Status:      j.Status,
+		Stage:       stage,
+		SubmittedAt: j.CreatedAt,
+	}
 }
 
 func fetchDescribeCapabilities(cfg *Config) ([]capabilityInfo, error) {
@@ -56,24 +70,37 @@ func cmdImageDescribeCapabilities(args []string) error {
 	return printCapabilities(caps, "vision LLM")
 }
 
-// cmdImageDescribe uploads an image and prints the vision model's description
-// to stdout. Progress goes to stderr so the output can be piped.
+type describeRun struct {
+	index   int
+	path    string
+	started startJobResponse
+}
+
+// cmdImageDescribe uploads each image and prints the vision model's descriptions
+// to stdout. Every input is a separate job. Progress goes to stderr so the
+// output can be piped.
 func cmdImageDescribe(args []string) error {
 	fs := flag.NewFlagSet("image describe", flag.ContinueOnError)
 	prompt := fs.String("prompt", defaultDescribePrompt, "question/instruction for the model")
 	capability := fs.String("capability", "", "vision LLM capability (default: first online)")
-	out := fs.String("o", "", "also write the description to this file")
+	out := fs.String("o", "", "also write descriptions to this file (_2, _3, ... for multiple inputs)")
 	timeout := timeoutFlag(fs)
+	showProgress := progressFlag(fs)
 	rest, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(rest) != 1 {
-		return errors.New(`usage: oai image describe <image-file> [-prompt "..."] [-capability llm.X] [-o out.txt]`)
+	if len(rest) == 0 {
+		return errors.New(`usage: oai image describe <image-file> [image-file ...] [-prompt "..."] [-capability llm.X] [-o out.txt]`)
 	}
-	path := rest[0]
-	if _, err := os.Stat(path); err != nil {
-		return err
+	for _, path := range rest {
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("%s: is a directory", path)
+		}
 	}
 
 	cfg, err := requireLogin()
@@ -94,56 +121,82 @@ func cmdImageDescribe(args []string) error {
 		fmt.Fprintf(os.Stderr, "Using capability: %s (auto-selected, online)\n", capName)
 	}
 
-	var up uploadResponse
-	if err := uploadFile(base+"/api/images/upload", cfg.Token, path, &up); err != nil {
-		return fmt.Errorf("upload: %w", err)
+	describePrompt := strings.TrimSpace(*prompt)
+	if describePrompt == "" {
+		describePrompt = defaultDescribePrompt
 	}
 
-	req := describeStartRequest{
-		Capability: capName,
-		Prompt:     strings.TrimSpace(*prompt),
-		ImageID:    up.ImageID,
-	}
-	if req.Prompt == "" {
-		req.Prompt = defaultDescribePrompt
-	}
-	var started startJobResponse
-	if err := doJSON("POST", base+"/api/describe/jobs", cfg.Token, req, &started); err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "Job: %s\n", started.JobID)
+	runs := make([]describeRun, 0, len(rest))
+	var batchErrors []error
+	for i, path := range rest {
+		if len(rest) > 1 {
+			fmt.Fprintf(os.Stderr, "Input %d/%d: %s\n", i+1, len(rest), path)
+		}
+		var up uploadResponse
+		if err := uploadFile(base+"/api/images/upload", cfg.Token, path, &up); err != nil {
+			batchErrors = append(batchErrors, fmt.Errorf("%s: upload: %w", path, err))
+			continue
+		}
 
-	var job describeJob
-	pollURL := base + "/api/describe/jobs/" + url.PathEscape(started.JobID) + "/poll"
-	err = waitForJob(os.Stderr, started.JobID, *timeout, func() (string, string, error) {
-		if err := doJSON("POST", pollURL, cfg.Token, nil, &job); err != nil {
-			return "", "", err
+		req := describeStartRequest{
+			Capability: capName,
+			Prompt:     describePrompt,
+			ImageID:    up.ImageID,
 		}
-		stage := ""
-		if job.Stage != nil {
-			stage = *job.Stage
+		var started startJobResponse
+		if err := doJSON("POST", base+"/api/describe/jobs", cfg.Token, req, &started); err != nil {
+			batchErrors = append(batchErrors, fmt.Errorf("%s: submit: %w", path, err))
+			continue
 		}
-		return job.Status, stage, nil
-	})
-	if err != nil {
-		return err
-	}
-	if job.Status != "completed" {
-		msg := "no error message"
-		if job.Error != nil && *job.Error != "" {
-			msg = *job.Error
+		runs = append(runs, describeRun{index: i, path: path, started: started})
+		if len(rest) == 1 {
+			fmt.Fprintf(os.Stderr, "Job: %s\n", started.JobID)
+		} else {
+			fmt.Fprintf(os.Stderr, "Job %d/%d: %s\n", i+1, len(rest), started.JobID)
 		}
-		return fmt.Errorf("job %s: %s", job.Status, msg)
 	}
-	if job.Result == nil {
-		return errors.New("job completed but returned no result")
-	}
-	fmt.Println(*job.Result)
-	if *out != "" {
-		if err := os.WriteFile(*out, []byte(*job.Result+"\n"), 0644); err != nil {
-			return err
+
+	for _, run := range runs {
+		var job describeJob
+		pollURL := base + "/api/describe/jobs/" + url.PathEscape(run.started.JobID) + "/poll"
+		err := waitForJob(os.Stderr, run.started.JobID, *timeout, jobProgressOptions{
+			Enabled:      *showProgress,
+			Label:        filepath.Base(run.path),
+			RunningLabel: "Analyzing",
+		}, func() (jobProgressState, error) {
+			if err := doJSON("POST", pollURL, cfg.Token, nil, &job); err != nil {
+				return jobProgressState{}, err
+			}
+			return job.progressState(), nil
+		})
+		if err != nil {
+			batchErrors = append(batchErrors, fmt.Errorf("%s (job %s): %w", run.path, run.started.JobID, err))
+			continue
 		}
-		fmt.Fprintf(os.Stderr, "Saved %s\n", *out)
+		if job.Status != "completed" {
+			msg := "no error message"
+			if job.Error != nil && *job.Error != "" {
+				msg = *job.Error
+			}
+			batchErrors = append(batchErrors, fmt.Errorf("%s (job %s): job %s: %s", run.path, run.started.JobID, job.Status, msg))
+			continue
+		}
+		if job.Result == nil {
+			batchErrors = append(batchErrors, fmt.Errorf("%s (job %s): job completed but returned no result", run.path, run.started.JobID))
+			continue
+		}
+		if len(rest) > 1 {
+			fmt.Printf("==> %s <==\n", run.path)
+		}
+		fmt.Println(*job.Result)
+		if *out != "" {
+			dest := indexedOutputPath(*out, run.index)
+			if err := os.WriteFile(dest, []byte(*job.Result+"\n"), 0644); err != nil {
+				batchErrors = append(batchErrors, fmt.Errorf("%s: save %s: %w", run.path, dest, err))
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "Saved %s\n", dest)
+		}
 	}
-	return nil
+	return errors.Join(batchErrors...)
 }

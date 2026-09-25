@@ -16,6 +16,9 @@ import (
 // Same cadence as ImageGenerationPage.tsx (POLL_MS).
 const pollInterval = 5 * time.Second
 
+// Keep the CLI's batch limit aligned with ImageGenerationPage.tsx.
+const maxGenerateCount = 10
+
 // capabilityInfo is the capability row shared by /api/images/capabilities and
 // /api/describe/capabilities.
 type capabilityInfo struct {
@@ -54,15 +57,31 @@ type imageRef struct {
 }
 
 type pollResponse struct {
-	JobID        string     `json:"job_id"`
-	Status       string     `json:"status"`
-	Stage        *string    `json:"stage"`
-	Error        *string    `json:"error"`
-	OutputImages []imageRef `json:"output_images"`
+	JobID                 string     `json:"job_id"`
+	Status                string     `json:"status"`
+	Stage                 *string    `json:"stage"`
+	Error                 *string    `json:"error"`
+	OutputImages          []imageRef `json:"output_images"`
+	StartedAt             *string    `json:"started_at"`
+	TypicalRuntimeSeconds *float64   `json:"typical_runtime_seconds"`
+	SubmittedAt           *string    `json:"submitted_at"`
+	QueuedSeconds         *float64   `json:"queued_seconds"`
+	ExecutionSeconds      *float64   `json:"execution_seconds"`
 }
 
-func isTerminal(status string) bool {
-	return status == "completed" || status == "failed" || status == "canceled"
+func (p pollResponse) progressState() jobProgressState {
+	stage := ""
+	if p.Stage != nil {
+		stage = *p.Stage
+	}
+	return jobProgressState{
+		Status:                p.Status,
+		Stage:                 stage,
+		StartedAt:             p.StartedAt,
+		TypicalRuntimeSeconds: p.TypicalRuntimeSeconds,
+		SubmittedAt:           p.SubmittedAt,
+		ExecutionSeconds:      p.ExecutionSeconds,
+	}
 }
 
 func cmdImage(args []string) error {
@@ -164,7 +183,11 @@ func cmdImageGenerate(args []string) error {
 	height := fs.Int("height", 768, "image height")
 	seed := fs.Int64("seed", 0, "seed (0 = random)")
 	workflow := fs.String("workflow", "txt2img", "workflow")
+	count := 1
+	fs.IntVar(&count, "n", 1, "number of separate image-generation runs (max 10)")
+	fs.IntVar(&count, "count", 1, "alias for -n")
 	timeout := timeoutFlag(fs)
+	showProgress := progressFlag(fs)
 	promptFlag := fs.String("prompt", "", "prompt text (or pass it as the first argument)")
 	rest, err := parseInterleaved(fs, args)
 	if err != nil {
@@ -176,6 +199,9 @@ func cmdImageGenerate(args []string) error {
 	}
 	if strings.TrimSpace(prompt) == "" {
 		return errors.New(`prompt required: oai image generate "a red bicycle" -o bike.jpg`)
+	}
+	if count < 1 || count > maxGenerateCount {
+		return fmt.Errorf("-n must be between 1 and %d", maxGenerateCount)
 	}
 
 	cfg, err := requireLogin()
@@ -210,53 +236,113 @@ func cmdImageGenerate(args []string) error {
 	if *seed != 0 {
 		req.Seed = seed
 	}
-	var started startJobResponse
-	if err := doJSON("POST", base+"/api/images/jobs", cfg.Token, req, &started); err != nil {
-		return err
+	startedJobs := make([]startJobResponse, 0, count)
+	var batchErrors []error
+	for i := 0; i < count; i++ {
+		var started startJobResponse
+		if err := doJSON("POST", base+"/api/images/jobs", cfg.Token, req, &started); err != nil {
+			batchErrors = append(batchErrors, fmt.Errorf("submit job %d of %d: %w", i+1, count, err))
+			break
+		}
+		startedJobs = append(startedJobs, started)
+		if count == 1 {
+			fmt.Printf("Job: %s\n", started.JobID)
+		} else {
+			fmt.Printf("Job %d/%d: %s\n", i+1, count, started.JobID)
+		}
 	}
-	fmt.Printf("Job: %s\n", started.JobID)
 
-	var p pollResponse
-	pollURL := base + "/api/images/jobs/" + url.PathEscape(started.JobID) + "/poll"
-	err = waitForJob(os.Stdout, started.JobID, *timeout, func() (string, string, error) {
-		if err := doJSON("POST", pollURL, cfg.Token, nil, &p); err != nil {
-			return "", "", err
+	for i, started := range startedJobs {
+		if count > 1 {
+			fmt.Printf("Waiting for job %d/%d: %s\n", i+1, count, started.JobID)
 		}
-		stage := ""
-		if p.Stage != nil {
-			stage = *p.Stage
+		var p pollResponse
+		pollURL := base + "/api/images/jobs/" + url.PathEscape(started.JobID) + "/poll"
+		label := "Image"
+		if count > 1 {
+			label = fmt.Sprintf("Image %d/%d", i+1, count)
 		}
-		return p.Status, stage, nil
-	})
-	if err != nil {
-		return err
+		err := waitForJob(os.Stdout, started.JobID, *timeout, jobProgressOptions{
+			Enabled:      *showProgress,
+			Label:        label,
+			RunningLabel: "Generating",
+		}, func() (jobProgressState, error) {
+			if err := doJSON("POST", pollURL, cfg.Token, nil, &p); err != nil {
+				return jobProgressState{}, err
+			}
+			return p.progressState(), nil
+		})
+		if err != nil {
+			batchErrors = append(batchErrors, fmt.Errorf("job %d of %d (%s): %w", i+1, count, started.JobID, err))
+			continue
+		}
+		if err := finishJob(base, cfg.Token, &p, indexedOutputPath(*out, i)); err != nil {
+			batchErrors = append(batchErrors, fmt.Errorf("job %d of %d (%s): %w", i+1, count, started.JobID, err))
+		}
 	}
-	return finishJob(base, cfg.Token, &p, *out)
+	return errors.Join(batchErrors...)
 }
 
-// waitForJob calls poll every pollInterval until the job reaches a terminal
-// status or timeout elapses, printing stage transitions to w. The final
-// (terminal) poll result is left to the caller via poll's closure state.
-func waitForJob(w io.Writer, jobID string, timeout time.Duration, poll func() (status, stage string, err error)) error {
+// waitForJob polls until the job reaches a terminal status or the timeout
+// elapses. Interactive terminals get an animated progress bar between polls;
+// redirected output and disabled progress retain plain stage-transition lines.
+func waitForJob(
+	w io.Writer,
+	jobID string,
+	timeout time.Duration,
+	opts jobProgressOptions,
+	poll func() (jobProgressState, error),
+) error {
 	deadline := time.Now().Add(timeout)
+	renderer := newJobProgressRenderer(w, opts)
 	lastStage := ""
 	for {
-		status, stage, err := poll()
+		state, err := poll()
 		if err != nil {
+			renderer.fail("Poll failed")
 			return err
 		}
-		if stage != "" && stage != lastStage {
-			lastStage = stage
-			fmt.Fprintf(w, "Stage: %s\n", stage)
+		now := time.Now()
+		if renderer.interactive {
+			renderer.render(state, now)
+		} else if state.Stage != "" && state.Stage != lastStage {
+			lastStage = state.Stage
+			fmt.Fprintf(w, "Stage: %s\n", state.Stage)
 		}
-		if isTerminal(status) {
+		if isTerminal(state.Status) {
+			renderer.finish(state, now)
 			return nil
 		}
-		if time.Now().Add(pollInterval).After(deadline) {
-			return fmt.Errorf("timed out after %s (job %s is still %s on the server)", timeout, jobID, status)
+
+		nextPoll := now.Add(pollInterval)
+		for {
+			now = time.Now()
+			if !now.Before(deadline) {
+				renderer.fail("Timed out")
+				return fmt.Errorf("timed out after %s (job %s is still %s on the server)", timeout, jobID, state.Status)
+			}
+			untilPoll := nextPoll.Sub(now)
+			if untilPoll <= 0 {
+				break
+			}
+			pause := untilPoll
+			if renderer.interactive {
+				renderer.render(state, now)
+				pause = minDuration(progressTick, untilPoll)
+			}
+			pause = minDuration(pause, deadline.Sub(now))
+			if pause > 0 {
+				time.Sleep(pause)
+			}
 		}
-		time.Sleep(pollInterval)
 	}
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func finishJob(base, token string, p *pollResponse, out string) error {
@@ -283,4 +369,15 @@ func finishJob(base, token string, p *pollResponse, out string) error {
 		fmt.Printf("Saved %s\n", dest)
 	}
 	return nil
+}
+
+// indexedOutputPath keeps the requested name for the first result and adds a
+// one-based suffix for later results: image.jpg, image_2.jpg, image_3.jpg.
+func indexedOutputPath(path string, index int) string {
+	if index == 0 {
+		return path
+	}
+	ext := filepath.Ext(path)
+	stem := strings.TrimSuffix(path, ext)
+	return fmt.Sprintf("%s_%d%s", stem, index+1, ext)
 }

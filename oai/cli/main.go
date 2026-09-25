@@ -17,9 +17,11 @@ Usage:
   oai whoami
   oai image capabilities
   oai image describe-capabilities
-  oai image describe <file> [-prompt "..."] [-capability llm.X] [-o out.txt] [-t|-timeout 5m]
+  oai image describe <file> [file ...] [-prompt "..."] [-capability llm.X] [-o out.txt]
+                     [--progress=false] [-t|-timeout 5m]
   oai image generate "prompt" [-o out.jpg] [-capability imggen.X] [-negative TEXT]
-                     [-width N] [-height N] [-seed N] [-workflow W] [-t|-timeout 5m]
+                     [-width N] [-height N] [-seed N] [-workflow W] [-n COUNT]
+                     [--progress=false] [-t|-timeout 5m]
 
 Config is stored in ~/.oai-cli.json. Set OAI_PASSWORD for non-interactive login.
 `

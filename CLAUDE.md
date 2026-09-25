@@ -448,7 +448,7 @@ task status
 task diff
 
 # Go CLI client (oai/cli — no Taskfile target; plain go build)
-cd oai/cli && go vet ./... && go build -o oai .
+cd oai/cli && go test ./... && go vet ./... && go build -o oai .
 ./oai login && ./oai image generate "a cat" -o /tmp/cat.jpg
 
 # Teardown
