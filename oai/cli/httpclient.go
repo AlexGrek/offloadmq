@@ -6,8 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -92,4 +96,49 @@ func downloadFile(url, token, destPath string) error {
 		return err
 	}
 	return f.Close()
+}
+
+// uploadFile POSTs path as multipart field "file" (the backend's upload
+// contract) and decodes the JSON response into out.
+func uploadFile(url, token, path string, out any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	// The backend decodes according to the part's content type, so send a real one.
+	ct := mime.TypeByExtension(filepath.Ext(path))
+	if ct == "" {
+		ct = http.DetectContentType(data)
+	}
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	hdr := textproto.MIMEHeader{}
+	hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filepath.Base(path)))
+	hdr.Set("Content-Type", ct)
+	part, err := mw.CreatePart(hdr)
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(data); err != nil {
+		return err
+	}
+	if err := mw.Close(); err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, url, &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	// Uploads can be large; don't apply the short API timeout.
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return apiError(resp)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 const usage = `oai — command-line client for OAI
@@ -15,8 +16,10 @@ Usage:
   oai login [-server URL] [-login NAME] [-password PW]
   oai whoami
   oai image capabilities
+  oai image describe-capabilities
+  oai image describe <file> [-prompt "..."] [-capability llm.X] [-o out.txt] [-t|-timeout 5m]
   oai image generate "prompt" [-o out.jpg] [-capability imggen.X] [-negative TEXT]
-                     [-width N] [-height N] [-seed N] [-workflow W] [-timeout 5m]
+                     [-width N] [-height N] [-seed N] [-workflow W] [-t|-timeout 5m]
 
 Config is stored in ~/.oai-cli.json. Set OAI_PASSWORD for non-interactive login.
 `
@@ -44,6 +47,15 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 		positional = append(positional, args[0])
 		args = args[1:]
 	}
+}
+
+// timeoutFlag registers -t / -timeout (one shared value) for job-style commands.
+func timeoutFlag(fs *flag.FlagSet) *time.Duration {
+	d := new(time.Duration)
+	usage := "give up waiting after this long (e.g. 90s, 10m)"
+	fs.DurationVar(d, "timeout", 5*time.Minute, usage)
+	fs.DurationVar(d, "t", 5*time.Minute, "shorthand for -timeout")
+	return d
 }
 
 func main() {

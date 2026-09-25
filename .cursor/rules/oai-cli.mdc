@@ -1,0 +1,11 @@
+---
+description: OAI CLI (Go) — read oai-cli skill before editing
+globs: oai/cli/**
+alwaysApply: false
+---
+
+Before editing, read `.claude/skills/oai-cli/SKILL.md`.
+
+Also read `oai-backend` / the feature skill (`oai-img`, `oai-chat`) for the API contract being called.
+
+See CLAUDE.md § OAI → Skills.

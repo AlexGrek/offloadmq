@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,7 +16,9 @@ import (
 // Same cadence as ImageGenerationPage.tsx (POLL_MS).
 const pollInterval = 5 * time.Second
 
-type imgGenCapability struct {
+// capabilityInfo is the capability row shared by /api/images/capabilities and
+// /api/describe/capabilities.
+type capabilityInfo struct {
 	Base            string   `json:"base"`
 	Tags            []string `json:"tags"`
 	Raw             string   `json:"raw"`
@@ -64,20 +67,24 @@ func isTerminal(status string) bool {
 
 func cmdImage(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: oai image <generate|capabilities> ...")
+		return errors.New("usage: oai image <generate|capabilities|describe|describe-capabilities> ...")
 	}
 	switch args[0] {
 	case "generate":
 		return cmdImageGenerate(args[1:])
 	case "capabilities":
 		return cmdImageCapabilities(args[1:])
+	case "describe":
+		return cmdImageDescribe(args[1:])
+	case "describe-capabilities":
+		return cmdImageDescribeCapabilities(args[1:])
 	default:
-		return fmt.Errorf("unknown image command %q (want generate or capabilities)", args[0])
+		return fmt.Errorf("unknown image command %q (want generate, capabilities, describe or describe-capabilities)", args[0])
 	}
 }
 
-func fetchImgCapabilities(cfg *Config) ([]imgGenCapability, error) {
-	var caps []imgGenCapability
+func fetchImgCapabilities(cfg *Config) ([]capabilityInfo, error) {
+	var caps []capabilityInfo
 	err := doJSON("GET", cfg.serverURL("")+"/api/images/capabilities", cfg.Token, nil, &caps)
 	return caps, err
 }
@@ -95,8 +102,13 @@ func cmdImageCapabilities(args []string) error {
 	if err != nil {
 		return err
 	}
+	return printCapabilities(caps, "imggen.*")
+}
+
+// printCapabilities renders a capability table; kind names the family for the empty message.
+func printCapabilities(caps []capabilityInfo, kind string) error {
 	if len(caps) == 0 {
-		fmt.Println("No imggen.* capabilities known to the server.")
+		fmt.Printf("No %s capabilities known to the server.\n", kind)
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -111,18 +123,18 @@ func cmdImageCapabilities(args []string) error {
 	return w.Flush()
 }
 
-// pickCapability returns the first online capability tagged with the requested
-// workflow (capabilities also cover img2img, video, ...), falling back to the
+// pickCapability returns the first online capability tagged with preferTag
+// (imggen capabilities also cover img2img, video, ...), falling back to the
 // first online one of any kind. It errors, listing all known capabilities, when
-// none are online.
-func pickCapability(caps []imgGenCapability, workflow string) (string, error) {
+// none are online. kind names the family in error messages.
+func pickCapability(caps []capabilityInfo, preferTag, kind string) (string, error) {
 	first := ""
 	for _, c := range caps {
 		if !c.Online {
 			continue
 		}
 		for _, t := range c.Tags {
-			if t == workflow {
+			if t == preferTag {
 				return c.Base, nil
 			}
 		}
@@ -134,13 +146,13 @@ func pickCapability(caps []imgGenCapability, workflow string) (string, error) {
 		return first, nil
 	}
 	if len(caps) == 0 {
-		return "", errors.New("no imggen.* capabilities are known to the server")
+		return "", fmt.Errorf("no %s capabilities are known to the server", kind)
 	}
 	var names []string
 	for _, c := range caps {
 		names = append(names, c.Base+" (offline)")
 	}
-	return "", fmt.Errorf("no imggen.* capability is online; known: %s", strings.Join(names, ", "))
+	return "", fmt.Errorf("no %s capability is online; known: %s", kind, strings.Join(names, ", "))
 }
 
 func cmdImageGenerate(args []string) error {
@@ -152,7 +164,7 @@ func cmdImageGenerate(args []string) error {
 	height := fs.Int("height", 768, "image height")
 	seed := fs.Int64("seed", 0, "seed (0 = random)")
 	workflow := fs.String("workflow", "txt2img", "workflow")
-	timeout := fs.Duration("timeout", 5*time.Minute, "give up waiting after this long")
+	timeout := timeoutFlag(fs)
 	promptFlag := fs.String("prompt", "", "prompt text (or pass it as the first argument)")
 	rest, err := parseInterleaved(fs, args)
 	if err != nil {
@@ -178,7 +190,7 @@ func cmdImageGenerate(args []string) error {
 		if err != nil {
 			return err
 		}
-		if capName, err = pickCapability(caps, *workflow); err != nil {
+		if capName, err = pickCapability(caps, *workflow, "imggen.*"); err != nil {
 			return err
 		}
 		fmt.Printf("Using capability: %s (auto-selected, online)\n", capName)
@@ -204,23 +216,44 @@ func cmdImageGenerate(args []string) error {
 	}
 	fmt.Printf("Job: %s\n", started.JobID)
 
-	deadline := time.Now().Add(*timeout)
+	var p pollResponse
+	pollURL := base + "/api/images/jobs/" + url.PathEscape(started.JobID) + "/poll"
+	err = waitForJob(os.Stdout, started.JobID, *timeout, func() (string, string, error) {
+		if err := doJSON("POST", pollURL, cfg.Token, nil, &p); err != nil {
+			return "", "", err
+		}
+		stage := ""
+		if p.Stage != nil {
+			stage = *p.Stage
+		}
+		return p.Status, stage, nil
+	})
+	if err != nil {
+		return err
+	}
+	return finishJob(base, cfg.Token, &p, *out)
+}
+
+// waitForJob calls poll every pollInterval until the job reaches a terminal
+// status or timeout elapses, printing stage transitions to w. The final
+// (terminal) poll result is left to the caller via poll's closure state.
+func waitForJob(w io.Writer, jobID string, timeout time.Duration, poll func() (status, stage string, err error)) error {
+	deadline := time.Now().Add(timeout)
 	lastStage := ""
 	for {
-		var p pollResponse
-		pollURL := base + "/api/images/jobs/" + url.PathEscape(started.JobID) + "/poll"
-		if err := doJSON("POST", pollURL, cfg.Token, nil, &p); err != nil {
+		status, stage, err := poll()
+		if err != nil {
 			return err
 		}
-		if p.Stage != nil && *p.Stage != "" && *p.Stage != lastStage {
-			lastStage = *p.Stage
-			fmt.Printf("Stage: %s\n", lastStage)
+		if stage != "" && stage != lastStage {
+			lastStage = stage
+			fmt.Fprintf(w, "Stage: %s\n", stage)
 		}
-		if isTerminal(p.Status) {
-			return finishJob(base, cfg.Token, &p, *out)
+		if isTerminal(status) {
+			return nil
 		}
 		if time.Now().Add(pollInterval).After(deadline) {
-			return fmt.Errorf("timed out after %s (job %s is still %s on the server)", *timeout, started.JobID, p.Status)
+			return fmt.Errorf("timed out after %s (job %s is still %s on the server)", timeout, jobID, status)
 		}
 		time.Sleep(pollInterval)
 	}

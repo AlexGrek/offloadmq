@@ -339,6 +339,7 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 - User accounts with per-user usage quotas
 - React UI built with shadcn/ui components
 - Deployed at `oai.alexgr.space`; Docker image `grekodocker/oai`
+- Also has a Go command-line client, [oai/cli/](oai/cli/) (`oai login`, `oai image generate|describe`), that talks to the same HTTP API as the SPA
 
 ### Skills
 
@@ -354,6 +355,7 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 | **oai-img** | `.claude/skills/oai-img/SKILL.md` | Image generation feature files (patterns below) |
 | **oai-img-tools** | `.claude/skills/oai-img-tools/SKILL.md` | Image Tools (`img-utils.*` / resize) feature files (patterns below) |
 | **oai-movie** | `.claude/skills/oai-movie/SKILL.md` | Movie Studio feature files (patterns below) |
+| **oai-cli** | `.claude/skills/oai-cli/SKILL.md` | `oai/cli/**` (Go CLI client) |
 | **oai-backend** | `.claude/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |
 | **oai-frontend** | `.claude/skills/oai-frontend/SKILL.md` | Any `oai/frontend/**` file, or cross-cutting SPA work |
 
@@ -363,6 +365,7 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 2. **Feature wins on overlap** — files listed under `oai-chat`, `oai-img`, or `oai-img-tools` use that feature skill first; still read `oai-backend` / `oai-frontend` for shared patterns (AppState, routing, layout). `oai-img` (generation) and `oai-img-tools` (`/app/img-utils` transforms) are distinct features — match by the file, not by "image".
 3. **DevOps** — Helm/Docker/deploy-only changes → `oai-devops` (skip feature skills unless app code changes too).
 4. **Tests** — `oai/itests/**` → `oai-itests` plus the skill for the route/feature under test.
+5. **CLI** — `oai/cli/**` → `oai-cli`, plus `oai-backend` and the feature skill (`oai-img`, `oai-chat`, …) for the API contract the command calls. The CLI is a pure API client: a new command needs an existing backend route.
 
 #### oai-chat — file patterns
 
@@ -406,6 +409,7 @@ Paths are relative to `oai/`.
 - **oai-img-tools** — Image Tools at `/app/img-utils`: one-shot transforms (image in, one out, no prompt). Two families sharing the page/table/endpoints — `img-utils.*` ComfyUI tools (depth, face swap, SeedVR2 upscale) and built-in `image_resize` "Basic resize". Spans the agent workflow install/autowiring, the OAI offload-job backend, and `ImgUtilsPage`. Pack=model / operation=file convention; scalar knobs via `secondary_prompts`.
 - **oai-movie** — Multi-scene AI film generator at `/app/movie`: director LLM outline, per-scene vision prompt + video render, long-shot continuity via ffmpeg, final concat.
 - **oai-backend** — Rust/Axum backend: routes, services, DB migrations (SeaORM), middleware, OffloadMQ client, background workers.
+- **oai-cli** — Go CLI at `oai/cli/`: file layout, conventions (flags, `doJSON`, capability picking, submit→poll→terminal), how to add a command, manual verification against a live backend, debugging table.
 - **oai-itests** — Python integration tests (httpx + pytest-xdist) against the live backend; one test file per route group; no mocking.
 - **oai-devops** — Helm/Kubernetes deploy, Garage init job, Docker publish, troubleshooting (`garage-init`, `wait-garage-creds`, ImagePullBackOff).
 
@@ -442,6 +446,10 @@ task undeploy
 task template        # Preview manifests
 task status
 task diff
+
+# Go CLI client (oai/cli — no Taskfile target; plain go build)
+cd oai/cli && go vet ./... && go build -o oai .
+./oai login && ./oai image generate "a cat" -o /tmp/cat.jpg
 
 # Teardown
 task infra:down      # Stop infra, keep data
