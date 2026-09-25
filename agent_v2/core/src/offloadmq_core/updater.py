@@ -85,6 +85,28 @@ def fetch_latest_info() -> dict[str, Any]:
         return result
 
 
+def tls_selftest() -> None:
+    """Round-trip to the release server over both HTTP stacks the agent uses.
+
+    urllib (updater) and aiohttp (the agent's server WebSocket) load CA
+    certificates independently — aiohttp at import time — so each is checked.
+    Raises on failure.
+    """
+    import asyncio
+
+    import aiohttp
+
+    url = f"{DL_BASE}/api/v1/pub/release/{BUCKET}/latest"
+    fetch_latest_info()
+
+    async def _aio() -> None:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
+            async with s.get(url) as resp:
+                resp.raise_for_status()
+
+    asyncio.run(_aio())
+
+
 def check_for_update(current_version: str) -> dict[str, Any]:
     """Return update info.
 
@@ -183,14 +205,14 @@ def _smoke_test(binary: Path, expected_version: str) -> None:
     """Prove the new binary works on this host before we swap it in.
 
     ``--version`` catches a truncated download, a build that needs a newer glibc
-    than this host has, or an import error at startup. ``update --check`` makes
-    a real TLS round-trip to the release server, catching a build that can't
-    verify certificates here (and so could never reach the OffloadMQ server).
+    than this host has, or an import error at startup. ``selftest`` makes real
+    TLS round-trips (urllib + aiohttp) to the release server, catching a build
+    that can't verify certificates here and so could never reach the server.
     """
     out = _run_new(binary, "--version")
     if expected_version.lstrip("v") not in out:
         raise UpdateError(f"new binary reports {out[-200:]!r}, expected {expected_version}")
-    _run_new(binary, "update", "--check")
+    _run_new(binary, "selftest")
 
 
 def stage_update(version: str, log_fn: LogFn) -> StagedUpdate:

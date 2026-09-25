@@ -228,6 +228,19 @@ def update(
     console.print(f"[green]{result['message']}[/green]")
 
 
+@app.command(hidden=True)
+def selftest() -> None:
+    """Check this build can make verified TLS connections (run by the self-updater)."""
+    from offloadmq_core import updater
+
+    try:
+        updater.tls_selftest()
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]selftest failed: {exc}[/red]")
+        raise typer.Exit(1)
+    console.print("[green]ok[/green]")
+
+
 # ------------------------------------------------------------------
 # config
 # ------------------------------------------------------------------

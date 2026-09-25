@@ -82,7 +82,7 @@ def fake_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, P
     exe.write_text("#!/bin/sh\necho v0.3.260\n")
     exe.chmod(0o755)
     release = tmp_path / "release"
-    release.write_text("#!/bin/sh\n[ \"$1\" = update ] && exit 0\necho v0.3.300\n")
+    release.write_text("#!/bin/sh\n[ \"$1\" = selftest ] && exit 0\necho v0.3.300\n")
 
     monkeypatch.setattr(updater, "_current_exe", lambda: exe)
     monkeypatch.setattr(updater, "_os_arch", lambda: "linux-amd64")
@@ -255,3 +255,23 @@ def test_ca_bundle_respects_explicit_env(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("SSL_CERT_FILE", "/custom.pem")
     tls.ensure_ca_bundle()
     assert tls.os.environ["SSL_CERT_FILE"] == "/custom.pem"
+
+
+def test_ca_bundle_applied_before_aiohttp_is_imported() -> None:
+    """aiohttp freezes its verified SSL context at import; the fix must run first."""
+    import subprocess
+    import sys
+
+    code = """
+import sys
+class Spy:
+    def find_spec(self, name, path=None, target=None):
+        if name == "aiohttp" and "offloadmq_agent.tls" not in sys.modules:
+            raise SystemExit("aiohttp imported before the CA bundle fix")
+        return None
+sys.meta_path.insert(0, Spy())
+import offloadmq_core
+import cli_manager.main
+"""
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
