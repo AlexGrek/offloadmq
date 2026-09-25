@@ -146,7 +146,13 @@ def _child_env() -> dict[str, str]:
     variables, believes it is our own child process, and runs out of our
     extraction dir instead of its own.
     """
+    from offloadmq_agent import tls
+
     env = {k: v for k, v in os.environ.items() if not k.startswith(("_PYI_", "_MEI"))}
+    if tls.injected:
+        # Our own workaround, not the host's config: the new binary must find
+        # the CA bundle by itself, exactly as it will after a systemd restart.
+        env.pop("SSL_CERT_FILE", None)
     env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
     if orig is not None:
@@ -156,15 +162,10 @@ def _child_env() -> dict[str, str]:
     return env
 
 
-def _smoke_test(binary: Path, expected_version: str) -> None:
-    """Run ``<binary> --version`` and require it to report ``expected_version``.
-
-    Catches a truncated download, a build that needs a newer glibc than this
-    host has, or an import error at startup — before we swap it in.
-    """
+def _run_new(binary: Path, *args: str) -> str:
     try:
         proc = subprocess.run(
-            [str(binary), "--version"],
+            [str(binary), *args],
             capture_output=True,
             text=True,
             timeout=120,
@@ -174,9 +175,22 @@ def _smoke_test(binary: Path, expected_version: str) -> None:
         raise UpdateError(f"new binary failed to run: {exc}") from exc
     out = (proc.stdout + proc.stderr).strip()
     if proc.returncode != 0:
-        raise UpdateError(f"new binary exited {proc.returncode}: {out[-500:]}")
+        raise UpdateError(f"new binary `{' '.join(args)}` exited {proc.returncode}: {out[-500:]}")
+    return out
+
+
+def _smoke_test(binary: Path, expected_version: str) -> None:
+    """Prove the new binary works on this host before we swap it in.
+
+    ``--version`` catches a truncated download, a build that needs a newer glibc
+    than this host has, or an import error at startup. ``update --check`` makes
+    a real TLS round-trip to the release server, catching a build that can't
+    verify certificates here (and so could never reach the OffloadMQ server).
+    """
+    out = _run_new(binary, "--version")
     if expected_version.lstrip("v") not in out:
         raise UpdateError(f"new binary reports {out[-200:]!r}, expected {expected_version}")
+    _run_new(binary, "update", "--check")
 
 
 def stage_update(version: str, log_fn: LogFn) -> StagedUpdate:

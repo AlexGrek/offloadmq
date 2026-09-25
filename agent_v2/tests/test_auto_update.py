@@ -82,7 +82,7 @@ def fake_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, P
     exe.write_text("#!/bin/sh\necho v0.3.260\n")
     exe.chmod(0o755)
     release = tmp_path / "release"
-    release.write_text("#!/bin/sh\necho v0.3.300\n")
+    release.write_text("#!/bin/sh\n[ \"$1\" = update ] && exit 0\necho v0.3.300\n")
 
     monkeypatch.setattr(updater, "_current_exe", lambda: exe)
     monkeypatch.setattr(updater, "_os_arch", lambda: "linux-amd64")
@@ -219,3 +219,39 @@ def test_remote_request_refused_when_unsupported(tmp_path: Path) -> None:
     au = _orchestrator(tmp_path).auto_update
     with pytest.raises(updater.UpdateError):
         au.handle_remote_request(check_only=True)
+
+
+# ----------------------------------------------------------------------
+# TLS CA bundle (frozen builds on non-Debian distros)
+# ----------------------------------------------------------------------
+
+
+def test_ca_bundle_set_when_openssl_default_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ssl
+
+    from offloadmq_agent import tls
+
+    bundle = tmp_path / "ca-bundle.crt"
+    bundle.write_text("")
+    missing = ssl.DefaultVerifyPaths(
+        str(tmp_path / "nope.pem"), str(tmp_path / "nocerts"), "", "", "", ""
+    )
+    monkeypatch.setattr(tls.sys, "platform", "linux")
+    monkeypatch.setattr(tls.ssl, "get_default_verify_paths", lambda: missing)
+    monkeypatch.setattr(tls, "_SYSTEM_BUNDLES", (str(bundle),))
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+
+    tls.ensure_ca_bundle()
+    assert tls.os.environ["SSL_CERT_FILE"] == str(bundle)
+
+
+def test_ca_bundle_respects_explicit_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from offloadmq_agent import tls
+
+    monkeypatch.setattr(tls.sys, "platform", "linux")
+    monkeypatch.setenv("SSL_CERT_FILE", "/custom.pem")
+    tls.ensure_ca_bundle()
+    assert tls.os.environ["SSL_CERT_FILE"] == "/custom.pem"
