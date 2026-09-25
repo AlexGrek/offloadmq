@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Copy,
   Eye,
@@ -63,6 +63,10 @@ const DEFAULT_PROMPT = 'Describe this image in detail'
 const POLL_INTERVAL_MS = 3000
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 
+type DescribeRouteState = {
+  describeImage?: UploadedImage
+}
+
 // Vision models handle modest resolutions best — downscale the input by default
 // (mirrors the management sandbox Image Analyzer).
 const DEFAULT_RESCALE: RescaleState = {
@@ -84,6 +88,8 @@ function jobTitle(prompt: string, limit = 56): string {
 export default function DescribeImagePage() {
   const { token } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const routeImage = (location.state as DescribeRouteState | null)?.describeImage ?? null
 
   const [capabilities, setCapabilities] = useState<DescribeCapability[]>([])
   const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('idle')
@@ -93,13 +99,15 @@ export default function DescribeImagePage() {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
   const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
 
-  const [uploadedInput, setUploadedInput] = useState<UploadedImage | null>(null)
+  const [uploadedInput, setUploadedInput] = useState<UploadedImage | null>(routeImage)
   // External resize: shrink the image on an `image_resize` agent rather than in
   // the backend. Only offered while such an agent is online.
   const [externalResizeInfo, setExternalResizeInfo] = useState<ExternalResizeInfo | null>(null)
   const [externalResize, setExternalResize] = useState(false)
   const previewUrlRef = useRef<string | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(() =>
+    routeImage ? imageFileUrl(routeImage.image_id, token) : null,
+  )
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)

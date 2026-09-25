@@ -5,7 +5,8 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Download, Pencil, ShieldAlert, Star, Trash2, Video, Wand2, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Download, Eye, Pencil, ShieldAlert, Star, Trash2, Video, Wand2, X } from 'lucide-react'
 import {
   deleteImage,
   getImageStarred,
@@ -78,6 +79,7 @@ export function ImageLightbox({
   open: controlledOpen,
   onOpenChange,
 }: ImageLightboxProps) {
+  const navigate = useNavigate()
   const isControlled = controlledOpen !== undefined
   const [internalOpen, setInternalOpen] = useState(false)
   const open = isControlled ? controlledOpen : internalOpen
@@ -159,6 +161,26 @@ export function ImageLightbox({
     triggerImageDownload(src, actions?.filename ?? alt)
     if (actions?.imageId) markImageDownloaded(actions.imageId)
   }, [src, actions, alt])
+
+  const onDescribe = useCallback(() => {
+    if (!actions) return
+    setOpen(false)
+    navigate('/app/describe', {
+      state: {
+        describeImage: {
+          image_id: actions.imageId,
+          filename: actions.filename,
+          // Images served by this lightbox are normalized to JPEG by OAI.
+          content_type: 'image/jpeg',
+          width: 0,
+          height: 0,
+          size_bytes: 0,
+          rescaled: false,
+          reencoded: false,
+        },
+      },
+    })
+  }, [actions, navigate, setOpen])
 
   const onToggleStar = useCallback(async () => {
     if (!actions?.token) return
@@ -298,6 +320,15 @@ export function ImageLightbox({
                   NSFW Scan
                 </button>
               ) : null}
+              <button
+                type="button"
+                className={glassButton}
+                onClick={onDescribe}
+                data-testid={testId ? `${testId}-describe` : 'image-lightbox-describe'}
+              >
+                <Eye className="size-3" />
+                Describe
+              </button>
               {actions.onSendToImg2Img ? (
                 <button
                   type="button"
