@@ -111,13 +111,27 @@ func cmdImageCapabilities(args []string) error {
 	return w.Flush()
 }
 
-// pickCapability returns the first online capability, or an error listing all
-// known ones when none are online.
-func pickCapability(caps []imgGenCapability) (string, error) {
+// pickCapability returns the first online capability tagged with the requested
+// workflow (capabilities also cover img2img, video, ...), falling back to the
+// first online one of any kind. It errors, listing all known capabilities, when
+// none are online.
+func pickCapability(caps []imgGenCapability, workflow string) (string, error) {
+	first := ""
 	for _, c := range caps {
-		if c.Online {
-			return c.Base, nil
+		if !c.Online {
+			continue
 		}
+		for _, t := range c.Tags {
+			if t == workflow {
+				return c.Base, nil
+			}
+		}
+		if first == "" {
+			first = c.Base
+		}
+	}
+	if first != "" {
+		return first, nil
 	}
 	if len(caps) == 0 {
 		return "", errors.New("no imggen.* capabilities are known to the server")
@@ -164,7 +178,7 @@ func cmdImageGenerate(args []string) error {
 		if err != nil {
 			return err
 		}
-		if capName, err = pickCapability(caps); err != nil {
+		if capName, err = pickCapability(caps, *workflow); err != nil {
 			return err
 		}
 		fmt.Printf("Using capability: %s (auto-selected, online)\n", capName)
