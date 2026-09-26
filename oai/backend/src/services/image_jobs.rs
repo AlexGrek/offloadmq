@@ -1801,7 +1801,7 @@ async fn store_output_image(
 
     let image_id = state.next_id();
     let storage_path = image_paths::main_image_path(user_id, "output", Some(job.id), image_id);
-    store_image(
+    let stored = store_image(
         state,
         StoredImageSpec {
             image_id,
@@ -1817,7 +1817,8 @@ async fn store_output_image(
         &processed,
     )
     .await?;
-    if let Err(e) = record_image_generation_parameters(state, user_id, job, &filename).await {
+    // Keyed by the *stored* name, which is what the Files page looks properties up by.
+    if let Err(e) = record_image_generation_parameters(state, user_id, job, &stored.filename).await {
         tracing::warn!(
             "failed to record generation parameters for image {image_id}: {e}"
         );
@@ -1912,6 +1913,13 @@ async fn store_image(
 ) -> Result<image_generation::ImageFile, AppError> {
     let user_id = spec.user_id;
     let op = storage::operator(state)?;
+    // The bytes are JPEG whatever the source was, so the name must say so — otherwise a
+    // "cat.png" download is re-suffixed by the browser into "cat.png.jpg".
+    let filename = if processed.content_type == "image/jpeg" {
+        image_processing::jpeg_filename(spec.filename)
+    } else {
+        spec.filename.to_string()
+    };
     let thumbnail_storage_path = image_paths::thumbnail_path(user_id, spec.image_id);
     storage::write(op, spec.storage_path, processed.bytes.clone()).await?;
     storage::write(
@@ -1931,7 +1939,7 @@ async fn store_image(
             storage_path: spec.storage_path,
             thumbnail_storage_path: &thumbnail_storage_path,
             thumbnail_stored_bytes: processed.thumbnail_bytes.len() as i64,
-            filename: spec.filename,
+            filename: &filename,
             content_type: &processed.content_type,
             original_bytes: processed.original_bytes,
             stored_bytes: processed.bytes.len() as i64,

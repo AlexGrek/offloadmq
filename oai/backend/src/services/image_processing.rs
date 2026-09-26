@@ -213,6 +213,31 @@ pub fn process_image_capped(
     })
 }
 
+/// File extensions of image formats [`process_image`] accepts as input.
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif", "avif", "jxl",
+];
+
+/// The name for a stored image whose bytes are now JPEG: the original image extension
+/// (`.png`, `.webp`, …) is replaced by `.jpg`, so `cat.png` becomes `cat.jpg` rather than
+/// `cat.png.jpg`. Any other dot in the name (`v2.final`) is part of the stem and stays.
+pub fn jpeg_filename(name: &str) -> String {
+    let name = name.trim();
+    let stem = match name.rsplit_once('.') {
+        Some((stem, ext))
+            if !stem.is_empty() && IMAGE_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()) =>
+        {
+            stem
+        }
+        _ => name,
+    };
+    if stem.is_empty() {
+        "image.jpg".to_string()
+    } else {
+        format!("{stem}.jpg")
+    }
+}
+
 /// Returns JPEG bytes for API responses when the stored blob is not already JPEG.
 pub fn ensure_jpeg_response(bytes: Vec<u8>, content_type: &str) -> Result<Vec<u8>, AppError> {
     if is_jpeg_blob(&bytes, content_type) {
@@ -599,6 +624,19 @@ mod tests {
         assert!(exif_image_description(&out.bytes).unwrap().contains("a lighthouse at dusk"));
         assert!(exif_orientation_int(&out.bytes).is_none(), "orientation is baked into pixels");
         assert_eq!(out.sha256, sha256_hex(&out.bytes));
+    }
+
+    #[test]
+    fn jpeg_filename_replaces_image_extension() {
+        assert_eq!(jpeg_filename("cat.png"), "cat.jpg");
+        assert_eq!(jpeg_filename("Cat.PNG"), "Cat.jpg");
+        assert_eq!(jpeg_filename("cat.jpeg"), "cat.jpg");
+        assert_eq!(jpeg_filename("cat.jpg"), "cat.jpg");
+        assert_eq!(jpeg_filename("photo.v2.webp"), "photo.v2.jpg");
+        assert_eq!(jpeg_filename("noext"), "noext.jpg");
+        assert_eq!(jpeg_filename("release.notes"), "release.notes.jpg");
+        assert_eq!(jpeg_filename(".png"), ".png.jpg");
+        assert_eq!(jpeg_filename(""), "image.jpg");
     }
 
     #[test]
