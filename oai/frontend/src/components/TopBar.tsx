@@ -5,6 +5,7 @@ import { useProgress } from '../contexts/ProgressContext'
 import { useWorkload } from '../contexts/WorkloadContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { RandomNamesWidget } from './RandomNamesWidget'
+import { TopApps } from './TopApps'
 import { Button } from './ui/button'
 import { cn } from '@/lib/utils'
 
@@ -24,9 +25,12 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur">
-      <Link to="/app/dashboard" className="font-display select-none text-xl font-bold tracking-tight">
-        oai
-      </Link>
+      <div className="flex min-w-0 items-center">
+        <Link to="/app/dashboard" className="font-display select-none text-xl font-bold tracking-tight">
+          oai
+        </Link>
+        <TopApps />
+      </div>
       <div className="flex items-center gap-1">
         <RandomNamesWidget />
         <Button
