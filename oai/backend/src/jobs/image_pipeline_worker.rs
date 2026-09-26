@@ -1,3 +1,4 @@
+use crate::error::ResultExt;
 use std::{sync::Arc, time::Duration};
 
 use crate::{db::image_worker_logs, services::image_jobs, state::AppState};
@@ -56,7 +57,7 @@ pub fn spawn(state: Arc<AppState>) {
                 "status": status,
                 "error": error,
             });
-            let _ = image_worker_logs::create(
+            image_worker_logs::create(
                 &state.db,
                 state.next_id(),
                 &run_id,
@@ -64,7 +65,8 @@ pub fn spawn(state: Arc<AppState>) {
                 "image pipeline worker pass",
                 &payload.to_string(),
             )
-            .await;
+            .await
+            .log_warn("write image worker log");
         }
     });
 }

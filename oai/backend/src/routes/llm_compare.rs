@@ -9,7 +9,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    db::{llm_compare, prompts},
+    db::llm_compare,
     error::AppError,
     middleware::AuthenticatedUser,
     routes::job_common::{parse_id, CancelJobResponse, StartJobResponse},
@@ -43,24 +43,10 @@ pub async fn start_job(
     Json(req): Json<StartJobRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     if let Some(system) = req.system_prompt.as_deref().filter(|s| !s.trim().is_empty()) {
-        let _ = prompts::record_use(
-            &state.db,
-            || state.next_id(),
-            user_id,
-            "llm-compare-system",
-            system,
-        )
-        .await;
+        crate::services::prompt_usage::note_use(&state, user_id, "llm-compare-system", system).await;
     }
     if !req.user_prompt.trim().is_empty() {
-        let _ = prompts::record_use(
-            &state.db,
-            || state.next_id(),
-            user_id,
-            "llm-compare-user",
-            &req.user_prompt,
-        )
-        .await;
+        crate::services::prompt_usage::note_use(&state, user_id, "llm-compare-user", &req.user_prompt).await;
     }
 
     let job_id = service::start_job(

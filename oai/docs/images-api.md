@@ -379,7 +379,7 @@ Upload and metadata routes return errors as:
 | Area | Location |
 |------|----------|
 | Routes | `oai/backend/src/routes/images.rs`, `routes/files.rs` |
-| Upload / download logic | `oai/backend/src/services/image_jobs.rs` |
+| Upload / download logic | `oai/backend/src/services/image_jobs/` |
 | JPEG + thumbnail processing | `oai/backend/src/services/image_processing.rs` |
 | Storage paths | `oai/backend/src/services/image_paths.rs` |
 | Route registration | `oai/backend/src/app.rs` |

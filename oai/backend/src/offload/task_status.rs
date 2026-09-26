@@ -37,22 +37,21 @@ pub const OFFLOAD_TASK_MISSING: &str =
 /// If `err` indicates the upstream task no longer exists (404/410, or a
 /// not-found message), returns a user-facing reason string; otherwise `None`.
 /// The caller marks the local job failed when this is `Some`.
+///
+/// For a 404/410 the server's own explanation (`{"error":{"type":"not_found",
+/// "message":…}}` or `{"message":…}`) is preferred over the generic text.
 pub fn offload_task_missing_message(err: &AppError) -> Option<String> {
     let AppError::ExternalService(msg) = err else {
         return None;
     };
-    if let Some(rest) = msg.strip_prefix("POLL_HTTP_") {
-        if offload_http_is_task_missing(rest) {
-            return Some(OFFLOAD_TASK_MISSING.to_string());
+    for prefix in ["POLL_HTTP_", "CANCEL_HTTP_"] {
+        if let Some(rest) = msg.strip_prefix(prefix) {
+            if offload_http_is_task_missing(rest) {
+                return Some(offload_missing_detail(rest, OFFLOAD_TASK_MISSING));
+            }
         }
     }
-    if let Some(rest) = msg.strip_prefix("CANCEL_HTTP_") {
-        if offload_http_is_task_missing(rest) {
-            return Some(OFFLOAD_TASK_MISSING.to_string());
-        }
-    }
-    let lower = msg.to_ascii_lowercase();
-    if lower.contains("not found") || lower.contains("not_found") {
+    if offload_message_indicates_missing(msg) {
         return Some(OFFLOAD_TASK_MISSING.to_string());
     }
     None
@@ -63,6 +62,43 @@ fn offload_http_is_task_missing(rest: &str) -> bool {
         rest.split_once(':').map(|(code, _)| code),
         Some("404") | Some("410")
     )
+}
+
+/// Longest slice of an upstream response body echoed into a failure reason.
+const MAX_MISSING_DETAIL_CHARS: usize = 240;
+
+fn offload_missing_detail(rest: &str, fallback: &str) -> String {
+    let body = rest.split_once(':').map(|(_, b)| b).unwrap_or("");
+    if body.is_empty() {
+        return fallback.to_string();
+    }
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
+        if let Some(err) = v.get("error") {
+            let is_not_found = err.get("type").and_then(|t| t.as_str()) == Some("not_found");
+            if is_not_found {
+                if let Some(m) = err.get("message").and_then(|m| m.as_str()).filter(|s| !s.is_empty()) {
+                    return m.to_string();
+                }
+                return fallback.to_string();
+            }
+        }
+        if let Some(m) = v.get("message").and_then(|m| m.as_str()).filter(|s| !s.is_empty()) {
+            return m.to_string();
+        }
+    }
+    let trimmed = body.trim();
+    // Truncate by chars, not bytes: a byte slice panics if a multibyte character
+    // straddles the cut, and this text comes from an upstream we don't control.
+    let shown: String = trimmed.chars().take(MAX_MISSING_DETAIL_CHARS).collect();
+    format!("{fallback} ({shown})")
+}
+
+fn offload_message_indicates_missing(msg: &str) -> bool {
+    let lower = msg.to_ascii_lowercase();
+    lower.contains("not found")
+        || lower.contains("not_found")
+        || (lower.contains("poll failed:") || lower.contains("cancel failed:"))
+            && lower.contains("404")
 }
 
 /// Extract an error string from a task output, falling back to `fallback`.
@@ -193,6 +229,69 @@ impl OffloadPoller for OffloadImageClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ext(msg: &str) -> AppError {
+        AppError::ExternalService(msg.to_string())
+    }
+
+    #[test]
+    fn missing_message_ignores_other_error_kinds_and_unrelated_failures() {
+        assert_eq!(offload_task_missing_message(&AppError::NotFound), None);
+        assert_eq!(offload_task_missing_message(&ext("POLL_HTTP_500:boom")), None);
+        assert_eq!(offload_task_missing_message(&ext("connection refused")), None);
+    }
+
+    #[test]
+    fn missing_message_404_and_410_with_no_body_use_the_generic_text() {
+        assert_eq!(
+            offload_task_missing_message(&ext("POLL_HTTP_404:")),
+            Some(OFFLOAD_TASK_MISSING.to_string())
+        );
+        assert_eq!(
+            offload_task_missing_message(&ext("CANCEL_HTTP_410:")),
+            Some(OFFLOAD_TASK_MISSING.to_string())
+        );
+    }
+
+    #[test]
+    fn missing_message_prefers_the_servers_own_explanation() {
+        let typed = r#"POLL_HTTP_404:{"error":{"type":"not_found","message":"task 42 was archived"}}"#;
+        assert_eq!(offload_task_missing_message(&ext(typed)), Some("task 42 was archived".into()));
+
+        let flat = r#"POLL_HTTP_404:{"message":"gone for good"}"#;
+        assert_eq!(offload_task_missing_message(&ext(flat)), Some("gone for good".into()));
+
+        // A typed not_found with no message falls back rather than echoing raw JSON.
+        let typed_empty = r#"POLL_HTTP_404:{"error":{"type":"not_found"}}"#;
+        assert_eq!(
+            offload_task_missing_message(&ext(typed_empty)),
+            Some(OFFLOAD_TASK_MISSING.to_string())
+        );
+    }
+
+    #[test]
+    fn missing_message_echoes_plain_bodies_truncated_on_a_char_boundary() {
+        let got = offload_task_missing_message(&ext("POLL_HTTP_404:  nope  ")).unwrap();
+        assert_eq!(got, format!("{OFFLOAD_TASK_MISSING} (nope)"));
+
+        // 300 two-byte chars: a byte slice at 240 would land mid-character and panic.
+        let body = "é".repeat(300);
+        let got = offload_task_missing_message(&ext(&format!("POLL_HTTP_404:{body}"))).unwrap();
+        assert_eq!(got.chars().filter(|c| *c == 'é').count(), MAX_MISSING_DETAIL_CHARS);
+    }
+
+    #[test]
+    fn missing_message_recognizes_not_found_wording_and_poll_404_text() {
+        for msg in [
+            "Task not found",
+            "error: NOT_FOUND",
+            "poll failed: status 404",
+            "cancel failed: HTTP 404 from server",
+        ] {
+            assert!(offload_task_missing_message(&ext(msg)).is_some(), "{msg}");
+        }
+        assert_eq!(offload_task_missing_message(&ext("poll failed: status 500")), None);
+    }
 
     #[test]
     fn extract_llm_text_ollama_message_content() {

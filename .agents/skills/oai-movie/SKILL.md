@@ -8,7 +8,7 @@ description: >-
   video pipeline; ffmpeg concatenates the finished clips. WebSocket control
   plane + REST. Use when working on oai/frontend movie files (MoviePage,
   useWsMovie, types/ws-movie, api/movie, components/movie/**), or
-  oai/backend/src/services/movie.rs, services/movie_ffmpeg.rs, db/movie.rs,
+  oai/backend/src/services/movie/**, services/movie_ffmpeg.rs, db/movie.rs,
   routes/movie.rs, ws/movie.rs, jobs/movie_worker.rs.
 ---
 
@@ -138,7 +138,7 @@ Movie Studio's frontend is being built in parallel; some of these exist already,
 
 | Path | Role |
 |------|------|
-| `backend/src/services/movie.rs` | The state machine: `reconcile_job`, `start_job`, `approve`, `stop`, `resume`, `cancel_job`, `delete_job`, `MovieJobView`/`SceneView` |
+| `backend/src/services/movie/` | The state machine. `mod.rs`: public API (`start_job`, `approve`, `stop`, `resume`, `cancel_job`, `delete_job`), `MovieJobView`/`SceneView`, the `reconcile_job` dispatcher; `outline.rs` (director), `scenes.rs` (scene prompt + video), `assemble.rs` (concat), `watch.rs` (WebSocket watcher) |
 | `backend/src/services/movie_ffmpeg.rs` | `last_frame_jpeg`, `concat_videos` — no DB/network I/O, pure `Command::new("ffmpeg")` wrappers |
 | `backend/src/db/movie.rs` | SeaORM CRUD (`create_job`, `get_job`, `list_jobs`, `list_inflight_jobs`, `update_job_state`, `delete_job`) |
 | `backend/src/db/entities/movie_jobs.rs` | `movie_jobs` table model |
@@ -149,7 +149,7 @@ Movie Studio's frontend is being built in parallel; some of these exist already,
 | `backend/src/app.rs` | Route registration — `/api/ws/movie` sits next to `/api/ws/debate`; `/api/movie/*` REST routes |
 
 **DB table:** `movie_jobs` (migration `m20260730_000029_create_movie_jobs` in
-`backend/src/db/migrator.rs`). One row per job; `outline_json` and `scenes_json` are
+`backend/src/db/migrator/m20260730_000029_create_movie_jobs.rs`). One row per job; `outline_json` and `scenes_json` are
 JSON-serialized `Vec<String>`/`Vec<SceneRecord>` columns, not separate tables.
 
 ---
@@ -175,7 +175,7 @@ Quick orientation only:
 
 ### Add a field to the job / scene shape
 
-1. `SceneRecord`/`SceneView` or `MovieJobView` in `services/movie.rs` — plus `scene_view`/
+1. `SceneRecord`/`SceneView` or `MovieJobView` in `services/movie/mod.rs` — plus `scene_view`/
    `job_view` mapping if adding to the view struct
 2. `movie_jobs::Model` in `db/entities/movie_jobs.rs` + a new migration if it's a DB column
    (job-level fields only — scene fields live inside `scenes_json`, no migration needed)
@@ -184,7 +184,7 @@ Quick orientation only:
 
 ### Change what happens in a phase
 
-Edit the matching `reconcile_*` function in `services/movie.rs` (`reconcile_director`,
+Edit the matching `reconcile_*` function in `services/movie/` (`outline.rs` / `scenes.rs` / `assemble.rs`) (`reconcile_director`,
 `reconcile_scene_prompt`, `reconcile_video`, `reconcile_assemble`). Keep `reconcile_job`'s
 top-level terminal/awaitingApproval/paused guard intact — every phase function assumes it has
 already been filtered out.

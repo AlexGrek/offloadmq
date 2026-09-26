@@ -7,7 +7,7 @@ continuity ("long-shot mode") — each prompt renders as a real clip through the
 `imggen.*` video pipeline (see [comfy-api.md](../../docs/comfy-api.md)), and once every scene
 has rendered, ffmpeg concatenates the clips into one movie file.
 
-Backend: `oai/backend/src/services/movie.rs` (state machine), `services/movie_ffmpeg.rs`
+Backend: `oai/backend/src/services/movie/` (state machine), `services/movie_ffmpeg.rs`
 (ffmpeg), `routes/movie.rs` (REST), `ws/movie.rs` (WebSocket transport), `db/movie.rs` +
 `db/entities/movie_jobs.rs` (persistence), `jobs/movie_worker.rs` (background reconcile).
 
@@ -210,8 +210,8 @@ Bearer auth (`AuthenticatedUser`). All paths under `/api/movie`.
 | `director_model` | string | — | required; normalized to `llm.<base>` |
 | `scene_model` | string | — | required; normalized to `llm.<base>` |
 | `video_capability` | string | — | required; normalized to `imggen.<base>` |
-| `director_system` | string? | built-in default | see `DEFAULT_DIRECTOR_SYSTEM` in `services/movie.rs` |
-| `scene_system` | string? | built-in default | see `DEFAULT_SCENE_SYSTEM` in `services/movie.rs` |
+| `director_system` | string? | built-in default | see `DEFAULT_DIRECTOR_SYSTEM` in `services/movie/mod.rs` |
+| `scene_system` | string? | built-in default | see `DEFAULT_SCENE_SYSTEM` in `services/movie/mod.rs` |
 | `initial_image_id` | string? | none | OAI image id (snowflake, as string); must already belong to the user |
 
 Server-side, submitting a job also records `idea`, `director_system`, and `scene_system` into
@@ -223,7 +223,7 @@ the prompt-library recent-use buckets `movie-idea`, `movie-director-system`,
 ## WebSocket protocol
 
 **Endpoint:** `GET /api/ws/movie` — handler `oai/backend/src/ws/movie.rs` (transport only;
-logic in `services/movie.rs`). Auth: `Authorization: Bearer` or `?token=`. JSON, `snake_case`
+logic in `services/movie/`). Auth: `Authorization: Bearer` or `?token=`. JSON, `snake_case`
 fields. Ping every 30s; 120s idle read timeout; invalid JSON is silently ignored.
 
 Only one `watch_job` subscription is live per connection — sending a new `watch_job` aborts and

@@ -177,7 +177,7 @@ pub async fn start_job(
     let (bytes, content_type) = if data_prep.is_some() {
         (bytes, input.content_type.clone())
     } else {
-        let processed = image_processing::process_image(bytes, Some(input.content_type.clone()))?;
+        let processed = image_processing::process_image_async(bytes, Some(input.content_type.clone())).await?;
         (processed.bytes, processed.content_type)
     };
     img_client

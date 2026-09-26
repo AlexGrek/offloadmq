@@ -9,7 +9,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    db::prompts,
     error::AppError,
     middleware::AuthenticatedUser,
     routes::job_common::{parse_id, CancelJobResponse, StartJobResponse},
@@ -60,55 +59,20 @@ pub async fn start_job(
     let referee_enabled = req.referee_enabled.unwrap_or(false);
 
     if !system_a.trim().is_empty() {
-        let _ = prompts::record_use(
-            &state.db,
-            || state.next_id(),
-            user_id,
-            "llm-debate-system-a",
-            system_a,
-        )
-        .await;
+        crate::services::prompt_usage::note_use(&state, user_id, "llm-debate-system-a", system_a).await;
     }
     if !system_b.trim().is_empty() {
-        let _ = prompts::record_use(
-            &state.db,
-            || state.next_id(),
-            user_id,
-            "llm-debate-system-b",
-            system_b,
-        )
-        .await;
+        crate::services::prompt_usage::note_use(&state, user_id, "llm-debate-system-b", system_b).await;
     }
     if !req.initial_prompt.trim().is_empty() {
-        let _ = prompts::record_use(
-            &state.db,
-            || state.next_id(),
-            user_id,
-            "llm-debate-initial",
-            &req.initial_prompt,
-        )
-        .await;
+        crate::services::prompt_usage::note_use(&state, user_id, "llm-debate-initial", &req.initial_prompt).await;
     }
     if referee_enabled {
         if let Some(s) = req.system_ref.as_deref().filter(|t| !t.trim().is_empty()) {
-            let _ = prompts::record_use(
-                &state.db,
-                || state.next_id(),
-                user_id,
-                "llm-debate-referee-system",
-                s,
-            )
-            .await;
+            crate::services::prompt_usage::note_use(&state, user_id, "llm-debate-referee-system", s).await;
         }
         if let Some(c) = req.command_ref.as_deref().filter(|t| !t.trim().is_empty()) {
-            let _ = prompts::record_use(
-                &state.db,
-                || state.next_id(),
-                user_id,
-                "llm-debate-referee-command",
-                c,
-            )
-            .await;
+            crate::services::prompt_usage::note_use(&state, user_id, "llm-debate-referee-command", c).await;
         }
     }
 

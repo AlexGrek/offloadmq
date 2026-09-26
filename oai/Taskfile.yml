@@ -17,6 +17,12 @@ vars:
     sh: git rev-list --count HEAD
   DATABASE_URL: postgres://oai:oai_dev_password@localhost:5432/oai
   ROOT_ADMIN_PASSWORD: "000000"
+  # Dev-only signing key; the backend refuses to start without JWT_SECRET.
+  JWT_SECRET: "local-dev-only-secret-not-for-production"
+  # Auth rate limit is on in dev, but loose enough for the itest/e2e suites, which
+  # register and log in many users from one IP. Prod uses the built-in defaults.
+  AUTH_RATE_LIMIT_BURST: "1000"
+  AUTH_RATE_LIMIT_REPLENISH_SECS: "1"
   STORAGE_BACKEND: fs
   STORAGE_FS_ROOT: ./.data/storage
 
@@ -59,7 +65,7 @@ tasks:
       trap cleanup EXIT
 
       echo "==> Starting backend..."
-      (cd backend && RUST_LOG=info DATABASE_URL={{.DATABASE_URL}} ROOT_ADMIN_PASSWORD={{.ROOT_ADMIN_PASSWORD}} SERVER_ADDRESS=0.0.0.0:{{.BACKEND_PORT}} STORAGE_BACKEND={{.STORAGE_BACKEND}} STORAGE_FS_ROOT={{.STORAGE_FS_ROOT}} cargo run) &
+      (cd backend && RUST_LOG=info DATABASE_URL={{.DATABASE_URL}} ROOT_ADMIN_PASSWORD={{.ROOT_ADMIN_PASSWORD}} JWT_SECRET={{.JWT_SECRET}} AUTH_RATE_LIMIT_BURST={{.AUTH_RATE_LIMIT_BURST}} AUTH_RATE_LIMIT_REPLENISH_SECS={{.AUTH_RATE_LIMIT_REPLENISH_SECS}} SERVER_ADDRESS=0.0.0.0:{{.BACKEND_PORT}} STORAGE_BACKEND={{.STORAGE_BACKEND}} STORAGE_FS_ROOT={{.STORAGE_FS_ROOT}} cargo run) &
       BACKEND_PID=$!
 
       echo "==> Starting frontend dev server..."
@@ -94,6 +100,9 @@ tasks:
       RUST_LOG: info
       DATABASE_URL: "{{.DATABASE_URL}}"
       ROOT_ADMIN_PASSWORD: "{{.ROOT_ADMIN_PASSWORD}}"
+      JWT_SECRET: "{{.JWT_SECRET}}"
+      AUTH_RATE_LIMIT_BURST: "{{.AUTH_RATE_LIMIT_BURST}}"
+      AUTH_RATE_LIMIT_REPLENISH_SECS: "{{.AUTH_RATE_LIMIT_REPLENISH_SECS}}"
       SERVER_ADDRESS: "0.0.0.0:{{.BACKEND_PORT}}"
       STORAGE_BACKEND: "{{.STORAGE_BACKEND}}"
       STORAGE_FS_ROOT: "{{.STORAGE_FS_ROOT}}"

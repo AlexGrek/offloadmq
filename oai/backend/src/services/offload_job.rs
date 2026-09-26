@@ -8,6 +8,7 @@
 //! else (the state machine, "task missing" handling, the background batch loop)
 //! lives here.
 
+use crate::error::ResultExt;
 use async_trait::async_trait;
 use sea_orm::EntityTrait;
 
@@ -394,11 +395,15 @@ where
                     reconciler.label(),
                     job.id()
                 );
-                let _ = fail_and_release(reconciler, state, &job, &reason).await;
+                fail_and_release(reconciler, state, &job, &reason)
+                    .await
+                    .log_warn("mark job failed");
             }
             Err(ReconcileFailure::Transient(e)) => {
                 if let Some(reason) = task_status::offload_task_missing_message(&e) {
-                    let _ = fail_and_release(reconciler, state, &job, &reason).await;
+                    fail_and_release(reconciler, state, &job, &reason)
+                    .await
+                    .log_warn("mark job failed");
                 } else {
                     tracing::warn!(
                         "{} poll failed for job {}: {e}",

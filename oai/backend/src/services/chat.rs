@@ -12,7 +12,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::db;
 use crate::db::chats as db_chats;
 use crate::db::llm_capabilities;
-use crate::error::AppError;
+use crate::error::{AppError, ResultExt};
 use crate::offload::{task_status, ChatMessage, LlmCapabilityInfo, OffloadClient, TaskId};
 use crate::services::chat_attachments;
 use crate::services::offload_factory;
@@ -26,29 +26,36 @@ const DEFAULT_MAX_WAIT_SECS_ONLINE: u32 = 5 * 60;       // 5 min — model is up
 const DEFAULT_MAX_WAIT_SECS_OFFLINE: u32 = 24 * 3600;   // 24 h — model offline, wait for it to come back
 const DEFAULT_RUNTIME_SECS: u32 = 15 * 60;              // 15 min
 
-/// Apply per-chat defaults when the user left a field unset, then derive a poll
-/// deadline the loop will honour.  Returns `None` only when every value is still
-/// unset after applying defaults (shouldn't happen given the constants above).
+/// Queue/runtime limits for one chat task after per-chat defaults were applied.
+#[derive(Debug, PartialEq, Eq)]
+struct ResolvedTimeouts {
+    /// Explicit overall timeout from the client; forwarded to OffloadMQ as-is.
+    timeout_secs: Option<u32>,
+    max_wait_secs: u32,
+    runtime_secs: u32,
+    /// How long the live poll loop keeps polling before giving up.
+    deadline_secs: u64,
+}
+
+/// Apply per-chat defaults when the user left a field unset, then derive the poll
+/// deadline: the explicit `timeout_secs` if given, else queue wait + runtime.
 fn resolve_timeouts(
     model_online: bool,
     timeout_secs: Option<u32>,
     max_wait_secs: Option<u32>,
     runtime_secs: Option<u32>,
-) -> (Option<u32>, Option<u32>, Option<u32>, Option<u64>) {
-    let wait = Some(max_wait_secs.unwrap_or(if model_online {
+) -> ResolvedTimeouts {
+    let max_wait_secs = max_wait_secs.unwrap_or(if model_online {
         DEFAULT_MAX_WAIT_SECS_ONLINE
     } else {
         DEFAULT_MAX_WAIT_SECS_OFFLINE
-    }));
-    let runtime = Some(runtime_secs.unwrap_or(DEFAULT_RUNTIME_SECS));
+    });
+    let runtime_secs = runtime_secs.unwrap_or(DEFAULT_RUNTIME_SECS);
+    let deadline_secs = timeout_secs
+        .map(u64::from)
+        .unwrap_or(u64::from(max_wait_secs) + u64::from(runtime_secs));
 
-    let deadline = if let Some(t) = timeout_secs {
-        Some(t as u64)
-    } else {
-        Some(wait.unwrap() as u64 + runtime.unwrap() as u64)
-    };
-
-    (timeout_secs, wait, runtime, deadline)
+    ResolvedTimeouts { timeout_secs, max_wait_secs, runtime_secs, deadline_secs }
 }
 
 /// Everything the poll loop needs to persist the assistant reply and address
@@ -82,44 +89,53 @@ async fn load_capabilities(state: &AppState) -> Result<Vec<LlmCapabilityInfo>, A
     llm_capabilities::list_for_display(&state.db, &online_bases).await
 }
 
-#[allow(clippy::too_many_arguments)]
+/// One `chat` command from the client, as received over the WebSocket.
+pub struct ChatRequest {
+    pub req_id: String,
+    pub capability: String,
+    /// Chat id as sent on the wire (a decimal string); validated in [`run_chat`].
+    pub chat_id: String,
+    pub content: String,
+    pub attachment_ids: Vec<String>,
+    /// Picks the queue-wait default: short when the model is up, a day when it is offline.
+    pub model_online: bool,
+    pub timeout_secs: Option<u32>,
+    pub max_wait_secs: Option<u32>,
+    pub runtime_secs: Option<u32>,
+}
+
 pub async fn chat(
-    req_id: String,
-    capability: String,
-    chat_id_str: String,
-    content: String,
-    attachment_ids: Vec<String>,
-    model_online: bool,
-    timeout_secs: Option<u32>,
-    max_wait_secs: Option<u32>,
-    runtime_secs: Option<u32>,
+    req: ChatRequest,
     tx: &UnboundedSender<ServerEvent>,
     state: &Arc<AppState>,
     user_id: i64,
 ) {
-    if let Err(message) = run_chat(&req_id, capability, chat_id_str, content, attachment_ids, model_online, timeout_secs, max_wait_secs, runtime_secs, tx, state, user_id).await
-    {
+    let req_id = req.req_id.clone();
+    if let Err(message) = run_chat(req, tx, state, user_id).await {
         send_error(tx, &req_id, &message);
     }
 }
 
 /// Persists the user message, submits the chat task, and spawns the poll loop.
 /// Returns a user-facing error string; the caller relays it as a `ServerEvent`.
-#[allow(clippy::too_many_arguments)]
 async fn run_chat(
-    req_id: &str,
-    capability: String,
-    chat_id_str: String,
-    content: String,
-    attachment_ids: Vec<String>,
-    model_online: bool,
-    timeout_secs: Option<u32>,
-    max_wait_secs: Option<u32>,
-    runtime_secs: Option<u32>,
+    req: ChatRequest,
     tx: &UnboundedSender<ServerEvent>,
     state: &Arc<AppState>,
     user_id: i64,
 ) -> Result<(), String> {
+    let ChatRequest {
+        req_id,
+        capability,
+        chat_id: chat_id_str,
+        content,
+        attachment_ids,
+        model_online,
+        timeout_secs,
+        max_wait_secs,
+        runtime_secs,
+    } = req;
+    let req_id = req_id.as_str();
     // OffloadMQ matches agents by BASE capability and requires tasks to be
     // submitted without extended attributes. The model picker may hand us the
     // raw cap (e.g. `llm.gemma4[vision;tools]`); strip it to base here so the
@@ -146,14 +162,7 @@ async fn run_chat(
     // Record the system prompt actually used for this turn as a recent (best-effort),
     // so it's reusable across chats without the frontend issuing a second request.
     if !chat.system_prompt.trim().is_empty() {
-        let _ = crate::db::prompts::record_use(
-            &state.db,
-            || state.next_id(),
-            user_id,
-            "llm-system",
-            &chat.system_prompt,
-        )
-        .await;
+        crate::services::prompt_usage::note_use(state, user_id, "llm-system", &chat.system_prompt).await;
     }
 
     // A turn with only attachments still needs non-empty user content so it
@@ -194,15 +203,15 @@ async fn run_chat(
         .await
         .map_err(|e| e.to_string())?;
 
-    let _ = db_chats::set_last_model(&state.db, chat_id, user_id, &capability)
+    db_chats::set_last_model(&state.db, chat_id, user_id, &capability)
         .await
         .map_err(|e| e.to_string())?;
 
     if chat.title.is_empty() {
         let title = stored_content.chars().take(50).collect::<String>();
-        let _ = db_chats::set_title(&state.db, chat_id, &title).await;
+        db_chats::set_title(&state.db, chat_id, &title).await.log_warn("set chat title");
     } else {
-        let _ = db_chats::touch_chat(&state.db, chat_id).await;
+        db_chats::touch_chat(&state.db, chat_id).await.log_warn("touch chat");
     }
 
     // Full persisted thread (including the message we just saved), chronological.
@@ -218,10 +227,9 @@ async fn run_chat(
         "submitting chat task with full history"
     );
 
-    let (eff_timeout, eff_wait, eff_runtime, deadline) =
-        resolve_timeouts(model_online, timeout_secs, max_wait_secs, runtime_secs);
+    let limits = resolve_timeouts(model_online, timeout_secs, max_wait_secs, runtime_secs);
     let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
-    let task_id = client.submit_chat(&capability, messages, eff_timeout, eff_wait, eff_runtime, file_bucket.as_deref()).await.map_err(|e| e.to_string())?;
+    let task_id = client.submit_chat(&capability, messages, limits.timeout_secs, Some(limits.max_wait_secs), Some(limits.runtime_secs), file_bucket.as_deref()).await.map_err(|e| e.to_string())?;
 
     // Persist the assistant reply as `pending` up front, carrying the offload
     // task id. This is the authoritative record: the live poll loop below
@@ -252,7 +260,7 @@ async fn run_chat(
         chat_id,
         assistant_msg_id,
     };
-    tokio::spawn(poll_loop(ctx, task_id, client, tx.clone(), state.clone(), deadline));
+    tokio::spawn(poll_loop(ctx, task_id, client, tx.clone(), state.clone(), Some(limits.deadline_secs)));
     Ok(())
 }
 
@@ -282,7 +290,7 @@ async fn poll_loop(
 
         if let Some(limit) = deadline_secs {
             if started_at.elapsed().as_secs() >= limit {
-                let _ = client.cancel_task(&task_id).await;
+                client.cancel_task(&task_id).await.log_warn("cancel chat task");
                 finish_failure(&state, &tx, &ctx, "Task timed out waiting for result".to_string(), None).await;
                 return;
             }
@@ -313,7 +321,7 @@ async fn poll_loop(
                 return;
             }
             "cancelRequested" => {
-                let _ = client.cancel_task(&task_id).await;
+                client.cancel_task(&task_id).await.log_warn("cancel chat task");
                 let stream_log = progress_stream_text(&resp);
                 // Ignore send errors: if the WS is gone we keep polling so the
                 // reply is still persisted (the background worker is the backstop
@@ -343,6 +351,9 @@ async fn poll_loop(
 }
 
 /// Finalizes the pending assistant reply (idempotent) and notifies the client.
+///
+/// A failed DB write is logged, not fatal: the row stays `pending`, so `chat_worker`
+/// re-polls the (already finished) task and persists it on its next tick.
 async fn finish_success(
     state: &AppState,
     tx: &UnboundedSender<ServerEvent>,
@@ -350,8 +361,10 @@ async fn finish_success(
     text: String,
     log: Option<String>,
 ) {
-    let _ = db_chats::finalize_message(&state.db, ctx.assistant_msg_id, &text, "complete").await;
-    let _ = db_chats::touch_chat(&state.db, ctx.chat_id).await;
+    db_chats::finalize_message(&state.db, ctx.assistant_msg_id, &text, "complete")
+        .await
+        .log_warn("finalize chat reply (chat_worker will retry)");
+    db_chats::touch_chat(&state.db, ctx.chat_id).await.log_warn("touch chat");
     state.watch.untrack(&ctx.cap, &ctx.id).await;
     let _ = tx.send(ServerEvent::TaskResult {
         req_id: ctx.req_id.clone(),
@@ -371,7 +384,9 @@ async fn finish_failure(
     error: String,
     log: Option<String>,
 ) {
-    let _ = db_chats::finalize_message(&state.db, ctx.assistant_msg_id, &error, "failed").await;
+    db_chats::finalize_message(&state.db, ctx.assistant_msg_id, &error, "failed")
+        .await
+        .log_warn("finalize failed chat reply (chat_worker will retry)");
     state.watch.untrack(&ctx.cap, &ctx.id).await;
     let _ = tx.send(ServerEvent::TaskFailed {
         req_id: ctx.req_id.clone(),
@@ -426,13 +441,14 @@ async fn reconcile_pending_message(
         Err(e) => {
             // Task likely gone (e.g. urgent TTL expired) — fail it once it's old.
             if aged_out {
-                let _ = db_chats::finalize_message(
+                db_chats::finalize_message(
                     &state.db,
                     msg.id,
                     "Task timed out waiting for result",
                     "failed",
                 )
-                .await;
+                .await
+                .log_warn("fail aged-out chat reply");
                 state.watch.untrack(&task_id.cap, &task_id.id).await;
             }
             return Err(e);
@@ -443,7 +459,7 @@ async fn reconcile_pending_message(
         "completed" => {
             db_chats::finalize_message(&state.db, msg.id, &task_status::extract_llm_text(&resp.output), "complete")
                 .await?;
-            let _ = db_chats::touch_chat(&state.db, msg.chat_id).await;
+            db_chats::touch_chat(&state.db, msg.chat_id).await.log_warn("touch chat");
             state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "failed" => {
@@ -456,10 +472,10 @@ async fn reconcile_pending_message(
             state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "cancelRequested" => {
-            let _ = client.cancel_task(&task_id).await;
+            client.cancel_task(&task_id).await.log_warn("cancel chat task");
         }
         _ if aged_out => {
-            let _ = client.cancel_task(&task_id).await;
+            client.cancel_task(&task_id).await.log_warn("cancel chat task");
             db_chats::finalize_message(
                 &state.db,
                 msg.id,
@@ -530,6 +546,40 @@ fn progress_stream_text(resp: &crate::offload::PollResponse) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn resolve_timeouts_online_defaults_to_short_queue_wait_plus_runtime() {
+        let t = resolve_timeouts(true, None, None, None);
+        assert_eq!(t, ResolvedTimeouts {
+            timeout_secs: None,
+            max_wait_secs: 5 * 60,
+            runtime_secs: 15 * 60,
+            deadline_secs: 20 * 60,
+        });
+    }
+
+    #[test]
+    fn resolve_timeouts_offline_model_waits_a_day_for_it_to_return() {
+        let t = resolve_timeouts(false, None, None, None);
+        assert_eq!(t.max_wait_secs, 24 * 3600);
+        assert_eq!(t.deadline_secs, 24 * 3600 + 15 * 60);
+    }
+
+    #[test]
+    fn resolve_timeouts_explicit_values_win() {
+        let t = resolve_timeouts(true, None, Some(30), Some(60));
+        assert_eq!((t.max_wait_secs, t.runtime_secs, t.deadline_secs), (30, 60, 90));
+
+        // An explicit overall timeout overrides the derived deadline and is forwarded.
+        let t = resolve_timeouts(true, Some(45), Some(30), Some(60));
+        assert_eq!((t.timeout_secs, t.deadline_secs), (Some(45), 45));
+    }
+
+    #[test]
+    fn resolve_timeouts_cannot_overflow_with_max_u32_inputs() {
+        let t = resolve_timeouts(true, None, Some(u32::MAX), Some(u32::MAX));
+        assert_eq!(t.deadline_secs, 2 * u64::from(u32::MAX));
+    }
+
     use super::*;
 
     #[test]

@@ -31,6 +31,8 @@ little_exif = "0.6"
 sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
+tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
 
 [dev-dependencies]
 image = "0.25"
+tower = { version = "0.5", features = ["util"] }

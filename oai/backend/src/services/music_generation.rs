@@ -6,6 +6,7 @@
 //! Unlike the LLM/vision features, music gen polls and cancels via the image
 //! client (its output arrives as bucket files, not inline data).
 
+use crate::error::ResultExt;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -271,7 +272,7 @@ pub async fn delete_job(state: &AppState, user_id: i64, job_id: i64) -> Result<(
         if let Ok(tracks) = serde_json::from_str::<Vec<AudioFileRecord>>(json) {
             if let Ok(op) = storage::operator(state) {
                 for track in &tracks {
-                    let _ = storage::delete(op, &track.storage_path).await;
+                    storage::delete(op, &track.storage_path).await.log_warn("delete music track");
                 }
             }
         }

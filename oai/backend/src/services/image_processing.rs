@@ -7,23 +7,20 @@
 //! full decoded pixel buffer into RAM, preventing OOM kills on large inputs (e.g. 48 MP
 //! camera shots) — but doing that work in a child process means a crash or runaway
 //! allocation there can't take the whole server down with it. All subprocess spawns in
-//! this module (vips*, ffmpeg) are serialized through [`SUBPROCESS_GATE`] so at most one
-//! runs at a time, bounding worst-case CPU/RAM on the pod regardless of request concurrency.
+//! this module (vips*, ffmpeg) are serialized through the gate in [`super::subprocess`] so at
+//! most one runs at a time, bounding worst-case CPU/RAM on the pod regardless of request
+//! concurrency.
+//!
+//! The functions here are **synchronous and blocking**. From async code call the `*_async`
+//! variants, which run them on the blocking pool (see [`super::subprocess::blocking`]).
 
-use std::{
-    io::Cursor,
-    path::{Path, PathBuf},
-    process::{Command, Output},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Mutex,
-    },
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{io::Cursor, path::Path, process::Command};
 
 use sha2::{Digest, Sha256};
 
 use crate::error::AppError;
+
+use super::subprocess::{blocking, run_gated, TempFile};
 
 pub const MAX_IMAGE_EDGE: u32 = 1920;
 /// Effectively "no cap" for [`vips_thumbnail`]'s shrink-only (`>`) box size — used for
@@ -39,10 +36,6 @@ pub const MAX_UPLOAD_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_TRANSCODE_BYTES: usize = 8 * 1024 * 1024;
 /// JPEG inputs with any dimension above this also bypass decode + re-encode.
 pub const MAX_TRANSCODE_EDGE: u32 = 6000;
-
-/// Serializes every resize/reencode subprocess this module spawns (`vipsthumbnail`,
-/// `vipsheader`, `ffmpeg`) so only one child process is ever running at a time.
-static SUBPROCESS_GATE: Mutex<()> = Mutex::new(());
 
 pub struct ProcessedImage {
     pub bytes: Vec<u8>,
@@ -284,6 +277,63 @@ pub fn thumbnail_from_video(bytes: &[u8]) -> Result<Vec<u8>, AppError> {
     Ok(thumb)
 }
 
+// ── Async entry points ──────────────────────────────────────────────────────
+//
+// The functions above block for as long as `vipsthumbnail` / `ffmpeg` run (and wait
+// on the subprocess gate behind other callers). Async code must use these wrappers,
+// which take owned data and run the sync function on the blocking pool.
+
+/// Async [`process_image`].
+pub async fn process_image_async(
+    bytes: Vec<u8>,
+    content_type_hint: Option<String>,
+) -> Result<ProcessedImage, AppError> {
+    blocking(move || process_image(bytes, content_type_hint)).await
+}
+
+/// Async [`process_upload`].
+pub async fn process_upload_async(
+    bytes: Vec<u8>,
+    content_type_hint: Option<String>,
+) -> Result<ProcessedImage, AppError> {
+    blocking(move || process_upload(bytes, content_type_hint)).await
+}
+
+/// Async [`process_generated_image`]. `exif_source` is owned because the work outlives
+/// the caller's borrow; callers holding a `&Vec<u8>` pass `.cloned()`.
+pub async fn process_generated_image_async(
+    bytes: Vec<u8>,
+    content_type_hint: Option<String>,
+    prompt: String,
+    max_edge: u32,
+    exif_source: Option<Vec<u8>>,
+) -> Result<ProcessedImage, AppError> {
+    blocking(move || {
+        process_generated_image(bytes, content_type_hint, &prompt, max_edge, exif_source.as_ref())
+    })
+    .await
+}
+
+/// Async [`ensure_jpeg_response`].
+pub async fn ensure_jpeg_response_async(
+    bytes: Vec<u8>,
+    content_type: String,
+) -> Result<Vec<u8>, AppError> {
+    blocking(move || ensure_jpeg_response(bytes, &content_type)).await
+}
+
+/// Async [`thumbnail_from_main_jpeg`].
+pub async fn thumbnail_from_main_jpeg_async(bytes: Vec<u8>) -> Result<Vec<u8>, AppError> {
+    blocking(move || thumbnail_from_main_jpeg(&bytes)).await
+}
+
+/// Async [`thumbnail_from_video`]. Videos are large and callers usually still need them
+/// (to store them), so ownership is handed back instead of forcing a copy:
+/// returns `(thumbnail_jpeg, video)`.
+pub async fn thumbnail_from_video_async(bytes: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>), AppError> {
+    blocking(move || thumbnail_from_video(&bytes).map(|thumb| (thumb, bytes))).await
+}
+
 pub fn is_jpeg_blob(bytes: &[u8], content_type: &str) -> bool {
     let ct = content_type.trim().to_ascii_lowercase();
     if ct != "image/jpeg" && ct != "image/jpg" {
@@ -326,58 +376,6 @@ fn vips_header_dim(path: &Path, field: &str) -> Result<u32, AppError> {
         .trim()
         .parse::<u32>()
         .map_err(|e| AppError::Internal(format!("vipsheader parse failed: {e}")))
-}
-
-/// Spawns `cmd`, holding [`SUBPROCESS_GATE`] for the child's lifetime so only one
-/// resize/reencode subprocess runs at a time.
-fn run_gated(mut cmd: Command) -> Result<Output, AppError> {
-    let program = cmd.get_program().to_string_lossy().into_owned();
-    let _permit = SUBPROCESS_GATE.lock().unwrap_or_else(|e| e.into_inner());
-    let output = cmd
-        .output()
-        .map_err(|e| AppError::Internal(format!("{program} spawn failed: {e}")))?;
-    if !output.status.success() {
-        return Err(AppError::Internal(format!(
-            "{program} failed ({}): {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    Ok(output)
-}
-
-/// A temp file on disk, removed on drop. CLI image tools need real file paths rather
-/// than stdin/stdout streaming.
-struct TempFile(PathBuf);
-
-static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-impl TempFile {
-    fn new(suffix: &str) -> Self {
-        let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let path = std::env::temp_dir().join(format!(
-            "oai-img-{}-{stamp}-{n}{suffix}",
-            std::process::id()
-        ));
-        Self(path)
-    }
-
-    fn write(bytes: &[u8], suffix: &str) -> Result<Self, AppError> {
-        let file = Self::new(suffix);
-        std::fs::write(&file.0, bytes)
-            .map_err(|e| AppError::Internal(format!("write temp file failed: {e}")))?;
-        Ok(file)
-    }
-}
-
-impl Drop for TempFile {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
 }
 
 /// Returns the raw EXIF orientation tag value (1–8), or None if absent / unreadable.

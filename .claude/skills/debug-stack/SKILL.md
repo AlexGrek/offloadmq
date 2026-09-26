@@ -147,7 +147,7 @@ OAI backend is a **poll mirror**: it copies MQ poll snapshots into Postgres, and
 the frontend renders from those rows. If MQ's poll JSON is right (check ToolDebug
 first!) but the UI is wrong, the bug is in persistence or rendering:
 
-- Poll + persist: `poll_and_persist` in [services/image_jobs.rs](../../../oai/backend/src/services/image_jobs.rs) — writes `last_poll_*`, `typical_runtime_seconds`; stamps `started_at` (set-once) on first `starting`/`running` status
+- Poll + persist: `poll_and_persist` in [services/image_jobs/poll.rs](../../../oai/backend/src/services/image_jobs/poll.rs) — writes `last_poll_*`, `typical_runtime_seconds`; stamps `started_at` (set-once) on first `starting`/`running` status
 - Deserializer: `OffloadPollResponse` in [offload/image_tasks.rs](../../../oai/backend/src/offload/image_tasks.rs) — `typicalRuntimeSeconds` parses serde `{secs,nanos}` into `std::time::Duration`; a field-shape mismatch here fails the whole poll with `ExternalService`
 - Drawer list (DB-only, no MQ poll): [services/progress.rs](../../../oai/backend/src/services/progress.rs)
 - Frontend bar: `JobProgressBar` — determinate iff status executing AND `started_at` AND `typical_runtime_seconds > 0`; `progressBarMeta` fallback chain in ImageGenerationPage (activePoll → selectedJob → running row)

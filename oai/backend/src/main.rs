@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 mod app;
 mod db;
@@ -33,8 +33,7 @@ async fn main() -> Result<()> {
     tracing::info!("oai-backend build version: {}", version::build_version());
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let jwt_secret =
-        std::env::var("JWT_SECRET").unwrap_or_else(|_| "dev-secret-change-in-prod".into());
+    let jwt_secret = require_jwt_secret()?;
     let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "../frontend/dist".into());
     let addr = std::env::var("SERVER_ADDRESS").unwrap_or_else(|_| "0.0.0.0:3000".into());
 
@@ -66,8 +65,31 @@ async fn main() -> Result<()> {
     let app = app::create_app(state, &static_dir);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("listening on {addr}");
-    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;
+    // Connect info gives the rate limiter the peer address when no proxy header is present.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
     Ok(())
+}
+
+/// Former built-in fallback. Anyone who reads the source knows it, so a deployment
+/// still configured with it can have its tokens (admin included) forged.
+const LEGACY_DEFAULT_JWT_SECRET: &str = "dev-secret-change-in-prod";
+
+/// `JWT_SECRET` has no fallback: a silently defaulted signing key would let anyone
+/// mint valid tokens for any user.
+fn require_jwt_secret() -> Result<String> {
+    let secret = std::env::var("JWT_SECRET")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .context("JWT_SECRET must be set (see backend/.env.example)")?;
+    if secret == LEGACY_DEFAULT_JWT_SECRET {
+        anyhow::bail!("JWT_SECRET is set to the publicly known legacy default; choose a real secret");
+    }
+    Ok(secret)
 }
 
 /// Resolves on SIGTERM (what the kubelet sends on pod termination) or Ctrl-C.
@@ -108,15 +130,23 @@ async fn ensure_root_admin(
         return Ok(());
     }
 
-    let password = std::env::var("ROOT_ADMIN_PASSWORD").unwrap_or_else(|_| "000000".into());
+    let (password, is_default) = match std::env::var("ROOT_ADMIN_PASSWORD") {
+        Ok(p) if !p.is_empty() => (p, false),
+        _ => ("000000".to_string(), true),
+    };
 
-    let hash = auth.hash_password(&password)?;
+    let hash = auth.hash_password(password).await?;
     let id = snowflake.next_id();
     db::users::create_admin(db, id, "root", hash).await?;
 
-    println!("=================================================");
-    println!(" Root admin created  |  login: root  |  password: {password}");
-    println!("=================================================");
+    // Never log the password itself — pod logs outlive the first boot.
+    tracing::info!("root admin created (login: root)");
+    if is_default {
+        tracing::warn!(
+            "ROOT_ADMIN_PASSWORD is not set: root was created with the built-in default \
+             password. Change it now via POST /api/auth/change_password."
+        );
+    }
 
     Ok(())
 }

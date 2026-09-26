@@ -7,7 +7,7 @@ description: >-
   /app/img-utils (one-shot transforms: img-utils.* depth map and face swap, plus the
   built-in image_resize "Basic resize"). Use when
   working on oai/frontend imggen or imgutils files, oai/backend image routes/services/jobs
-  (image_jobs.rs, routes/images.rs, routes/img_utils.rs, image_pipeline_worker), or image
+  (image_jobs/, routes/images.rs, routes/img_utils.rs, image_pipeline_worker), or image
   pipeline debugging.
 ---
 
@@ -134,7 +134,7 @@ sequenceDiagram
 | max | `{ "*": "scale/max[px=…,mp=…]" }` (needs px and/or mp) |
 | disabled | `null` (omitted) |
 
-**Task payload** (`build_submit_payload` in `image_jobs.rs`): `workflow`, `prompt`, `resolution`, optional `secondary_prompts.negative` (if `override_negative`), `seed`, `input_image` filename for img2img.
+**Task payload** (`build_submit_payload` in `image_jobs/start.rs`): `workflow`, `prompt`, `resolution`, optional `secondary_prompts.negative` (if `override_negative`), `seed`, `input_image` filename for img2img.
 
 **Offload submit** (`offload/image_tasks.rs` `submit_img_task`): `urgent: false`, `file_bucket`, `output_bucket`, `dataPreparation`, `fetchFiles` for outputs.
 
@@ -320,7 +320,7 @@ Backend: `image_jobs::cancel_job` → `OffloadImageClient::cancel_task` → `upd
 | Path | Role |
 |------|------|
 | `backend/src/routes/images.rs` | Handlers + DTOs |
-| `backend/src/services/image_jobs.rs` | Upload, start, poll, cancel, outputs, capabilities, worker pass |
+| `backend/src/services/image_jobs/` | `start.rs` upload/start/retry · `poll.rs` poll/cancel/reconcile/worker pass · `outputs.rs` download + persist · `files.rs` file ops/cleanup · `details.rs` job views + capabilities · `mod.rs` shared helpers (`record_event`) |
 | `backend/src/services/image_processing.rs` | Normalize bytes (no I/O) |
 | `backend/src/db/image_generation.rs` | Jobs, files, events, offload tasks |
 | `backend/src/offload/image_tasks.rs` | `OffloadImageClient` |
@@ -390,7 +390,7 @@ progress-row-image:{job_id}, progress-cancel-image:{job_id}
 
 ### Add a field to submit payload
 
-1. `StartJobParams` in `image_jobs.rs` + `build_submit_payload`
+1. `StartJobParams` in `image_jobs/start.rs` + `build_submit_payload`
 2. `StartImageJobRequest` in `api/images.ts`
 3. `ImageGenerationPage` form state + submit body
 4. Agent capability schema on OffloadMQ side if needed
@@ -408,7 +408,7 @@ progress-row-image:{job_id}, progress-cancel-image:{job_id}
 
 ### New pipeline event for UI
 
-Record in `image_jobs.rs` via `record_event`; add to timeline unless poll noise (extend `POLL_EVENT_STEPS` if hiding).
+Record via `record_event` (`image_jobs/mod.rs`); add to timeline unless poll noise (extend `POLL_EVENT_STEPS` if hiding).
 
 ---
 

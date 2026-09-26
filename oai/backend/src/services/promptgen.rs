@@ -2,6 +2,7 @@
 //! input frame plus fixed system/user text to a vision LLM over the `/api/ws/promptgen`
 //! socket and streams back what happens next in the video.
 
+use crate::error::ResultExt;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -136,7 +137,7 @@ async fn submit_video_prompt_task(
 
     let op = storage::operator(state)?;
     let bytes = storage::read(op, &input.storage_path).await?;
-    let processed = image_processing::process_image(bytes, Some(input.content_type.clone()))?;
+    let processed = image_processing::process_image_async(bytes, Some(input.content_type.clone())).await?;
     img_client
         .upload_bucket_file(&bucket.bucket_uid, processed.bytes, &input.filename, &processed.content_type)
         .await?;
@@ -163,7 +164,7 @@ async fn queue_and_poll(
 ) -> Result<(), String> {
     if !scope.is_open() {
         let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
-        let _ = client.cancel_task(&task_id).await;
+        client.cancel_task(&task_id).await.log_warn("cancel promptgen task");
         return Ok(());
     }
 
@@ -187,7 +188,6 @@ async fn queue_and_poll(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn poll_loop_ws(
     ctx: PollContext,
     task_id: TaskId,
@@ -202,7 +202,7 @@ async fn poll_loop_ws(
     let mut events = state.watch.subscribe();
     loop {
         if !scope.is_open() {
-            let _ = client.cancel_task(&task_id).await;
+            client.cancel_task(&task_id).await.log_warn("cancel promptgen task");
             scope.untrack(&task_id);
             state.watch.untrack(&task_id.cap, &task_id.id).await;
             return;
@@ -219,7 +219,7 @@ async fn poll_loop_ws(
         if let Some(limit) = deadline_secs {
             if started_at.elapsed().as_secs() >= limit {
                 tracing::warn!(req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, limit, "promptgen: task timed out");
-                let _ = client.cancel_task(&task_id).await;
+                client.cancel_task(&task_id).await.log_warn("cancel promptgen task");
                 let _ = tx.send(ServerEvent::TaskFailed {
                     req_id: ctx.req_id.clone(),
                     cap: ctx.cap.clone(),
@@ -307,7 +307,7 @@ async fn poll_loop_ws(
                 return;
             }
             "cancelRequested" => {
-                let _ = client.cancel_task(&task_id).await;
+                client.cancel_task(&task_id).await.log_warn("cancel promptgen task");
                 let stream_log = progress_stream_text(&resp);
                 let _ = tx.send(ServerEvent::TaskProgress {
                     req_id: ctx.req_id.clone(),

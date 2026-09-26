@@ -9,7 +9,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    db::prompts,
     error::AppError,
     middleware::AuthenticatedUser,
     offload::LlmCapabilityInfo,
@@ -75,24 +74,10 @@ pub async fn start_job(
         .unwrap_or(service::DEFAULT_SCENE_SYSTEM);
 
     if !req.idea.trim().is_empty() {
-        let _ = prompts::record_use(&state.db, || state.next_id(), user_id, "movie-idea", &req.idea).await;
+        crate::services::prompt_usage::note_use(&state, user_id, "movie-idea", &req.idea).await;
     }
-    let _ = prompts::record_use(
-        &state.db,
-        || state.next_id(),
-        user_id,
-        "movie-director-system",
-        director_system,
-    )
-    .await;
-    let _ = prompts::record_use(
-        &state.db,
-        || state.next_id(),
-        user_id,
-        "movie-scene-system",
-        scene_system,
-    )
-    .await;
+    crate::services::prompt_usage::note_use(&state, user_id, "movie-director-system", director_system).await;
+    crate::services::prompt_usage::note_use(&state, user_id, "movie-scene-system", scene_system).await;
 
     let job_id = service::start_job(
         &state,

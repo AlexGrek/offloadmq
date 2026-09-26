@@ -1,6 +1,7 @@
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    SqlErr,
 };
 
 use crate::{
@@ -39,7 +40,14 @@ pub async fn create(
         is_admin: ActiveValue::Set(None),
         used_storage_bytes: ActiveValue::Set(0),
     };
-    model.insert(db).await.map_err(AppError::Database)
+    // `find_by_login` in the route is only a fast path; two concurrent registrations
+    // can both pass it, so the unique index on `users.login` is the real arbiter.
+    model.insert(db).await.map_err(|e| match e.sql_err() {
+        Some(SqlErr::UniqueConstraintViolation(_)) => {
+            AppError::BadRequest("Login already taken".into())
+        }
+        _ => AppError::Database(e),
+    })
 }
 
 pub async fn create_admin(

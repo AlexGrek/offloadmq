@@ -1,6 +1,7 @@
 //! LLM compare: submit the same prompt to multiple models in parallel and
 //! reconcile each OffloadMQ task until all slots reach a terminal state.
 
+use crate::error::ResultExt;
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
@@ -31,10 +32,6 @@ pub struct StartJobParams {
     pub models: Vec<String>,
     pub system_prompt: String,
     pub user_prompt: String,
-}
-
-fn slot_is_terminal(status: &str) -> bool {
-    matches!(status, "completed" | "failed" | "canceled")
 }
 
 fn parse_slots(json: &str) -> Result<Vec<CompareSlot>, AppError> {
@@ -74,7 +71,7 @@ fn recompute_job_status(slots: &[CompareSlot]) -> (String, Option<String>) {
     if slots.is_empty() {
         return ("failed".into(), Some("no model slots".into()));
     }
-    if slots.iter().any(|s| !slot_is_terminal(&s.status)) {
+    if slots.iter().any(|s| !task_status::is_terminal(&s.status)) {
         return ("running".into(), None);
     }
     let completed = slots.iter().filter(|s| s.status == "completed").count();
@@ -90,7 +87,7 @@ fn recompute_job_status(slots: &[CompareSlot]) -> (String, Option<String>) {
 }
 
 async fn poll_one_slot(state: &AppState, client: &OffloadClient, slot: &mut CompareSlot) -> Result<(), AppError> {
-    if slot_is_terminal(&slot.status) {
+    if task_status::is_terminal(&slot.status) {
         return Ok(());
     }
     let (Some(cap), Some(id)) = (&slot.offload_cap, &slot.offload_task_id) else {
@@ -284,7 +281,7 @@ pub async fn cancel_job(
     let mut canceled_any = false;
 
     for slot in slots.iter_mut() {
-        if slot_is_terminal(&slot.status) {
+        if task_status::is_terminal(&slot.status) {
             continue;
         }
         if let (Some(cap), Some(id)) = (&slot.offload_cap, &slot.offload_task_id) {
@@ -378,7 +375,7 @@ pub async fn run_background_reconcile_pass(
     let jobs = llm_compare::list_inflight_jobs(&state.db, batch).await?;
     for job in jobs {
         if let Ok(mut slots) = parse_slots(&job.slots_json) {
-            let _ = reconcile_slots(state, job.id, &mut slots).await;
+            reconcile_slots(state, job.id, &mut slots).await.log_warn("reconcile llm_compare slots");
         }
     }
     Ok(())

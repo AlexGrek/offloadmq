@@ -287,7 +287,7 @@ pub async fn admin_k8s_self_pod(
     AuthenticatedUser(_): AuthenticatedUser,
     Query(q): Query<K8sComponentQuery>,
 ) -> Result<Json<k8s_self::SelfPodStatusResponse>, AppError> {
-    let cluster = k8s_self::K8sClusterAccess::from_env()?;
+    let cluster = k8s_self::K8sClusterAccess::from_env().await?;
     let pod = cluster.resolve_pod(q.component)?;
     let status = k8s_self::get_pod_status(&cluster, &pod).await?;
     Ok(Json(status))
@@ -297,7 +297,7 @@ pub async fn admin_k8s_self_logs(
     AuthenticatedUser(_): AuthenticatedUser,
     Query(query): Query<SelfPodLogsQuery>,
 ) -> Result<Json<k8s_self::SelfPodLogsResponse>, AppError> {
-    let cluster = k8s_self::K8sClusterAccess::from_env()?;
+    let cluster = k8s_self::K8sClusterAccess::from_env().await?;
     let pod = cluster.resolve_pod(query.component)?;
     let logs = k8s_self::get_pod_logs(
         &cluster,

@@ -2,6 +2,7 @@
 //! management, frame decoding, and command dispatch. Domain logic lives in
 //! `services::promptgen`.
 
+use crate::error::ResultExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -68,7 +69,7 @@ impl ConnectionScope {
         }
         if let Ok(client) = offload_factory::chat_client(state).await {
             for task in tasks {
-                let _ = client.cancel_task(&task).await;
+                client.cancel_task(&task).await.log_warn("cancel promptgen task on disconnect");
             }
         }
     }

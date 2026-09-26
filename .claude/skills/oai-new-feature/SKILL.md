@@ -27,7 +27,7 @@ Reference implementations, simplest first — copy the closest match:
 - **TTS** (no input file, audio blob output) — `db/tts.rs`, `services/tts.rs`, `routes/tts.rs`, `jobs/tts_worker.rs`, `pages/TtsPage.tsx`.
 - **Image analysis / nude detect** (input image → text/JSON result) — `db/image_analysis.rs`, `services/image_analysis.rs`, `routes/describe.rs`.
 - **Music generation** (output *files* from an OffloadMQ bucket, image-client poller) — `db/music_generation.rs`, `services/music_generation.rs`, `routes/music_generation.rs`.
-- **Image generation** — `services/image_jobs.rs` etc. is the *bespoke* multi-file pipeline (NOT on the framework); only copy it if you need pipeline events + multiple output files + an offload-tasks table.
+- **Image generation** — `services/image_jobs/` etc. is the *bespoke* multi-file pipeline (NOT on the framework); only copy it if you need pipeline events + multiple output files + an offload-tasks table.
 
 ---
 
@@ -92,7 +92,7 @@ Plus any feature-specific params (input image id, dimensions, model knobs, …).
 
 **Indexes**: `(user_id)` for list queries, `(status)` for the background worker's pending-jobs query.
 
-**Migration**: append a new module to `migrator.rs` named `m<YYYYMMDD>_<NNNNNN>_create_<feature>_jobs`; add `Box::new(...)` to `migrations()`. Pattern after `m20260522_000016_create_image_analysis_jobs`.
+**Migration**: add `db/migrator/m<YYYYMMDD>_<NNNNNN>_create_<feature>_jobs.rs` (with `pub struct Migration`), declare it with `mod m<...>;` in `migrator.rs`, and add `Box::new(...)` to `migrations()`. Pattern after `m20260522_000016_create_image_analysis_jobs`.
 
 **Entity**: one file in `db/entities/<feature>_jobs.rs`. Register in `db/entities/mod.rs`. SeaORM model only — no relations needed for the simple shape.
 

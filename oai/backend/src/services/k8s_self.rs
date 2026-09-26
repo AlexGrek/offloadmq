@@ -128,18 +128,18 @@ pub struct LogQuery {
 }
 
 impl K8sClusterAccess {
-    pub fn from_env() -> Result<Self, AppError> {
+    pub async fn from_env() -> Result<Self, AppError> {
         let namespace = env_required("POD_NAMESPACE")?;
         let host = env_required("KUBERNETES_SERVICE_HOST")?;
         let port = std::env::var("KUBERNETES_SERVICE_PORT").unwrap_or_else(|_| "443".into());
         let api_server = format!("https://{host}:{port}");
 
-        let token = std::fs::read_to_string(SA_TOKEN_PATH).map_err(|e| {
+        let token = tokio::fs::read_to_string(SA_TOKEN_PATH).await.map_err(|e| {
             AppError::ExternalService(format!(
                 "service account token not available ({SA_TOKEN_PATH}): {e}"
             ))
         })?;
-        let ca_pem = std::fs::read(SA_CA_PATH).map_err(|e| {
+        let ca_pem = tokio::fs::read(SA_CA_PATH).await.map_err(|e| {
             AppError::ExternalService(format!(
                 "cluster CA not available ({SA_CA_PATH}): {e}"
             ))

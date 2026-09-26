@@ -35,7 +35,7 @@ pub async fn register(
     if users::find_by_login(&state.db, &req.login).await?.is_some() {
         return Err(AppError::BadRequest("Login already taken".into()));
     }
-    let hash = state.auth.hash_password(&req.password)?;
+    let hash = state.auth.hash_password(req.password).await?;
     let id = state.next_id();
     let user = users::create(&state.db, id, &req.login, Some(hash), None).await?;
     let token = state.auth.create_token(user.id)?;
@@ -46,11 +46,16 @@ pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
-    let user = users::find_by_login(&state.db, &req.login)
+    let found = users::find_by_login(&state.db, &req.login)
         .await?
-        .ok_or(AppError::Unauthorized)?;
-    let hash = user.password_hash.as_deref().ok_or(AppError::Unauthorized)?;
-    if !state.auth.verify_password(&req.password, hash)? {
+        .and_then(|u| u.password_hash.clone().map(|h| (u, h)));
+    let Some((user, hash)) = found else {
+        // Unknown login or passwordless account: do the same bcrypt work as the
+        // real path so response time doesn't reveal which logins exist.
+        state.auth.verify_dummy(req.password).await;
+        return Err(AppError::Unauthorized);
+    };
+    if !state.auth.verify_password(req.password, hash).await? {
         return Err(AppError::Unauthorized);
     }
     let token = state.auth.create_token(user.id)?;
@@ -93,14 +98,14 @@ pub async fn change_password(
         .ok_or(AppError::NotFound)?;
     let hash = user
         .password_hash
-        .as_deref()
+        .clone()
         .ok_or(AppError::BadRequest(
             "This account has no password set; sign in with your linked provider".into(),
         ))?;
-    if !state.auth.verify_password(&req.current_password, hash)? {
+    if !state.auth.verify_password(req.current_password, hash).await? {
         return Err(AppError::Unauthorized);
     }
-    let new_hash = state.auth.hash_password(&req.new_password)?;
+    let new_hash = state.auth.hash_password(req.new_password).await?;
     users::update_password_hash(&state.db, user_id, new_hash).await?;
     Ok(Json(ChangePasswordResponse { ok: true }))
 }

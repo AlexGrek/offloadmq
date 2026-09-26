@@ -4,7 +4,7 @@ use axum::{
     extract::DefaultBodyLimit,
     http::{
         header::{AUTHORIZATION, CONTENT_TYPE},
-        Method,
+        HeaderValue, Method,
     },
     middleware::from_fn_with_state,
     routing::{get, post},
@@ -26,18 +26,25 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
     // Hashed Vite assets — no fallback so a missing chunk returns 404.
     let assets_dir = format!("{static_dir}/assets");
 
+    // Credential endpoints run bcrypt, so they get a per-IP rate limit.
+    let credential_routes = middleware::rate_limit::limit(
+        Router::new()
+            .route("/api/auth/register", post(routes::auth::register))
+            .route("/api/auth/login", post(routes::auth::login)),
+    );
+    let change_password_route = middleware::rate_limit::limit(Router::new().route(
+        "/api/auth/change_password",
+        post(routes::auth::change_password),
+    ));
+
     let public = Router::new()
         .route("/api/health", get(routes::health::health))
         .route("/api/version", get(routes::health::version))
-        .route("/api/auth/register", post(routes::auth::register))
-        .route("/api/auth/login", post(routes::auth::login));
+        .merge(credential_routes);
 
     let authenticated = Router::new()
         .route("/api/me", get(routes::auth::me))
-        .route(
-            "/api/auth/change_password",
-            post(routes::auth::change_password),
-        )
+        .merge(change_password_route)
         .route("/api/admin/am_i_admin", get(routes::admin::am_i_admin))
         .route("/api/ws/chat", get(crate::ws::chat::ws_chat))
         .route("/api/ws/promptgen", get(crate::ws::promptgen::ws_promptgen))
@@ -299,13 +306,9 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
-                .allow_origin([
-                    "http://localhost:5173".parse().unwrap(),
-                    "http://127.0.0.1:5173".parse().unwrap(),
-                    "http://localhost:5174".parse().unwrap(),
-                    "http://127.0.0.1:5174".parse().unwrap(),
-                    "https://oai.alexgr.space".parse().unwrap(),
-                ])
+                .allow_origin(cors_allowed_origins(
+                    std::env::var("CORS_ALLOWED_ORIGINS").ok().as_deref(),
+                ))
                 .allow_methods([
                     Method::GET,
                     Method::POST,
@@ -317,4 +320,64 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
                 .allow_headers([CONTENT_TYPE, AUTHORIZATION])
                 .allow_credentials(true),
         )
+}
+
+/// Origins allowed to make credentialed cross-origin requests when `CORS_ALLOWED_ORIGINS`
+/// is unset: the local Vite dev servers and the production host.
+const DEFAULT_CORS_ORIGINS: &[&str] = &[
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "https://oai.alexgr.space",
+];
+
+/// Parses a comma-separated `CORS_ALLOWED_ORIGINS` value (blank/unset → the defaults).
+/// Entries that aren't valid header values are skipped with a warning rather than
+/// taking the server down over a typo.
+fn cors_allowed_origins(raw: Option<&str>) -> Vec<HeaderValue> {
+    let configured: Vec<&str> = raw
+        .map(|v| v.split(',').map(str::trim).filter(|o| !o.is_empty()).collect())
+        .unwrap_or_default();
+    let origins = if configured.is_empty() { DEFAULT_CORS_ORIGINS.to_vec() } else { configured };
+
+    origins
+        .into_iter()
+        .filter_map(|origin| match HeaderValue::from_str(origin) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                tracing::warn!("ignoring invalid CORS origin {origin:?}: {e}");
+                None
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn strs(v: Vec<HeaderValue>) -> Vec<String> {
+        v.into_iter().map(|h| h.to_str().unwrap().to_string()).collect()
+    }
+
+    #[test]
+    fn unset_or_blank_uses_the_defaults() {
+        let defaults: Vec<String> = DEFAULT_CORS_ORIGINS.iter().map(|s| s.to_string()).collect();
+        assert_eq!(strs(cors_allowed_origins(None)), defaults);
+        assert_eq!(strs(cors_allowed_origins(Some(""))), defaults);
+        assert_eq!(strs(cors_allowed_origins(Some(" , ,"))), defaults);
+    }
+
+    #[test]
+    fn configured_list_replaces_the_defaults() {
+        let got = strs(cors_allowed_origins(Some("https://a.example, https://b.example ,")));
+        assert_eq!(got, vec!["https://a.example", "https://b.example"]);
+    }
+
+    #[test]
+    fn invalid_entries_are_skipped_not_fatal() {
+        let got = strs(cors_allowed_origins(Some("https://ok.example,bad\u{7f}origin")));
+        assert_eq!(got, vec!["https://ok.example"]);
+    }
 }

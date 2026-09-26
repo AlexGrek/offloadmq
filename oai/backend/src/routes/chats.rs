@@ -109,7 +109,7 @@ pub async fn create_chat(
     } else {
         prompts::normalize_content(content)?
     };
-    let _ = prompts::record_use(&state.db, || state.next_id(), user_id, "llm-system", &system_prompt).await;
+    crate::services::prompt_usage::note_use(&state, user_id, "llm-system", &system_prompt).await;
     let id = state.next_id();
     let chat = chats::create_chat(&state.db, id, user_id, &system_prompt).await?;
     let chat = if let Some(ref model) = body.as_ref().and_then(|b| b.last_model.as_ref()) {
@@ -148,7 +148,7 @@ pub async fn update_system_prompt(
 ) -> Result<Json<ChatResponse>, AppError> {
     let id: i64 = chat_id.parse().map_err(|_| AppError::BadRequest("invalid chat id".into()))?;
     let system_prompt = prompts::normalize_content(&req.content)?;
-    let _ = prompts::record_use(&state.db, || state.next_id(), user_id, "llm-system", &system_prompt).await;
+    crate::services::prompt_usage::note_use(&state, user_id, "llm-system", &system_prompt).await;
     let chat = chats::set_system_prompt(&state.db, id, user_id, &system_prompt).await?;
     Ok(Json(chat_to_response(chat)))
 }

@@ -24,7 +24,7 @@ cd oai/backend && cargo run
 # Backend listens on :3001 in dev; Vite proxies /api/* → :3001
 ```
 
-Backend reads config from `oai/backend/.env`. In dev: `DATABASE_URL`, `JWT_SECRET`, `SERVER_ADDRESS`, `STORAGE_BACKEND` / `STORAGE_FS_ROOT`, optionally `OFFLOAD_MQ_CLIENT_KEY` / `OFFLOAD_MQ_MGMT_TOKEN` to seed admin settings on first boot.
+Backend reads config from `oai/backend/.env`. `JWT_SECRET` is **required** — startup fails without it (`task dev` supplies a dev-only value). Optional: `AUTH_RATE_LIMIT_BURST` / `_REPLENISH_SECS` / `_TRUST_FORWARDED` / `_DISABLED` (login/register/change_password limiter), `CORS_ALLOWED_ORIGINS`. In dev: `DATABASE_URL`, `JWT_SECRET`, `SERVER_ADDRESS`, `STORAGE_BACKEND` / `STORAGE_FS_ROOT`, optionally `OFFLOAD_MQ_CLIENT_KEY` / `OFFLOAD_MQ_MGMT_TOKEN` to seed admin settings on first boot.
 
 ---
 
@@ -42,7 +42,8 @@ oai/backend/src/
 
   middleware/
     mod.rs                        # jwt_auth_middleware, admin_auth_middleware, AuthenticatedUser, extract_jwt_token
-    auth.rs                       # Auth struct — bcrypt hash/verify, JWT encode/decode (30-day TTL)
+    auth.rs                       # Auth struct — bcrypt hash/verify (async, on the blocking pool), JWT encode/decode (30-day TTL)
+    rate_limit.rs                 # per-IP limiter for register/login/change_password (tower_governor; keys on the proxy's last X-Forwarded-For hop)
 
   routes/
     health.rs                     # GET /api/health, GET /api/version
@@ -88,10 +89,12 @@ oai/backend/src/
     external_resize.rs            # offload the input downscale to a cheap agent task (pre-step chain)
     llm_compare.rs                # bespoke multi-slot LLM fan-out + reconcile
     llm_debate.rs                 # bespoke turn-based debate state machine + reconcile
-    movie.rs                      # bespoke movie state machine (outline → scenes → concat) + reconcile
-    movie_ffmpeg.rs               # frame extraction + clip concatenation
-    image_jobs.rs                 # image domain: start/poll/cancel/retry/delete, downloads, file browsing (bespoke)
-    image_processing.rs           # process_image() — resize, re-encode, SHA-256, EXIF; size/edge limits
+    movie/                        # bespoke movie state machine: mod.rs (API, views, dispatcher), outline.rs, scenes.rs, assemble.rs, watch.rs (WS watcher)
+    movie_ffmpeg.rs               # frame extraction + clip concatenation (async — ffmpeg runs on the blocking pool)
+    subprocess.rs                 # SUBPROCESS_GATE + run_gated, TempFile/TempDir, blocking() — every CLI/CPU-heavy call goes through here
+    prompt_usage.rs               # note_use(): best-effort "remember this prompt" (logs failures, never fails the request)
+    image_jobs/                   # image domain (bespoke): mod.rs (shared helpers e.g. record_event), start.rs, poll.rs, outputs.rs, files.rs, details.rs
+    image_processing.rs           # process_image() — resize, re-encode, SHA-256, EXIF; size/edge limits. Sync core: call the *_async wrappers from async code
     image_paths.rs                # canonical OpenDAL paths for image/thumbnail/video/movie blobs
     image_pipeline_params.rs      # ImagePipelineParams — build + parse stored JSON
     image_job_names.rs            # display_name / prompt_label / generate_random_names
@@ -113,7 +116,8 @@ oai/backend/src/
 
   db/
     mod.rs                        # connect() — SeaORM, runs migrations on boot
-    migrator.rs                   # SeaORM Migrator — all migrations inline (34 as of m20260926_000034)
+    migrator.rs                   # SeaORM Migrator — just the migrations() list + mod declarations (34 as of m20260926_000034)
+    migrator/                     # one file per migration: m{YYYYMMDD}_{NNNNNN}_{name}.rs
     users.rs                      # find_by_login/id, create, create_admin, update_password_hash, update_used_storage
     chats.rs                      # chat + message CRUD, add_pending_assistant_message, finalize_message
     chat_attachments.rs           # attachment rows
@@ -328,6 +332,8 @@ All handlers return `Result<impl IntoResponse, AppError>`. `AppError` maps to HT
 | `Jwt(_)` | 401 |
 | `Bcrypt(_)` | 500 |
 
+Best-effort side effects (cleanup, audit-log writes, cancelling an upstream task) must not be a bare `let _ = op().await;` — call `.log_warn("what")` from `error::ResultExt` so failures are logged. (`let _ = tx.send(..)` on a WebSocket channel is the exception: a closed receiver is normal.)
+
 Use `?` freely — `sea_orm::DbErr` auto-converts via `#[from]`. Use `AppError::BadRequest` for invalid user input, `AppError::Internal` for impossible states, `AppError::ExternalService` for OffloadMQ failures. Note the framework's failure classifier treats `BadRequest` out of `on_completed` as *permanent* — don't use it for transient conditions there.
 
 ---
@@ -446,7 +452,7 @@ SeaORM with PostgreSQL 17. Migrations run automatically on startup via `db::conn
 
 ### Adding a Migration
 
-Add a new `mod` inside `migrator.rs` and push a `Box::new(...)` to the `migrations()` vec. Naming convention: `m{YYYYMMDD}_{NNNNNN}_{description}` — the counter is global and sequential (latest: `m20260926_000034_prompt_entry_previews`). Migrations run once on boot — always provide a `down()`.
+Create `db/migrator/m{YYYYMMDD}_{NNNNNN}_{description}.rs` (with `pub struct Migration`, `MigrationName`, `MigrationTrait`), declare it with `mod m{...};` in `migrator.rs`, and push a `Box::new(m{...}::Migration)` to the `migrations()` vec. **Never rename an existing migration** — its `name()` is stored in `seaql_migrations`. Naming convention: `m{YYYYMMDD}_{NNNNNN}_{description}` — the counter is global and sequential (latest: `m20260926_000034_prompt_entry_previews`). Migrations run once on boot — always provide a `down()`.
 
 ---
 
@@ -533,27 +539,39 @@ pub async fn my_handler(
 ### Adding a Migration
 
 ```rust
-// In migrator.rs — add to migrations() vec and add the mod below
+// db/migrator.rs — declare the module and add it to the migrations() vec
+mod m20260806_000033_my_change;
+// ...
 Box::new(m20260806_000033_my_change::Migration),
+```
 
-mod m20260806_000033_my_change {
-    use sea_orm_migration::prelude::*;
-    pub struct Migration;
-    impl MigrationName for Migration {
-        fn name(&self) -> &str { "m20260806_000033_my_change" }
-    }
-    #[async_trait::async_trait]
-    impl MigrationTrait for Migration {
-        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> { ... }
-        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { ... }
-    }
-    // Iden enums for table/column names
+```rust
+// db/migrator/m20260806_000033_my_change.rs
+use sea_orm_migration::prelude::*;
+
+pub struct Migration;
+
+impl MigrationName for Migration {
+    fn name(&self) -> &str { "m20260806_000033_my_change" }
 }
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> { ... }
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { ... }
+}
+// Iden enums for table/column names
 ```
 
 ### Root Admin
 
-On first boot, if no user with login `root` exists, one is created. Password from `ROOT_ADMIN_PASSWORD` env var (default `000000`). The `root` user has `is_admin=true`.
+On first boot, if no user with login `root` exists, one is created. Password from `ROOT_ADMIN_PASSWORD` env var (default `000000` — set it in any real deployment). The password is never logged; a warning is logged when the default was used. The `root` user has `is_admin=true`.
+
+---
+
+## Blocking Work Never Runs on Async Workers
+
+Anything that shells out (`vipsthumbnail`, `ffmpeg`), decodes/re-encodes images, or hashes passwords is blocking. Run it through `services::subprocess::blocking(..)`: use the `image_processing::*_async` wrappers and `movie_ffmpeg::*` (already async), and `Auth::{hash,verify}_password` (already async). `run_gated` serializes child processes behind a process-wide mutex — called directly from an `async fn`, a few concurrent uploads park every Tokio worker on it and the *whole server* (health checks included) stalls. New CLI/CPU-heavy code goes in a sync fn + a `blocking` wrapper, never inline in a handler.
 
 ---
 

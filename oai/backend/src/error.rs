@@ -55,3 +55,39 @@ impl IntoResponse for AppError {
         (status, Json(json!({ "error": message }))).into_response()
     }
 }
+
+/// For best-effort operations whose failure must not fail the caller (cleanup,
+/// audit-log writes, cancelling an upstream task) but should never vanish silently
+/// either — a bare `let _ = op().await;` discards the only evidence something broke.
+pub trait ResultExt<T> {
+    /// On `Err`, logs `"{what} failed: {error:?}"` at warn level; always discards the
+    /// error and returns the `Ok` value, if any.
+    ///
+    /// Uses `Debug` on purpose: `AppError::Database`'s `Display` is just "Database
+    /// error" and would drop the underlying cause.
+    fn log_warn(self, what: &str) -> Option<T>;
+}
+
+impl<T, E: std::fmt::Debug> ResultExt<T> for Result<T, E> {
+    fn log_warn(self, what: &str) -> Option<T> {
+        match self {
+            Ok(v) => Some(v),
+            Err(e) => {
+                tracing::warn!("{what} failed: {e:?}");
+                None
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_warn_passes_ok_through_and_swallows_err() {
+        assert_eq!(Ok::<_, AppError>(7).log_warn("x"), Some(7));
+        assert_eq!(Err::<i32, _>(AppError::NotFound).log_warn("x"), None);
+        assert_eq!(Err::<i32, _>("plain string error").log_warn("x"), None);
+    }
+}

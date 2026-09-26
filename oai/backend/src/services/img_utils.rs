@@ -205,14 +205,16 @@ impl JobReconciler for ImgUtilsReconciler {
         let file = image_jobs::store_offload_output_image(
             state,
             job.user_id,
-            &source,
-            bucket,
-            image,
-            // Embedded in the stored JPEG's EXIF as the image's provenance — unless the
-            // input already carries a description of its own, which then wins.
-            &job.capability,
-            max_edge,
-            input_bytes.as_ref(),
+            image_jobs::OffloadOutputImage {
+                source: &source,
+                output_bucket: bucket,
+                image,
+                // Embedded as the image's provenance — unless the input already
+                // carries a description of its own, which then wins.
+                metadata_text: &job.capability,
+                max_edge,
+                exif_source: input_bytes.as_deref(),
+            },
         )
         .await?;
         if let Some(input) = input.as_ref() {
@@ -536,7 +538,7 @@ async fn stage_image(
 ) -> Result<String, AppError> {
     let op = storage::operator(state)?;
     let bytes = storage::read(op, &file.storage_path).await?;
-    let processed = image_processing::process_image(bytes, Some(file.content_type.clone()))?;
+    let processed = image_processing::process_image_async(bytes, Some(file.content_type.clone())).await?;
     let name = format!("{slot}_{}.jpg", file.id);
     client
         .upload_bucket_file(bucket_uid, processed.bytes, &name, &processed.content_type)

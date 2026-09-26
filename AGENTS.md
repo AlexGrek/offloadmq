@@ -378,7 +378,7 @@ Paths are relative to `oai/`.
 
 **Frontend:** `frontend/src/pages/ImageGenerationPage.tsx`, `frontend/src/pages/ImageWorkerLogsPage.tsx`, `frontend/src/pages/FilesPage.tsx`, `frontend/src/components/imggen/**`, `frontend/src/lib/imggen.ts`, `frontend/src/api/images.ts`, `frontend/src/api/promptgen.ts`, `frontend/src/hooks/useRunningImageJobs.ts`, `frontend/src/contexts/ProgressContext.tsx`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (image rows)
 
-**Backend:** `backend/src/routes/images.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/routes/promptgen.rs`, `backend/src/services/image_jobs.rs`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/services/promptgen.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
+**Backend:** `backend/src/routes/images.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/routes/promptgen.rs`, `backend/src/services/image_jobs/**`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/services/promptgen.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
 
 #### oai-img-tools — file patterns
 
@@ -396,7 +396,7 @@ Paths are relative to `oai/`.
 
 **Frontend:** `frontend/src/pages/MoviePage.tsx`, `frontend/src/components/movie/**`, `frontend/src/hooks/useWsMovie.ts`, `frontend/src/types/ws-movie.ts`, `frontend/src/api/movie.ts`, `frontend/src/lib/moviePromptBuckets.ts`
 
-**Backend:** `backend/src/services/movie.rs`, `backend/src/services/movie_ffmpeg.rs`, `backend/src/db/movie.rs`, `backend/src/db/entities/movie_jobs.rs`, `backend/src/routes/movie.rs`, `backend/src/ws/movie.rs`, `backend/src/jobs/movie_worker.rs`
+**Backend:** `backend/src/services/movie/**`, `backend/src/services/movie_ffmpeg.rs`, `backend/src/db/movie.rs`, `backend/src/db/entities/movie_jobs.rs`, `backend/src/routes/movie.rs`, `backend/src/ws/movie.rs`, `backend/src/jobs/movie_worker.rs`
 
 #### Skill summaries
 
@@ -477,7 +477,7 @@ so no finished job leaves an OffloadMQ bucket behind (image generation does the 
 
 **Database** — PostgreSQL 17
 
-- SeaORM with migrations; schema in [oai/backend/src/db/migrator.rs](oai/backend/src/db/migrator.rs)
+- SeaORM with migrations; schema in [oai/backend/src/db/migrator.rs](oai/backend/src/db/migrator.rs) (the `migrations()` list; each migration is its own file under `oai/backend/src/db/migrator/`)
 - `users` table: `id` (snowflake i64), `login`, `password_hash`, `google_id`, `created_at`
 
 **Storage** — OpenDAL (FS or S3/Garage)
@@ -495,7 +495,10 @@ so no finished job leaves an OffloadMQ bucket behind (image generation does the 
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `JWT_SECRET` | Secret for signing user JWT tokens |
+| `JWT_SECRET` | Secret for signing user JWT tokens — **required**: the backend refuses to start without it |
+| `ROOT_ADMIN_PASSWORD` | Password for the `root` admin created on first boot (default `000000` — set it in real deployments; it is never logged) |
+| `AUTH_RATE_LIMIT_BURST` / `AUTH_RATE_LIMIT_REPLENISH_SECS` | Per-IP limit on login/register/change_password (default burst 10, +1 per 6 s). `AUTH_RATE_LIMIT_TRUST_FORWARDED=false` when not behind a proxy; `AUTH_RATE_LIMIT_DISABLED=1` turns it off |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed for credentialed CORS (default: local Vite ports + `oai.alexgr.space`) |
 | `SERVER_ADDRESS` | Bind address (default `0.0.0.0:3000`) |
 | `STATIC_DIR` | Path to built frontend assets (default `/app/static`) |
 | `OFFLOAD_MQ_URL` | OffloadMQ server base URL |
