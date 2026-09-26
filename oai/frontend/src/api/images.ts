@@ -59,6 +59,9 @@ export interface StartImageJobRequest {
    *  generation task runs, instead of decoding it in the backend. img2img /
    *  img2video only — ignored when there is no input image. */
   external_resize?: boolean
+  /** Prompt as typed, before placeholder expansion. The finished job's thumbnail
+   *  becomes the preview of the saved prompt with exactly this text. */
+  prompt_template?: string | null
 }
 
 /** Whether the External resize option can be offered, and when it defaults on. */

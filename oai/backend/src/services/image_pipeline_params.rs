@@ -46,6 +46,10 @@ pub struct ImagePipelineParams {
     /// before the option existed deserialize as `false`.
     #[serde(default)]
     pub external_resize: bool,
+    /// Raw prompt before placeholder expansion (see `StartJobParams::prompt_template`);
+    /// replayed on retry so the retried result also refreshes the saved-prompt preview.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_template: Option<String>,
 }
 
 impl ImagePipelineParams {
@@ -73,6 +77,7 @@ impl ImagePipelineParams {
             video_length: None,
             // Predates the option, so it can never have been used.
             external_resize: false,
+            prompt_template: None,
             rescale: if job.workflow == "img2img" {
                 Some(RescaleParams {
                     enabled: true,

@@ -1072,6 +1072,7 @@ export default function ImageGenerationPage() {
       rescale: rescaleForSubmit(),
       video_length: isVideoMode(mode) ? parseVideoLength(videoLength) : null,
       external_resize: isInputImageMode(mode) && externalResize,
+      prompt_template: prompt.trim() || null,
     }
   }
 
@@ -1603,6 +1604,7 @@ export default function ImageGenerationPage() {
                   onChange={setPrompt}
                   bucket="imggen-prompt"
                   token={token}
+                  previews
                   rows={4}
                   data-testid="imggen-prompt"
                 />

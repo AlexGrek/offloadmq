@@ -1089,6 +1089,7 @@ async fn reconcile_video(state: &AppState, job: &mut movie::MovieJob) -> Result<
                 // Scene inputs are frames this pipeline just generated — already
                 // small, so there is nothing for an agent to shrink.
                 external_resize: false,
+                prompt_template: None,
             },
         )
         .await?;

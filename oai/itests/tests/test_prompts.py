@@ -182,3 +182,163 @@ class TestImageJobDoesNotAutoRecordPrompt:
         assert template in recent
         for variant in expanded_variants:
             assert variant not in recent
+
+
+# ---------------------------------------------------------------------------
+# Paged library listing (GET /api/prompts/{bucket}/entries) + previews
+# ---------------------------------------------------------------------------
+
+
+def _star(client: httpx.Client, headers: dict, bucket: str, content: str) -> dict:
+    r = client.post(f"/api/prompts/{bucket}/star", headers=headers, json={"content": content})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _entries(client: httpx.Client, headers: dict, bucket: str, **params) -> httpx.Response:
+    return client.get(f"/api/prompts/{bucket}/entries", headers=headers, params=params)
+
+
+class TestPromptEntriesPaging:
+    def test_pages_cover_all_favorites_without_overlap(self, client: httpx.Client, new_user: dict):
+        bucket = f"it-paging-{uuid.uuid4().hex[:6]}"
+        contents = [f"favorite number {i:02d}" for i in range(45)]
+        for c in contents:
+            _star(client, new_user["headers"], bucket, c)
+
+        first = _entries(client, new_user["headers"], bucket, kind="starred", limit=40)
+        assert first.status_code == 200, first.text
+        page1 = first.json()
+        assert len(page1["items"]) == 40
+        assert page1["next_cursor"]
+
+        second = _entries(
+            client, new_user["headers"], bucket, kind="starred", limit=40, cursor=page1["next_cursor"]
+        ).json()
+        assert len(second["items"]) == 5
+        assert second["next_cursor"] is None
+
+        ids = [i["id"] for i in page1["items"] + second["items"]]
+        assert len(set(ids)) == 45
+        seen = {i["content"] for i in page1["items"] + second["items"]}
+        assert seen == set(contents)
+        # Newest favorite first.
+        assert page1["items"][0]["content"] == contents[-1]
+
+    def test_entry_shape(self, client: httpx.Client, new_user: dict):
+        bucket = f"it-shape-{uuid.uuid4().hex[:6]}"
+        _star(client, new_user["headers"], bucket, "shape probe")
+        item = _entries(client, new_user["headers"], bucket, kind="starred").json()["items"][0]
+        assert item["kind"] == "starred"
+        assert item["content"] == "shape probe"
+        assert item["preview_version"] is None
+        for field in ("id", "created_at", "last_used_at", "updated_at"):
+            assert item[field]
+
+    def test_recent_kind_lists_recents_only(self, client: httpx.Client, new_user: dict):
+        bucket = f"it-kind-{uuid.uuid4().hex[:6]}"
+        client.post(f"/api/prompts/{bucket}/recent", headers=new_user["headers"], json={"content": "a recent"})
+        _star(client, new_user["headers"], bucket, "a favorite")
+        items = _entries(client, new_user["headers"], bucket, kind="recent").json()["items"]
+        assert [i["content"] for i in items] == ["a recent"]
+        assert items[0]["kind"] == "recent"
+
+    def test_invalid_kind_is_400(self, client: httpx.Client, new_user: dict):
+        r = _entries(client, new_user["headers"], "imggen-prompt", kind="everything")
+        assert r.status_code == 400
+
+    def test_invalid_cursor_is_400(self, client: httpx.Client, new_user: dict):
+        r = _entries(client, new_user["headers"], "imggen-prompt", kind="starred", cursor="nope")
+        assert r.status_code == 400
+
+    def test_requires_auth(self, fresh_client: httpx.Client):
+        r = fresh_client.get("/api/prompts/imggen-prompt/entries", params={"kind": "recent"})
+        assert r.status_code == 401
+
+    def test_other_users_entries_are_invisible(self, client: httpx.Client, new_user: dict, session_headers: dict):
+        bucket = f"it-iso-{uuid.uuid4().hex[:6]}"
+        _star(client, new_user["headers"], bucket, "private favorite")
+        items = _entries(client, session_headers, bucket, kind="starred").json()["items"]
+        assert items == []
+
+
+class TestPromptEntriesSearch:
+    def test_case_insensitive_substring(self, client: httpx.Client, new_user: dict):
+        bucket = f"it-search-{uuid.uuid4().hex[:6]}"
+        for c in ("A Red Fox at dawn", "blue whale", "fox terrier portrait"):
+            _star(client, new_user["headers"], bucket, c)
+        items = _entries(client, new_user["headers"], bucket, kind="starred", q="FOX").json()["items"]
+        assert {i["content"] for i in items} == {"A Red Fox at dawn", "fox terrier portrait"}
+
+    def test_wildcards_are_literal(self, client: httpx.Client, new_user: dict):
+        bucket = f"it-wild-{uuid.uuid4().hex[:6]}"
+        for c in ("100% cotton", "1000 cotton", "snake_case", "snakeXcase"):
+            _star(client, new_user["headers"], bucket, c)
+        pct = _entries(client, new_user["headers"], bucket, kind="starred", q="0%").json()["items"]
+        assert [i["content"] for i in pct] == ["100% cotton"]
+        under = _entries(client, new_user["headers"], bucket, kind="starred", q="e_c").json()["items"]
+        assert [i["content"] for i in under] == ["snake_case"]
+
+    def test_search_pages(self, client: httpx.Client, new_user: dict):
+        bucket = f"it-spage-{uuid.uuid4().hex[:6]}"
+        for i in range(7):
+            _star(client, new_user["headers"], bucket, f"match {i}")
+            _star(client, new_user["headers"], bucket, f"other {i}")
+        page1 = _entries(client, new_user["headers"], bucket, kind="starred", q="match", limit=5).json()
+        page2 = _entries(
+            client, new_user["headers"], bucket, kind="starred", q="match", limit=5, cursor=page1["next_cursor"]
+        ).json()
+        got = [i["content"] for i in page1["items"] + page2["items"]]
+        assert sorted(got) == [f"match {i}" for i in range(7)]
+        assert page2["next_cursor"] is None
+
+
+class TestPromptPreviewAndEdit:
+    def test_preview_404_without_image(self, client: httpx.Client, new_user: dict):
+        bucket = f"it-prev-{uuid.uuid4().hex[:6]}"
+        entry = _star(client, new_user["headers"], bucket, "no image yet")
+        r = client.get(f"/api/prompt-entries/{entry['id']}/preview", headers=new_user["headers"])
+        assert r.status_code == 404
+
+    def test_preview_of_other_users_entry_is_404(
+        self, client: httpx.Client, new_user: dict, session_headers: dict
+    ):
+        entry = _star(client, new_user["headers"], f"it-prev-{uuid.uuid4().hex[:6]}", "mine")
+        r = client.get(f"/api/prompt-entries/{entry['id']}/preview", headers=session_headers)
+        assert r.status_code == 404
+
+    def test_patch_returns_full_entry(self, client: httpx.Client, new_user: dict):
+        bucket = f"it-edit-{uuid.uuid4().hex[:6]}"
+        entry = _star(client, new_user["headers"], bucket, "before edit")
+        r = client.patch(
+            f"/api/prompt-entries/{entry['id']}", headers=new_user["headers"], json={"content": "after edit"}
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["id"] == entry["id"]
+        assert body["content"] == "after edit"
+        assert body["kind"] == "starred"
+        assert "preview_version" in body
+
+    def test_image_job_accepts_prompt_template(self, client: httpx.Client, new_user: dict):
+        """`prompt_template` is an optional start-job field; it must never be
+        rejected as unknown input (the job may still fail downstream when no
+        OffloadMQ agent is online in the test environment)."""
+        r = client.post(
+            "/api/images/jobs",
+            headers=new_user["headers"],
+            json={
+                "capability": "imggen.txt2img",
+                "prompt": "a red fox",
+                "prompt_template": "a {color} fox",
+                "negative_prompt": None,
+                "override_negative": False,
+                "width": 512,
+                "height": 512,
+                "seed": None,
+                "workflow": "txt2img",
+                "input_image_id": None,
+                "data_preparation": None,
+            },
+        )
+        assert r.status_code != 422, r.text

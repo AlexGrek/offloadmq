@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Image Generation Functionality', () => {
-  const uniqueId = Date.now();
-  const username = `imguser_${uniqueId}`;
   const password = 'password123';
 
   test.beforeEach(async ({ page }) => {
-    // Register and login before tests
+    // Register and login before tests — a fresh user per test, since one worker
+    // may run several tests and a login can only be registered once.
+    const username = `imguser_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     await page.goto('/register');
     await page.fill('data-testid=login-input', username);
     await page.fill('data-testid=password-input', password);
@@ -40,41 +40,98 @@ test.describe('Image Generation Functionality', () => {
   });
 
   test('should allow saving and using a starred prompt in txt2img', async ({ page }) => {
-    // Go to image generation page
     await page.goto('/app/images');
 
-    // Type a prompt
     const promptInput = page.locator('data-testid=imggen-prompt');
     await expect(promptInput).toBeVisible();
     await promptInput.fill('My broken starred prompt test');
 
-    // Open the prompt library modal
-    await page.locator('data-testid=prompt-list-open').click();
-    const modal = page.locator('data-testid=prompt-library-modal');
-    await expect(modal).toBeVisible();
-
-    // Click Add to favorites
+    // Open the saved-prompts drawer and star the current text.
+    await page.locator('data-testid=prompt-list-open').first().click();
+    const drawer = page.locator('data-testid=prompt-library-drawer');
+    await expect(drawer).toBeVisible();
     await page.locator('data-testid=prompt-add-favorite').click();
+    // Starring switches to the Starred tab once saved — wait for it before reloading.
+    await expect(
+      drawer.locator('[data-testid^="prompt-starred-"]').getByText('My broken starred prompt test'),
+    ).toBeVisible();
 
-    // Reload to verify it persisted
+    // Reload to verify it persisted.
     await page.reload();
-
-    // Open the prompt library modal again
     await page.locator('data-testid=prompt-list-open').first().click(); // first() for the main prompt
-
-    // Switch to starred tab
     await page.locator('data-testid=prompt-tab-starred').click();
 
-    // Verify the newly starred prompt is visible in the list
-    const starredItem = modal.locator('[data-testid^="prompt-starred-"]').getByText('My broken starred prompt test');
+    const starredItem = drawer.locator('[data-testid^="prompt-starred-"]').getByText('My broken starred prompt test');
     await expect(starredItem).toBeVisible();
 
-    // Click it to use it
+    // Picking it closes the drawer and fills the textarea.
     await starredItem.click();
-
-    // The modal should close and the textarea should contain the text
-    // This might fail if the feature is broken!
-    await expect(modal).not.toBeVisible();
+    await expect(drawer).not.toBeVisible();
     await expect(promptInput).toHaveValue('My broken starred prompt test');
+  });
+
+  test('saved prompts drawer searches favorites and switches view modes', async ({ page }) => {
+    await page.goto('/app/images');
+    const promptInput = page.locator('data-testid=imggen-prompt');
+    const drawer = page.locator('data-testid=prompt-library-drawer');
+
+    for (const text of ['Crimson fox at dawn', 'Blue whale in the deep sea']) {
+      await promptInput.fill(text);
+      await page.locator('data-testid=prompt-list-open').first().click();
+      await page.locator('data-testid=prompt-add-favorite').click();
+      await expect(drawer.getByText(text)).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(drawer).not.toBeVisible();
+    }
+
+    await page.locator('data-testid=prompt-list-open').first().click();
+    await page.locator('data-testid=prompt-tab-starred').click();
+    const items = drawer.locator('[data-testid^="prompt-starred-"]');
+    await expect(items).toHaveCount(2);
+
+    // Server-side search, case-insensitive, with the match highlighted.
+    await page.locator('data-testid=prompt-search').fill('FOX');
+    await expect(items).toHaveCount(1);
+    await expect(items.first()).toContainText('Crimson fox at dawn');
+    await expect(items.first().locator('mark')).toHaveText('fox');
+
+    await page.locator('data-testid=prompt-search').fill('no such prompt');
+    await expect(page.locator('data-testid=prompt-library-empty')).toBeVisible();
+    await page.locator('data-testid=prompt-search-clear').click();
+    await expect(items).toHaveCount(2);
+
+    // View modes (image prompts only); the choice persists per bucket.
+    await page.locator('data-testid=prompt-view-gallery').click();
+    await expect(drawer.locator('data-testid=prompt-list-gallery')).toBeVisible();
+    await page.locator('data-testid=prompt-view-text').click();
+    await expect(drawer.locator('data-testid=prompt-list-text')).toBeVisible();
+
+    await page.reload();
+    await page.locator('data-testid=prompt-list-open').first().click();
+    await page.locator('data-testid=prompt-tab-starred').click();
+    await expect(drawer.locator('data-testid=prompt-list-text')).toBeVisible();
+    await expect(page.locator('data-testid=prompt-view-text')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('saved prompts drawer loads more favorites on scroll', async ({ page }) => {
+    await page.goto('/app/images');
+    const token = await page.evaluate(() => localStorage.getItem('oai_token'));
+    for (let i = 0; i < 50; i++) {
+      const res = await page.request.post('/api/prompts/imggen-prompt/star', {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { content: `seeded favorite ${String(i).padStart(2, '0')}` },
+      });
+      expect(res.ok()).toBeTruthy();
+    }
+
+    await page.locator('data-testid=prompt-list-open').first().click();
+    await page.locator('data-testid=prompt-tab-starred').click();
+    const drawer = page.locator('data-testid=prompt-library-drawer');
+    const items = drawer.locator('[data-testid^="prompt-starred-"]');
+    await expect(items).toHaveCount(40);
+
+    await page.locator('data-testid=prompt-load-more-sentinel').scrollIntoViewIfNeeded();
+    await expect(items).toHaveCount(50);
+    await expect(drawer.getByText('seeded favorite 00')).toBeVisible();
   });
 });

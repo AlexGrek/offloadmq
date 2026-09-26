@@ -39,6 +39,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260805_000031_img_utils_progress_timing::Migration),
             Box::new(m20260806_000032_image_analysis_external_resize::Migration),
             Box::new(m20260903_000033_create_prompt_placeholders::Migration),
+            Box::new(m20260926_000034_prompt_entry_previews::Migration),
         ]
     }
 }
@@ -3217,5 +3218,82 @@ mod m20260903_000033_create_prompt_placeholders {
         VariantsJson,
         CreatedAt,
         UpdatedAt,
+    }
+}
+
+/// Image previews for saved prompts. `preview_updated_at` is non-null once an image
+/// was generated from the entry's content; the blob itself lives in storage at a
+/// content-derived path (`image_paths::prompt_preview_path`), so recent and starred
+/// entries with identical text share it. The second index serves keyset paging of
+/// favorites, which sort by `updated_at` (recents reuse the `last_used_at` index).
+mod m20260926_000034_prompt_entry_previews {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260926_000034_prompt_entry_previews"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(PromptEntries::Table)
+                        .add_column(
+                            ColumnDef::new(PromptEntries::PreviewUpdatedAt)
+                                .timestamp_with_time_zone()
+                                .null(),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+
+            manager
+                .create_index(
+                    Index::create()
+                        .table(PromptEntries::Table)
+                        .col(PromptEntries::UserId)
+                        .col(PromptEntries::Bucket)
+                        .col(PromptEntries::Kind)
+                        .col(PromptEntries::UpdatedAt)
+                        .name("idx_prompt_entries_user_bucket_kind_updated")
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .drop_index(
+                    Index::drop()
+                        .table(PromptEntries::Table)
+                        .name("idx_prompt_entries_user_bucket_kind_updated")
+                        .to_owned(),
+                )
+                .await?;
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(PromptEntries::Table)
+                        .drop_column(PromptEntries::PreviewUpdatedAt)
+                        .to_owned(),
+                )
+                .await
+        }
+    }
+
+    #[derive(DeriveIden)]
+    enum PromptEntries {
+        Table,
+        UserId,
+        Bucket,
+        Kind,
+        UpdatedAt,
+        PreviewUpdatedAt,
     }
 }

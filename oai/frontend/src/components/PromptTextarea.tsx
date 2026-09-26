@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { List } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { SavedPromptsDialog } from '@/components/SavedPromptsDialog'
+import { SavedPromptsDrawer } from '@/components/prompts/SavedPromptsDrawer'
 
 type PromptTextareaProps = {
   value: string
@@ -10,6 +10,9 @@ type PromptTextareaProps = {
   /** Storage namespace, e.g. `llm-system` or `describe-image-user`. */
   bucket: string
   token: string | null
+  /** Saved prompts in this bucket get image previews (enables the drawer's
+   *  gallery / mixed view modes). Only image-generation prompts have them. */
+  previews?: boolean
   placeholder?: string
   rows?: number
   disabled?: boolean
@@ -23,7 +26,7 @@ type PromptTextareaProps = {
 
 /**
  * A textarea with a built-in saved-prompts picker. The list icon opens
- * SavedPromptsDialog, which lets the user browse/star/edit/delete saved
+ * SavedPromptsDrawer, which lets the user search/browse/star/edit/delete saved
  * prompts and pick one to replace the current text.
  */
 export function PromptTextarea({
@@ -31,6 +34,7 @@ export function PromptTextarea({
   onChange,
   bucket,
   token,
+  previews,
   placeholder,
   rows = 4,
   disabled,
@@ -72,13 +76,14 @@ export function PromptTextarea({
         <List className="size-4" />
       </Button>
 
-      <SavedPromptsDialog
+      <SavedPromptsDrawer
         open={open}
         onOpenChange={setOpen}
         bucket={bucket}
         token={token}
         value={value}
         onPick={onChange}
+        previews={previews}
       />
     </div>
   )

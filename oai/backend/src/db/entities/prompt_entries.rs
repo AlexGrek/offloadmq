@@ -15,6 +15,9 @@ pub struct Model {
     pub last_used_at: DateTimeWithTimeZone,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
+    /// Set when an image was generated from this content; the preview blob lives at
+    /// `image_paths::prompt_preview_path`. Doubles as the preview URL cache-buster.
+    pub preview_updated_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

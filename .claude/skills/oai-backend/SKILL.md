@@ -50,7 +50,7 @@ oai/backend/src/
     admin.rs                      # admin settings, connection check, image admin, k8s self
     chats.rs                      # CRUD chats + messages, system-prompt / last-model patches
     chat_attachments.rs           # upload/reference documents, image attachments, list, download
-    prompts.rs                    # generic prompt library — per-user buckets, recent/starred
+    prompts.rs                    # generic prompt library — per-user buckets, recent/starred, paged /entries, previews
     promptgen.rs                  # prompt generator over REST (WS variant lives in ws/promptgen.rs)
     images.rs                     # upload, start/list/get/poll/cancel/retry/delete job, image bytes/thumbnail/star, capabilities
     job_common.rs                 # parse_id + shared StartJobResponse/CancelJobResponse DTOs
@@ -99,6 +99,7 @@ oai/backend/src/
     llm_text_capabilities.rs      # shared text-LLM capability listing (compare, debate, movie)
     offload_factory.rs            # chat_client() / image_client() from DB settings
     progress.rs                   # list_running_image_jobs() → RunningJobsResponse
+    prompt_previews.rs            # saved-prompt preview blobs: attach (imggen completion), serve, GC on trim/edit/delete
     promptgen.rs                  # prompt generator: capabilities, generate, poll, WS variants
     runners.rs                    # online agent summaries via the management API
     storage.rs                    # operator(), read(), write(), exists(), delete()
@@ -113,7 +114,7 @@ oai/backend/src/
 
   db/
     mod.rs                        # connect() — SeaORM, runs migrations on boot
-    migrator.rs                   # SeaORM Migrator — all migrations inline (32 as of m20260806_000032)
+    migrator.rs                   # SeaORM Migrator — all migrations inline (34 as of m20260926_000034)
     users.rs                      # find_by_login/id, create, create_admin, update_password_hash, update_used_storage
     chats.rs                      # chat + message CRUD, add_pending_assistant_message, finalize_message
     chat_attachments.rs           # attachment rows
@@ -126,7 +127,7 @@ oai/backend/src/
     image_worker_logs.rs          # worker log rows
     llm_capabilities.rs           # sync_online(), list_for_display(), delete_stale()
     imggen_capabilities.rs        # same shape for imggen.* capabilities
-    prompts.rs                    # prompt library (prompt_entries: bucket + kind recent/starred)
+    prompts.rs                    # prompt library (prompt_entries: bucket + kind recent/starred); keyset list_page + ILIKE search
     generation_parameters.rs      # parsed generation params extracted from uploaded images
     entities/                     # SeaORM entity structs (one per table)
 
@@ -236,9 +237,12 @@ Two routes carry a `DefaultBodyLimit` override: `/api/images/upload` (`image_pro
 | GET | `/api/promptgen/capabilities` | `promptgen::list_capabilities` |
 | POST | `/api/promptgen/generate` | `promptgen::generate` |
 | POST | `/api/promptgen/poll` | `promptgen::poll` |
-| GET | `/api/prompts/{bucket}` | `prompts::list_library` |
+| GET | `/api/prompts/{bucket}` | `prompts::list_library` — legacy all-at-once |
+| GET | `/api/prompts/{bucket}/entries?kind=recent\|starred&q=&cursor=&limit=` | `prompts::list_entries` — keyset-paged (default 40, max 100), `q` = case-insensitive substring; `{ items, next_cursor }` |
+| POST | `/api/prompts/{bucket}/recent` | `prompts::record_recent` |
 | POST | `/api/prompts/{bucket}/star` | `prompts::star` |
-| PATCH/DELETE | `/api/prompt-entries/{id}` | `prompts::update_entry` / `delete_entry` |
+| PATCH/DELETE | `/api/prompt-entries/{id}` | `prompts::update_entry` (returns full entry) / `delete_entry` |
+| GET | `/api/prompt-entries/{id}/preview` | `prompts::get_preview` — JPEG, `?token=` + `?v=preview_version`, immutable cache |
 | GET | `/api/files` | `files::list_files` |
 | GET | `/api/files/properties` | `files::get_file_properties` |
 | POST | `/api/files/cleanup` | `files::cleanup_files` |
@@ -425,7 +429,7 @@ SeaORM with PostgreSQL 17. Migrations run automatically on startup via `db::conn
 | `chats` | `id`, `user_id`, `title`, `system_prompt`, `last_model`, timestamps |
 | `chat_messages` | `id`, `chat_id`, `role`, `content`, `status` (complete/pending/failed), `model`, `offload_cap`, `offload_task_id` |
 | `chat_attachments` | `id`, `user_id`, `message_id`, `chat_id`, `kind`, `filename`, `content_type`, `size_bytes`, `image_file_id`, `storage_path`, `sha256` |
-| `prompt_entries` | `id`, `user_id`, `bucket`, `kind` (`recent`/`starred`), `content`, `last_used_at` |
+| `prompt_entries` | `id`, `user_id`, `bucket`, `kind` (`recent`/`starred`), `content`, `last_used_at`, `updated_at`, `preview_updated_at` (non-null = has preview; blob at `image_paths::prompt_preview_path`, keyed by sha256(content) so same-text entries share it) |
 | `llm_capabilities` / `imggen_capabilities` | `base` (PK text), `tags_json`, `raw`, `last_available_at` |
 | `image_generation_jobs` | `id`, `user_id`, `status`, `display_name`, `prompt`, `negative_prompt`, `capability`, `workflow`, `width`, `height`, `seed`, `input_image_id`, `error`, `pipeline_params_json` |
 | `image_files` | `id`, `user_id`, `job_id`, `direction`, `source`, `storage_path`, `thumbnail_storage_path`, `filename`, `content_type`, sizes/dimensions, `exif_orientation`, `rescaled`, `reencoded`, `sha256`, offload bucket/file uids |
@@ -446,7 +450,7 @@ SeaORM with PostgreSQL 17. Migrations run automatically on startup via `db::conn
 
 ### Adding a Migration
 
-Add a new `mod` inside `migrator.rs` and push a `Box::new(...)` to the `migrations()` vec. Naming convention: `m{YYYYMMDD}_{NNNNNN}_{description}` — the counter is global and sequential (latest: `m20260806_000032_image_analysis_external_resize`). Migrations run once on boot — always provide a `down()`.
+Add a new `mod` inside `migrator.rs` and push a `Box::new(...)` to the `migrations()` vec. Naming convention: `m{YYYYMMDD}_{NNNNNN}_{description}` — the counter is global and sequential (latest: `m20260926_000034_prompt_entry_previews`). Migrations run once on boot — always provide a `down()`.
 
 ---
 

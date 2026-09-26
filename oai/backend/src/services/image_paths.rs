@@ -45,3 +45,12 @@ pub fn starred_image_path(user_id: i64, image_id: i64) -> String {
 pub fn movie_output_path(user_id: i64, job_id: i64, file_id: i64) -> String {
     format!("users/{user_id}/videos/movies/{job_id}/{file_id}.mp4")
 }
+
+/// Saved-prompt preview thumbnail. Keyed by the prompt *content* (not the entry id) so
+/// a recent and a starred entry with the same text share one blob — starring a recent
+/// keeps its preview without copying anything. `bucket` is already validated by
+/// `db::prompts::normalize_bucket` (`[A-Za-z0-9._-]`), so it is path-safe.
+pub fn prompt_preview_path(user_id: i64, bucket: &str, content: &str) -> String {
+    let digest = super::image_processing::sha256_hex(content.as_bytes());
+    format!("users/{user_id}/prompt_previews/{bucket}/{digest}.jpg")
+}

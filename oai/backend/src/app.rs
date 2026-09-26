@@ -85,6 +85,10 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/promptgen/generate", post(routes::promptgen::generate))
         .route("/api/promptgen/poll", post(routes::promptgen::poll))
         .route("/api/prompts/{bucket}", get(routes::prompts::list_library))
+        .route(
+            "/api/prompts/{bucket}/entries",
+            get(routes::prompts::list_entries),
+        )
         .route("/api/prompts/{bucket}/star", post(routes::prompts::star))
         .route(
             "/api/prompts/{bucket}/recent",
@@ -94,6 +98,10 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/prompt-entries/{id}",
             axum::routing::patch(routes::prompts::update_entry)
                 .delete(routes::prompts::delete_entry),
+        )
+        .route(
+            "/api/prompt-entries/{id}/preview",
+            get(routes::prompts::get_preview),
         )
         .route(
             "/api/prompt-placeholders",

@@ -21,7 +21,8 @@ use crate::{
         image_job_names,
         image_paths,
         image_pipeline_params::{self, ImagePipelineParams, RescaleParams},
-        image_processing, image_processing::ProcessedImage, offload_factory, storage,
+        image_processing, image_processing::ProcessedImage, offload_factory, prompt_previews,
+        storage,
     },
     state::AppState,
 };
@@ -29,6 +30,10 @@ use crate::{
 /// OAI persists at most one generated output file per job, even when OffloadMQ
 /// returns multiple images in the poll payload.
 const MAX_OUTPUT_FILES_PER_JOB: usize = 1;
+
+/// Saved-prompt bucket of the image generation Prompt textarea; completed jobs
+/// attach their thumbnail to the matching entries there as a preview.
+const PROMPT_BUCKET: &str = "imggen-prompt";
 
 /// Input contract for starting a generation job (the service's command type).
 #[derive(Deserialize)]
@@ -57,6 +62,12 @@ pub struct StartJobParams {
     /// with no input image ignores it. See [`external_resize`].
     #[serde(default)]
     pub external_resize: bool,
+    /// The prompt as the user typed it, before placeholder expansion. Saved prompts
+    /// store this raw text, so it is the key a finished job's thumbnail is attached
+    /// to as the saved prompt's preview. Absent for API/CLI callers — the stored
+    /// prompt is used then.
+    #[serde(default)]
+    pub prompt_template: Option<String>,
 }
 
 /// Result of polling a job — domain data the route maps to its response DTO.
@@ -1028,6 +1039,7 @@ fn start_params_from_pipeline(p: &ImagePipelineParams) -> StartJobParams {
         rescale: p.rescale.clone(),
         video_length: p.video_length,
         external_resize: p.external_resize,
+        prompt_template: p.prompt_template.clone(),
     }
 }
 
@@ -1050,6 +1062,12 @@ fn build_pipeline_params(
         rescale: req.rescale.clone(),
         video_length: req.video_length,
         external_resize: req.external_resize && input_image_id.is_some(),
+        prompt_template: req
+            .prompt_template
+            .as_deref()
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(ToOwned::to_owned),
     }
 }
 
@@ -1504,7 +1522,7 @@ async fn fetch_and_store_outputs(
     let client =
         offload_factory::image_client_from_settings(state, app_settings::get(&state.db).await?)?;
 
-    if is_video_workflow(&job.workflow) {
+    let thumbnail = if is_video_workflow(&job.workflow) {
         let video = collect_output_video(output.as_ref(), offload.last_poll_output.as_deref());
         let Some(video) = video else {
             record_event(
@@ -1517,7 +1535,7 @@ async fn fetch_and_store_outputs(
             .await?;
             return Ok(());
         };
-        store_output_video(state, &client, user_id, job, &output_bucket, &video).await?;
+        store_output_video(state, &client, user_id, job, &output_bucket, &video).await?
     } else {
         let images = collect_output_images(output.as_ref(), offload.last_poll_output.as_deref());
         let image_count = images.len();
@@ -1544,11 +1562,16 @@ async fn fetch_and_store_outputs(
             )
             .await?;
         }
-        store_output_image(state, &client, user_id, job, &output_bucket, 0, &image).await?;
-    }
+        store_output_image(state, &client, user_id, job, &output_bucket, 0, &image).await?
+    };
 
     image_generation::update_job_status(&state.db, job.id, "completed", None).await?;
     record_event(state, job.id, "job.finalize", "ok", Some("completed")).await?;
+    // Latest result becomes the saved prompt's preview (best-effort, never fails the job).
+    let template = pipeline_params_for_job(job)
+        .prompt_template
+        .unwrap_or_else(|| job.prompt.clone());
+    prompt_previews::attach_preview(state, user_id, PROMPT_BUCKET, &template, thumbnail).await;
     // The outputs are in our own storage now, so the task's buckets are dead
     // weight on the server.
     release_job_buckets(state, job.id).await;
@@ -1672,7 +1695,7 @@ async fn store_output_video(
     job: &image_generation::ImageGenerationJob,
     output_bucket: &str,
     video: &Value,
-) -> Result<(), AppError> {
+) -> Result<Vec<u8>, AppError> {
     let file_uid = video["file_uid"]
         .as_str()
         .ok_or_else(|| AppError::ExternalService("video output missing file_uid".into()))?;
@@ -1739,7 +1762,8 @@ async fn store_output_video(
         "ok",
         Some(&format!("file_id={file_id} file_uid={file_uid}")),
     )
-    .await
+    .await?;
+    Ok(thumbnail_bytes)
 }
 
 async fn store_output_image(
@@ -1750,7 +1774,7 @@ async fn store_output_image(
     output_bucket: &str,
     idx: usize,
     image: &Value,
-) -> Result<(), AppError> {
+) -> Result<Vec<u8>, AppError> {
     let file_uid = image["file_uid"]
         .as_str()
         .ok_or_else(|| AppError::ExternalService("output image missing file_uid".into()))?;
@@ -1798,7 +1822,8 @@ async fn store_output_image(
         "ok",
         Some(&format!("image_id={} file_uid={}", image_id, file_uid)),
     )
-    .await
+    .await?;
+    Ok(processed.thumbnail_bytes)
 }
 
 async fn record_image_generation_parameters(

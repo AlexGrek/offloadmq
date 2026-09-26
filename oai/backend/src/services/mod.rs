@@ -8,6 +8,7 @@ pub mod image_analysis;
 pub mod nude_detect;
 pub mod progress;
 pub mod promptgen;
+pub mod prompt_previews;
 pub mod image_jobs;
 pub mod image_job_names;
 pub mod image_paths;

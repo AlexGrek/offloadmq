@@ -226,7 +226,11 @@ Two independent substitution mechanisms can appear in the Prompt textarea, both 
 
 ### `StartJobParams` (JSON)
 
-`capability`, `prompt`, `negative_prompt?`, `override_negative`, `width`, `height`, `seed?`, `workflow?`, `input_image_id?`, `data_preparation?` (map string→string).
+`capability`, `prompt`, `negative_prompt?`, `override_negative`, `width`, `height`, `seed?`, `workflow?`, `input_image_id?`, `data_preparation?` (map string→string), `prompt_template?` (raw textarea text before placeholder expansion — stored in `pipeline_params_json`, replayed on retry).
+
+### Saved-prompt previews
+
+On completion `fetch_and_store_outputs` hands the output thumbnail (384px; video → frame) to `prompt_previews::attach_preview("imggen-prompt", prompt_template ?? job.prompt)`. It copies the JPEG to `users/{u}/prompt_previews/imggen-prompt/{sha256(content)}.jpg` (latest generation wins) and sets `preview_updated_at` on every entry with that exact text. Best-effort — never fails the job. The Prompt textarea passes `previews` to `PromptTextarea`, enabling the drawer's Gallery / Mixed / Text view modes.
 
 ---
 

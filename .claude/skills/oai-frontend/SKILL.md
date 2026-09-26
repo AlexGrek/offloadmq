@@ -51,6 +51,7 @@ oai/frontend/src/
   hooks/
     useAdminStatus.ts          # calls amIAdmin once on mount; errors → isAdmin=false
     useWsChat.ts               # WebSocket chat + capability list
+    usePromptLibrary.ts        # paged saved-prompts loader: debounced server search, keyset loadMore, stale-page guard
 
   components/
     RequireAuth.tsx            # redirect to /login if not authenticated
@@ -58,9 +59,11 @@ oai/frontend/src/
     TopBar.tsx                 # logo, Progress drawer, theme, account
     GlobalProgressDrawer.tsx   # global running jobs (chat + images)
     ToolDebugModal.tsx         # per-tool OffloadMQ poll debug (modal, icon trigger)
+    PromptTextarea.tsx         # textarea + list icon → SavedPromptsDrawer (`previews` prop for image buckets)
+    prompts/                   # SavedPromptsDrawer (right Sheet: tabs, server search, view modes, infinite scroll), PromptEntryCard
     chat/                      # SystemPromptStudio, SystemPromptBlock
     imggen/                    # ImageJobHistorySidebar, RescaleControls
-    ui/                        # shadcn: button, card, input, dialog, label, alert
+    ui/                        # shadcn: button, card, input, dialog, sheet, label, alert
 
   pages/
     LandingPage.tsx            # public landing — non-interactive, see below
