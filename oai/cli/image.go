@@ -40,6 +40,9 @@ type startJobRequest struct {
 	Height           int    `json:"height"`
 	Seed             *int64 `json:"seed,omitempty"`
 	Workflow         string `json:"workflow,omitempty"`
+	// PromptTemplate is the raw prompt before placeholder expansion; the server
+	// stores it so Retry / saved-prompt previews see the template, like the web UI.
+	PromptTemplate string `json:"prompt_template,omitempty"`
 }
 
 type startJobResponse struct {
@@ -174,6 +177,21 @@ func pickCapability(caps []capabilityInfo, preferTag, kind string) (string, erro
 	return "", fmt.Errorf("no %s capability is online; known: %s", kind, strings.Join(names, ", "))
 }
 
+// fetchCustomPlaceholders loads the user's server-side custom placeholders. Like
+// the web UI it is additive: any failure just means custom tokens stay literal
+// (with a warning), never a failed submission. Skipped when the prompt has no braces.
+func fetchCustomPlaceholders(cfg *Config, prompt string) []promptPlaceholder {
+	if !strings.Contains(prompt, "{") {
+		return nil
+	}
+	var items []promptPlaceholder
+	if err := doJSON("GET", cfg.serverURL("")+"/api/prompt-placeholders", cfg.Token, nil, &items); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not load custom placeholders: %v\n", err)
+		return nil
+	}
+	return items
+}
+
 func cmdImageGenerate(args []string) error {
 	fs := flag.NewFlagSet("image generate", flag.ContinueOnError)
 	out := fs.String("o", "output.jpg", "output file (extra images get _2, _3, ... suffixes)")
@@ -222,12 +240,17 @@ func cmdImageGenerate(args []string) error {
 		fmt.Printf("Using capability: %s (auto-selected, online)\n", capName)
 	}
 
+	// Placeholders ({color}, custom {.name}, ...) resolve per job, sharing one
+	// expander so a batch never repeats a value. {?} is left for the server.
+	template := strings.TrimSpace(prompt)
+	expander := newPlaceholderExpander(fetchCustomPlaceholders(cfg, template))
+
 	req := startJobRequest{
-		Capability: capName,
-		Prompt:     prompt,
-		Width:      *width,
-		Height:     *height,
-		Workflow:   *workflow,
+		Capability:     capName,
+		PromptTemplate: template,
+		Width:          *width,
+		Height:         *height,
+		Workflow:       *workflow,
 	}
 	if *negative != "" {
 		req.NegativePrompt = *negative
@@ -237,6 +260,14 @@ func cmdImageGenerate(args []string) error {
 	var batchErrors []error
 	for i := 0; i < count; i++ {
 		jobReq := req
+		jobReq.Prompt = strings.TrimSpace(expander.Expand(template))
+		if jobReq.Prompt != template {
+			if count == 1 {
+				fmt.Printf("Prompt: %s\n", jobReq.Prompt)
+			} else {
+				fmt.Printf("Prompt %d/%d: %s\n", i+1, count, jobReq.Prompt)
+			}
+		}
 		if *seed != 0 {
 			// Offset the seed per job: one shared seed would make every image identical.
 			jobSeed := *seed + int64(i)
@@ -253,6 +284,10 @@ func cmdImageGenerate(args []string) error {
 		} else {
 			fmt.Printf("Job %d/%d: %s\n", i+1, count, started.JobID)
 		}
+	}
+
+	if left := expander.Unsupported(); len(left) > 0 {
+		fmt.Fprintf(os.Stderr, "warning: %s not supported by the CLI, sent literally\n", strings.Join(left, ", "))
 	}
 
 	for i, started := range startedJobs {

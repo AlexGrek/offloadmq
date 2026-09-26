@@ -23,6 +23,9 @@ Usage:
                      [-width N] [-height N] [-seed N] [-workflow W] [-n COUNT]
                      [--progress=false] [-t|-timeout 5m]
 
+Prompts may use {color} {animal} {adjective} {country} {language} {name}, your custom
+{placeholders} from the server, and {?} (expanded by the server).
+
 Config is stored in ~/.oai-cli.json. Set OAI_PASSWORD for non-interactive login.
 `
 

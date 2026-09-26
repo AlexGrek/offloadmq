@@ -25,6 +25,7 @@ Style: flat `package main`, stdlib only (`net/http`, `encoding/json`, `flag`) pl
 | `auth.go` | `login`, `whoami` |
 | `image.go` | `image` sub-dispatch, `capabilities`, `generate`, shared `capabilityInfo`, `printCapabilities`, `pickCapability`, `waitForJob` (poll loop), `finishJob` |
 | `describe.go` | `image describe`, `image describe-capabilities` |
+| `placeholders.go` | `{color}`/`{animal}`/… (gofakeit) + custom `{name}` (server `GET /api/prompt-placeholders`) prompt expansion, mirroring `frontend/src/lib/promptPlaceholders.ts`; `{?}` stays server-side |
 | `progress.go` | TTY-aware spinner/progress bar, web-UI timing heuristic, `--progress` / `--profress` flags, plain-output fallback |
 | `README.md` | User-facing usage — keep in sync with the usage banner in `main.go` |
 
@@ -40,6 +41,7 @@ Commands today: `login`, `whoami`, `image capabilities|generate|describe|describ
 - **IDs are strings** in JSON (snowflake i64 → string). Path-escape them with `url.PathEscape`.
 - **Capabilities**: OAI lists base capabilities (`imggen.x`, `llm.x`); tags describe kind (`txt2img`, `img2video`, `vision`). `pickCapability(caps, preferTag, kind)` picks the first online one with the tag, else any online one — never blindly the first online entry, because imggen also contains img2img/video capabilities.
 - **Batch generate (`-n`)**: one job per image, all submitted first, then awaited in order. A non-zero `-seed` is offset by the job index (a shared seed would yield identical images); `outputImagePath` names results (`out.jpg`, `out_2.jpg`; extra images within a batch job get `out_<job>_<image>.jpg`) so jobs never overwrite each other.
+- **Prompt placeholders**: `generate` expands them per job through one shared `placeholderExpander` (no repeats across a batch) and sends the raw text as `prompt_template`. JS-only libraries are replaced by Go analogs (gofakeit); anything with no analog (`{starwars}`) is left literal with a warning. Keep the builtin category list in step with the frontend/backend `RESERVED_PLACEHOLDER_NAMES`.
 - Every job-style feature follows **submit → poll → terminal** (`completed|failed|canceled`); poll every 5s (`pollInterval`, same as the web UI) via `waitForJob`.
 - Job commands enable the live progress renderer by default. Pass API timing metadata through `jobProgressState`; keep stdout pipe-safe for result-producing commands by rendering their progress on stderr.
 
