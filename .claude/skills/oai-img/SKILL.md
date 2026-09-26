@@ -86,8 +86,8 @@ sequenceDiagram
 | `frontend/src/pages/ImageGenerationPage.tsx` | Modes, form, submit, 5s auto-poll, job detail, cancel, ToolDebug |
 | `frontend/src/components/imggen/ImageJobHistorySidebar.tsx` | Pipelines list; `IMGGEN_NEW_PANEL = 'new'` |
 | `frontend/src/components/imggen/RescaleControls.tsx` | img2img `dataPreparation` (exact / max) |
-| `frontend/src/components/imggen/PromptGeneratorModal.tsx` | LLM prompt generator (modal / mobile bottom sheet) |
-| `frontend/src/api/promptgen.ts` | Prompt generator REST client |
+| `frontend/src/components/imggen/VideoPromptGenerator.tsx` | img2video "what happens next" prompt generator (vision LLM over `/api/ws/promptgen`) |
+| `frontend/src/components/prompts/SavedPromptsDrawer.tsx` | Saved prompts drawer; opened by the Starred prompts button and the textarea list icon |
 | `frontend/src/lib/imggen.ts` | `rescaleDataPrep`, capability filter, pipeline UI helpers, `MODE_DEFAULTS` |
 | `frontend/src/lib/promptPlaceholders.ts` | `{color}`/`{animal}`/etc. client-side prompt placeholders (unique-names-generator); `{?}` stays server-side |
 | `frontend/src/components/RandomNamesWidget.tsx` | TopBar widget documenting `{?}` and `{category}` placeholders |
@@ -175,13 +175,11 @@ start_job(external_resize) → submit `image_resize`  ← the job's offload task
 
 ---
 
-## Prompt generator
+## Starred prompts button
 
-"Prompt generator" button on the Prompt label row (`imggen-promptgen-open`) opens `PromptGeneratorModal` — centered dialog on desktop, bottom sheet on mobile (`useIsMobile` + DialogContent class overrides). It rewrites the user's rough idea into a polished prompt via a **text LLM** (`llm.*`, picked with `CapabilityModelPicker`).
+The **Starred prompts** button on the Prompt label row (`imggen-starred-prompts-open`) opens `SavedPromptsDrawer` on the **Starred** tab (`initialKind="starred"`, bucket `imggen-prompt`, `previews`) — the same drawer as the textarea's list icon, which keeps its last-used tab. Picking a prompt fills the form and closes the drawer. It replaced the old text "Prompt generator" (LLM rewrite of the user's idea), which was removed together with its REST routes (`/api/promptgen/{capabilities,generate,poll}`) and the `generate_prompt` WS command; the per-mode `imggen-promptgen-{mode}` prompt-library rows it left behind are unused.
 
-- **Query template** must contain `{}` — replaced server-side with the idea. Templates are stored **per mode** in prompt-library buckets `imggen-promptgen-{mode}` (`PromptTextarea` recent/starred; recents recorded server-side on generate). Drafts also persist in `localStorage` (`oai_promptgen_query_{mode}`); model in `oai_promptgen_model`.
-- **Flow:** `POST /api/promptgen/generate` `{ mode, capability, query, prompt }` → `{ cap, id }`; modal polls `POST /api/promptgen/poll` every **1.5s**; stop via generic `POST /api/tasks/cancel/{cap}/{id}`. Backend (`services/promptgen.rs`) validates, records the query, submits a non-urgent chat task (`maxWaitSecs 120`), and extracts the final text (`extract_llm_text`).
-- **UI:** framer-motion morphing action element — Generate button → loader pill (with stop) → clickable generated-prompt variant (click = apply to form + close); Regenerate slides in below.
+The **video** prompt generator (img2video, `VideoPromptGenerator` → `generate_video_prompt` on `/api/ws/promptgen`) is a separate feature and is unchanged.
 
 ---
 
@@ -218,9 +216,6 @@ Two independent substitution mechanisms can appear in the Prompt textarea, both 
 | GET | `/api/progress/running` | DB-only list for drawer |
 | POST | `/api/debug/offload_poll` | `{ cap, id }` raw MQ JSON |
 | GET | `/api/files` | user file browser metadata |
-| GET | `/api/promptgen/capabilities` | text LLMs (`llm.*`) for the prompt generator |
-| POST | `/api/promptgen/generate` | `{ mode, capability, query, prompt }` → `{ cap, id }` |
-| POST | `/api/promptgen/poll` | `{ cap, id }` → `{ status, stage?, text?, error? }` |
 
 **Chat cancel** uses `POST /api/tasks/cancel/{cap}/{id}` — **not** for OAI job rows; images use **`/api/images/jobs/{id}/cancel`**.
 
@@ -332,7 +327,7 @@ Backend: `image_jobs::cancel_job` → `OffloadImageClient::cancel_task` → `upd
 | `backend/src/jobs/image_pipeline_worker.rs` | Background ticker |
 | `backend/src/services/progress.rs` | Running jobs for drawer |
 | `backend/src/routes/progress.rs`, `files.rs`, `admin.rs`, `debug.rs` | |
-| `backend/src/routes/promptgen.rs` + `backend/src/services/promptgen.rs` | Prompt generator (LLM rewrite of the user's idea) |
+| `backend/src/services/promptgen.rs` + `backend/src/ws/promptgen.rs` | Video prompt generator (vision LLM, WS only) |
 | `backend/src/app.rs` | Route registration |
 
 ### DB tables
@@ -375,10 +370,7 @@ imggen-pipeline-new, imggen-pipeline-item-{job_id},
 imggen-new-panel, imggen-mode-tabs, imggen-mode-img2img,
 imggen-capability-select, imggen-input-section, imggen-upload-input,
 imggen-rescale, imggen-prompt, imggen-negative-toggle,
-imggen-promptgen-open, promptgen-modal, promptgen-idea, promptgen-query,
-promptgen-reset-query, promptgen-insert-placeholder, promptgen-model-*,
-promptgen-generate, promptgen-status, promptgen-stop,
-promptgen-result, promptgen-regenerate, promptgen-error,
+imggen-starred-prompts-open, prompt-library-drawer, video-promptgen-*,
 imggen-width, imggen-height, imggen-swap-dims, imggen-copy-from-input,
 imggen-resolution-toggles, imggen-original-resolution, imggen-keep-proportions,
 imggen-external-resize, imggen-external-resize-checkbox,

@@ -70,6 +70,46 @@ test.describe('Image Generation Functionality', () => {
     await expect(promptInput).toHaveValue('My broken starred prompt test');
   });
 
+  test('Starred prompts button opens the drawer on the Starred tab', async ({ page }) => {
+    await page.goto('/app/images');
+    const promptInput = page.locator('data-testid=imggen-prompt');
+    const drawer = page.locator('data-testid=prompt-library-drawer');
+
+    // The prompt generator is gone; its slot now holds the Starred prompts button.
+    await expect(page.locator('data-testid=imggen-promptgen-open')).toHaveCount(0);
+
+    await promptInput.fill('A lighthouse in a storm');
+    await page.locator('data-testid=prompt-list-open').first().click();
+    await page.locator('data-testid=prompt-add-favorite').click();
+    await expect(drawer.getByText('A lighthouse in a storm')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(drawer).not.toBeVisible();
+
+    // Opens straight on Starred, even though the textarea's own drawer last showed Recent.
+    await page.locator('data-testid=imggen-starred-prompts-open').click();
+    await expect(drawer).toBeVisible();
+    await expect(page.locator('data-testid=prompt-tab-starred')).toHaveAttribute('aria-pressed', 'true');
+    const item = drawer.locator('[data-testid^="prompt-starred-"]').getByText('A lighthouse in a storm');
+    await expect(item).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(drawer).not.toBeVisible();
+
+    // Picking fills the prompt and closes the drawer.
+    await promptInput.fill('');
+    await page.locator('data-testid=imggen-starred-prompts-open').click();
+    await drawer.locator('[data-testid^="prompt-starred-"]').getByText('A lighthouse in a storm').click();
+    await expect(drawer).not.toBeVisible();
+    await expect(promptInput).toHaveValue('A lighthouse in a storm');
+
+    // Reopening lands on Starred again after switching tabs.
+    await page.locator('data-testid=imggen-starred-prompts-open').click();
+    await page.locator('data-testid=prompt-tab-recent').click();
+    await page.keyboard.press('Escape');
+    await expect(drawer).not.toBeVisible();
+    await page.locator('data-testid=imggen-starred-prompts-open').click();
+    await expect(page.locator('data-testid=prompt-tab-starred')).toHaveAttribute('aria-pressed', 'true');
+  });
+
   test('saved prompts drawer searches favorites and switches view modes', async ({ page }) => {
     await page.goto('/app/images');
     const promptInput = page.locator('data-testid=imggen-prompt');

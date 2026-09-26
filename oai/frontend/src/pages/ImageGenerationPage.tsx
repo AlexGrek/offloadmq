@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Search,
   Square,
+  Star,
   Trash2,
   Pencil,
   Shuffle,
@@ -31,6 +32,7 @@ import { MorphCollapse, MorphIn } from '@/components/Morph'
 import { useMorph } from '@/lib/motion'
 import { ImageLightbox } from '@/components/ImageLightbox'
 import { PromptTextarea } from '../components/PromptTextarea'
+import { SavedPromptsDrawer } from '../components/prompts/SavedPromptsDrawer'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -80,7 +82,6 @@ import { PipelineJobParamsPanel } from '../components/imggen/PipelineJobParamsPa
 import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImgGenModelPicker } from '../components/imggen/ImgGenModelPicker'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
-import { PromptGeneratorModal } from '../components/imggen/PromptGeneratorModal'
 import { VideoPromptGenerator } from '../components/imggen/VideoPromptGenerator'
 import {
   ToolDebugHeaderButton,
@@ -231,7 +232,7 @@ export default function ImageGenerationPage() {
   const [deletingJob, setDeletingJob] = useState(false)
   const [jobsLoading, setJobsLoading] = useState(true)
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [promptGenOpen, setPromptGenOpen] = useState(false)
+  const [starredPromptsOpen, setStarredPromptsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [slideshowOn, setSlideshowOn] = useState(false)
@@ -1591,11 +1592,12 @@ export default function ImageGenerationPage() {
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs"
-                    onClick={() => setPromptGenOpen(true)}
-                    data-testid="imggen-promptgen-open"
+                    onClick={() => setStarredPromptsOpen(true)}
+                    disabled={!token}
+                    data-testid="imggen-starred-prompts-open"
                   >
-                    <Wand2 className="mr-1 size-3.5" />
-                    Prompt generator
+                    <Star className="mr-1 size-3.5" />
+                    Starred prompts
                   </Button>
                 </div>
                 <PromptTextarea
@@ -2390,13 +2392,15 @@ export default function ImageGenerationPage() {
         token={token}
       />
     )}
-    <PromptGeneratorModal
-      open={promptGenOpen}
-      onOpenChange={setPromptGenOpen}
-      mode={mode}
-      prompt={prompt}
+    <SavedPromptsDrawer
+      open={starredPromptsOpen}
+      onOpenChange={setStarredPromptsOpen}
+      bucket="imggen-prompt"
       token={token}
-      onUsePrompt={setPrompt}
+      value={prompt}
+      onPick={setPrompt}
+      previews
+      initialKind="starred"
     />
     {nudeDetectTarget && token ? (
       <NudeDetectModal

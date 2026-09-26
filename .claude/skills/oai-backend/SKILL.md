@@ -51,7 +51,6 @@ oai/backend/src/
     chats.rs                      # CRUD chats + messages, system-prompt / last-model patches
     chat_attachments.rs           # upload/reference documents, image attachments, list, download
     prompts.rs                    # generic prompt library — per-user buckets, recent/starred, paged /entries, previews
-    promptgen.rs                  # prompt generator over REST (WS variant lives in ws/promptgen.rs)
     images.rs                     # upload, start/list/get/poll/cancel/retry/delete job, image bytes/thumbnail/star, capabilities
     job_common.rs                 # parse_id + shared StartJobResponse/CancelJobResponse DTOs
     describe.rs                   # image-analysis (vision) jobs
@@ -71,7 +70,7 @@ oai/backend/src/
 
   ws/
     chat.rs                       # /api/ws/chat — upgrade + ping/idle loop (transport only)
-    promptgen.rs                  # /api/ws/promptgen — prompt + video-prompt generation
+    promptgen.rs                  # /api/ws/promptgen — video-prompt generation + LLM capability list
     debate.rs                     # /api/ws/debate — watch a debate job
     movie.rs                      # /api/ws/movie — watch a movie job + capabilities
     events.rs                     # ServerEvent + per-socket ClientCommand enums (serde tag = "type")
@@ -100,7 +99,7 @@ oai/backend/src/
     offload_factory.rs            # chat_client() / image_client() from DB settings
     progress.rs                   # list_running_image_jobs() → RunningJobsResponse
     prompt_previews.rs            # saved-prompt preview blobs: attach (imggen completion), serve, GC on trim/edit/delete
-    promptgen.rs                  # prompt generator: capabilities, generate, poll, WS variants
+    promptgen.rs                  # video prompt generator (vision LLM) + capability list, WS only
     runners.rs                    # online agent summaries via the management API
     storage.rs                    # operator(), read(), write(), exists(), delete()
     connection.rs                 # check_offloadmq_connection()
@@ -234,9 +233,6 @@ Two routes carry a `DefaultBodyLimit` override: `/api/images/upload` (`image_pro
 ### Authenticated — prompts, files, misc
 | Method | Path | Handler |
 |--------|------|---------|
-| GET | `/api/promptgen/capabilities` | `promptgen::list_capabilities` |
-| POST | `/api/promptgen/generate` | `promptgen::generate` |
-| POST | `/api/promptgen/poll` | `promptgen::poll` |
 | GET | `/api/prompts/{bucket}` | `prompts::list_library` — legacy all-at-once |
 | GET | `/api/prompts/{bucket}/entries?kind=recent\|starred&q=&cursor=&limit=` | `prompts::list_entries` — keyset-paged (default 40, max 100), `q` = case-insensitive substring; `{ items, next_cursor }` |
 | POST | `/api/prompts/{bucket}/recent` | `prompts::record_recent` |
@@ -365,7 +361,7 @@ Four sockets, all under `jwt_auth_middleware` (token via `?token=`): `/api/ws/ch
 { "type": "error", "req_id": "...", "message": "..." }
 ```
 
-Debate and movie sockets reuse `ServerEvent` with their own variants — `debate:update` / `movie:update` (`{ req_id, job, terminal }`, carrying the full `DebateJobView` / `MovieJobView`) and `movie_capabilities` (`{ req_id, llm, video }`). Their commands are `DebateClientCommand` / `MovieClientCommand`: `list_capabilities`, `watch_job { req_id, job_id }`, `ping`. `PromptGenClientCommand` adds `generate_prompt { mode, capability, query, prompt }` and `generate_video_prompt { capability, image_id }`.
+Debate and movie sockets reuse `ServerEvent` with their own variants — `debate:update` / `movie:update` (`{ req_id, job, terminal }`, carrying the full `DebateJobView` / `MovieJobView`) and `movie_capabilities` (`{ req_id, llm, video }`). Their commands are `DebateClientCommand` / `MovieClientCommand`: `list_capabilities`, `watch_job { req_id, job_id }`, `ping`. `PromptGenClientCommand` adds `generate_video_prompt { capability, image_id }` (vision LLM, fixed system prompt).
 
 ### Chat flow
 

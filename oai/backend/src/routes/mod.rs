@@ -4,7 +4,6 @@ pub mod chat_attachments;
 pub mod chats;
 pub mod prompts;
 pub mod prompt_placeholders;
-pub mod promptgen;
 pub mod debug;
 pub mod job_common;
 pub mod describe;

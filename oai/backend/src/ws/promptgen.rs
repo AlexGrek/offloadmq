@@ -1,4 +1,4 @@
-//! WebSocket transport for the prompt generator: connection upgrade, ping/idle
+//! WebSocket transport for the video prompt generator: connection upgrade, ping/idle
 //! management, frame decoding, and command dispatch. Domain logic lives in
 //! `services::promptgen`.
 
@@ -186,25 +186,6 @@ async fn handle_text(
         PromptGenClientCommand::ListCapabilities { req_id } => {
             promptgen::list_capabilities_ws(req_id, tx, state).await;
         }
-        PromptGenClientCommand::GeneratePrompt {
-            req_id,
-            mode,
-            capability,
-            query,
-            prompt,
-        } => {
-            // Don't block the reader on OffloadMQ submit — the client may close
-            // while we're waiting; connection scope cancels tracked tasks on drop.
-            let tx = tx.clone();
-            let state = state.clone();
-            let scope = scope.clone();
-            tokio::spawn(async move {
-                promptgen::generate_prompt_ws(
-                    req_id, mode, capability, query, prompt, &tx, &state, user_id, &scope,
-                )
-                .await;
-            });
-        }
         PromptGenClientCommand::GenerateVideoPrompt {
             req_id,
             capability,
@@ -214,6 +195,8 @@ async fn handle_text(
                 user_id, req_id = %req_id, capability = %capability, image_id = %image_id,
                 "ws: generate_video_prompt received"
             );
+            // Don't block the reader on OffloadMQ submit — the client may close
+            // while we're waiting; connection scope cancels tracked tasks on drop.
             let tx = tx.clone();
             let state = state.clone();
             let scope = scope.clone();

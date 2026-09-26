@@ -7,14 +7,6 @@ export type { ServerEvent, LlmCapabilityInfo } from './ws'
 export type PromptGenClientCommand =
   | { type: 'list_capabilities'; req_id: string }
   | {
-      type: 'generate_prompt'
-      req_id: string
-      mode: string
-      capability: string
-      query: string
-      prompt: string
-    }
-  | {
       type: 'generate_video_prompt'
       req_id: string
       capability: string

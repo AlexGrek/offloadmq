@@ -116,15 +116,8 @@ pub enum MovieClientCommand {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PromptGenClientCommand {
     ListCapabilities { req_id: String },
-    GeneratePrompt {
-        req_id: String,
-        mode: String,
-        capability: String,
-        query: String,
-        prompt: String,
-    },
-    /// Vision variant: describes what happens next in the video given a single
-    /// frame. System + user text are fixed server-side (see `services::promptgen`).
+    /// Describes what happens next in the video given a single frame (vision LLM).
+    /// System + user text are fixed server-side (see `services::promptgen`).
     GenerateVideoPrompt {
         req_id: String,
         capability: String,

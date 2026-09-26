@@ -41,6 +41,8 @@ type SavedPromptsDrawerProps = {
   onPick: (content: string) => void
   /** The bucket's prompts can carry image previews — enables the view modes. */
   previews?: boolean
+  /** Tab to show each time the drawer opens; omit to keep the last-used tab. */
+  initialKind?: PromptKind
 }
 
 /**
@@ -59,9 +61,16 @@ export function SavedPromptsDrawer({
   value,
   onPick,
   previews = false,
+  initialKind,
 }: SavedPromptsDrawerProps) {
   const isMobile = useIsMobile()
-  const [kind, setKind] = useState<PromptKind>('recent')
+  const [kind, setKind] = useState<PromptKind>(initialKind ?? 'recent')
+  // Jump to `initialKind` on every open (state adjusted during render, not in an effect).
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open && initialKind) setKind(initialKind)
+  }
   const [query, setQuery] = useState('')
   const [storedMode, setStoredMode] = useState<PromptViewMode>(() => readViewMode(bucket))
   const [busy, setBusy] = useState(false)
