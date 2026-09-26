@@ -22,8 +22,8 @@ use serde::Serialize;
 
 use crate::{
     db::{
-        entities::img_utils_jobs::Entity as ImgUtilsJobEntity, image_generation, img_utils,
-        offload_jobs,
+        entities::img_utils_jobs::Entity as ImgUtilsJobEntity, generation_parameters,
+        image_generation, img_utils, offload_jobs,
     },
     error::AppError,
     offload::task_status::{self, NormalizedPoll, OffloadPoller},
@@ -192,20 +192,111 @@ impl JobReconciler for ImgUtilsReconciler {
         } else {
             (format!("img-utils/{}", job.utility), image_processing::NO_MAX_EDGE)
         };
+        // The input this output was derived from: its EXIF and generation parameters
+        // are handed on, so a tool run doesn't launder away where the picture came from.
+        let input = match job.input_image_id {
+            Some(id) => image_generation::get_image_file(&state.db, id, job.user_id).await?,
+            None => None,
+        };
+        let input_bytes = match input.as_ref() {
+            Some(input) => read_stored_image(state, input).await,
+            None => None,
+        };
         let file = image_jobs::store_offload_output_image(
             state,
             job.user_id,
             &source,
             bucket,
             image,
-            // Embedded in the stored JPEG's EXIF as the image's provenance.
+            // Embedded in the stored JPEG's EXIF as the image's provenance — unless the
+            // input already carries a description of its own, which then wins.
             &job.capability,
             max_edge,
+            input_bytes.as_ref(),
         )
         .await?;
+        if let Some(input) = input.as_ref() {
+            carry_generation_parameters(state, job, input, &file).await;
+        }
         // The output bucket is released by the generic driver once this returns
         // — see `offload_job::release_bucket`.
         img_utils::set_output_image(&state.db, job.id, file.id).await
+    }
+}
+
+/// Best-effort read of a stored image's bytes — the EXIF hand-over is a bonus and
+/// must never fail the job.
+async fn read_stored_image(
+    state: &AppState,
+    file: &image_generation::ImageFile,
+) -> Option<Vec<u8>> {
+    let op = storage::operator(state).ok()?;
+    match storage::read(op, &file.storage_path).await {
+        Ok(bytes) => Some(bytes),
+        Err(e) => {
+            tracing::warn!("img_utils: cannot read input {} for EXIF: {e:?}", file.id);
+            None
+        }
+    }
+}
+
+/// Copies the input's generation parameters (keyed by filename in
+/// `generation_parameters`) to the output's filename, annotated with the tool run that
+/// produced it. Earlier tool runs are kept in `img_utils_steps`, so a chain of tools
+/// stays readable. Inputs without recorded parameters (plain uploads) have nothing to
+/// carry. Best-effort, like the EXIF hand-over.
+async fn carry_generation_parameters(
+    state: &AppState,
+    job: &img_utils::ImgUtilsJob,
+    input: &image_generation::ImageFile,
+    output: &image_generation::ImageFile,
+) {
+    let result: Result<(), AppError> = async {
+        let Some(row) =
+            generation_parameters::get_by_filename(&state.db, job.user_id, &input.filename).await?
+        else {
+            return Ok(());
+        };
+        let mut parameters = match row.parameters {
+            serde_json::Value::Object(map) => map,
+            other => serde_json::Map::from_iter([("original".to_string(), other)]),
+        };
+        let mut steps = match parameters.remove("img_utils_steps") {
+            Some(serde_json::Value::Array(steps)) => steps,
+            _ => Vec::new(),
+        };
+        steps.push(serde_json::json!({
+            "capability": job.capability,
+            "workflow": job.workflow,
+            "options": job
+                .options_json
+                .as_deref()
+                .and_then(|o| serde_json::from_str::<serde_json::Value>(o).ok()),
+            "job_id": job.id.to_string(),
+        }));
+        parameters.insert("img_utils_steps".into(), steps.into());
+        parameters.insert(
+            "derived_from".into(),
+            serde_json::json!({
+                "image_id": input.id.to_string(),
+                "filename": input.filename,
+            }),
+        );
+        generation_parameters::upsert(
+            &state.db,
+            generation_parameters::UpsertInput {
+                id: state.next_id(),
+                user_id: job.user_id,
+                filename: &output.filename,
+                source: &row.source,
+                parameters: parameters.into(),
+            },
+        )
+        .await
+    }
+    .await;
+    if let Err(e) = result {
+        tracing::warn!("img_utils: could not carry generation parameters for job {}: {e:?}", job.id);
     }
 }
 

@@ -64,15 +64,29 @@ pub struct ProcessedImage {
 /// [`MAX_IMAGE_EDGE`] for the standard cap, or [`NO_MAX_EDGE`] for a tool whose whole
 /// purpose is to exceed it (e.g. img-utils upscale), where crushing the result back
 /// down would throw away the work the tool just did.
+///
+/// `exif_source` is the image this output was derived from (an img-utils input). Its
+/// EXIF is carried over (see [`CarriedExif`]), and because the original's own
+/// `ImageDescription` — typically the prompt that made it — is worth more than the
+/// tool's name, `prompt` is only embedded when the source did not supply one.
 pub fn process_generated_image(
     bytes: Vec<u8>,
     content_type_hint: Option<String>,
     prompt: &str,
     max_edge: u32,
+    exif_source: Option<&Vec<u8>>,
 ) -> Result<ProcessedImage, AppError> {
     let trimmed = prompt.trim();
     let mut out = process_image_capped(bytes, content_type_hint, max_edge)?;
-    if !trimmed.is_empty() {
+    let mut changed = false;
+    if let Some(carried) = exif_source.and_then(CarriedExif::extract) {
+        // Best effort: the transform's pixels are the deliverable, its metadata a bonus.
+        match carried.apply_to_jpeg(&mut out.bytes) {
+            Ok(()) => changed = true,
+            Err(e) => tracing::warn!("could not carry source EXIF onto output: {e:?}"),
+        }
+    }
+    if !trimmed.is_empty() && exif_image_description(&out.bytes).is_none() {
         embed_prompt_exif(&mut out.bytes, trimmed)?;
         // Confirm little_exif wrote a readable ImageDescription tag (kamadak-exif reader).
         if exif_image_description(&out.bytes).is_none() {
@@ -80,7 +94,30 @@ pub fn process_generated_image(
                 "EXIF ImageDescription missing after embed".into(),
             ));
         }
+        changed = true;
+    }
+    if changed {
         out.sha256 = sha256_hex(&out.bytes);
+    }
+    Ok(out)
+}
+
+/// [`process_image`] for a user upload: additionally keeps the original's EXIF
+/// (camera, dates, GPS, and the `ImageDescription` a generator may have written) on the
+/// stored copy, so a later Image Tools run can hand it on to its output. Orientation is
+/// still baked into the pixels and dropped — see [`CarriedExif`]. Oversized JPEGs are
+/// stored verbatim and therefore keep everything already.
+pub fn process_upload(
+    bytes: Vec<u8>,
+    content_type_hint: Option<String>,
+) -> Result<ProcessedImage, AppError> {
+    let carried = CarriedExif::extract(&bytes);
+    let mut out = process_image(bytes, content_type_hint)?;
+    if let Some(carried) = carried.filter(|_| out.reencoded) {
+        match carried.apply_to_jpeg(&mut out.bytes) {
+            Ok(()) => out.sha256 = sha256_hex(&out.bytes),
+            Err(e) => tracing::warn!("could not keep upload EXIF: {e:?}"),
+        }
     }
     Ok(out)
 }
@@ -361,6 +398,93 @@ fn embed_prompt_exif(jpeg: &mut Vec<u8>, prompt: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// EXIF lifted out of an original image so it can be re-applied to a re-encoded copy
+/// (`vipsthumbnail` strips everything).
+///
+/// Only tags describing the *content* survive. Those describing the original file's
+/// layout are dropped because they would be wrong or dangling on the copy: orientation
+/// (already baked into the pixels — keeping it would rotate twice), pixel dimensions,
+/// strip/thumbnail data, sub-IFD pointers, and the MakerNote (its internal offsets are
+/// relative to the original file). Only the primary IFD chain is kept, so the embedded
+/// thumbnail is not carried.
+pub struct CarriedExif(little_exif::metadata::Metadata);
+
+impl CarriedExif {
+    /// `None` when the format is unsupported or carries no usable EXIF.
+    // little_exif's reader takes `&Vec<u8>`; accepting it too avoids copying up to 32 MiB.
+    #[allow(clippy::ptr_arg)]
+    pub fn extract(bytes: &Vec<u8>) -> Option<Self> {
+        use little_exif::{filetype::FileExtension, metadata::Metadata};
+
+        let file_type = FileExtension::auto_detect(&mut Cursor::new(bytes))?;
+        let source = Metadata::new_from_vec(bytes, file_type).ok()?;
+        let mut kept = Metadata::new();
+        for ifd in source
+            .get_ifds()
+            .iter()
+            .filter(|ifd| ifd.get_generic_ifd_nr() == 0)
+        {
+            for tag in ifd.get_tags() {
+                if !is_layout_tag(tag.as_u16(), ifd.get_ifd_type()) {
+                    kept.set_tag(tag.clone());
+                }
+            }
+        }
+        kept.get_ifds()
+            .iter()
+            .any(|ifd| !ifd.get_tags().is_empty())
+            .then_some(Self(kept))
+    }
+
+    /// Merges the carried tags into `jpeg`. `jpeg` is left untouched on failure.
+    pub fn apply_to_jpeg(&self, jpeg: &mut Vec<u8>) -> Result<(), AppError> {
+        use little_exif::{filetype::FileExtension, metadata::Metadata};
+
+        if !is_jpeg_magic(jpeg) {
+            return Err(AppError::Internal("CarriedExif applied to non-JPEG bytes".into()));
+        }
+        let mut candidate = jpeg.clone();
+        let mut merged = Metadata::new_from_vec(&candidate, FileExtension::JPEG)
+            .unwrap_or_else(|_| Metadata::new());
+        for ifd in self.0.get_ifds() {
+            for tag in ifd.get_tags() {
+                merged.set_tag(tag.clone());
+            }
+        }
+        merged
+            .write_to_vec(&mut candidate, FileExtension::JPEG)
+            .map_err(|e| AppError::Internal(format!("exif write failed: {e}")))?;
+        *jpeg = candidate;
+        Ok(())
+    }
+}
+
+/// Tags that describe the original file's layout rather than its content.
+fn is_layout_tag(hex: u16, group: little_exif::ifd::ExifTagGroup) -> bool {
+    use little_exif::ifd::ExifTagGroup;
+    match group {
+        // ImageWidth/Length, BitsPerSample, Compression, Photometric, StripOffsets,
+        // Orientation, SamplesPerPixel, RowsPerStrip, StripByteCounts, PlanarConfig,
+        // thumbnail offset/length, ExifOffset, GPSInfo.
+        ExifTagGroup::GENERIC => matches!(
+            hex,
+            0x0100..=0x0103
+                | 0x0106
+                | 0x0111
+                | 0x0112
+                | 0x0115..=0x0117
+                | 0x011C
+                | 0x0201
+                | 0x0202
+                | 0x8769
+                | 0x8825
+        ),
+        // MakerNote, PixelX/YDimension, InteropOffset.
+        ExifTagGroup::EXIF => matches!(hex, 0x927C | 0xA002 | 0xA003 | 0xA005),
+        _ => false,
+    }
+}
+
 fn truncate_exif_text(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();
@@ -429,6 +553,7 @@ mod tests {
             Some("image/png".into()),
             prompt,
             MAX_IMAGE_EDGE,
+            None,
         )
         .unwrap();
         let desc = exif_image_description(&out.bytes).unwrap();
@@ -439,6 +564,80 @@ mod tests {
     fn upload_path_does_not_embed_prompt() {
         let out = process_image(tiny_png(), Some("image/png".into())).unwrap();
         assert!(exif_image_description(&out.bytes).is_none());
+    }
+
+    /// A small JPEG carrying the given EXIF, as a camera or generator would write it.
+    fn jpeg_with_exif(make: &str, description: Option<&str>) -> Vec<u8> {
+        use little_exif::{exif_tag::ExifTag, filetype::FileExtension, metadata::Metadata};
+        let mut jpeg = process_image(tiny_png(), None).unwrap().bytes;
+        let mut metadata = Metadata::new();
+        metadata.set_tag(ExifTag::Make(make.to_string()));
+        metadata.set_tag(ExifTag::Orientation(vec![6]));
+        if let Some(d) = description {
+            metadata.set_tag(ExifTag::ImageDescription(d.to_string()));
+        }
+        metadata.write_to_vec(&mut jpeg, FileExtension::JPEG).unwrap();
+        jpeg
+    }
+
+    fn exif_string(bytes: &[u8], tag: exif::Tag) -> Option<String> {
+        let exif = exif::Reader::new()
+            .continue_on_error(true)
+            .read_from_container(&mut Cursor::new(bytes))
+            .ok()?;
+        let field = exif.get_field(tag, exif::In::PRIMARY)?;
+        Some(field.display_value().to_string())
+    }
+
+    #[test]
+    fn upload_keeps_content_exif_but_not_orientation() {
+        let original = jpeg_with_exif("ACME", Some("a lighthouse at dusk"));
+        assert!(exif_orientation_int(&original).is_some(), "fixture must carry orientation");
+        let out = process_upload(original, Some("image/jpeg".into())).unwrap();
+        assert!(out.reencoded);
+        assert!(exif_string(&out.bytes, exif::Tag::Make).unwrap().contains("ACME"));
+        assert!(exif_image_description(&out.bytes).unwrap().contains("a lighthouse at dusk"));
+        assert!(exif_orientation_int(&out.bytes).is_none(), "orientation is baked into pixels");
+        assert_eq!(out.sha256, sha256_hex(&out.bytes));
+    }
+
+    #[test]
+    fn upload_without_exif_stays_clean() {
+        let out = process_upload(tiny_png(), Some("image/png".into())).unwrap();
+        assert!(exif_image_description(&out.bytes).is_none());
+    }
+
+    #[test]
+    fn generated_output_inherits_source_exif_and_its_description() {
+        let source = jpeg_with_exif("ACME", Some("a lighthouse at dusk"));
+        let out = process_generated_image(
+            tiny_png(),
+            Some("image/png".into()),
+            "img-utils.depth",
+            MAX_IMAGE_EDGE,
+            Some(&source),
+        )
+        .unwrap();
+        assert!(exif_string(&out.bytes, exif::Tag::Make).unwrap().contains("ACME"));
+        // The original's description wins over the tool's name.
+        assert!(exif_image_description(&out.bytes).unwrap().contains("a lighthouse at dusk"));
+        assert!(exif_orientation_int(&out.bytes).is_none());
+        assert_eq!(out.sha256, sha256_hex(&out.bytes));
+    }
+
+    #[test]
+    fn generated_output_falls_back_to_prompt_when_source_has_no_description() {
+        let source = jpeg_with_exif("ACME", None);
+        let out = process_generated_image(
+            tiny_png(),
+            Some("image/png".into()),
+            "img-utils.depth",
+            MAX_IMAGE_EDGE,
+            Some(&source),
+        )
+        .unwrap();
+        assert!(exif_string(&out.bytes, exif::Tag::Make).unwrap().contains("ACME"));
+        assert!(exif_image_description(&out.bytes).unwrap().contains("img-utils.depth"));
     }
 
     fn wide_jpeg(width: u32, height: u32) -> Vec<u8> {

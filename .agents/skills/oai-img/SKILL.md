@@ -252,7 +252,7 @@ Backend: `image_jobs::cancel_job` → `OffloadImageClient::cancel_task` → `upd
 |------|----------------|
 | Upload input | `users/{user_id}/images/input/{image_id}.jpg` |
 | Job output | `users/{user_id}/images/output/{job_id}/{image_id}.jpg` |
-| Processing | `image_processing::process_image` — libvips; max edge **1920**, JPEG q=90; EXIF orientation baked in, EXIF stripped |
+| Processing | `image_processing::process_image` — libvips; max edge **1920**, JPEG q=90; EXIF orientation baked in and dropped; uploads keep other EXIF via `process_upload`, Image Tools outputs inherit the input's EXIF + generation parameters (`CarriedExif`) |
 
 `imageFileUrl(imageId, token)` → `/api/images/files/{id}?token=…` for `<img>` / links.
 

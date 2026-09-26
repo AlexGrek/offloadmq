@@ -228,4 +228,11 @@ Note: `eslint .` has a large **pre-existing** project-wide baseline (react-hooks
    advertised filters.
 7. **No dedicated itest file** — `oai/itests` has none for img-utils yet; verify with the
    agent autowiring unit check + a manual end-to-end run.
+8. **Provenance carry-over.** `ImgUtilsReconciler::on_completed` hands the input's EXIF to the output
+   (`process_generated_image(.., exif_source)` → `CarriedExif`; input's `ImageDescription` beats the
+   capability-name fallback) and copies its `generation_parameters` row to the output filename
+   (`carry_generation_parameters`, adds `derived_from` + `img_utils_steps`). Both are best-effort and
+   never fail the job. This only works because `upload_input_image` uses `process_upload`, which keeps
+   the upload's EXIF (minus orientation/dimensions/thumbnail/MakerNote); the agent-bound copy in
+   `stage_image` is still stripped by `process_image`.
 ```

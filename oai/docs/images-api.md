@@ -35,12 +35,14 @@ Every stored image is normalized on ingest (upload or OffloadMQ output download)
 | Output format | JPEG (`image/jpeg`) |
 | JPEG quality | 90 |
 | Max edge (full image) | 1920 px (downscale if larger) |
-| EXIF orientation | Baked into pixels by `vipsthumbnail`'s auto-rotate; EXIF stripped from output |
+| EXIF orientation | Baked into pixels by `vipsthumbnail`'s auto-rotate; the orientation tag is removed from the output |
 | Thumbnail | Always created; max edge 384 px, JPEG quality 90 |
 
 All inputs (JPEG, PNG, WebP, …) are decoded and re-encoded through `vipsthumbnail`. The EXIF orientation transform is always applied to the pixel data and the orientation tag is removed from the output, so no viewer needs to apply a rotation to display the file correctly.
 
-**Generated outputs** (OffloadMQ download path) are normalized the same way, then the job **prompt** is written to EXIF `ImageDescription` (UTF-8, truncated to 2000 characters). User uploads do not get prompt metadata.
+**Generated outputs** (OffloadMQ download path) are normalized the same way, then the job **prompt** is written to EXIF `ImageDescription` (UTF-8, truncated to 2000 characters). User uploads do not get prompt metadata, but they keep the rest of their original EXIF (camera, dates, GPS, an existing `ImageDescription`) — everything except the tags describing the original file's layout (orientation, pixel dimensions, thumbnail, MakerNote).
+
+**Image Tools outputs** (`/api/img-utils`) inherit the EXIF of the image they were derived from, minus those layout tags. The input's own `ImageDescription` wins; the capability name is written only when the input had none. The input's generation parameters (`GET /api/files/properties`, keyed by filename) are copied to the output's filename too, with `derived_from` and an `img_utils_steps` list recording each tool run. Inputs uploaded before this behaviour existed were stripped at upload and have nothing to carry.
 
 **On download**, `GET /api/images/files/{id}` returns JPEG bytes. Legacy non-JPEG blobs in storage are transcoded on read.
 

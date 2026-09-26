@@ -124,7 +124,7 @@ pub async fn upload_input_image(
     content_type: String,
 ) -> Result<image_generation::ImageFile, AppError> {
     storage::operator(state)?;
-    let processed = image_processing::process_image(bytes, Some(content_type))?;
+    let processed = image_processing::process_upload(bytes, Some(content_type))?;
 
     let image_id = state.next_id();
     let storage_path = image_paths::main_image_path(user_id, "input", None, image_id);
@@ -158,6 +158,10 @@ pub async fn upload_input_image(
 /// tools whose output should match the standard stored-image cap, or
 /// [`image_processing::NO_MAX_EDGE`] for a tool (e.g. img-utils upscale) whose whole
 /// purpose is to exceed it.
+///
+/// `exif_source` is the stored bytes of the image the output was derived from; its EXIF
+/// is carried onto the output (see [`image_processing::process_generated_image`]).
+#[allow(clippy::too_many_arguments)]
 pub async fn store_offload_output_image(
     state: &AppState,
     user_id: i64,
@@ -166,6 +170,7 @@ pub async fn store_offload_output_image(
     image: &Value,
     metadata_text: &str,
     max_edge: u32,
+    exif_source: Option<&Vec<u8>>,
 ) -> Result<image_generation::ImageFile, AppError> {
     storage::operator(state)?;
     let file_uid = image["file_uid"].as_str();
@@ -183,6 +188,7 @@ pub async fn store_offload_output_image(
         file_uid.unwrap_or_default(),
         metadata_text,
         max_edge,
+        exif_source,
     )
     .await?;
 
@@ -1789,6 +1795,7 @@ async fn store_output_image(
         file_uid,
         job.prompt.trim(),
         image_processing::MAX_IMAGE_EDGE,
+        None,
     )
     .await?;
 
@@ -1872,6 +1879,7 @@ async fn process_output_image(
     file_uid: &str,
     prompt: &str,
     max_edge: u32,
+    exif_source: Option<&Vec<u8>>,
 ) -> Result<ProcessedImage, AppError> {
     if let Some(data_base64) = image["data_base64"].as_str() {
         let bytes = base64::engine::general_purpose::STANDARD
@@ -1882,10 +1890,17 @@ async fn process_output_image(
             image["content_type"].as_str().map(ToOwned::to_owned),
             prompt,
             max_edge,
+            exif_source,
         )
     } else {
         let (bytes, content_type) = download_with_retries(client, output_bucket, file_uid, 3).await?;
-        image_processing::process_generated_image(bytes, Some(content_type), prompt, max_edge)
+        image_processing::process_generated_image(
+            bytes,
+            Some(content_type),
+            prompt,
+            max_edge,
+            exif_source,
+        )
     }
 }
 
