@@ -233,14 +233,17 @@ func cmdImageGenerate(args []string) error {
 		req.NegativePrompt = *negative
 		req.OverrideNegative = true
 	}
-	if *seed != 0 {
-		req.Seed = seed
-	}
 	startedJobs := make([]startJobResponse, 0, count)
 	var batchErrors []error
 	for i := 0; i < count; i++ {
+		jobReq := req
+		if *seed != 0 {
+			// Offset the seed per job: one shared seed would make every image identical.
+			jobSeed := *seed + int64(i)
+			jobReq.Seed = &jobSeed
+		}
 		var started startJobResponse
-		if err := doJSON("POST", base+"/api/images/jobs", cfg.Token, req, &started); err != nil {
+		if err := doJSON("POST", base+"/api/images/jobs", cfg.Token, jobReq, &started); err != nil {
 			batchErrors = append(batchErrors, fmt.Errorf("submit job %d of %d: %w", i+1, count, err))
 			break
 		}
@@ -276,7 +279,7 @@ func cmdImageGenerate(args []string) error {
 			batchErrors = append(batchErrors, fmt.Errorf("job %d of %d (%s): %w", i+1, count, started.JobID, err))
 			continue
 		}
-		if err := finishJob(base, cfg.Token, &p, indexedOutputPath(*out, i)); err != nil {
+		if err := finishJob(base, cfg.Token, &p, *out, i, count > 1); err != nil {
 			batchErrors = append(batchErrors, fmt.Errorf("job %d of %d (%s): %w", i+1, count, started.JobID, err))
 		}
 	}
@@ -345,7 +348,22 @@ func minDuration(a, b time.Duration) time.Duration {
 	return b
 }
 
-func finishJob(base, token string, p *pollResponse, out string) error {
+// outputImagePath names the image-th (zero-based) result of job job. A single
+// run uses out, out_2, ...; in a batch each job owns out / out_<job+1> and its
+// extra images get an image suffix (out_1_2, out_2_2, ...) so jobs never collide.
+func outputImagePath(out string, job, image int, batch bool) string {
+	if !batch {
+		return indexedOutputPath(out, image)
+	}
+	base := indexedOutputPath(out, job)
+	if image == 0 {
+		return base
+	}
+	ext := filepath.Ext(out)
+	return fmt.Sprintf("%s_%d_%d%s", strings.TrimSuffix(out, ext), job+1, image+1, ext)
+}
+
+func finishJob(base, token string, p *pollResponse, out string, job int, batch bool) error {
 	if p.Status != "completed" {
 		msg := "no error message"
 		if p.Error != nil && *p.Error != "" {
@@ -356,13 +374,8 @@ func finishJob(base, token string, p *pollResponse, out string) error {
 	if len(p.OutputImages) == 0 {
 		return errors.New("job completed but produced no images")
 	}
-	ext := filepath.Ext(out)
-	stem := strings.TrimSuffix(out, ext)
 	for i, img := range p.OutputImages {
-		dest := out
-		if i > 0 {
-			dest = fmt.Sprintf("%s_%d%s", stem, i+1, ext)
-		}
+		dest := outputImagePath(out, job, i, batch)
 		if err := downloadFile(base+"/api/images/files/"+url.PathEscape(img.ImageID), token, dest); err != nil {
 			return fmt.Errorf("download %s: %w", img.ImageID, err)
 		}

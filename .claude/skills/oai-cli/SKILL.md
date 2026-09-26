@@ -39,6 +39,7 @@ Commands today: `login`, `whoami`, `image capabilities|generate|describe|describ
 - **JSON field names are snake_case**, exactly as the Rust structs (`#[derive(Deserialize)]` with no rename). Optional server fields are pointers (`*string`, `*int64`) so `null`/absent is distinguishable; request-side optionals use `omitempty`.
 - **IDs are strings** in JSON (snowflake i64 → string). Path-escape them with `url.PathEscape`.
 - **Capabilities**: OAI lists base capabilities (`imggen.x`, `llm.x`); tags describe kind (`txt2img`, `img2video`, `vision`). `pickCapability(caps, preferTag, kind)` picks the first online one with the tag, else any online one — never blindly the first online entry, because imggen also contains img2img/video capabilities.
+- **Batch generate (`-n`)**: one job per image, all submitted first, then awaited in order. A non-zero `-seed` is offset by the job index (a shared seed would yield identical images); `outputImagePath` names results (`out.jpg`, `out_2.jpg`; extra images within a batch job get `out_<job>_<image>.jpg`) so jobs never overwrite each other.
 - Every job-style feature follows **submit → poll → terminal** (`completed|failed|canceled`); poll every 5s (`pollInterval`, same as the web UI) via `waitForJob`.
 - Job commands enable the live progress renderer by default. Pass API timing metadata through `jobProgressState`; keep stdout pipe-safe for result-producing commands by rendering their progress on stderr.
 

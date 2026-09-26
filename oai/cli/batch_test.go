@@ -212,3 +212,127 @@ func TestImageGenerateRejectsInvalidCount(t *testing.T) {
 		}
 	}
 }
+
+// newImageMux serves the generate endpoints. outputs(jobID, pollCount) supplies
+// each poll response; requests captures submitted jobs.
+func newImageMux(
+	requests *[]startJobRequest,
+	outputs func(jobID string, poll int) pollResponse,
+) *http.ServeMux {
+	var mu sync.Mutex
+	polls := map[string]int{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/images/jobs", func(w http.ResponseWriter, r *http.Request) {
+		var req startJobRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		*requests = append(*requests, req)
+		n := len(*requests)
+		mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(startJobResponse{JobID: fmt.Sprintf("job-%d", n), Status: "submitted"})
+	})
+	mux.HandleFunc("/api/images/jobs/", func(w http.ResponseWriter, r *http.Request) {
+		jobID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/images/jobs/"), "/poll")
+		mu.Lock()
+		polls[jobID]++
+		n := polls[jobID]
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(outputs(jobID, n))
+	})
+	mux.HandleFunc("/api/images/files/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, strings.TrimPrefix(r.URL.Path, "/api/images/files/"))
+	})
+	return mux
+}
+
+func completedWith(jobID string, imageIDs ...string) pollResponse {
+	p := pollResponse{JobID: jobID, Status: "completed"}
+	for _, id := range imageIDs {
+		p.OutputImages = append(p.OutputImages, imageRef{ImageID: id})
+	}
+	return p
+}
+
+func TestImageGenerateOffsetsSeedPerJob(t *testing.T) {
+	var requests []startJobRequest
+	server := httptest.NewServer(newImageMux(&requests, func(id string, _ int) pollResponse {
+		return completedWith(id, "img-"+id)
+	}))
+	t.Cleanup(server.Close)
+	configureTestServer(t, server.URL)
+
+	out := filepath.Join(t.TempDir(), "r.jpg")
+	if err := cmdImageGenerate([]string{"x", "-capability", "imggen.t", "-n", "3", "-seed", "100", "-o", out, "--progress=false"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 3 {
+		t.Fatalf("requests = %d, want 3", len(requests))
+	}
+	for i, req := range requests {
+		if req.Seed == nil || *req.Seed != int64(100+i) {
+			t.Errorf("request %d seed = %v, want %d", i+1, req.Seed, 100+i)
+		}
+	}
+
+	requests = nil
+	if err := cmdImageGenerate([]string{"x", "-capability", "imggen.t", "-n", "2", "-o", out, "--progress=false"}); err != nil {
+		t.Fatal(err)
+	}
+	for i, req := range requests {
+		if req.Seed != nil {
+			t.Errorf("request %d seed = %d, want omitted (random)", i+1, *req.Seed)
+		}
+	}
+}
+
+func TestImageGenerateBatchWithMultipleOutputsDoesNotOverwrite(t *testing.T) {
+	var requests []startJobRequest
+	server := httptest.NewServer(newImageMux(&requests, func(id string, _ int) pollResponse {
+		return completedWith(id, id+"-a", id+"-b")
+	}))
+	t.Cleanup(server.Close)
+	configureTestServer(t, server.URL)
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "r.jpg")
+	if err := cmdImageGenerate([]string{"x", "-capability", "imggen.t", "-n", "2", "-o", out, "--progress=false"}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"r.jpg":     "job-1-a",
+		"r_1_2.jpg": "job-1-b",
+		"r_2.jpg":   "job-2-a",
+		"r_2_2.jpg": "job-2-b",
+	}
+	for name, content := range want {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+		} else if string(data) != content {
+			t.Errorf("%s = %q, want %q", name, data, content)
+		}
+	}
+}
+
+func TestImageGenerateSingleRunKeepsPlainSuffixes(t *testing.T) {
+	var requests []startJobRequest
+	server := httptest.NewServer(newImageMux(&requests, func(id string, _ int) pollResponse {
+		return completedWith(id, "a", "b")
+	}))
+	t.Cleanup(server.Close)
+	configureTestServer(t, server.URL)
+
+	dir := t.TempDir()
+	if err := cmdImageGenerate([]string{"x", "-capability", "imggen.t", "-o", filepath.Join(dir, "r.jpg"), "--progress=false"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"r.jpg", "r_2.jpg"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
