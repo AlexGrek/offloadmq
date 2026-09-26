@@ -36,6 +36,7 @@ import { SavedPromptsDrawer } from '../components/prompts/SavedPromptsDrawer'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogBody,
@@ -144,6 +145,8 @@ const BURST_SPARKS = [
   { x: -60, y: 25, delay: 0.04 },
 ]
 const POLL_MS = 5000
+/** Silent background refresh of the pipelines sidebar list (no loading UI). */
+const JOBS_LIST_REFRESH_MS = 20_000
 
 const MODE_TABS: { mode: ImgGenMode; label: string; icon: LucideIcon }[] = [
   { mode: 'txt2img', label: 'Txt2Img', icon: Sparkles },
@@ -362,6 +365,28 @@ export default function ImageGenerationPage() {
       setJobsLoading(false)
     }
   }, [token])
+
+  // Keep the pipelines list fresh without any loading UI: no `jobsLoading`
+  // toggle (which would flash the skeleton / spin the refresh icon) and no error
+  // banner — a failed background tick just waits for the next one. Skipped while
+  // the tab is hidden, and while the slideshow is on (its own tick already lists jobs).
+  useEffect(() => {
+    if (!token || slideshowOn) return
+    let cancelled = false
+    const id = window.setInterval(async () => {
+      if (document.hidden) return
+      try {
+        const list = await listImageJobs(token)
+        if (!cancelled) setJobs(list)
+      } catch {
+        // silent
+      }
+    }, JOBS_LIST_REFRESH_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [token, slideshowOn])
 
   const toggleSlideshow = useCallback(() => {
     setSlideshowOn(prev => {
@@ -1975,9 +2000,22 @@ export default function ImageGenerationPage() {
           >
           {error && <JobErrorBanner message={error} testId="imggen-job-error" />}
           {jobDetailLoading ? (
-            <div className="flex min-h-[40vh] items-center justify-center">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
-            </div>
+            <Card
+              role="status"
+              aria-label="Loading job"
+              data-testid="imggen-job-detail-skeleton"
+              className="overflow-hidden py-0"
+            >
+              <Skeleton className="aspect-video w-full rounded-none" />
+              <div className="space-y-2 px-4 pb-4">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <div className="flex gap-2 pt-2">
+                  <Skeleton className="h-8 w-24" />
+                  <Skeleton className="h-8 w-24" />
+                </div>
+              </div>
+            </Card>
           ) : selectedJob?.job_id === viewedJobId ? (
           <Card data-testid="imggen-job-detail" className="overflow-hidden">
 

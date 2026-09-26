@@ -11,11 +11,11 @@ import { cn } from '@/lib/utils'
 export function TopBar() {
   const { user, logout } = useAuth()
   const { theme, toggle } = useTheme()
-  const { drawerOpen, toggleDrawer, runningImageJobs } = useProgress()
+  const { drawerOpen, toggleDrawer, runningImageJobs, runningDescribeJobs } = useProgress()
   const { runningChatTasks } = useWorkload()
   const navigate = useNavigate()
 
-  const runningCount = runningChatTasks.length + runningImageJobs.length
+  const runningCount = runningChatTasks.length + runningImageJobs.length + runningDescribeJobs.length
 
   function handleLogout() {
     logout()
@@ -52,17 +52,18 @@ export function TopBar() {
           size="sm"
           onClick={toggle}
           aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>
         <span className="hidden px-2 text-sm text-muted-foreground sm:block">{user?.login}</span>
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/app/settings">
+          <Link to="/app/settings" aria-label="My Account" title="My Account">
             <User className="h-4 w-4" />
             <span className="ml-1.5 hidden sm:inline">My Account</span>
           </Link>
         </Button>
-        <Button variant="ghost" size="sm" onClick={handleLogout}>
+        <Button variant="ghost" size="sm" onClick={handleLogout} aria-label="Sign out" title="Sign out">
           <LogOut className="h-4 w-4" />
           <span className="ml-1.5 hidden sm:inline">Sign out</span>
         </Button>

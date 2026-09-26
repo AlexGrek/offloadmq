@@ -127,3 +127,18 @@ export function imageProgressRows(
 ): ProgressRow[] {
   return imageRows(jobs, focusJobId, onCancelImage)
 }
+
+export function describeProgressRows(
+  jobs: RunningJobItem[],
+  onCancelDescribe?: (job: RunningJobItem) => void,
+): ProgressRow[] {
+  // Unlike image jobs, describe cancel also works before the OffloadMQ task exists
+  // (the backend just marks the row canceled), so it is never disabled.
+  return jobs.map(j => ({
+    key: j.key,
+    label: j.label,
+    status: j.status,
+    stage: j.stage,
+    onCancel: onCancelDescribe ? () => onCancelDescribe(j) : undefined,
+  }))
+}

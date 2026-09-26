@@ -97,7 +97,7 @@ oai/backend/src/
     image_job_names.rs            # display_name / prompt_label / generate_random_names
     llm_text_capabilities.rs      # shared text-LLM capability listing (compare, debate, movie)
     offload_factory.rs            # chat_client() / image_client() from DB settings
-    progress.rs                   # list_running_image_jobs() → RunningJobsResponse
+    progress.rs                   # list_running_jobs() → RunningJobsResponse (image + describe rows, `source` discriminates)
     prompt_previews.rs            # saved-prompt preview blobs: attach (imggen completion), serve, GC on trim/edit/delete
     promptgen.rs                  # video prompt generator (vision LLM) + capability list, WS only
     runners.rs                    # online agent summaries via the management API

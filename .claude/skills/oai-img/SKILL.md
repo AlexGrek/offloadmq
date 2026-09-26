@@ -354,7 +354,7 @@ Frontend: `listImageWorkerLogs` in `api/admin.ts`; link from Settings `settings-
 
 ## ProgressContext / GlobalProgressDrawer
 
-- `useRunningImageJobs` → `runningImageJobs` (5s refresh)
+- `useRunningImageJobs` → all rows from `/api/progress/running` (5s refresh); `ProgressContext` splits them by `source`: `runningImageJobs` (`image`) and `runningDescribeJobs` (`describe`, keys `describe:{job_id}`, cancel `progress-cancel-describe:{job_id}` → `cancelDescribeJob`). The shell's background poll calls `pollImageJob` / `pollDescribeJob` per row by source. TopBar badge counts chat + image + describe.
 - `TopBar` badge: chat running count + image running count
 - Drawer image rows: key `image:{job_id}`; cancel → `cancelImageJob`
 - `progress-refresh` reloads image list only (chat tasks are in-memory `WorkloadContext`)

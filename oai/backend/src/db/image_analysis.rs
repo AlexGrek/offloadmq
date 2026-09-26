@@ -2,7 +2,10 @@
 //! generically via [`crate::db::offload_jobs`]; only the analysis-specific writes
 //! (`create_job`, `set_result`) and the framework trait impls live here.
 
-use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect,
+};
 
 use crate::{
     db::{
@@ -120,4 +123,19 @@ pub async fn set_result(
     };
     model.update(db).await.map_err(AppError::Database)?;
     Ok(())
+}
+
+/// A user's non-terminal describe jobs, newest first — feeds the global Progress drawer.
+pub async fn list_user_active(
+    db: &DatabaseConnection,
+    user_id: i64,
+) -> Result<Vec<ImageAnalysisJob>, AppError> {
+    ImageAnalysisJobEntity::find()
+        .filter(image_analysis_jobs::Column::UserId.eq(user_id))
+        .filter(image_analysis_jobs::Column::Status.is_not_in(["completed", "failed", "canceled"]))
+        .order_by_desc(image_analysis_jobs::Column::CreatedAt)
+        .limit(64)
+        .all(db)
+        .await
+        .map_err(AppError::Database)
 }

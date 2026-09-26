@@ -7,11 +7,13 @@ import { useProgress } from '../contexts/ProgressContext'
 import { useWorkload } from '../contexts/WorkloadContext'
 import { cancelOffloadTask } from '../api/tasks'
 import { cancelImageJob } from '../api/images'
+import { cancelDescribeJob } from '../api/describe'
 import type { RunningJobItem } from '../api/progress'
 import type { ChatTaskRecord } from '../contexts/WorkloadContext'
 import {
   ProgressPanel,
   chatProgressRows,
+  describeProgressRows,
   imageProgressRows,
 } from './ProgressPanel'
 
@@ -20,6 +22,7 @@ export function GlobalProgressDrawer() {
     drawerOpen,
     setDrawerOpen,
     runningImageJobs: imageJobs,
+    runningDescribeJobs: describeJobs,
     runningImageJobsLoading: loadingImages,
     refreshRunningImageJobs: refreshImages,
   } = useProgress()
@@ -52,6 +55,19 @@ export function GlobalProgressDrawer() {
     [token, refreshImages],
   )
 
+  const handleCancelDescribe = useCallback(
+    async (job: RunningJobItem) => {
+      if (!token) return
+      try {
+        await cancelDescribeJob(token, job.job_id)
+        await refreshImages()
+      } catch (e) {
+        console.error('cancel describe job', e)
+      }
+    },
+    [token, refreshImages],
+  )
+
   const chatRows = useMemo(
     () => chatProgressRows(runningChatTasks, handleCancelChat),
     [runningChatTasks, handleCancelChat],
@@ -60,7 +76,11 @@ export function GlobalProgressDrawer() {
     () => imageProgressRows(imageJobs, null, handleCancelImage),
     [imageJobs, handleCancelImage],
   )
-  const totalRunning = chatRows.length + imageRows.length
+  const describeRows = useMemo(
+    () => describeProgressRows(describeJobs, handleCancelDescribe),
+    [describeJobs, handleCancelDescribe],
+  )
+  const totalRunning = chatRows.length + imageRows.length + describeRows.length
 
   return (
     <>
@@ -94,7 +114,7 @@ export function GlobalProgressDrawer() {
             size="icon-sm"
             onClick={() => void refreshImages()}
             disabled={loadingImages}
-            title="Refresh image jobs"
+            title="Refresh running jobs"
             data-testid="progress-refresh"
           >
             {loadingImages ? (
@@ -125,6 +145,12 @@ export function GlobalProgressDrawer() {
             loading={loadingImages && imageRows.length === 0}
             emptyMessage="No image jobs in progress."
             rows={imageRows}
+          />
+          <ProgressPanel
+            title="Describe image"
+            loading={loadingImages && describeRows.length === 0}
+            emptyMessage="No describe jobs in progress."
+            rows={describeRows}
           />
         </div>
       </aside>

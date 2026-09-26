@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { AlertCircle, ChevronDown, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ModelAvailabilityDot } from '@/components/chat/ModelAvailabilityDot'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { CapabilitiesStatus } from '@/lib/capabilitiesStatus'
 import { capabilityBaseLabel, sortCapabilitiesForPicker } from '@/lib/modelAvailability'
 import { cn } from '@/lib/utils'
@@ -127,7 +128,14 @@ export function CapabilityModelPicker({
         {!modelsLoading && !modelsError && selectedCap && (
           <ModelAvailabilityDot cap={selectedCap} />
         )}
-        <span className={cn('truncate', isForm && 'flex-1 text-left')}>{label}</span>
+        {modelsLoading ? (
+          <>
+            <Skeleton className={cn('h-3.5', isForm ? 'flex-1' : 'w-24')} />
+            <span className="sr-only">{label}</span>
+          </>
+        ) : (
+          <span className={cn('truncate', isForm && 'flex-1 text-left')}>{label}</span>
+        )}
         {canOpen && (
           <ChevronDown
             className={cn(

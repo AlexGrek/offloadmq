@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
-import { Download, Loader2, Plus } from 'lucide-react'
+import { Download, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
 import { imageThumbnailUrl, type ImageJobDetails } from '../../api/images'
 import { jobPromptTitle, jobTechMeta, imageJobIsExecuting, imageJobStatusLabel, lastOutputImageId } from '../../lib/imggen'
 import { useDownloadedImages } from '@/lib/downloadedImages'
@@ -62,9 +63,20 @@ export function ImageJobHistorySidebar({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 px-1">
         {loading ? (
-          <div className="flex justify-center py-4">
-            <Loader2 className="size-4 animate-spin text-muted-foreground" />
-          </div>
+          <ul
+            className="space-y-1"
+            role="status"
+            aria-label="Loading jobs"
+            data-testid="imggen-pipelines-skeleton"
+          >
+            {[0, 1, 2, 3, 4].map(i => (
+              <li key={i} className="flex min-h-17 flex-col justify-center gap-1.5 rounded-lg bg-sidebar-accent/40 px-3 py-2">
+                <Skeleton className="h-3 w-4/5 bg-sidebar-accent" />
+                <Skeleton className="h-2.5 w-3/5 bg-sidebar-accent" />
+                <Skeleton className="h-2.5 w-1/4 bg-sidebar-accent" />
+              </li>
+            ))}
+          </ul>
         ) : jobs.length === 0 ? (
           <p className="px-3 py-4 text-center text-xs text-muted-foreground">No jobs yet</p>
         ) : (

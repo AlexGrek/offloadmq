@@ -56,8 +56,13 @@ export function RandomNamesWidget() {
                 transition={{ duration: 0.15 }}
                 onClick={() => setOpen(false)}
               />
+              {/* Clip viewport below the top bar: the drawer slides up *under* the
+                  bar and fully out of sight, instead of stopping at the bar's
+                  bottom edge (still visible above it, z-60 > the bar's z-40) and
+                  then unmounting with no animation. */}
+              <div className="pointer-events-none fixed inset-x-0 top-14 bottom-0 z-[60] overflow-hidden">
               <motion.aside
-                className="fixed inset-x-0 top-14 z-[60] mx-auto flex w-full max-w-2xl max-h-[min(80dvh,calc(100dvh-3.5rem))] flex-col border-x border-b border-border bg-background shadow-xl sm:rounded-b-2xl"
+                className="pointer-events-auto mx-auto flex w-full max-w-2xl max-h-[min(80dvh,calc(100dvh-3.5rem))] flex-col border-x border-b border-border bg-background shadow-xl sm:rounded-b-2xl"
                 initial={{ y: '-100%' }}
                 animate={{ y: 0 }}
                 exit={{ y: '-100%' }}
@@ -78,6 +83,7 @@ export function RandomNamesWidget() {
                   />
                 </div>
               </motion.aside>
+              </div>
             </>
           )}
         </AnimatePresence>,

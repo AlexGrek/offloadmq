@@ -1,10 +1,12 @@
 //! Lightweight running-job list for the global Progress drawer (DB only, no OffloadMQ poll).
+//! Covers image generation (`source: "image"`) and describe (`source: "describe"`).
 
 use serde::Serialize;
 
 use crate::{
-    db::image_generation,
+    db::{image_analysis, image_generation},
     error::AppError,
+    offload::base_capability,
     services::image_job_names,
     state::AppState,
 };
@@ -29,12 +31,12 @@ pub struct RunningJobsResponse {
     pub jobs: Vec<RunningJobItem>,
 }
 
-pub async fn list_running_image_jobs(
+pub async fn list_running_jobs(
     state: &AppState,
     user_id: i64,
 ) -> Result<RunningJobsResponse, AppError> {
     let rows = image_generation::list_user_active_offload_tasks(&state.db, user_id).await?;
-    let jobs = rows
+    let mut jobs: Vec<RunningJobItem> = rows
         .into_iter()
         .map(|(job, task)| RunningJobItem {
             key: format!("image:{}", job.id),
@@ -53,5 +55,21 @@ pub async fn list_running_image_jobs(
             submitted_at: Some(task.submitted_at.to_rfc3339()),
         })
         .collect();
+
+    let describe = image_analysis::list_user_active(&state.db, user_id).await?;
+    jobs.extend(describe.into_iter().map(|job| RunningJobItem {
+        key: format!("describe:{}", job.id),
+        source: "describe".to_string(),
+        label: format!("Describe · {}", base_capability(&job.capability)),
+        status: job.status,
+        stage: job.stage,
+        job_id: job.id.to_string(),
+        offload_cap: job.offload_cap.unwrap_or_default(),
+        offload_task_id: job.offload_task_id.unwrap_or_default(),
+        started_at: None,
+        typical_runtime_seconds: None,
+        submitted_at: Some(job.created_at.to_rfc3339()),
+    }));
+
     Ok(RunningJobsResponse { jobs })
 }

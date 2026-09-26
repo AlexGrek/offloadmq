@@ -197,10 +197,13 @@ export function SavedPromptsDrawer({
               variant="outline"
               disabled={!canAddFavorite}
               onClick={() => void addFavorite()}
+              aria-label="Add to favorites"
+              title="Add to favorites"
+              className="max-sm:w-7 max-sm:px-0"
               data-testid="prompt-add-favorite"
             >
-              <Star className="mr-1.5 size-3.5" />
-              Add to favorites
+              <Star className="size-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Add to favorites</span>
             </Button>
           </div>
           <div className="flex items-center gap-2">
