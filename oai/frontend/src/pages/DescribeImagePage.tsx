@@ -59,7 +59,14 @@ import RescaleControls from '../components/imggen/RescaleControls'
 import { rescaleDataPrep, type RescaleState } from '../lib/imggen'
 import { cn } from '../lib/utils'
 
-const DEFAULT_PROMPT = 'Describe this image in detail'
+const DEFAULT_PROMPT = [
+  'Describe this image in detail. Use the following rules:',
+  '1. Describe main subject or person visually, do not use general words like "person", mention gender, age, body shape, skin color, race, hair, what person is wearing, pose, significant visual details.',
+  '2. Describe what the subject is doing, what is going on around, what is on background.',
+  '3. Describe atmosphere, dominant colors, lighting, weather, style.',
+  '',
+  'Write one paragraph, no numeration, 6 sentences max.',
+].join('\n')
 const POLL_INTERVAL_MS = 3000
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 
@@ -616,7 +623,7 @@ export default function DescribeImagePage() {
                       onChange={setPrompt}
                       bucket="describe-image-user"
                       token={token}
-                      rows={2}
+                      rows={8}
                       placeholder={DEFAULT_PROMPT}
                       data-testid="describe-prompt-input"
                     />

@@ -11,7 +11,12 @@ import (
 )
 
 // Same default as DescribeImagePage.tsx.
-const defaultDescribePrompt = "Describe this image in detail"
+const defaultDescribePrompt = `Describe this image in detail. Use the following rules:
+1. Describe main subject or person visually, do not use general words like "person", mention gender, age, body shape, skin color, race, hair, what person is wearing, pose, significant visual details.
+2. Describe what the subject is doing, what is going on around, what is on background.
+3. Describe atmosphere, dominant colors, lighting, weather, style.
+
+Write one paragraph, no numeration, 6 sentences max.`
 
 type describeCapabilitiesResponse struct {
 	Capabilities []capabilityInfo `json:"capabilities"`
