@@ -3,9 +3,11 @@ import { Download, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { imageThumbnailUrl, type ImageJobDetails } from '../../api/images'
+import type { RunningJobItem } from '../../api/progress'
 import { jobPromptTitle, jobTechMeta, imageJobIsExecuting, imageJobStatusLabel, lastOutputImageId } from '../../lib/imggen'
 import { useDownloadedImages } from '@/lib/downloadedImages'
 import { WorkflowBadge } from './WorkflowBadge'
+import { ImageQueueEstimate } from './ImageQueueEstimate'
 import { useMorph } from '@/lib/motion'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
@@ -21,6 +23,8 @@ type ImageJobHistorySidebarProps = {
   loading?: boolean
   /** Live status from progress drawer poll cache (`last_poll_status`). */
   statusOverrides?: Record<string, string>
+  /** In-flight jobs from the Progress feed; drives the estimated queue time. */
+  runningJobs?: RunningJobItem[]
   onSelectNew: () => void
   onSelectJob: (jobId: string) => void
 }
@@ -37,6 +41,7 @@ export function ImageJobHistorySidebar({
   mediaRevision = 0,
   loading,
   statusOverrides,
+  runningJobs,
   onSelectNew,
   onSelectJob,
 }: ImageJobHistorySidebarProps) {
@@ -60,6 +65,8 @@ export function ImageJobHistorySidebar({
         <Plus className="size-4 shrink-0" />
         New
       </button>
+
+      <ImageQueueEstimate running={runningJobs ?? []} history={jobs} />
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 px-1">
         {loading ? (

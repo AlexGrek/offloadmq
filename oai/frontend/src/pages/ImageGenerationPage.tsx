@@ -1321,6 +1321,7 @@ export default function ImageGenerationPage() {
           mediaRevision={mediaRevision}
           loading={jobsLoading}
           statusOverrides={jobStatusOverrides}
+          runningJobs={runningImageJobs}
           onSelectNew={() => {
             selectNew()
             if (isMobile) setSidebarOpen(false)

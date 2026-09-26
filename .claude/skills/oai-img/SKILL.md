@@ -85,6 +85,7 @@ sequenceDiagram
 |------|------|
 | `frontend/src/pages/ImageGenerationPage.tsx` | Modes, form, submit, 5s auto-poll, job detail, cancel, ToolDebug |
 | `frontend/src/components/imggen/ImageJobHistorySidebar.tsx` | Pipelines list; `IMGGEN_NEW_PANEL = 'new'` |
+| `frontend/src/components/imggen/ImageQueueEstimate.tsx` | "Queue: N jobs · ~time" under the sidebar's New button while anything is in flight; math in `estimateQueue` (`lib/imggen.ts`): sequential sum of `typical − elapsed` (running) / `typical` (queued), missing typicals fall back to same-capability history then in-flight mean; `≥` prefix when some jobs couldn't be estimated. `data-testid=imggen-queue-estimate` |
 | `frontend/src/components/imggen/RescaleControls.tsx` | img2img `dataPreparation` (exact / max) |
 | `frontend/src/components/imggen/VideoPromptGenerator.tsx` | img2video "what happens next" prompt generator (vision LLM over `/api/ws/promptgen`) |
 | `frontend/src/components/prompts/SavedPromptsDrawer.tsx` | Saved prompts drawer; opened by the Starred prompts button and the textarea list icon |

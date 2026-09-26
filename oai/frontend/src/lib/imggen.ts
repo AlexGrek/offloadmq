@@ -7,6 +7,7 @@ import type {
   ImageJobEvent,
   UploadedImage,
 } from '../api/images'
+import type { RunningJobItem } from '../api/progress'
 import { pickListedCapability } from './capability-picker'
 
 export type ImgGenMode = 'txt2img' | 'img2img' | 'txt2video' | 'img2video'
@@ -652,4 +653,77 @@ export const MODE_DEFAULTS: Record<
     height: 512,
     rescale: { enabled: false, mode: 'exact', width: 768, height: 512 },
   },
+}
+
+export interface QueueEstimate {
+  /** In-flight jobs counted (canceling ones excluded). */
+  jobs: number
+  /** Estimated seconds until the whole queue has drained; `null` when nothing could be estimated. */
+  seconds: number | null
+  /** True when some jobs had no runtime estimate and were left out of `seconds`. */
+  partial: boolean
+}
+
+const QUEUED_STATUSES = new Set(['submitted', 'pending', 'queued', 'assigned'])
+
+function baseCap(cap: string): string {
+  const i = cap.indexOf('[')
+  return i < 0 ? cap : cap.slice(0, i)
+}
+
+function mean(values: number[]): number | null {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null
+}
+
+/**
+ * Estimated time to drain the image-generation queue, assuming jobs run one after
+ * another (the number of agents is not known to the client, so this is an upper-ish
+ * bound when several agents share the load).
+ *
+ * Per job: an executing job contributes `typical − elapsed` (floored at 0), a queued
+ * one its full `typical`. A missing `typical` falls back to the mean of finished jobs
+ * on the same capability (`history`), then to the mean of the other in-flight jobs.
+ */
+export function estimateQueue(
+  running: Pick<RunningJobItem, 'status' | 'offload_cap' | 'started_at' | 'typical_runtime_seconds'>[],
+  history: Pick<ImageJobDetails, 'capability' | 'typical_runtime_seconds'>[],
+  nowMs: number,
+): QueueEstimate {
+  const active = running.filter(r => r.status !== 'cancelRequested')
+
+  const byCap = new Map<string, number[]>()
+  for (const h of history) {
+    const t = h.typical_runtime_seconds
+    if (t != null && t > 0) {
+      const key = baseCap(h.capability)
+      byCap.set(key, [...(byCap.get(key) ?? []), t])
+    }
+  }
+  const inFlightKnown = active
+    .map(r => r.typical_runtime_seconds)
+    .filter((t): t is number => t != null && t > 0)
+  const inFlightMean = mean(inFlightKnown)
+
+  let seconds = 0
+  let estimated = 0
+  for (const r of active) {
+    const typical =
+      (r.typical_runtime_seconds != null && r.typical_runtime_seconds > 0
+        ? r.typical_runtime_seconds
+        : null) ??
+      mean(byCap.get(baseCap(r.offload_cap)) ?? []) ??
+      inFlightMean
+    if (typical == null) continue
+    const executing =
+      imageJobIsExecuting(r.status) || (r.started_at != null && !QUEUED_STATUSES.has(r.status))
+    const elapsed =
+      executing && r.started_at ? Math.max(0, (nowMs - new Date(r.started_at).getTime()) / 1000) : 0
+    seconds += Math.max(0, typical - elapsed)
+    estimated += 1
+  }
+  return {
+    jobs: active.length,
+    seconds: estimated > 0 ? seconds : null,
+    partial: estimated > 0 && estimated < active.length,
+  }
 }
