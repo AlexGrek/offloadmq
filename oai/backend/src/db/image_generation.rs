@@ -190,12 +190,37 @@ pub async fn create_pipeline_event(
     model.insert(db).await.map_err(AppError::Database)
 }
 
+/// Steps recorded for OffloadMQ status polls. The SPA never shows them, so the
+/// user-facing reads leave them out ([`EventScope::WithoutPolls`]).
+pub const POLL_EVENT_STEPS: [&str; 2] = ["offload.poll", "worker.offload.poll"];
+
+/// Which pipeline events a read returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EventScope {
+    /// Everything, including poll events — admin views.
+    All,
+    /// Everything except [`POLL_EVENT_STEPS`] — user-facing job responses.
+    WithoutPolls,
+}
+
+impl EventScope {
+    fn condition(self) -> Condition {
+        match self {
+            EventScope::All => Condition::all(),
+            EventScope::WithoutPolls => Condition::all()
+                .add(image_pipeline_events::Column::Step.is_not_in(POLL_EVENT_STEPS)),
+        }
+    }
+}
+
 pub async fn list_pipeline_events(
     db: &DatabaseConnection,
     job_id: i64,
+    scope: EventScope,
 ) -> Result<Vec<ImagePipelineEvent>, AppError> {
     ImagePipelineEventEntity::find()
         .filter(image_pipeline_events::Column::JobId.eq(job_id))
+        .filter(scope.condition())
         .order_by_asc(image_pipeline_events::Column::CreatedAt)
         .all(db)
         .await
@@ -501,9 +526,11 @@ pub async fn list_job_files_for_jobs(
 pub async fn list_pipeline_events_for_jobs(
     db: &DatabaseConnection,
     job_ids: &[i64],
+    scope: EventScope,
 ) -> Result<Vec<ImagePipelineEvent>, AppError> {
     ImagePipelineEventEntity::find()
         .filter(image_pipeline_events::Column::JobId.is_in(job_ids.iter().copied()))
+        .filter(scope.condition())
         .order_by_asc(image_pipeline_events::Column::CreatedAt)
         .all(db)
         .await

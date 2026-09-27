@@ -52,6 +52,8 @@ import {
   DescribeHistorySidebar,
 } from '../components/describe/DescribeHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
+import { useProgress } from '../contexts/ProgressContext'
+import { keepIfUnchanged, mergeJobList, upsertJob } from '../lib/jobMerge'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
@@ -85,6 +87,19 @@ const DEFAULT_RESCALE: RescaleState = {
   mp: '',
 }
 
+/** Change key for `lib/jobMerge` — everything a poll can move (not `updated_at`,
+ *  which a poll bumps even when nothing else changed). */
+function describeJobFingerprint(job: DescribeJob): string {
+  return [
+    job.status,
+    job.stage ?? '',
+    job.error ?? '',
+    job.offload_cap ?? '',
+    job.offload_task_id ?? '',
+    job.result ?? '',
+  ].join('|')
+}
+
 function jobTitle(prompt: string, limit = 56): string {
   const trimmed = prompt.trim()
   if (!trimmed) return 'Analysis'
@@ -94,6 +109,7 @@ function jobTitle(prompt: string, limit = 56): string {
 
 export default function DescribeImagePage() {
   const { token } = useAuth()
+  const { setForegroundJob } = useProgress()
   const navigate = useNavigate()
   const location = useLocation()
   const routeImage = (location.state as DescribeRouteState | null)?.describeImage ?? null
@@ -175,7 +191,7 @@ export default function DescribeImagePage() {
     if (!token) return
     try {
       const list = await listDescribeJobs(token)
-      setJobs(list)
+      setJobs(prev => mergeJobList(prev, list, describeJobFingerprint))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -195,43 +211,58 @@ export default function DescribeImagePage() {
     }
   }, [])
 
+  /** Publishes a fetched job; an unchanged snapshot keeps its object so idle polls don't re-render. */
+  const applyJob = useCallback((job: DescribeJob) => {
+    setSelectedJob(prev => keepIfUnchanged(prev, job, describeJobFingerprint))
+    setJobs(prev => upsertJob(prev, job, describeJobFingerprint))
+  }, [])
+
   const refreshJob = useCallback(
     async (jobId: string) => {
       if (!token) return null
       const job = await getDescribeJob(token, jobId)
-      setSelectedJob(job)
-      setJobs(prev => {
-        const idx = prev.findIndex(j => j.job_id === job.job_id)
-        if (idx >= 0) {
-          const next = [...prev]
-          next[idx] = job
-          return next
-        }
-        return [job, ...prev]
-      })
+      applyJob(job)
       return job
     },
-    [token],
+    [token, applyJob],
   )
 
-  function selectNew() {
+  const selectNew = useCallback(() => {
     setActivePanel(DESCRIBE_NEW_PANEL)
     setError(null)
-  }
+  }, [])
 
-  async function selectJob(jobId: string) {
-    if (!token) return
-    setActivePanel(jobId)
-    setError(null)
-    setJobDetailLoading(true)
-    try {
-      await refreshJob(jobId)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setJobDetailLoading(false)
-    }
-  }
+  const selectJob = useCallback(
+    async (jobId: string) => {
+      if (!token) return
+      setActivePanel(jobId)
+      setError(null)
+      setJobDetailLoading(true)
+      try {
+        await refreshJob(jobId)
+      } catch (e) {
+        setError((e as Error).message)
+      } finally {
+        setJobDetailLoading(false)
+      }
+    },
+    [token, refreshJob],
+  )
+
+  // Stable so the memoized history sidebar skips re-rendering on unrelated
+  // page updates (prompt keystrokes, polls of the viewed job).
+  const onSidebarSelectNew = useCallback(() => {
+    selectNew()
+    if (isMobile) setSidebarOpen(false)
+  }, [selectNew, isMobile])
+
+  const onSidebarSelectJob = useCallback(
+    (jobId: string) => {
+      void selectJob(jobId)
+      if (isMobile) setSidebarOpen(false)
+    },
+    [selectJob, isMobile],
+  )
 
   function clearInput() {
     setUploadedInput(null)
@@ -305,20 +336,29 @@ export default function DescribeImagePage() {
     }
   }
 
-  async function onPollNow(jobId: string) {
-    if (!token) return
-    setPolling(true)
-    setError(null)
-    try {
-      const job = await pollDescribeJob(token, jobId)
-      setSelectedJob(job)
-      setJobs(prev => prev.map(j => (j.job_id === job.job_id ? job : j)))
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setPolling(false)
-    }
-  }
+  // Job ids with a poll in flight — auto-poll ticks never stack up behind a slow poll.
+  const pollInFlightRef = useRef<Set<string>>(new Set())
+
+  /** Polls `jobId`; only a manual "Poll now" drives the `polling` spinner. */
+  const runPoll = useCallback(
+    async (jobId: string, opts?: { manual?: boolean }) => {
+      if (!token) return
+      if (pollInFlightRef.current.has(jobId)) return
+      pollInFlightRef.current.add(jobId)
+      const manual = opts?.manual ?? false
+      if (manual) setPolling(true)
+      setError(null)
+      try {
+        applyJob(await pollDescribeJob(token, jobId))
+      } catch (e) {
+        setError((e as Error).message)
+      } finally {
+        pollInFlightRef.current.delete(jobId)
+        if (manual) setPolling(false)
+      }
+    },
+    [token, applyJob],
+  )
 
   async function onCancel(jobId: string) {
     if (!token) return
@@ -373,17 +413,22 @@ export default function DescribeImagePage() {
     }
   }
 
-  // Auto-poll while viewing a non-terminal job
+  // Auto-poll while viewing a non-terminal job. The shell's background loop
+  // skips this job meanwhile, so it isn't polled twice.
+  const selectedStatus = selectedJob?.status
   useEffect(() => {
     if (!token || !viewedJobId) return
-    const status = selectedJob?.status
-    if (status && TERMINAL.has(status)) return
+    if (selectedStatus && TERMINAL.has(selectedStatus)) return
+    setForegroundJob('describe', viewedJobId)
     const id = window.setInterval(() => {
-      void onPollNow(viewedJobId)
+      if (document.hidden) return
+      void runPoll(viewedJobId)
     }, POLL_INTERVAL_MS)
-    return () => window.clearInterval(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, viewedJobId, selectedJob?.status])
+    return () => {
+      window.clearInterval(id)
+      setForegroundJob('describe', null)
+    }
+  }, [token, viewedJobId, selectedStatus, runPoll, setForegroundJob])
 
   function handleCopy() {
     if (!selectedJob?.result) return
@@ -439,14 +484,8 @@ export default function DescribeImagePage() {
           activePanel={activePanel}
           token={token}
           loading={jobsLoading}
-          onSelectNew={() => {
-            selectNew()
-            if (isMobile) setSidebarOpen(false)
-          }}
-          onSelectJob={jobId => {
-            void selectJob(jobId)
-            if (isMobile) setSidebarOpen(false)
-          }}
+          onSelectNew={onSidebarSelectNew}
+          onSelectJob={onSidebarSelectJob}
         />
       </ToolSidebar>
 
@@ -742,7 +781,7 @@ export default function DescribeImagePage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => void onPollNow(selectedJob.job_id)}
+                        onClick={() => void runPoll(selectedJob.job_id, { manual: true })}
                         disabled={polling}
                         data-testid="describe-poll-job"
                       >

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { Download, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -34,7 +35,7 @@ function statusLabel(status: string): string | null {
   return imageJobStatusLabel(status)
 }
 
-export function ImageJobHistorySidebar({
+export const ImageJobHistorySidebar = memo(function ImageJobHistorySidebar({
   jobs,
   activePanel,
   token,
@@ -46,7 +47,6 @@ export function ImageJobHistorySidebar({
   onSelectJob,
 }: ImageJobHistorySidebarProps) {
   const isNewActive = activePanel === IMGGEN_NEW_PANEL
-  const morph = useMorph()
   const downloadedImages = useDownloadedImages()
 
   return (
@@ -66,7 +66,7 @@ export function ImageJobHistorySidebar({
         New
       </button>
 
-      <ImageQueueEstimate running={runningJobs ?? []} history={jobs} />
+      <ImageQueueEstimate running={runningJobs ?? EMPTY_RUNNING} history={jobs} />
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 px-1">
         {loading ? (
@@ -88,118 +88,156 @@ export function ImageJobHistorySidebar({
           <p className="px-3 py-4 text-center text-xs text-muted-foreground">No jobs yet</p>
         ) : (
           <ul className="space-y-1">
-            {jobs.map((job, i) => {
-              const outputId = lastOutputImageId(job)
-              const bgUrl = outputId
-                ? imageThumbnailUrl(outputId, token, mediaRevision)
-                : null
-              const active = activePanel === job.job_id
-              const jobStatus = statusOverrides?.[job.job_id] ?? job.status
-              const inProgress = statusLabel(jobStatus)
-              const executing = imageJobIsExecuting(jobStatus)
-              const downloaded = job.files.some(
-                f => f.direction === 'output' && downloadedImages.has(f.image_id),
-              )
-
-              return (
-                <motion.li
-                  key={job.job_id}
-                  layout
-                  initial={{ opacity: 0, x: -6 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={morph.reduced ? { duration: 0 } : { delay: i * 0.03, duration: 0.2 }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onSelectJob(job.job_id)}
-                    data-testid={`imggen-pipeline-item-${job.job_id}`}
-                    className={cn(
-                      'group/pipeline relative w-full overflow-hidden rounded-lg text-left transition-colors',
-                      'min-h-17 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      active ? 'shadow-sm' : 'ring-1 ring-sidebar-border hover:ring-sidebar-accent',
-                    )}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="imggen-active-pipeline"
-                        transition={morph.spring}
-                        aria-hidden
-                        className="pointer-events-none absolute inset-0 z-20 rounded-lg border-2 border-sidebar-primary"
-                      />
-                    )}
-                    {bgUrl ? (
-                      <>
-                        <img
-                          key={`${job.job_id}-${outputId}-${mediaRevision}`}
-                          src={bgUrl}
-                          alt=""
-                          aria-hidden
-                          className="absolute inset-0 h-full w-full scale-105 object-cover blur-[3px] saturate-[0.9] dark:saturate-[0.75] dark:brightness-[0.6] brightness-[0.95]"
-                        />
-                        <div
-                          className="absolute inset-0 bg-linear-to-br from-background/72 via-background/55 to-background/76 dark:from-background/78 dark:via-background/62 dark:to-background/82"
-                          aria-hidden
-                        />
-                      </>
-                    ) : (
-                      <div
-                        className={cn(
-                          'absolute inset-0',
-                          active ? 'bg-sidebar-accent' : 'bg-sidebar-accent/40',
-                        )}
-                        aria-hidden
-                      />
-                    )}
-
-                    <div className="relative z-10 flex min-h-17 flex-col justify-center gap-0.5 px-3 py-2">
-                      <div className="flex items-start justify-between gap-1.5">
-                        <p className="line-clamp-2 min-w-0 flex-1 text-xs font-semibold leading-snug text-foreground">
-                          {jobPromptTitle(job.prompt, 72)}
-                        </p>
-                        <div className="flex shrink-0 items-center gap-1">
-                          {downloaded && (
-                            <span
-                              title="Downloaded"
-                              data-testid={`imggen-pipeline-downloaded-${job.job_id}`}
-                            >
-                              <Download className="size-3 text-muted-foreground" aria-label="Downloaded" />
-                            </span>
-                          )}
-                          <WorkflowBadge workflow={job.workflow} />
-                        </div>
-                      </div>
-                      <span className="truncate font-mono text-[10px] text-muted-foreground/80">
-                        {jobTechMeta(job)}
-                      </span>
-                      {inProgress ? (
-                        <span className="inline-flex w-fit items-center gap-1 text-[10px] text-muted-foreground">
-                          <span
-                            className={cn(
-                              'size-1.5 rounded-full',
-                              executing
-                                ? 'animate-pulse bg-primary/80'
-                                : 'bg-muted-foreground/50',
-                            )}
-                          />
-                          {inProgress}
-                        </span>
-                      ) : jobStatus === 'failed' ? (
-                        <span className="text-[10px] font-medium text-destructive">Failed</span>
-                      ) : jobStatus === 'completed' ? (
-                        <span className="text-[10px] text-muted-foreground">Completed</span>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground">
-                          {imageJobStatusLabel(jobStatus)}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                </motion.li>
-              )
-            })}
+            {jobs.map((job, i) => (
+              <PipelineRow
+                key={job.job_id}
+                job={job}
+                index={i}
+                active={activePanel === job.job_id}
+                status={statusOverrides?.[job.job_id] ?? job.status}
+                downloaded={job.files.some(
+                  f => f.direction === 'output' && downloadedImages.has(f.image_id),
+                )}
+                token={token}
+                mediaRevision={mediaRevision}
+                onSelect={onSelectJob}
+              />
+            ))}
           </ul>
         )}
       </div>
     </div>
   )
+})
+
+const EMPTY_RUNNING: RunningJobItem[] = []
+
+type PipelineRowProps = {
+  job: ImageJobDetails
+  /** Position in the list — staggers the one-time enter animation. */
+  index: number
+  active: boolean
+  /** Effective status (progress-feed override, else the job's own). */
+  status: string
+  downloaded: boolean
+  token: string | null
+  mediaRevision: number
+  onSelect: (jobId: string) => void
 }
+
+/**
+ * One pipeline entry. Memoized so a poll that changes one job re-renders one row.
+ * No `layout` prop: framer-motion would measure every row on every render.
+ */
+const PipelineRow = memo(function PipelineRow({
+  job,
+  index,
+  active,
+  status,
+  downloaded,
+  token,
+  mediaRevision,
+  onSelect,
+}: PipelineRowProps) {
+  const morph = useMorph()
+  const outputId = lastOutputImageId(job)
+  const bgUrl = outputId ? imageThumbnailUrl(outputId, token, mediaRevision) : null
+  const inProgress = statusLabel(status)
+  const executing = imageJobIsExecuting(status)
+
+  return (
+    <motion.li
+      initial={{ opacity: 0, x: -6 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={morph.reduced ? { duration: 0 } : { delay: Math.min(index, 15) * 0.03, duration: 0.2 }}
+    >
+      <button
+        type="button"
+        onClick={() => onSelect(job.job_id)}
+        data-testid={`imggen-pipeline-item-${job.job_id}`}
+        className={cn(
+          'group/pipeline relative w-full overflow-hidden rounded-lg text-left transition-colors',
+          'min-h-17 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          active ? 'shadow-sm' : 'ring-1 ring-sidebar-border hover:ring-sidebar-accent',
+        )}
+      >
+        {active && (
+          <motion.span
+            layoutId="imggen-active-pipeline"
+            transition={morph.spring}
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-20 rounded-lg border-2 border-sidebar-primary"
+          />
+        )}
+        {bgUrl ? (
+          <>
+            <img
+              key={`${job.job_id}-${outputId}-${mediaRevision}`}
+              src={bgUrl}
+              alt=""
+              aria-hidden
+              loading="lazy"
+              decoding="async"
+              className="absolute inset-0 h-full w-full scale-105 object-cover blur-[3px] saturate-[0.9] dark:saturate-[0.75] dark:brightness-[0.6] brightness-[0.95]"
+            />
+            <div
+              className="absolute inset-0 bg-linear-to-br from-background/72 via-background/55 to-background/76 dark:from-background/78 dark:via-background/62 dark:to-background/82"
+              aria-hidden
+            />
+          </>
+        ) : (
+          <div
+            className={cn(
+              'absolute inset-0',
+              active ? 'bg-sidebar-accent' : 'bg-sidebar-accent/40',
+            )}
+            aria-hidden
+          />
+        )}
+
+        <div className="relative z-10 flex min-h-17 flex-col justify-center gap-0.5 px-3 py-2">
+          <div className="flex items-start justify-between gap-1.5">
+            <p className="line-clamp-2 min-w-0 flex-1 text-xs font-semibold leading-snug text-foreground">
+              {jobPromptTitle(job.prompt, 72)}
+            </p>
+            <div className="flex shrink-0 items-center gap-1">
+              {downloaded && (
+                <span
+                  title="Downloaded"
+                  data-testid={`imggen-pipeline-downloaded-${job.job_id}`}
+                >
+                  <Download className="size-3 text-muted-foreground" aria-label="Downloaded" />
+                </span>
+              )}
+              <WorkflowBadge workflow={job.workflow} />
+            </div>
+          </div>
+          <span className="truncate font-mono text-[10px] text-muted-foreground/80">
+            {jobTechMeta(job)}
+          </span>
+          {inProgress ? (
+            <span className="inline-flex w-fit items-center gap-1 text-[10px] text-muted-foreground">
+              <span
+                className={cn(
+                  'size-1.5 rounded-full',
+                  executing
+                    ? 'animate-pulse bg-primary/80'
+                    : 'bg-muted-foreground/50',
+                )}
+              />
+              {inProgress}
+            </span>
+          ) : status === 'failed' ? (
+            <span className="text-[10px] font-medium text-destructive">Failed</span>
+          ) : status === 'completed' ? (
+            <span className="text-[10px] text-muted-foreground">Completed</span>
+          ) : (
+            <span className="text-[10px] text-muted-foreground">
+              {imageJobStatusLabel(status)}
+            </span>
+          )}
+        </div>
+      </button>
+    </motion.li>
+  )
+})

@@ -270,6 +270,13 @@ Examples: `job.created`, `offload.output_bucket.create`, `offload.input.upload`,
 | **useRunningImageJobs** | 5s | `GET /api/progress/running` |
 | **image_pipeline_worker** | 20s | `run_background_reconcile_pass` — poll in-flight + reconcile completed missing files |
 
+**Frontend polling rules (keep these — they're what stops the page lagging):**
+
+- `ProgressContext`'s background loop is a chained `setTimeout` (never overlaps), polls at most 3 jobs at once, skips hidden tabs, and **skips the job the page is showing** (`setForegroundImageJob`) — except while it is `cancelRequested`, since only that loop re-issues the cancel.
+- `useRunningImageJobs` background ticks are silent (no `loading` flip) and publish a new array only when the payload changed; `refresh()` (drawer button) shows the spinner.
+- Page `runPoll` has a per-job in-flight guard, applies all state in one batch after its last `await`, and only drives the `polling` spinner for manual "Poll now" (`{ manual: true }`).
+- Job lists/details go through `mergeJob` / `mergeJobList` / `upsertJob` (`lib/imggen.ts`), which keep object identity for unchanged jobs. `ImageJobHistorySidebar` and its `PipelineRow` are `memo`'d and need stable callbacks (`onSidebarSelectNew/Job`). Don't put `layout` back on the row `motion.li` — framer-motion measures every row on every render.
+
 **Running list:** `list_user_active_offload_tasks` — non-terminal jobs with offload row; display status prefers `task.last_poll_status` else `job.status`.
 
 ---

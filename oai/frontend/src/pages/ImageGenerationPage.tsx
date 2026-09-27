@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeftRight,
@@ -99,6 +99,7 @@ import {
   filterCapabilitiesByWorkflow,
   fitsOriginalResolution,
   isInputImageMode,
+  imageJobFingerprint,
   isVideoMode,
   jobPromptTitle,
   jobTechMeta,
@@ -119,6 +120,7 @@ import {
   type RescaleState,
 } from '../lib/imggen'
 import { ExternalResizeToggle } from '../components/ExternalResizeToggle'
+import { keepIfUnchanged, mergeJobList, upsertJob } from '../lib/jobMerge'
 import { createPlaceholderUsage, expandPromptPlaceholders } from '../lib/promptPlaceholders'
 import { listPromptPlaceholders } from '../api/promptPlaceholders'
 import { recordRecentPrompt } from '../api/prompts'
@@ -185,7 +187,7 @@ const DEFAULT_RESCALE: RescaleState = {
 
 export default function ImageGenerationPage() {
   const { token } = useAuth()
-  const { refreshRunningImageJobs, runningImageJobs } = useProgress()
+  const { refreshRunningImageJobs, runningImageJobs, setForegroundJob } = useProgress()
   const isMobile = useIsMobile()
   const morph = useMorph()
   const location = useLocation()
@@ -243,11 +245,12 @@ export default function ImageGenerationPage() {
   const slideshowSeenRef = useRef<Set<string>>(new Set())
   const slideshowQueueRef = useRef<SlideshowEntry[]>([])
 
+  const deferredSearchQuery = useDeferredValue(searchQuery)
   const filteredJobs = useMemo(() => {
-    if (!searchQuery.trim()) return jobs
-    const q = searchQuery.toLowerCase()
+    if (!deferredSearchQuery.trim()) return jobs
+    const q = deferredSearchQuery.toLowerCase()
     return jobs.filter(j => j.prompt.toLowerCase().includes(q))
-  }, [jobs, searchQuery])
+  }, [jobs, deferredSearchQuery])
   const [nudeDetectTarget, setNudeDetectTarget] = useState<{
     imageId: string
     filename: string
@@ -358,7 +361,7 @@ export default function ImageGenerationPage() {
     setJobsLoading(true)
     try {
       const list = await listImageJobs(token)
-      setJobs(list)
+      setJobs(prev => mergeJobList(prev, list, imageJobFingerprint))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -377,7 +380,7 @@ export default function ImageGenerationPage() {
       if (document.hidden) return
       try {
         const list = await listImageJobs(token)
-        if (!cancelled) setJobs(list)
+        if (!cancelled) setJobs(prev => mergeJobList(prev, list, imageJobFingerprint))
       } catch {
         // silent
       }
@@ -422,7 +425,7 @@ export default function ImageGenerationPage() {
         return
       }
       if (cancelled) return
-      setJobs(list)
+      setJobs(prev => mergeJobList(prev, list, imageJobFingerprint))
       // Newest-first from the API — walk oldest-to-newest so the queue fills in generation order.
       for (const job of [...list].reverse()) {
         for (const file of job.files) {
@@ -605,24 +608,24 @@ export default function ImageGenerationPage() {
     })
   }
 
+  /**
+   * Publishes a fetched job to the selected-job and list state. Unchanged
+   * snapshots keep their previous object so idle polls don't re-render
+   * anything; a brand-new job (just submitted) is prepended.
+   */
+  const applyJobDetails = useCallback((details: ImageJobDetails) => {
+    setSelectedJob(prev => keepIfUnchanged(prev, details, imageJobFingerprint))
+    setJobs(prev => upsertJob(prev, details, imageJobFingerprint))
+  }, [])
+
   const refreshJob = useCallback(
     async (jobId: string) => {
       if (!token) return null
       const details = await getImageJob(token, jobId)
-      setSelectedJob(details)
-      setJobs(prev => {
-        const idx = prev.findIndex(j => j.job_id === details.job_id)
-        if (idx >= 0) {
-          const next = [...prev]
-          next[idx] = details
-          return next
-        }
-        // Brand-new job (e.g. just submitted) — prepend once to match newest-first list.
-        return [details, ...prev]
-      })
+      applyJobDetails(details)
       return details
     },
-    [token],
+    [token, applyJobDetails],
   )
 
   const onImageMutated = useCallback(async () => {
@@ -820,23 +823,39 @@ export default function ImageGenerationPage() {
     capabilities,
   ])
 
+  // Job ids with a poll request in flight — auto-poll ticks never stack up
+  // behind a slow backend poll.
+  const pollInFlightRef = useRef<Set<string>>(new Set())
+
+  /**
+   * Polls OffloadMQ for `jobId` and refreshes its details. All state lands in
+   * one synchronous batch after the last await (one render per poll); only a
+   * manual "Poll now" drives the `polling` spinner.
+   */
   const runPoll = useCallback(
-    async (jobId: string) => {
+    async (jobId: string, opts?: { manual?: boolean }) => {
       if (!token) return
-      setPolling(true)
+      if (pollInFlightRef.current.has(jobId)) return
+      pollInFlightRef.current.add(jobId)
+      const manual = opts?.manual ?? false
+      if (manual) setPolling(true)
       try {
         const poll = await pollImageJob(token, jobId)
-        setActivePoll(poll)
-        await refreshJob(jobId)
+        const details = await getImageJob(token, jobId)
+        setActivePoll(prev =>
+          prev && JSON.stringify(prev) === JSON.stringify(poll) ? prev : poll,
+        )
+        applyJobDetails(details)
         setInfo(`Job ${jobId}: ${poll.status}${poll.stage ? ` (${poll.stage})` : ''}`)
         if (poll.error) setError(poll.error)
       } catch (e) {
         setError((e as Error).message)
       } finally {
-        setPolling(false)
+        pollInFlightRef.current.delete(jobId)
+        if (manual) setPolling(false)
       }
     },
-    [token, refreshJob],
+    [token, applyJobDetails],
   )
 
   async function onDeleteJob(jobId: string) {
@@ -876,7 +895,7 @@ export default function ImageGenerationPage() {
     try {
       const res = await retryImageJob(token, jobId)
       const list = await listImageJobs(token)
-      setJobs(list)
+      setJobs(prev => mergeJobList(prev, list, imageJobFingerprint))
       setActivePanel(res.job_id)
       await refreshJob(res.job_id)
       setActivePoll({
@@ -1055,10 +1074,10 @@ export default function ImageGenerationPage() {
     }
   }, [inputPreviewUrl])
 
-  function selectNew() {
+  const selectNew = useCallback(() => {
     setActivePanel(IMGGEN_NEW_PANEL)
     setError(null)
-  }
+  }, [])
 
   function editPromptFromJob() {
     if (!selectedJob) return
@@ -1102,7 +1121,7 @@ export default function ImageGenerationPage() {
     }
   }
 
-  async function selectJob(jobId: string) {
+  const selectJob = useCallback(async (jobId: string) => {
     if (!token) return
     setActivePanel(jobId)
     setError(null)
@@ -1142,7 +1161,22 @@ export default function ImageGenerationPage() {
     } finally {
       setJobDetailLoading(false)
     }
-  }
+  }, [token, refreshJob, runPoll])
+
+  // Stable so the memoized pipelines sidebar skips re-rendering on unrelated
+  // page updates (every prompt keystroke, every poll).
+  const onSidebarSelectNew = useCallback(() => {
+    selectNew()
+    if (isMobile) setSidebarOpen(false)
+  }, [selectNew, isMobile])
+
+  const onSidebarSelectJob = useCallback(
+    (jobId: string) => {
+      void selectJob(jobId)
+      if (isMobile) setSidebarOpen(false)
+    },
+    [selectJob, isMobile],
+  )
 
   const jobStatusOverrides = useMemo(() => {
     const overrides: Record<string, string> = {}
@@ -1206,11 +1240,17 @@ export default function ImageGenerationPage() {
     if (!token || !viewedJobId) return
     if (displayStatus && TERMINAL.has(displayStatus)) return
 
+    // This page polls the viewed job itself; the shell's background loop skips it.
+    setForegroundJob('image', viewedJobId)
     const id = window.setInterval(() => {
+      if (document.hidden) return
       void runPoll(viewedJobId)
     }, POLL_MS)
-    return () => window.clearInterval(id)
-  }, [token, viewedJobId, displayStatus, runPoll])
+    return () => {
+      window.clearInterval(id)
+      setForegroundJob('image', null)
+    }
+  }, [token, viewedJobId, displayStatus, runPoll, setForegroundJob])
 
   const outputFiles = useMemo(
     () => (selectedJob ? selectedJob.files.filter(f => f.direction === 'output') : []),
@@ -1322,14 +1362,8 @@ export default function ImageGenerationPage() {
           loading={jobsLoading}
           statusOverrides={jobStatusOverrides}
           runningJobs={runningImageJobs}
-          onSelectNew={() => {
-            selectNew()
-            if (isMobile) setSidebarOpen(false)
-          }}
-          onSelectJob={jobId => {
-            void selectJob(jobId)
-            if (isMobile) setSidebarOpen(false)
-          }}
+          onSelectNew={onSidebarSelectNew}
+          onSelectJob={onSidebarSelectJob}
         />
       </ToolSidebar>
 
@@ -2274,7 +2308,7 @@ export default function ImageGenerationPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => viewedJobId && void runPoll(viewedJobId)}
+                    onClick={() => viewedJobId && void runPoll(viewedJobId, { manual: true })}
                     disabled={!viewedJobId || polling}
                     data-testid="imggen-poll-job"
                   >

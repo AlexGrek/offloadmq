@@ -176,6 +176,27 @@ export function promptExcerpt(prompt: string, maxLen = 52): string {
   return `${t.slice(0, maxLen).trimEnd()}…`
 }
 
+/**
+ * Change key for an image job snapshot (see `lib/jobMerge.ts`). Covers every
+ * field a poll can move — prompt/params are immutable after submit, events are
+ * append-only.
+ */
+export function imageJobFingerprint(job: ImageJobDetails): string {
+  return [
+    job.status,
+    job.error ?? '',
+    job.offload_cap ?? '',
+    job.offload_task_id ?? '',
+    job.started_at ?? '',
+    job.submitted_at ?? '',
+    job.typical_runtime_seconds ?? '',
+    job.queued_seconds ?? '',
+    job.execution_seconds ?? '',
+    job.events.length,
+    job.files.map(f => `${f.direction}:${f.image_id}`).join(','),
+  ].join('|')
+}
+
 export function lastOutputImageId(job: { files: { direction: string; image_id: string }[] }): string | null {
   const outputs = job.files.filter(f => f.direction === 'output')
   if (outputs.length === 0) return null

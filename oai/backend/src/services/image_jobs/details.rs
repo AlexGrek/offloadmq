@@ -1,6 +1,7 @@
 //! Read models: job detail views, the imggen capability listing, and admin listings.
 
 use super::*;
+use crate::db::image_generation::EventScope;
 
 /// A job plus its files and pipeline events, used to build detail responses.
 pub struct JobDetail {
@@ -79,7 +80,7 @@ pub async fn user_job_detail(
     let job = image_generation::get_job(&state.db, job_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    job_detail(state, job).await
+    job_detail(state, job, EventScope::WithoutPolls).await
 }
 
 pub async fn list_user_job_details(
@@ -88,14 +89,14 @@ pub async fn list_user_job_details(
     limit: u64,
 ) -> Result<Vec<JobDetail>, AppError> {
     let jobs = image_generation::list_jobs(&state.db, user_id, limit).await?;
-    collect_details(state, jobs).await
+    collect_details(state, jobs, EventScope::WithoutPolls).await
 }
 
 pub async fn any_job_detail(state: &AppState, job_id: i64) -> Result<JobDetail, AppError> {
     let job = image_generation::get_job_global(&state.db, job_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    job_detail(state, job).await
+    job_detail(state, job, EventScope::All).await
 }
 
 pub async fn list_all_job_details(
@@ -103,15 +104,16 @@ pub async fn list_all_job_details(
     limit: u64,
 ) -> Result<Vec<JobDetail>, AppError> {
     let jobs = image_generation::list_jobs_global(&state.db, limit).await?;
-    collect_details(state, jobs).await
+    collect_details(state, jobs, EventScope::All).await
 }
 
 pub(super) async fn job_detail(
     state: &AppState,
     job: image_generation::ImageGenerationJob,
+    scope: EventScope,
 ) -> Result<JobDetail, AppError> {
     let files = limit_job_output_files(image_generation::list_job_files(&state.db, job.id).await?);
-    let events = image_generation::list_pipeline_events(&state.db, job.id).await?;
+    let events = image_generation::list_pipeline_events(&state.db, job.id, scope).await?;
     let offload = image_generation::get_offload_task_by_job(&state.db, job.id).await?;
     let progress = offload.as_ref().map(offload_progress_meta);
     Ok(JobDetail {
@@ -134,6 +136,7 @@ pub(super) async fn job_detail(
 pub(super) async fn collect_details(
     state: &AppState,
     jobs: Vec<image_generation::ImageGenerationJob>,
+    scope: EventScope,
 ) -> Result<Vec<JobDetail>, AppError> {
     if jobs.is_empty() {
         return Ok(Vec::new());
@@ -141,7 +144,7 @@ pub(super) async fn collect_details(
     let job_ids: Vec<i64> = jobs.iter().map(|j| j.id).collect();
 
     let all_files = image_generation::list_job_files_for_jobs(&state.db, &job_ids).await?;
-    let all_events = image_generation::list_pipeline_events_for_jobs(&state.db, &job_ids).await?;
+    let all_events = image_generation::list_pipeline_events_for_jobs(&state.db, &job_ids, scope).await?;
     let all_offload = image_generation::list_offload_tasks_for_jobs(&state.db, &job_ids).await?;
 
     let mut files_by_job: HashMap<i64, Vec<image_generation::ImageFile>> = HashMap::new();

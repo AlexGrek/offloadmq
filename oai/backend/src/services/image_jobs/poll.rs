@@ -143,7 +143,7 @@ pub async fn poll_job(state: &AppState, user_id: i64, job_id: i64) -> Result<Pol
             return Err(e);
         }
     };
-    record_event(state, job.id, "offload.poll", "ok", Some(&poll_summary(&poll))).await?;
+    record_poll_transition(state, job.id, "offload.poll", &task, &poll).await?;
     apply_poll_outcome_to_job(state, &job, &task, &poll).await?;
 
     // Re-read the offload task to pick up `started_at`/`finished_at` (set by
@@ -214,6 +214,31 @@ pub(super) async fn mark_poll_unreachable(state: &AppState, job_id: i64, reason:
     release_job_buckets(state, job_id).await;
     record_event(state, job_id, "offload.poll", "error", Some(reason)).await?;
     record_event(state, job_id, "job.finalize", "error", Some(reason)).await
+}
+
+/// Records a poll as a pipeline event only when it moved the task to a new
+/// status. `task` must be the row read *before* the poll, so its
+/// `last_poll_status` is the previous status.
+///
+/// Every in-flight job is polled by the job page, the SPA shell and the worker —
+/// several times a minute — and logging each of those buried the timeline and
+/// bloated every job-detail payload. The transitions are the part worth keeping;
+/// the live stage is on the offload task row.
+async fn record_poll_transition(
+    state: &AppState,
+    job_id: i64,
+    step: &str,
+    task: &image_generation::ImageOffloadTask,
+    poll: &OffloadPollResponse,
+) -> Result<(), AppError> {
+    if !is_poll_transition(task.last_poll_status.as_deref(), &poll.status) {
+        return Ok(());
+    }
+    record_event(state, job_id, step, "ok", Some(&poll_summary(poll))).await
+}
+
+fn is_poll_transition(previous_status: Option<&str>, polled_status: &str) -> bool {
+    previous_status != Some(polled_status)
 }
 
 pub(super) fn poll_summary(poll: &OffloadPollResponse) -> String {
@@ -468,9 +493,21 @@ pub(super) async fn background_poll_once(
             return Err(e);
         }
     };
-    record_event(state, job.id, "worker.offload.poll", "ok", Some(&poll_summary(&poll)))
+    record_poll_transition(state, job.id, "worker.offload.poll", &task, &poll)
         .await
         .log_warn("record poll event");
     apply_poll_outcome_to_job(state, job, &task, &poll).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_poll_transition;
+
+    #[test]
+    fn poll_event_only_on_status_change() {
+        assert!(is_poll_transition(None, "pending"), "first poll of a task is recorded");
+        assert!(is_poll_transition(Some("pending"), "running"));
+        assert!(!is_poll_transition(Some("running"), "running"), "repeat polls are not");
+    }
 }
