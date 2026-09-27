@@ -2,12 +2,19 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+logger = logging.getLogger(__name__)
+
 SETTINGS_FILE = Path.home() / ".offloadmq-agent.json"
+
+# Shared default for the web UI port — referenced by settings, the systemd
+# installer, and both CLI/GUI entry points so there's one place to change it.
+DEFAULT_WEBUI_PORT = 8090
 
 
 class Settings(BaseModel):
@@ -18,7 +25,7 @@ class Settings(BaseModel):
     custom_caps: list[str] = []
     max_concurrent: int = 1
     autostart: bool = False
-    webui_port: int = 8090
+    webui_port: int = DEFAULT_WEBUI_PORT
 
     # Tiered capability policy (v2-native names).
     regular_disabled_caps: list[str] = Field(default_factory=list)
@@ -89,7 +96,13 @@ def load_settings(path: Path = SETTINGS_FILE) -> Settings:
         return Settings()
     try:
         return Settings.model_validate(json.loads(path.read_text()))
-    except (json.JSONDecodeError, ValueError, OSError):
+    except (json.JSONDecodeError, ValueError, OSError) as exc:
+        # This is called before the orchestrator's own log buffer/error pool
+        # exist, so stderr via logging is the only trace an operator gets that
+        # settings (agent_id/key/api_key included) were just silently reset —
+        # without it, a corrupt/truncated file looks identical to "never
+        # configured" with no way to tell why.
+        logger.error("Failed to load settings from %s, using defaults: %s", path, exc)
         return Settings()
 
 

@@ -1,14 +1,16 @@
 """imggen task executor — entry point for ComfyUI-backed image/video generation.
 
-The body is shared with the ``img-utils.*`` family (see
-:mod:`offloadmq_agent.exec.imgutils`): both submit a ComfyUI graph, wait for it,
-and collect image output. They differ only in the capability prefix, the
-workflows sub-directory, and whether the payload's ``workflow`` field is
-mandatory.
+The body is shared with the ``img-utils.*`` and ``txt2music.*`` families (see
+:mod:`offloadmq_agent.exec.imgutils`, :mod:`offloadmq_agent.exec.musicgen`): all
+three submit a ComfyUI graph, wait for it, and collect output. They differ only
+in the capability prefix, the workflows sub-directory, whether the payload's
+``workflow`` field is mandatory, and — for txt2music — the payload→injection
+mapping and the kind of output collected (audio vs image/video), both supplied
+via the ``build_injection_values``/``build_output`` parameters.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -16,8 +18,16 @@ from offloadmq_agent.wire import TaskId
 from offloadmq_agent.transport_exec import AgentTransport
 from offloadmq_agent.exec.reporting import TaskCancelled, make_failure_report, make_success_report, report_cancelled, report_progress, report_result
 from .comfyui import queue_prompt, wait_for_completion
-from .workflow import load_workflow_template, inject_params, build_injection_values, list_task_types
-from .output import build_output
+from .workflow import (
+    load_workflow_template,
+    inject_params,
+    build_injection_values as _default_build_injection_values,
+    list_task_types,
+)
+from .output import build_output as _default_build_output
+
+BuildInjectionValuesFn = Callable[[dict[str, Any], str, Path], dict[str, Any]]
+BuildOutputFn = Callable[..., dict[str, Any]]
 
 
 def run_comfy_image_task(
@@ -32,13 +42,17 @@ def run_comfy_image_task(
     prefix: str,
     namespace: str | None = None,
     default_task_type: str | None = None,
+    build_injection_values: BuildInjectionValuesFn = _default_build_injection_values,
+    build_output: BuildOutputFn = _default_build_output,
 ) -> bool:
     """Run one ComfyUI graph for a ``<prefix>.<workflow-name>`` capability.
 
     ``prefix`` is the capability family including the trailing dot (``"imggen."``).
     ``namespace`` is the workflows sub-directory holding the workflow, or ``None``
     for the flat layout.  When ``default_task_type`` is given, a payload without a
-    ``workflow`` field falls back to it instead of failing.
+    ``workflow`` field falls back to it instead of failing. ``build_injection_values``
+    and ``build_output`` default to the image/video family's own (imggen/img-utils);
+    txt2music passes its own audio-shaped equivalents.
     """
     try:
         if not output_bucket:

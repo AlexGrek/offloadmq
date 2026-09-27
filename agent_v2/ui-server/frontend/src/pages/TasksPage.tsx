@@ -25,6 +25,7 @@ export function TasksPage() {
     2000
   );
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
   const tasks = [...(data?.tasks ?? [])].sort(
     (a, b) => b.created_at - a.created_at
@@ -34,11 +35,12 @@ export function TasksPage() {
 
   const cancel = async (id: string) => {
     setCancelling(id);
+    setError("");
     try {
       await api.cancelTask(id);
       refresh();
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setCancelling(null);
     }
@@ -46,6 +48,7 @@ export function TasksPage() {
 
   return (
     <div className="space-y-6">
+      {error && <p className="text-xs text-destructive">{error}</p>}
       <TaskTable
         title={`In progress (${active.length})`}
         tasks={active}

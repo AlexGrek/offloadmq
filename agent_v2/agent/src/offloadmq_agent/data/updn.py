@@ -1,6 +1,5 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 from pathlib import Path
-import os
 import subprocess
 import logging
 from urllib.parse import urlparse
@@ -119,6 +118,47 @@ def download_s3_file(
     logger.info(f"Successfully downloaded {s3_url}")
 
 
+def _build_request_headers(
+    custom_headers: Optional[dict[str, str]],
+    auth_header: Optional[str],
+    custom_auth: Optional[str],
+    base_headers: Optional[dict[str, Any]] = None,
+) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if base_headers:
+        headers.update(base_headers)
+    if custom_headers:
+        headers.update(custom_headers)
+    # custom_auth takes priority over auth_header
+    if custom_auth:
+        headers["Authorization"] = custom_auth
+    elif auth_header:
+        headers["Authorization"] = auth_header
+    return headers
+
+
+def _build_basic_auth(
+    auth_user: Optional[str], auth_password: Optional[str]
+) -> Optional[tuple[str, str]]:
+    if auth_user and auth_password:
+        return (auth_user, auth_password)
+    return None
+
+
+def _maybe_disable_ssl_warnings(verify_ssl: bool) -> None:
+    if not verify_ssl:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+def _stream_response_to_file(response: requests.Response, target_path: Path) -> None:
+    response.raise_for_status()
+    with open(target_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+
+
 def download_http_file(
     url: str,
     target_path: Path,
@@ -133,34 +173,15 @@ def download_http_file(
     logger.info(f"Downloading HTTP {url} to {target_path}")
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    headers = {}
-    if custom_headers:
-        headers.update(custom_headers)
-    # custom_auth takes priority over auth_header
-    if custom_auth:
-        headers["Authorization"] = custom_auth
-    elif auth_header:
-        headers["Authorization"] = auth_header
-
-    # Determine Basic Auth tuple
-    auth = None
-    if auth_user and auth_password:
-        auth = (auth_user, auth_password)
-
-    if not verify_ssl:
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    headers = _build_request_headers(custom_headers, auth_header, custom_auth)
+    auth = _build_basic_auth(auth_user, auth_password)
+    _maybe_disable_ssl_warnings(verify_ssl)
 
     response = requests.get(
         url, auth=auth, headers=headers, verify=verify_ssl, stream=True, timeout=60
     )
-    response.raise_for_status()
+    _stream_response_to_file(response, target_path)
 
-    with open(target_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
-    
     logger.info(f"Successfully downloaded {url}")
 
 
@@ -178,32 +199,14 @@ def download_http_post_file(
     logger.info(f"Downloading via HTTP POST {url} to {target_path}")
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    headers = {}
-    if custom_headers:
-        headers.update(custom_headers)
-    # custom_auth takes priority over auth_header
-    if custom_auth:
-        headers["Authorization"] = custom_auth
-    elif auth_header:
-        headers["Authorization"] = auth_header
-
-    auth = None
-    if auth_user and auth_password:
-        auth = (auth_user, auth_password)
-
-    if not verify_ssl:
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    headers = _build_request_headers(custom_headers, auth_header, custom_auth)
+    auth = _build_basic_auth(auth_user, auth_password)
+    _maybe_disable_ssl_warnings(verify_ssl)
 
     response = requests.post(
         url, auth=auth, headers=headers, verify=verify_ssl, stream=True, timeout=60
     )
-    response.raise_for_status()
-
-    with open(target_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
+    _stream_response_to_file(response, target_path)
 
     logger.info(f"Successfully downloaded {url}")
 
@@ -235,28 +238,15 @@ def download_http_request(
     method = config.get("method", "GET").upper()
     url = config.get("url")
     body = config.get("body")
-    config_headers = config.get("headers", {})
 
     if not url:
         raise ValueError("Request configuration must include 'url'")
 
-    headers = {}
-    headers.update(config_headers)
-    if custom_headers:
-        headers.update(custom_headers)
-    # custom_auth takes priority over auth_header
-    if custom_auth:
-        headers["Authorization"] = custom_auth
-    elif auth_header:
-        headers["Authorization"] = auth_header
-
-    auth = None
-    if auth_user and auth_password:
-        auth = (auth_user, auth_password)
-
-    if not verify_ssl:
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    headers = _build_request_headers(
+        custom_headers, auth_header, custom_auth, base_headers=config.get("headers", {})
+    )
+    auth = _build_basic_auth(auth_user, auth_password)
+    _maybe_disable_ssl_warnings(verify_ssl)
 
     response = requests.request(
         method=method,
@@ -268,12 +258,7 @@ def download_http_request(
         stream=True,
         timeout=60
     )
-    response.raise_for_status()
-
-    with open(target_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
+    _stream_response_to_file(response, target_path)
 
     logger.info(f"Successfully downloaded from {url}")
 
@@ -337,22 +322,9 @@ def upload_http_file(
     if not local_path.exists():
         raise FileNotFoundError(f"Source file not found: {local_path}")
 
-    headers = {}
-    if custom_headers:
-        headers.update(custom_headers)
-    # custom_auth takes priority over auth_header
-    if custom_auth:
-        headers["Authorization"] = custom_auth
-    elif auth_header:
-        headers["Authorization"] = auth_header
-
-    auth = None
-    if auth_user and auth_password:
-        auth = (auth_user, auth_password)
-
-    if not verify_ssl:
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    headers = _build_request_headers(custom_headers, auth_header, custom_auth)
+    auth = _build_basic_auth(auth_user, auth_password)
+    _maybe_disable_ssl_warnings(verify_ssl)
 
     # We use 'open' here, requests will handle closing it after the request if used in 'files'
     with open(local_path, 'rb') as f:
@@ -379,9 +351,12 @@ def upload_http_file(
 def process_data_download(base_path: Path, d: FileReference) -> None:
     """Dispatch download to correct handler based on populated fields."""
     save_path = base_path / d.path
-    
-    # Security check to prevent directory traversal
-    if not os.path.abspath(save_path).startswith(os.path.abspath(base_path)):
+
+    # Security check to prevent directory traversal. Path.is_relative_to on the
+    # resolved paths (rather than a startswith on abspath strings) avoids the
+    # sibling-directory bypass where e.g. base_path=/data/task1 would wrongly
+    # accept /data/task1evil/foo.
+    if not save_path.resolve().is_relative_to(base_path.resolve()):
         raise ValueError(f"Invalid path: {d.path} traverses outside target directory")
 
     logger.info(f"Processing Download: {d.path}")
@@ -447,8 +422,8 @@ def process_data_upload(base_path: Path, d: FileReference) -> None:
     """Dispatch upload to correct handler based on populated fields."""
     source_path = base_path / d.path
 
-    # Security check to prevent directory traversal
-    if not os.path.abspath(source_path).startswith(os.path.abspath(base_path)):
+    # Security check to prevent directory traversal (see process_data_download).
+    if not source_path.resolve().is_relative_to(base_path.resolve()):
         raise ValueError(f"Invalid path: {d.path} traverses outside source directory")
 
     logger.info(f"Processing Upload: {d.path}")

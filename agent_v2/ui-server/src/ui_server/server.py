@@ -1,6 +1,7 @@
 """FastAPI application factory."""
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 
 from ui_server.api import create_router
 from ui_server.protocol import OrchestratorAPI
+
+logger = logging.getLogger(__name__)
 
 
 def _static_dir() -> Path:
@@ -31,19 +34,13 @@ def create_app(orchestrator: OrchestratorAPI) -> FastAPI:
         if autostart and hasattr(orchestrator, "start"):
             try:
                 orchestrator.start()
-            except RuntimeError:
-                pass
-        if getattr(settings, "keep_awake_enabled", False):
-            from offloadmq_core import keep_awake
-
-            log = getattr(orchestrator, "_log", None)
-            keep_awake.sync_from_settings(True, log)
+            except RuntimeError as exc:
+                logger.warning("Autostart failed (agent left stopped): %s", exc)
+        orchestrator.sync_keep_awake_from_settings()
 
     @app.on_event("shutdown")
     async def _on_shutdown() -> None:
-        from offloadmq_core import keep_awake
-
-        keep_awake.shutdown()
+        orchestrator.shutdown_keep_awake()
 
     static = _static_dir()
     if static.exists():

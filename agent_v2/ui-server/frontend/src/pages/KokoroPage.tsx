@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 
 import { api } from "@/api/client";
@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SaveIndicator } from "@/components/SaveIndicator";
-import { useDebouncedSave } from "@/hooks/useDebouncedSave";
+import { useEditableSettings } from "@/hooks/useEditableSettings";
 
 type KokoroForm = {
   kokoro_api_url: string;
@@ -21,19 +21,8 @@ type KokoroStatus = {
 };
 
 export function KokoroPage() {
-  const [form, setForm] = useState<KokoroForm>({
-    kokoro_api_url: "",
-    kokoro_api_key: "",
-  });
   const [status, setStatus] = useState<KokoroStatus | null>(null);
   const [probing, setProbing] = useState(false);
-
-  const { schedule, flush, status: saveStatus } = useDebouncedSave<KokoroForm>(
-    async (next) => {
-      await api.saveKokoroSettings(next);
-      await probe();
-    }
-  );
 
   const probe = async () => {
     setProbing(true);
@@ -50,23 +39,26 @@ export function KokoroPage() {
     }
   };
 
-  useEffect(() => {
-    api.getSettings().then((s) => {
-      setForm({
+  const {
+    form,
+    edit,
+    flush,
+    status: saveStatus,
+    error,
+  } = useEditableSettings<KokoroForm>(
+    { kokoro_api_url: "", kokoro_api_key: "" },
+    async () => {
+      const [s] = await Promise.all([api.getSettings(), probe()]);
+      return {
         kokoro_api_url: s.kokoro_api_url ?? "",
         kokoro_api_key: s.kokoro_api_key ?? "",
-      });
-    });
-    probe();
-  }, []);
-
-  const edit = (patch: Partial<KokoroForm>) => {
-    setForm((prev) => {
-      const next = { ...prev, ...patch };
-      schedule(next);
-      return next;
-    });
-  };
+      };
+    },
+    async (next) => {
+      await api.saveKokoroSettings(next);
+      await probe();
+    }
+  );
 
   return (
     <div className="space-y-6">
@@ -82,7 +74,7 @@ export function KokoroPage() {
               detection.
             </CardDescription>
           </div>
-          <SaveIndicator status={saveStatus} />
+          <SaveIndicator status={saveStatus} error={error} />
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">

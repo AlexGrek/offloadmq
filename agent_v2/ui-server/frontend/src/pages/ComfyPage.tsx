@@ -233,7 +233,6 @@ export function ComfyPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [unwired, setUnwired] = useState<UnwiredReport | null>(null);
-  const standardTaskTypesRef = useRef<string[]>([]);
 
   // Param map drawer state
   const [editorOpen, setEditorOpen] = useState(false);
@@ -243,10 +242,9 @@ export function ComfyPage() {
     api.getComfyWorkflows().then((r) => {
       setWorkflows(r.workflows);
       setStandardTaskTypes(r.standardTaskTypes);
-      standardTaskTypesRef.current = r.standardTaskTypes;
     });
 
-  const { schedule, flush, status } = useDebouncedSave<string>(async (next) => {
+  const { schedule, flush, status, error } = useDebouncedSave<string>(async (next) => {
     await api.saveComfyUrl(next);
     await refreshWorkflows();
   });
@@ -284,7 +282,7 @@ export function ComfyPage() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">ComfyUI URL</CardTitle>
-          <SaveIndicator status={status} />
+          <SaveIndicator status={status} error={error} />
         </CardHeader>
         <CardContent>
           <Input

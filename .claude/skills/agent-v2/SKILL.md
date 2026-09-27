@@ -100,7 +100,7 @@ worker threads.
 
 | File | Purpose |
 |---|---|
-| `models.py` | `Task` (`Task.from_poll` parses the pushed task frame into `server_task`), `TaskResult`, `TaskStatus`, `LogEntry`, registration DTOs |
+| `models.py` | `Task` (`Task.from_wire` parses the pushed task frame into `server_task`), `TaskResult`, `TaskStatus`, `LogEntry`, registration DTOs |
 | `wire.py` | Server wire types: `TaskId`, `TaskResultReport`, `TaskProgressReport` |
 | `context.py` | `ExecContext` — structured logs, cooperative cancel, `agent_transport` |
 | `client.py` | `OffloadMQClient` — register/auth (HTTP); persistent WebSocket (`open_ws`/`ws_messages`) receives server-pushed tasks + cancels; `report_progress` + **wire-format `resolve`** sent over WS; `update_agent_info`. HTTP polling removed. |
@@ -259,6 +259,17 @@ orch.scan_capabilities() / get_scan_state() / start_background_scan()
 orch.rescan(restart_if_changed=False) / update_capability_policy(...)
 orch.register() / start() / stop() / status() / get_agent_logs(n)
 orch.list_tasks() / get_task(id) / cancel_task(id)
+
+# UI-backed ops — proxy into core's own service modules (custom_caps_service,
+# comfy_service, keep_awake, startup_mac/win, systemd_service, updater) so
+# ui-server never has to import core directly:
+orch.list_custom_caps() / get_custom_cap(name) / save_custom_cap(name, yaml) / delete_custom_cap(name)
+orch.list_comfy_workflows() / add_comfy_workflow(...) / delete_comfy_workflow(...)
+orch.get_comfy_param_map(...) / save_comfy_param_map(...) / autodetect_comfy_param_map(...)
+orch.check_update() / download_update()
+orch.get_startup_status() / set_keep_awake(enable) / set_win_startup(enable) / set_mac_startup(enable)
+orch.install_systemd(host=None, port=None) / uninstall_systemd()
+orch.sync_keep_awake_from_settings() / shutdown_keep_awake()
 ```
 
 ---
@@ -270,8 +281,18 @@ Library only. `create_app(orchestrator)` injects orchestrator into routes.
 | File | Purpose |
 |---|---|
 | `protocol.py` | `OrchestratorAPI` Protocol |
-| `api.py` | All `/api/*` routes (see below) |
+| `schemas.py` | Pydantic request/response payload models shared by the route modules |
+| `api.py` | `create_router()` — composes the per-concern routers below under `/api` |
+| `routes/core.py` | settings, config/raw, capabilities, agent lifecycle, tasks |
+| `routes/custom_caps.py` | `/custom/*` — custom capability YAML CRUD |
+| `routes/comfy.py` | `/comfy/*` — ComfyUI workflows + param maps |
+| `routes/kokoro.py` | `/kokoro/*` — Kokoro TTS settings/status |
+| `routes/system.py` | `/system/*`, `/update/*` — sysinfo, self-update, OS startup/keep-awake/systemd |
 | `server.py` | SPA mount + startup autostart/background scan |
+
+Every route module calls only `orch: OrchestratorAPI` methods — never `offloadmq_core`
+directly (agent-level imports, e.g. `offloadmq_agent.systeminfo`, are fine per the
+dependency graph above).
 
 ### REST routes (under `/api`)
 

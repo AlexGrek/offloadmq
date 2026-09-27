@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from offloadmq_agent.context import ExecContext, TaskCancelled
-from offloadmq_agent.data.fs_utils import parse_file_reference, pick_directory
+from offloadmq_agent.data.fs_utils import (
+    parse_file_reference,
+    pick_directory,
+    resolve_bucket_file_path,
+)
 from offloadmq_agent.data.updn import process_data_download
 from offloadmq_agent.exec.reporting import (
     TaskCancelled as ReportingCancelled,
@@ -61,7 +65,7 @@ def _download_buckets(
             for file_info in bucket_info.get("files", []):
                 file_uid = file_info["file_uid"]
                 original_name = file_info.get("original_name", file_uid)
-                save_path = data_path / original_name
+                save_path = resolve_bucket_file_path(data_path, original_name)
                 if save_path.exists():
                     continue
                 save_path.parent.mkdir(parents=True, exist_ok=True)

@@ -12,8 +12,6 @@ from offloadmq_agent.tier import (
     calculate_tier,
 )
 
-import typer
-
 
 _WIN_NO_WINDOW: int = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -366,19 +364,21 @@ def effective_display_name(
 
 
 def print_system_info(sysinfo: Dict[str, Any]) -> None:
-    typer.echo("Collecting system information...")
-    typer.echo(f"OS: {sysinfo['os']}")
-    typer.echo(f"Architecture: {sysinfo['cpuArch']}")
+    # Plain print, not typer.echo: `agent` depends on nothing internal (no CLI/UI
+    # deps) — CLI-specific formatting belongs in cli-manager, which can wrap this.
+    print("Collecting system information...")
+    print(f"OS: {sysinfo['os']}")
+    print(f"Architecture: {sysinfo['cpuArch']}")
     if sysinfo.get("cpuModel"):
-        typer.echo(f"CPU Model: {sysinfo['cpuModel']}")
-    typer.echo(f"Memory: {sysinfo['totalMemoryGb']} GB")
+        print(f"CPU Model: {sysinfo['cpuModel']}")
+    print(f"Memory: {sysinfo['totalMemoryGb']} GB")
     if sysinfo.get("gpu"):
         g = sysinfo["gpu"]
-        typer.echo(f"GPU: {g.get('vendor')} {g.get('model')} ({g.get('vramGb', 0)} GB VRAM)")
+        print(f"GPU: {g.get('vendor')} {g.get('model')} ({g.get('vramGb', 0)} GB VRAM)")
     else:
-        typer.echo("GPU: None detected")
+        print("GPU: None detected")
     if sysinfo.get("machineId"):
-        typer.echo(f"Machine ID: {sysinfo['machineId']}")
+        print(f"Machine ID: {sysinfo['machineId']}")
 
 
 __all__ = [

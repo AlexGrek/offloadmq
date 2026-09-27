@@ -20,6 +20,7 @@ const LOG_VARIANT: Record<string, "secondary" | "default" | "warning" | "destruc
 export function TaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
   const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
 
   const { data: task, error, refresh } = usePoll<TaskRecord>(
     () => api.getTask(taskId!),
@@ -30,11 +31,12 @@ export function TaskDetailPage() {
   const cancel = async () => {
     if (!taskId) return;
     setCancelling(true);
+    setCancelError("");
     try {
       await api.cancelTask(taskId);
       refresh();
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      setCancelError(e instanceof Error ? e.message : String(e));
     } finally {
       setCancelling(false);
     }
@@ -59,6 +61,7 @@ export function TaskDetailPage() {
           </Button>
         ) : null}
       </div>
+      {cancelError && <p className="text-xs text-destructive">{cancelError}</p>}
 
       {error ? (
         <Card>

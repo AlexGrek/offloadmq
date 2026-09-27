@@ -212,7 +212,7 @@ export function SystemPage() {
   );
   const [port, setPort] = useState(8090);
 
-  const { schedule, flush, status } = useDebouncedSave<number>((next) =>
+  const { schedule, flush, status, error } = useDebouncedSave<number>((next) =>
     api.saveSettings({ webui_port: next })
   );
 
@@ -267,7 +267,7 @@ export function SystemPage() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Web UI port</CardTitle>
-          <SaveIndicator status={status} />
+          <SaveIndicator status={status} error={error} />
         </CardHeader>
         <CardContent className="space-y-2">
           <Label>Port (restart the web UI to bind a new port)</Label>

@@ -21,6 +21,7 @@ import { TERMINAL_STATUSES } from "@/types";
 export function DashboardPage() {
   const [busy, setBusy] = useState(false);
   const [rescanning, setRescanning] = useState(false);
+  const [error, setError] = useState("");
   const { data: status, refresh } = usePoll<AgentStatus>(api.getStatus, 2000);
   const { data: taskData } = usePoll<{ tasks: TaskRecord[] }>(
     api.listTasks,
@@ -36,12 +37,13 @@ export function DashboardPage() {
 
   const toggle = async () => {
     setBusy(true);
+    setError("");
     try {
       if (status?.running) await api.stopAgent();
       else await api.startAgent();
       refresh();
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -49,11 +51,12 @@ export function DashboardPage() {
 
   const rescan = async () => {
     setRescanning(true);
+    setError("");
     try {
       await api.rescanCapabilities(false);
       refresh();
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setRescanning(false);
     }
@@ -107,6 +110,7 @@ export function DashboardPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && <p className="text-xs text-destructive">{error}</p>}
           <Separator />
           <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
             <InfoRow label="Name" value={status?.displayName || "—"} />

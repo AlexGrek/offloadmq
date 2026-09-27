@@ -27,11 +27,12 @@ class Task(BaseModel):
     capability: str
     payload: dict[str, Any] = Field(default_factory=dict)
     priority: int = 0
-    # Full server poll response (id + data + createdAt) for legacy executors.
+    # Full server-pushed task frame (id + data + createdAt) for legacy executors.
     server_task: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
-    def from_poll(cls, raw: dict[str, Any]) -> Task:
+    def from_wire(cls, raw: dict[str, Any]) -> Task:
+        """Parse a task frame pushed over the agent WebSocket (no HTTP polling)."""
         tid = raw.get("id") or {}
         data = raw.get("data") or {}
         cap = str(tid.get("cap", data.get("capability", "")))

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from offloadmq_core.settings import DEFAULT_WEBUI_PORT
 
 _UNIT_NAME = "offloadmq-agent.service"
 
@@ -34,7 +35,13 @@ def uninstall_systemd_unit() -> dict[str, Any]:
     return {"ok": True, "message": f"Removed {path}"}
 
 
-def install_systemd_unit(*, host: str = "0.0.0.0", port: int = 8090) -> dict[str, Any]:
+def install_systemd_unit(
+    *, host: str = "127.0.0.1", port: int = DEFAULT_WEBUI_PORT
+) -> dict[str, Any]:
+    # Default host is loopback-only: the web UI's settings endpoints return
+    # plaintext credentials (api_key, jwt_token, kokoro_api_key), so binding to
+    # every interface by default would expose them to the whole network. An
+    # operator who wants LAN/remote access can still pass host= explicitly.
     if sys.platform != "linux":
         return {"ok": False, "message": "systemd install is only supported on Linux"}
 

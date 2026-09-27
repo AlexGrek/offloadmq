@@ -42,6 +42,20 @@ def pick_directory(task_id: TaskId) -> Path:
     return dir_path
 
 
+def resolve_bucket_file_path(data_path: Path, original_name: str) -> Path:
+    """Resolve a bucket file's client-supplied ``original_name`` under ``data_path``.
+
+    ``original_name`` comes from bucket metadata recorded at upload time and is
+    ultimately client-controlled, so it must not be trusted to stay inside the
+    task's data directory. Raises ValueError if it would escape.
+    """
+    root = data_path.resolve()
+    candidate = (data_path / original_name).resolve()
+    if not candidate.is_relative_to(root):
+        raise ValueError(f"Bucket file name {original_name!r} escapes the task directory")
+    return candidate
+
+
 def parse_file_reference(raw: dict[str, Any]) -> FileReference:
     """
     Convert a raw camelCase payload dict into a FileReference instance.

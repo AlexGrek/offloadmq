@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from offloadmq_core import Orchestrator, run_blocking
+from offloadmq_core.settings import DEFAULT_WEBUI_PORT
 from offloadmq_core.version import set_app_version
 
 from cli_manager._version import __version__ as _BAKED_VERSION
@@ -86,13 +87,14 @@ def _block_until_interrupt(orch: Orchestrator) -> None:
 
 
 # ------------------------------------------------------------------
-# serve — headless polling, no UI
+# serve — headless, no UI
 # ------------------------------------------------------------------
 
 
 @app.command()
 def serve() -> None:
-    """Start the agent and poll for tasks (headless, no web UI)."""
+    """Start the agent (headless, no web UI). Tasks are pushed over the agent
+    WebSocket — the agent never polls for them."""
     orch = _orch()
     try:
         orch.start()
@@ -111,7 +113,7 @@ def serve() -> None:
 @app.command()
 def webui(
     host: str = typer.Option("127.0.0.1", "--host"),
-    port: int = typer.Option(8090, "--port", "-p"),
+    port: int = typer.Option(DEFAULT_WEBUI_PORT, "--port", "-p"),
     start: bool = typer.Option(False, "--start", help="Also start the agent"),
 ) -> None:
     """Serve the web dashboard at http://host:port (Ctrl-C to stop)."""

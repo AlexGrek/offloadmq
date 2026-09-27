@@ -10,34 +10,40 @@ import { usePoll } from "@/hooks/usePoll";
 export function SlavemodePage() {
   const [all, setAll] = useState<string[]>([]);
   const [allowed, setAllowed] = useState<Set<string>>(new Set());
-  const other = useRef<{ regular: string[]; sensitive: string[] }>({
-    regular: [],
-    sensitive: [],
-  });
+  // Set for the whole window from "user toggled a box" to "save actually
+  // landed" so a 3s poll tick in between doesn't clobber the edit with the
+  // stale pre-edit server state.
+  const dirty = useRef(false);
 
-  const { schedule, status } = useDebouncedSave<Set<string>>(
-    (next) =>
-      api.saveCapabilityPolicy({
-        regular_disabled: other.current.regular,
-        sensitive_allowed: other.current.sensitive,
+  const { schedule, status, error } = useDebouncedSave<Set<string>>(async (next) => {
+    try {
+      // Fetch the other two policy tiers fresh right before saving instead of
+      // trusting a cached snapshot from the last poll: /capabilities/policy
+      // saves all three tiers atomically, so a stale regular/sensitive
+      // snapshot here would silently clobber a concurrent edit made on the
+      // Capabilities page (or another tab) in between polls.
+      const current = await api.getCapabilitiesState();
+      await api.saveCapabilityPolicy({
+        regular_disabled: current.tierCaps.regularDisabled,
+        sensitive_allowed: current.tierCaps.sensitiveAllowed,
         slavemode_allowed: [...next],
-      }),
-    200
-  );
+      });
+    } finally {
+      dirty.current = false;
+    }
+  }, 200);
 
   const load = useCallback(async () => {
     const s = await api.getCapabilitiesState();
     setAll(s.tierCaps.slavemodeAll);
+    if (dirty.current) return;
     setAllowed(new Set(s.tierCaps.slavemodeAllowed));
-    other.current = {
-      regular: s.tierCaps.regularDisabled,
-      sensitive: s.tierCaps.sensitiveAllowed,
-    };
   }, []);
 
   usePoll(load, 3000);
 
   const apply = (next: Set<string>) => {
+    dirty.current = true;
     setAllowed(next);
     schedule(next);
   };
@@ -54,7 +60,7 @@ export function SlavemodePage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Slavemode</h1>
         <div className="flex items-center gap-2">
-          <SaveIndicator status={status} />
+          <SaveIndicator status={status} error={error} />
           <Button variant="outline" onClick={() => apply(new Set(all))}>
             Allow all
           </Button>

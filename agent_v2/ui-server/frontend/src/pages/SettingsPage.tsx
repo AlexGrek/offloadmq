@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Loader2, Search } from "lucide-react";
 
 import { api } from "@/api/client";
@@ -13,7 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SaveIndicator } from "@/components/SaveIndicator";
-import { useDebouncedSave } from "@/hooks/useDebouncedSave";
+import { useEditableSettings } from "@/hooks/useEditableSettings";
 import type { Settings } from "@/types";
 
 const EMPTY: Settings = {
@@ -44,25 +44,16 @@ const EMPTY: Settings = {
 };
 
 export function SettingsPage() {
-  const [cfg, setCfg] = useState<Settings>(EMPTY);
   const [detecting, setDetecting] = useState(false);
 
-  const { schedule, flush, status } = useDebouncedSave<Partial<Settings>>(
-    (patch) => api.saveSettings(patch)
+  const { form: cfg, edit, flush, status, error } = useEditableSettings<Settings>(
+    EMPTY,
+    () => api.getSettings(),
+    (next) => api.saveSettings(next)
   );
 
-  useEffect(() => {
-    api.getSettings().then(setCfg).catch(() => {});
-  }, []);
-
-  const edit = (patch: Partial<Settings>) => {
-    setCfg((prev) => ({ ...prev, ...patch }));
-    schedule(patch);
-  };
-
   const editNow = (patch: Partial<Settings>) => {
-    setCfg((prev) => ({ ...prev, ...patch }));
-    schedule(patch);
+    edit(patch);
     flush();
   };
 
@@ -85,7 +76,7 @@ export function SettingsPage() {
             Connection, capabilities and concurrency for this agent.
           </CardDescription>
         </div>
-        <SaveIndicator status={status} />
+        <SaveIndicator status={status} error={error} />
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="space-y-2">

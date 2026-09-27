@@ -12,6 +12,7 @@ import uvicorn
 from ui_server.server import create_app
 
 from offloadmq_core.orchestrator import Orchestrator
+from offloadmq_core.settings import DEFAULT_WEBUI_PORT
 
 
 def build_server(orchestrator: Orchestrator, host: str, port: int) -> uvicorn.Server:
@@ -20,13 +21,15 @@ def build_server(orchestrator: Orchestrator, host: str, port: int) -> uvicorn.Se
     return uvicorn.Server(config)
 
 
-def run_blocking(orchestrator: Orchestrator, host: str = "127.0.0.1", port: int = 8090) -> None:
+def run_blocking(
+    orchestrator: Orchestrator, host: str = "127.0.0.1", port: int = DEFAULT_WEBUI_PORT
+) -> None:
     """Run the UI server in the foreground (server / headless-with-UI mode)."""
     build_server(orchestrator, host, port).run()
 
 
 def run_in_thread(
-    orchestrator: Orchestrator, host: str = "127.0.0.1", port: int = 8090
+    orchestrator: Orchestrator, host: str = "127.0.0.1", port: int = DEFAULT_WEBUI_PORT
 ) -> threading.Thread:
     """Run the UI server on a daemon thread (GUI mode) and return the thread."""
     server = build_server(orchestrator, host, port)

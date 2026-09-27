@@ -43,7 +43,7 @@ def _has_video_extension(filename: str) -> bool:
 _SALIENT_FIELDS = ("filename", "subfolder", "type", "format", "frame_rate")
 
 
-def _log(transport: AgentTransport, task_id: TaskId | None, message: str, stage: str = "collecting") -> None:
+def log_progress(transport: AgentTransport, task_id: TaskId | None, message: str, stage: str = "collecting") -> None:
     """Emit a log line both to the agent logger and (if known) the task's progress feed."""
     logger.info(message)
     if task_id is not None:
@@ -86,7 +86,7 @@ def upload_output_file(
 ) -> str:
     """Upload an output file to the server bucket. Returns the file_uid assigned by the server."""
     file_uid = transport.upload_file(bucket_uid, filename, content, content_type)
-    _log(
+    log_progress(
         transport, task_id,
         f"Uploaded '{filename}' ({len(content)} bytes, {content_type}) "
         f"to bucket {bucket_uid} → file_uid={file_uid}",
@@ -103,7 +103,7 @@ def collect_images(
     for node_id, node_output in history_entry.get("outputs", {}).items():
         for img in node_output.get("images", []):
             filename = img.get("filename", "")
-            _log(
+            log_progress(
                 transport, task_id,
                 f"Collecting image from node {node_id}: filename='{filename}' "
                 f"subfolder='{img.get('subfolder', '')}' type='{img.get('type', 'output')}'",
@@ -140,7 +140,7 @@ def collect_video(
                 # always accepted regardless of extension.
                 if key == "images" and not _has_video_extension(filename):
                     continue
-                _log(
+                log_progress(
                     transport, task_id,
                     f"Found video candidate under '{key}' in node {node_id}: filename='{filename}' "
                     f"subfolder='{vid.get('subfolder', '')}' type='{vid.get('type', 'output')}' "
@@ -169,17 +169,17 @@ def build_output(
     """Collect all outputs from a completed ComfyUI job and return a result dict."""
     # Always surface exactly what ComfyUI handed back, so a "no output" failure
     # is diagnosable from the task log alone.
-    _log(transport, task_id, describe_outputs(history_entry))
+    log_progress(transport, task_id, describe_outputs(history_entry))
 
     base: dict[str, str | int] = {"workflow": task_type, "prompt_id": prompt_id, "output_bucket": bucket_uid}
     if seed is not None:
         base["seed"] = seed
 
     if task_type in _VIDEO_TASK_TYPES:
-        _log(transport, task_id, f"Task type '{task_type}' is a video workflow — collecting video output")
+        log_progress(transport, task_id, f"Task type '{task_type}' is a video workflow — collecting video output")
         video = collect_video(history_entry, transport, bucket_uid, task_id)
         if not video:
-            _log(
+            log_progress(
                 transport, task_id,
                 f"No video found under any of {_VIDEO_OUTPUT_KEYS} across "
                 f"{len(history_entry.get('outputs', {}))} output node(s).",
@@ -189,18 +189,18 @@ def build_output(
         frame_count = 0
         for node_output in history_entry.get("outputs", {}).values():
             frame_count = len(node_output.get("images", [])) or frame_count
-        _log(transport, task_id, f"Video output collected: {video['filename']} (frame_count={frame_count})")
+        log_progress(transport, task_id, f"Video output collected: {video['filename']} (frame_count={frame_count})")
         return {**base, "frame_count": frame_count, "video": video}
 
-    _log(transport, task_id, f"Task type '{task_type}' is an image workflow — collecting image output")
+    log_progress(transport, task_id, f"Task type '{task_type}' is an image workflow — collecting image output")
     images = collect_images(history_entry, transport, bucket_uid, task_id)
     if not images:
-        _log(
+        log_progress(
             transport, task_id,
             f"No images found under the 'images' key across "
             f"{len(history_entry.get('outputs', {}))} output node(s).",
             stage="failed",
         )
         raise ValueError("ComfyUI completed but returned no output images")
-    _log(transport, task_id, f"Collected {len(images)} image(s)")
+    log_progress(transport, task_id, f"Collected {len(images)} image(s)")
     return {**base, "image_count": len(images), "images": images}

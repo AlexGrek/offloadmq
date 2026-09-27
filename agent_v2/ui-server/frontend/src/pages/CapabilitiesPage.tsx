@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -55,23 +55,31 @@ export function CapabilitiesPage() {
   const [sensitiveAllowed, setSensitiveAllowed] = useState<Set<string>>(
     new Set()
   );
+  // Set for the whole window from "user toggled a box" to "save actually
+  // landed" so a 3s poll tick in between doesn't clobber the edit with the
+  // stale pre-edit server state (or, if the save failed, is cleared so the
+  // next poll reverts to server truth and the error is visible).
+  const dirty = useRef(false);
 
-  const { schedule, status } = useDebouncedSave<{
+  const { schedule, status, error } = useDebouncedSave<{
     regular: Set<string>;
     sensitive: Set<string>;
-  }>(
-    ({ regular, sensitive }) =>
-      api.saveCapabilityPolicy({
+  }>(async ({ regular, sensitive }) => {
+    try {
+      await api.saveCapabilityPolicy({
         regular_disabled: [...regular],
         sensitive_allowed: [...sensitive],
         slavemode_allowed: state?.tierCaps.slavemodeAllowed ?? [],
-      }),
-    200
-  );
+      });
+    } finally {
+      dirty.current = false;
+    }
+  }, 200);
 
   const load = useCallback(async () => {
     const s = await api.getCapabilitiesState();
     setState(s);
+    if (dirty.current) return;
     setRegularDisabled(new Set(s.tierCaps.regularDisabled));
     setSensitiveAllowed(new Set(s.tierCaps.sensitiveAllowed));
   }, []);
@@ -86,6 +94,7 @@ export function CapabilitiesPage() {
   if (!state) return <p className="text-muted-foreground">Loading…</p>;
 
   const toggleRegular = (cap: string) => {
+    dirty.current = true;
     setRegularDisabled((prev) => {
       const next = new Set(prev);
       if (next.has(cap)) next.delete(cap);
@@ -96,6 +105,7 @@ export function CapabilitiesPage() {
   };
 
   const toggleSensitive = (cap: string) => {
+    dirty.current = true;
     setSensitiveAllowed((prev) => {
       const next = new Set(prev);
       if (next.has(cap)) next.delete(cap);
@@ -110,7 +120,7 @@ export function CapabilitiesPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Capabilities</h1>
         <div className="flex items-center gap-2">
-          <SaveIndicator status={status} />
+          <SaveIndicator status={status} error={error} />
           <Button variant="outline" onClick={rescan}>
             Rescan
           </Button>

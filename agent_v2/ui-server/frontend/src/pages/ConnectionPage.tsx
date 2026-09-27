@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -6,42 +6,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SaveIndicator } from "@/components/SaveIndicator";
-import { useDebouncedSave } from "@/hooks/useDebouncedSave";
+import { useEditableSettings } from "@/hooks/useEditableSettings";
 import type { Settings } from "@/types";
 
 export function ConnectionPage() {
-  const [form, setForm] = useState<Partial<Settings>>({});
   const [registerId, setRegisterId] = useState("");
 
-  const { schedule, flush, status } = useDebouncedSave<Partial<Settings>>(
+  const { form, edit, flush, status, error } = useEditableSettings<Partial<Settings>>(
+    {},
+    async (schedule) => {
+      const settings = await api.getSettings();
+      if (settings.display_name) return settings;
+      const { display_name } = await api.getDefaultDisplayName();
+      if (!display_name) return settings;
+      const patched = { ...settings, display_name };
+      schedule(patched);
+      return patched;
+    },
     (patch) => api.saveSettings(patch)
   );
-
-  useEffect(() => {
-    api.getSettings().then((settings) => {
-      if (!settings.display_name) {
-        api.getDefaultDisplayName().then(({ display_name: defaultName }) => {
-          if (defaultName) {
-            const patched = { ...settings, display_name: defaultName };
-            setForm(patched);
-            schedule(patched);
-          } else {
-            setForm(settings);
-          }
-        });
-      } else {
-        setForm(settings);
-      }
-    });
-  }, []);
-
-  const edit = (patch: Partial<Settings>) => {
-    setForm((prev) => {
-      const next = { ...prev, ...patch };
-      schedule(next);
-      return next;
-    });
-  };
 
   const register = async () => {
     const { agentId } = await api.registerAgent();
@@ -54,7 +37,7 @@ export function ConnectionPage() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>Server</CardTitle>
-          <SaveIndicator status={status} />
+          <SaveIndicator status={status} error={error} />
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">

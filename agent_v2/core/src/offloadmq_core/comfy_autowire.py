@@ -21,11 +21,11 @@ Two invariants drive the design:
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Iterable, Sequence
 
-Graph = Dict[str, Any]
-Target = Tuple[str, str]
-Notes = Dict[str, str]
+Graph = dict[str, Any]
+Target = tuple[str, str]
+Notes = dict[str, str]
 SkipFn = Callable[[Graph, str, str], bool]
 
 _MAX_DEPTH = 16
@@ -113,12 +113,12 @@ _TEXT_ENCODE_CLASSES: frozenset[str] = frozenset(
 )
 
 # Which input(s) on a text-encode node hold the prompt string.
-_TEXT_ENCODE_INPUTS: Dict[str, Tuple[str, ...]] = {
+_TEXT_ENCODE_INPUTS: dict[str, tuple[str, ...]] = {
     "CLIPTextEncodeFlux": ("clip_l", "t5xxl"),
     "CLIPTextEncodeSDXL": ("text_g", "text_l"),
     "CLIPTextEncodeSDXLRefiner": ("text",),
 }
-_DEFAULT_TEXT_INPUT: Tuple[str, ...] = ("text",)
+_DEFAULT_TEXT_INPUT: tuple[str, ...] = ("text",)
 
 # Conditioning passthroughs with a single `conditioning` input.
 _CONDITIONING_PASSTHROUGH: frozenset[str] = frozenset(
@@ -133,15 +133,15 @@ _CONDITIONING_PASSTHROUGH: frozenset[str] = frozenset(
 )
 
 # Samplers that own positive/negative directly.
-_DIRECT_SAMPLER_CLASSES: Tuple[str, ...] = ("KSampler", "KSamplerAdvanced", "SamplerCustom")
+_DIRECT_SAMPLER_CLASSES: tuple[str, ...] = ("KSampler", "KSamplerAdvanced", "SamplerCustom")
 # NOTE: KSamplerSelect is *not* a sampler — it only carries `sampler_name`.
 
-_SEED_INPUTS: Tuple[str, ...] = ("seed", "noise_seed")
-_STEPS_INPUTS: Tuple[str, ...] = ("steps",)
-_CFG_INPUTS: Tuple[str, ...] = ("cfg",)
-_LENGTH_INPUTS: Tuple[str, ...] = ("length", "frame_count", "num_frames", "video_frames")
-_FPS_INPUTS: Tuple[str, ...] = ("fps", "frame_rate")
-_UPSCALE_INPUTS: Tuple[str, ...] = ("upscale_factor", "scale_by", "rescale_factor", "scale")
+_SEED_INPUTS: tuple[str, ...] = ("seed", "noise_seed")
+_STEPS_INPUTS: tuple[str, ...] = ("steps",)
+_CFG_INPUTS: tuple[str, ...] = ("cfg",)
+_LENGTH_INPUTS: tuple[str, ...] = ("length", "frame_count", "num_frames", "video_frames")
+_FPS_INPUTS: tuple[str, ...] = ("fps", "frame_rate")
+_UPSCALE_INPUTS: tuple[str, ...] = ("upscale_factor", "scale_by", "rescale_factor", "scale")
 
 _SEED_OWNER_CLASSES: frozenset[str] = frozenset(
     {
@@ -168,7 +168,7 @@ _LOAD_IMAGE_CLASSES: frozenset[str] = frozenset(
 
 # Where the *main* input image is consumed, most-specific first.  A LoadImage node is
 # scored by the earliest role it reaches; lowest score wins.
-_IMAGE_ROLE_PRIORITY: Tuple[Tuple[str, str], ...] = (
+_IMAGE_ROLE_PRIORITY: tuple[tuple[str, str], ...] = (
     ("*ImageToVideo", "start_image"),
     ("VAEEncode", "pixels"),
     ("VAEEncodeForInpaint", "pixels"),
@@ -178,18 +178,18 @@ _IMAGE_ROLE_PRIORITY: Tuple[Tuple[str, str], ...] = (
     ("*", "input"),
 )
 
-_FACE_REF_ROLES: Tuple[Tuple[str, str], ...] = (("ReActorFaceSwap", "source_image"),)
+_FACE_REF_ROLES: tuple[tuple[str, str], ...] = (("ReActorFaceSwap", "source_image"),)
 
-_AUDIO_ENCODE_CLASSES: Tuple[str, ...] = (
+_AUDIO_ENCODE_CLASSES: tuple[str, ...] = (
     "TextEncodeAceStepAudio1.5",
     "TextEncodeAceStep",
     "AceStepTextEncode",
 )
-_AUDIO_LATENT_CLASSES: Tuple[str, ...] = (
+_AUDIO_LATENT_CLASSES: tuple[str, ...] = (
     "EmptyAceStep1.5LatentAudio",
     "EmptyAceStepLatentAudio",
 )
-_AUDIO_ENCODE_FIELDS: Tuple[str, ...] = (
+_AUDIO_ENCODE_FIELDS: tuple[str, ...] = (
     "tags",
     "lyrics",
     "bpm",
@@ -206,8 +206,8 @@ _AUDIO_ENCODE_FIELDS: Tuple[str, ...] = (
 
 # Standard payload keys per task type.  Every key listed here appears in the emitted
 # params.json, even when unresolved (as `[]`), so the editor always shows a row.
-_TXT_BASE: Tuple[str, ...] = ("prompt", "negative", "width", "height", "seed")
-_STANDARD_KEYS: Dict[str, Tuple[str, ...]] = {
+_TXT_BASE: tuple[str, ...] = ("prompt", "negative", "width", "height", "seed")
+_STANDARD_KEYS: dict[str, tuple[str, ...]] = {
     "txt2img": _TXT_BASE,
     "img2img": _TXT_BASE + ("input_image",),
     "inpaint": _TXT_BASE + ("input_image",),
@@ -229,7 +229,7 @@ IMG_UTILS_NAMESPACE = "img-utils"
 # and no seed — autowiring only has to find the LoadImage node(s), and emitting
 # prompt/width/height keys would make the editor warn about fields the workflow
 # genuinely does not have.
-_IMG_UTILS_KEYS: Dict[str, Tuple[str, ...]] = {
+_IMG_UTILS_KEYS: dict[str, tuple[str, ...]] = {
     "depth": ("input_image",),
     "face_swap": ("input_image", "face_swap"),
     "upscale": ("input_image", "scale_multiplier"),
@@ -238,7 +238,7 @@ _IMG_UTILS_KEYS: Dict[str, Tuple[str, ...]] = {
 # Inputs that carry an img-utils upscale factor, most-specific first. The SeedVR2
 # ResizeImageMaskNode names it ``resize_type.multiplier``; the rest cover the
 # common ImageScaleBy-style nodes.
-_SCALE_MULTIPLIER_INPUTS: Tuple[str, ...] = (
+_SCALE_MULTIPLIER_INPUTS: tuple[str, ...] = (
     "resize_type.multiplier",
     "multiplier",
     "scale_by",
@@ -269,7 +269,7 @@ def is_wire(value: Any) -> bool:
     )
 
 
-def _inputs(graph: Graph, node_id: str) -> Dict[str, Any]:
+def _inputs(graph: Graph, node_id: str) -> dict[str, Any]:
     node = graph.get(node_id)
     if not isinstance(node, dict):
         return {}
@@ -285,7 +285,7 @@ def _class_of(graph: Graph, node_id: str) -> str:
     return ct if isinstance(ct, str) else ""
 
 
-def _wire_source(value: Any) -> Optional[str]:
+def _wire_source(value: Any) -> str | None:
     return str(value[0]) if is_wire(value) else None
 
 
@@ -293,14 +293,14 @@ def _wire_slot(value: Any) -> int:
     return int(value[1]) if is_wire(value) else 0
 
 
-def node_order(node_ids: Iterable[str]) -> List[str]:
+def node_order(node_ids: Iterable[str]) -> list[str]:
     """Deterministic id ordering: plain integers numerically, composites lexically.
 
     Comfy subgraph exports use ids like ``"103:17"``; a plain ``sorted()`` would
     interleave them with ``"9"`` and ``"114"`` unpredictably.
     """
 
-    def key(nid: str) -> Tuple[int, int, str]:
+    def key(nid: str) -> tuple[int, int, str]:
         s = str(nid)
         if s.isdigit():
             return (0, int(s), "")
@@ -342,9 +342,9 @@ def live_subgraph(graph: Graph) -> set[str]:
     return live
 
 
-def _consumers(graph: Graph) -> Dict[str, List[Tuple[str, str]]]:
+def _consumers(graph: Graph) -> dict[str, list[tuple[str, str]]]:
     """source_node_id → [(consumer_node_id, consumer_input_name), ...]"""
-    out: Dict[str, List[Tuple[str, str]]] = {}
+    out: dict[str, list[tuple[str, str]]] = {}
     for nid in node_order(graph):
         for in_name, value in _inputs(graph, nid).items():
             src = _wire_source(value)
@@ -366,14 +366,14 @@ class _Unresolved(Exception):
         self.reason = reason
 
 
-def _first_literal_string_input(graph: Graph, node_id: str) -> Optional[str]:
+def _first_literal_string_input(graph: Graph, node_id: str) -> str | None:
     for in_name, value in _inputs(graph, node_id).items():
         if isinstance(value, str) and value:
             return str(in_name)
     return None
 
 
-def _resolve(graph: Graph, node_id: str, input_name: str, depth: int, seen: set[Tuple[str, str]]) -> Target:
+def _resolve(graph: Graph, node_id: str, input_name: str, depth: int, seen: set[tuple[str, str]]) -> Target:
     if depth > _MAX_DEPTH or (node_id, input_name) in seen:
         raise _Unresolved(f"wire chain from {node_id}.{input_name} is cyclic or too deep")
     seen.add((node_id, input_name))
@@ -433,16 +433,16 @@ def resolve_literal(graph: Graph, node_id: str, input_name: str) -> Target:
     return _resolve(graph, node_id, input_name, 0, set())
 
 
-def _try_resolve(graph: Graph, node_id: str, input_name: str) -> Tuple[Optional[Target], str]:
+def _try_resolve(graph: Graph, node_id: str, input_name: str) -> tuple[Target | None, str]:
     try:
         return resolve_literal(graph, node_id, input_name), ""
     except _Unresolved as exc:
         return None, exc.reason
 
 
-def _dedupe(targets: Sequence[Target]) -> List[Target]:
+def _dedupe(targets: Sequence[Target]) -> list[Target]:
     seen: set[Target] = set()
-    out: List[Target] = []
+    out: list[Target] = []
     for t in targets:
         if t not in seen:
             seen.add(t)
@@ -455,7 +455,7 @@ def _dedupe(targets: Sequence[Target]) -> List[Target]:
 # --------------------------------------------------------------------------
 
 
-def trace_conditioning(graph: Graph, ref: Any, depth: int = 0, seen: Optional[set[str]] = None) -> Optional[str]:
+def trace_conditioning(graph: Graph, ref: Any, depth: int = 0, seen: set[str] | None = None) -> str | None:
     """Walk a CONDITIONING wire back to the text-encode node that produced it.
 
     Slot-aware: a node exposing both ``positive`` and ``negative`` inputs (the
@@ -497,10 +497,10 @@ def trace_conditioning(graph: Graph, ref: Any, depth: int = 0, seen: Optional[se
     return None
 
 
-def _text_targets(graph: Graph, encode_nid: str) -> Tuple[List[Target], str]:
+def _text_targets(graph: Graph, encode_nid: str) -> tuple[list[Target], str]:
     ct = _class_of(graph, encode_nid)
     names = _TEXT_ENCODE_INPUTS.get(ct, _DEFAULT_TEXT_INPUT)
-    targets: List[Target] = []
+    targets: list[Target] = []
     reason = ""
     for name in names:
         if name not in _inputs(graph, encode_nid):
@@ -518,7 +518,7 @@ def _text_targets(graph: Graph, encode_nid: str) -> Tuple[List[Target], str]:
 # --------------------------------------------------------------------------
 
 
-def find_guider(graph: Graph, live: set[str]) -> Optional[str]:
+def find_guider(graph: Graph, live: set[str]) -> str | None:
     """The live node that owns ``positive``/``negative``.
 
     ``SamplerCustomAdvanced`` delegates to a ``CFGGuider`` via its ``guider`` input;
@@ -556,10 +556,10 @@ def _collect_by_inputs(
     live: set[str],
     owner_classes: frozenset[str],
     input_names: Sequence[str],
-    skip: Optional[SkipFn] = None,
-) -> Tuple[List[Target], str]:
+    skip: SkipFn | None = None,
+) -> tuple[list[Target], str]:
     """Resolve every ``input_names`` slot on every live node in ``owner_classes``."""
-    targets: List[Target] = []
+    targets: list[Target] = []
     reason = ""
     for nid in node_order(live):
         if _class_of(graph, nid) not in owner_classes:
@@ -586,7 +586,7 @@ def _seed_disabled(graph: Graph, node_id: str, input_name: str) -> bool:
     return add_noise in ("disable", False)
 
 
-def _resolve_dimensions(graph: Graph, live: set[str]) -> Tuple[Dict[str, List[Target]], Notes]:
+def _resolve_dimensions(graph: Graph, live: set[str]) -> tuple[dict[str, list[Target]], Notes]:
     """Find the node that sizes the generation, in priority order."""
 
     def has_pair(nid: str, a: str, b: str) -> bool:
@@ -595,7 +595,7 @@ def _resolve_dimensions(graph: Graph, live: set[str]) -> Tuple[Dict[str, List[Ta
 
     ordered = node_order(live)
 
-    tiers: List[List[Tuple[str, str, str]]] = [[], [], []]  # (nid, width_in, height_in)
+    tiers: list[list[tuple[str, str, str]]] = [[], [], []]  # (nid, width_in, height_in)
     for nid in ordered:
         ct = _class_of(graph, nid)
         for w_in, h_in in (("width", "height"), ("target_width", "target_height")):
@@ -609,7 +609,7 @@ def _resolve_dimensions(graph: Graph, live: set[str]) -> Tuple[Dict[str, List[Ta
                 tiers[2].append((nid, w_in, h_in))
             break
 
-    params: Dict[str, List[Target]] = {"width": [], "height": []}
+    params: dict[str, list[Target]] = {"width": [], "height": []}
     notes: Notes = {}
     for tier in tiers:
         if not tier:
@@ -632,10 +632,10 @@ def _resolve_dimensions(graph: Graph, live: set[str]) -> Tuple[Dict[str, List[Ta
     return params, notes
 
 
-def _role_score(graph: Graph, load_nid: str, roles: Sequence[Tuple[str, str]], consumers: Dict[str, List[Tuple[str, str]]]) -> Optional[int]:
+def _role_score(graph: Graph, load_nid: str, roles: Sequence[tuple[str, str]], consumers: dict[str, list[tuple[str, str]]]) -> int | None:
     """Lowest role-priority index reachable downstream of ``load_nid``, or None."""
-    best: Optional[int] = None
-    queue: deque[Tuple[str, int]] = deque([(load_nid, 0)])
+    best: int | None = None
+    queue: deque[tuple[str, int]] = deque([(load_nid, 0)])
     visited: set[str] = set()
     while queue:
         nid, depth = queue.popleft()
@@ -653,11 +653,11 @@ def _role_score(graph: Graph, load_nid: str, roles: Sequence[Tuple[str, str]], c
     return best
 
 
-def _resolve_images(graph: Graph, live: set[str], task_type: str) -> Tuple[Dict[str, List[Target]], Notes]:
+def _resolve_images(graph: Graph, live: set[str], task_type: str) -> tuple[dict[str, list[Target]], Notes]:
     consumers = _consumers(graph)
     load_nodes = [nid for nid in node_order(live) if _class_of(graph, nid) in _LOAD_IMAGE_CLASSES]
 
-    params: Dict[str, List[Target]] = {}
+    params: dict[str, list[Target]] = {}
     notes: Notes = {}
 
     if not load_nodes:
@@ -698,7 +698,7 @@ def _resolve_images(graph: Graph, live: set[str], task_type: str) -> Tuple[Dict[
     return params, notes
 
 
-def _resolve_upscale(graph: Graph, live: set[str]) -> Tuple[List[Target], str]:
+def _resolve_upscale(graph: Graph, live: set[str]) -> tuple[list[Target], str]:
     for nid in node_order(live):
         inputs = _inputs(graph, nid)
         for name in _UPSCALE_INPUTS:
@@ -708,7 +708,7 @@ def _resolve_upscale(graph: Graph, live: set[str]) -> Tuple[List[Target], str]:
     return [], "no node with an upscale factor input found"
 
 
-def _resolve_scale_multiplier(graph: Graph, live: set[str]) -> Tuple[List[Target], str]:
+def _resolve_scale_multiplier(graph: Graph, live: set[str]) -> tuple[list[Target], str]:
     for nid in node_order(live):
         inputs = _inputs(graph, nid)
         for name in _SCALE_MULTIPLIER_INPUTS:
@@ -718,7 +718,7 @@ def _resolve_scale_multiplier(graph: Graph, live: set[str]) -> Tuple[List[Target
     return [], "no node with a scale-multiplier input found"
 
 
-def _resolve_length(graph: Graph, live: set[str]) -> Tuple[List[Target], str]:
+def _resolve_length(graph: Graph, live: set[str]) -> tuple[list[Target], str]:
     for nid in node_order(live):
         inputs = _inputs(graph, nid)
         for name in _LENGTH_INPUTS:
@@ -733,8 +733,8 @@ def _resolve_length(graph: Graph, live: set[str]) -> Tuple[List[Target], str]:
 # --------------------------------------------------------------------------
 
 
-def _guess_txt2music(graph: Graph, live: set[str]) -> Tuple[Dict[str, Any], Notes]:
-    params: Dict[str, Any] = {}
+def _guess_txt2music(graph: Graph, live: set[str]) -> tuple[dict[str, Any], Notes]:
+    params: dict[str, Any] = {}
     notes: Notes = {}
 
     seed_targets, seed_why = _collect_by_inputs(
@@ -744,7 +744,7 @@ def _guess_txt2music(graph: Graph, live: set[str]) -> Tuple[Dict[str, Any], Note
     if not seed_targets and seed_why:
         notes["seed"] = seed_why
 
-    encode_nid: Optional[str] = None
+    encode_nid: str | None = None
     for ct in _AUDIO_ENCODE_CLASSES:
         for nid in node_order(live):
             if _class_of(graph, nid) == ct:
@@ -765,7 +765,7 @@ def _guess_txt2music(graph: Graph, live: set[str]) -> Tuple[Dict[str, Any], Note
                 params[field] = []
                 notes[field] = why
 
-    duration_targets: List[Target] = []
+    duration_targets: list[Target] = []
     if encode_nid and "duration" in _inputs(graph, encode_nid):
         target, why = _try_resolve(graph, encode_nid, "duration")
         if target is not None:
@@ -795,9 +795,9 @@ def _guess_txt2music(graph: Graph, live: set[str]) -> Tuple[Dict[str, Any], Note
 # --------------------------------------------------------------------------
 
 
-def _guess_img_utils(graph: Graph, live: set[str], task_type: str) -> Tuple[Dict[str, Any], Notes]:
+def _guess_img_utils(graph: Graph, live: set[str], task_type: str) -> tuple[dict[str, Any], Notes]:
     """Param map for an ``img-utils.*`` operation: input images and nothing else."""
-    params: Dict[str, Any] = {}
+    params: dict[str, Any] = {}
     img_params, notes = _resolve_images(graph, live, task_type)
     for key, targets in img_params.items():
         params[key] = [list(t) for t in targets]
@@ -814,7 +814,7 @@ def _guess_img_utils(graph: Graph, live: set[str], task_type: str) -> Tuple[Dict
 
 def guess_params_ex(
     graph: Graph, task_type: str, namespace: str = ""
-) -> Tuple[Dict[str, Any], Notes]:
+) -> tuple[dict[str, Any], Notes]:
     """Auto-detect the param map plus per-field explanations for unresolved fields.
 
     Returns ``(params, notes)``.  ``params`` maps each payload key to a list of
@@ -837,13 +837,13 @@ def guess_params_ex(
     if namespace == IMG_UTILS_NAMESPACE or task_type in _IMG_UTILS_TASK_TYPES:
         return _guess_img_utils(graph, live, task_type)
 
-    params: Dict[str, Any] = {}
+    params: dict[str, Any] = {}
     notes: Notes = {}
 
     # prompt / negative
     guider = find_guider(graph, live)
-    pos_nid: Optional[str] = None
-    neg_nid: Optional[str] = None
+    pos_nid: str | None = None
+    neg_nid: str | None = None
     if guider is not None:
         ginputs = _inputs(graph, guider)
         pos_nid = trace_conditioning(graph, ginputs.get("positive"))
@@ -931,7 +931,7 @@ def guess_params_ex(
     return params, notes
 
 
-def guess_params(graph: Graph, task_type: str, namespace: str = "") -> Dict[str, Any]:
+def guess_params(graph: Graph, task_type: str, namespace: str = "") -> dict[str, Any]:
     """Auto-detect param → node-input mappings from a Comfy API-format graph."""
     params, _ = guess_params_ex(graph, task_type, namespace)
     return params

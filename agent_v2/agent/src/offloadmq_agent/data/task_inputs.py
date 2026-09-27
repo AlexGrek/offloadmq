@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any, Protocol
 
-from offloadmq_agent.data.fs_utils import pick_directory
+from offloadmq_agent.data.fs_utils import pick_directory, resolve_bucket_file_path
 from offloadmq_agent.models import Task
 from offloadmq_agent.wire import TaskId
 
@@ -37,7 +37,7 @@ def _download_bucket_files(
         for file_info in resp.json().get("files", []):
             file_uid = file_info["file_uid"]
             original_name = file_info.get("original_name", file_uid)
-            save_path = data_path / original_name
+            save_path = resolve_bucket_file_path(data_path, original_name)
             if save_path.exists():
                 continue
             save_path.parent.mkdir(parents=True, exist_ok=True)

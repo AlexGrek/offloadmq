@@ -25,6 +25,7 @@ import socket
 import time
 
 from offloadmq_core import Orchestrator, keep_awake, run_blocking, run_in_thread
+from offloadmq_core.settings import DEFAULT_WEBUI_PORT
 
 # Mark GUI entry point so the web UI can show GUI-only controls.
 os.environ.setdefault("OMQ_GUI", "1")
@@ -78,7 +79,7 @@ def main() -> None:
     parser.add_argument(
         "--server", action="store_true", help="Headless server mode (no window)"
     )
-    parser.add_argument("--port", type=int, default=8090, help="UI server port")
+    parser.add_argument("--port", type=int, default=DEFAULT_WEBUI_PORT, help="UI server port")
     args = parser.parse_args()
 
     orch = Orchestrator()

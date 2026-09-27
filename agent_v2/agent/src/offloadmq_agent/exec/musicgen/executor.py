@@ -1,19 +1,22 @@
-"""txt2music task executor — entry point for ComfyUI-backed music generation."""
+"""txt2music task executor — entry point for ComfyUI-backed music generation.
+
+Thin wrapper over :func:`offloadmq_agent.exec.imggen.executor.run_comfy_image_task`
+(same as img-utils, see that module's docstring) — reuses the shared
+queue/poll/collect pipeline instead of duplicating it, supplying only the
+txt2music-specific payload→injection mapping and audio output collector.
+"""
 
 from pathlib import Path
 from typing import Any
 
-import requests
-
 from offloadmq_agent.wire import TaskId
 from offloadmq_agent.transport_exec import AgentTransport
-from offloadmq_agent.exec.reporting import TaskCancelled, make_failure_report, make_success_report, report_cancelled, report_progress, report_result
-from offloadmq_agent.exec.imggen.comfyui import queue_prompt, wait_for_completion
-from offloadmq_agent.exec.imggen.workflow import load_workflow_template, inject_params
+from offloadmq_agent.exec.imggen.executor import run_comfy_image_task
 from .injection import build_injection_values
 from .output import build_output
 
 _NAMESPACE = "txt2music"
+_PREFIX = f"{_NAMESPACE}."
 
 
 def execute_musicgen_comfyui(
@@ -29,53 +32,16 @@ def execute_musicgen_comfyui(
 
     capability format: txt2music.<workflow-name>  (base, no brackets)
     """
-    try:
-        if not output_bucket:
-            raise ValueError(
-                "txt2music tasks require an 'output_bucket' field — "
-                "create a bucket via the client storage API and pass its UID in the task"
-            )
-
-        if not isinstance(payload, dict):
-            raise ValueError(f"Payload must be a dict, got {type(payload).__name__}")
-
-        task_type = payload.get("workflow")
-        if not task_type:
-            raise ValueError("Payload missing required 'workflow' field")
-
-        workflow_name = capability.removeprefix(f"{_NAMESPACE}.")
-        if not workflow_name or workflow_name == capability:
-            raise ValueError(f"Capability '{capability}' is not a valid txt2music capability")
-
-        graph, param_map = load_workflow_template(workflow_name, task_type, namespace=_NAMESPACE)
-        inject_values = build_injection_values(payload, task_type, data_path)
-        graph = inject_params(graph, param_map, inject_values)
-
-        prompt_id = queue_prompt(graph)
-        report_progress(transport, f"Queued as prompt_id={prompt_id}", "queued", task_id)
-
-        history_entry = wait_for_completion(prompt_id, transport, task_id, job_timeout)
-        report_progress(transport, "Generation complete — collecting output", "collecting", task_id)
-
-        seed = inject_values.get("seed") or payload.get("seed")
-        output = build_output(history_entry, task_type, prompt_id, seed, transport, output_bucket)
-        report = make_success_report(task_id, capability, output)
-
-    except TaskCancelled:
-        report_cancelled(transport, task_id, capability, output={"cancelled": True})
-        return True
-
-    except requests.RequestException as e:
-        response_text = "No response from server"
-        resp = getattr(e, "response", None)
-        if resp and hasattr(resp, "text"):
-            response_text = resp.text
-        extra = {
-            "error": f"ComfyUI API request failed: {e}",
-            "response_text": response_text,
-        }
-        report = make_failure_report(task_id, capability, str(e), extra_output=extra)
-    except Exception as e:
-        report = make_failure_report(task_id, capability, str(e))
-
-    return report_result(transport, report)
+    return run_comfy_image_task(
+        transport,
+        task_id,
+        capability,
+        payload,
+        data_path,
+        output_bucket,
+        job_timeout,
+        prefix=_PREFIX,
+        namespace=_NAMESPACE,
+        build_injection_values=build_injection_values,
+        build_output=build_output,
+    )

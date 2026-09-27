@@ -28,14 +28,12 @@ class ExecContext:
         cancel_event: threading.Event | None = None,
         *,
         progress_reporter: ProgressReporter | None = None,
-        legacy_transport: Any | None = None,
         agent_transport: Any | None = None,
     ) -> None:
         self._log_sink = log_sink
         self._cancel_event = cancel_event or threading.Event()
         self._progress_reporter = progress_reporter
-        self.agent_transport = agent_transport if agent_transport is not None else legacy_transport
-        self.legacy_transport = self.agent_transport
+        self.agent_transport = agent_transport
 
     # ------------------------------------------------------------------
     # Logging — all structured

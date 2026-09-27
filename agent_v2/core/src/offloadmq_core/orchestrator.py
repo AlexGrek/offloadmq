@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
+import sys
 import threading
 import traceback
 from pathlib import Path
@@ -53,6 +55,17 @@ from offloadmq_core.scan_state import ScanState
 from offloadmq_core.settings import SETTINGS_FILE, Settings, load_settings, save_settings
 from offloadmq_core.task_store import TaskRecord, TaskStore
 from offloadmq_core.version import get_app_version
+
+# UI-backed ops: custom caps / comfy / system-integration / updates. Imported
+# here (not in ui_server.api) so ui-server never has to import core directly —
+# see SKILL.md's dependency graph. Orchestrator just proxies into these.
+from offloadmq_core import custom_caps_service, comfy_service, keep_awake, startup_mac, startup_win
+from offloadmq_core.systemd_service import (
+    install_systemd_unit,
+    is_installed as systemd_is_installed,
+    uninstall_systemd_unit,
+)
+from offloadmq_core.updater import check_for_update, download_update
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +223,12 @@ class Orchestrator:
             machine_fp = None
 
         unsent: list[PendingLog] = []
-        for entry in to_send:
+        # Index by position (enumerate), not to_send.index(entry): PendingLog is
+        # a plain @dataclass with structural equality, so two entries with the
+        # same severity/text/timestamp would make .index() resolve to the first
+        # match rather than the one that actually failed — resending an
+        # already-delivered duplicate or dropping an unsent one.
+        for idx, entry in enumerate(to_send):
             try:
                 await client.submit_log(
                     entry.severity,
@@ -224,12 +242,10 @@ class Orchestrator:
                 # Whatever was not yet sent stays in the pool. Don't keep
                 # retrying inside this call — the next successful op will
                 # trigger another flush.
-                idx = to_send.index(entry)
                 unsent = to_send[idx:]
                 break
             except Exception as exc:  # noqa: BLE001
                 logger.warning("log flush hit unexpected error: %s", exc)
-                idx = to_send.index(entry)
                 unsent = to_send[idx:]
                 break
         if unsent:
@@ -624,6 +640,133 @@ class Orchestrator:
         ]
 
     # ==================================================================
+    # UI-backed ops: custom capabilities, ComfyUI workflows, system
+    # integration, updates.
+    #
+    # These proxy into core's own service modules (custom_caps_service,
+    # comfy_service, keep_awake, startup_mac/win, systemd_service, updater) so
+    # that ui_server.api only ever talks to the Orchestrator, never to core
+    # directly (see SKILL.md's dependency graph: "ui-server ... never imports
+    # core").
+    # ==================================================================
+
+    def list_custom_caps(self) -> list[dict[str, Any]]:
+        return custom_caps_service.list_custom_caps()
+
+    def get_custom_cap(self, name: str) -> str:
+        return custom_caps_service.get_custom_cap(name)
+
+    def save_custom_cap(self, name: str, yaml_text: str) -> None:
+        custom_caps_service.save_custom_cap(name, yaml_text)
+
+    def delete_custom_cap(self, name: str) -> None:
+        custom_caps_service.delete_custom_cap(name)
+
+    def list_comfy_workflows(self) -> dict[str, Any]:
+        return {
+            "workflows": comfy_service.list_workflows(),
+            "standardTaskTypes": comfy_service.STANDARD_TASK_TYPES,
+        }
+
+    def add_comfy_workflow(
+        self, workflow_name: str, task_type: str, namespace: str, graph_json: str
+    ) -> None:
+        comfy_service.add_workflow(workflow_name, task_type, namespace, graph_json)
+
+    def delete_comfy_workflow(self, workflow_name: str, namespace: str = "") -> None:
+        comfy_service.delete_workflow(workflow_name, namespace)
+
+    def get_comfy_param_map(
+        self, workflow_name: str, task_type: str, namespace: str = ""
+    ) -> dict[str, Any]:
+        return comfy_service.get_param_map(workflow_name, task_type, namespace)
+
+    def save_comfy_param_map(
+        self, workflow_name: str, task_type: str, namespace: str, params: Any
+    ) -> None:
+        comfy_service.save_param_map(workflow_name, task_type, namespace, params)
+
+    def autodetect_comfy_param_map(
+        self, workflow_name: str, task_type: str, namespace: str
+    ) -> dict[str, Any]:
+        params, notes = comfy_service.autodetect_param_map(workflow_name, task_type, namespace)
+        return {"paramMap": params, "notes": notes}
+
+    def check_update(self) -> dict[str, Any]:
+        return check_for_update(get_app_version())
+
+    def download_update(self) -> dict[str, Any]:
+        lines: list[str] = []
+        result = download_update(get_app_version(), lines.append)
+        result["log"] = lines
+        return result
+
+    def get_startup_status(self) -> dict[str, Any]:
+        settings = self.get_settings()
+        result: dict[str, Any] = {
+            "platform": sys.platform,
+            "mac_enabled": startup_mac.enabled(),
+            "win_enabled": startup_win.enabled(),
+            "systemd_installed": systemd_is_installed(),
+            "gui_mode": os.environ.get("OMQ_GUI") == "1",
+            "keep_awake_available": keep_awake.available(),
+            "keep_awake_active": keep_awake.active(),
+            "keep_awake_enabled": getattr(settings, "keep_awake_enabled", False),
+            "keep_awake_method": keep_awake.method(),
+        }
+        # Windows debug info
+        if sys.platform == "win32":
+            result["win_exe"] = startup_win._get_exe_path()
+            result["win_frozen"] = getattr(sys, "frozen", False)
+            result["win_registry_value"] = startup_win.read_value()
+        # macOS debug info
+        if sys.platform == "darwin":
+            result["mac_exe"] = startup_mac._get_exe_path()
+            result["mac_frozen"] = getattr(sys, "frozen", False)
+            result["mac_plist"] = startup_mac.read_plist()
+            result["mac_log_dir"] = startup_mac._LOG_DIR
+        return result
+
+    def set_keep_awake(self, enable: bool) -> Settings:
+        if enable and not keep_awake.available():
+            raise ValueError("Keep awake is not available on this platform")
+        keep_awake.sync_from_settings(enable, self._log)
+        return self.apply_settings(keep_awake_enabled=enable)
+
+    def set_win_startup(self, enable: bool) -> Settings:
+        if not startup_win.available():
+            raise ValueError("Windows startup not available")
+        startup_win.set_enabled(enable, self._log)
+        return self.update_settings(win_startup_enabled=enable, autostart=enable)
+
+    def set_mac_startup(self, enable: bool) -> Settings:
+        if not startup_mac.available():
+            raise ValueError("macOS LaunchAgent not available")
+        startup_mac.set_enabled(enable, self._log)
+        return self.update_settings(mac_startup_enabled=enable, autostart=enable)
+
+    def install_systemd(self, host: str | None = None, port: int | None = None) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {}
+        if host is not None:
+            kwargs["host"] = host
+        if port is not None:
+            kwargs["port"] = port
+        return install_systemd_unit(**kwargs)
+
+    def uninstall_systemd(self) -> dict[str, Any]:
+        return uninstall_systemd_unit()
+
+    def sync_keep_awake_from_settings(self) -> None:
+        """Apply the persisted ``keep_awake_enabled`` flag at startup, without
+        re-persisting it (unlike :meth:`set_keep_awake`, which is the user-facing
+        toggle)."""
+        if self.get_settings().keep_awake_enabled:
+            keep_awake.sync_from_settings(True, self._log)
+
+    def shutdown_keep_awake(self) -> None:
+        keep_awake.shutdown()
+
+    # ==================================================================
     # Task queries
     # ==================================================================
 
@@ -922,7 +1065,7 @@ class Orchestrator:
                 if not isinstance(raw, dict):
                     continue
                 try:
-                    task = Task.from_poll(raw)
+                    task = Task.from_wire(raw)
                 except Exception as exc:  # noqa: BLE001
                     self._record_error("ERROR", "[ws] malformed task push", exc=exc)
                     continue
