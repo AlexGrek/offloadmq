@@ -220,6 +220,47 @@ explicit `PATH` to the plist:
 ```
 then `launchctl unload` + `launchctl load` to pick it up.
 
+**Making the installed binary show up in Spotlight/Launchpad:** `task
+upgrade-client-on-this-mac` (and the raw `omq-gui` binary generally) is not a
+real `.app` bundle, so it won't appear in Spotlight/Launchpad search even
+while running as a LaunchAgent. Wrap it in a thin launcher bundle instead of
+rebuilding the full PyInstaller `.app`:
+
+```bash
+mkdir -p "$HOME/Applications/Offload Agent.app/Contents/MacOS"
+cat > "$HOME/Applications/Offload Agent.app/Contents/MacOS/Offload Agent" <<'EOF'
+#!/bin/bash
+exec "$HOME/.local/bin/omq-gui" "$@"
+EOF
+chmod +x "$HOME/Applications/Offload Agent.app/Contents/MacOS/Offload Agent"
+
+cat > "$HOME/Applications/Offload Agent.app/Contents/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key><string>Offload Agent</string>
+    <key>CFBundleDisplayName</key><string>Offload Agent</string>
+    <key>CFBundleIdentifier</key><string>com.offloadmq.agent.launcher</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>1.0</string>
+    <key>CFBundleExecutable</key><string>Offload Agent</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>LSUIElement</key><true/>
+</dict>
+</plist>
+EOF
+xattr -cr "$HOME/Applications/Offload Agent.app"
+mdimport "$HOME/Applications/Offload Agent.app"
+```
+
+Since it just `exec`s whatever is currently at `~/.local/bin/omq-gui`, it stays
+current across future `upgrade-client-on-this-mac` runs — no need to recreate
+it. Caveat: if the LaunchAgent is already running the agent in the background,
+launching this from Launchpad spawns a **second** `omq-gui` process (its own
+webview, likely a different random port) rather than focusing the existing
+instance — a limitation of `omq-gui` itself, not of the wrapper.
+
 ---
 
 ## Ansible Fleet Deployment
