@@ -105,6 +105,7 @@ pub async fn check_availability(state: &AppState) -> Result<AvailabilityResponse
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MgmtAgent {
     uid: String,
     uid_short: String,
