@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+
 use anyhow::{Result, bail};
+use chrono::Utc;
 use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use owo_colors::OwoColorize;
+use serde_json::Value;
 
-use crate::models::Agent;
+use crate::models::{Agent, QuotaUsage, RunnerStat, StorageQuotas, TaskSummary, TasksOverview};
 
 fn online_cell(online: bool) -> Cell {
     if online {
@@ -152,6 +156,261 @@ pub fn print_agent_detail(agent: &Agent) {
     }
 
     println!("{table}");
+}
+
+/// Compact "Ns" / "NmNs" / "NhNm" / "Nd" age string for a past timestamp.
+fn humanize_age(t: chrono::DateTime<Utc>) -> String {
+    let secs = (Utc::now() - t).num_seconds().max(0);
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m{}s", secs / 60, secs % 60)
+    } else if secs < 86400 {
+        format!("{}h{}m", secs / 3600, (secs % 3600) / 60)
+    } else {
+        format!("{}d", secs / 86400)
+    }
+}
+
+/// `omqcli status` — section 1: online agents with tech info and an
+/// aggregate success rate computed by summing per-capability heuristics
+/// (`RunnerStat`) across every capability for each agent's uid.
+pub fn print_status_agents(agents: &[Agent], stats: &[RunnerStat]) {
+    let online: Vec<&Agent> = agents.iter().filter(|a| a.is_online()).collect();
+    println!("{}", format!("Online agents ({})", online.len()).bold());
+    if online.is_empty() {
+        println!("{}", "  none".dimmed());
+        return;
+    }
+
+    let mut totals: HashMap<&str, (u64, u64)> = HashMap::new();
+    for s in stats {
+        let entry = totals.entry(s.runner_id.as_str()).or_default();
+        entry.0 += s.total_runs;
+        entry.1 += s.success_count;
+    }
+
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            "SHORT ID",
+            "NAME",
+            "TIER",
+            "CAP.",
+            "LOAD",
+            "OS",
+            "CPU",
+            "GPU",
+            "MEM (GB)",
+            "APP VERSION",
+            "SUCCESS RATE",
+        ]);
+
+    for agent in &online {
+        let (os, cpu, gpu, mem) = match &agent.system_info {
+            Some(info) => (
+                info.os.clone(),
+                info.cpu_model.clone().unwrap_or_else(|| info.cpu_arch.clone()),
+                info.gpu
+                    .as_ref()
+                    .map(|g| format!("{} {}", g.vendor, g.model))
+                    .unwrap_or_else(|| "-".into()),
+                info.total_memory_gb.to_string(),
+            ),
+            None => ("-".into(), "-".into(), "-".into(), "-".into()),
+        };
+        let success = match totals.get(agent.uid.as_str()) {
+            Some((total, success)) if *total > 0 => {
+                format!("{:.1}% ({total})", *success as f64 / *total as f64 * 100.0)
+            }
+            _ => "-".to_string(),
+        };
+
+        table.add_row(vec![
+            Cell::new(&agent.uid_short),
+            Cell::new(agent.display_name.as_deref().unwrap_or("-")),
+            Cell::new(agent.tier),
+            Cell::new(agent.capacity),
+            Cell::new(agent.in_flight.unwrap_or(0)),
+            Cell::new(os),
+            Cell::new(cpu),
+            Cell::new(gpu),
+            Cell::new(mem),
+            Cell::new(agent.app_version.as_deref().unwrap_or("-")),
+            Cell::new(success),
+        ]);
+    }
+    println!("{table}");
+}
+
+/// `omqcli status` — section 2: up to `limit` running and `limit` scheduled
+/// tasks, oldest first (longest-running / longest-waiting surfaces first).
+pub fn print_status_tasks(tasks: &TasksOverview, agents: &[Agent], limit: usize) {
+    let agent_names: HashMap<&str, &str> = agents
+        .iter()
+        .map(|a| (a.uid.as_str(), a.uid_short.as_str()))
+        .collect();
+
+    let mut running: Vec<&TaskSummary> = tasks
+        .urgent
+        .assigned
+        .iter()
+        .chain(tasks.regular.assigned.iter())
+        .collect();
+    running.sort_by_key(|t| t.created_at);
+
+    let mut scheduled: Vec<&TaskSummary> = tasks
+        .urgent
+        .unassigned
+        .iter()
+        .chain(tasks.regular.unassigned.iter())
+        .collect();
+    scheduled.sort_by_key(|t| t.created_at);
+
+    println!();
+    println!("{}", format!("Running tasks ({})", running.len()).bold());
+    if running.is_empty() {
+        println!("{}", "  none".dimmed());
+    } else {
+        for t in running.iter().take(limit) {
+            let agent = t
+                .agent_id
+                .as_deref()
+                .and_then(|id| agent_names.get(id))
+                .copied()
+                .unwrap_or("?");
+            let status = t.status.as_deref().unwrap_or("running");
+            let stage = t.stage.as_deref().map(|s| format!(" [{s}]")).unwrap_or_default();
+            println!(
+                "  {}[{}] on {} — {}{} ({} ago)",
+                t.id.cap.cyan(),
+                t.id.id.dimmed(),
+                agent,
+                status,
+                stage,
+                humanize_age(t.created_at)
+            );
+        }
+        if running.len() > limit {
+            println!("  {}", format!("... and {} more", running.len() - limit).dimmed());
+        }
+    }
+
+    println!();
+    println!("{}", format!("Scheduled tasks ({})", scheduled.len()).bold());
+    if scheduled.is_empty() {
+        println!("{}", "  none".dimmed());
+    } else {
+        for t in scheduled.iter().take(limit) {
+            println!(
+                "  {}[{}] waiting ({} ago)",
+                t.id.cap.cyan(),
+                t.id.id.dimmed(),
+                humanize_age(t.created_at)
+            );
+        }
+        if scheduled.len() > limit {
+            println!(
+                "  {}",
+                format!("... and {} more", scheduled.len() - limit).dimmed()
+            );
+        }
+    }
+}
+
+/// `omqcli status` — section 3: bucket count vs. the global max-per-key quota
+/// for every API key that currently owns at least one bucket.
+pub fn print_status_buckets(quotas: &StorageQuotas) {
+    println!();
+    println!("{}", "Storage buckets".bold());
+    let max = quotas.limits.max_buckets_per_key;
+    if quotas.usage.is_empty() {
+        println!(
+            "{}",
+            format!("  no buckets in use (max {max} per API key)").dimmed()
+        );
+        return;
+    }
+
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec!["API KEY", "BUCKETS", "MAX"]);
+
+    let mut rows: Vec<(&String, &QuotaUsage)> = quotas.usage.iter().collect();
+    rows.sort_by_key(|(_, usage)| std::cmp::Reverse(usage.bucket_count));
+    for (key, usage) in rows {
+        table.add_row(vec![Cell::new(key), Cell::new(usage.bucket_count), Cell::new(max)]);
+    }
+    println!("{table}");
+}
+
+/// `omqcli status` — section 4: all capabilities currently provided by
+/// online agents.
+pub fn print_status_capabilities(caps: &[String]) {
+    println!();
+    let mut sorted = caps.to_vec();
+    sorted.sort();
+    println!("{}", format!("Available capabilities ({})", sorted.len()).bold());
+    if sorted.is_empty() {
+        println!("{}", "  none".dimmed());
+    } else {
+        println!("  {}", sorted.join(", "));
+    }
+}
+
+/// Print the result of a `slavemode.*` task: the server's response shape
+/// varies (a full assigned-task record on success, a short `{id, status,
+/// message}` record on server-side expiry), so pull out the fields we care
+/// about defensively rather than assuming one exact struct.
+///
+/// Returns `Err` if the task's terminal status was not `completed`, so
+/// callers can propagate a non-zero exit code.
+pub fn print_slavemode_result(capability: &str, raw: &Value) -> Result<()> {
+    let status = raw
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let result = raw.get("result").or_else(|| raw.get("output"));
+    let log = raw.get("log").and_then(|v| v.as_str());
+    let message = raw.get("message").and_then(|v| v.as_str());
+
+    let ok = status == "completed";
+    let label = if ok {
+        status.green().bold().to_string()
+    } else {
+        status.red().bold().to_string()
+    };
+    println!("{} {} {}", capability.cyan(), "→".dimmed(), label);
+
+    if let Some(msg) = message {
+        println!("{msg}");
+    }
+    if let Some(result) = result
+        && !result.is_null()
+    {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(result).unwrap_or_else(|_| result.to_string())
+        );
+    }
+    if let Some(log) = log
+        && !log.is_empty()
+    {
+        println!("{}", "log:".dimmed());
+        println!("{log}");
+    }
+
+    if !ok {
+        let reason = message
+            .or_else(|| result.and_then(|r| r.as_str()))
+            .unwrap_or("task did not complete successfully");
+        bail!("{reason}");
+    }
+    Ok(())
 }
 
 /// Resolve a user-supplied identifier (full uid, short id, display name, or

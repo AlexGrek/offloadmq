@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
@@ -102,4 +104,84 @@ impl Agent {
         }
         false
     }
+}
+
+//=============================================================================
+// `omqcli status`
+//=============================================================================
+
+/// One row of `GET /management/heuristics/stats/runners` — per (capability,
+/// runner) execution stats. `status` aggregates these across capabilities to
+/// get one success rate per agent.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunnerStat {
+    #[serde(default)]
+    pub runner_id: String,
+    #[serde(default)]
+    pub total_runs: u64,
+    #[serde(default)]
+    pub success_count: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RunnerStatsResponse {
+    #[serde(default)]
+    pub items: Vec<RunnerStat>,
+}
+
+/// Minimal task identifier, mirrors the server's `TaskId { cap, id }`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TaskId {
+    pub cap: String,
+    pub id: String,
+}
+
+/// A row from `GET /management/tasks/list`. One struct covers both
+/// `UnassignedTask` (only `id`/`createdAt`) and `AssignedTask` (adds
+/// `agentId`/`status`/`stage`) — unknown/absent fields are simply ignored.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskSummary {
+    pub id: TaskId,
+    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub stage: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TaskGroup {
+    #[serde(default)]
+    pub assigned: Vec<TaskSummary>,
+    #[serde(default)]
+    pub unassigned: Vec<TaskSummary>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TasksOverview {
+    pub urgent: TaskGroup,
+    pub regular: TaskGroup,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct QuotaLimits {
+    #[serde(default)]
+    pub max_buckets_per_key: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct QuotaUsage {
+    #[serde(default)]
+    pub bucket_count: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StorageQuotas {
+    pub limits: QuotaLimits,
+    #[serde(default)]
+    pub usage: HashMap<String, QuotaUsage>,
 }

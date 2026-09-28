@@ -45,6 +45,120 @@ enum Command {
         #[command(subcommand)]
         target: DeleteTarget,
     },
+    /// Run a slavemode command (self-management task) on one agent
+    Agent {
+        /// Agent id, short id, display name, or machine fingerprint
+        id: String,
+        #[command(subcommand)]
+        action: AgentAction,
+    },
+    /// One-shot dashboard: online agents, running/scheduled tasks, bucket
+    /// quotas, and available capabilities
+    Status {
+        /// Max number of running and of scheduled tasks to list
+        #[arg(long, default_value_t = 5)]
+        task_limit: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentAction {
+    /// Re-detect capabilities and push the updated list to the server
+    ForceRescan {
+        /// Max seconds to wait for the agent
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Check for, or install, an agent binary update
+    Update {
+        /// Only report current/latest versions; do not install
+        #[arg(long)]
+        check: bool,
+        /// Max seconds to wait for the agent
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Manage custom capability definitions
+    Caps {
+        #[command(subcommand)]
+        action: CapsAction,
+    },
+    /// Manage Ollama models
+    Ollama {
+        #[command(subcommand)]
+        action: OllamaAction,
+    },
+    /// Manage ONNX models
+    Onnx {
+        #[command(subcommand)]
+        action: OnnxAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum CapsAction {
+    /// List custom capability definitions
+    Get {
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Create or replace a custom capability definition
+    Set {
+        /// JSON object describing the capability, or @path/to/file.json
+        json: String,
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Delete a custom capability definition by name
+    Delete {
+        name: String,
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum OllamaAction {
+    /// List installed Ollama models
+    List {
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Pull (download) an Ollama model
+    Pull {
+        model: String,
+        /// Max seconds of silence between progress updates before giving up
+        #[arg(long, default_value_t = 1800)]
+        timeout: u64,
+    },
+    /// Delete an installed Ollama model
+    Delete {
+        model: String,
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum OnnxAction {
+    /// List known ONNX models and their install state
+    List {
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Download an ONNX model
+    Prepare {
+        model: String,
+        /// Max seconds of silence between progress updates before giving up
+        #[arg(long, default_value_t = 1800)]
+        timeout: u64,
+    },
+    /// Delete a downloaded ONNX model
+    Delete {
+        model: String,
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -100,6 +214,34 @@ fn main() {
         Command::Delete { target } => match target {
             DeleteTarget::Agent { id, yes } => commands::delete::agent(&id, yes),
         },
+        Command::Agent { id, action } => match action {
+            AgentAction::ForceRescan { timeout } => commands::agent::force_rescan(&id, timeout),
+            AgentAction::Update { check, timeout } => commands::agent::update(&id, check, timeout),
+            AgentAction::Caps { action } => match action {
+                CapsAction::Get { timeout } => commands::agent::caps_get(&id, timeout),
+                CapsAction::Set { json, timeout } => commands::agent::caps_set(&id, &json, timeout),
+                CapsAction::Delete { name, timeout } => commands::agent::caps_delete(&id, &name, timeout),
+            },
+            AgentAction::Ollama { action } => match action {
+                OllamaAction::List { timeout } => commands::agent::ollama_list(&id, timeout),
+                OllamaAction::Pull { model, timeout } => {
+                    commands::agent::ollama_pull(&id, &model, timeout)
+                }
+                OllamaAction::Delete { model, timeout } => {
+                    commands::agent::ollama_delete(&id, &model, timeout)
+                }
+            },
+            AgentAction::Onnx { action } => match action {
+                OnnxAction::List { timeout } => commands::agent::onnx_list(&id, timeout),
+                OnnxAction::Prepare { model, timeout } => {
+                    commands::agent::onnx_prepare(&id, &model, timeout)
+                }
+                OnnxAction::Delete { model, timeout } => {
+                    commands::agent::onnx_delete(&id, &model, timeout)
+                }
+            },
+        },
+        Command::Status { task_limit } => commands::status::run(task_limit),
     };
 
     if let Err(e) = result {
