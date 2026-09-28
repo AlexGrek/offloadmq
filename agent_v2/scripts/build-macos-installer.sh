@@ -88,6 +88,7 @@ echo "-- pyinstaller omq"
   uv run --with pyinstaller pyinstaller \
     --onefile \
     --name omq \
+    --icon ../assets/icon.png \
     --add-data "../ui-server/frontend/dist:frontend/dist" \
     src/cli_manager/main.py
 )
@@ -102,6 +103,7 @@ echo "-- pyinstaller omq-gui"
     --onefile \
     --windowed \
     --name omq-gui \
+    --icon ../assets/icon.png \
     --add-data "../ui-server/frontend/dist:frontend/dist" \
     src/gui_manager/main.py
 )

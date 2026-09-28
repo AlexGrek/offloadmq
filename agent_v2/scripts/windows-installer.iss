@@ -32,6 +32,7 @@ Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
 UninstallDisplayName={#AppName}
+SetupIconFile=..\assets\icon.ico
 UninstallDisplayIcon={app}\omq-gui.exe
 
 [Languages]

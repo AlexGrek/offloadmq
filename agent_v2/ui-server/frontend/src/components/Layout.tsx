@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import {
-  Cpu,
   FileCode,
   Image,
   LayoutDashboard,
@@ -87,7 +86,7 @@ export function Layout() {
             {open ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
           <div className="flex items-center gap-2 font-semibold">
-            <Cpu className="size-5" />
+            <img src="/favicon.png" alt="" className="size-6" />
             <span className="hidden sm:inline">OffloadMQ Agent</span>
             {label && (
               <span className="text-muted-foreground font-normal text-sm sm:before:content-['/'] sm:before:mr-2 sm:before:text-border">
