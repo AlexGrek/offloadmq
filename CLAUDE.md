@@ -84,9 +84,11 @@ Standalone Rust CLI in [offloadmq-cli/](offloadmq-cli/) (own `Cargo.toml`, not p
 of the root crate) for operators — lists/describes/deletes agents, runs
 `slavemode.*` self-management commands (force-rescan, agent binary update, Ollama
 model management, ONNX model management, custom-capability CRUD) pinned to one
-specific agent, and `status` prints a one-shot fleet dashboard (online agents +
+specific agent, `status` prints a one-shot fleet dashboard (online agents +
 success rate, up to 5 running/scheduled tasks, bucket usage vs. quota per API
-key, available capabilities). Talks to the management API + the client API's
+key, available capabilities), and full task control (`list tasks`, `describe
+task`, `cancel task`, `reset tasks`) matches everything the Tasks page in
+management-frontend can do. Talks to the management API + the client API's
 management override (`X-MGMT-API-KEY`), authenticated with `MGMT_TOKEN`. Full
 docs: [offloadmq-cli/README.md](offloadmq-cli/README.md).
 ```bash

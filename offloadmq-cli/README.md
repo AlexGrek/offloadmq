@@ -45,11 +45,13 @@ omqcli <COMMAND>
 
 Commands:
   auth      Save the management API key (and optionally the server URL) to ~/.omqcli.yaml
-  list      List agents or online capabilities
+  list      List agents, online capabilities, or tasks
   describe  Show full details for a single resource
   delete    Delete a resource
   agent     Run a slavemode command (self-management task) on one agent
   status    One-shot dashboard: online agents, running/scheduled tasks, bucket quotas, and available capabilities
+  cancel    Cancel a running or queued resource
+  reset     Reset (permanently clear) all of a resource type
   help      Print this message or the help of the given subcommand(s)
 ```
 
@@ -58,22 +60,30 @@ Commands:
 ```bash
 omqcli list agents [--online]     # table: short id, name, status, tier, capacity, load, caps, last contact
 omqcli list caps [--ext]          # online capabilities; --ext includes bracketed attributes
+omqcli list tasks [--unassigned-only] [--cap <capability>]
 ```
 
 `list caps` (alias `list capabilities`) hits `/management/capabilities/list/online`
 (or `/online_ext` with `--ext`) — the same extended-capability convention documented
 in the root [CLAUDE.md](../CLAUDE.md#extended-capability-attributes).
 
+`list tasks` is the full task-control view — see [Task control](#task-control-list-tasks-describe-task-cancel-task-reset-tasks)
+below.
+
 ### `describe`
 
 ```bash
 omqcli describe agent <id>
+omqcli describe task <capability> <id>
 ```
 
-Prints every field the server tracks for one agent: uid, short id, display name,
-online/offline + WebSocket-connected status, registration/last-contact timestamps,
-tier, capacity, in-flight count, app version, full capability list, and — when
-present — system info (OS, CPU, GPU, total memory, machine fingerprint).
+`describe agent` prints every field the server tracks for one agent: uid, short
+id, display name, online/offline + WebSocket-connected status,
+registration/last-contact timestamps, tier, capacity, in-flight count, app
+version, full capability list, and — when present — system info (OS, CPU, GPU,
+total memory, machine fingerprint).
+
+`describe task` is covered below.
 
 ### `delete`
 
@@ -83,6 +93,50 @@ omqcli delete agent <id> [-y|--yes]
 
 Permanently removes an agent from the registry (`POST /management/agents/delete/{id}`).
 Prompts for confirmation unless `-y`/`--yes` is passed.
+
+### Task control: `list tasks`, `describe task`, `cancel task`, `reset tasks`
+
+Full parity with the management frontend's Tasks page (`TasksPage.jsx` /
+`TaskDataRenderer.jsx`) — everything it can do to a task, `omqcli` can do too.
+All four commands hit `/management/tasks/*` and need only the management token
+(no client API key, no task ownership check — that's the point of the
+management override).
+
+```bash
+omqcli list tasks                              # every task, grouped urgent/regular × assigned/unassigned
+omqcli list tasks --unassigned-only             # only queued tasks (mirrors the UI's "Unassigned only" toggle)
+omqcli list tasks --cap llm.mistral             # only tasks for one capability (not in the UI, added for convenience)
+
+omqcli describe task llm.mistral 01ARZ3NDE4V2XTGZUVY7   # full detail: metadata, payload, result, log, history
+
+omqcli cancel task llm.mistral 01ARZ3NDE4V2XTGZUVY7      # prompts for confirmation
+omqcli cancel task llm.mistral 01ARZ3NDE4V2XTGZUVY7 -y   # skip the prompt
+
+omqcli reset tasks                              # DESTRUCTIVE — clears every task, prompts for confirmation
+omqcli reset tasks -y                           # skip the prompt
+```
+
+- **`list tasks`** fetches `GET /management/tasks/list` (all four buckets:
+  urgent/regular × assigned/unassigned) and prints one table per non-empty
+  bucket — task id, capability, status, stage, agent (resolved to short
+  id + name), flags (`urgent`/`restartable`), and creation time.
+- **`describe task <cap> <id>`** scans the same response for a matching
+  `(cap, id)` — there's no server-side get-by-id endpoint, only the full list —
+  and prints everything: which queue/bucket it's in, status/stage, timestamps,
+  assigned agent, flags, the full JSON payload, the result (on
+  completion/failure), the accumulated log, and the history of state
+  transitions. Errors clearly if the task isn't found (it may already be
+  archived/expired).
+- **`cancel task <cap> <id>`** calls `POST /management/tasks/cancel/{cap}/{id}`
+  with the management override, which — unlike the client-facing cancel
+  endpoint — bypasses API-key ownership checks entirely. Works on both urgent
+  and regular tasks, queued or in-flight; queued tasks cancel immediately,
+  in-flight tasks move to `cancelRequested` (the agent gets HTTP 499 on its
+  next progress/resolve call). Fails with `404` if the task doesn't exist or
+  `409` if it's already terminal/cancel-requested.
+- **`reset tasks`** calls `POST /management/tasks/reset` — clears **every**
+  task, in-memory and persisted, with no way to undo it. Same destructive
+  operation as the Tasks page's "Reset" button. Always confirms unless `-y`.
 
 ### `status`
 
@@ -172,7 +226,7 @@ of guessing.
 
 ## How it talks to the server
 
-- `auth`, `list`, `describe`, `delete`, `status` all call the **management API**
+- `auth`, `list`, `describe`, `delete`, `status`, `cancel`, `reset` all call the **management API**
   (`/management/*`), authenticated with `Authorization: Bearer <management-token>`.
 - `agent <id> <action>` calls the **client API**'s blocking submit endpoint
   (`POST /api/task/submit_blocking`) using the **management override** header
@@ -231,4 +285,4 @@ any other command will run. Re-run `auth` to change either value.
 | [`src/config.rs`](src/config.rs) | `~/.omqcli.yaml` load/save |
 | [`src/models.rs`](src/models.rs) | `Agent` and related structs deserialized from the management API, plus id-matching logic |
 | [`src/output.rs`](src/output.rs) | Table/detail printing, agent resolution, slavemode result printing |
-| [`src/commands/`](src/commands/) | One module per top-level command (`auth.rs`, `list.rs`, `describe.rs`, `delete.rs`, `agent.rs`, `status.rs`) |
+| [`src/commands/`](src/commands/) | One module per top-level command (`auth.rs`, `list.rs`, `describe.rs`, `delete.rs`, `agent.rs`, `status.rs`, `task.rs`) — `task.rs` backs `list tasks`/`describe task`/`cancel task`/`reset tasks` |

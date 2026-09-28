@@ -30,7 +30,7 @@ enum Command {
         #[arg(long)]
         server: Option<String>,
     },
-    /// List agents or online capabilities
+    /// List agents, online capabilities, or tasks
     List {
         #[command(subcommand)]
         target: ListTarget,
@@ -58,6 +58,16 @@ enum Command {
         /// Max number of running and of scheduled tasks to list
         #[arg(long, default_value_t = 5)]
         task_limit: usize,
+    },
+    /// Cancel a running or queued resource
+    Cancel {
+        #[command(subcommand)]
+        target: CancelTarget,
+    },
+    /// Reset (permanently clear) all of a resource type
+    Reset {
+        #[command(subcommand)]
+        target: ResetTarget,
     },
 }
 
@@ -176,6 +186,15 @@ enum ListTarget {
         #[arg(long)]
         ext: bool,
     },
+    /// List all tasks (urgent/regular, assigned/unassigned)
+    Tasks {
+        /// Only show queued/unassigned tasks
+        #[arg(long)]
+        unassigned_only: bool,
+        /// Only show tasks for one capability
+        #[arg(long)]
+        cap: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -183,6 +202,13 @@ enum DescribeTarget {
     /// Show details for one agent (full uid, short id, display name, or fingerprint)
     Agent {
         /// Agent id, short id, display name, or machine fingerprint
+        id: String,
+    },
+    /// Show full detail for one task: metadata, payload, result, log, history
+    Task {
+        /// Task capability (queue)
+        cap: String,
+        /// Task id
         id: String,
     },
 }
@@ -199,6 +225,30 @@ enum DeleteTarget {
     },
 }
 
+#[derive(Subcommand)]
+enum CancelTarget {
+    /// Cancel one task, queued or in-flight (bypasses client-key ownership checks)
+    Task {
+        /// Task capability (queue)
+        cap: String,
+        /// Task id
+        id: String,
+        /// Skip the confirmation prompt
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum ResetTarget {
+    /// Clear every task — urgent and regular, queued and running. Destructive.
+    Tasks {
+        /// Skip the confirmation prompt
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -207,9 +257,11 @@ fn main() {
         Command::List { target } => match target {
             ListTarget::Agents { online } => commands::list::agents(online),
             ListTarget::Caps { ext } => commands::list::capabilities(ext),
+            ListTarget::Tasks { unassigned_only, cap } => commands::task::list(unassigned_only, cap),
         },
         Command::Describe { target } => match target {
             DescribeTarget::Agent { id } => commands::describe::agent(&id),
+            DescribeTarget::Task { cap, id } => commands::task::describe(&cap, &id),
         },
         Command::Delete { target } => match target {
             DeleteTarget::Agent { id, yes } => commands::delete::agent(&id, yes),
@@ -242,6 +294,12 @@ fn main() {
             },
         },
         Command::Status { task_limit } => commands::status::run(task_limit),
+        Command::Cancel { target } => match target {
+            CancelTarget::Task { cap, id, yes } => commands::task::cancel(&cap, &id, yes),
+        },
+        Command::Reset { target } => match target {
+            ResetTarget::Tasks { yes } => commands::task::reset(yes),
+        },
     };
 
     if let Err(e) = result {

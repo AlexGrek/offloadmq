@@ -362,6 +362,189 @@ pub fn print_status_capabilities(caps: &[String]) {
     }
 }
 
+/// `omqcli list tasks` — every task across all four buckets (urgent/regular ×
+/// assigned/unassigned), one table per non-empty bucket. `unassigned_only`
+/// mirrors the management UI's "Unassigned only" toggle; `cap_filter`
+/// restricts to one capability (not present in the UI, added for convenience).
+pub fn print_tasks_table(
+    tasks: &TasksOverview,
+    agents: &[Agent],
+    unassigned_only: bool,
+    cap_filter: Option<&str>,
+) {
+    let agent_names: HashMap<&str, String> = agents
+        .iter()
+        .map(|a| {
+            (
+                a.uid.as_str(),
+                format!("{} ({})", a.uid_short, a.display_name.as_deref().unwrap_or("unnamed")),
+            )
+        })
+        .collect();
+
+    let groups: [(&str, &str, &Vec<TaskSummary>); 4] = [
+        ("urgent", "assigned", &tasks.urgent.assigned),
+        ("urgent", "unassigned", &tasks.urgent.unassigned),
+        ("regular", "assigned", &tasks.regular.assigned),
+        ("regular", "unassigned", &tasks.regular.unassigned),
+    ];
+
+    let mut printed_any = false;
+    for (queue, bucket, list) in groups {
+        if unassigned_only && bucket == "assigned" {
+            continue;
+        }
+        let filtered: Vec<&TaskSummary> = list
+            .iter()
+            .filter(|t| cap_filter.is_none_or(|c| t.id.cap == c))
+            .collect();
+        if filtered.is_empty() {
+            continue;
+        }
+        printed_any = true;
+
+        println!("{}", format!("{queue} / {bucket} ({})", filtered.len()).bold());
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec!["TASK ID", "CAPABILITY", "STATUS", "STAGE", "AGENT", "FLAGS", "CREATED"]);
+
+        for t in &filtered {
+            let status = t
+                .status
+                .clone()
+                .unwrap_or_else(|| if bucket == "assigned" { "assigned".into() } else { "queued".into() });
+            let agent = t
+                .agent_id
+                .as_deref()
+                .and_then(|id| agent_names.get(id))
+                .cloned()
+                .unwrap_or_else(|| "-".into());
+            let flags = t
+                .data
+                .as_ref()
+                .map(|d| {
+                    let mut f = vec![];
+                    if d.urgent {
+                        f.push("urgent");
+                    }
+                    if d.restartable {
+                        f.push("restartable");
+                    }
+                    f.join(",")
+                })
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "-".into());
+
+            table.add_row(vec![
+                Cell::new(&t.id.id),
+                Cell::new(&t.id.cap),
+                Cell::new(status),
+                Cell::new(t.stage.as_deref().unwrap_or("-")),
+                Cell::new(agent),
+                Cell::new(flags),
+                Cell::new(t.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+            ]);
+        }
+        println!("{table}");
+        println!();
+    }
+
+    if !printed_any {
+        println!("{}", "No tasks found.".yellow());
+    }
+}
+
+/// `omqcli describe task` — full detail for one task: metadata, payload,
+/// result, log, and history, mirroring the management UI's expanded task card.
+pub fn print_task_detail(queue: &str, assigned: bool, task: &TaskSummary, agents: &[Agent]) {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+
+    let mut row = |k: &str, v: String| {
+        table.add_row(vec![Cell::new(k).fg(Color::Blue), Cell::new(v)]);
+    };
+
+    row("Task ID", task.id.id.clone());
+    row("Capability", task.id.cap.clone());
+    row(
+        "Queue",
+        format!("{queue} ({})", if assigned { "assigned" } else { "unassigned" }),
+    );
+    row(
+        "Status",
+        task.status
+            .clone()
+            .unwrap_or_else(|| if assigned { "assigned".into() } else { "queued".into() }),
+    );
+    if let Some(stage) = &task.stage {
+        row("Stage", stage.clone());
+    }
+    row("Created", task.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string());
+    if let Some(assigned_at) = task.assigned_at {
+        row("Assigned at", assigned_at.format("%Y-%m-%d %H:%M:%S UTC").to_string());
+    }
+    if let Some(agent_id) = &task.agent_id {
+        let name = agents
+            .iter()
+            .find(|a| &a.uid == agent_id)
+            .map(|a| format!("{} ({})", a.uid_short, a.display_name.as_deref().unwrap_or("unnamed")))
+            .unwrap_or_else(|| agent_id.clone());
+        row("Agent", name);
+    }
+    if let Some(data) = &task.data {
+        let mut flags = vec![];
+        if data.urgent {
+            flags.push("urgent");
+        }
+        if data.restartable {
+            flags.push("restartable");
+        }
+        row("Flags", if flags.is_empty() { "-".into() } else { flags.join(", ") });
+    }
+    println!("{table}");
+
+    if let Some(payload) = task.data.as_ref().and_then(|d| d.payload.as_ref())
+        && !payload.is_null()
+    {
+        println!();
+        println!("{}", "Payload:".bold());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(payload).unwrap_or_else(|_| payload.to_string())
+        );
+    }
+    if let Some(result) = &task.result
+        && !result.is_null()
+    {
+        println!();
+        println!("{}", "Result:".bold());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(result).unwrap_or_else(|_| result.to_string())
+        );
+    }
+    if let Some(log) = &task.log
+        && !log.is_empty()
+    {
+        println!();
+        println!("{}", "Log:".bold());
+        println!("{log}");
+    }
+    if !task.history.is_empty() {
+        println!();
+        println!("{}", "History:".bold());
+        for h in &task.history {
+            println!(
+                "  {} {}",
+                h.timestamp.format("%Y-%m-%d %H:%M:%S UTC").to_string().dimmed(),
+                h.description
+            );
+        }
+    }
+}
+
 /// Print the result of a `slavemode.*` task: the server's response shape
 /// varies (a full assigned-task record on success, a short `{id, status,
 /// message}` record on server-side expiry), so pull out the fields we care

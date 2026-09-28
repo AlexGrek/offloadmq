@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::Value;
 
 /// Online threshold used by the server (`Agent::ONLINE_TIMEOUT_SECS`).
 pub const ONLINE_TIMEOUT_SECS: i64 = 120;
@@ -137,20 +138,52 @@ pub struct TaskId {
     pub id: String,
 }
 
+/// A single historical event in a task's lifecycle (`AssignedTask.history`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskEvent {
+    pub timestamp: DateTime<Utc>,
+    pub description: String,
+}
+
+/// The client-submitted request data embedded in a task (`AssignedTask.data`
+/// / `UnassignedTask.data`), i.e. `TaskSubmissionRequest` on the server.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskData {
+    #[serde(default)]
+    pub payload: Option<Value>,
+    #[serde(default)]
+    pub urgent: bool,
+    #[serde(default)]
+    pub restartable: bool,
+}
+
 /// A row from `GET /management/tasks/list`. One struct covers both
-/// `UnassignedTask` (only `id`/`createdAt`) and `AssignedTask` (adds
-/// `agentId`/`status`/`stage`) — unknown/absent fields are simply ignored.
+/// `UnassignedTask` (only `id`/`data`/`createdAt`) and `AssignedTask` (adds
+/// `agentId`/`status`/`stage`/`result`/`log`/`history`/`assignedAt`) —
+/// fields absent for the unassigned shape just deserialize to their default.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskSummary {
     pub id: TaskId,
     pub created_at: DateTime<Utc>,
     #[serde(default)]
+    pub data: Option<TaskData>,
+    #[serde(default)]
     pub agent_id: Option<String>,
+    #[serde(default)]
+    pub assigned_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
     pub stage: Option<String>,
+    #[serde(default)]
+    pub result: Option<Value>,
+    #[serde(default)]
+    pub log: Option<String>,
+    #[serde(default)]
+    pub history: Vec<TaskEvent>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

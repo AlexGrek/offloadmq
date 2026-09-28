@@ -7,6 +7,23 @@ use serde_json::Value;
 
 use crate::models::{Agent, RunnerStat, RunnerStatsResponse, StorageQuotas, TasksOverview};
 
+/// Percent-encode one URL path segment. Capabilities can contain `/`
+/// (namespaced models like `hf.co/org/model`) and `:` (tags like `qwen3:8b`),
+/// both of which must be encoded or they'd be read as extra path segments —
+/// see docs/tasks-api.md's note on capability path segments.
+fn encode_path_segment(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 pub struct Client {
     http: HttpClient,
     server: String,
@@ -106,6 +123,26 @@ impl Client {
     pub fn delete_agent(&self, agent_id: &str) -> Result<()> {
         let path = format!("/management/agents/delete/{agent_id}");
         Self::check_status(self.http.post(self.url(&path)).send()?)?;
+        Ok(())
+    }
+
+    /// Cancel one task regardless of who owns it (management bypasses the
+    /// client-API-key ownership check the client-facing cancel endpoint has).
+    /// Returns the raw `{id, status, message}` response.
+    pub fn cancel_task(&self, cap: &str, id: &str) -> Result<Value> {
+        let path = format!(
+            "/management/tasks/cancel/{}/{}",
+            encode_path_segment(cap),
+            encode_path_segment(id)
+        );
+        let resp = Self::check_status(self.http.post(self.url(&path)).send()?)?;
+        Ok(resp.json()?)
+    }
+
+    /// Clear every task — urgent and regular, assigned and unassigned.
+    /// Destructive; callers should confirm with the operator first.
+    pub fn reset_tasks(&self) -> Result<()> {
+        Self::check_status(self.http.post(self.url("/management/tasks/reset")).send()?)?;
         Ok(())
     }
 

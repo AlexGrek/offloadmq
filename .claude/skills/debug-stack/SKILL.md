@@ -68,6 +68,18 @@ status is stuck at `assigned` while `stage` says `running`.
    ```
 5. **Management API** — `/management/*` with `X-MGMT-API-KEY` for agents/tasks/caps
    (`/management/capabilities/list/online_ext` shows raw caps with brackets).
+6. **`omqcli`** ([offloadmq-cli/](../../../offloadmq-cli/), binary `omqcli`) — a CLI
+   over the same management API, faster than hand-rolling curl:
+   `omqcli status` is a one-shot dashboard (online agents + success rate, up to 5
+   running/scheduled tasks, bucket usage, available capabilities) — good first
+   command for "is the task even queued / is an agent online with this cap".
+   `omqcli describe agent <id|fingerprint>` dumps one agent's full record
+   (capabilities, tier, system info, app version). `omqcli agent <id>
+   force-rescan` re-pushes an agent's capability list without restarting it —
+   useful when `/management/capabilities/list/online_ext` doesn't show a
+   capability you just enabled. One-time setup: `omqcli auth --key
+   this-is-for-testing-management-tokens` (local dev). Full command reference:
+   [offloadmq-cli/README.md](../../../offloadmq-cli/README.md).
 
 Local dev keys (documented, do not grep .env): client `client_secret_key_123`,
 agent `ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e`,
@@ -174,7 +186,7 @@ tasks (scheduler matches on base, but the task's cap key must be the base form).
 | `typicalRuntimeSeconds` null | expected until 2 successful runs of that cap on that machine; check heuristics, not a bug per se |
 | Poll JSON right, OAI DB row (`image_offload_tasks`) wrong | OAI backend poll/persist |
 | DB row right, UI wrong | OAI frontend (check which of the 3 data sources the component actually reads) |
-| Task never leaves `queued` | no online agent with matching base cap / tier reservation — check `/management/capabilities/list/online_ext` |
+| Task never leaves `queued` | no online agent with matching base cap / tier reservation — check `omqcli status` or `/management/capabilities/list/online_ext` |
 | Sandbox app works, OAI doesn't | almost always status-vs-stage or a field OAI needs that sandbox doesn't (sandbox anchors on `createdAt`) |
 
 ## Pitfalls learned the hard way

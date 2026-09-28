@@ -313,6 +313,21 @@ ansible-playbook playbooks/site.yml -i inventory/hosts.yml \
   -e offload_agent_force_register=true
 ```
 
+### Verify fleet state from the CLI (`omqcli`)
+
+[offloadmq-cli/](offloadmq-cli/) (binary `omqcli`) is a standalone client over
+the management API — faster than curl for checking whether an Ansible run
+actually landed:
+
+```bash
+omqcli auth --key <management-token>       # once
+omqcli status                              # online agents + success rate, queued/running tasks, capabilities
+omqcli describe agent <id|fingerprint>     # one agent's full capability/tier/system-info record
+omqcli agent <id> force-rescan             # re-push an agent's capability list without a full re-register
+```
+
+Full reference: [offloadmq-cli/README.md](offloadmq-cli/README.md).
+
 ---
 
 ## Tier-Based Scheduling (server side)

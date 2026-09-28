@@ -215,7 +215,9 @@ explicit `PATH` to the plist:
     <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
 </dict>
 ```
-then `launchctl unload` + `launchctl load` to pick it up.
+then `launchctl unload` + `launchctl load` to pick it up. Verify the fix landed
+without SSHing back in: `omqcli describe agent <id|fingerprint>` (or `omqcli
+status` for the whole fleet) — see the note under Managing Capabilities below.
 
 **Making the installed binary show up in Spotlight/Launchpad:** `task
 upgrade-client-on-this-mac` (and the raw `omq-gui` binary generally) is not a
@@ -413,6 +415,22 @@ offload-agent cli register --server URL --key KEY --caps shell.bash
 # Via Ansible: remove from inventory, run playbook
 # Role detects capability mismatch and re-registers automatically
 ```
+
+### Verifying from the server side (`omqcli`)
+
+[offloadmq-cli/](../../../offloadmq-cli/) (binary `omqcli`) talks to the
+management API and is the fastest way to confirm a capability change actually
+reached the server, without re-checking the agent's own logs:
+
+```bash
+omqcli auth --key <management-token>       # once
+omqcli describe agent <id|fingerprint>     # full capability list, tier, app version, system info
+omqcli status                              # whole-fleet view: online agents, capabilities, running/queued tasks
+```
+
+For agent_v2 specifically, `omqcli agent <id> force-rescan` re-detects and
+re-pushes the capability list over the existing connection — no re-register,
+no restart. Full reference: [offloadmq-cli/README.md](../../../offloadmq-cli/README.md).
 
 ---
 
