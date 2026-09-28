@@ -57,6 +57,14 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return dump(settings)
 
+    @router.post("/system/pause-on-battery")
+    def pause_on_battery_toggle(enable: bool = Query(...)) -> dict[str, Any]:
+        try:
+            settings = orch.set_pause_on_battery(enable)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return dump(settings)
+
     @router.post("/system/win-startup")
     def win_startup(enable: bool = Query(...)) -> dict[str, Any]:
         try:

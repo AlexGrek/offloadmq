@@ -38,6 +38,7 @@ export interface TaskRecord {
 export interface AgentStatus {
   running: boolean;
   online: boolean;
+  paused?: boolean;
   message: string;
   agentId: string;
   server: string;
@@ -68,6 +69,7 @@ export interface Settings {
   win_startup_enabled: boolean;
   mac_startup_enabled: boolean;
   keep_awake_enabled: boolean;
+  pause_on_battery: boolean;
   auto_update_enabled: boolean;
   auto_update_interval_hours: number;
   agent_id: string;

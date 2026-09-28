@@ -22,6 +22,7 @@ class SettingsPayload(BaseModel):
     win_startup_enabled: bool | None = None
     mac_startup_enabled: bool | None = None
     keep_awake_enabled: bool | None = None
+    pause_on_battery: bool | None = None
     auto_update_enabled: bool | None = None
     auto_update_interval_hours: int | None = None
 

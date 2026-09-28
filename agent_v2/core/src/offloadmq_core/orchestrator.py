@@ -59,7 +59,7 @@ from offloadmq_core.version import get_app_version
 # UI-backed ops: custom caps / comfy / system-integration / updates. Imported
 # here (not in ui_server.api) so ui-server never has to import core directly —
 # see SKILL.md's dependency graph. Orchestrator just proxies into these.
-from offloadmq_core import custom_caps_service, comfy_service, keep_awake, startup_mac, startup_win
+from offloadmq_core import custom_caps_service, comfy_service, keep_awake, power, startup_mac, startup_win
 from offloadmq_core.systemd_service import (
     install_systemd_unit,
     is_installed as systemd_is_installed,
@@ -82,6 +82,9 @@ _RECONNECT_BACKOFF_CAP = 60.0
 # worker threads), so the agent keeps heartbeating even while busy with a task.
 _WS_HEARTBEAT_MIN_SECS = 60.0
 _WS_HEARTBEAT_MAX_SECS = 90.0
+
+_POWER_POLL_SECS = 5.0
+_PAUSED_MESSAGE = "paused (on battery)"
 
 
 class _SessionEnded(Exception):
@@ -144,6 +147,10 @@ class Orchestrator:
         # Set once the auto-updater has claimed an idle moment to restart in:
         # pushed tasks are left alone from then on (see try_begin_drain).
         self._draining = False
+        # On battery with pause_on_battery set: new pushed tasks are refused, and
+        # once idle the session is closed and the supervisor holds off reconnecting.
+        self._power_paused = False
+        self._power_thread: threading.Thread | None = None
         self.auto_update = AutoUpdater(self)
         # Registered only where self-update can work, which is also what makes
         # slavemode.agent-update advertisable (see slavemode_policy).
@@ -339,6 +346,8 @@ class Orchestrator:
             from offloadmq_core import keep_awake
 
             keep_awake.sync_from_settings(after.keep_awake_enabled, self._log)
+        if "pause_on_battery" in changed and self.is_running():
+            self._check_power()
 
     def _resize_pool(self, max_workers: int) -> None:
         with self._lock:
@@ -533,6 +542,9 @@ class Orchestrator:
     # ==================================================================
 
     def start(self) -> None:
+        # Decided before the supervisor exists, so starting on battery never
+        # opens a session only to close it again.
+        paused = self.get_settings().pause_on_battery and power.on_battery() is True
         with self._lock:
             if self._running:
                 return
@@ -542,6 +554,7 @@ class Orchestrator:
 
             self._stop.clear()
             self._draining = False
+            self._power_paused = paused
             self._pool = ExecutorPool(max_workers=settings.max_concurrent)
             self._running = True
             self._status_message = "starting"
@@ -554,6 +567,12 @@ class Orchestrator:
                 target=self._rescan_scheduler_main, name="omq-rescan", daemon=True
             )
             self._rescan_thread.start()
+            self._power_thread = threading.Thread(
+                target=self._power_monitor_main, name="omq-power", daemon=True
+            )
+            self._power_thread.start()
+        if paused:
+            self._record_error("INFO", "[power] on battery — agent starts paused")
         self.auto_update.start()
 
     def stop(self) -> None:
@@ -613,6 +632,7 @@ class Orchestrator:
             return {
                 "running": self._running,
                 "online": self._online,
+                "paused": self._power_paused,
                 "message": self._status_message,
                 "agentId": settings.agent_id,
                 "server": settings.server,
@@ -713,6 +733,10 @@ class Orchestrator:
             "keep_awake_active": keep_awake.active(),
             "keep_awake_enabled": getattr(settings, "keep_awake_enabled", False),
             "keep_awake_method": keep_awake.method(),
+            "battery_pause_available": power.available(),
+            "pause_on_battery": settings.pause_on_battery and power.available(),
+            "on_battery": power.on_battery(),
+            "power_paused": self._power_paused,
         }
         # Windows debug info
         if sys.platform == "win32":
@@ -732,6 +756,11 @@ class Orchestrator:
             raise ValueError("Keep awake is not available on this platform")
         keep_awake.sync_from_settings(enable, self._log)
         return self.apply_settings(keep_awake_enabled=enable)
+
+    def set_pause_on_battery(self, enable: bool) -> Settings:
+        if enable and not power.available():
+            raise ValueError("Battery detection is only available on macOS")
+        return self.apply_settings(pause_on_battery=enable)
 
     def set_win_startup(self, enable: bool) -> Settings:
         if not startup_win.available():
@@ -800,6 +829,8 @@ class Orchestrator:
         attempt = 0
         try:
             while not self._stop.is_set():
+                if self._wait_while_power_paused():
+                    break
                 try:
                     loop.run_until_complete(self._run_session())
                     # Clean session exit (e.g. _cycle_session) → reconnect immediately.
@@ -854,6 +885,53 @@ class Orchestrator:
                 self._client = None
                 self._sync_transport = None
                 self._status_message = "stopped"
+
+    def _wait_while_power_paused(self) -> bool:
+        """Hold the supervisor offline while paused; True if ``stop()`` came meanwhile."""
+        announced = False
+        while True:
+            with self._lock:
+                if not self._power_paused:
+                    return self._stop.is_set()
+                if not announced:
+                    self._status_message = _PAUSED_MESSAGE
+                    announced = True
+            if self._stop.wait(1.0):
+                return True
+
+    # ==================================================================
+    # Power (pause on battery)
+    # ==================================================================
+
+    def _power_monitor_main(self) -> None:
+        # Disconnect is checked before power so a pause is logged (and flushed
+        # to the server) one tick before the session it reports on closes.
+        while not self._stop.wait(_POWER_POLL_SECS):
+            self._disconnect_if_idle_for_pause()
+            self._check_power()
+
+    def _check_power(self) -> None:
+        settings = self.get_settings()
+        paused = settings.pause_on_battery and power.on_battery() is True
+        with self._lock:
+            if paused == self._power_paused:
+                return
+            self._power_paused = paused
+        if paused:
+            self._record_error(
+                "INFO", "[power] on battery — pausing once running tasks finish"
+            )
+        else:
+            self._record_error("INFO", "[power] resuming (external power or pause disabled)")
+
+    def _disconnect_if_idle_for_pause(self) -> None:
+        with self._lock:
+            if not (self._power_paused and self._online):
+                return
+            if self._store.active_count() or self._pending_resolves or self._resolving:
+                return
+        self._log("[power] agent idle — disconnecting until external power returns")
+        self._cycle_session()
 
     @staticmethod
     def _backoff_seconds(attempt: int) -> float:
@@ -1150,13 +1228,12 @@ class Orchestrator:
         executor = find_executor(task.capability)
         with self._lock:
             draining = self._draining
-            if not draining:
+            power_paused = self._power_paused
+            if not (draining or power_paused):
                 record, cancel_event = self._store.create(task)
-        if draining:
-            self._log(
-                f"[update] restarting for update — leaving task {task.id} "
-                "for the server to re-queue"
-            )
+        if draining or power_paused:
+            reason = "[update] restarting for update" if draining else "[power] paused on battery"
+            self._log(f"{reason} — leaving task {task.id} for the server to re-queue")
             return
 
         if executor is None:

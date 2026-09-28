@@ -50,6 +50,7 @@ class Settings(BaseModel):
     win_startup_enabled: bool = False
     mac_startup_enabled: bool = False
     keep_awake_enabled: bool = False
+    pause_on_battery: bool = False
 
     # Internal flags — mark one-time slavemode default seeding as done.
     onnx_slavemode_initialized: bool = False

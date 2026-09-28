@@ -193,9 +193,17 @@ export const api = {
       keep_awake_active: boolean;
       keep_awake_enabled: boolean;
       keep_awake_method: string;
+      battery_pause_available: boolean;
+      pause_on_battery: boolean;
+      on_battery: boolean | null;
+      power_paused: boolean;
     }>("/system/startup-status"),
   setKeepAwake: (enable: boolean) =>
     request<Settings>(`/system/keep-awake?enable=${enable}`, { method: "POST" }),
+  setPauseOnBattery: (enable: boolean) =>
+    request<Settings>(`/system/pause-on-battery?enable=${enable}`, {
+      method: "POST",
+    }),
   setWinStartup: (enable: boolean) =>
     request<Settings>(`/system/win-startup?enable=${enable}`, { method: "POST" }),
   setMacStartup: (enable: boolean) =>

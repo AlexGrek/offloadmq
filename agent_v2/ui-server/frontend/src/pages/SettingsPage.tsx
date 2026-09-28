@@ -35,6 +35,7 @@ const EMPTY: Settings = {
   win_startup_enabled: false,
   mac_startup_enabled: false,
   keep_awake_enabled: false,
+  pause_on_battery: false,
   auto_update_enabled: true,
   auto_update_interval_hours: 6,
   agent_id: "",
