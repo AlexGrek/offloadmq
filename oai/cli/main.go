@@ -22,6 +22,15 @@ Usage:
   oai image generate "prompt" [-o out.jpg] [-capability imggen.X] [-negative TEXT]
                      [-width N] [-height N] [-seed N] [-workflow W] [-n COUNT]
                      [--progress=false] [-t|-timeout 5m]
+  oai nude scan <file> [file ...] [-threshold 0.25] [-json] [-o out.json]
+                [--progress=false] [-t|-timeout 5m]
+  oai nude availability
+  oai nude jobs
+  oai nude job <job-id> [-json]
+  oai nude poll <job-id> [-json]
+  oai nude cancel <job-id>
+  oai nude retry <job-id> [--progress=false] [-t|-timeout 5m]
+  oai nude delete <job-id>
 
 Prompts may use {color} {animal} {adjective} {country} {language} {name}, your custom
 {placeholders} from the server, and {?} (expanded by the server).
@@ -80,6 +89,8 @@ func main() {
 		err = cmdWhoami(os.Args[2:])
 	case "image":
 		err = cmdImage(os.Args[2:])
+	case "nude":
+		err = cmdNude(os.Args[2:])
 	case "help":
 		fmt.Print(usage)
 	default:

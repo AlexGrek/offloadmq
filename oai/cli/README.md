@@ -36,6 +36,16 @@ OAI_PASSWORD=000000 ./oai login -server http://localhost:3001 -login root
 ./oai image describe cat.jpg
 ./oai image describe cat.jpg -prompt "What breed is this?" -capability llm.qwen3-vl:8b -o desc.txt
 ./oai image describe cat.jpg dog.jpg bird.png -o description.txt
+
+# NSFW detection with NudeNet (tunable confidence threshold)
+./oai nude availability
+./oai nude scan photo.jpg
+./oai nude scan a.jpg b.jpg -threshold 0.4 -o results.json
+./oai nude jobs
+./oai nude job <job-id>
+./oai nude cancel <job-id>
+./oai nude retry <job-id>
+./oai nude delete <job-id>
 ```
 
 `image describe` accepts one or more image paths and creates a separate job for each image. Results stay in input order and multi-image stdout is labeled with each path. Flags: `-prompt` (default: a detailed one-paragraph description prompt, see `defaultDescribePrompt` in `describe.go`), `-capability` (default: first online vision LLM, printed to stderr), `-o` (also write the text to a file; multiple inputs use `<name>_2.txt`, `<name>_3.txt`, ...), `--progress=false`, `-t` / `-timeout` (default `5m`; also accepted as `--timeout`). Each image is uploaded first, so anything the backend can decode (JPEG, PNG, ...) works. If a model fails server-side (`job failed: vision task failed`), pick another with `-capability`.
@@ -53,6 +63,19 @@ OAI_PASSWORD=000000 ./oai login -server http://localhost:3001 -login root
 Tokens are case-insensitive and unknown ones are left untouched. The expanded prompt is printed before each job, and the raw template is sent as `prompt_template` so Retry and saved-prompt previews in the web UI see it.
 
 Each job is polled every 5s, like the web UI. If `-timeout` expires for a job, it keeps running on the server; only the CLI stops waiting for it.
+
+### Nude detector (NudeNet)
+
+`nude scan` uploads one or more images and runs NSFW detection (`onnx.nudenet`) with a tunable confidence threshold, mirroring the web UI's Nude Detector page — one job per image. Flags: `-threshold` (default `0.25`, must be `0.05`-`0.95`, same range as the UI slider), `-json` (print the raw result JSON instead of a label/confidence summary), `-o` (also save the raw JSON result; multiple inputs get `_2`, `_3`, ... suffixes), `--progress=false`, `-t` / `-timeout` (default `5m`).
+
+Other `nude` subcommands manage jobs directly, matching the web UI's history sidebar actions:
+
+- `nude availability` — whether an `onnx.nudenet` agent is online, plus any active runners
+- `nude jobs` — table of your nude-detect jobs
+- `nude job <id>` / `nude poll <id>` — job details (add `-json` for the raw response); `poll` re-checks the server, `job` just fetches the stored state
+- `nude cancel <id>` — cancel a running job
+- `nude retry <id>` — resubmit a failed/canceled job (reuses its original image and threshold) and wait for the new result
+- `nude delete <id>` — delete a job's history entry
 
 ## Progress UI
 
