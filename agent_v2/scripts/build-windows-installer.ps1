@@ -77,6 +77,7 @@ try {
     uv run --with pyinstaller pyinstaller `
         --onefile `
         --name omq `
+        --icon ../assets/icon.ico `
         "--add-data=../ui-server/frontend/dist;frontend/dist" `
         src/cli_manager/main.py
     if ($LASTEXITCODE -ne 0) { throw "pyinstaller (omq) failed" }
@@ -92,6 +93,7 @@ try {
         --onefile `
         --windowed `
         --name omq-gui `
+        --icon ../assets/icon.ico `
         "--add-data=../ui-server/frontend/dist;frontend/dist" `
         src/gui_manager/main.py
     if ($LASTEXITCODE -ne 0) { throw "pyinstaller (omq-gui) failed" }

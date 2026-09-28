@@ -105,7 +105,7 @@ tasks:
     cmds:
       - rm -rf build dist omq.spec
       - >-
-        uv run --with pyinstaller pyinstaller --onefile --name omq
+        uv run --with pyinstaller pyinstaller --onefile --name omq --icon ../assets/icon.png
         --paths src
         --add-data "../ui-server/frontend/dist:frontend/dist"
         _pyi_entry.py
@@ -116,7 +116,7 @@ tasks:
     dir: gui-manager
     cmds:
       - >-
-        uv run --with pyinstaller pyinstaller --onefile --windowed --name omq-gui
+        uv run --with pyinstaller pyinstaller --onefile --windowed --name omq-gui --icon ../assets/icon.png
         --add-data "../ui-server/frontend/dist:frontend/dist"
         src/gui_manager/main.py
 

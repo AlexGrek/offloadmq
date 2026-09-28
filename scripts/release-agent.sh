@@ -111,7 +111,7 @@ else
 
   echo "→ Building CLI (omq)..."
   ( cd "${AGENT_DIR}/cli-manager" && rm -rf build dist ./*.spec && \
-    uv run --with pyinstaller pyinstaller --onefile --name omq \
+    uv run --with pyinstaller pyinstaller --onefile --name omq --icon ../assets/icon.png \
       --add-data "../ui-server/frontend/dist:frontend/dist" \
       src/cli_manager/main.py )
   if [[ ! -f "$CLI_DIST" ]]; then
@@ -121,7 +121,7 @@ else
 
   echo "→ Building GUI (omq-gui)..."
   ( cd "${AGENT_DIR}/gui-manager" && rm -rf build dist ./*.spec && \
-    uv run --with pyinstaller pyinstaller --onefile --windowed --name omq-gui \
+    uv run --with pyinstaller pyinstaller --onefile --windowed --name omq-gui --icon ../assets/icon.png \
       --add-data "../ui-server/frontend/dist:frontend/dist" \
       src/gui_manager/main.py )
   if [[ ! -f "$GUI_DIST" ]]; then
