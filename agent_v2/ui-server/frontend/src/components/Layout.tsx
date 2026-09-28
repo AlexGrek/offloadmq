@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { api } from "@/api/client";
+import { usePoll } from "@/hooks/usePoll";
+import type { AgentStatus } from "@/types";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -70,6 +73,7 @@ export function Layout() {
   }, [open]);
 
   const label = currentLabel(location.pathname);
+  const { data: status } = usePoll<AgentStatus>(api.getStatus, 5000);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -91,6 +95,11 @@ export function Layout() {
               </span>
             )}
           </div>
+          {status?.version && (
+            <span className="ml-auto font-mono text-xs text-muted-foreground">
+              {status.version}
+            </span>
+          )}
         </div>
       </header>
 

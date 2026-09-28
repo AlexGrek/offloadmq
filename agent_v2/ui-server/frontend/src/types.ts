@@ -48,6 +48,7 @@ export interface AgentStatus {
   displayName?: string;
   sysinfo?: Record<string, unknown>;
   scanning?: boolean;
+  version?: string;
 }
 
 export interface Settings {
