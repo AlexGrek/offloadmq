@@ -96,3 +96,11 @@ rm ~/Library/LaunchAgents/com.offloadmq.agent.plist
 - `RunAtLoad: true` — starts immediately on load and at every login
 - The `WorkingDirectory` must point to the `offload-agent/` source dir so `.offload-agent.json` is found correctly
 - The `install launchd` subcommand in `offload-agent.py` only works for frozen `.app` bundles; use this manual plist approach for source installations
+- launchd gives GUI/agent jobs a bare `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — it does **not** include `/usr/local/bin` or `/opt/homebrew/bin`. Capability probes that do `shutil.which("ollama")` (or docker, etc.) silently fail to detect an installed-but-not-on-default-PATH binary even though the service is running. Add an `EnvironmentVariables` dict with an explicit `PATH` to the plist:
+  ```xml
+  <key>EnvironmentVariables</key>
+  <dict>
+      <key>PATH</key>
+      <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  ```

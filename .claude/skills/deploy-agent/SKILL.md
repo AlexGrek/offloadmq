@@ -204,6 +204,22 @@ launchctl load ~/Library/LaunchAgents/com.offloadmq.agent.plist
 launchctl unload ~/Library/LaunchAgents/com.offloadmq.agent.plist
 ```
 
+⚠️ **LaunchAgent PATH gotcha:** launchd jobs get a bare default `PATH`
+(`/usr/bin:/bin:/usr/sbin:/sbin`), which excludes `/usr/local/bin` and
+`/opt/homebrew/bin`. Capability probes that gate on `shutil.which("ollama")`
+(or docker, etc.) will silently miss an installed, running Ollama/docker if
+its binary only lives on the Homebrew/local PATH — the service still shows
+"online" with just `debug.echo`/`shell.bash`, no `llm.*`. Fix by adding an
+explicit `PATH` to the plist:
+```xml
+<key>EnvironmentVariables</key>
+<dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+</dict>
+```
+then `launchctl unload` + `launchctl load` to pick it up.
+
 ---
 
 ## Ansible Fleet Deployment

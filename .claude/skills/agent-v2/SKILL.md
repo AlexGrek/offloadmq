@@ -373,6 +373,21 @@ Use `fetch('/api/*')` only — not `window.pywebview.api`.
 
 ---
 
+## Troubleshooting
+
+**Capability probe silently missing on a launchd/systemd-run agent (e.g.
+Ollama not detected despite `ollama serve` running):** `check_ollama()` and
+similar probes in `capabilities_sync.py` gate on `shutil.which(<binary>)`,
+which only searches the process's `PATH`. Service managers hand jobs a bare
+`PATH` (`/usr/bin:/bin:/usr/sbin:/sbin` on launchd) that excludes
+`/usr/local/bin` / `/opt/homebrew/bin`, so a binary installed there (Ollama,
+docker, etc.) is invisible to the probe even though it's running and
+reachable — the agent stays "online" with just `debug.echo`/`shell.bash`.
+Fix: give the service job an explicit `PATH` (e.g. an `EnvironmentVariables`
+block in the `.plist`, or `Environment=PATH=...` in the systemd unit) that
+includes wherever the runtime actually lives, then rescan
+(`orch.rescan()` / `/api/capabilities/rescan`).
+
 ## Extension Recipes
 
 ### New native async executor
