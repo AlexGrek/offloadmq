@@ -8,11 +8,13 @@ OffloadMQ is a distributed task queue system for offloading computational tasks 
 
 ## Development Commands
 
+The repo root uses [Go Task](https://taskfile.dev) — run `task --list` for everything in [Taskfile.yml](Taskfile.yml). There is no root Makefile; `offload-agent/` and `itests/` keep their own Makefiles.
+
 ### Rust Backend (Message Queue Server)
 ```bash
-make dev-mq              # Run the server (cargo run)
+task dev                 # Run the server (cargo run)
 cargo build              # Build release
-cargo test               # Run Rust unit tests
+task test:unit           # Run Rust unit tests (cargo test)
 ```
 
 ### Python Agent
@@ -34,22 +36,20 @@ venv/bin/python -m mypy app/ --strict
 
 ### Releasing the Agent Binary
 
-Build and publish the offload-agent binary to `dl.alexgr.space` from any macOS, Linux, or Windows machine.
+Build and publish the agent_v2 binaries — `omq` (CLI) and `omq-gui` (GUI) — to `dl.alexgr.space`. A release only covers the OS/arch of the machine it runs on (PyInstaller output is platform-specific), so run it once per platform.
 
-**Version is auto-computed** from the latest `release-*` tag + current commit count: e.g. latest tag `release-v0.3.250` with 260 commits → `v0.3.260`. No tag needed before running.
+**Version is auto-computed** by [scripts/compute-agent-version.sh](scripts/compute-agent-version.sh): major.minor from the latest `release-*` tag + current commit count, e.g. latest tag `release-v0.3.250` with 260 commits → `v0.3.260`. No tag needed before running.
 
 `DL_API_KEY` is stored in `~/.zshrc` and inherited automatically — no need to pass it inline for normal usage.
 
 ```bash
 # macOS / Linux — from repo root (preferred)
-make release-agent                        # auto-detects version, uses $DL_API_KEY from env
-make release-agent VERSION=v0.3.260       # explicit version
-make release-agent DL_API_KEY=dlk_...     # override key inline
-make release-agent DL_BASE_URL=http://... # override target server (default: https://dl.alexgr.space)
-
-# from offload-agent/ subdirectory
-cd offload-agent
-make release
+task release                              # tag release-<version>, push the tag, then build + upload
+task release:agent                        # build + upload only (no tag)
+task release:agent VERSION=v0.3.260       # explicit version
+task release:agent DL_BASE_URL=http://... # override target server (default: https://dl.alexgr.space)
+DL_API_KEY=dlk_... task release:agent     # override key inline
+./scripts/release-agent.sh [version]      # the script release:agent wraps
 
 # Windows (PowerShell)
 $env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1            # auto-detects
@@ -58,7 +58,11 @@ $env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1 v0.3.260   # explicit
 
 Scripts: [scripts/release-agent.sh](scripts/release-agent.sh) · [scripts/release-agent.ps1](scripts/release-agent.ps1)
 
-The scripts build the frontend + PyInstaller binary, then upload to bucket `offload-agent` on `dl.alexgr.space`. The releaser key requires scopes `release-create` + `release-write:offload-agent`. `DL_BUCKET` and `DL_BASE_URL` env vars can override defaults.
+The scripts build the frontend, then a one-file PyInstaller binary per target, and upload them to bucket `offload-agent` as `omq-<os>-<arch>` and `omq-gui-<os>-<arch>` (`.exe` on Windows). The latest build is always at `https://dl.alexgr.space/rs/offload-agent/latest/<os>-<arch>/<file>`. The releaser key requires scopes `release-create` + `release-write:offload-agent`. `DL_BUCKET` overrides the bucket.
+
+Linux (amd64) binaries are built by CI when the `release-*` tag is pushed — `task release` pushes it, `task release:agent` does not. Full process: [docs/releasing.md](docs/releasing.md).
+
+Install the latest release on the current machine with `task agent:update:mac` or `task agent:update:linux`.
 
 ### React Management Frontend
 ```bash
@@ -72,12 +76,12 @@ npm run lint             # Run ESLint
 ### Integration Tests
 ```bash
 # From project root:
-make test-full           # Full test: start server+agent, run tests, stop everything
-make test-unit           # Run Rust unit tests only
-make test                # Run integration tests (requires running server+agent)
-make test-start          # Start server and agent for manual testing
-make test-stop           # Stop server and agent
-make test-logs           # Show server and agent logs
+task test:full           # Full test: start server+agent, run tests, stop everything
+task test:unit           # Run Rust unit tests only
+task test                # Run integration tests (requires running server+agent)
+task test:start          # Start server and agent for manual testing
+task test:stop           # Stop server and agent
+task test:logs           # Show server and agent logs
 
 # From itests directory:
 cd itests
@@ -92,12 +96,16 @@ make run                 # Run pytest (server+agent must be running)
 
 ### Docker/Kubernetes Deployment
 ```bash
-make build               # Build container image
-make push                # Push to registry
-make deploy              # Build, push, and helm install/upgrade
-make template            # Preview helm manifests
-make clean-all           # Clean all build artifacts (cargo, offload-agent, frontend dist)
-make rebuild-all         # Clean everything, rebuild both images, push, and helm install/upgrade
+task docker:release            # Build + push backend image (linux/amd64), tagged with the commit count
+task docker:release:frontend   # Build + push management frontend image
+task docker:release:multi      # Build + push multi-arch backend image (amd64 + arm64)
+task secrets                   # Generate .secrets.yaml (required by deploy/template/diff)
+task deploy                    # helm install/upgrade
+task ship                      # Build + push both images, then deploy
+task template                  # Preview helm manifests
+task diff                      # Diff deployed vs local chart (helm-diff plugin)
+task rollback                  # Roll back to the previous helm revision
+task clean                     # Clean build artifacts (cargo, offload-agent, frontend dist)
 ```
 
 ### Releasing

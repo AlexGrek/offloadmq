@@ -23,37 +23,31 @@ description: DevOps context for deploying offload-agent nodes — Ansible fleet 
 
 ## Versioning
 
-Version is derived at build time from the latest `release-*` tag + current commit count:
+`scripts/compute-agent-version.sh` takes major.minor from the latest `release-*` tag and appends the current commit count:
 
 ```bash
 # latest tag release-v0.3.250 + 260 commits → v0.3.260
 git rev-list --count HEAD   # → e.g. 260
 ```
 
-Release tags follow `release-v0.2.<count>`. Version is auto-detected by the release scripts — no tag needed before running.
+Release tags follow `release-v0.3.<count>`. The release tasks compute the version themselves — no tag needed before running.
 
 ---
 
 ## Releasing the Agent Binary
 
-Binaries are published to `dl.alexgr.space` (bucket `offload-agent`). The releaser key is stored in `~/.zshrc` as `DL_API_KEY`.
+Releases are the agent_v2 binaries — `omq` (CLI) and `omq-gui` (GUI) — published to `dl.alexgr.space` (bucket `offload-agent`). The releaser key is stored in `~/.zshrc` as `DL_API_KEY`. Each run builds only the OS/arch of the machine it runs on. Full process: [docs/releasing.md](../../../docs/releasing.md).
 
-### From the root Makefile (preferred)
-
-```bash
-make release-agent                        # auto-detects version, uses $DL_API_KEY from env
-make release-agent VERSION=v0.3.260       # explicit version
-make release-agent DL_API_KEY=dlk_...     # override key inline
-make release-agent DL_BASE_URL=http://... # override target server
-```
-
-### From offload-agent/ subdirectory
+### From the repo root (Go Task)
 
 ```bash
-cd offload-agent
-make release          # uses $DL_API_KEY from env
-DL_API_KEY=dlk_... make release VERSION=v0.3.260
+task release                          # tag release-<version>, push it, build + upload this platform
+task release:agent                    # build + upload this platform only (no tag)
+task release:agent VERSION=v0.3.260   # explicit version
+DL_API_KEY=dlk_... task release:agent # override key inline
 ```
+
+Pushing the tag is what triggers CI (`.github/workflows/build-client.yml`) to build and upload the **linux-amd64** binaries under the same version — `task release:agent` alone leaves the version without a Linux build.
 
 ### Windows (PowerShell)
 
@@ -62,12 +56,15 @@ $env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1            # auto-detects
 $env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1 v0.3.260   # explicit
 ```
 
-**Download URL after release:**
+**Download URLs after release:**
 ```
-https://dl.alexgr.space/rs/offload-agent/latest/darwin-arm64/offload-agent-darwin-arm64
-https://dl.alexgr.space/rs/offload-agent/latest/darwin-amd64/offload-agent-darwin-amd64
-https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/offload-agent-linux-amd64
+https://dl.alexgr.space/rs/offload-agent/latest/darwin-arm64/omq-gui-darwin-arm64
+https://dl.alexgr.space/rs/offload-agent/latest/darwin-arm64/omq-darwin-arm64
+https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/omq-linux-amd64
+https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/omq-gui-linux-amd64
 ```
+
+Install the latest release on the current machine: `task agent:update:mac` / `task agent:update:linux` (repo root).
 
 **Required key scopes:** `release-create` + `release-write:offload-agent`
 
