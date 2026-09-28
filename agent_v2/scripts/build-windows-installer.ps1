@@ -60,10 +60,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "uv sync failed" }
 } finally { Pop-Location }
 
-# ── Stamp CLI version ──────────────────────────────────────────────────────────
+# ── Stamp CLI + GUI version ──────────────────────────────────────────────────────
 
 $VersionFile = Join-Path $AgentDir "cli-manager\src\cli_manager\_version.py"
 Set-Content -Path $VersionFile -Value "__version__ = `"$Version`""
+
+$GuiVersionFile = Join-Path $AgentDir "gui-manager\src\gui_manager\_version.py"
+Set-Content -Path $GuiVersionFile -Value "__version__ = `"$Version`""
 
 # ── Build CLI (omq.exe) ────────────────────────────────────────────────────────
 

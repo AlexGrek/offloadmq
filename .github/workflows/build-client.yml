@@ -57,6 +57,12 @@ jobs:
           printf '__version__ = "%s"\n' "${GITHUB_REF_NAME#release-}" \
             > src/cli_manager/_version.py
 
+      - name: Stamp GUI version
+        working-directory: agent_v2/gui-manager
+        run: |
+          printf '__version__ = "%s"\n' "${GITHUB_REF_NAME#release-}" \
+            > src/gui_manager/_version.py
+
       - name: Build CLI executable (omq)
         working-directory: agent_v2/cli-manager
         run: |

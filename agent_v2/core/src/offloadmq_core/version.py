@@ -1,9 +1,10 @@
 """Running agent version.
 
 The release tooling stamps the version into the *entry point* package
-(``cli_manager/_version.py``), which core must not import. The entry point
-hands it over with :func:`set_app_version` at startup instead; until then (and
-in unstamped dev builds) the version is :data:`DEV_VERSION`.
+(``cli_manager/_version.py`` or ``gui_manager/_version.py``), which core must
+not import. The entry point hands it over with :func:`set_app_version` at
+startup instead; until then (and in unstamped dev builds) the version is
+:data:`DEV_VERSION`.
 """
 from __future__ import annotations
 

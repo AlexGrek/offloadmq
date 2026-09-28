@@ -72,10 +72,12 @@ echo "-- npm run build"
 echo "-- uv sync"
 ( cd "${AGENT_DIR}" && uv sync )
 
-# ── Stamp CLI version ──────────────────────────────────────────────────────────
+# ── Stamp CLI + GUI version ──────────────────────────────────────────────────────
 
 printf '__version__ = "%s"\n' "${VERSION}" \
   > "${AGENT_DIR}/cli-manager/src/cli_manager/_version.py"
+printf '__version__ = "%s"\n' "${VERSION}" \
+  > "${AGENT_DIR}/gui-manager/src/gui_manager/_version.py"
 
 # ── Build CLI (omq) ──────────────────────────────────────────────────────────
 

@@ -26,9 +26,16 @@ import time
 
 from offloadmq_core import Orchestrator, keep_awake, run_blocking, run_in_thread
 from offloadmq_core.settings import DEFAULT_WEBUI_PORT
+from offloadmq_core.version import set_app_version
+
+from gui_manager._version import __version__ as _BAKED_VERSION
 
 # Mark GUI entry point so the web UI can show GUI-only controls.
 os.environ.setdefault("OMQ_GUI", "1")
+
+# Only a release-stamped version: an unstamped local build falling back to
+# something else would make a dev build look like an old release.
+set_app_version(_BAKED_VERSION)
 
 
 def _find_free_port(preferred: int) -> int:

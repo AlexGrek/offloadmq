@@ -99,6 +99,10 @@ try {
     Set-Content -Path "cli-manager\src\cli_manager\_version.py" `
         -Value "__version__ = `"$Version`""
 
+    # Stamp the GUI version so omq-gui reports the release version too
+    Set-Content -Path "gui-manager\src\gui_manager\_version.py" `
+        -Value "__version__ = `"$Version`""
+
     # Build CLI (omq.exe) — Windows uses ; as add-data separator
     Push-Location "cli-manager"
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "dist", "build", "*.spec"
