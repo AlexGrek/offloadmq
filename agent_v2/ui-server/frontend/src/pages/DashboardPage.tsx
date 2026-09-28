@@ -71,7 +71,9 @@ export function DashboardPage() {
           <div className="space-y-1.5">
             <CardTitle className="flex items-center gap-2">
               Agent
-              {running ? (
+              {running && status?.paused ? (
+                <Badge variant="outline">paused</Badge>
+              ) : running ? (
                 <Badge variant={status?.online ? "success" : "warning"}>
                   {status?.online ? "online" : "connecting"}
                 </Badge>
