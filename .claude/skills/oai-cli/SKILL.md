@@ -56,6 +56,18 @@ Commands today: `login`, `whoami`, `image capabilities|generate|describe|describ
 
 Out of scope so far (add only on request): chat (WebSocket), TTS, img2img/video, img-utils, admin commands, shell completion.
 
+## Installed copy on the dev Mac
+
+The CLI is **probably already installed** on this Mac and on `PATH`: `~/go/bin/oai` (from
+`task install-mac` in `oai/cli/`), and the user's zsh also aliases `oai` to the repo build at
+`oai/cli/oai`. It is usually logged in to `https://oai.alexgr.space` already — check with
+`oai whoami` before asking for a login. So for reproducing a bug or trying a change end to
+end you can just run `oai …`; the `oai-app` skill (`~/.claude/skills/oai-app/SKILL.md`)
+covers everyday usage. After changing CLI source, refresh the install with
+`cd oai/cli && go test ./... && task install-mac` (this also rebuilds `oai/cli/oai`).
+The Bash tool doesn't load zsh aliases reliably, so call `~/go/bin/oai` explicitly if `oai`
+isn't found.
+
 ## Build & verify
 
 ```bash

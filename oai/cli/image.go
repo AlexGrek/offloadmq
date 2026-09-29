@@ -42,6 +42,10 @@ type capabilityInfo struct {
 	UsageCount      uint32   `json:"usage_count"`
 }
 
+type contentRequest struct {
+	Content string `json:"content"`
+}
+
 type startJobRequest struct {
 	Capability     string `json:"capability"`
 	Prompt         string `json:"prompt"`
@@ -209,8 +213,8 @@ func cmdImageGenerate(args []string) error {
 	out := fs.String("o", "output.jpg", "output file (extra images get _2, _3, ... suffixes)")
 	capability := fs.String("capability", "", "imggen.* capability (default: first online)")
 	negative := fs.String("negative", "", "negative prompt")
-	width := fs.Int("width", 768, "image width")
-	height := fs.Int("height", 768, "image height")
+	width := fs.Int("width", 1024, "image width")
+	height := fs.Int("height", 1024, "image height")
 	seed := fs.Int64("seed", 0, "seed (0 = random)")
 	workflow := fs.String("workflow", "txt2img", "workflow")
 	count := 1
@@ -219,6 +223,7 @@ func cmdImageGenerate(args []string) error {
 	timeout := timeoutFlag(fs)
 	showProgress := progressFlag(fs)
 	promptFlag := fs.String("prompt", "", "prompt text (or pass it as the first argument)")
+	history := fs.Bool("history", true, "save prompt to history (OAI prompt library)")
 	rest, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
@@ -300,6 +305,13 @@ func cmdImageGenerate(args []string) error {
 
 	if left := expander.Unsupported(); len(left) > 0 {
 		fmt.Fprintf(os.Stderr, "warning: %s not supported by the CLI, sent literally\n", strings.Join(left, ", "))
+	}
+
+	if *history && len(startedJobs) > 0 {
+		_ = doJSON("POST", base+"/api/prompts/imggen-prompt/recent", cfg.Token, contentRequest{Content: template}, nil)
+		if *negative != "" {
+			_ = doJSON("POST", base+"/api/prompts/imggen-negative/recent", cfg.Token, contentRequest{Content: *negative}, nil)
+		}
 	}
 
 	for i, started := range startedJobs {

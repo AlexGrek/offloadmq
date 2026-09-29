@@ -21,7 +21,7 @@ Usage:
                      [--progress=false] [-t|-timeout 5m]
   oai image generate "prompt" [-o out.jpg] [-capability imggen.X] [-negative TEXT]
                      [-width N] [-height N] [-seed N] [-workflow W] [-n COUNT]
-                     [--progress=false] [-t|-timeout 5m]
+                     [--progress=false] [--history=false] [-t|-timeout 5m]
   oai nude scan <file> [file ...] [-threshold 0.25] [-json] [-o out.json]
                 [--progress=false] [-t|-timeout 5m]
   oai nude availability

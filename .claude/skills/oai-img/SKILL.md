@@ -412,6 +412,9 @@ progress-row-image:{job_id}, progress-cancel-image:{job_id}
 2. Job detail pipeline timeline (non-poll events)
 3. Admin worker logs / reconcile
 4. Check MQ agent + `imggen.*` capability online
+5. Reproduce from a terminal: the `oai` CLI is probably installed on this Mac (`~/go/bin/oai`,
+   usually logged in to prod — `oai whoami`). `oai image generate "…" -o /tmp/x.jpg` runs
+   the same submit → poll flow as the page; see the `oai-cli` / `oai-app` skills
 
 ### New pipeline event for UI
 
