@@ -19,9 +19,9 @@ features rather than inventing new ones: state machine + REST + **WebSocket cont
 like chat, and clip rendering through the same `imggen.*` pipeline (buckets, jobs, storage)
 as image generation.
 
-**Related:** SPA shell → `.Codex/skills/oai-frontend/SKILL.md`. WS transport conventions,
-`ServerEvent`/`ClientCommand` patterns → `.Codex/skills/oai-chat/SKILL.md`. Video rendering,
-buckets, `image_generation_jobs`, storage paths → `.Codex/skills/oai-img/SKILL.md`.
+**Related:** SPA shell → `.agents/skills/oai-frontend/SKILL.md`. WS transport conventions,
+`ServerEvent`/`ClientCommand` patterns → `.agents/skills/oai-chat/SKILL.md`. Video rendering,
+buckets, `image_generation_jobs`, storage paths → `.agents/skills/oai-img/SKILL.md`.
 **Full REST + WS contract, state machine detail, exact ffmpeg flags:**
 [oai/docs/movie-studio.md](../../../oai/docs/movie-studio.md) — read that first for anything
 touching the wire contract; this file is engineering context and pitfalls only.

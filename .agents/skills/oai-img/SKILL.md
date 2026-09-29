@@ -3,9 +3,12 @@ name: oai-img
 description: >-
   OAI image generation — ImageGenerationPage, txt2img/img2img, upload/buckets,
   dataPreparation rescale, job poll/cancel, pipeline events, background worker,
-  ProgressContext, ToolDebug, imggen.* OffloadMQ tasks. Use when working on
-  oai/frontend imggen files, oai/backend image routes/services/jobs (image_jobs/,
-  routes/images.rs, image_pipeline_worker), or image pipeline debugging.
+  ProgressContext, ToolDebug, imggen.* OffloadMQ tasks. Also Image Tools at
+  /app/img-utils (one-shot transforms: img-utils.* depth map and face swap, plus the
+  built-in image_resize "Basic resize"). Use when
+  working on oai/frontend imggen or imgutils files, oai/backend image routes/services/jobs
+  (image_jobs/, routes/images.rs, routes/img_utils.rs, image_pipeline_worker), or image
+  pipeline debugging.
 ---
 
 # OAI Image Generation — Engineering Context
@@ -82,10 +85,13 @@ sequenceDiagram
 |------|------|
 | `frontend/src/pages/ImageGenerationPage.tsx` | Modes, form, submit, 5s auto-poll, job detail, cancel, ToolDebug |
 | `frontend/src/components/imggen/ImageJobHistorySidebar.tsx` | Pipelines list; `IMGGEN_NEW_PANEL = 'new'` |
+| `frontend/src/components/imggen/ImageQueueEstimate.tsx` | "Queue: N jobs · ~time" under the sidebar's New button while anything is in flight; math in `estimateQueue` (`lib/imggen.ts`): sequential sum of `typical − elapsed` (running) / `typical` (queued), missing typicals fall back to same-capability history then in-flight mean; `≥` prefix when some jobs couldn't be estimated. `data-testid=imggen-queue-estimate` |
 | `frontend/src/components/imggen/RescaleControls.tsx` | img2img `dataPreparation` (exact / max) |
-| `frontend/src/components/imggen/PromptGeneratorModal.tsx` | LLM prompt generator (modal / mobile bottom sheet) |
-| `frontend/src/api/promptgen.ts` | Prompt generator REST client |
+| `frontend/src/components/imggen/VideoPromptGenerator.tsx` | img2video "what happens next" prompt generator (vision LLM over `/api/ws/promptgen`) |
+| `frontend/src/components/prompts/SavedPromptsDrawer.tsx` | Saved prompts drawer; opened by the Starred prompts button and the textarea list icon |
 | `frontend/src/lib/imggen.ts` | `rescaleDataPrep`, capability filter, pipeline UI helpers, `MODE_DEFAULTS` |
+| `frontend/src/lib/promptPlaceholders.ts` | `{color}`/`{animal}`/etc. client-side prompt placeholders (unique-names-generator); `{?}` stays server-side |
+| `frontend/src/components/RandomNamesWidget.tsx` | TopBar widget documenting `{?}` and `{category}` placeholders |
 | `frontend/src/api/images.ts` | REST + `imageFileUrl()` |
 | `frontend/src/hooks/useRunningImageJobs.ts` | Polls running jobs every **5s** |
 | `frontend/src/contexts/ProgressContext.tsx` | Drawer + `refreshRunningImageJobs` |
@@ -132,6 +138,34 @@ sequenceDiagram
 
 **Offload submit** (`offload/image_tasks.rs` `submit_img_task`): `urgent: false`, `file_bucket`, `output_bucket`, `dataPreparation`, `fetchFiles` for outputs.
 
+### External resize (img2img / img2video / Describe image)
+
+Optional **pre-step** that shrinks the input on an `image_resize` agent instead of in the
+pod. It exists because `process_image` bypasses decode+resize for JPEGs over
+`MAX_TRANSCODE_BYTES` (8 MB) / `MAX_TRANSCODE_EDGE` (6000 px) and stores them **verbatim at
+full size** — which the job would otherwise ship whole to the GPU/vision agent.
+
+```text
+start_job(external_resize) → submit `image_resize`  ← the job's offload task row
+  → poll completed → promote: submit the real task with
+    file_bucket = the resize task's output bucket   ← row is *replaced*, not added
+  → poll completed → normal result handling
+```
+
+- **Phase marker is the capability** — the in-flight task is the pre-step iff
+  `external_resize::is_pre_step(offload_cap)`. No phase column.
+- imggen: `image_jobs::promote_after_resize`, row swapped via
+  `image_generation::replace_offload_task` (one task row per job is assumed by
+  `get_offload_task_by_job` and all the progress-meta code).
+- describe: `image_analysis::promote_after_resize`, intercepted at the top of the generic
+  driver's `on_completed`.
+- Persisted for retry / "Edit prompt": `ImagePipelineParams.external_resize` (JSON, no
+  migration) and `image_analysis_jobs.external_resize` (column, migration `…_000032`).
+- UI: `components/ExternalResizeToggle.tsx`, gated on
+  `GET /api/images/external-resize`, default-on above **9 MB** (`externalResizeDefault`
+  in `api/images.ts`). Set from `applyInputDefaults` (imggen) / `onUpload` (describe).
+- Wire contract + rationale: `docs/image-resize-api.md`.
+
 **Capabilities:** prefix `imggen.` via `POST …/capabilities/list/online_ext`. Tags in brackets e.g. `[txt2img;img2img]` — `filterCapabilitiesByWorkflow` matches workflow; if none match, shows all caps.
 
 **img2img resolution toggles** (page state, near Width/Height; helpers in `lib/imggen.ts`):
@@ -142,13 +176,28 @@ sequenceDiagram
 
 ---
 
-## Prompt generator
+## Starred prompts button
 
-"Prompt generator" button on the Prompt label row (`imggen-promptgen-open`) opens `PromptGeneratorModal` — centered dialog on desktop, bottom sheet on mobile (`useIsMobile` + DialogContent class overrides). It rewrites the user's rough idea into a polished prompt via a **text LLM** (`llm.*`, picked with `CapabilityModelPicker`).
+The **Starred prompts** button on the Prompt label row (`imggen-starred-prompts-open`) opens `SavedPromptsDrawer` on the **Starred** tab (`initialKind="starred"`, bucket `imggen-prompt`, `previews`) — the same drawer as the textarea's list icon, which keeps its last-used tab. Picking a prompt fills the form and closes the drawer. It replaced the old text "Prompt generator" (LLM rewrite of the user's idea), which was removed together with its REST routes (`/api/promptgen/{capabilities,generate,poll}`) and the `generate_prompt` WS command; the per-mode `imggen-promptgen-{mode}` prompt-library rows it left behind are unused.
 
-- **Query template** must contain `{}` — replaced server-side with the idea. Templates are stored **per mode** in prompt-library buckets `imggen-promptgen-{mode}` (`PromptTextarea` recent/starred; recents recorded server-side on generate). Drafts also persist in `localStorage` (`oai_promptgen_query_{mode}`); model in `oai_promptgen_model`.
-- **Flow:** `POST /api/promptgen/generate` `{ mode, capability, query, prompt }` → `{ cap, id }`; modal polls `POST /api/promptgen/poll` every **1.5s**; stop via generic `POST /api/tasks/cancel/{cap}/{id}`. Backend (`services/promptgen.rs`) validates, records the query, submits a non-urgent chat task (`maxWaitSecs 120`), and extracts the final text (`extract_llm_text`).
-- **UI:** framer-motion morphing action element — Generate button → loader pill (with stop) → clickable generated-prompt variant (click = apply to form + close); Regenerate slides in below.
+The **video** prompt generator (img2video, `VideoPromptGenerator` → `generate_video_prompt` on `/api/ws/promptgen`) is a separate feature and is unchanged.
+
+---
+
+## Prompt placeholders (`{?}` and `{category}`)
+
+Two independent substitution mechanisms can appear in the Prompt textarea, both surfaced via the `RandomNamesWidget` hint in `TopBar`:
+
+| Placeholder | Where resolved | Source |
+|-------------|-----------------|--------|
+| `{?}` | **Server**, at job creation | `image_job_names::expand_prompt_placeholders` (`backend/src/services/image_job_names.rs`) — random two-word name (`names` crate), dashes → spaces |
+| `{color}`, `{animal}`, `{adjective}`, `{country}`, `{language}`, `{name}`, `{starwars}` | **Frontend**, before submit | `expandPromptCategoryPlaceholders` (`frontend/src/lib/promptPlaceholders.ts`) — [unique-names-generator](https://www.npmjs.com/package/unique-names-generator) dictionaries |
+
+- Category tokens are matched case-insensitively (`{Color}` works); unknown `{...}` tokens — including `{?}` — are left untouched by the frontend expander so the server still substitutes them.
+- **Uniqueness:** each placeholder occurrence gets a distinct value from its dictionary within the same expansion pass. `ImageGenerationPage` creates one `PlaceholderUsage` map (`createPlaceholderUsage()`) per submit call for a single job (`onSubmit`), but shares **one** map across the whole loop in `onSubmitMultiple` — so a "Generate multiple" batch never repeats a `{color}`/`{animal}`/etc. value across jobs, mirroring how `{?}` already guarantees distinct names within one prompt server-side. The dictionary resets (clears used-set) if a batch is larger than the dictionary size, rather than looping forever.
+- `buildSubmitRequest(promptOverride?)` takes the already-expanded prompt string instead of reading `prompt` state directly, so the textarea itself still shows the raw `{color}`/`{?}` template — only the submitted payload is resolved.
+- Retry / "Generate again" (`onResubmitJob` → `retryImageJob`) replays the **stored, already-expanded** prompt from the original job — no re-expansion, so a retried job keeps the exact values it was first generated with.
+- Adding a category: extend `CATEGORY_DICTIONARIES` in `promptPlaceholders.ts` with another `unique-names-generator` dictionary (or a custom `string[]`).
 
 ---
 
@@ -157,6 +206,7 @@ sequenceDiagram
 | Method | Path | Notes |
 |--------|------|-------|
 | POST | `/api/images/upload` | multipart `file`; max **32MB** |
+| GET | `/api/images/external-resize` | `{ available, threshold_bytes }` for the External resize checkbox |
 | POST | `/api/images/jobs` | `StartJobParams` → `{ job_id, status: "submitted" }` |
 | GET | `/api/images/jobs` | last **50** jobs, full detail |
 | GET | `/api/images/jobs/{id}` | job + files + events + offload ids |
@@ -167,15 +217,16 @@ sequenceDiagram
 | GET | `/api/progress/running` | DB-only list for drawer |
 | POST | `/api/debug/offload_poll` | `{ cap, id }` raw MQ JSON |
 | GET | `/api/files` | user file browser metadata |
-| GET | `/api/promptgen/capabilities` | text LLMs (`llm.*`) for the prompt generator |
-| POST | `/api/promptgen/generate` | `{ mode, capability, query, prompt }` → `{ cap, id }` |
-| POST | `/api/promptgen/poll` | `{ cap, id }` → `{ status, stage?, text?, error? }` |
 
 **Chat cancel** uses `POST /api/tasks/cancel/{cap}/{id}` — **not** for OAI job rows; images use **`/api/images/jobs/{id}/cancel`**.
 
 ### `StartJobParams` (JSON)
 
-`capability`, `prompt`, `negative_prompt?`, `override_negative`, `width`, `height`, `seed?`, `workflow?`, `input_image_id?`, `data_preparation?` (map string→string).
+`capability`, `prompt`, `negative_prompt?`, `override_negative`, `width`, `height`, `seed?`, `workflow?`, `input_image_id?`, `data_preparation?` (map string→string), `prompt_template?` (raw textarea text before placeholder expansion — stored in `pipeline_params_json`, replayed on retry).
+
+### Saved-prompt previews
+
+On completion `fetch_and_store_outputs` hands the output thumbnail (384px; video → frame) to `prompt_previews::attach_preview("imggen-prompt", prompt_template ?? job.prompt)`. It copies the JPEG to `users/{u}/prompt_previews/imggen-prompt/{sha256(content)}.jpg` (latest generation wins) and sets `preview_updated_at` on every entry with that exact text. Best-effort — never fails the job. The Prompt textarea passes `previews` to `PromptTextarea`, enabling the drawer's Gallery / Mixed / Text view modes.
 
 ---
 
@@ -219,6 +270,13 @@ Examples: `job.created`, `offload.output_bucket.create`, `offload.input.upload`,
 | **useRunningImageJobs** | 5s | `GET /api/progress/running` |
 | **image_pipeline_worker** | 20s | `run_background_reconcile_pass` — poll in-flight + reconcile completed missing files |
 
+**Frontend polling rules (keep these — they're what stops the page lagging):**
+
+- `ProgressContext`'s background loop is a chained `setTimeout` (never overlaps), polls at most 3 jobs at once, skips hidden tabs, and **skips the job the page is showing** (`setForegroundImageJob`) — except while it is `cancelRequested`, since only that loop re-issues the cancel.
+- `useRunningImageJobs` background ticks are silent (no `loading` flip) and publish a new array only when the payload changed; `refresh()` (drawer button) shows the spinner.
+- Page `runPoll` has a per-job in-flight guard, applies all state in one batch after its last `await`, and only drives the `polling` spinner for manual "Poll now" (`{ manual: true }`).
+- Job lists/details go through `mergeJob` / `mergeJobList` / `upsertJob` (`lib/imggen.ts`), which keep object identity for unchanged jobs. `ImageJobHistorySidebar` and its `PipelineRow` are `memo`'d and need stable callbacks (`onSidebarSelectNew/Job`). Don't put `layout` back on the row `motion.li` — framer-motion measures every row on every render.
+
 **Running list:** `list_user_active_offload_tasks` — non-terminal jobs with offload row; display status prefers `task.last_poll_status` else `job.status`.
 
 ---
@@ -252,7 +310,7 @@ Backend: `image_jobs::cancel_job` → `OffloadImageClient::cancel_task` → `upd
 |------|----------------|
 | Upload input | `users/{user_id}/images/input/{image_id}.jpg` |
 | Job output | `users/{user_id}/images/output/{job_id}/{image_id}.jpg` |
-| Processing | `image_processing::process_image` — libvips; max edge **1920**, JPEG q=90; EXIF orientation baked in and dropped; uploads keep other EXIF via `process_upload`, Image Tools outputs inherit the input's EXIF + generation parameters (`CarriedExif`) |
+| Processing | `image_processing::process_image` — `vipsthumbnail`/`vipsheader` CLI subprocesses; max edge **1920**, JPEG q=90; EXIF orientation baked in and dropped; uploads keep other EXIF via `process_upload`, Image Tools outputs inherit the input's EXIF + generation parameters (`CarriedExif`) |
 
 `imageFileUrl(imageId, token)` → `/api/images/files/{id}?token=…` for `<img>` / links.
 
@@ -260,7 +318,7 @@ Backend: `image_jobs::cancel_job` → `OffloadImageClient::cancel_task` → `upd
 
 **Reconcile:** completed job without files → worker/user poll retries download; admin `POST …/reconcile`.
 
-**libvips dependency:** `image_processing.rs` uses `rs-vips` (wraps libvips). Dev requires `brew install vips` (macOS) or `apt-get install libvips-dev` (Linux). Docker image installs `libvips42` in the runtime stage. `task dev` / `task build:backend` check for the system lib and fail fast with a hint if missing.
+**vips CLI dependency:** `image_processing.rs` shells out to the `vipsthumbnail`/`vipsheader` binaries as subprocesses — no libvips linking at build time. Every resize/reencode spawn (plus the `ffmpeg` video-thumbnail spawn) is serialized through a process-wide gate (`SUBPROCESS_GATE` in `image_processing.rs`) so only one runs at a time. Dev requires `brew install vips` (macOS) or `apt-get install libvips-tools` (Linux) — the CLI must be on `PATH` at runtime. Docker image installs `libvips-tools` in the runtime stage. `task dev` / `task build:backend` check for the CLI on `PATH` and fail fast with a hint if missing.
 
 ---
 
@@ -277,7 +335,7 @@ Backend: `image_jobs::cancel_job` → `OffloadImageClient::cancel_task` → `upd
 | `backend/src/jobs/image_pipeline_worker.rs` | Background ticker |
 | `backend/src/services/progress.rs` | Running jobs for drawer |
 | `backend/src/routes/progress.rs`, `files.rs`, `admin.rs`, `debug.rs` | |
-| `backend/src/routes/promptgen.rs` + `backend/src/services/promptgen.rs` | Prompt generator (LLM rewrite of the user's idea) |
+| `backend/src/services/promptgen.rs` + `backend/src/ws/promptgen.rs` | Video prompt generator (vision LLM, WS only) |
 | `backend/src/app.rs` | Route registration |
 
 ### DB tables
@@ -304,7 +362,7 @@ Frontend: `listImageWorkerLogs` in `api/admin.ts`; link from Settings `settings-
 
 ## ProgressContext / GlobalProgressDrawer
 
-- `useRunningImageJobs` → `runningImageJobs` (5s refresh)
+- `useRunningImageJobs` → all rows from `/api/progress/running` (5s refresh); `ProgressContext` splits them by `source`: `runningImageJobs` (`image`) and `runningDescribeJobs` (`describe`, keys `describe:{job_id}`, cancel `progress-cancel-describe:{job_id}` → `cancelDescribeJob`). The shell's background poll calls `pollImageJob` / `pollDescribeJob` per row by source. TopBar badge counts chat + image + describe.
 - `TopBar` badge: chat running count + image running count
 - Drawer image rows: key `image:{job_id}`; cancel → `cancelImageJob`
 - `progress-refresh` reloads image list only (chat tasks are in-memory `WorkloadContext`)
@@ -320,12 +378,11 @@ imggen-pipeline-new, imggen-pipeline-item-{job_id},
 imggen-new-panel, imggen-mode-tabs, imggen-mode-img2img,
 imggen-capability-select, imggen-input-section, imggen-upload-input,
 imggen-rescale, imggen-prompt, imggen-negative-toggle,
-imggen-promptgen-open, promptgen-modal, promptgen-idea, promptgen-query,
-promptgen-reset-query, promptgen-insert-placeholder, promptgen-model-*,
-promptgen-generate, promptgen-status, promptgen-stop,
-promptgen-result, promptgen-regenerate, promptgen-error,
+imggen-starred-prompts-open, prompt-library-drawer, video-promptgen-*,
 imggen-width, imggen-height, imggen-swap-dims, imggen-copy-from-input,
 imggen-resolution-toggles, imggen-original-resolution, imggen-keep-proportions,
+imggen-external-resize, imggen-external-resize-checkbox,
+describe-external-resize, describe-external-resize-checkbox,
 imggen-submit-job,
 imggen-job-detail, imggen-poll-job, imggen-cancel-job,
 imggen-pipeline, imggen-pipeline-toggle, imggen-pipeline-status,
@@ -355,6 +412,9 @@ progress-row-image:{job_id}, progress-cancel-image:{job_id}
 2. Job detail pipeline timeline (non-poll events)
 3. Admin worker logs / reconcile
 4. Check MQ agent + `imggen.*` capability online
+5. Reproduce from a terminal: the `oai` CLI is probably installed on this Mac (`~/go/bin/oai`,
+   usually logged in to prod — `oai whoami`). `oai image generate "…" -o /tmp/x.jpg` runs
+   the same submit → poll flow as the page; see the `oai-cli` / `oai-app` skills
 
 ### New pipeline event for UI
 
@@ -367,12 +427,12 @@ Record via `record_event` (`image_jobs/mod.rs`); add to timeline unless poll noi
 1. **No WebSocket** — do not use `ws/` or `WorkloadContext` for image progress.
 2. **`cancelRequested` is not UI-terminal** — auto-poll continues until `canceled`/`failed`/`completed`.
 3. **Cancel needs offload row** — short window after submit.
-4. **Capabilities empty** — missing client token or no `imggen.*` agents online.
+4. **Capabilities empty** — missing client token or no `imggen.*` agents.
 5. **Debug uses `OffloadClient` (chat factory)** — same MQ poll endpoint as images.
-6. **Img2img rescale ≠ upload resize** — OAI normalizes upload to 1920px via libvips; MQ `dataPreparation` scales bucket files for the agent.
+6. **Img2img rescale ≠ upload resize** — OAI normalizes upload to 1920px via `vipsthumbnail`; MQ `dataPreparation` scales bucket files for the agent.
 7. **Progress drawer does not poll MQ** — only DB; use page poll or worker for fresh state.
 8. **No dedicated image itests** — admin 403 tests only; extend `oai/itests` when adding contract tests.
-9. **libvips must be installed** — `image_processing.rs` links against the system libvips. Missing lib = linker error. Run `task install` or `brew install vips` before `task dev` or `cargo build`.
+9. **The vips CLI must be on `PATH` at runtime** — `image_processing.rs` shells out to `vipsthumbnail`/`vipsheader` as subprocesses (no build-time linking). Missing binary = runtime `AppError::Internal("... spawn failed")` on the first upload/job, not a build failure. Run `task install` or `brew install vips` (macOS) / `apt-get install libvips-tools` (Linux) before `task dev`.
 
 ---
 
@@ -382,3 +442,94 @@ Record via `record_event` (`image_jobs/mod.rs`); add to timeline unless poll noi
 - No `test_images.py` yet — add when stabilizing REST contract
 - Frontend E2E tests (Playwright) live in `oai/e2e/tests/images.spec.ts`.
   - **Run E2E tests:** `cd oai/e2e && npm test` (Requires `task dev` running)
+
+---
+
+## Image Tools (`/app/img-utils`) — moved to its own skill
+
+The `img-utils.*` / `image_resize` "Image Tools" feature (one-shot transforms: depth, face
+swap, SeedVR2 upscale, Basic resize) now has a **dedicated skill**:
+`.agents/skills/oai-img-tools/SKILL.md`. Read that when touching
+`frontend/src/pages/ImgUtilsPage.tsx`, `components/imgutils/**`, `api/imgUtils.ts`,
+`backend/src/{routes,services,db}/img_utils.rs`, `jobs/img_utils_worker.rs`, or the agent's
+img-utils workflow/autowiring. The overview below is kept as a quick orientation only.
+
+Where image generation is a bespoke multi-file pipeline, Image Tools is a plain
+**offload-job framework** feature (`db/offload_jobs.rs` + `services/offload_job.rs` +
+`worker_runtime`) — see `.agents/skills/oai-new-feature/SKILL.md` for that shape.
+
+**What it is:** one-shot transforms with no prompt — an image in, one image out.
+**Two capability families** share the page, the `img_utils_jobs` table and every endpoint:
+
+| Family | `kind` | Tools | Contract |
+|--------|--------|-------|----------|
+| `img-utils.*` | `comfy` | `img-utils.depth` (Lotus), `img-utils.face_swap` (ReActor) — need ComfyUI + an installed workflow | `docs/img-utils-api.md` |
+| `image_resize` | `resize` | **Basic resize** — Pillow only, no GPU, so it is online wherever any agent is | `docs/image-resize-api.md` |
+
+**File map**
+
+| Layer | File |
+|-------|------|
+| Page | `frontend/src/pages/ImgUtilsPage.tsx` |
+| Sidebar | `frontend/src/components/imgutils/ImgUtilsHistorySidebar.tsx` |
+| Resize form | `frontend/src/components/imgutils/ResizeControls.tsx` |
+| API client | `frontend/src/api/imgUtils.ts` (resize form model + `resizeOptionsFromForm`) |
+| Routes | `backend/src/routes/img_utils.rs` |
+| Service | `backend/src/services/img_utils.rs` |
+| Resize payload rules | `backend/src/services/image_resize.rs` (`ResizeOptions`, unit-tested) |
+| DB | `backend/src/db/img_utils.rs`, `db/entities/img_utils_jobs.rs` |
+| Worker | `backend/src/jobs/img_utils_worker.rs` (`IMG_UTILS_WORKER_TICK_SECS`, `IMG_UTILS_WORKER_BATCH_SIZE`) |
+
+**Basic resize specifics**
+
+- `img_utils_jobs.workflow` holds the synthetic `basic_resize` (`RESIZE_WORKFLOW`); the
+  agent payload has no `workflow` field, so the name never leaves OAI. `prettyLabel`
+  renders it as "Basic resize".
+- Options are the payload (flat `method`/`mode`/`width`/`height`/`scale`/`format`/
+  `quality`/`allow_upscale`), **not** `secondary_prompts`. They are validated on submit and
+  stored normalized, so **Retry** replays them.
+- `method` is checked against the filters the online agent published in its brackets
+  (`image_resize[nearest;box;…]`), surfaced as `ImgUtilCapability.methods`.
+- Dimensions are capped at `MAX_IMAGE_EDGE` (1920) — OAI downscales every stored image to
+  that, so a bigger request could never be delivered.
+- `list_capabilities` fetches both families in **one** round trip via
+  `OffloadClient::list_capabilities_raw` + `parse_capabilities_with_prefix`.
+
+**Key differences from image generation**
+
+1. **No `image_generation_jobs` row.** `img_utils_jobs` is its own table; there are no
+   pipeline events and no `image_offload_tasks` row, so there is no Progress-drawer entry
+   and no ToolDebug view. The page's own 3 s auto-poll is the only progress signal — but
+   `img_utils_jobs.started_at` / `typical_runtime_seconds` (set in `on_poll` of
+   `ImgUtilsReconciler`, mirroring the image pipeline's `mark_offload_task_started`) feed
+   the same `JobProgressBar` component image generation uses, so the running-job bar looks
+   identical on both pages.
+2. **Reuses `image_files` for both ends.** Inputs come from the shared
+   `POST /api/images/upload`; the result is stored via
+   `image_jobs::store_offload_output_image` with `job_id = None` and
+   `direction = "output"`, so it is served by `/api/images/files/{id}`, gets a thumbnail,
+   counts toward the user's quota, and shows up in **My Files**.
+3. **Tools are discovered, not hardcoded.** `GET /api/img-utils/capabilities` lists
+   whatever `img-utils.*` agents are online (plus `image_resize`). Adding a workflow on an
+   agent adds a tool to the UI with no OAI change. Only two name-based special cases exist: a utility whose
+   name starts with `face_swap` gets a second upload slot
+   (`utility_needs_source_image` in `services/img_utils.rs`, `needs_source_image` in the
+   DTO), and `UTILITY_HINTS` in `ImgUtilsPage.tsx` holds the blurbs.
+4. **Two buckets per job.** Input bucket is created with `rm_after_task=true`; the output
+   bucket is persisted in `img_utils_jobs.output_bucket_uid`. Bucket files are named
+   `input_<image_id>.jpg` / `source_<image_id>.jpg` so the same upload can fill both slots
+   without colliding on the agent.
+5. **`delete_job` removes the output image only** — the input is a user upload shared with
+   the rest of the app.
+6. **Same `ImageLightbox` as image generation.** The job-detail image (and both panes of
+   compare mode) use `components/ImageLightbox.tsx` with the same action set as
+   `ImageGenerationPage`: Edit → img2img, Animate → img2video (both via
+   `ImggenRouteState.useInputImage`, `navigate('/app/images', { state })`), Image Tools →
+   reload as this page's own input (`applyAsInput`, in-page — no navigation), NSFW scan,
+   star, download, delete (output only). `GET`/`poll` responses resolve `input_image` /
+   `source_image` / `output_image` (`JobImageRef`, extends `UploadedImage`) so the page
+   never needs a second lookup to get filename/dimensions for these actions; the list
+   endpoint leaves them `null`.
+7. **Compare mode** (`imgutils-compare-toggle`, shown once a job has both an input and an
+   output) toggles a two-pane before/after grid — the same pattern as img2img compare on
+   `ImageGenerationPage`, reset to off on every job switch.

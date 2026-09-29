@@ -440,6 +440,8 @@ Record via `record_event` (`image_jobs/mod.rs`); add to timeline unless poll noi
 
 - `oai/itests/tests/test_admin.py` — 403 on `/api/admin/images/jobs`, `/api/admin/images/files`
 - No `test_images.py` yet — add when stabilizing REST contract
+- Frontend E2E tests (Playwright) live in `oai/e2e/tests/images.spec.ts`.
+  - **Run E2E tests:** `cd oai/e2e && npm test` (Requires `task dev` running)
 
 ---
 

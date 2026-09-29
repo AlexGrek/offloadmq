@@ -54,11 +54,11 @@ Every AI app in OAI has the same five pieces. Build them in this order:
         │ Postgres (jobs) │               │ Background worker    │
         │ + storage (S3)  │               │ jobs/<feature>_worker│
         └─────────────────┘               └──────────────────────┘
-                    ▲                                │
-                    └─────── reconcile ──────────────┘
-                                 │
-                                 ▼
-                        OffloadMQ HTTP API
+                   ▲                                │
+                   └─────── reconcile ──────────────┘
+                                │
+                                ▼
+                       OffloadMQ HTTP API
 ```
 
 ---
@@ -107,7 +107,7 @@ contains only:
 
 1. `pub type <Feature>Job = <feature>_jobs::Model;` alias.
 2. `impl OffloadJobModel for <feature>_jobs::Model` — `id`, `status`, `offload_cap`, `offload_task_id`.
-3. `impl OffloadJobEntity for <Entity>` — the `col_webdav_bucket()` if applicable, otherwise default columns.
+3. `impl OffloadJobEntity for <Entity>` — the `col_*()` accessors (and `col_bucket()` ⇒ `Some(...)` if the table has a bucket column; default `None` otherwise).
 4. `create_job(db, NewJobInput)` — the only feature-specific insert.
 5. result setter(s) — `set_result` (text/JSON), `set_audio` / `set_audio_files`, etc.
 

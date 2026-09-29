@@ -349,3 +349,5 @@ Edit `services/chat.rs` (`build_offload_chat_messages`, `submit_chat` payload). 
 ## Tests
 
 REST chat coverage: `oai/itests/tests/test_chats.py`. WS paths typically manual or future itests.
+Frontend E2E tests (Playwright) live in `oai/e2e/tests/chat.spec.ts`.
+- **Run E2E tests:** `cd oai/e2e && npm test` (Requires `task dev` running)

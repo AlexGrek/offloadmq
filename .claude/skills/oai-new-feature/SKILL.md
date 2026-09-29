@@ -322,6 +322,7 @@ For HTTP-level reference: the Rust route handlers in `src/api/client/mod.rs` and
 - [ ] `cargo check` passes from `oai/backend/`.
 - [ ] Frontend API client imports `apiRequest` from `api/http.ts` (no local `request<T>`).
 - [ ] Frontend builds: `npx tsc --noEmit` from `oai/frontend/`.
+- [ ] E2E tests are added in `oai/e2e/` for the new feature and pass (`npm test` requires `task dev`).
 - [ ] Sidebar item added to `AppShell` nav.
 - [ ] Auto-poll stops on terminal statuses (no runaway timers).
 - [ ] `delete_job` removes job-linked storage blobs (if any) before the DB row.

@@ -100,7 +100,7 @@ worker threads.
 
 | File | Purpose |
 |---|---|
-| `models.py` | `Task` (`Task.from_poll` parses the pushed task frame into `server_task`), `TaskResult`, `TaskStatus`, `LogEntry`, registration DTOs |
+| `models.py` | `Task` (`Task.from_wire` parses the pushed task frame into `server_task`), `TaskResult`, `TaskStatus`, `LogEntry`, registration DTOs |
 | `wire.py` | Server wire types: `TaskId`, `TaskResultReport`, `TaskProgressReport` |
 | `context.py` | `ExecContext` — structured logs, cooperative cancel, `agent_transport` |
 | `client.py` | `OffloadMQClient` — register/auth (HTTP); persistent WebSocket (`open_ws`/`ws_messages`) receives server-pushed tasks + cancels; `report_progress` + **wire-format `resolve`** sent over WS; `update_agent_info`. HTTP polling removed. |
@@ -210,7 +210,10 @@ Single object both entry points drive. Settings, task store, executor pool, WS s
 | `agent_log.py` | Ring buffer for UI log tail |
 | `scan_state.py` | Background scan state for capabilities UI |
 | `webui.py` | uvicorn lifecycle |
-| `custom_caps_service.py`, `comfy_service.py`, `updater.py`, `startup_win/mac.py`, `systemd_service.py` | UI-backed ops |
+| `custom_caps_service.py`, `comfy_service.py`, `startup_win/mac.py`, `systemd_service.py` | UI-backed ops |
+| `version.py` | Running version — entry point calls `set_app_version()` with the release stamp; core never imports `cli_manager` |
+| `updater.py` | dl.alexgr.space check + download/verify/swap of `omq-<os>-<arch>` (keeps `<exe>.prev`) |
+| `auto_update.py` | `AutoUpdater` thread owned by the orchestrator — see *Self-update* below |
 
 ### Threading model
 
@@ -231,6 +234,22 @@ caller thread          orchestrator.start() → spawns:
   polling has been removed. The supervisor stays alive until `stop()`,
   reconnecting with exponential backoff (and re-auth) on any socket close.
 
+### Self-update (Linux CLI under systemd only)
+
+`AutoUpdater` runs only when `omq` is a frozen, release-stamped Linux build in a
+user-writable dir **and** `INVOCATION_ID` is set (i.e. systemd started it).
+Every `auto_update_interval_hours` (default 6, ±10% jitter; first check 1–10 min
+after start) it: checks the latest release → downloads it next to the exe and
+smoke-tests `--version` → waits until `orch.try_begin_drain()` succeeds (no active
+task, no undelivered resolve; pushes after that are ignored and the server
+re-queues them via the heartbeat claim) → atomic swap → `orch.stop()` →
+`os._exit(75)`. systemd restarts it (`Restart=on-failure`; new units also set
+`RestartForceExitStatus=75`). Manual: `omq update [--check|--rollback]`,
+`/api/update/auto[/run]`, System page card, and server-side via the opt-in
+`slavemode.agent-update` cap (executor → `offloadmq_agent.self_update` hook →
+`AutoUpdater.handle_remote_request`; only advertised when a handler is registered,
+i.e. self-update is supported). Dev builds (`0.0.0.dev0`) never update.
+
 ### Orchestrator API (implements `OrchestratorAPI`)
 
 ```python
@@ -240,6 +259,17 @@ orch.scan_capabilities() / get_scan_state() / start_background_scan()
 orch.rescan(restart_if_changed=False) / update_capability_policy(...)
 orch.register() / start() / stop() / status() / get_agent_logs(n)
 orch.list_tasks() / get_task(id) / cancel_task(id)
+
+# UI-backed ops — proxy into core's own service modules (custom_caps_service,
+# comfy_service, keep_awake, startup_mac/win, systemd_service, updater) so
+# ui-server never has to import core directly:
+orch.list_custom_caps() / get_custom_cap(name) / save_custom_cap(name, yaml) / delete_custom_cap(name)
+orch.list_comfy_workflows() / add_comfy_workflow(...) / delete_comfy_workflow(...)
+orch.get_comfy_param_map(...) / save_comfy_param_map(...) / autodetect_comfy_param_map(...)
+orch.check_update() / download_update()
+orch.get_startup_status() / set_keep_awake(enable) / set_win_startup(enable) / set_mac_startup(enable)
+orch.install_systemd(host=None, port=None) / uninstall_systemd()
+orch.sync_keep_awake_from_settings() / shutdown_keep_awake()
 ```
 
 ---
@@ -251,8 +281,18 @@ Library only. `create_app(orchestrator)` injects orchestrator into routes.
 | File | Purpose |
 |---|---|
 | `protocol.py` | `OrchestratorAPI` Protocol |
-| `api.py` | All `/api/*` routes (see below) |
+| `schemas.py` | Pydantic request/response payload models shared by the route modules |
+| `api.py` | `create_router()` — composes the per-concern routers below under `/api` |
+| `routes/core.py` | settings, config/raw, capabilities, agent lifecycle, tasks |
+| `routes/custom_caps.py` | `/custom/*` — custom capability YAML CRUD |
+| `routes/comfy.py` | `/comfy/*` — ComfyUI workflows + param maps |
+| `routes/kokoro.py` | `/kokoro/*` — Kokoro TTS settings/status |
+| `routes/system.py` | `/system/*`, `/update/*` — sysinfo, self-update, OS startup/keep-awake/systemd |
 | `server.py` | SPA mount + startup autostart/background scan |
+
+Every route module calls only `orch: OrchestratorAPI` methods — never `offloadmq_core`
+directly (agent-level imports, e.g. `offloadmq_agent.systeminfo`, are fine per the
+dependency graph above).
 
 ### REST routes (under `/api`)
 
@@ -332,6 +372,21 @@ Use `fetch('/api/*')` only — not `window.pywebview.api`.
 - Field mapping: see `docs/agent-v2-migration.md`.
 
 ---
+
+## Troubleshooting
+
+**Capability probe silently missing on a launchd/systemd-run agent (e.g.
+Ollama not detected despite `ollama serve` running):** `check_ollama()` and
+similar probes in `capabilities_sync.py` gate on `shutil.which(<binary>)`,
+which only searches the process's `PATH`. Service managers hand jobs a bare
+`PATH` (`/usr/bin:/bin:/usr/sbin:/sbin` on launchd) that excludes
+`/usr/local/bin` / `/opt/homebrew/bin`, so a binary installed there (Ollama,
+docker, etc.) is invisible to the probe even though it's running and
+reachable — the agent stays "online" with just `debug.echo`/`shell.bash`.
+Fix: give the service job an explicit `PATH` (e.g. an `EnvironmentVariables`
+block in the `.plist`, or `Environment=PATH=...` in the systemd unit) that
+includes wherever the runtime actually lives, then rescan
+(`orch.rescan()` / `/api/capabilities/rescan`).
 
 ## Extension Recipes
 
