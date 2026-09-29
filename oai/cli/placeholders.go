@@ -4,6 +4,7 @@ import (
 	"math/rand/v2"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/brianvoe/gofakeit/v7"
 )
@@ -28,12 +29,27 @@ const maxPickAttempts = 64
 var placeholderRE = regexp.MustCompile(`\{([A-Za-z0-9._-]+)\}`)
 
 var builtinPlaceholders = map[string]func() string{
-	"color":     gofakeit.Color,
+	"color":     func() string { return splitCamelCase(gofakeit.Color()) },
 	"animal":    gofakeit.Animal,
 	"adjective": gofakeit.AdjectiveDescriptive,
 	"country":   gofakeit.Country,
 	"language":  gofakeit.Language,
 	"name":      gofakeit.FirstName,
+}
+
+// splitCamelCase turns gofakeit's CSS color names ("MediumVioletRed") into
+// words ("Medium Violet Red"); the expander lowercases them afterwards, and
+// without this they would collapse into "mediumvioletred".
+func splitCamelCase(s string) string {
+	var b strings.Builder
+	runes := []rune(s)
+	for i, r := range runes {
+		if i > 0 && unicode.IsUpper(r) && unicode.IsLower(runes[i-1]) {
+			b.WriteByte(' ')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // unsupportedPlaceholders are reserved by the web UI but have no Go dictionary.

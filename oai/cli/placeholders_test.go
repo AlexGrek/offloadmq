@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/brianvoe/gofakeit/v7"
 )
 
 func TestExpandBuiltinCategories(t *testing.T) {
@@ -16,6 +18,32 @@ func TestExpandBuiltinCategories(t *testing.T) {
 	got := e.Expand("a {Color} {animal} in {country}, speaking {language}, named {name}, very {adjective}")
 	if strings.Contains(got, "{") {
 		t.Fatalf("builtin placeholders left unexpanded: %q", got)
+	}
+}
+
+func TestColorPlaceholderKeepsWordBoundaries(t *testing.T) {
+	for in, want := range map[string]string{
+		"MediumVioletRed":      "Medium Violet Red",
+		"LightGoldenRodYellow": "Light Golden Rod Yellow",
+		"Red":                  "Red",
+	} {
+		if got := splitCamelCase(in); got != want {
+			t.Errorf("splitCamelCase(%q) = %q, want %q", in, got, want)
+		}
+	}
+	gofakeit.GlobalFaker = gofakeit.New(1)
+	e := newPlaceholderExpander(nil)
+	// Most CSS color names are compounds, so a few dozen draws must hit one.
+	multiWord := false
+	for i := 0; i < 50; i++ {
+		got := e.Expand("{color}")
+		if got != strings.ToLower(got) {
+			t.Fatalf("expanded color %q is not lowercase", got)
+		}
+		multiWord = multiWord || strings.Contains(got, " ")
+	}
+	if !multiWord {
+		t.Fatal("no multi-word color in 50 draws: compound names are being glued together")
 	}
 }
 

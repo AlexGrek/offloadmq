@@ -21,7 +21,19 @@ Usage:
                      [--progress=false] [-t|-timeout 5m]
   oai image generate "prompt" [-o out.jpg] [-capability imggen.X] [-negative TEXT]
                      [-width N] [-height N] [-seed N] [-workflow W] [-n COUNT]
-                     [--progress=false] [--history=false] [-t|-timeout 5m]
+                     [--no-wait] [--star] [--progress=false] [--history=false] [-t|-timeout 5m]
+  oai image job <job-id> [-json]
+  oai image poll <job-id> [-json]
+  oai image download <job-id> [-o out.jpg]
+  oai image prompts recent|starred [-negative] [-q TEXT] [-limit N] [-cursor C] [-all]
+                                   [-full] [-json]
+  oai image prompts show <id> [-json]
+  oai image prompts star "text" [-negative]  |  star -id <entry-id>
+  oai image prompts unstar "text" [-negative]
+  oai image prompts record "text" [-negative]
+  oai image prompts edit <id> "new text"
+  oai image prompts delete <id> [id ...]
+  oai image prompts preview <id> [-o preview.jpg]
   oai nude scan <file> [file ...] [-threshold 0.25] [-json] [-o out.json]
                 [--progress=false] [-t|-timeout 5m]
   oai nude availability

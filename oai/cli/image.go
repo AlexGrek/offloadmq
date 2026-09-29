@@ -88,6 +88,37 @@ type pollResponse struct {
 	ExecutionSeconds      *float64   `json:"execution_seconds"`
 }
 
+// imageJobFile is an input or output file attached to an image-generation job.
+// The job detail endpoint includes both, while the poll endpoint includes only
+// output images.
+type imageJobFile struct {
+	ImageID     string `json:"image_id"`
+	Direction   string `json:"direction"`
+	Source      string `json:"source"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	SizeBytes   int64  `json:"size_bytes"`
+}
+
+// imageJobDetail mirrors the fields used from GET /api/images/jobs/{id}.
+// Keep optional backend fields as pointers so null remains distinguishable.
+type imageJobDetail struct {
+	JobID                 string         `json:"job_id"`
+	DisplayName           string         `json:"display_name"`
+	Status                string         `json:"status"`
+	Capability            string         `json:"capability"`
+	Workflow              string         `json:"workflow"`
+	Error                 *string        `json:"error"`
+	StartedAt             *string        `json:"started_at"`
+	TypicalRuntimeSeconds *float64       `json:"typical_runtime_seconds"`
+	SubmittedAt           *string        `json:"submitted_at"`
+	QueuedSeconds         *float64       `json:"queued_seconds"`
+	ExecutionSeconds      *float64       `json:"execution_seconds"`
+	Files                 []imageJobFile `json:"files"`
+}
+
 func (p pollResponse) progressState() jobProgressState {
 	stage := ""
 	if p.Stage != nil {
@@ -105,19 +136,27 @@ func (p pollResponse) progressState() jobProgressState {
 
 func cmdImage(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: oai image <generate|capabilities|describe|describe-capabilities> ...")
+		return errors.New("usage: oai image <generate|capabilities|job|poll|download|prompts|describe|describe-capabilities> ...")
 	}
 	switch args[0] {
 	case "generate":
 		return cmdImageGenerate(args[1:])
+	case "prompts":
+		return cmdImagePrompts(args[1:])
 	case "capabilities":
 		return cmdImageCapabilities(args[1:])
+	case "job":
+		return cmdImageJob(args[1:])
+	case "poll":
+		return cmdImagePoll(args[1:])
+	case "download":
+		return cmdImageDownload(args[1:])
 	case "describe":
 		return cmdImageDescribe(args[1:])
 	case "describe-capabilities":
 		return cmdImageDescribeCapabilities(args[1:])
 	default:
-		return fmt.Errorf("unknown image command %q (want generate, capabilities, describe or describe-capabilities)", args[0])
+		return fmt.Errorf("unknown image command %q (want generate, capabilities, job, poll, download, prompts, describe or describe-capabilities)", args[0])
 	}
 }
 
@@ -141,6 +180,153 @@ func cmdImageCapabilities(args []string) error {
 		return err
 	}
 	return printCapabilities(caps, "imggen.*")
+}
+
+// cmdImageJob reads the last state persisted by the backend. It does not
+// contact OffloadMQ; use image poll when an immediate refresh is needed.
+func cmdImageJob(args []string) error {
+	fs := flag.NewFlagSet("image job", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "print the raw job JSON")
+	rest, err := parseInterleaved(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(rest) != 1 {
+		return errors.New("usage: oai image job <job-id> [-json]")
+	}
+	cfg, err := requireLogin()
+	if err != nil {
+		return err
+	}
+	var job imageJobDetail
+	u := cfg.serverURL("") + "/api/images/jobs/" + url.PathEscape(rest[0])
+	if err := doJSON("GET", u, cfg.Token, nil, &job); err != nil {
+		return err
+	}
+	if *asJSON {
+		return printJSON(&job)
+	}
+	printImageJobDetail(&job)
+	return nil
+}
+
+// cmdImagePoll asks the backend to reconcile one image job with OffloadMQ,
+// then prints the refreshed state. A single invocation performs one poll.
+func cmdImagePoll(args []string) error {
+	fs := flag.NewFlagSet("image poll", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "print the raw poll JSON")
+	rest, err := parseInterleaved(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(rest) != 1 {
+		return errors.New("usage: oai image poll <job-id> [-json]")
+	}
+	cfg, err := requireLogin()
+	if err != nil {
+		return err
+	}
+	var polled pollResponse
+	u := cfg.serverURL("") + "/api/images/jobs/" + url.PathEscape(rest[0]) + "/poll"
+	if err := doJSON("POST", u, cfg.Token, nil, &polled); err != nil {
+		return err
+	}
+	if *asJSON {
+		return printJSON(&polled)
+	}
+	printImagePoll(&polled)
+	return nil
+}
+
+// cmdImageDownload saves every output attached to a completed image job. It
+// deliberately reads the persisted job state instead of polling, so callers
+// can choose when a foreground OffloadMQ poll occurs.
+func cmdImageDownload(args []string) error {
+	fs := flag.NewFlagSet("image download", flag.ContinueOnError)
+	out := fs.String("o", "output.jpg", "output file (extra images get _2, _3, ... suffixes)")
+	rest, err := parseInterleaved(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(rest) != 1 {
+		return errors.New("usage: oai image download <job-id> [-o output.jpg]")
+	}
+	cfg, err := requireLogin()
+	if err != nil {
+		return err
+	}
+	base := cfg.serverURL("")
+	var job imageJobDetail
+	u := base + "/api/images/jobs/" + url.PathEscape(rest[0])
+	if err := doJSON("GET", u, cfg.Token, nil, &job); err != nil {
+		return err
+	}
+	if job.Status != "completed" {
+		return fmt.Errorf("job %s is %s; run `oai image poll %s` until it completes", job.JobID, job.Status, job.JobID)
+	}
+	outputs := outputImageFiles(job.Files)
+	if len(outputs) == 0 {
+		return fmt.Errorf("job %s completed but has no output images", job.JobID)
+	}
+	for i, image := range outputs {
+		dest := indexedOutputPath(*out, i)
+		if err := downloadFile(base+"/api/images/files/"+url.PathEscape(image.ImageID), cfg.Token, dest); err != nil {
+			return fmt.Errorf("download %s: %w", image.ImageID, err)
+		}
+		fmt.Printf("Saved %s\n", dest)
+	}
+	return nil
+}
+
+func outputImageFiles(files []imageJobFile) []imageJobFile {
+	outputs := make([]imageJobFile, 0, len(files))
+	for _, file := range files {
+		if file.Direction == "output" {
+			outputs = append(outputs, file)
+		}
+	}
+	return outputs
+}
+
+func printImageJobDetail(job *imageJobDetail) {
+	fmt.Printf("Job:        %s\n", job.JobID)
+	fmt.Printf("Status:     %s\n", job.Status)
+	fmt.Printf("Capability: %s\n", job.Capability)
+	fmt.Printf("Workflow:   %s\n", job.Workflow)
+	if job.Error != nil && *job.Error != "" {
+		fmt.Printf("Error:      %s\n", *job.Error)
+	}
+	if len(job.Files) == 0 {
+		return
+	}
+	fmt.Println()
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "IMAGE ID\tDIRECTION\tFILENAME\tSIZE")
+	for _, file := range job.Files {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\n", file.ImageID, file.Direction, file.Filename, file.SizeBytes)
+	}
+	_ = w.Flush()
+}
+
+func printImagePoll(polled *pollResponse) {
+	fmt.Printf("Job:    %s\n", polled.JobID)
+	fmt.Printf("Status: %s\n", polled.Status)
+	if polled.Stage != nil && *polled.Stage != "" {
+		fmt.Printf("Stage:  %s\n", *polled.Stage)
+	}
+	if polled.Error != nil && *polled.Error != "" {
+		fmt.Printf("Error:  %s\n", *polled.Error)
+	}
+	if len(polled.OutputImages) == 0 {
+		return
+	}
+	fmt.Println()
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "IMAGE ID\tFILENAME\tSIZE")
+	for _, image := range polled.OutputImages {
+		fmt.Fprintf(w, "%s\t%s\t%d\n", image.ImageID, image.Filename, image.SizeBytes)
+	}
+	_ = w.Flush()
 }
 
 // printCapabilities renders a capability table; kind names the family for the empty message.
@@ -220,10 +406,12 @@ func cmdImageGenerate(args []string) error {
 	count := 1
 	fs.IntVar(&count, "n", 1, "number of separate image-generation runs (max 10)")
 	fs.IntVar(&count, "count", 1, "alias for -n")
+	noWait := fs.Bool("no-wait", false, "submit without waiting; print job IDs to stdout")
 	timeout := timeoutFlag(fs)
 	showProgress := progressFlag(fs)
 	promptFlag := fs.String("prompt", "", "prompt text (or pass it as the first argument)")
 	history := fs.Bool("history", true, "save prompt to history (OAI prompt library)")
+	star := fs.Bool("star", false, "also add the prompt to your starred prompts")
 	rest, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
@@ -237,6 +425,17 @@ func cmdImageGenerate(args []string) error {
 	}
 	if count < 1 || count > maxGenerateCount {
 		return fmt.Errorf("-n must be between 1 and %d", maxGenerateCount)
+	}
+	if *noWait {
+		outputRequested := false
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "o" {
+				outputRequested = true
+			}
+		})
+		if outputRequested {
+			return errors.New("-o cannot be used with --no-wait; download later with `oai image download <job-id> -o output.jpg`")
+		}
 	}
 
 	cfg, err := requireLogin()
@@ -254,7 +453,11 @@ func cmdImageGenerate(args []string) error {
 		if capName, err = pickCapability(caps, *workflow, "imggen.*"); err != nil {
 			return err
 		}
-		fmt.Printf("Using capability: %s (auto-selected, online)\n", capName)
+		if *noWait {
+			fmt.Fprintf(os.Stderr, "Using capability: %s (auto-selected, online)\n", capName)
+		} else {
+			fmt.Printf("Using capability: %s (auto-selected, online)\n", capName)
+		}
 	}
 
 	// Placeholders ({color}, custom {.name}, ...) resolve per job, sharing one
@@ -279,10 +482,14 @@ func cmdImageGenerate(args []string) error {
 		jobReq := req
 		jobReq.Prompt = strings.TrimSpace(expander.Expand(template))
 		if jobReq.Prompt != template {
+			output := io.Writer(os.Stdout)
+			if *noWait {
+				output = os.Stderr
+			}
 			if count == 1 {
-				fmt.Printf("Prompt: %s\n", jobReq.Prompt)
+				fmt.Fprintf(output, "Prompt: %s\n", jobReq.Prompt)
 			} else {
-				fmt.Printf("Prompt %d/%d: %s\n", i+1, count, jobReq.Prompt)
+				fmt.Fprintf(output, "Prompt %d/%d: %s\n", i+1, count, jobReq.Prompt)
 			}
 		}
 		if *seed != 0 {
@@ -296,7 +503,11 @@ func cmdImageGenerate(args []string) error {
 			break
 		}
 		startedJobs = append(startedJobs, started)
-		if count == 1 {
+		if *noWait {
+			// Keep stdout machine-readable: a regular detached invocation emits
+			// exactly one bare ID; detached batches emit one bare ID per line.
+			fmt.Fprintln(os.Stdout, started.JobID)
+		} else if count == 1 {
 			fmt.Printf("Job: %s\n", started.JobID)
 		} else {
 			fmt.Printf("Job %d/%d: %s\n", i+1, count, started.JobID)
@@ -308,10 +519,22 @@ func cmdImageGenerate(args []string) error {
 	}
 
 	if *history && len(startedJobs) > 0 {
-		_ = doJSON("POST", base+"/api/prompts/imggen-prompt/recent", cfg.Token, contentRequest{Content: template}, nil)
+		_ = doJSON("POST", base+"/api/prompts/"+imgPromptBucket+"/recent", cfg.Token, contentRequest{Content: template}, nil)
 		if *negative != "" {
-			_ = doJSON("POST", base+"/api/prompts/imggen-negative/recent", cfg.Token, contentRequest{Content: *negative}, nil)
+			_ = doJSON("POST", base+"/api/prompts/"+imgNegativeBucket+"/recent", cfg.Token, contentRequest{Content: *negative}, nil)
 		}
+	}
+	// Star the template (placeholders unexpanded), as the web UI's favorite
+	// button does. stderr keeps --no-wait stdout to bare job IDs.
+	if *star && len(startedJobs) > 0 {
+		if item, err := starPrompt(cfg, imgPromptBucket, template); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not star prompt: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "Starred prompt %s\n", item.ID)
+		}
+	}
+	if *noWait {
+		return errors.Join(batchErrors...)
 	}
 
 	for i, started := range startedJobs {

@@ -180,6 +180,11 @@ start_job(external_resize) → submit `image_resize`  ← the job's offload task
 
 The **Starred prompts** button on the Prompt label row (`imggen-starred-prompts-open`) opens `SavedPromptsDrawer` on the **Starred** tab (`initialKind="starred"`, bucket `imggen-prompt`, `previews`) — the same drawer as the textarea's list icon, which keeps its last-used tab. Picking a prompt fills the form and closes the drawer. It replaced the old text "Prompt generator" (LLM rewrite of the user's idea), which was removed together with its REST routes (`/api/promptgen/{capabilities,generate,poll}`) and the `generate_prompt` WS command; the per-mode `imggen-promptgen-{mode}` prompt-library rows it left behind are unused.
 
+The same `imggen-prompt` / `imggen-negative` libraries (recent + starred, edit, delete, previews) are
+exposed by the Go CLI as `oai image prompts …` and `oai image generate --star` (`oai/cli/prompts.go`,
+see the `oai-cli` skill). Changing `routes/prompts.rs` DTOs, bucket names, or dedupe/limit rules
+means updating the CLI and `oai/cli/README.md` too.
+
 The **video** prompt generator (img2video, `VideoPromptGenerator` → `generate_video_prompt` on `/api/ws/promptgen`) is a separate feature and is unchanged.
 
 ---

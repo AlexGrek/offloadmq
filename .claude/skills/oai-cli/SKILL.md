@@ -3,8 +3,10 @@ name: oai-cli
 description: >-
   Go engineer context for the OAI command-line client (`oai`). Use when working on
   oai/cli/** — adding a CLI command for an existing OAI backend feature, changing
-  auth/config/HTTP helpers, or debugging why `oai login`, `oai image generate`, or
-  `oai image describe` misbehaves against a backend. Stack with oai-backend (API
+  auth/config/HTTP helpers, or debugging why `oai login`, `oai image generate`
+  (incl. detached `--no-wait` + `image job|poll|download`), `oai image prompts`
+  (prompt history + starred prompts), `oai image describe` or
+  `oai nude` misbehaves against a backend. Stack with oai-backend (API
   contract), oai-img / oai-chat (feature semantics).
 ---
 
@@ -23,13 +25,15 @@ Style: flat `package main`, stdlib only (`net/http`, `encoding/json`, `flag`) pl
 | `httpclient.go` | `doJSON` (bearer + `{error}` unwrapping, mirrors `frontend/src/api/http.ts`), `downloadFile`, `uploadFile` (multipart field `file`), `errNotLoggedIn` |
 | `password.go` | `readLine`, `readPassword` (`OAI_PASSWORD` env → TTY no-echo → piped stdin) |
 | `auth.go` | `login`, `whoami` |
-| `image.go` | `image` sub-dispatch, `capabilities`, `generate`, shared `capabilityInfo`, `printCapabilities`, `pickCapability`, `waitForJob` (poll loop), `finishJob` |
+| `image.go` | `image` sub-dispatch, `capabilities`, `generate` (incl. `--no-wait`), detached-job commands `job`/`poll`/`download` (`imageJobDetail`, `outputImageFiles`), shared `capabilityInfo`, `printCapabilities`, `pickCapability`, `waitForJob` (poll loop), `finishJob` |
+| `prompts.go` | `image prompts recent|starred|show|star|unstar|record|edit|delete|preview` — the image prompt library (`imggen-prompt` / `imggen-negative` buckets); `promptEntry`/`promptPage` DTOs, `fetchPromptPage`/`fetchAllPrompts` (keyset paging), `findPromptEntry` (ID lookup by scanning — no single-entry GET), `starPrompt` (also used by `generate --star`) |
+| `nude.go` | `nude scan|availability|jobs|job|poll|cancel|retry|delete`; also hosts the shared `printJSON` |
 | `describe.go` | `image describe`, `image describe-capabilities` |
 | `placeholders.go` | `{color}`/`{animal}`/… (gofakeit) + custom `{name}` (server `GET /api/prompt-placeholders`) prompt expansion, mirroring `frontend/src/lib/promptPlaceholders.ts`; `{?}` stays server-side |
 | `progress.go` | TTY-aware spinner/progress bar, web-UI timing heuristic, `--progress` / `--profress` flags, plain-output fallback |
 | `README.md` | User-facing usage — keep in sync with the usage banner in `main.go` |
 
-Commands today: `login`, `whoami`, `image capabilities|generate|describe|describe-capabilities`. Default server `https://oai.alexgr.space`.
+Commands today: `login`, `whoami`, `image capabilities|generate|job|poll|download|prompts|describe|describe-capabilities`, `nude scan|availability|jobs|job|poll|cancel|retry|delete`. Default server `https://oai.alexgr.space`.
 
 ## Conventions
 
@@ -43,6 +47,19 @@ Commands today: `login`, `whoami`, `image capabilities|generate|describe|describ
 - **Batch generate (`-n`)**: one job per image, all submitted first, then awaited in order. A non-zero `-seed` is offset by the job index (a shared seed would yield identical images); `outputImagePath` names results (`out.jpg`, `out_2.jpg`; extra images within a batch job get `out_<job>_<image>.jpg`) so jobs never overwrite each other.
 - **Prompt placeholders**: `generate` expands them per job through one shared `placeholderExpander` (no repeats across a batch) and sends the raw text as `prompt_template`. JS-only libraries are replaced by Go analogs (gofakeit); anything with no analog (`{starwars}`) is left literal with a warning. Keep the builtin category list in step with the frontend/backend `RESERVED_PLACEHOLDER_NAMES`.
 - Every job-style feature follows **submit → poll → terminal** (`completed|failed|canceled`); poll every 5s (`pollInterval`, same as the web UI) via `waitForJob`.
+- **Detached mode (`image generate --no-wait`)** splits that flow across invocations. Contract (pinned by `image_detached_test.go`, keep it): stdout is *exactly* the bare job ID(s), one per line, and nothing else — every informational line (auto-selected capability, expanded prompt) must go to stderr when `--no-wait` is set, so `id=$(oai image generate … --no-wait)` works. `-o` is rejected (detected with `fs.Visit`, since its default is non-empty); submit errors in a batch are joined and returned after the IDs already printed. No poll happens. The follow-ups:
+  - `image job <id>` → `GET /api/images/jobs/{id}`: last *persisted* state, no OffloadMQ call (the backend's `image_pipeline_worker` reconciles in the background, so this does advance on its own).
+  - `image poll <id>` → `POST /api/images/jobs/{id}/poll`: one forced reconcile, prints the refreshed state.
+  - `image download <id> -o out.jpg` reads the persisted job (deliberately no poll), refuses non-`completed` jobs, and saves every `direction == "output"` file via `indexedOutputPath` (`out.jpg`, `out_2.jpg`, …).
+  - `job`/`poll` take `-json` (`printJSON`, 2-space indent) for scripts. When adding detached mode to another feature, mirror this split and the stdout contract.
+- **Prompt library (`image prompts`)** wraps `routes/prompts.rs` — it is *not* a job feature (plain CRUD, no poll):
+  - `GET /api/prompts/{bucket}/entries?kind=recent|starred&q=&cursor=&limit=` → `recent` / `starred` listing (`-q`, `-limit`, `-cursor`, `-all`, `-full`, `-json`); the next cursor goes to **stderr** so stdout stays the table/JSON.
+  - `POST /api/prompts/{bucket}/star` → `star` (server dedupes by exact content and bumps the existing favorite); `POST …/recent` → `record` and `generate`'s automatic history (once per invocation, gated by `--history`).
+  - `PATCH` / `DELETE /api/prompt-entries/{id}` → `edit` / `delete` (the backend works on any owned entry, recent or starred); `GET …/{id}/preview` → `preview` (404 = no preview; `downloadFile` checks status before creating the file, so nothing is left behind).
+  - Derived, CLI-only operations: `show <id>` and `star -id <id>` resolve an ID via `findPromptEntry` (scans recent+starred of both buckets; recents are capped at 10, so cheap), `unstar "text"` = search starred with `q` (skipped above the server's 500-char `MAX_QUERY_LEN`) → exact-content match → delete.
+  - `-negative` (bool) picks the `imggen-negative` bucket for list/star/unstar/record; ID-based commands need no bucket. Don't confuse it with `generate -negative TEXT`.
+  - `show` prints the bare text so `generate "$(oai image prompts show ID)"` works; `generate --star` stars the unexpanded template and reports on **stderr** (keeps the `--no-wait` stdout contract).
+  - The web UI uses only the paged `/entries` endpoint; the legacy `GET /api/prompts/{bucket}` (recent+starred at once) isn't wrapped. Bucket names come from `ImageGenerationPage.tsx`; other features' buckets (`llm-system`, `describe-image-user`, …) are out of scope unless asked.
 - Job commands enable the live progress renderer by default. Pass API timing metadata through `jobProgressState`; keep stdout pipe-safe for result-producing commands by rendering their progress on stderr.
 
 ## Adding a new command
@@ -78,15 +95,21 @@ go vet ./...
 go build -o oai .
 ```
 
-`batch_test.go` exercises multi-job generation and description against a mock HTTP server; `progress_test.go` covers the web-UI timing heuristic, flags, terminal sizing, and redirected-output fallback. End-to-end verification against a real backend is still manual:
+`batch_test.go` exercises multi-job generation and description against a mock HTTP server; `image_detached_test.go` covers `--no-wait` (stdout is only IDs, no polling, `-o` rejected) and `job`/`poll`/`download`; `nude_test.go` the nude commands; `prompts_test.go` runs every `image prompts` subcommand plus `generate --star` against an in-memory fake of the prompt routes (paging, search, dedupe, cross-bucket ID lookup, preview 404); `progress_test.go` covers the web-UI timing heuristic, flags, terminal sizing, and redirected-output fallback. End-to-end verification against a real backend is still manual:
 
 ```bash
 ./oai login -server http://localhost:3001 -login root    # local: root / 000000
 ./oai whoami
 ./oai image capabilities
 ./oai image generate "a red bicycle" -o /tmp/bike.jpg && file /tmp/bike.jpg
+id=$(./oai image generate "a red bicycle" --no-wait) && ./oai image poll "$id"
+./oai image job "$id" -json                  # repeat until "status": "completed"
+./oai image download "$id" -o /tmp/bike2.jpg
 ./oai image describe /tmp/bike.jpg -capability llm.qwen3-vl:8b
+./oai image prompts recent && ./oai image prompts starred -limit 5
 ```
+
+Prompt-library checks on **prod** touch the user's real library. Listing, `show` and `preview` are read-only. For writes, use a net-zero round trip on a throwaway text (`star "zz-cli-test …"` → `show` → `edit` → `unstar`). **Never `record` on prod**: recents are capped at 10, so it evicts one of the user's real entries.
 
 Real generation/description needs an **online agent** with the capability (ComfyUI for `imggen.*`, Ollama vision model for `llm.*`). A local `task dev` OAI has none unless you attach an agent, so generation is normally tested against `https://oai.alexgr.space` with the user's own login (ask the user to run `oai login` themselves — do not guess credentials on prod). To test CLI plumbing without agents, point `-server` (or `~/.oai-cli.json`) at a throwaway mock HTTP server and use a temp `HOME` so the real config is untouched. Don't leave generated files in the repo; write to `/tmp`. The built `oai` binary is git-ignored (`oai/cli/.gitignore`).
 
@@ -99,7 +122,12 @@ Real generation/description needs an **online agent** with the capability (Comfy
 | `login failed: Invalid credentials` | Wrong login/password; `OAI_PASSWORD` env silently overrides the prompt — `unset` it |
 | `no <kind> capability is online; known: …` | No agent online. Compare with `image capabilities` / the web UI. Not a CLI bug |
 | `job failed: <msg>` | Job reached `failed` on the server; the message is the backend's `error` field. Same job appears in the web UI (Describe/Images history) — check its details there, then `debug-stack` skill for agent/MQ side. Model-specific failures (e.g. a big vision model failing) reproduce with the web UI too; retry with `-capability` |
-| `timed out after … (job X is still running…)` | Only the CLI gave up; the job continues. Raise `-timeout` or look it up in the UI |
+| `timed out after … (job X is still running…)` | Only the CLI gave up; the job continues. Raise `-timeout`, or resume with `image job X` / `image download X` |
+| `--no-wait` output breaks `$(…)` capture | Something new printed to stdout under `--no-wait`; route it to stderr (see the detached-mode contract) |
+| `image download`: `job X is submitted/running` | Expected before completion — `download` never polls. `image poll X` or wait for the background worker |
+| `prompt X not found in imggen-prompt or imggen-negative` | `show`/`star -id` only search the two image buckets; the ID may belong to another feature's bucket, or was deleted/trimmed out of recents |
+| `no starred prompt in … has exactly that text` | `unstar` needs the exact stored (trimmed) text — use `starred -q …` to find it, or `delete <id>` |
+| `prompt cannot be empty` / `prompt exceeds 32000 characters` | Server-side validation in `db/prompts.rs` |
 | `HTTP 4xx` with no message | Backend returned a non-`{error}` body — usually a request-shape problem (field name/type). Diff the DTO against the Rust struct |
 | `HTTP 413` on describe/upload | Upload over the backend cap (`image_processing::MAX_UPLOAD_BYTES`) |
 | Decode error (`cannot unmarshal …`) | DTO type mismatch (e.g. ID as number, nullable field not a pointer) |

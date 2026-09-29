@@ -368,7 +368,7 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 - User accounts with per-user usage quotas
 - React UI built with shadcn/ui components
 - Deployed at `oai.alexgr.space`; Docker image `grekodocker/oai`
-- Also has a Go command-line client, [oai/cli/](oai/cli/) (`oai login`, `oai image generate|describe`), that talks to the same HTTP API as the SPA
+- Also has a Go command-line client, [oai/cli/](oai/cli/) (`oai login`, `oai image generate|describe|prompts`, `oai nude`), that talks to the same HTTP API as the SPA
 
 ### Skills
 
