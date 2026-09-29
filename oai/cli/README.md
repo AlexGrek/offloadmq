@@ -54,6 +54,18 @@ job_id=$(./oai image generate "a red bicycle" -capability imggen.flux-schnell --
 ./oai image prompts delete 363426941451112448
 ./oai image prompts starred -negative          # negative-prompt library
 
+# Custom prompt placeholders (the web UI's Prompt Placeholders page)
+./oai image placeholders list
+./oai image placeholders create .cinematic "cinematic lighting" "film grain" "anamorphic lens flare"
+./oai image placeholders add .cinematic "35mm, shallow depth of field"
+./oai image placeholders remove .cinematic "film grain"
+./oai image placeholders edit .cinematic        # one variant per line in $VISUAL / $EDITOR
+./oai image placeholders show .cinematic > variants.txt   # bare, one per line
+./oai image placeholders set .cinematic - < variants.txt  # replace all (creates if missing)
+./oai image placeholders rename .cinematic .film
+./oai image placeholders expand "a {color} fox, {.film}" -n 4   # preview, nothing generated
+./oai image placeholders delete .film
+
 # Describe an image with a vision LLM (description on stdout, progress on stderr)
 ./oai image describe-capabilities
 ./oai image describe cat.jpg
@@ -82,12 +94,31 @@ Pass `--no-wait` to submit detached work and return immediately. For one job, st
 `image generate` expands `{token}` placeholders in the prompt the same way the web UI does, once per job, so `-n 4` never repeats a value:
 
 - `{color}` `{animal}` `{adjective}` `{country}` `{language}` `{name}` — random words. The web UI draws them from unique-names-generator; the CLI uses [gofakeit](https://github.com/brianvoe/gofakeit), so the word pools differ. `{starwars}` has no Go equivalent: it is sent literally (with a warning).
-- `{item}`, `{.cinematic}`, … — your **custom placeholders**, loaded from the same server-side definitions as the web UI (`GET /api/prompt-placeholders`; edit them in the web app). A random variant is picked per job, and variants may contain further placeholders (depth-capped). If they cannot be loaded, the CLI warns and sends those tokens literally.
+- `{item}`, `{.cinematic}`, … — your **custom placeholders**, loaded from the same server-side definitions as the web UI (`GET /api/prompt-placeholders`; manage them with [`image placeholders`](#managing-custom-placeholders) or in the web app). A random variant is picked per job, and variants may contain further placeholders (depth-capped). If they cannot be loaded, the CLI warns and sends those tokens literally.
 - `{?}` — random two-word name, expanded by the server; the CLI leaves it alone.
 
 Tokens are case-insensitive and unknown ones are left untouched. The expanded prompt is printed before each job, and the raw template is sent as `prompt_template` so Retry and saved-prompt previews in the web UI see it.
 
 Each job is polled every 5s, like the web UI. A failed poll caused by a network error or a gateway/overload response (502, 503, 504, 408, 429) is retried on the next tick, with a notice on stderr; the CLI gives up only after 3 such failures in a row. Any other error (auth, unknown job, a backend 500) fails immediately. `-timeout` also bounds an in-flight poll request. If `-timeout` expires for a job, it keeps running on the server; only the CLI stops waiting for it.
+
+### Managing custom placeholders
+
+`image placeholders` manages the same per-user definitions as the web UI's Prompt Placeholders page (`/api/prompt-placeholders`). A placeholder has a name (letters, digits, `.`, `-`, `_`; up to 64 characters; unique case-insensitively; not one of the built-in names above or `?`) and one or more variants. Everywhere a name is expected you may write it with or without braces (`.cinematic` or `{.cinematic}`, case-insensitive) or pass the placeholder's ID. Validation happens on the server, so its messages (`reserved placeholder name`, `already have a placeholder named …`) come through as-is.
+
+| Command | What it does |
+|---------|--------------|
+| `list [-full] [-json]` | Table of name, ID, variant count and the first variant; `-full` prints every variant |
+| `show <name> [-json]` | Print the variants, one per line, bare on stdout |
+| `create <name> "v1" "v2" …` | Create a placeholder; fails if the name exists |
+| `set <name> "v1" …` | Replace every variant, creating the placeholder if missing (idempotent, for scripts) |
+| `add <name> "v" …` | Append variants; ones already present are skipped |
+| `remove <name> "v" …` | Remove variants by exact text; refuses to remove the last one (use `delete`) |
+| `rename <name> <new-name>` | Rename; prompts that already use the old `{name}` are not rewritten |
+| `edit <name>` | Open the variants in `$VISUAL` / `$EDITOR` (default `vi`), one per line; blank lines are ignored. A new name is created on save; an empty file or a non-zero editor exit saves nothing |
+| `delete <name> [name …]` | Delete placeholders |
+| `expand "prompt" [-n N]` | Print N expansions of a prompt with the same expander as `generate` (no repeats until a pool runs out; `{?}` stays literal). Nothing is generated |
+
+For `create`, `set`, `add` and `remove`, a lone `-` reads the variants from stdin, one per line — the format `show` prints, so `show NAME > f`, edit `f`, `set NAME - < f` round-trips.
 
 ### Prompt library: history and starred prompts
 

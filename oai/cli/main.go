@@ -34,6 +34,13 @@ Usage:
   oai image prompts edit <id> "new text"
   oai image prompts delete <id> [id ...]
   oai image prompts preview <id> [-o preview.jpg]
+  oai image placeholders list [-full] [-json]
+  oai image placeholders show <name|id> [-json]
+  oai image placeholders create|set|add|remove <name|id> "variant" [...]   (- reads stdin)
+  oai image placeholders rename <name|id> <new-name>
+  oai image placeholders edit <name|id>          (opens $VISUAL / $EDITOR)
+  oai image placeholders delete <name|id> [...]
+  oai image placeholders expand "prompt" [-n COUNT]
   oai nude scan <file> [file ...] [-threshold 0.25] [-json] [-o out.json]
                 [--progress=false] [-t|-timeout 5m]
   oai nude availability
@@ -45,7 +52,7 @@ Usage:
   oai nude delete <job-id>
 
 Prompts may use {color} {animal} {adjective} {country} {language} {name}, your custom
-{placeholders} from the server, and {?} (expanded by the server).
+{placeholders} (manage with oai image placeholders), and {?} (expanded by the server).
 
 Config is stored in ~/.oai-cli.json. Set OAI_PASSWORD for non-interactive login.
 `

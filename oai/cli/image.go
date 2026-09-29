@@ -136,13 +136,15 @@ func (p pollResponse) progressState() jobProgressState {
 
 func cmdImage(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: oai image <generate|capabilities|job|poll|download|prompts|describe|describe-capabilities> ...")
+		return errors.New("usage: oai image <generate|capabilities|job|poll|download|prompts|placeholders|describe|describe-capabilities> ...")
 	}
 	switch args[0] {
 	case "generate":
 		return cmdImageGenerate(args[1:])
 	case "prompts":
 		return cmdImagePrompts(args[1:])
+	case "placeholders":
+		return cmdImagePlaceholders(args[1:])
 	case "capabilities":
 		return cmdImageCapabilities(args[1:])
 	case "job":
@@ -156,7 +158,7 @@ func cmdImage(args []string) error {
 	case "describe-capabilities":
 		return cmdImageDescribeCapabilities(args[1:])
 	default:
-		return fmt.Errorf("unknown image command %q (want generate, capabilities, job, poll, download, prompts, describe or describe-capabilities)", args[0])
+		return fmt.Errorf("unknown image command %q (want generate, capabilities, job, poll, download, prompts, placeholders, describe or describe-capabilities)", args[0])
 	}
 }
 
@@ -386,8 +388,8 @@ func fetchCustomPlaceholders(cfg *Config, prompt string) []promptPlaceholder {
 	if !strings.Contains(prompt, "{") {
 		return nil
 	}
-	var items []promptPlaceholder
-	if err := doJSON("GET", cfg.serverURL("")+"/api/prompt-placeholders", cfg.Token, nil, &items); err != nil {
+	items, err := fetchPlaceholders(cfg)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not load custom placeholders: %v\n", err)
 		return nil
 	}

@@ -30,10 +30,11 @@ Style: flat `package main`, stdlib only (`net/http`, `encoding/json`, `flag`) pl
 | `nude.go` | `nude scan|availability|jobs|job|poll|cancel|retry|delete`; also hosts the shared `printJSON` |
 | `describe.go` | `image describe`, `image describe-capabilities` |
 | `placeholders.go` | `{color}`/`{animal}`/… (gofakeit) + custom `{name}` (server `GET /api/prompt-placeholders`) prompt expansion, mirroring `frontend/src/lib/promptPlaceholders.ts`; `{?}` stays server-side |
+| `placeholders_cmd.go` | `image placeholders list|show|create|set|add|remove|rename|edit|delete|expand` — CRUD over `routes/prompt_placeholders.rs`; `fetchPlaceholders` (also used by `generate`), `findPlaceholder` (name case-insensitive, braces optional, or ID), `editText` + swappable `editorCommand` ($VISUAL/$EDITOR) |
 | `progress.go` | TTY-aware spinner/progress bar, web-UI timing heuristic, `--progress` / `--profress` flags, plain-output fallback |
 | `README.md` | User-facing usage — keep in sync with the usage banner in `main.go` |
 
-Commands today: `login`, `whoami`, `image capabilities|generate|job|poll|download|prompts|describe|describe-capabilities`, `nude scan|availability|jobs|job|poll|cancel|retry|delete`. Default server `https://oai.alexgr.space`.
+Commands today: `login`, `whoami`, `image capabilities|generate|job|poll|download|prompts|placeholders|describe|describe-capabilities`, `nude scan|availability|jobs|job|poll|cancel|retry|delete`. Default server `https://oai.alexgr.space`.
 
 ## Conventions
 
@@ -60,6 +61,7 @@ Commands today: `login`, `whoami`, `image capabilities|generate|job|poll|downloa
   - `-negative` (bool) picks the `imggen-negative` bucket for list/star/unstar/record; ID-based commands need no bucket. Don't confuse it with `generate -negative TEXT`.
   - `show` prints the bare text so `generate "$(oai image prompts show ID)"` works; `generate --star` stars the unexpanded template and reports on **stderr** (keeps the `--no-wait` stdout contract).
   - The web UI uses only the paged `/entries` endpoint; the legacy `GET /api/prompts/{bucket}` (recent+starred at once) isn't wrapped. Bucket names come from `ImageGenerationPage.tsx`; other features' buckets (`llm-system`, `describe-image-user`, …) are out of scope unless asked.
+- **Custom placeholders (`image placeholders`)** wrap `routes/prompt_placeholders.rs` — plain CRUD: `GET`/`POST /api/prompt-placeholders`, `PATCH`/`DELETE …/{id}`. `PATCH` takes the **full** `{name, variants}`, so `add`/`remove`/`rename`/`edit` all read the list, modify, and send the whole definition. The backend has no single GET; resolve by name via the list. Names/variants are validated server-side (reserved names, uniqueness, trimming) — don't duplicate that in the CLI. Variant text format everywhere (stdin `-`, `show`, the editor) is one per line, blank lines dropped, matching the web UI's textarea. `show` output is bare so it round-trips with `set NAME -`. `expand` reuses `placeholderExpander`, so it previews exactly what `generate` would send.
 - Job commands enable the live progress renderer by default. Pass API timing metadata through `jobProgressState`; keep stdout pipe-safe for result-producing commands by rendering their progress on stderr.
 
 ## Adding a new command
@@ -95,7 +97,7 @@ go vet ./...
 go build -o oai .
 ```
 
-`batch_test.go` exercises multi-job generation and description against a mock HTTP server; `image_detached_test.go` covers `--no-wait` (stdout is only IDs, no polling, `-o` rejected) and `job`/`poll`/`download`; `nude_test.go` the nude commands; `prompts_test.go` runs every `image prompts` subcommand plus `generate --star` against an in-memory fake of the prompt routes (paging, search, dedupe, cross-bucket ID lookup, preview 404); `progress_test.go` covers the web-UI timing heuristic, flags, terminal sizing, and redirected-output fallback. End-to-end verification against a real backend is still manual:
+`batch_test.go` exercises multi-job generation and description against a mock HTTP server; `image_detached_test.go` covers `--no-wait` (stdout is only IDs, no polling, `-o` rejected) and `job`/`poll`/`download`; `nude_test.go` the nude commands; `placeholders_cmd_test.go` runs every `image placeholders` subcommand against an in-memory fake with the server's validation (the editor is a temp shell script swapped into `editorCommand`, run through `sh -c '$EDITOR "$@"'` like git); `prompts_test.go` runs every `image prompts` subcommand plus `generate --star` against an in-memory fake of the prompt routes (paging, search, dedupe, cross-bucket ID lookup, preview 404); `progress_test.go` covers the web-UI timing heuristic, flags, terminal sizing, and redirected-output fallback. End-to-end verification against a real backend is still manual:
 
 ```bash
 ./oai login -server http://localhost:3001 -login root    # local: root / 000000
@@ -109,7 +111,7 @@ id=$(./oai image generate "a red bicycle" --no-wait) && ./oai image poll "$id"
 ./oai image prompts recent && ./oai image prompts starred -limit 5
 ```
 
-Prompt-library checks on **prod** touch the user's real library. Listing, `show` and `preview` are read-only. For writes, use a net-zero round trip on a throwaway text (`star "zz-cli-test …"` → `show` → `edit` → `unstar`). **Never `record` on prod**: recents are capped at 10, so it evicts one of the user's real entries.
+Prompt-library checks on **prod** touch the user's real library. Listing, `show` and `preview` are read-only. For writes, use a net-zero round trip on a throwaway text (`star "zz-cli-test …"` → `show` → `edit` → `unstar`). **Never `record` on prod**: recents are capped at 10, so it evicts one of the user's real entries. For placeholders, `list`/`show`/`expand` are read-only; test writes on a throwaway name (`create zz-cli-test a` → `add` → `remove` → `rename` → `delete`).
 
 Real generation/description needs an **online agent** with the capability (ComfyUI for `imggen.*`, Ollama vision model for `llm.*`). A local `task dev` OAI has none unless you attach an agent, so generation is normally tested against `https://oai.alexgr.space` with the user's own login (ask the user to run `oai login` themselves — do not guess credentials on prod). To test CLI plumbing without agents, point `-server` (or `~/.oai-cli.json`) at a throwaway mock HTTP server and use a temp `HOME` so the real config is untouched. Don't leave generated files in the repo; write to `/tmp`. The built `oai` binary is git-ignored (`oai/cli/.gitignore`).
 
