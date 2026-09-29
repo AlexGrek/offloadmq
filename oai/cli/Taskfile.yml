@@ -30,6 +30,10 @@ tasks:
       - cp {{.BINARY}} {{.INSTALL_DIR}}/{{.BINARY}}
       - 'echo "Installed {{.INSTALL_DIR}}/{{.BINARY}}"'
 
+  install:
+    desc: Alias for install-mac
+    deps: [install-mac]
+
   clean:
     desc: Remove the built binary and Task's checksum cache
     cmds:
