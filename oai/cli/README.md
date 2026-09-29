@@ -65,7 +65,7 @@ OAI_PASSWORD=000000 ./oai login -server http://localhost:3001 -login root
 
 Tokens are case-insensitive and unknown ones are left untouched. The expanded prompt is printed before each job, and the raw template is sent as `prompt_template` so Retry and saved-prompt previews in the web UI see it.
 
-Each job is polled every 5s, like the web UI. A failed poll (network error or 5xx) is retried on the next tick; the CLI gives up only after 3 failures in a row, and fails immediately on auth/not-found errors. If `-timeout` expires for a job, it keeps running on the server; only the CLI stops waiting for it.
+Each job is polled every 5s, like the web UI. A failed poll caused by a network error or a gateway/overload response (502, 503, 504, 408, 429) is retried on the next tick, with a notice on stderr; the CLI gives up only after 3 such failures in a row. Any other error (auth, unknown job, a backend 500) fails immediately. `-timeout` also bounds an in-flight poll request. If `-timeout` expires for a job, it keeps running on the server; only the CLI stops waiting for it.
 
 ### Nude detector (NudeNet)
 

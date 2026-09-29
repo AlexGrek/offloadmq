@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +50,12 @@ func apiError(resp *http.Response) error {
 // doJSON sends an optional JSON body and decodes a JSON response into out.
 // token may be empty for public endpoints; out may be nil.
 func doJSON(method, url, token string, body any, out any) error {
+	return doJSONContext(context.Background(), method, url, token, body, out)
+}
+
+// doJSONContext is doJSON bounded by ctx (job polls use it so a hung request
+// can't outlive the command's -timeout).
+func doJSONContext(ctx context.Context, method, url, token string, body any, out any) error {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -57,7 +64,7 @@ func doJSON(method, url, token string, body any, out any) error {
 		}
 		reader = bytes.NewReader(data)
 	}
-	req, err := http.NewRequest(method, url, reader)
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {
 		return err
 	}

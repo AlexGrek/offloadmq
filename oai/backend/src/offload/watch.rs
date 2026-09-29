@@ -18,7 +18,10 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -77,6 +80,10 @@ pub struct TaskWatch {
     cmd_tx: mpsc::UnboundedSender<WsCmd>,
     events: broadcast::Sender<TaskKey>,
     reconnect: Notify,
+    /// True while a connection is up. The cache is cleared whenever a
+    /// connection ends, so a snapshot is never served from a dead connection;
+    /// while this is false [`poll_via_watch`] polls over HTTP directly.
+    connected: AtomicBool,
 }
 
 /// Manual, minimal impl: several fields (channels, the notify) don't carry
@@ -90,6 +97,15 @@ impl std::fmt::Debug for TaskWatch {
 impl TaskWatch {
     /// Spawn the connection-supervisor task and return the shared handle.
     pub fn spawn(db: DatabaseConnection) -> Arc<Self> {
+        let (watch, cmd_rx) = Self::detached();
+        let supervised = watch.clone();
+        tokio::spawn(async move { supervised.run(db, cmd_rx).await });
+        watch
+    }
+
+    /// A handle with no connection supervisor behind it (what [`Self::spawn`]
+    /// wires up, and what unit tests drive directly).
+    fn detached() -> (Arc<Self>, mpsc::UnboundedReceiver<WsCmd>) {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let (events, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let watch = Arc::new(Self {
@@ -98,10 +114,14 @@ impl TaskWatch {
             cmd_tx,
             events,
             reconnect: Notify::new(),
+            connected: AtomicBool::new(false),
         });
-        let supervised = watch.clone();
-        tokio::spawn(async move { supervised.run(db, cmd_rx).await });
-        watch
+        (watch, cmd_rx)
+    }
+
+    /// Whether a connection is currently up (see the `connected` field).
+    pub fn is_connected(&self) -> bool {
+        self.connected.load(Ordering::Acquire)
     }
 
     /// Add a task to the tracked set. Idempotent — re-tracking an already
@@ -172,7 +192,12 @@ impl TaskWatch {
     ) {
         let mut backoff = MIN_BACKOFF;
         loop {
-            match self.connect_and_serve(&db, &mut cmd_rx).await {
+            let result = self.connect_and_serve(&db, &mut cmd_rx).await;
+            // Nothing refreshes the cache until the next connection re-tracks
+            // everything, so drop it rather than serve stale state meanwhile.
+            self.connected.store(false, Ordering::Release);
+            self.cache.write().await.clear();
+            match result {
                 Ok(()) => backoff = MIN_BACKOFF,
                 Err(e) => {
                     tracing::warn!("task watch: connection error, retrying: {e}");
@@ -213,6 +238,7 @@ impl TaskWatch {
         if !snapshot.is_empty() {
             send_frame(&mut sink, &track_frame(&snapshot)).await?;
         }
+        self.connected.store(true, Ordering::Release);
 
         loop {
             tokio::select! {
@@ -258,9 +284,18 @@ impl TaskWatch {
         let ServerFrame::Update { tasks, .. } = frame else {
             return;
         };
+        // Lock order: `tracked` before `cache` (`untrack` takes them one at a
+        // time, so it can't deadlock against this).
+        let tracked = self.tracked.read().await;
         let mut cache = self.cache.write().await;
         for entry in tasks {
             let key = TaskKey::new(&entry.id.cap, &entry.id.id);
+            // An update already in flight when we untracked this task would
+            // otherwise re-create a partial slot that nothing ever refreshes
+            // or removes again.
+            if !tracked.contains(&key) {
+                continue;
+            }
             let slot = cache.entry(key.clone()).or_default();
             if entry.missing {
                 slot.missing = true;
@@ -307,11 +342,11 @@ pub struct PolledFields {
 /// `offload_task_missing_message` and every caller that already checks it
 /// keep working unmodified — only *how* the answer is obtained changed.
 ///
-/// A cache miss that outlives [`FIRST_SNAPSHOT_TIMEOUT`] falls back to one
-/// HTTP poll. That happens right after submit (the server only answers a
-/// `track` on its next tick, which can land after the timeout) and whenever
-/// the watch connection is down or reconnecting. The task stays tracked, so
-/// later polls are served from the cache again.
+/// Falls back to one HTTP poll when the cache can't answer: immediately while
+/// the connection is down, or when a cache miss outlives
+/// [`FIRST_SNAPSHOT_TIMEOUT`] (right after submit, the server only answers a
+/// `track` on its next tick, which can land after the timeout). Either way the
+/// task is tracked, so later polls are served from the cache again.
 pub async fn poll_via_watch(
     watch: &TaskWatch,
     http: &reqwest::Client,
@@ -320,6 +355,10 @@ pub async fn poll_via_watch(
     cap: &str,
     id: &str,
 ) -> Result<PolledFields, AppError> {
+    if !watch.is_connected() {
+        watch.track(cap, id).await;
+        return http_poll(http, base_url, api_key, cap, id).await;
+    }
     match watch.get_or_track(cap, id).await {
         Some(snap) if snap.missing => {
             Err(AppError::ExternalService(format!("POLL_HTTP_404:{OFFLOAD_TASK_MISSING}")))
@@ -333,10 +372,20 @@ pub async fn poll_via_watch(
         }),
         None => {
             tracing::debug!("task watch: no snapshot for {cap}/{id} yet, polling over HTTP");
-            let raw = crate::offload::post_poll_raw(http, base_url, api_key, cap, id).await?;
-            http_poll_fields(raw)
+            http_poll(http, base_url, api_key, cap, id).await
         }
     }
+}
+
+async fn http_poll(
+    http: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    cap: &str,
+    id: &str,
+) -> Result<PolledFields, AppError> {
+    let raw = crate::offload::post_poll_raw(http, base_url, api_key, cap, id).await?;
+    http_poll_fields(raw)
 }
 
 /// Body of `POST /api/task/poll/{cap}/{id}`.
@@ -471,6 +520,44 @@ mod tests {
         assert_eq!(f.log.as_deref(), Some("step 3/8"));
         assert!(f.output.is_none());
         assert_eq!(f.typical_runtime_seconds, Some(Duration::from_millis(12_500)));
+    }
+
+    #[tokio::test]
+    async fn apply_frame_ignores_untracked_tasks() {
+        let (watch, _cmd_rx) = TaskWatch::detached();
+        watch.track("imggen.x", "kept").await;
+        watch
+            .apply_frame(
+                r#"{"type":"update","seq":1,"full":false,"tasks":[
+                    {"id":{"cap":"imggen.x","id":"kept"},"status":"running"},
+                    {"id":{"cap":"imggen.x","id":"gone"},"logAppend":"late delta"}
+                ]}"#,
+            )
+            .await;
+        assert_eq!(watch.get("imggen.x", "kept").await.unwrap().status.as_deref(), Some("running"));
+        assert!(watch.get("imggen.x", "gone").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn poll_while_disconnected_uses_http_at_once_and_tracks() {
+        use axum::{routing::post, Json, Router};
+        let app = Router::new().route(
+            "/api/task/poll/{cap}/{id}",
+            post(|| async { Json(serde_json::json!({ "status": "running", "stage": "sampling" })) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let (watch, mut cmd_rx) = TaskWatch::detached();
+        let started = tokio::time::Instant::now();
+        let f = poll_via_watch(&watch, &reqwest::Client::new(), &base, "key", "imggen.x", "t1")
+            .await
+            .unwrap();
+        assert_eq!(f.status, "running");
+        assert_eq!(f.stage.as_deref(), Some("sampling"));
+        assert!(started.elapsed() < FIRST_SNAPSHOT_TIMEOUT, "must not wait for a snapshot");
+        assert!(matches!(cmd_rx.try_recv(), Ok(WsCmd::Track(k)) if k == TaskKey::new("imggen.x", "t1")));
     }
 
     #[test]

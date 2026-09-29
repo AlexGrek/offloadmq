@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ func TestWaitForJobFallsBackToPlainStageLines(t *testing.T) {
 	err := waitForJob(&output, "job-1", time.Second, jobProgressOptions{
 		Enabled: true,
 		Label:   "Image",
-	}, func() (jobProgressState, error) {
+	}, func(context.Context) (jobProgressState, error) {
 		return jobProgressState{Status: "completed", Stage: "saving output"}, nil
 	})
 	if err != nil {
@@ -34,9 +35,12 @@ func shortPollInterval(t *testing.T) {
 
 func TestWaitForJobRetriesTransientPollErrors(t *testing.T) {
 	shortPollInterval(t)
-	var output bytes.Buffer
+	var output, notices bytes.Buffer
+	savedNotices := pollNotices
+	pollNotices = &notices
+	t.Cleanup(func() { pollNotices = savedNotices })
 	calls := 0
-	err := waitForJob(&output, "job-1", 5*time.Second, jobProgressOptions{Enabled: true}, func() (jobProgressState, error) {
+	err := waitForJob(&output, "job-1", 5*time.Second, jobProgressOptions{Enabled: true}, func(context.Context) (jobProgressState, error) {
 		calls++
 		if calls == 1 {
 			return jobProgressState{}, &httpError{Status: 502, Msg: "WATCH_PENDING: task not yet observed by the watch cache"}
@@ -49,15 +53,18 @@ func TestWaitForJobRetriesTransientPollErrors(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("poll calls = %d, want 2", calls)
 	}
-	if !strings.Contains(output.String(), "Poll failed (1/3), retrying: WATCH_PENDING") {
-		t.Fatalf("output %q does not report the retry", output.String())
+	if !strings.Contains(notices.String(), "Poll failed (1/3), retrying: WATCH_PENDING") {
+		t.Fatalf("notices %q do not report the retry", notices.String())
+	}
+	if output.Len() != 0 {
+		t.Fatalf("job output %q must stay free of retry notices", output.String())
 	}
 }
 
 func TestWaitForJobGivesUpAfterRepeatedPollErrors(t *testing.T) {
 	shortPollInterval(t)
 	calls := 0
-	err := waitForJob(&bytes.Buffer{}, "job-1", 5*time.Second, jobProgressOptions{}, func() (jobProgressState, error) {
+	err := waitForJob(&bytes.Buffer{}, "job-1", 5*time.Second, jobProgressOptions{}, func(context.Context) (jobProgressState, error) {
 		calls++
 		return jobProgressState{}, &httpError{Status: 502, Msg: "bad gateway"}
 	})
@@ -69,15 +76,31 @@ func TestWaitForJobGivesUpAfterRepeatedPollErrors(t *testing.T) {
 	}
 }
 
-func TestWaitForJobDoesNotRetryClientErrors(t *testing.T) {
+func TestWaitForJobDoesNotRetryPermanentErrors(t *testing.T) {
 	shortPollInterval(t)
-	calls := 0
-	err := waitForJob(&bytes.Buffer{}, "job-1", 5*time.Second, jobProgressOptions{}, func() (jobProgressState, error) {
-		calls++
-		return jobProgressState{}, &httpError{Status: 404, Msg: "Not found"}
+	for _, status := range []int{400, 401, 404, 500} {
+		calls := 0
+		err := waitForJob(&bytes.Buffer{}, "job-1", 5*time.Second, jobProgressOptions{}, func(context.Context) (jobProgressState, error) {
+			calls++
+			return jobProgressState{}, &httpError{Status: status, Msg: "nope"}
+		})
+		if err == nil || calls != 1 {
+			t.Fatalf("HTTP %d: waitForJob = %v after %d calls, want immediate failure", status, err, calls)
+		}
+	}
+}
+
+func TestWaitForJobTimeoutCutsOffAHungPoll(t *testing.T) {
+	started := time.Now()
+	err := waitForJob(&bytes.Buffer{}, "job-1", 50*time.Millisecond, jobProgressOptions{}, func(ctx context.Context) (jobProgressState, error) {
+		<-ctx.Done() // a request that never answers on its own
+		return jobProgressState{}, ctx.Err()
 	})
-	if err == nil || calls != 1 {
-		t.Fatalf("waitForJob = %v after %d calls, want immediate failure", err, calls)
+	if err == nil || !strings.Contains(err.Error(), "timed out after 50ms (job job-1 is still in progress") {
+		t.Fatalf("waitForJob = %v, want the timeout error", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("returned after %s, want right at the deadline", elapsed)
 	}
 }
 

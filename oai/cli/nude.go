@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -407,8 +408,8 @@ func cmdNudeScan(args []string) error {
 			Enabled:      *showProgress,
 			Label:        filepath.Base(run.path),
 			RunningLabel: "Scanning",
-		}, func() (jobProgressState, error) {
-			if err := doJSON("POST", pollURL, cfg.Token, nil, &job); err != nil {
+		}, func(ctx context.Context) (jobProgressState, error) {
+			if err := doJSONContext(ctx, "POST", pollURL, cfg.Token, nil, &job); err != nil {
 				return jobProgressState{}, err
 			}
 			return job.progressState(), nil
@@ -466,8 +467,8 @@ func waitAndPrintNudeJob(base, token, jobID string, timeout time.Duration, showP
 		Enabled:      showProgress,
 		Label:        "Scan",
 		RunningLabel: "Scanning",
-	}, func() (jobProgressState, error) {
-		if err := doJSON("POST", pollURL, token, nil, &job); err != nil {
+	}, func(ctx context.Context) (jobProgressState, error) {
+		if err := doJSONContext(ctx, "POST", pollURL, token, nil, &job); err != nil {
 			return jobProgressState{}, err
 		}
 		return job.progressState(), nil

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -168,8 +169,8 @@ func cmdImageDescribe(args []string) error {
 			Enabled:      *showProgress,
 			Label:        filepath.Base(run.path),
 			RunningLabel: "Analyzing",
-		}, func() (jobProgressState, error) {
-			if err := doJSON("POST", pollURL, cfg.Token, nil, &job); err != nil {
+		}, func(ctx context.Context) (jobProgressState, error) {
+			if err := doJSONContext(ctx, "POST", pollURL, cfg.Token, nil, &job); err != nil {
 				return jobProgressState{}, err
 			}
 			return job.progressState(), nil
