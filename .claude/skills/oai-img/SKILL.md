@@ -282,6 +282,14 @@ Examples: `job.created`, `offload.output_bucket.create`, `offload.input.upload`,
 - Page `runPoll` has a per-job in-flight guard, applies all state in one batch after its last `await`, and only drives the `polling` spinner for manual "Poll now" (`{ manual: true }`).
 - Job lists/details go through `mergeJob` / `mergeJobList` / `upsertJob` (`lib/imggen.ts`), which keep object identity for unchanged jobs. `ImageJobHistorySidebar` and its `PipelineRow` are `memo`'d and need stable callbacks (`onSidebarSelectNew/Job`). Don't put `layout` back on the row `motion.li` — framer-motion measures every row on every render.
 
+**No-flash rules (placeholders):**
+
+- `selectedJob` is **derived**: the fetched job if it matches `viewedJobId`, else the entry from `jobs` (the list endpoint returns full details). Selecting a listed job renders instantly; `imggen-job-detail-skeleton` is only for a job not in the list. Never gate the detail on the per-job fetch.
+- `displayStatus` / `displayStage` ignore `activePoll` unless `activePoll.job_id === viewedJobId` — a late poll for the previous job must not leak in.
+- Images go through `components/LoadingImage.tsx` with intrinsic `width`/`height` (`intrinsicSize()`), so the box is reserved at the right aspect ratio with a pulse placeholder, then fades in; memory-cached images skip both. Sidebar thumbnails use `placeholderClassName="opacity-0"` over the tile fill.
+- Initial fetches (settings, jobs, capabilities, external-resize) run in parallel. `capabilitiesStatus` starts as `'loading'`, and the picker stays on its skeleton (`pickerStatus`) until the first model is picked in a `useLayoutEffect` that waits for the job list, so the last-used model wins. This avoids the old "No models" → "Pick model" → model sequence.
+- The sidebar skeleton shows only while the list is empty; manual refresh just spins the icon.
+
 **Running list:** `list_user_active_offload_tasks` — non-terminal jobs with offload row; display status prefers `task.last_poll_status` else `job.status`.
 
 ---

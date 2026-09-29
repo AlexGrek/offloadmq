@@ -4,6 +4,7 @@ import { Check, ImageIcon, RefreshCw, Search, Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { LoadingImage } from '@/components/LoadingImage'
 import { listImageLibrary } from '../../api/files'
 import type { UserFile } from '../../api/files'
 import { imageThumbnailUrl } from '../../api/images'
@@ -246,7 +247,7 @@ export function ImagePickerModal({ open, onClose, onSelect, token }: ImagePicker
                           'group relative min-w-0 overflow-hidden rounded-xl border-2 bg-muted/30 transition-colors',
                           isSelected ? 'border-primary' : 'border-transparent',
                         )} data-testid={`imggen-picker-file-${file.id}`}>
-                          <img src={imageThumbnailUrl(file.id, token)} alt={file.filename} className="size-full object-cover" loading="lazy" />
+                          <LoadingImage src={imageThumbnailUrl(file.id, token)} alt={file.filename} className="size-full object-cover" loading="lazy" />
                           <div className="absolute left-1.5 top-1.5"><span className={cn(
                             'rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white opacity-0 transition-opacity group-hover:opacity-100',
                             isSelected && 'opacity-100', file.direction === 'output' ? 'bg-violet-500/90' : 'bg-sky-500/90',

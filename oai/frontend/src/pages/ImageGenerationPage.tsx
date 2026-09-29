@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeftRight,
@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils'
 import { MorphCollapse, MorphIn } from '@/components/Morph'
 import { useMorph } from '@/lib/motion'
 import { ImageLightbox } from '@/components/ImageLightbox'
+import { LoadingImage } from '@/components/LoadingImage'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { SavedPromptsDrawer } from '../components/prompts/SavedPromptsDrawer'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
@@ -176,6 +177,44 @@ type SlideshowEntry = {
   prompt: string
 }
 
+/** Poll-shaped snapshot of a job's stored state (before any live MQ poll). */
+function pollSnapshot(details: ImageJobDetails): PollImageJobResponse {
+  return {
+    job_id: details.job_id,
+    status: details.status,
+    stage: null,
+    error: details.error,
+    started_at: details.started_at ?? null,
+    typical_runtime_seconds: details.typical_runtime_seconds ?? null,
+    submitted_at: details.submitted_at ?? null,
+    queued_seconds: details.queued_seconds ?? null,
+    execution_seconds: details.execution_seconds ?? null,
+    output_images: details.files
+      .filter(f => f.direction === 'output')
+      .map(f => ({
+        image_id: f.image_id,
+        filename: f.filename,
+        width: f.width,
+        height: f.height,
+        content_type: f.content_type,
+        size_bytes: f.size_bytes,
+      })),
+  }
+}
+
+/** `next` unless it is structurally equal to `prev` (avoids no-op re-renders). */
+function samePollOr(
+  prev: PollImageJobResponse | null,
+  next: PollImageJobResponse,
+): PollImageJobResponse {
+  return prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next
+}
+
+/** `width`/`height` props for an `<img>`/`<video>`, omitted when unknown. */
+function intrinsicSize(width: number, height: number) {
+  return width > 0 && height > 0 ? { width, height } : undefined
+}
+
 const DEFAULT_RESCALE: RescaleState = {
   enabled: false,
   mode: 'exact',
@@ -198,7 +237,11 @@ export default function ImageGenerationPage() {
   const [overrideNegative, setOverrideNegative] = useState(false)
   const [capability, setCapability] = useState('')
   const [allCapabilities, setAllCapabilities] = useState<ImgGenCapability[]>([])
-  const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('idle')
+  // Start in 'loading' (not 'idle') so the picker shows its skeleton from the
+  // first paint instead of flashing "No models" before the fetch begins.
+  const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>(() =>
+    token ? 'loading' : 'idle',
+  )
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
   const [width, setWidth] = useState(MODE_DEFAULTS.txt2img.width)
   const [height, setHeight] = useState(MODE_DEFAULTS.txt2img.height)
@@ -227,7 +270,7 @@ export default function ImageGenerationPage() {
   const [activePanel, setActivePanel] = useState<string>(IMGGEN_NEW_PANEL)
   const [activePoll, setActivePoll] = useState<PollImageJobResponse | null>(null)
   const [jobs, setJobs] = useState<ImageJobDetails[]>([])
-  const [selectedJob, setSelectedJob] = useState<ImageJobDetails | null>(null)
+  const [fetchedJob, setSelectedJob] = useState<ImageJobDetails | null>(null)
   const [jobDetailLoading, setJobDetailLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
@@ -268,6 +311,18 @@ export default function ImageGenerationPage() {
 
   const viewingJob = activePanel !== IMGGEN_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
+
+  // The list endpoint returns full job details, so the viewed job renders from
+  // the list straight away and is swapped for its own fetch when that lands —
+  // switching jobs never flashes a skeleton, a stale job or "Could not load".
+  const selectedJob = useMemo(() => {
+    if (!viewedJobId || fetchedJob?.job_id === viewedJobId) return fetchedJob
+    return jobs.find(j => j.job_id === viewedJobId) ?? null
+  }, [viewedJobId, fetchedJob, jobs])
+  const jobsRef = useRef(jobs)
+  useEffect(() => {
+    jobsRef.current = jobs
+  }, [jobs])
 
   useEffect(() => {
     setDebugOpen(false)
@@ -455,19 +510,19 @@ export default function ImageGenerationPage() {
       setCapabilitiesError(null)
       return
     }
-    ;(async () => {
-      try {
-        const settings = await getSettings(token)
+    // Independent fetches run in parallel so every section fills in at once.
+    getSettings(token)
+      .then(settings => {
         if (!settings.client_api_token) {
           setInfo('Admin should configure OffloadMQ client token in Settings -> Server.')
         }
-      } catch {
+      })
+      .catch(() => {
         // non-fatal
-      }
-      await refreshJobs()
-      await loadCapabilities()
-      await loadExternalResizeInfo()
-    })()
+      })
+    void refreshJobs()
+    void loadCapabilities()
+    void loadExternalResizeInfo()
   }, [token, loadCapabilities, loadExternalResizeInfo, refreshJobs])
 
   const refreshCapabilities = useCallback(() => {
@@ -476,10 +531,14 @@ export default function ImageGenerationPage() {
 
   const capabilityInitialized = useRef(false)
 
-  useEffect(() => {
+  // Layout effect: the chosen model is in place before paint, so the picker
+  // never shows "Pick model" for a frame. The first pick waits for the job list
+  // (capabilities and jobs load in parallel) so the last-used model wins.
+  useLayoutEffect(() => {
     if (capabilities.length === 0) return
 
     if (!capabilityInitialized.current) {
+      if (jobsLoading) return
       capabilityInitialized.current = true
       const lastJobCap = jobs[0]?.capability
       if (lastJobCap && capabilities.some(c => c.base === lastJobCap)) {
@@ -496,7 +555,13 @@ export default function ImageGenerationPage() {
       const firstOnline = capabilities.find(c => c.online)
       setCapability(firstOnline?.base ?? capabilities[0].base)
     }
-  }, [capabilities, capability, jobs])
+  }, [capabilities, capability, jobs, jobsLoading])
+
+  // Until a model is picked, keep the picker on its loading skeleton.
+  const pickerStatus: CapabilitiesStatus =
+    capabilitiesStatus === 'ready' && capabilities.length > 0 && !capability
+      ? 'loading'
+      : capabilitiesStatus
 
   // Apply defaults after an input image is set. For img2img: lock proportions + use original
   // resolution when sub-4K. For video modes: leave output resolution untouched — the user sets
@@ -842,9 +907,7 @@ export default function ImageGenerationPage() {
       try {
         const poll = await pollImageJob(token, jobId)
         const details = await getImageJob(token, jobId)
-        setActivePoll(prev =>
-          prev && JSON.stringify(prev) === JSON.stringify(poll) ? prev : poll,
-        )
+        setActivePoll(prev => samePollOr(prev, poll))
         applyJobDetails(details)
         setInfo(`Job ${jobId}: ${poll.status}${poll.stage ? ` (${poll.stage})` : ''}`)
         if (poll.error) setError(poll.error)
@@ -1125,34 +1188,14 @@ export default function ImageGenerationPage() {
     if (!token) return
     setActivePanel(jobId)
     setError(null)
-    setJobDetailLoading(true)
+    // A job already in the list renders immediately; only an unknown one gets
+    // the skeleton while its details load.
+    const cached = jobsRef.current.find(j => j.job_id === jobId)
+    if (cached) setActivePoll(pollSnapshot(cached))
+    else setJobDetailLoading(true)
     try {
       const details = await refreshJob(jobId)
-      setActivePoll(
-        details
-          ? {
-              job_id: jobId,
-              status: details.status,
-              stage: null,
-              error: details.error,
-              started_at: details.started_at ?? null,
-              typical_runtime_seconds: details.typical_runtime_seconds ?? null,
-              submitted_at: details.submitted_at ?? null,
-              queued_seconds: details.queued_seconds ?? null,
-              execution_seconds: details.execution_seconds ?? null,
-              output_images: details.files
-                .filter(f => f.direction === 'output')
-                .map(f => ({
-                  image_id: f.image_id,
-                  filename: f.filename,
-                  width: f.width,
-                  height: f.height,
-                  content_type: f.content_type,
-                  size_bytes: f.size_bytes,
-                })),
-            }
-          : null,
-      )
+      if (details) setActivePoll(prev => samePollOr(prev, pollSnapshot(details)))
       if (details && !TERMINAL.has(details.status)) {
         void runPoll(jobId)
       }
@@ -1186,15 +1229,18 @@ export default function ImageGenerationPage() {
     return overrides
   }, [runningImageJobs])
 
+  // A poll for a job the user has already navigated away from must not leak
+  // its status into the one now on screen.
+  const viewedPoll = activePoll && activePoll.job_id === viewedJobId ? activePoll : null
   const displayStatus =
     viewingJob && selectedJob?.job_id === viewedJobId
-      ? jobStatusOverrides[viewedJobId] ?? activePoll?.status ?? selectedJob?.status
+      ? jobStatusOverrides[viewedJobId] ?? viewedPoll?.status ?? selectedJob?.status
       : undefined
   const displayStage = useMemo(() => {
     if (!viewedJobId) return activePoll?.stage ?? null
     const row = runningImageJobs.find(r => r.job_id === viewedJobId)
-    return row?.stage ?? activePoll?.stage ?? null
-  }, [viewedJobId, runningImageJobs, activePoll?.stage])
+    return row?.stage ?? viewedPoll?.stage ?? null
+  }, [viewedJobId, runningImageJobs, activePoll?.stage, viewedPoll?.stage])
   const progressBarMeta = useMemo(() => {
     if (!viewedJobId) {
       return {
@@ -1256,6 +1302,14 @@ export default function ImageGenerationPage() {
     () => (selectedJob ? selectedJob.files.filter(f => f.direction === 'output') : []),
     [selectedJob],
   )
+
+  // Intrinsic size of the job's input, so its <img> reserves the right box
+  // before loading. Falls back to the job's output size (same aspect for img2img).
+  const inputDims = useMemo(() => {
+    if (!selectedJob?.input_image_id) return undefined
+    const f = selectedJob.files.find(x => x.image_id === selectedJob.input_image_id)
+    return intrinsicSize(f?.width ?? selectedJob.width, f?.height ?? selectedJob.height)
+  }, [selectedJob])
 
   const downloadJobOutputs = useCallback(() => {
     for (const file of outputFiles) {
@@ -1359,7 +1413,7 @@ export default function ImageGenerationPage() {
           activePanel={activePanel}
           token={token}
           mediaRevision={mediaRevision}
-          loading={jobsLoading}
+          loading={jobsLoading && jobs.length === 0}
           statusOverrides={jobStatusOverrides}
           runningJobs={runningImageJobs}
           onSelectNew={onSidebarSelectNew}
@@ -1503,7 +1557,7 @@ export default function ImageGenerationPage() {
                   selected={capability}
                   onSelect={setCapability}
                   onRefresh={refreshCapabilities}
-                  capabilitiesStatus={capabilitiesStatus}
+                  capabilitiesStatus={pickerStatus}
                   capabilitiesError={capabilitiesError}
                 />
                 {capabilitiesStatus === 'ready' && capabilities.length === 0 && (
@@ -1582,12 +1636,15 @@ export default function ImageGenerationPage() {
                           : undefined
                       }
                     >
-                      <img
+                      <LoadingImage
                         src={
                           uploadedInput
                             ? imageFileUrl(uploadedInput.image_id, token, mediaRevision)
                             : inputPreviewUrl!
                         }
+                        {...(uploadedInput
+                          ? intrinsicSize(uploadedInput.width, uploadedInput.height)
+                          : undefined)}
                         alt=""
                         aria-hidden
                         className="max-h-48 w-full object-contain bg-muted/30"
@@ -2078,8 +2135,9 @@ export default function ImageGenerationPage() {
                     testId="imggen-compare-input"
                     actions={lightboxActions(selectedJob.input_image_id!, 'Input', 'input')}
                   >
-                    <img
+                    <LoadingImage
                       src={imageFileUrl(selectedJob.input_image_id!, token, mediaRevision)}
+                      {...inputDims}
                       alt=""
                       aria-hidden
                       className="w-full object-contain max-h-[40dvh] sm:max-h-[65vh] transition-opacity group-hover:opacity-95"
@@ -2110,8 +2168,9 @@ export default function ImageGenerationPage() {
                         true,
                       )}
                     >
-                      <img
+                      <LoadingImage
                         src={imageFileUrl(file.image_id, token, mediaRevision)}
+                        {...intrinsicSize(file.width, file.height)}
                         alt=""
                         aria-hidden
                         className="w-full object-contain max-h-[40dvh] sm:max-h-[65vh] transition-opacity group-hover:opacity-95"
@@ -2137,6 +2196,11 @@ export default function ImageGenerationPage() {
                         src={imageFileUrl(file.image_id, token, mediaRevision)}
                         controls
                         loop
+                        style={
+                          file.width > 0 && file.height > 0
+                            ? { aspectRatio: `${file.width} / ${file.height}` }
+                            : undefined
+                        }
                         className="w-full max-h-[70vh] object-contain"
                       />
                     </div>
@@ -2161,8 +2225,9 @@ export default function ImageGenerationPage() {
                         true,
                       )}
                     >
-                      <img
+                      <LoadingImage
                         src={imageFileUrl(file.image_id, token, mediaRevision)}
+                        {...intrinsicSize(file.width, file.height)}
                         alt=""
                         aria-hidden
                         className="w-full object-contain max-h-[70vh] transition-opacity group-hover:opacity-95"
@@ -2429,7 +2494,7 @@ export default function ImageGenerationPage() {
                     testId="imggen-job-input"
                     actions={lightboxActions(selectedJob.input_image_id, 'Job input', 'input')}
                   >
-                    <img
+                    <LoadingImage
                       src={imageFileUrl(selectedJob.input_image_id, token, mediaRevision)}
                       alt=""
                       aria-hidden

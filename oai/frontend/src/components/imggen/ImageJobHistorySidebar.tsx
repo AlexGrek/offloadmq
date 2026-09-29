@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { Download, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
+import { LoadingImage } from '@/components/LoadingImage'
 import { imageThumbnailUrl, type ImageJobDetails } from '../../api/images'
 import type { RunningJobItem } from '../../api/progress'
 import { jobPromptTitle, jobTechMeta, imageJobIsExecuting, imageJobStatusLabel, lastOutputImageId } from '../../lib/imggen'
@@ -169,15 +170,24 @@ const PipelineRow = memo(function PipelineRow({
             className="pointer-events-none absolute inset-0 z-20 rounded-lg border-2 border-sidebar-primary"
           />
         )}
-        {bgUrl ? (
+        {/* Plain tile fill; also the placeholder a thumbnail fades in over. */}
+        <div
+          className={cn(
+            'absolute inset-0',
+            active ? 'bg-sidebar-accent' : 'bg-sidebar-accent/40',
+          )}
+          aria-hidden
+        />
+        {bgUrl && (
           <>
-            <img
+            <LoadingImage
               key={`${job.job_id}-${outputId}-${mediaRevision}`}
               src={bgUrl}
               alt=""
               aria-hidden
               loading="lazy"
               decoding="async"
+              placeholderClassName="opacity-0"
               className="absolute inset-0 h-full w-full scale-105 object-cover blur-[3px] saturate-[0.9] dark:saturate-[0.75] dark:brightness-[0.6] brightness-[0.95]"
             />
             <div
@@ -185,14 +195,6 @@ const PipelineRow = memo(function PipelineRow({
               aria-hidden
             />
           </>
-        ) : (
-          <div
-            className={cn(
-              'absolute inset-0',
-              active ? 'bg-sidebar-accent' : 'bg-sidebar-accent/40',
-            )}
-            aria-hidden
-          />
         )}
 
         <div className="relative z-10 flex min-h-17 flex-col justify-center gap-0.5 px-3 py-2">
