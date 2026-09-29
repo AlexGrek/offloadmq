@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -13,8 +14,14 @@ import (
 	"time"
 )
 
-// Same cadence as ImageGenerationPage.tsx (POLL_MS).
-const pollInterval = 5 * time.Second
+// Same cadence as ImageGenerationPage.tsx (POLL_MS). A var only so tests can
+// shorten it.
+var pollInterval = 5 * time.Second
+
+// A job poll may fail this many times in a row before the command gives up.
+// Poll failures are usually transient (backend restart, gateway blip) and
+// the job keeps running on the server regardless.
+const maxPollFailures = 3
 
 // Keep the CLI's batch limit aligned with ImageGenerationPage.tsx.
 const maxGenerateCount = 10
@@ -334,22 +341,36 @@ func waitForJob(
 	deadline := time.Now().Add(timeout)
 	renderer := newJobProgressRenderer(w, opts)
 	lastStage := ""
+	failures := 0
+	var state jobProgressState
 	for {
-		state, err := poll()
-		if err != nil {
-			renderer.fail("Poll failed")
-			return err
-		}
+		polled, err := poll()
 		now := time.Now()
-		if renderer.interactive {
-			renderer.render(state, now)
-		} else if state.Stage != "" && state.Stage != lastStage {
-			lastStage = state.Stage
-			fmt.Fprintf(w, "Stage: %s\n", state.Stage)
-		}
-		if isTerminal(state.Status) {
-			renderer.finish(state, now)
-			return nil
+		if err == nil {
+			failures = 0
+			state = polled
+			if renderer.interactive {
+				renderer.render(state, now)
+			} else if state.Stage != "" && state.Stage != lastStage {
+				lastStage = state.Stage
+				fmt.Fprintf(w, "Stage: %s\n", state.Stage)
+			}
+			if isTerminal(state.Status) {
+				renderer.finish(state, now)
+				return nil
+			}
+		} else {
+			failures++
+			if !isTransientPollError(err) || failures >= maxPollFailures {
+				renderer.fail("Poll failed")
+				return err
+			}
+			msg := fmt.Sprintf("Poll failed (%d/%d), retrying: %v", failures, maxPollFailures, err)
+			if renderer.interactive {
+				renderer.fail(msg)
+			} else {
+				fmt.Fprintln(w, msg)
+			}
 		}
 
 		nextPoll := now.Add(pollInterval)
@@ -357,7 +378,11 @@ func waitForJob(
 			now = time.Now()
 			if !now.Before(deadline) {
 				renderer.fail("Timed out")
-				return fmt.Errorf("timed out after %s (job %s is still %s on the server)", timeout, jobID, state.Status)
+				status := state.Status
+				if status == "" {
+					status = "in progress"
+				}
+				return fmt.Errorf("timed out after %s (job %s is still %s on the server)", timeout, jobID, status)
 			}
 			untilPoll := nextPoll.Sub(now)
 			if untilPoll <= 0 {
@@ -374,6 +399,17 @@ func waitForJob(
 			}
 		}
 	}
+}
+
+// isTransientPollError reports whether a failed poll is worth retrying:
+// network errors and 5xx/408/429 responses are, any other API error (auth,
+// unknown job, bad request) is not.
+func isTransientPollError(err error) bool {
+	var he *httpError
+	if !errors.As(err, &he) {
+		return !errors.Is(err, errNotLoggedIn)
+	}
+	return he.Status >= 500 || he.Status == http.StatusRequestTimeout || he.Status == http.StatusTooManyRequests
 }
 
 func minDuration(a, b time.Duration) time.Duration {

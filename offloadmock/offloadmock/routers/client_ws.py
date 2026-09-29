@@ -142,7 +142,8 @@ async def task_watch(websocket: WebSocket) -> None:
                             break
                         tracked[key] = task_id
                 else:
-                    dirty = True
+                    # Newly tracked tasks go out on the next tick on their own;
+                    # no full resend of the whole set (matches the real server).
                     await websocket.send_text(_send({"type": "ack", "reqId": req_id, "tracked": len(tracked)}))
                 continue
             if ftype == "untrack":

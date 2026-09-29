@@ -283,7 +283,10 @@ async fn handle_client_frame(
                     tracked.push(t);
                 }
             }
-            *dirty = true;
+            // No full sync needed: a newly tracked task has no `sent` entry, so
+            // the next tick already sends it in full. Forcing one here re-read
+            // and re-sent the whole tracked set on every submit, which delayed
+            // the new task's first snapshot.
             let ack = ServerFrame::Ack {
                 req_id: &req_id,
                 tracked: tracked.len(),

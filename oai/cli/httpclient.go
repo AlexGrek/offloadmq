@@ -19,6 +19,15 @@ var errNotLoggedIn = errors.New("not logged in — run `oai login` first")
 
 var httpClient = &http.Client{Timeout: 60 * time.Second}
 
+// httpError is a non-2xx API response. Error() is the backend's message, so
+// callers that only print it see the same text as before.
+type httpError struct {
+	Status int
+	Msg    string
+}
+
+func (e *httpError) Error() string { return e.Msg }
+
 // apiError turns a non-2xx response into an error, preferring the backend's
 // {"error": "..."} body (same as frontend/src/api/http.ts).
 func apiError(resp *http.Response) error {
@@ -26,13 +35,15 @@ func apiError(resp *http.Response) error {
 		Error string `json:"error"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&body)
-	if resp.StatusCode == http.StatusUnauthorized && body.Error == "" {
-		return errors.New("unauthorized — run `oai login` again")
+	msg := body.Error
+	switch {
+	case msg != "":
+	case resp.StatusCode == http.StatusUnauthorized:
+		msg = "unauthorized — run `oai login` again"
+	default:
+		msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
 	}
-	if body.Error != "" {
-		return errors.New(body.Error)
-	}
-	return fmt.Errorf("HTTP %d", resp.StatusCode)
+	return &httpError{Status: resp.StatusCode, Msg: msg}
 }
 
 // doJSON sends an optional JSON body and decodes a JSON response into out.

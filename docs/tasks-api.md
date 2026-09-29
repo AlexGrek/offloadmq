@@ -425,7 +425,7 @@ asyncio.run(main())
 
 | `type` | Payload | Meaning |
 |--------|---------|---------|
-| `track` | `{ "reqId", "tasks": [{ "cap", "id" }, ...] }` | Add tasks to this connection's tracked set. Answered with `ack`; the next tick sends a full snapshot of the whole tracked set (not just the newly-added tasks). |
+| `track` | `{ "reqId", "tasks": [{ "cap", "id" }, ...] }` | Add tasks to this connection's tracked set. Answered with `ack`; the next tick sends a full entry for each newly-added task. Tasks that were already tracked are not re-sent. |
 | `untrack` | `{ "reqId", "tasks": [{ "cap", "id" }, ...] }` | Remove tasks from the tracked set. Answered with `ack`. |
 | `sync` | `{ "reqId" }` | Force a full snapshot of the tracked set on the next tick, without changing it. Answered with `ack`. |
 | `ping` | `{}` | Answered with `pong`. |
@@ -471,14 +471,14 @@ asyncio.run(main())
 | `typicalRuntimeSeconds` | changed, or full entry | Plain seconds as a JSON number (`42.0`), **not** the `{ "secs", "nanos" }` shape the HTTP poll endpoint uses |
 | `missing` | task not found | `true` if the task doesn't exist in any store (deleted, archived, or never existed) — the push equivalent of the poll endpoint's 404. Sent once per disappearance, not every tick. |
 
-A full entry (on first track, on `full: true` updates, or whenever the server can't express a change as a delta) carries every field the task currently has; a delta entry carries only what changed. `full: true` on the `update` frame itself means *every* tracked task is being sent in full that tick, which happens right after `track`/`untrack`/`sync`, and periodically anyway (`fullSyncSecs`, default 30s) as a resync safety net.
+A full entry (on first track, on `full: true` updates, or whenever the server can't express a change as a delta) carries every field the task currently has; a delta entry carries only what changed. `full: true` on the `update` frame itself means *every* tracked task is being sent in full that tick, which happens right after `untrack`/`sync` (not `track` — newly-tracked tasks get their own full entries in an ordinary update), and periodically anyway (`fullSyncSecs`, default 30s) as a resync safety net.
 
 **Notes**
 
 - One WebSocket serves any number of tracked tasks — track everything you care about on a single connection rather than opening one per task
 - Ownership is enforced per task exactly as it is for `POST /api/task/poll/{cap}/{id}`: a client key can only track tasks it submitted, unless `X-MGMT-API-KEY` is used
 - Urgent tasks are removed from their store as soon as they reach a terminal state (see [Submit Task (Blocking)](#submit-task-blocking)) — a watcher may observe `missing: true` for a completed urgent task rather than a `completed` update, if the completion and the removal land in the same tick
-- There is no HTTP fallback: if the connection drops, reconnect and re-`track` your task set — the server always answers a fresh `track` with a full snapshot, so no update is lost, only delayed
+- There is no HTTP fallback: if the connection drops, reconnect and re-`track` your task set — a fresh connection has no diff base, so every re-tracked task comes back as a full entry and no update is lost, only delayed
 - `maxTracked` (default 1000, see [Configuration](#configuration)) caps a single connection's tracked set; track a bounded, relevant set of tasks rather than everything a client has ever submitted
 
 ---

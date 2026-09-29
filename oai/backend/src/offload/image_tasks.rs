@@ -208,7 +208,15 @@ impl OffloadImageClient {
     /// error convention (`POLL_HTTP_404:` prefix, `offload_task_missing_message`)
     /// is preserved so every existing caller keeps working unmodified.
     pub async fn poll_task(&self, task_id: &OffloadTaskId) -> Result<OffloadPollResponse, AppError> {
-        let f = crate::offload::watch::poll_via_watch(&self.watch, &task_id.cap, &task_id.id).await?;
+        let f = crate::offload::watch::poll_via_watch(
+            &self.watch,
+            &self.http,
+            &self.base_url,
+            &self.api_key,
+            &task_id.cap,
+            &task_id.id,
+        )
+        .await?;
         Ok(OffloadPollResponse {
             status: f.status,
             stage: f.stage,

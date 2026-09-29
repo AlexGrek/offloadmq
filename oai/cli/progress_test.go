@@ -25,6 +25,62 @@ func TestWaitForJobFallsBackToPlainStageLines(t *testing.T) {
 	}
 }
 
+func shortPollInterval(t *testing.T) {
+	t.Helper()
+	saved := pollInterval
+	pollInterval = time.Millisecond
+	t.Cleanup(func() { pollInterval = saved })
+}
+
+func TestWaitForJobRetriesTransientPollErrors(t *testing.T) {
+	shortPollInterval(t)
+	var output bytes.Buffer
+	calls := 0
+	err := waitForJob(&output, "job-1", 5*time.Second, jobProgressOptions{Enabled: true}, func() (jobProgressState, error) {
+		calls++
+		if calls == 1 {
+			return jobProgressState{}, &httpError{Status: 502, Msg: "WATCH_PENDING: task not yet observed by the watch cache"}
+		}
+		return jobProgressState{Status: "completed"}, nil
+	})
+	if err != nil {
+		t.Fatalf("waitForJob = %v, want success after a retry", err)
+	}
+	if calls != 2 {
+		t.Fatalf("poll calls = %d, want 2", calls)
+	}
+	if !strings.Contains(output.String(), "Poll failed (1/3), retrying: WATCH_PENDING") {
+		t.Fatalf("output %q does not report the retry", output.String())
+	}
+}
+
+func TestWaitForJobGivesUpAfterRepeatedPollErrors(t *testing.T) {
+	shortPollInterval(t)
+	calls := 0
+	err := waitForJob(&bytes.Buffer{}, "job-1", 5*time.Second, jobProgressOptions{}, func() (jobProgressState, error) {
+		calls++
+		return jobProgressState{}, &httpError{Status: 502, Msg: "bad gateway"}
+	})
+	if err == nil || err.Error() != "bad gateway" {
+		t.Fatalf("waitForJob = %v, want the last poll error", err)
+	}
+	if calls != maxPollFailures {
+		t.Fatalf("poll calls = %d, want %d", calls, maxPollFailures)
+	}
+}
+
+func TestWaitForJobDoesNotRetryClientErrors(t *testing.T) {
+	shortPollInterval(t)
+	calls := 0
+	err := waitForJob(&bytes.Buffer{}, "job-1", 5*time.Second, jobProgressOptions{}, func() (jobProgressState, error) {
+		calls++
+		return jobProgressState{}, &httpError{Status: 404, Msg: "Not found"}
+	})
+	if err == nil || calls != 1 {
+		t.Fatalf("waitForJob = %v after %d calls, want immediate failure", err, calls)
+	}
+}
+
 func TestInteractiveRendererRedrawsAndFinishes(t *testing.T) {
 	var output bytes.Buffer
 	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)

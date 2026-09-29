@@ -341,7 +341,15 @@ impl OffloadClient {
     /// error convention (`POLL_HTTP_404:` prefix, `offload_task_missing_message`)
     /// is preserved so every existing caller keeps working unmodified.
     pub async fn poll_task(&self, task_id: &TaskId) -> Result<PollResponse, AppError> {
-        let f = watch::poll_via_watch(&self.watch, &task_id.cap, &task_id.id).await?;
+        let f = watch::poll_via_watch(
+            &self.watch,
+            &self.http,
+            &self.base_url,
+            &self.api_key,
+            &task_id.cap,
+            &task_id.id,
+        )
+        .await?;
         Ok(PollResponse {
             status: f.status,
             stage: f.stage,
@@ -353,22 +361,7 @@ impl OffloadClient {
 
     /// Full OffloadMQ poll JSON — used by OAI debug mode.
     pub async fn poll_task_raw(&self, task_id: &TaskId) -> Result<serde_json::Value, AppError> {
-        let cap_encoded = urlencoding::encode(&task_id.cap);
-        let url = format!("{}/api/task/poll/{}/{}", self.base_url, cap_encoded, task_id.id);
-        let body = serde_json::json!({ "apiKey": self.api_key });
-        let resp = self
-            .http
-            .post(&url)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AppError::ExternalService(e.to_string()))?;
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::ExternalService(format!("POLL_HTTP_{status}:{text}")));
-        }
-        resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))
+        post_poll_raw(&self.http, &self.base_url, &self.api_key, &task_id.cap, &task_id.id).await
     }
 
     pub async fn cancel_task(&self, task_id: &TaskId) -> Result<CancelTaskResponse, AppError> {
@@ -410,6 +403,33 @@ pub(crate) async fn delete_bucket(
         )));
     }
     Ok(())
+}
+
+/// `POST /api/task/poll/{cap}/{id}` — one HTTP poll, returning the raw JSON.
+/// Non-2xx responses become `ExternalService("POLL_HTTP_{status}:{body}")`,
+/// the convention `task_status::offload_task_missing_message` parses.
+pub(crate) async fn post_poll_raw(
+    http: &Client,
+    base_url: &str,
+    api_key: &str,
+    cap: &str,
+    id: &str,
+) -> Result<serde_json::Value, AppError> {
+    let cap_encoded = urlencoding::encode(cap);
+    let url = format!("{base_url}/api/task/poll/{cap_encoded}/{id}");
+    let body = serde_json::json!({ "apiKey": api_key });
+    let resp = http
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| AppError::ExternalService(e.to_string()))?;
+    if !resp.status().is_success() {
+        let status = resp.status().as_u16();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AppError::ExternalService(format!("POLL_HTTP_{status}:{text}")));
+    }
+    resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))
 }
 
 pub(crate) async fn post_cancel(

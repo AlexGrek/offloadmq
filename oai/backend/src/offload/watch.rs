@@ -8,7 +8,9 @@
 //! [`crate::offload::image_tasks::OffloadImageClient::poll_task`] are the only
 //! two places that actually read the cache (via [`TaskWatch::get_or_track`]) —
 //! every existing caller of those two methods gets the traffic reduction for
-//! free, with no call-site changes required. Untracking is an optimization
+//! free, with no call-site changes required. A task the cache hasn't seen yet
+//! (just submitted, or the connection is down) is answered by a single HTTP
+//! poll instead — see [`poll_via_watch`]. Untracking is an optimization
 //! (it keeps the tracked set, and therefore the update traffic the server
 //! sends back, from growing without bound over a long-running process) rather
 //! than a correctness requirement: a task nobody explicitly untracks just sits
@@ -304,7 +306,20 @@ pub struct PolledFields {
 /// HTTP request. Preserves the pre-existing error convention so
 /// `offload_task_missing_message` and every caller that already checks it
 /// keep working unmodified — only *how* the answer is obtained changed.
-pub async fn poll_via_watch(watch: &TaskWatch, cap: &str, id: &str) -> Result<PolledFields, AppError> {
+///
+/// A cache miss that outlives [`FIRST_SNAPSHOT_TIMEOUT`] falls back to one
+/// HTTP poll. That happens right after submit (the server only answers a
+/// `track` on its next tick, which can land after the timeout) and whenever
+/// the watch connection is down or reconnecting. The task stays tracked, so
+/// later polls are served from the cache again.
+pub async fn poll_via_watch(
+    watch: &TaskWatch,
+    http: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    cap: &str,
+    id: &str,
+) -> Result<PolledFields, AppError> {
     match watch.get_or_track(cap, id).await {
         Some(snap) if snap.missing => {
             Err(AppError::ExternalService(format!("POLL_HTTP_404:{OFFLOAD_TASK_MISSING}")))
@@ -316,10 +331,36 @@ pub async fn poll_via_watch(watch: &TaskWatch, cap: &str, id: &str) -> Result<Po
             log: snap.log,
             typical_runtime_seconds: snap.typical_runtime_seconds.map(Duration::from_secs_f64),
         }),
-        None => Err(AppError::ExternalService(
-            "WATCH_PENDING: task not yet observed by the watch cache".to_string(),
-        )),
+        None => {
+            tracing::debug!("task watch: no snapshot for {cap}/{id} yet, polling over HTTP");
+            let raw = crate::offload::post_poll_raw(http, base_url, api_key, cap, id).await?;
+            http_poll_fields(raw)
+        }
     }
+}
+
+/// Body of `POST /api/task/poll/{cap}/{id}`.
+#[derive(Debug, Deserialize)]
+struct HttpPollResponse {
+    status: String,
+    stage: Option<String>,
+    output: Option<serde_json::Value>,
+    log: Option<String>,
+    /// Serialized as `{ secs, nanos }`.
+    #[serde(default, rename = "typicalRuntimeSeconds")]
+    typical_runtime_seconds: Option<Duration>,
+}
+
+fn http_poll_fields(raw: serde_json::Value) -> Result<PolledFields, AppError> {
+    let r: HttpPollResponse =
+        serde_json::from_value(raw).map_err(|e| AppError::ExternalService(e.to_string()))?;
+    Ok(PolledFields {
+        status: r.status,
+        stage: r.stage,
+        output: r.output,
+        log: r.log,
+        typical_runtime_seconds: r.typical_runtime_seconds,
+    })
 }
 
 fn to_ws_url(http_url: &str) -> Result<String, anyhow::Error> {
@@ -408,4 +449,34 @@ enum ServerFrame {
     },
     Error,
     Pong,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn http_poll_fields_parses_server_poll_body() {
+        let raw = serde_json::json!({
+            "id": { "cap": "imggen.x", "id": "t1" },
+            "status": "running",
+            "stage": "sampling",
+            "log": "step 3/8",
+            "output": null,
+            "typicalRuntimeSeconds": { "secs": 12, "nanos": 500_000_000 },
+        });
+        let f = http_poll_fields(raw).unwrap();
+        assert_eq!(f.status, "running");
+        assert_eq!(f.stage.as_deref(), Some("sampling"));
+        assert_eq!(f.log.as_deref(), Some("step 3/8"));
+        assert!(f.output.is_none());
+        assert_eq!(f.typical_runtime_seconds, Some(Duration::from_millis(12_500)));
+    }
+
+    #[test]
+    fn http_poll_fields_tolerates_missing_optionals() {
+        let f = http_poll_fields(serde_json::json!({ "status": "pending" })).unwrap();
+        assert_eq!(f.status, "pending");
+        assert!(f.stage.is_none() && f.log.is_none() && f.typical_runtime_seconds.is_none());
+    }
 }
