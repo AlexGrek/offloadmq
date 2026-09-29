@@ -1,0 +1,36 @@
+version: '3'
+
+vars:
+  BINARY: oai
+  INSTALL_DIR:
+    sh: echo "$(go env GOPATH)/bin"
+
+tasks:
+  build:
+    desc: Build an optimized oai binary (static, stripped, reproducible paths)
+    sources:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+    generates:
+      - '{{.BINARY}}'
+    env:
+      CGO_ENABLED: '0'
+    cmds:
+      - go build -trimpath -ldflags="-s -w" -o {{.BINARY}} .
+
+  install-mac:
+    desc: Build and install oai to $(go env GOPATH)/bin (on PATH)
+    platforms: [darwin]
+    deps: [build]
+    cmds:
+      # Remove first: overwriting a signed binary in place makes macOS kill it (SIGKILL).
+      - rm -f {{.INSTALL_DIR}}/{{.BINARY}}
+      - mkdir -p {{.INSTALL_DIR}}
+      - cp {{.BINARY}} {{.INSTALL_DIR}}/{{.BINARY}}
+      - 'echo "Installed {{.INSTALL_DIR}}/{{.BINARY}}"'
+
+  clean:
+    desc: Remove the built binary and Task's checksum cache
+    cmds:
+      - rm -rf {{.BINARY}} .task

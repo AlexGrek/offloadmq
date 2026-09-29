@@ -9,6 +9,9 @@ cd oai/cli
 go build -o oai .
 ```
 
+Or with [Task](https://taskfile.dev): `task build` (optimized: static, stripped, `-trimpath`),
+`task install-mac` (build + install to `$(go env GOPATH)/bin`, i.e. `~/go/bin/oai`), `task clean`.
+
 ## Usage
 
 ```bash
