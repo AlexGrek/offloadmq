@@ -40,6 +40,13 @@ job_id=$(./oai image generate "a red bicycle" -capability imggen.flux-schnell --
 ./oai image poll "$job_id"      # refresh it from OffloadMQ once
 ./oai image download "$job_id" -o bike.jpg
 
+# Image job history (the Images page sidebar)
+./oai image jobs                        # the 50 newest jobs
+./oai image jobs -status failed -ids    # bare IDs, for scripts
+./oai image retry <job-id> -o again.jpg # resubmit a finished job with its stored settings
+./oai image cancel $(./oai image jobs -active -ids)
+./oai image delete <job-id> [job-id ...]  # also removes the job's images
+
 # Prompt history and starred prompts (the web UI's Saved Prompts drawer)
 ./oai image prompts recent                     # last 10 prompts you generated with
 ./oai image prompts starred -q castle -all     # search every favorite
@@ -71,6 +78,15 @@ job_id=$(./oai image generate "a red bicycle" -capability imggen.flux-schnell --
 ./oai image describe cat.jpg
 ./oai image describe cat.jpg -prompt "What breed is this?" -capability llm.qwen3-vl:8b -o desc.txt
 ./oai image describe cat.jpg dog.jpg bird.png -o description.txt
+
+# Image Tools: one image in, one image out (the web UI's /app/img-utils)
+./oai img-utils tools                   # what is online, and which flags each tool takes
+./oai upscale photo.jpg                 # SeedVR2, x4 -> photo_upscale.jpg
+./oai upscale a.jpg b.jpg -scale 2 -o big.png
+./oai img-utils run depth photo.jpg     # depth map -> photo_depth.<ext>
+./oai img-utils run face_swap target.jpg -source face.jpg
+./oai img-utils run resize photo.jpg -width 800 -format webp
+./oai img-utils jobs -active
 
 # NSFW detection with NudeNet (tunable confidence threshold)
 ./oai nude availability
@@ -148,6 +164,38 @@ Flags for `recent` / `starred`: `-negative` (negative-prompt library), `-q TEXT`
 `star`, `unstar` and `record` take `-negative` to target the negative-prompt library. Commands that take an `<id>` (`show`, `edit`, `delete`, `preview`, `star -id`) work in both libraries without `-negative`, because entry IDs are unique. There is no "unstar by ID" command: deleting a starred entry unstars it. Starring a recent entry copies it into the favorites and leaves the recent entry where it is.
 
 `show` prints just the text, so a saved prompt can drive a generation: `oai image generate "$(oai image prompts show <id>)"`. Placeholders in it are expanded as usual.
+
+### Image job history
+
+These mirror the Images page's history sidebar and pair with `image job` / `poll` / `download`:
+
+- `image jobs` — the 50 newest image jobs: ID, status, workflow, capability, submit time, output count, prompt. `-status failed,canceled` filters by status, `-active` keeps only unfinished jobs, `-ids` prints bare IDs (for `$(…)`), `-json` prints the raw list.
+- `image cancel <id> [id …]` — request cancellation. It is asynchronous: the job reports `cancelRequested` and turns `canceled` shortly after.
+- `image retry <id>` — resubmit a `completed`, `failed` or `canceled` job with its stored prompt and settings. That creates a new job; the command waits and saves it like `generate` (`-o`, `-t`, `--progress=false`), or with `--no-wait` prints only the new ID.
+- `image delete <id> [id …]` — remove jobs from history **together with their stored images**.
+
+Multi-ID commands keep going past a failing ID and report every failure at the end. An empty ID (for example from an empty `$(…)`) is rejected.
+
+### Image Tools (`img-utils`, `upscale`)
+
+`img-utils` runs the web UI's Image Tools: one-shot transforms with one image in, one image out, and no prompt. Two families share it: ComfyUI tools (`img-utils.*` — `depth`, `face_swap`, `upscale`, whichever workflows your agents have installed) and the built-in `basic_resize`. `img-utils tools` lists what is online right now, one row per tool, with the flags it takes.
+
+`img-utils run <tool> <image> [image …]` uploads each image, starts one job per image, waits, and saves the output. `<tool>` is an operation (`upscale`, `depth`, `face_swap` / `face-swap`, `resize`), a pack, or a capability. The first online match is used (`-capability` pins one), and the command fails without uploading anything when no online agent offers it. By default the output is saved as `<input>_<tool>.<ext>` in the current directory, with the extension taken from the stored output. `-o` sets the name, and several inputs get `_2`, `_3`, … suffixes. Progress and `Job:` lines go to stderr; stdout gets only `Saved <path> (WxH)` lines, or with `--no-wait` only bare job IDs (in that mode, `-o` is rejected).
+
+`oai upscale <image> …` is a shortcut for `img-utils run upscale`: it picks the first online upscale tool, or fails if there is none.
+
+Per-tool flags (a flag that doesn't apply to the chosen tool is an error):
+
+| Tool | Flags |
+|------|-------|
+| `upscale` | `-scale 1..8` — SeedVR2 multiplier, default `4` (as in the web UI). Upscale outputs are not capped at 1920 px |
+| `face_swap` | `-source FACE_IMAGE` (required) — the face to put into each input |
+| `resize` | `-scale F` (max 4) or `-width` / `-height`; `-mode fit\|exact\|cover` (default `fit`; `exact` / `cover` need both sides), `-method` (a filter from `img-utils tools`), `-format png\|jpeg\|webp\|bmp\|tiff`, `-quality 1..100`, `-allow-upscale`. Validated by the server; dimensions cap at 1920 |
+| ComfyUI tools | `-opt key=value` (repeatable) — extra workflow knobs, forwarded verbatim as `secondary_prompts`; numbers and `true` / `false` stay typed |
+
+Common flags: `-capability`, `-o`, `--no-wait`, `--progress=false`, `-t` / `-timeout` (default `5m`; SeedVR2 on a large image can need more).
+
+Job management mirrors the Image Tools history sidebar: `img-utils jobs` (`-status`, `-active`, `-ids`, `-json`), `img-utils job <id>` (stored state, including options and the input/output images) / `img-utils poll <id>` (one forced refresh), `img-utils download <id> [-o file]` (completed jobs only, never polls; default name `<tool>_<job-id>.<ext>`), `img-utils cancel <id> …`, `img-utils retry <id>` (**failed or canceled** jobs only; it replays the stored images and options, then waits and saves, or `--no-wait` prints the new ID), and `img-utils delete <id> …` (removes the job and its output image; the input upload stays).
 
 ### Nude detector (NudeNet)
 

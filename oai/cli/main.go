@@ -22,9 +22,13 @@ Usage:
   oai image generate "prompt" [-o out.jpg] [-capability imggen.X] [-negative TEXT]
                      [-width N] [-height N] [-seed N] [-workflow W] [-n COUNT]
                      [--no-wait] [--star] [--progress=false] [--history=false] [-t|-timeout 5m]
+  oai image jobs [-status S[,S]] [-active] [-ids] [-json]
   oai image job <job-id> [-json]
   oai image poll <job-id> [-json]
   oai image download <job-id> [-o out.jpg]
+  oai image cancel <job-id> [job-id ...]
+  oai image retry <job-id> [-o out.jpg] [--no-wait] [--progress=false] [-t|-timeout 5m]
+  oai image delete <job-id> [job-id ...]
   oai image prompts recent|starred [-negative] [-q TEXT] [-limit N] [-cursor C] [-all]
                                    [-full] [-json]
   oai image prompts show <id> [-json]
@@ -41,6 +45,17 @@ Usage:
   oai image placeholders edit <name|id>          (opens $VISUAL / $EDITOR)
   oai image placeholders delete <name|id> [...]
   oai image placeholders expand "prompt" [-n COUNT]
+  oai img-utils tools [-json]
+  oai img-utils run <tool> <image> [image ...] [-o out.jpg] [-capability C] [--no-wait]
+                    [-source FACE] [-scale N] [-opt key=value ...]
+                    [-width N] [-height N] [-mode fit|exact|cover] [-method M] [-format F]
+                    [-quality Q] [-allow-upscale] [--progress=false] [-t|-timeout 5m]
+  oai upscale <image> [image ...] [-scale 1-8] [-o out.png] ...   (= img-utils run upscale)
+  oai img-utils jobs [-status S[,S]] [-active] [-ids] [-json]
+  oai img-utils job|poll <job-id> [-json]
+  oai img-utils cancel|delete <job-id> [job-id ...]
+  oai img-utils retry <job-id> [-o out.jpg] [--no-wait]
+  oai img-utils download <job-id> [-o out.jpg]
   oai nude scan <file> [file ...] [-threshold 0.25] [-json] [-o out.json]
                 [--progress=false] [-t|-timeout 5m]
   oai nude availability
@@ -110,6 +125,10 @@ func main() {
 		err = cmdImage(os.Args[2:])
 	case "nude":
 		err = cmdNude(os.Args[2:])
+	case "img-utils", "imgutils":
+		err = cmdImgUtils(os.Args[2:])
+	case "upscale":
+		err = cmdUpscale(os.Args[2:])
 	case "help":
 		fmt.Print(usage)
 	default:

@@ -110,6 +110,7 @@ type imageJobDetail struct {
 	Status                string         `json:"status"`
 	Capability            string         `json:"capability"`
 	Workflow              string         `json:"workflow"`
+	Prompt                string         `json:"prompt"`
 	Error                 *string        `json:"error"`
 	StartedAt             *string        `json:"started_at"`
 	TypicalRuntimeSeconds *float64       `json:"typical_runtime_seconds"`
@@ -136,7 +137,7 @@ func (p pollResponse) progressState() jobProgressState {
 
 func cmdImage(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: oai image <generate|capabilities|job|poll|download|prompts|placeholders|describe|describe-capabilities> ...")
+		return errors.New("usage: oai image <generate|capabilities|jobs|job|poll|download|cancel|retry|delete|prompts|placeholders|describe|describe-capabilities> ...")
 	}
 	switch args[0] {
 	case "generate":
@@ -153,12 +154,20 @@ func cmdImage(args []string) error {
 		return cmdImagePoll(args[1:])
 	case "download":
 		return cmdImageDownload(args[1:])
+	case "jobs":
+		return cmdImageJobs(args[1:])
+	case "cancel":
+		return cmdImageCancel(args[1:])
+	case "retry":
+		return cmdImageRetry(args[1:])
+	case "delete":
+		return cmdImageDelete(args[1:])
 	case "describe":
 		return cmdImageDescribe(args[1:])
 	case "describe-capabilities":
 		return cmdImageDescribeCapabilities(args[1:])
 	default:
-		return fmt.Errorf("unknown image command %q (want generate, capabilities, job, poll, download, prompts, placeholders, describe or describe-capabilities)", args[0])
+		return fmt.Errorf("unknown image command %q (want generate, capabilities, jobs, job, poll, download, cancel, retry, delete, prompts, placeholders, describe or describe-capabilities)", args[0])
 	}
 }
 
@@ -429,13 +438,7 @@ func cmdImageGenerate(args []string) error {
 		return fmt.Errorf("-n must be between 1 and %d", maxGenerateCount)
 	}
 	if *noWait {
-		outputRequested := false
-		fs.Visit(func(f *flag.Flag) {
-			if f.Name == "o" {
-				outputRequested = true
-			}
-		})
-		if outputRequested {
+		if flagSet(fs, "o") {
 			return errors.New("-o cannot be used with --no-wait; download later with `oai image download <job-id> -o output.jpg`")
 		}
 	}
@@ -543,31 +546,38 @@ func cmdImageGenerate(args []string) error {
 		if count > 1 {
 			fmt.Printf("Waiting for job %d/%d: %s\n", i+1, count, started.JobID)
 		}
-		var p pollResponse
-		pollURL := base + "/api/images/jobs/" + url.PathEscape(started.JobID) + "/poll"
 		label := "Image"
 		if count > 1 {
 			label = fmt.Sprintf("Image %d/%d", i+1, count)
 		}
-		err := waitForJob(os.Stdout, started.JobID, *timeout, jobProgressOptions{
-			Enabled:      *showProgress,
-			Label:        label,
-			RunningLabel: "Generating",
-		}, func(ctx context.Context) (jobProgressState, error) {
-			if err := doJSONContext(ctx, "POST", pollURL, cfg.Token, nil, &p); err != nil {
-				return jobProgressState{}, err
-			}
-			return p.progressState(), nil
-		})
+		p, err := waitForImageJob(base, cfg.Token, started.JobID, label, *timeout, *showProgress)
 		if err != nil {
 			batchErrors = append(batchErrors, fmt.Errorf("job %d of %d (%s): %w", i+1, count, started.JobID, err))
 			continue
 		}
-		if err := finishJob(base, cfg.Token, &p, *out, i, count > 1); err != nil {
+		if err := finishJob(base, cfg.Token, p, *out, i, count > 1); err != nil {
 			batchErrors = append(batchErrors, fmt.Errorf("job %d of %d (%s): %w", i+1, count, started.JobID, err))
 		}
 	}
 	return errors.Join(batchErrors...)
+}
+
+// waitForImageJob polls one image job (progress on stdout, like generate) until
+// it reaches a terminal status, returning the last poll.
+func waitForImageJob(base, token, jobID, label string, timeout time.Duration, showProgress bool) (*pollResponse, error) {
+	var p pollResponse
+	pollURL := base + "/api/images/jobs/" + url.PathEscape(jobID) + "/poll"
+	err := waitForJob(os.Stdout, jobID, timeout, jobProgressOptions{
+		Enabled:      showProgress,
+		Label:        label,
+		RunningLabel: "Generating",
+	}, func(ctx context.Context) (jobProgressState, error) {
+		if err := doJSONContext(ctx, "POST", pollURL, token, nil, &p); err != nil {
+			return jobProgressState{}, err
+		}
+		return p.progressState(), nil
+	})
+	return &p, err
 }
 
 // waitForJob polls until the job reaches a terminal status or the timeout
