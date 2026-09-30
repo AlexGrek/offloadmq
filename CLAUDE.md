@@ -326,6 +326,10 @@ Server reads from `.env` file:
 - `AGENT_API_KEYS` - Comma-separated agent registration keys
 - `CLIENT_API_KEYS` - Comma-separated client API keys
 - `MGMT_TOKEN` - Management endpoint auth token
+- `TASK_ARCHIVE_RETENTION_DAYS` - Archived tasks are permanently deleted after this many days (default: `30`; `0` is rejected → default)
+- `SERVICE_MESSAGE_RETENTION_DAYS` - Service messages older than this are deleted, swept at startup + every 6 h (default: `30`)
+- `SLED_CACHE_MB` - Page cache per sled DB in MiB (default: `64`; sled's own default is 1 GiB × 7 DBs)
+- `DB_COMPACT_ON_START` - `1`/`true` rebuilds every sled DB at startup to reclaim disk (default: off; see [docs/database-maintenance.md](docs/database-maintenance.md))
 
 ### Local Dev API Keys (from `.env`)
 

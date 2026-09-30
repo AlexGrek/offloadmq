@@ -72,6 +72,19 @@ env:
   STALE_AGENTS_CLEANUP_INTERVAL_MIN_HOURS: "16"
   STALE_AGENTS_CLEANUP_INTERVAL_MAX_HOURS: "22"
 
+  # ── Data retention & sled tuning ───────────────────────────────────────────
+  # Archived (finished >7 d ago) tasks are deleted after N more days
+  TASK_ARCHIVE_RETENTION_DAYS: "30"
+  # Service messages (Service logs page) older than N days are deleted
+  SERVICE_MESSAGE_RETENTION_DAYS: "30"
+  # sled page cache per database (MiB); 7 DBs are open, sled's default is 1 GiB each
+  SLED_CACHE_MB: "64"
+  # One-off disk reclaim — leave UNSET normally. Set DB_COMPACT_ON_START: "1" for ONE
+  # restart to rebuild every sled DB (originals kept as <db>.bak-<ts>), then unset it.
+  # Startup blocks until done (~a minute for ~650 MB on 200m CPU) and the pod has no
+  # probes, so nothing restarts it meanwhile. See docs/database-maintenance.md.
+  # DB_COMPACT_ON_START: "1"
+
 persistence:
   enabled: true
   size: 1Gi
