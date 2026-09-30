@@ -14,7 +14,7 @@ pub struct AgentStorage {
 impl AgentStorage {
     pub fn new(path: &str) -> sled::Result<Self> {
         Ok(Self {
-            db: sled::open(path)?,
+            db: crate::db::open_sled(path)?,
         })
     }
 

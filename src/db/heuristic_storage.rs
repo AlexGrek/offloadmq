@@ -47,7 +47,7 @@ pub struct HeuristicStorage {
 impl HeuristicStorage {
     /// Open or create heuristic storage at the given path
     pub fn open(path: &str) -> Result<Self> {
-        let db = sled::open(path)?;
+        let db = crate::db::open_sled(path)?;
         let heuristics_by_cap = db.open_tree("heuristics_by_cap")?;
         let heuristics_by_runner = db.open_tree("heuristics_by_runner")?;
         let heuristics_by_machine = db.open_tree("heuristics_by_machine")?;

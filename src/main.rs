@@ -52,6 +52,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     info!("  Storage backend: {}", config.storage.backend);
 
+    if config.db_compact_on_start {
+        compact_databases_on_start(&config.database_root_path);
+    }
+
     let app_storage = AppStorage::new(&config.database_root_path, &config.storage)
         .expect("Failed to initialize storage");
 
@@ -595,6 +599,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Background: purge service messages past SERVICE_MESSAGE_RETENTION_DAYS.
+    // Runs once at startup, then every 6 hours, on a blocking thread (the tree
+    // can hold hundreds of thousands of rows).
+    {
+        let state = shared_state.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(time::Duration::from_secs(6 * 60 * 60));
+            let mut shutdown = state.subscribe_shutdown();
+            loop {
+                tokio::select! {
+                    _ = shutdown.changed() => {
+                        if *shutdown.borrow() {
+                            break;
+                        }
+                    }
+                    _ = interval.tick() => {
+                        let retention_days = state.config.retention.service_message_days;
+                        let worker_state = state.clone();
+                        let result = tokio::task::spawn_blocking(move || {
+                            worker_state
+                                .storage
+                                .service_messages
+                                .cleanup_older_than(retention_days)
+                        })
+                        .await;
+                        match result {
+                            Ok(Ok(deleted)) => {
+                                if deleted > 0 {
+                                    info!(
+                                        "Service messages cleanup: deleted {} message(s) older than {} days",
+                                        deleted, retention_days
+                                    );
+                                }
+                                // Pushed after the sweep so the report itself survives it.
+                                let _ = state.storage.service_messages.push(
+                                    "bg",
+                                    "service-messages-cleanup-job",
+                                    serde_json::json!({
+                                        "deleted": deleted,
+                                        "max_age_days": retention_days,
+                                    }),
+                                );
+                            }
+                            Ok(Err(e)) => {
+                                log::warn!("Service messages cleanup failed: {}", e);
+                                let _ = state.storage.service_messages.push(
+                                    "bg",
+                                    "service-messages-cleanup-job",
+                                    serde_json::json!({ "error": e.to_string() }),
+                                );
+                            }
+                            Err(e) => log::warn!("Service messages cleanup task panicked: {}", e),
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     // Background: move finished tasks past their 7-day retention from the live
     // `assigned` tree into the archive, at startup and then every 3 hours. Runs
     // on a blocking thread — walking a large tree is synchronous sled I/O.
@@ -612,19 +675,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     _ = interval.tick() => {
                         let worker_state = state.clone();
+                        let retention_days = state.config.retention.task_archive_days;
                         let result = tokio::task::spawn_blocking(move || {
-                            worker_state.storage.tasks.archive_stale_tasks()
+                            let tasks = &worker_state.storage.tasks;
+                            let archived = tasks.archive_stale_tasks()?;
+                            let purged = tasks.purge_archived_older_than(retention_days)?;
+                            Ok::<_, anyhow::Error>((archived, purged))
                         })
                         .await;
                         match result {
-                            Ok(Ok(n)) => {
+                            Ok(Ok((n, purged))) => {
                                 if n > 0 {
                                     info!("Task archive: moved {} finished task(s) past retention", n);
+                                }
+                                if purged > 0 {
+                                    info!(
+                                        "Task archive: purged {} task(s) older than {} days",
+                                        purged, retention_days
+                                    );
                                 }
                                 let _ = state.storage.service_messages.push(
                                     "bg",
                                     "task-archive-job",
-                                    serde_json::json!({ "archived": n }),
+                                    serde_json::json!({
+                                        "archived": n,
+                                        "purged": purged,
+                                        "retention_days": retention_days,
+                                    }),
                                 );
                             }
                             Ok(Err(e)) => {
@@ -749,6 +826,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
+}
+
+/// Rebuild each sled database under `root` to reclaim disk (opt-in via
+/// `DB_COMPACT_ON_START`). Must run before any of them is opened. A failure on
+/// one database is logged and skipped — the original is left in place and the
+/// server starts regardless.
+fn compact_databases_on_start(root: &str) {
+    const DBS: [&str; 7] = [
+        "tasks",
+        "service_messages",
+        "agent_logs",
+        "heuristics",
+        "agents",
+        "buckets",
+        "client_api_keys",
+    ];
+    let cache_mb = offloadmq::db::sled_cache_mb();
+    info!(
+        "DB_COMPACT_ON_START set: compacting {} database(s) under {}",
+        DBS.len(),
+        root
+    );
+    for name in DBS {
+        let path = std::path::Path::new(root).join(name);
+        if !path.is_dir() {
+            info!(
+                "Compaction: {} does not exist yet, skipping",
+                path.display()
+            );
+            continue;
+        }
+        let started = std::time::Instant::now();
+        match offloadmq::db::compact::compact_sled_dir(&path, cache_mb) {
+            Ok(r) => info!(
+                "Compaction: {} {} -> {} bytes in {:.1}s (backup kept at {})",
+                name,
+                r.bytes_before,
+                r.bytes_after,
+                started.elapsed().as_secs_f32(),
+                r.backup.display()
+            ),
+            Err(e) => warn!(
+                "Compaction of {} failed, original left untouched: {:#}",
+                name, e
+            ),
+        }
+    }
 }
 
 /// Rebuild the authoritative per-agent in-flight load from the source of truth:

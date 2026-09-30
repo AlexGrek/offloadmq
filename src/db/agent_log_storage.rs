@@ -79,7 +79,7 @@ pub struct AgentLogStorage {
 
 impl AgentLogStorage {
     pub fn open(path: &str) -> Result<Self> {
-        let db = sled::open(path)?;
+        let db = crate::db::open_sled(path)?;
         let tree = db.open_tree("agent_logs")?;
         Ok(Self { _db: db, tree })
     }

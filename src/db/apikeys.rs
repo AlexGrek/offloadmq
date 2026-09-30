@@ -13,7 +13,7 @@ pub struct ApiKeysStorage {
 impl ApiKeysStorage {
     /// Open or create a new task storage in the given path
     pub fn open(path: &str) -> Result<Self> {
-        let db = sled::open(path)?;
+        let db = crate::db::open_sled(path)?;
         let active = db.open_tree("api_keys_active")?;
         let archived = db.open_tree("api_keys_archived")?;
 

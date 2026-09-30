@@ -206,6 +206,10 @@ pub struct AppConfig {
     pub storage: StorageConfig,
     pub heuristics: HeuristicsConfig,
     pub stale_agents: StaleAgentsConfig,
+    pub retention: RetentionConfig,
+    /// Rebuild every sled DB at startup to reclaim disk (env: DB_COMPACT_ON_START,
+    /// default: off). See docs/database-maintenance.md.
+    pub db_compact_on_start: bool,
     pub agent_ws: AgentWsConfig,
     pub task_watch: TaskWatchConfig,
 }
@@ -251,6 +255,8 @@ impl AppConfig {
         let storage = StorageConfig::from_env(&database_root_path);
         let heuristics = HeuristicsConfig::from_env();
         let stale_agents = StaleAgentsConfig::from_env();
+        let retention = RetentionConfig::from_env();
+        let db_compact_on_start = env_flag("DB_COMPACT_ON_START");
         let agent_ws = AgentWsConfig::from_env();
         let task_watch = TaskWatchConfig::from_env();
 
@@ -266,10 +272,54 @@ impl AppConfig {
             storage,
             heuristics,
             stale_agents,
+            retention,
+            db_compact_on_start,
             agent_ws,
             task_watch,
         })
     }
+}
+
+/// How long finished data is kept before being permanently deleted.
+#[derive(Clone, Debug)]
+pub struct RetentionConfig {
+    /// Archived tasks older than this many days are deleted
+    /// (env: TASK_ARCHIVE_RETENTION_DAYS, default: 30)
+    pub task_archive_days: i64,
+    /// Service messages older than this many days are deleted
+    /// (env: SERVICE_MESSAGE_RETENTION_DAYS, default: 30)
+    pub service_message_days: i64,
+}
+
+impl RetentionConfig {
+    pub fn from_env() -> Self {
+        Self {
+            task_archive_days: positive_days("TASK_ARCHIVE_RETENTION_DAYS", 30),
+            service_message_days: positive_days("SERVICE_MESSAGE_RETENTION_DAYS", 30),
+        }
+    }
+}
+
+/// A retention window in days; unset, unparsable and zero/negative values fall
+/// back to `default` (0 would mean "delete everything").
+fn positive_days(var: &str, default: i64) -> i64 {
+    env::var(var)
+        .ok()
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .filter(|&d| d > 0)
+        .unwrap_or(default)
+}
+
+/// True for `1`, `true`, `yes`, `on` (case-insensitive).
+fn env_flag(var: &str) -> bool {
+    env::var(var)
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
 }
 
 #[derive(Clone, Debug)]

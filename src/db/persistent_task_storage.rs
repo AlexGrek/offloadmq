@@ -58,7 +58,7 @@ pub struct TaskStorage {
 impl TaskStorage {
     /// Open or create a new task storage in the given path
     pub fn open(path: &str) -> Result<Self> {
-        let db = sled::open(path)?;
+        let db = crate::db::open_sled(path)?;
         let unassigned = db.open_tree("tasks_unassigned")?;
         let assigned = db.open_tree("tasks_assigned")?;
         let archived = db.open_tree("tasks_archived")?;
@@ -160,6 +160,42 @@ impl TaskStorage {
         for (k, v) in batch.drain(..) {
             self.archived.insert(&k, v)?;
             self.assigned.remove(&k)?;
+        }
+        Ok(n)
+    }
+
+    /// Permanently delete archived tasks whose retention clock (`finished_at`,
+    /// else `assigned_at` — same as [`Self::archive_stale_tasks`]) is older than
+    /// `retention_days`. Streams the archive and deletes keys in bounded
+    /// batches. Returns how many were deleted.
+    pub fn purge_archived_older_than(&self, retention_days: i64) -> Result<usize> {
+        self.purge_archived_in_batches(retention_days, ARCHIVE_BATCH)
+    }
+
+    fn purge_archived_in_batches(&self, retention_days: i64, batch_size: usize) -> Result<usize> {
+        let cutoff = Utc::now() - chrono::Duration::days(retention_days);
+        let mut purged = 0;
+        let mut batch: Vec<sled::IVec> = Vec::with_capacity(batch_size);
+
+        for item in self.archived.iter() {
+            let (k, v) = item?;
+            let task: AssignedTask = rmp_serde::from_slice(&v)?;
+            let retain_from = task.finished_at.unwrap_or(task.assigned_at);
+            if retain_from < cutoff {
+                batch.push(k);
+                if batch.len() >= batch_size {
+                    purged += self.flush_purge_batch(&mut batch)?;
+                }
+            }
+        }
+        purged += self.flush_purge_batch(&mut batch)?;
+        Ok(purged)
+    }
+
+    fn flush_purge_batch(&self, batch: &mut Vec<sled::IVec>) -> Result<usize> {
+        let n = batch.len();
+        for k in batch.drain(..) {
+            self.archived.remove(&k)?;
         }
         Ok(n)
     }
@@ -791,6 +827,67 @@ mod tests {
         assert_eq!(store.archive_stale_tasks_in_batches(4).unwrap(), 25);
         assert_eq!(store.archived.len(), 25);
         assert_eq!(store.assigned.len(), 1);
+    }
+
+    #[test]
+    fn purge_archived_deletes_only_tasks_past_ttl() {
+        let (store, _guard) = storage();
+        // Archived directly: 40 d old, 10 d old, and one with no finished_at
+        // that falls back to assigned_at (40 d).
+        for (id, age) in [("ancient", 40 * DAY), ("recent", 10 * DAY)] {
+            let t = assigned("a1", id, TaskStatus::Completed, age);
+            store
+                .archived
+                .insert(
+                    TaskStorage::make_key(&t.id).as_bytes(),
+                    rmp_serde::to_vec_named(&t).unwrap(),
+                )
+                .unwrap();
+        }
+        let mut fallback = assigned("a1", "no-finish", TaskStatus::Failed, 40 * DAY);
+        fallback.finished_at = None;
+        store
+            .archived
+            .insert(
+                TaskStorage::make_key(&fallback.id).as_bytes(),
+                rmp_serde::to_vec_named(&fallback).unwrap(),
+            )
+            .unwrap();
+        // A live assigned task must never be touched by the purge.
+        store
+            .update_assigned(&assigned("a1", "live", TaskStatus::Completed, 40 * DAY))
+            .unwrap();
+
+        assert_eq!(store.purge_archived_older_than(30).unwrap(), 2);
+        assert_eq!(store.archived.len(), 1);
+        assert!(store.get_assigned(&tid("live")).unwrap().is_some());
+        assert_eq!(store.purge_archived_older_than(30).unwrap(), 0);
+    }
+
+    #[test]
+    fn purge_archived_drains_more_than_one_batch() {
+        let (store, _guard) = storage();
+        for i in 0..25 {
+            let t = assigned("a1", &format!("old-{i}"), TaskStatus::Failed, 60 * DAY);
+            store
+                .archived
+                .insert(
+                    TaskStorage::make_key(&t.id).as_bytes(),
+                    rmp_serde::to_vec_named(&t).unwrap(),
+                )
+                .unwrap();
+        }
+        let keep = assigned("a1", "keep", TaskStatus::Completed, DAY);
+        store
+            .archived
+            .insert(
+                TaskStorage::make_key(&keep.id).as_bytes(),
+                rmp_serde::to_vec_named(&keep).unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(store.purge_archived_in_batches(30, 4).unwrap(), 25);
+        assert_eq!(store.archived.len(), 1);
     }
 
     #[test]

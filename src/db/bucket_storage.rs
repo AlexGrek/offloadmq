@@ -41,7 +41,7 @@ pub struct BucketStorage {
 
 impl BucketStorage {
     pub fn open(path: &str) -> anyhow::Result<Self> {
-        let db = sled::open(path)?;
+        let db = crate::db::open_sled(path)?;
         let buckets = db.open_tree("buckets")?;
         let owner_idx = db.open_tree("owner_idx")?;
         Ok(Self {
