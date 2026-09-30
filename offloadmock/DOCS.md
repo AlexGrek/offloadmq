@@ -194,7 +194,7 @@ the original empty mock.
 | `GET /api/task/watch` (WebSocket) | Speaks the real protocol (`hello`/`track`/`untrack`/`sync`/`ping` → `ack`/`update`/`pong`) but, matching the empty-state contract above, every tracked task is reported `missing: true` — never a real status |
 | Agent `poll` / `poll_urgent` | First injected task matching the agent's caps, or `null` |
 | Agent `take` / `resolve` / `progress` | Serves injected tasks; `404` if unknown |
-| `GET /management/tasks/list` | Reflects injected tasks split by urgent/regular × assigned/unassigned |
+| `GET /management/tasks/list` | Reflects injected tasks split by urgent/regular × assigned/unassigned; supports `status` (`active`/`terminal`/`all`), `limit` (default 200, max 1000) and `since`, and adds a `meta` block (`limit`, `truncated`, `totals`) |
 | `POST /management/tasks/cancel/{cap}/{id}` | Marks an injected task `cancelRequested`; `404` if unknown |
 
 ---
@@ -263,7 +263,7 @@ the original empty mock.
 | GET | `/version` | `{version}` |
 | GET | `/capabilities/list/online` | base caps (all online agents) |
 | GET | `/capabilities/list/online_ext` | raw caps |
-| GET | `/tasks/list` | injected tasks split `urgent`/`regular` × `assigned`/`unassigned` |
+| GET | `/tasks/list` | injected tasks split `urgent`/`regular` × `assigned`/`unassigned`; query `status`, `limit`, `since`; adds `meta` |
 | POST | `/tasks/reset` | `{result}` (clears the injected queue) |
 | POST | `/tasks/cancel/{cap}/{id}` | marks `cancelRequested` (then `canceled` on agent ack), else `404` |
 | GET | `/agents/list` | `[Agent]` |

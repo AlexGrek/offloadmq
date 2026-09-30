@@ -268,6 +268,30 @@ def test_management_tasks_list_reflects_injected_tasks():
     assert body["urgent"] == {"assigned": [], "unassigned": []}
 
 
+def test_management_tasks_list_is_bounded_and_reports_truncation():
+    _reset()
+    client.post(
+        "/testing/tasks/generate_for_capability",
+        headers=MGMT_HEADERS,
+        json={"capability": "debug.echo", "count": 5},
+    )
+    body = client.get("/management/tasks/list?limit=2", headers=MGMT_HEADERS).json()
+    assert len(body["regular"]["unassigned"]) == 2
+    assert body["meta"]["truncated"] is True
+    assert body["meta"]["totals"]["regular_unassigned"] == 5
+
+    full = client.get("/management/tasks/list", headers=MGMT_HEADERS).json()
+    assert len(full["regular"]["unassigned"]) == 5
+    assert full["meta"]["truncated"] is False
+
+    # Finished-only listing never carries queued tasks.
+    finished = client.get("/management/tasks/list?status=terminal", headers=MGMT_HEADERS).json()
+    assert finished["regular"]["unassigned"] == []
+
+    bad = client.get("/management/tasks/list?status=bogus", headers=MGMT_HEADERS)
+    assert bad.status_code == 400
+
+
 def test_management_cancel_marks_cancel_requested_then_canceled():
     _reset()
     agent_id, key = _register(["debug.echo"])

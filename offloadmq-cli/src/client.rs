@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Result, bail};
@@ -24,6 +25,36 @@ fn encode_path_segment(s: &str) -> String {
     out
 }
 
+/// Per-request HTTP timeout in seconds; `--http-timeout` / `OMQCLI_HTTP_TIMEOUT`
+/// override it (see `set_http_timeout`).
+static HTTP_TIMEOUT_SECS: AtomicU64 = AtomicU64::new(15);
+
+pub fn set_http_timeout(secs: u64) {
+    HTTP_TIMEOUT_SECS.store(secs.max(1), Ordering::Relaxed);
+}
+
+/// Server-side filter for `GET /management/tasks/list`. The server caps every
+/// list (default 200, max 1000) and reports truncation in `meta`.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct TaskQuery {
+    /// `active`, `terminal` or `all`; `None` leaves it to the server (`all`).
+    pub status: Option<&'static str>,
+    pub limit: Option<usize>,
+}
+
+impl TaskQuery {
+    /// Everything the server will hand over in one response.
+    pub const MAX: usize = 1000;
+
+    pub fn active() -> Self {
+        Self { status: Some("active"), limit: Some(Self::MAX) }
+    }
+
+    pub fn everything() -> Self {
+        Self { status: Some("all"), limit: Some(Self::MAX) }
+    }
+}
+
 pub struct Client {
     http: HttpClient,
     server: String,
@@ -39,7 +70,7 @@ impl Client {
 
         let http = HttpClient::builder()
             .default_headers(headers)
-            .timeout(std::time::Duration::from_secs(15))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS.load(Ordering::Relaxed)))
             .build()?;
 
         Ok(Client {
@@ -97,8 +128,20 @@ impl Client {
         Ok(resp.json()?)
     }
 
-    pub fn list_tasks(&self) -> Result<TasksOverview> {
-        let resp = Self::check_status(self.http.get(self.url("/management/tasks/list")).send()?)?;
+    pub fn list_tasks(&self, query: TaskQuery) -> Result<TasksOverview> {
+        let mut params: Vec<(&str, String)> = Vec::new();
+        if let Some(status) = query.status {
+            params.push(("status", status.to_string()));
+        }
+        if let Some(limit) = query.limit {
+            params.push(("limit", limit.to_string()));
+        }
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/tasks/list"))
+                .query(&params)
+                .send()?,
+        )?;
         Ok(resp.json()?)
     }
 

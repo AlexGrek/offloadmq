@@ -291,7 +291,7 @@ Tests for administrative Management API (`/management/*`).
 | `/management/agents/delete/{id}` | POST | 200 | Bearer | Remove agent |
 | `/management/capabilities/list/online` | GET | 200 | Bearer | Base capabilities only |
 | `/management/capabilities/list/online_ext` | GET | 200 | Bearer | With extended attributes |
-| `/management/tasks/list` | GET | 200 | Bearer | All tasks by type |
+| `/management/tasks/list` | GET | 200 | Bearer | Tasks by type, capped per list (`status`, `limit`, `since`; `meta` reports truncation) |
 | `/management/tasks/reset` | POST | 200 | Bearer | Clear all tasks |
 | `/management/agents/reset` | POST | 200 | Bearer | Clear all agents |
 | `/management/client_api_keys/list` | GET | 200 | Bearer | All keys |

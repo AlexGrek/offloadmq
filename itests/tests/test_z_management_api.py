@@ -142,6 +142,30 @@ class TestTaskManagement:
         assert "assigned" in data["regular"]
         assert "unassigned" in data["regular"]
 
+    def test_list_tasks_is_bounded_and_validated(self):
+        """tasks/list caps each list, reports truncation in meta, rejects bad filters."""
+        url = f"{SERVER_URL}/management/tasks/list"
+        response = requests.get(url, params={"limit": 1}, headers=self._headers(), timeout=10)
+        assert response.status_code == 200
+        data = response.json()
+        meta = data["meta"]
+        assert meta["limit"] == 1
+        for group in ("urgent", "regular"):
+            for bucket in ("assigned", "unassigned"):
+                assert len(data[group][bucket]) <= 1
+        assert isinstance(meta["truncated"], bool)
+        assert set(meta["totals"]) == {
+            "urgent_assigned", "urgent_unassigned", "regular_assigned", "regular_unassigned",
+        }
+
+        active = requests.get(url, params={"status": "active"}, headers=self._headers(), timeout=10)
+        assert active.status_code == 200
+        for task in active.json()["regular"]["assigned"]:
+            assert task["status"] not in ("completed", "failed", "canceled")
+
+        bad = requests.get(url, params={"status": "bogus"}, headers=self._headers(), timeout=10)
+        assert bad.status_code == 400
+
     def test_reset_tasks(self):
         """Test resetting all tasks."""
         url = f"{SERVER_URL}/management/tasks/reset"

@@ -219,7 +219,7 @@ utility name doubles as the default task type, so clients may omit `payload.work
 | Aspect               | Urgent                                                    | Non-Urgent                                                                                  |
 | -------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | **Storage**          | In-memory IndexMap ([src/mq/urgent.rs](src/mq/urgent.rs)) | Sled persistent DB ([src/db/persistent_task_storage.rs](src/db/persistent_task_storage.rs)) |
-| **TTL**              | 60 seconds (auto-expires)                                 | No TTL (archived after 7 days)                                                              |
+| **TTL**              | 60 seconds (auto-expires)                                 | No TTL (finished tasks archived 7 days after completion by a sweep at startup + every 3 h)  |
 | **Client Blocking**  | Yes - `/submit_blocking` waits for result                 | No - `/submit` returns immediately with task ID                                             |
 | **Tier Filtering**   | None (FIFO)                                               | Higher-tier agents get priority                                                             |
 | **Polling Endpoint** | `GET /private/agent/task/poll_urgent`                     | `GET /private/agent/task/poll` (checks urgent first)                                        |

@@ -40,24 +40,37 @@ function sortTaskCategories(data) {
     return out;
 }
 
+function truncationNotice(meta) {
+    if (!meta?.truncated) return "";
+    const t = meta.totals || {};
+    return `Showing the newest ${meta.limit} per list — server has ` +
+        `${t.regular_assigned ?? "?"} assigned and ${t.regular_unassigned ?? "?"} queued regular tasks. ` +
+        `Finished tasks are archived after 7 days.`;
+}
+
 function TasksPage() {
-    const [data, setData] = useState([]);
+    const [response, setResponse] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [newOnly, setNewOnly] = useState(true);
+    const [showFinished, setShowFinished] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true); setError("");
         try {
-            const url = "/management/tasks/list";
-            const data = await apiFetch(url);
-            setData(data);
+            // The server caps each list; ask only for unfinished tasks unless
+            // the user wants history, so the page never pulls the whole archive.
+            const status = showFinished ? "all" : "active";
+            setResponse(await apiFetch(`/management/tasks/list?status=${status}`));
         } catch (e) {
             setError(e.message || String(e));
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [showFinished]);
+
+    // `meta` sits next to the four task lists; keep it out of the category renderer.
+    const { meta, ...data } = response || {};
 
     const handleReset = useCallback(async () => {
         const url = "/management/tasks/reset";
@@ -87,16 +100,21 @@ function TasksPage() {
                         <input type="checkbox" checked={newOnly} onChange={(e) => setNewOnly(e.target.checked)} />
                         <span>Unassigned only</span>
                     </label>
+                    <label className="toggle">
+                        <input type="checkbox" checked={showFinished} onChange={(e) => setShowFinished(e.target.checked)} />
+                        <span>Show finished</span>
+                    </label>
                     <button className="btn" onClick={load}><RefreshCw /> <span>Refresh</span></button>
                 </div>
             </div>
 
             {error && <Banner kind="error">{error}</Banner>}
+            {truncationNotice(meta) && <Banner kind="info">{truncationNotice(meta)}</Banner>}
 
             {loading ? (
                 <div className="loader" aria-busy="true">Loading…</div>
             ) : (
-                <TaskDataRenderer data={sortTaskCategories(newOnly ? filterUnassigned(data) : data)} onCancel={handleCancel} />
+                <TaskDataRenderer data={response ? sortTaskCategories(newOnly ? filterUnassigned(data) : data) : null} onCancel={handleCancel} />
             )}
         </div>
     );

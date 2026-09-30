@@ -194,10 +194,36 @@ pub struct TaskGroup {
     pub unassigned: Vec<TaskSummary>,
 }
 
+/// Real list sizes behind a (possibly truncated) `tasks/list` response.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TaskTotals {
+    #[serde(default)]
+    pub urgent_assigned: usize,
+    #[serde(default)]
+    pub urgent_unassigned: usize,
+    #[serde(default)]
+    pub regular_assigned: usize,
+    #[serde(default)]
+    pub regular_unassigned: usize,
+}
+
+/// `meta` block of `tasks/list`; absent on servers that predate the bounded listing.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TasksMeta {
+    #[serde(default)]
+    pub limit: usize,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default)]
+    pub totals: TaskTotals,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct TasksOverview {
     pub urgent: TaskGroup,
     pub regular: TaskGroup,
+    #[serde(default)]
+    pub meta: TasksMeta,
 }
 
 #[derive(Debug, Clone, Deserialize)]

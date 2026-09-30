@@ -279,11 +279,22 @@ Clears all agents from the registry. **Destructive operation**.
 ### List All Tasks
 
 ```
-GET /management/tasks/list
+GET /management/tasks/list[?status=active|terminal|all&limit=N&since=<RFC3339>]
 Authorization: Bearer <token>
 ```
 
-Returns all tasks (urgent and regular, assigned and unassigned) in the system.
+Returns tasks (urgent and regular, assigned and unassigned), **bounded**: each of the four lists
+is capped at `limit`, so the response size no longer grows with task history.
+
+**Query parameters** (all optional)
+
+| Parameter | Description |
+|-----------|-------------|
+| `status` | `active` — unfinished tasks only; `terminal` — completed/failed/canceled only (queued and urgent lists come back empty); `all` (default) |
+| `limit` | Max tasks per list. Default `200`, capped at `1000`. Assigned tasks are returned newest-first by last activity |
+| `since` | RFC 3339 timestamp; drops assigned tasks whose last activity is older |
+
+An unknown `status` or unparsable `since` returns `400`.
 
 **Response** (200 OK)
 
@@ -342,6 +353,12 @@ Returns all tasks (urgent and regular, assigned and unassigned) in the system.
 | `urgent.unassigned` | Urgent tasks waiting for an agent (in-memory, 60s TTL) |
 | `regular.assigned` | Non-urgent tasks claimed by an agent (persisted) |
 | `regular.unassigned` | Non-urgent tasks waiting for an agent (persisted) |
+| `meta.limit` | The effective per-list cap |
+| `meta.truncated` | `true` if any list was cut at `limit` |
+| `meta.totals` | Real sizes before capping: `urgent_assigned`, `urgent_unassigned`, `regular_assigned`, `regular_unassigned` |
+
+Finished tasks are archived out of the live set 7 days after completion (a background sweep runs at
+startup and every 3 hours), so they no longer appear here after that.
 
 **AssignedTask fields**
 

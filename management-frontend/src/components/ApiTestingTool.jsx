@@ -223,8 +223,12 @@ const ENDPOINTS = [
     path: '/management/tasks/list',
     auth: 'bearer',
     pathParams: [],
-    queryParams: [],
-    description: 'Returns all tasks (urgent/regular, assigned/unassigned) with full details.',
+    queryParams: [
+      { name: 'status', required: false, placeholder: 'active | terminal | all (default all)' },
+      { name: 'limit', required: false, placeholder: 'Default: 200 (max: 1000)' },
+      { name: 'since', required: false, placeholder: 'RFC 3339 timestamp (optional)' },
+    ],
+    description: 'Returns tasks (urgent/regular, assigned/unassigned) with full details, each list capped at limit (assigned newest first). meta reports totals and truncation.',
   },
   {
     group: 'Management — Tasks',

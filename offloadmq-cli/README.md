@@ -119,7 +119,11 @@ omqcli reset tasks -y                           # skip the prompt
 - **`list tasks`** fetches `GET /management/tasks/list` (all four buckets:
   urgent/regular × assigned/unassigned) and prints one table per non-empty
   bucket — task id, capability, status, stage, agent (resolved to short
-  id + name), flags (`urgent`/`restartable`), and creation time.
+  id + name), flags (`urgent`/`restartable`), and creation time. The server
+  caps every bucket (default 200, newest first); `--limit N` (max 1000),
+  `--status active|terminal|all` and `--all` (status=all, limit=1000) tune it, and
+  a `note:` line on stderr says when anything was cut off. `--unassigned-only`
+  and `--cap` filter the fetched rows client-side.
 - **`describe task <cap> <id>`** scans the same response for a matching
   `(cap, id)` — there's no server-side get-by-id endpoint, only the full list —
   and prints everything: which queue/bucket it's in, status/stage, timestamps,
@@ -155,7 +159,7 @@ A one-shot fleet dashboard. Makes four read-only management API calls and prints
    agent's uid, so it reflects the agent's overall track record, not just one
    capability. Shows `-` for an agent with no heuristic history yet.
 2. **Running tasks** and **scheduled tasks** (up to `--task-limit` each, default
-   5), oldest first — from `GET /management/tasks/list`. "Running" is
+   5), oldest first — from `GET /management/tasks/list?status=active`. "Running" is
    `urgent.assigned` + `regular.assigned` (already claimed by an agent);
    "scheduled" is `urgent.unassigned` + `regular.unassigned` (queued, waiting
    for one). Each line shows the task id, its agent (for running tasks), status/
@@ -261,6 +265,10 @@ key: this-is-for-testing-management-tokens
 
 Both fields are optional in isolation, but `key` must be set (via `auth`) before
 any other command will run. Re-run `auth` to change either value.
+
+Every HTTP request times out after 15 s by default. Raise it for a slow server
+with the global `--http-timeout <secs>` flag or `OMQCLI_HTTP_TIMEOUT=<secs>`
+(slavemode commands keep their own `--timeout`, which is the agent wait).
 
 ## Adding a new `agent` slavemode subcommand
 

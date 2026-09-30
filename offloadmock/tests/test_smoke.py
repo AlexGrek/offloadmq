@@ -144,7 +144,7 @@ def test_storage_bucket_roundtrip():
 def test_mgmt_requires_token():
     assert client.get("/management/agents/list").status_code == 403
     ok = client.get("/management/tasks/list", headers={"Authorization": f"Bearer {MGMT}"})
-    assert ok.json() == {
-        "urgent": {"assigned": [], "unassigned": []},
-        "regular": {"assigned": [], "unassigned": []},
-    }
+    body = ok.json()
+    assert body["urgent"] == {"assigned": [], "unassigned": []}
+    assert body["regular"] == {"assigned": [], "unassigned": []}
+    assert body["meta"]["truncated"] is False

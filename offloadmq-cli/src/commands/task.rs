@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use anyhow::Result;
 use owo_colors::OwoColorize;
 
-use crate::client::Client;
+use crate::client::{Client, TaskQuery};
 use crate::config::Config;
 use crate::models::{TaskSummary, TasksOverview};
 use crate::output;
@@ -33,13 +33,54 @@ fn confirm(prompt: &str) -> Result<bool> {
     Ok(matches!(answer.trim().to_lowercase().as_str(), "y" | "yes"))
 }
 
-pub fn list(unassigned_only: bool, cap: Option<String>) -> Result<()> {
+/// Warn on stderr when the server cut any list short, so a short table is
+/// never mistaken for the whole queue.
+fn warn_if_truncated(tasks: &TasksOverview) {
+    let meta = &tasks.meta;
+    if !meta.truncated {
+        return;
+    }
+    let t = &meta.totals;
+    eprintln!(
+        "{} lists capped at {} per group — server has urgent {}/{} assigned/queued, \
+         regular {}/{} assigned/queued. Narrow with --status active|terminal, or raise \
+         --limit (max {}).",
+        "note:".yellow().bold(),
+        meta.limit,
+        t.urgent_assigned,
+        t.urgent_unassigned,
+        t.regular_assigned,
+        t.regular_unassigned,
+        TaskQuery::MAX,
+    );
+}
+
+pub fn list(
+    unassigned_only: bool,
+    cap: Option<String>,
+    status: Option<String>,
+    limit: Option<usize>,
+    all: bool,
+) -> Result<()> {
     let cfg = Config::load()?;
     let (server, key) = cfg.require()?;
     let client = Client::new(&server, &key)?;
-    let tasks = client.list_tasks()?;
+    let query = if all {
+        TaskQuery::everything()
+    } else {
+        TaskQuery {
+            status: status.as_deref().map(|s| match s {
+                "active" => "active",
+                "terminal" => "terminal",
+                _ => "all",
+            }),
+            limit,
+        }
+    };
+    let tasks = client.list_tasks(query)?;
     let agents = client.list_agents(false)?;
     output::print_tasks_table(&tasks, &agents, unassigned_only, cap.as_deref());
+    warn_if_truncated(&tasks);
     Ok(())
 }
 
@@ -47,13 +88,18 @@ pub fn describe(cap: &str, id: &str) -> Result<()> {
     let cfg = Config::load()?;
     let (server, key) = cfg.require()?;
     let client = Client::new(&server, &key)?;
-    let tasks = client.list_tasks()?;
+    let tasks = client.list_tasks(TaskQuery::everything())?;
     let agents = client.list_agents(false)?;
 
     let (queue, assigned, task) = find_task(&tasks, cap, id).ok_or_else(|| {
+        let hint = if tasks.meta.truncated {
+            " — the server list is capped, so an older task may be beyond the newest 1000"
+        } else {
+            ""
+        };
         anyhow::anyhow!(
             "no task found with capability {cap:?} and id {id:?} — it may already be \
-             archived/expired, or never existed"
+             archived/expired, or never existed{hint}"
         )
     })?;
     output::print_task_detail(queue, assigned, task, &agents);

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use owo_colors::OwoColorize;
 
-use crate::client::Client;
+use crate::client::{Client, TaskQuery};
 use crate::config::Config;
 use crate::output;
 
@@ -20,7 +20,7 @@ pub fn run(task_limit: usize) -> Result<()> {
     let stats = client.runner_stats()?;
     output::print_status_agents(&agents, &stats);
 
-    let tasks = client.list_tasks()?;
+    let tasks = client.list_tasks(TaskQuery::active())?;
     output::print_status_tasks(&tasks, &agents, task_limit);
 
     let quotas = client.storage_quotas()?;

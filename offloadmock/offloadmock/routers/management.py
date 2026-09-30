@@ -46,22 +46,68 @@ async def capabilities_online_ext() -> list[str]:
 # "no task subsystem" contract.
 
 
+TASK_LIST_DEFAULT_LIMIT = 200
+TASK_LIST_MAX_LIMIT = 1000
+
+
+def _activity_ts(wire: dict) -> str:
+    """Latest timestamp on an assigned wire task (ISO-Z strings sort lexically)."""
+    return wire.get("finishedAt") or wire.get("lastUpdateAt") or wire.get("createdAt") or ""
+
+
 @router.get("/tasks/list")
-async def list_tasks() -> dict:
+async def list_tasks(
+    status: Optional[str] = Query(None),
+    limit: Optional[int] = Query(None, ge=0),
+    since: Optional[str] = Query(None),
+) -> dict:
+    """Bounded listing mirroring ``api::mgmt::list_tasks``: ``status`` is
+    ``active|terminal|all``, every list is capped at ``limit`` (default 200,
+    max 1000), assigned tasks are newest-first, and ``meta`` reports totals."""
+    if status not in (None, "all", "active", "terminal"):
+        raise AppError.validation(
+            f"status must be one of active, terminal, all (got '{status}')"
+        )
+    status = status or "all"
+    cap = min(TASK_LIST_DEFAULT_LIMIT if limit is None else limit, TASK_LIST_MAX_LIMIT)
+    include_queued = status != "terminal"
+
     urgent_assigned: list[dict] = []
     urgent_unassigned: list[dict] = []
     reg_assigned: list[dict] = []
     reg_unassigned: list[dict] = []
     for task in deps.store.list_tasks():
         if task.agent_id is None and not task.status.is_terminal():
-            wire = task.to_unassigned_wire()
-            (urgent_unassigned if task.urgent else reg_unassigned).append(wire)
-        else:
-            wire = task.to_assigned_wire()
-            (urgent_assigned if task.urgent else reg_assigned).append(wire)
+            if include_queued:
+                wire = task.to_unassigned_wire()
+                (urgent_unassigned if task.urgent else reg_unassigned).append(wire)
+            continue
+        if status == "active" and task.status.is_terminal():
+            continue
+        if status == "terminal" and not task.status.is_terminal():
+            continue
+        wire = task.to_assigned_wire()
+        if since and _activity_ts(wire) < since:
+            continue
+        (urgent_assigned if task.urgent else reg_assigned).append(wire)
+
+    reg_assigned.sort(key=_activity_ts, reverse=True)
+    urgent_assigned.sort(key=_activity_ts, reverse=True)
+    totals = {
+        "urgent_assigned": len(urgent_assigned),
+        "urgent_unassigned": len(urgent_unassigned),
+        "regular_assigned": len(reg_assigned),
+        "regular_unassigned": len(reg_unassigned),
+    }
+    lists = [urgent_assigned, urgent_unassigned, reg_assigned, reg_unassigned]
     return {
-        "urgent": {"assigned": urgent_assigned, "unassigned": urgent_unassigned},
-        "regular": {"assigned": reg_assigned, "unassigned": reg_unassigned},
+        "urgent": {"assigned": urgent_assigned[:cap], "unassigned": urgent_unassigned[:cap]},
+        "regular": {"assigned": reg_assigned[:cap], "unassigned": reg_unassigned[:cap]},
+        "meta": {
+            "limit": cap,
+            "truncated": any(len(lst) > cap for lst in lists),
+            "totals": totals,
+        },
     }
 
 

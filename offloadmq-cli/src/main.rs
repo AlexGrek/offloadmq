@@ -14,6 +14,10 @@ use owo_colors::OwoColorize;
 #[derive(Parser)]
 #[command(name = "omqcli", version, about, long_about = None)]
 struct Cli {
+    /// Per-request HTTP timeout in seconds (default 15, or $OMQCLI_HTTP_TIMEOUT);
+    /// slavemode commands have their own --timeout
+    #[arg(long, global = true)]
+    http_timeout: Option<u64>,
     #[command(subcommand)]
     command: Command,
 }
@@ -194,6 +198,15 @@ enum ListTarget {
         /// Only show tasks for one capability
         #[arg(long)]
         cap: Option<String>,
+        /// Which assigned tasks to fetch: active (unfinished), terminal (finished) or all
+        #[arg(long, value_parser = ["active", "terminal", "all"])]
+        status: Option<String>,
+        /// Max tasks per list, newest first (server default 200, max 1000)
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Fetch as much as the server allows (status=all, limit=1000)
+        #[arg(long, conflicts_with_all = ["status", "limit"])]
+        all: bool,
     },
 }
 
@@ -251,13 +264,21 @@ enum ResetTarget {
 
 fn main() {
     let cli = Cli::parse();
+    if let Some(secs) = cli
+        .http_timeout
+        .or_else(|| std::env::var("OMQCLI_HTTP_TIMEOUT").ok()?.parse().ok())
+    {
+        client::set_http_timeout(secs);
+    }
 
     let result = match cli.command {
         Command::Auth { key, server } => commands::auth::run(key, server),
         Command::List { target } => match target {
             ListTarget::Agents { online } => commands::list::agents(online),
             ListTarget::Caps { ext } => commands::list::capabilities(ext),
-            ListTarget::Tasks { unassigned_only, cap } => commands::task::list(unassigned_only, cap),
+            ListTarget::Tasks { unassigned_only, cap, status, limit, all } => {
+                commands::task::list(unassigned_only, cap, status, limit, all)
+            }
         },
         Command::Describe { target } => match target {
             DescribeTarget::Agent { id } => commands::describe::agent(&id),
