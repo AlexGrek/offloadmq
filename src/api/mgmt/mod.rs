@@ -21,6 +21,7 @@ use std::convert::Infallible;
 use tracing::info;
 
 use crate::{
+    db::persistent_task_storage::AssignedStatusFilter,
     error::AppError,
     models::{Agent, ClientApiKey},
     schema::{self},
@@ -150,24 +151,107 @@ pub async fn add_client_api_key(
     Ok(Json(key))
 }
 
-pub async fn list_tasks(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, AppError> {
-    let tasks = state.urgent.tasks.read().await;
-    let urgent: Vec<_> = tasks.iter().map(|entry| entry.1).collect();
-    let urgent_assigned: Vec<_> = urgent
-        .iter()
-        .filter_map(|entry| entry.assigned_task.clone())
-        .collect();
-    let urgent_unassigned: Vec<_> = urgent
-        .iter()
-        .filter(|entry| entry.assigned_task.is_none())
-        .map(|entry| entry.task.clone())
-        .collect();
-    let regular_assigned = state.storage.tasks.list_assigned_all()?;
-    let regular_unassigned = state.regular.list_all().await;
-    Ok(Json(json!({"urgent": {"assigned": urgent_assigned,
-                                "unassigned": urgent_unassigned},
-                            "regular": {"assigned": regular_assigned,
-                                "unassigned": regular_unassigned}})))
+/// Default and maximum number of tasks returned per list by `GET /tasks/list`.
+const TASK_LIST_DEFAULT_LIMIT: usize = 200;
+const TASK_LIST_MAX_LIMIT: usize = 1000;
+
+#[derive(Deserialize, Default)]
+pub struct ListTasksQuery {
+    /// `active` (not yet finished), `terminal` (finished) or `all` (default).
+    pub status: Option<String>,
+    /// Max tasks per list (default 200, capped at 1000).
+    pub limit: Option<usize>,
+    /// RFC 3339 timestamp; drop assigned tasks whose last activity is older.
+    pub since: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Bounded task listing. Each of the four lists is capped at `limit`; `meta`
+/// reports the real totals and whether anything was cut, so callers can tell
+/// a short list from a truncated one. Assigned tasks come newest-first.
+pub async fn list_tasks(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ListTasksQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let filter = match params.status.as_deref() {
+        None | Some("all") => AssignedStatusFilter::All,
+        Some("active") => AssignedStatusFilter::Active,
+        Some("terminal") => AssignedStatusFilter::Terminal,
+        Some(other) => {
+            return Err(AppError::Validation(format!(
+                "status must be one of active, terminal, all (got '{other}')"
+            )));
+        }
+    };
+    let limit = params
+        .limit
+        .unwrap_or(TASK_LIST_DEFAULT_LIMIT)
+        .min(TASK_LIST_MAX_LIMIT);
+
+    // Queued / in-flight urgent and unassigned tasks are never finished, so
+    // they are omitted only when the caller asked for finished tasks alone.
+    let include_queued = filter != AssignedStatusFilter::Terminal;
+
+    let (urgent_assigned, urgent_unassigned, urgent_assigned_total, urgent_unassigned_total) =
+        if include_queued {
+            let tasks = state.urgent.tasks.read().await;
+            let assigned: Vec<_> = tasks
+                .values()
+                .filter_map(|entry| entry.assigned_task.clone())
+                .collect();
+            let unassigned: Vec<_> = tasks
+                .values()
+                .filter(|entry| entry.assigned_task.is_none())
+                .map(|entry| entry.task.clone())
+                .collect();
+            let totals = (assigned.len(), unassigned.len());
+            (
+                assigned.into_iter().take(limit).collect::<Vec<_>>(),
+                unassigned.into_iter().take(limit).collect::<Vec<_>>(),
+                totals.0,
+                totals.1,
+            )
+        } else {
+            (Vec::new(), Vec::new(), 0, 0)
+        };
+
+    let since = params.since;
+    let blocking_state = state.clone();
+    let (regular_assigned, regular_assigned_total) = tokio::task::spawn_blocking(move || {
+        blocking_state
+            .storage
+            .tasks
+            .list_assigned_filtered(filter, since, limit)
+    })
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("task listing panicked: {e}")))??;
+
+    let (regular_unassigned, regular_unassigned_total) = if include_queued {
+        let all = state.regular.list_all().await;
+        let total = all.len();
+        (all.into_iter().take(limit).collect::<Vec<_>>(), total)
+    } else {
+        (Vec::new(), 0)
+    };
+
+    let truncated = regular_assigned_total > regular_assigned.len()
+        || regular_unassigned_total > regular_unassigned.len()
+        || urgent_assigned_total > urgent_assigned.len()
+        || urgent_unassigned_total > urgent_unassigned.len();
+
+    Ok(Json(json!({
+        "urgent": {"assigned": urgent_assigned, "unassigned": urgent_unassigned},
+        "regular": {"assigned": regular_assigned, "unassigned": regular_unassigned},
+        "meta": {
+            "limit": limit,
+            "truncated": truncated,
+            "totals": {
+                "urgent_assigned": urgent_assigned_total,
+                "urgent_unassigned": urgent_unassigned_total,
+                "regular_assigned": regular_assigned_total,
+                "regular_unassigned": regular_unassigned_total,
+            },
+        },
+    })))
 }
 
 pub async fn reset_tasks(

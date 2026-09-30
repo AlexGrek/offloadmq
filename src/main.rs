@@ -33,9 +33,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  Host: {}", config.host);
     info!("  Port: {}", config.port);
     info!("  Database path: {}", config.database_root_path);
-    info!("  Agent API keys: {:?}", config.agent_api_keys);
-    info!("  Client API keys: {:?}", config.client_api_keys);
-    info!("  Management token: {}", config.management_token);
+    // Counts only — these values are credentials and must not reach the logs.
+    info!("  Agent API keys: {} configured", config.agent_api_keys.len());
+    info!("  Client API keys: {} configured", config.client_api_keys.len());
+    info!(
+        "  Management token: {}",
+        if config.management_token.is_empty() { "NOT SET" } else { "set" }
+    );
     info!("  Storage backend: {}", config.storage.backend);
 
     let app_storage = AppStorage::new(&config.database_root_path, &config.storage)
@@ -581,6 +585,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Background: move finished tasks past their 7-day retention from the live
+    // `assigned` tree into the archive, at startup and then every 3 hours. Runs
+    // on a blocking thread — walking a large tree is synchronous sled I/O.
+    {
+        let state = shared_state.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(time::Duration::from_secs(3 * 60 * 60));
+            let mut shutdown = state.subscribe_shutdown();
+            loop {
+                tokio::select! {
+                    _ = shutdown.changed() => {
+                        if *shutdown.borrow() {
+                            break;
+                        }
+                    }
+                    _ = interval.tick() => {
+                        let worker_state = state.clone();
+                        let result = tokio::task::spawn_blocking(move || {
+                            worker_state.storage.tasks.archive_stale_tasks()
+                        })
+                        .await;
+                        match result {
+                            Ok(Ok(n)) => {
+                                if n > 0 {
+                                    info!("Task archive: moved {} finished task(s) past retention", n);
+                                }
+                                let _ = state.storage.service_messages.push(
+                                    "bg",
+                                    "task-archive-job",
+                                    serde_json::json!({ "archived": n }),
+                                );
+                            }
+                            Ok(Err(e)) => {
+                                log::warn!("Task archive failed: {}", e);
+                                let _ = state.storage.service_messages.push(
+                                    "bg",
+                                    "task-archive-job",
+                                    serde_json::json!({ "error": e.to_string() }),
+                                );
+                            }
+                            Err(e) => log::warn!("Task archive task panicked: {}", e),
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     // Background: maintain persistent (non-urgent) task state every 30 s.
     // - Unassigned tasks past maxWaitSecs or timeoutSecs are moved to Failed.
     // - Assigned tasks past timeoutSecs are set to CancelRequested so the
@@ -698,7 +750,7 @@ async fn rebuild_agent_load(
 ) -> std::collections::HashMap<String, std::collections::HashSet<offloadmq::schema::TaskId>> {
     use std::collections::{HashMap, HashSet};
     let mut live: HashMap<String, HashSet<offloadmq::schema::TaskId>> = HashMap::new();
-    match state.storage.tasks.list_assigned_all() {
+    match state.storage.tasks.list_active_assigned() {
         Ok(assigned) => {
             for task in assigned {
                 if !task.status.is_terminal() {

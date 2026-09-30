@@ -47,7 +47,11 @@ impl AgentStorage {
         self.db.insert(id.as_bytes(), data)?;
         self.db.flush_async().await?;
 
-        info!("Created agent {:?}", agent);
+        info!(
+            "Created agent {} ({})",
+            agent.uid_short,
+            agent.display_name.as_deref().unwrap_or("-")
+        );
         Ok(())
     }
 
@@ -124,8 +128,17 @@ impl AgentStorage {
             .filter(|agent| agent.is_online())
             .collect();
         info!("Online agents: ");
+        // Never `{:?}` the whole Agent: it carries `personal_login_token`.
         for agent in agents {
-            info!("     {:?}", agent);
+            info!(
+                "     {} ({}) tier={} capacity={} via {:?} last_contact={:?}",
+                agent.uid_short,
+                agent.display_name.as_deref().unwrap_or("-"),
+                agent.tier,
+                agent.capacity,
+                agent.last_comm_method,
+                agent.last_contact,
+            );
         }
     }
 

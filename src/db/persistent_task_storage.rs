@@ -14,6 +14,40 @@ use crate::{
     utils::base_capability,
 };
 
+/// How long a finished task stays in the live `assigned` tree before archiving.
+const ARCHIVE_RETENTION_DAYS: i64 = 7;
+/// Tasks moved per flush by the archive sweep (bounds its memory use).
+const ARCHIVE_BATCH: usize = 200;
+
+/// Which assigned tasks a bounded listing should include.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AssignedStatusFilter {
+    /// Non-terminal tasks only (queued-for-agent, starting, running, cancelling).
+    Active,
+    /// Completed / failed / canceled only.
+    Terminal,
+    #[default]
+    All,
+}
+
+impl AssignedStatusFilter {
+    fn matches(self, status: &TaskStatus) -> bool {
+        match self {
+            Self::Active => !status.is_terminal(),
+            Self::Terminal => status.is_terminal(),
+            Self::All => true,
+        }
+    }
+}
+
+/// Most recent moment anything happened to an assigned task; used to order and
+/// time-filter listings.
+fn activity_time(task: &AssignedTask) -> chrono::DateTime<Utc> {
+    task.finished_at
+        .or(task.last_update_at)
+        .unwrap_or(task.assigned_at)
+}
+
 pub struct TaskStorage {
     _db: Db,
     unassigned: sled::Tree,
@@ -91,27 +125,43 @@ impl TaskStorage {
     /// orphan-recovery sweeps before they ever become eligible here. The
     /// retention clock starts at `finished_at` (falling back to `assigned_at`
     /// for records written before that field existed).
-    pub fn archive_stale_tasks(&self) -> Result<()> {
-        let now = Utc::now();
-        let cutoff = now - chrono::Duration::days(7);
+    ///
+    /// Tasks are moved in bounded batches while streaming the tree, so memory
+    /// stays flat however large the backlog is. Returns how many were archived.
+    pub fn archive_stale_tasks(&self) -> Result<usize> {
+        self.archive_stale_tasks_in_batches(ARCHIVE_BATCH)
+    }
 
-        let mut to_archive = Vec::new();
+    fn archive_stale_tasks_in_batches(&self, batch_size: usize) -> Result<usize> {
+        let cutoff = Utc::now() - chrono::Duration::days(ARCHIVE_RETENTION_DAYS);
+        let mut archived = 0;
+        let mut batch: Vec<(sled::IVec, sled::IVec)> = Vec::with_capacity(batch_size);
 
         for item in self.assigned.iter() {
             let (k, v) = item?;
             let task: AssignedTask = rmp_serde::from_slice(&v)?;
             let retain_from = task.finished_at.unwrap_or(task.assigned_at);
             if task.status.is_terminal() && retain_from < cutoff {
-                to_archive.push((k, v));
+                batch.push((k, v));
+                if batch.len() >= batch_size {
+                    archived += self.flush_archive_batch(&mut batch)?;
+                }
             }
         }
+        archived += self.flush_archive_batch(&mut batch)?;
+        Ok(archived)
+    }
 
-        for (k, v) in to_archive {
-            self.assigned.remove(&k)?;
+    /// Insert into the archive before removing from `assigned`, so a crash
+    /// between the two leaves a duplicate (harmless, re-archived next sweep)
+    /// rather than a lost task.
+    fn flush_archive_batch(&self, batch: &mut Vec<(sled::IVec, sled::IVec)>) -> Result<usize> {
+        let n = batch.len();
+        for (k, v) in batch.drain(..) {
             self.archived.insert(&k, v)?;
+            self.assigned.remove(&k)?;
         }
-
-        Ok(())
+        Ok(n)
     }
 
     /// Revert an assigned task back to the unassigned queue.
@@ -486,16 +536,51 @@ impl TaskStorage {
         Ok(count)
     }
 
-    pub fn list_assigned_all(&self) -> Result<Vec<AssignedTask>> {
+    /// Non-terminal assigned tasks, streamed so finished history is never held
+    /// in memory. Backs the agent-load reconcile tick.
+    pub fn list_active_assigned(&self) -> Result<Vec<AssignedTask>> {
         let mut result = Vec::new();
-        // The iter() method returns an iterator over all key-value pairs in the tree.
         for item in self.assigned.iter() {
-            // Each item is a sled::Result<(IVec, IVec)>
             let (_key, value) = item?;
             let task: AssignedTask = rmp_serde::from_slice(&value)?;
-            result.push(task);
+            if !task.status.is_terminal() {
+                result.push(task);
+            }
         }
         Ok(result)
+    }
+
+    /// Bounded listing for the management API: the `limit` most recently active
+    /// assigned tasks matching `status` (and not older than `since`), newest
+    /// first, plus the total number that matched. Only ~2×`limit` tasks are
+    /// ever held in memory, regardless of how many are stored.
+    pub fn list_assigned_filtered(
+        &self,
+        status: AssignedStatusFilter,
+        since: Option<chrono::DateTime<Utc>>,
+        limit: usize,
+    ) -> Result<(Vec<AssignedTask>, usize)> {
+        let mut kept: Vec<AssignedTask> = Vec::new();
+        let mut total = 0usize;
+        let newest_first =
+            |a: &AssignedTask, b: &AssignedTask| activity_time(b).cmp(&activity_time(a));
+
+        for item in self.assigned.iter() {
+            let (_key, value) = item?;
+            let task: AssignedTask = rmp_serde::from_slice(&value)?;
+            if !status.matches(&task.status) || since.is_some_and(|s| activity_time(&task) < s) {
+                continue;
+            }
+            total += 1;
+            kept.push(task);
+            if kept.len() >= limit.saturating_mul(2).max(1) {
+                kept.sort_by(newest_first);
+                kept.truncate(limit);
+            }
+        }
+        kept.sort_by(newest_first);
+        kept.truncate(limit);
+        Ok((kept, total))
     }
 }
 
@@ -655,5 +740,108 @@ mod tests {
         // A second pass (or a resolve that already landed) must not rewrite it.
         assert!(!store.fail_disowned_assigned(&tid("lost"), "a1").unwrap());
         assert!(!store.fail_disowned_assigned(&tid("missing"), "a1").unwrap());
+    }
+
+    const DAY: i64 = 24 * 60 * 60;
+
+    #[test]
+    fn archive_moves_only_old_terminal_tasks() {
+        let (store, _guard) = storage();
+        store
+            .update_assigned(&assigned("a1", "old-done", TaskStatus::Completed, 8 * DAY))
+            .unwrap();
+        store
+            .update_assigned(&assigned("a1", "new-done", TaskStatus::Completed, DAY))
+            .unwrap();
+        store
+            .update_assigned(&assigned("a1", "old-running", TaskStatus::Running, 8 * DAY))
+            .unwrap();
+
+        assert_eq!(store.archive_stale_tasks().unwrap(), 1);
+        assert!(store.get_assigned(&tid("old-done")).unwrap().is_none());
+        assert!(store.get_assigned(&tid("new-done")).unwrap().is_some());
+        assert!(store.get_assigned(&tid("old-running")).unwrap().is_some());
+        assert_eq!(store.archived.len(), 1);
+        // Idempotent: nothing left to archive.
+        assert_eq!(store.archive_stale_tasks().unwrap(), 0);
+    }
+
+    #[test]
+    fn archive_drains_a_backlog_larger_than_one_batch() {
+        let (store, _guard) = storage();
+        for i in 0..25 {
+            store
+                .update_assigned(&assigned(
+                    "a1",
+                    &format!("old-{i}"),
+                    TaskStatus::Failed,
+                    9 * DAY,
+                ))
+                .unwrap();
+        }
+        store
+            .update_assigned(&assigned("a1", "keep", TaskStatus::Completed, 60))
+            .unwrap();
+
+        assert_eq!(store.archive_stale_tasks_in_batches(4).unwrap(), 25);
+        assert_eq!(store.archived.len(), 25);
+        assert_eq!(store.assigned.len(), 1);
+    }
+
+    #[test]
+    fn filtered_listing_is_bounded_newest_first_and_counts_total() {
+        let (store, _guard) = storage();
+        for i in 0..10 {
+            // i = 0 is the newest (10s old), i = 9 the oldest (100s old).
+            store
+                .update_assigned(&assigned(
+                    "a1",
+                    &format!("done-{i}"),
+                    TaskStatus::Completed,
+                    10 * (i + 1),
+                ))
+                .unwrap();
+        }
+        store
+            .update_assigned(&assigned("a1", "live", TaskStatus::Running, 500))
+            .unwrap();
+
+        let (tasks, total) = store
+            .list_assigned_filtered(AssignedStatusFilter::All, None, 3)
+            .unwrap();
+        assert_eq!(total, 11);
+        let ids: Vec<_> = tasks.iter().map(|t| t.id.id.as_str()).collect();
+        assert_eq!(ids, ["done-0", "done-1", "done-2"]);
+
+        let (active, total) = store
+            .list_assigned_filtered(AssignedStatusFilter::Active, None, 50)
+            .unwrap();
+        assert_eq!((active.len(), total), (1, 1));
+        assert_eq!(active[0].id.id, "live");
+
+        let (terminal, total) = store
+            .list_assigned_filtered(AssignedStatusFilter::Terminal, None, 50)
+            .unwrap();
+        assert_eq!((terminal.len(), total), (10, 10));
+
+        let since = Utc::now() - TimeDelta::seconds(35);
+        let (recent, total) = store
+            .list_assigned_filtered(AssignedStatusFilter::All, Some(since), 50)
+            .unwrap();
+        assert_eq!((recent.len(), total), (3, 3));
+    }
+
+    #[test]
+    fn active_listing_skips_finished_history() {
+        let (store, _guard) = storage();
+        store
+            .update_assigned(&assigned("a1", "done", TaskStatus::Completed, 60))
+            .unwrap();
+        store
+            .update_assigned(&assigned("a1", "live", TaskStatus::Running, 60))
+            .unwrap();
+        let active = store.list_active_assigned().unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id.id, "live");
     }
 }
