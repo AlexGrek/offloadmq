@@ -4,6 +4,7 @@ import {
   Copy,
   Eye,
   FolderOpen,
+  ImagePlus,
   ImageUp,
   Loader2,
   PanelLeftClose,
@@ -51,6 +52,7 @@ import {
   DESCRIBE_NEW_PANEL,
   DescribeHistorySidebar,
 } from '../components/describe/DescribeHistorySidebar'
+import { QuickGenerateDialog } from '../components/describe/QuickGenerateDialog'
 import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
 import { keepIfUnchanged, mergeJobList, upsertJob } from '../lib/jobMerge'
@@ -134,6 +136,7 @@ export default function DescribeImagePage() {
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
 
   const [jobs, setJobs] = useState<DescribeJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -827,9 +830,9 @@ export default function DescribeImagePage() {
                     {/* Result / pending / error */}
                     {selectedJob.result ? (
                       <section className="space-y-2" data-testid="describe-result">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-start justify-between gap-2">
                           <h3 className="text-xs font-medium text-muted-foreground">Result</h3>
-                          <div className="flex items-center gap-0.5">
+                          <div className="flex flex-wrap items-center justify-end gap-0.5">
                             <SpeechListenWidget
                               text={selectedJob.result}
                               triggerVariant="ghost"
@@ -846,6 +849,18 @@ export default function DescribeImagePage() {
                             >
                               <Wand2 className="size-3.5" />
                               Use as prompt
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-1.5 text-xs"
+                              onClick={() => setGenerateOpen(true)}
+                              title="Generate an image from this description"
+                              data-testid="describe-generate-open"
+                            >
+                              <ImagePlus className="size-3.5" />
+                              Generate
                             </Button>
                             <Button
                               type="button"
@@ -894,6 +909,14 @@ export default function DescribeImagePage() {
           open={pickerOpen}
           onClose={() => setPickerOpen(false)}
           onSelect={selectLibraryImage}
+          token={token}
+        />
+      )}
+      {generateOpen && token && selectedJob?.result && (
+        <QuickGenerateDialog
+          open={generateOpen}
+          onOpenChange={setGenerateOpen}
+          prompt={selectedJob.result}
           token={token}
         />
       )}
