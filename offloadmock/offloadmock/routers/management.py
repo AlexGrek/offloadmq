@@ -7,6 +7,7 @@ agents, client keys, capabilities, tasks (empty), storage admin, heuristics
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -69,6 +70,13 @@ async def list_tasks(
             f"status must be one of active, terminal, all (got '{status}')"
         )
     status = status or "all"
+    since_ts: Optional[str] = None
+    if since is not None:
+        try:
+            parsed = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError:
+            raise AppError.bad_request(f"since must be an RFC 3339 timestamp (got '{since}')")
+        since_ts = iso_z(parsed)
     cap = min(TASK_LIST_DEFAULT_LIMIT if limit is None else limit, TASK_LIST_MAX_LIMIT)
     include_queued = status != "terminal"
 
@@ -87,7 +95,7 @@ async def list_tasks(
         if status == "terminal" and not task.status.is_terminal():
             continue
         wire = task.to_assigned_wire()
-        if since and _activity_ts(wire) < since:
+        if since_ts and _activity_ts(wire) < since_ts:
             continue
         (urgent_assigned if task.urgent else reg_assigned).append(wire)
 

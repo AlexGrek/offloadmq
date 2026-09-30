@@ -290,6 +290,8 @@ def test_management_tasks_list_is_bounded_and_reports_truncation():
 
     bad = client.get("/management/tasks/list?status=bogus", headers=MGMT_HEADERS)
     assert bad.status_code == 400
+    bad_since = client.get("/management/tasks/list?since=notadate", headers=MGMT_HEADERS)
+    assert bad_since.status_code == 400
 
 
 def test_management_cancel_marks_cancel_requested_then_canceled():

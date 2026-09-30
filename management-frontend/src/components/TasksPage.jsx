@@ -101,7 +101,15 @@ function TasksPage() {
                         <span>Unassigned only</span>
                     </label>
                     <label className="toggle">
-                        <input type="checkbox" checked={showFinished} onChange={(e) => setShowFinished(e.target.checked)} />
+                        <input
+                            type="checkbox"
+                            checked={showFinished}
+                            onChange={(e) => {
+                                setShowFinished(e.target.checked);
+                                // Finished tasks are assigned ones; "Unassigned only" would hide them all.
+                                if (e.target.checked) setNewOnly(false);
+                            }}
+                        />
                         <span>Show finished</span>
                     </label>
                     <button className="btn" onClick={load}><RefreshCw /> <span>Refresh</span></button>

@@ -31,7 +31,7 @@ pub enum AssignedStatusFilter {
 }
 
 impl AssignedStatusFilter {
-    fn matches(self, status: &TaskStatus) -> bool {
+    pub fn matches(self, status: &TaskStatus) -> bool {
         match self {
             Self::Active => !status.is_terminal(),
             Self::Terminal => status.is_terminal(),
@@ -552,18 +552,18 @@ impl TaskStorage {
 
     /// Bounded listing for the management API: the `limit` most recently active
     /// assigned tasks matching `status` (and not older than `since`), newest
-    /// first, plus the total number that matched. Only ~2×`limit` tasks are
-    /// ever held in memory, regardless of how many are stored.
+    /// first, plus the total number that matched. At most `limit` tasks are
+    /// held in memory, regardless of how many are stored.
     pub fn list_assigned_filtered(
         &self,
         status: AssignedStatusFilter,
         since: Option<chrono::DateTime<Utc>>,
         limit: usize,
     ) -> Result<(Vec<AssignedTask>, usize)> {
-        let mut kept: Vec<AssignedTask> = Vec::new();
+        // Kept sorted newest-first; `limit` is small (API-capped), so a sorted
+        // insert beats a heap that would need an ordering wrapper around tasks.
+        let mut kept: Vec<AssignedTask> = Vec::with_capacity(limit.min(64));
         let mut total = 0usize;
-        let newest_first =
-            |a: &AssignedTask, b: &AssignedTask| activity_time(b).cmp(&activity_time(a));
 
         for item in self.assigned.iter() {
             let (_key, value) = item?;
@@ -572,14 +572,19 @@ impl TaskStorage {
                 continue;
             }
             total += 1;
-            kept.push(task);
-            if kept.len() >= limit.saturating_mul(2).max(1) {
-                kept.sort_by(newest_first);
-                kept.truncate(limit);
+            let at = activity_time(&task);
+            if kept.len() >= limit {
+                // Full: only a task newer than the current oldest earns a slot.
+                match kept.last() {
+                    Some(oldest) if at > activity_time(oldest) => {
+                        kept.pop();
+                    }
+                    _ => continue,
+                }
             }
+            let pos = kept.partition_point(|t| activity_time(t) >= at);
+            kept.insert(pos, task);
         }
-        kept.sort_by(newest_first);
-        kept.truncate(limit);
         Ok((kept, total))
     }
 }
@@ -829,6 +834,34 @@ mod tests {
             .list_assigned_filtered(AssignedStatusFilter::All, Some(since), 50)
             .unwrap();
         assert_eq!((recent.len(), total), (3, 3));
+    }
+
+    #[test]
+    fn bounded_listing_keeps_the_newest_when_storage_order_is_oldest_first() {
+        let (store, _guard) = storage();
+        // Key order (t-00 … t-11) runs oldest → newest, the opposite of the
+        // other test, so every later task must evict an earlier one.
+        for i in 0..12 {
+            store
+                .update_assigned(&assigned(
+                    "a1",
+                    &format!("t-{i:02}"),
+                    TaskStatus::Completed,
+                    1000 - 10 * i,
+                ))
+                .unwrap();
+        }
+        let (tasks, total) = store
+            .list_assigned_filtered(AssignedStatusFilter::All, None, 4)
+            .unwrap();
+        assert_eq!(total, 12);
+        let ids: Vec<_> = tasks.iter().map(|t| t.id.id.as_str()).collect();
+        assert_eq!(ids, ["t-11", "t-10", "t-09", "t-08"]);
+
+        let (none, total) = store
+            .list_assigned_filtered(AssignedStatusFilter::All, None, 0)
+            .unwrap();
+        assert_eq!((none.len(), total), (0, 12));
     }
 
     #[test]

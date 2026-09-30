@@ -34,11 +34,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  Port: {}", config.port);
     info!("  Database path: {}", config.database_root_path);
     // Counts only — these values are credentials and must not reach the logs.
-    info!("  Agent API keys: {} configured", config.agent_api_keys.len());
-    info!("  Client API keys: {} configured", config.client_api_keys.len());
+    info!(
+        "  Agent API keys: {} configured",
+        config.agent_api_keys.len()
+    );
+    info!(
+        "  Client API keys: {} configured",
+        config.client_api_keys.len()
+    );
     info!(
         "  Management token: {}",
-        if config.management_token.is_empty() { "NOT SET" } else { "set" }
+        if config.management_token.is_empty() {
+            "NOT SET"
+        } else {
+            "set"
+        }
     );
     info!("  Storage backend: {}", config.storage.backend);
 

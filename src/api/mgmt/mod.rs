@@ -187,32 +187,37 @@ pub async fn list_tasks(
         .unwrap_or(TASK_LIST_DEFAULT_LIMIT)
         .min(TASK_LIST_MAX_LIMIT);
 
-    // Queued / in-flight urgent and unassigned tasks are never finished, so
-    // they are omitted only when the caller asked for finished tasks alone.
+    // Queued (unassigned) tasks are never finished, so they are omitted only
+    // when the caller asked for finished tasks alone. Urgent tasks that were
+    // assigned can linger in memory after finishing, so they obey the status
+    // filter like persisted ones.
     let include_queued = filter != AssignedStatusFilter::Terminal;
 
-    let (urgent_assigned, urgent_unassigned, urgent_assigned_total, urgent_unassigned_total) =
-        if include_queued {
-            let tasks = state.urgent.tasks.read().await;
-            let assigned: Vec<_> = tasks
-                .values()
-                .filter_map(|entry| entry.assigned_task.clone())
-                .collect();
-            let unassigned: Vec<_> = tasks
+    let (urgent_assigned, urgent_unassigned, urgent_assigned_total, urgent_unassigned_total) = {
+        let tasks = state.urgent.tasks.read().await;
+        let assigned: Vec<_> = tasks
+            .values()
+            .filter_map(|entry| entry.assigned_task.as_ref())
+            .filter(|task| filter.matches(&task.status))
+            .cloned()
+            .collect();
+        let unassigned: Vec<_> = if include_queued {
+            tasks
                 .values()
                 .filter(|entry| entry.assigned_task.is_none())
                 .map(|entry| entry.task.clone())
-                .collect();
-            let totals = (assigned.len(), unassigned.len());
-            (
-                assigned.into_iter().take(limit).collect::<Vec<_>>(),
-                unassigned.into_iter().take(limit).collect::<Vec<_>>(),
-                totals.0,
-                totals.1,
-            )
+                .collect()
         } else {
-            (Vec::new(), Vec::new(), 0, 0)
+            Vec::new()
         };
+        let totals = (assigned.len(), unassigned.len());
+        (
+            assigned.into_iter().take(limit).collect::<Vec<_>>(),
+            unassigned.into_iter().take(limit).collect::<Vec<_>>(),
+            totals.0,
+            totals.1,
+        )
+    };
 
     let since = params.since;
     let blocking_state = state.clone();

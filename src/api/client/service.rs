@@ -132,7 +132,11 @@ pub async fn do_submit_task_blocking(
         data: req,
         created_at: Utc::now(),
     };
-    info!("New urgent task: {:?}", task);
+    // Not `{:?}`: the request carries the client API key and the full payload.
+    info!(
+        "New urgent task: {} (capability {})",
+        task.id, task.data.capability
+    );
     let outcome = submit_urgent_task(state, task).await?;
     emit_urgent_expired_if_needed(state, &outcome);
     Ok(outcome)
@@ -164,7 +168,10 @@ pub async fn do_submit_task(
         data: req,
         created_at: Utc::now(),
     };
-    info!("New unassigned task: {:?}", task);
+    info!(
+        "New unassigned task: {} (capability {})",
+        task.id, task.data.capability
+    );
     if urgent {
         let outcome = submit_urgent_task(state, task).await?;
         emit_urgent_expired_if_needed(state, &outcome);
