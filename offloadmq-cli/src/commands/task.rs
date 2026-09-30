@@ -41,17 +41,20 @@ fn warn_if_truncated(tasks: &TasksOverview) {
         return;
     }
     let t = &meta.totals;
+    let advice = if meta.limit < TaskQuery::MAX {
+        format!("raise --limit (max {}) or narrow with --status active|terminal", TaskQuery::MAX)
+    } else {
+        "already at the server maximum — narrow with --status active|terminal".to_string()
+    };
     eprintln!(
         "{} lists capped at {} per group — server has urgent {}/{} assigned/queued, \
-         regular {}/{} assigned/queued. Narrow with --status active|terminal, or raise \
-         --limit (max {}).",
+         regular {}/{} assigned/queued; {advice}.",
         "note:".yellow().bold(),
         meta.limit,
         t.urgent_assigned,
         t.urgent_unassigned,
         t.regular_assigned,
         t.regular_unassigned,
-        TaskQuery::MAX,
     );
 }
 
