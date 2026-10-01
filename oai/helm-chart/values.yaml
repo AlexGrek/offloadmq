@@ -23,6 +23,12 @@ resources:
   limits:
     memory: 512Mi
 
+# Pin the app next to Postgres: every DB round trip across nodes costs ~24 ms
+# vs ~0.65 ms on-node, and request handlers make many sequential queries.
+# Must match postgres.nodeSelector.
+nodeSelector:
+  kubernetes.io/hostname: ubuntu-4gb-hel1-2
+
 # Grace window for an outgoing pod: preStop pause (endpoint propagation) plus
 # time for in-flight requests to drain before SIGKILL.
 preStopDrainSeconds: 5
@@ -61,6 +67,12 @@ postgres:
   database: oai
   user: oai
   password: "change-me-in-production"
+  # Co-located with the app (see top-level nodeSelector). local-path PVs are
+  # bound to the node they were provisioned on, so once the PVC exists this is
+  # effectively permanent: changing it means dump → delete PVC → restore
+  # (runbook in .claude/skills/oai-devops/SKILL.md).
+  nodeSelector:
+    kubernetes.io/hostname: ubuntu-4gb-hel1-2
   persistence:
     size: 10Gi
     storageClass: ""

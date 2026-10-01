@@ -35,6 +35,12 @@ Job oai-garage-init (Helm post-install/post-upgrade hook)
   → creates Secret oai-garage-creds (S3 access key for the app)
 ```
 
+**Node placement:** the app Deployment and `oai-postgres-0` are both pinned with
+`nodeSelector` (`values.yaml`: top-level `nodeSelector` and `postgres.nodeSelector`) to
+`ubuntu-4gb-hel1-2`, so DB round trips stay on-node (~0.2 ms instead of ~24 ms across nodes).
+Keep the two values equal. Garage is not pinned and runs on `ubuntu-edge-1`. Its volumes are
+`local-path` as well, so it stays there.
+
 **OffloadMQ** is not in this chart — configure `OFFLOAD_MQ_URL` / client key in the admin UI after deploy.
 
 ---
@@ -177,6 +183,31 @@ Garage S3 endpoint inside cluster: `http://oai-garage:3900`, bucket `oai`, regio
 kubectl get ingress -n oai
 kubectl get certificate -n oai   # if cert-manager installed
 ```
+
+### 7. Moving Postgres to another node
+
+Postgres data sits on a `local-path` PV that is bound to the node it was provisioned on.
+Changing `postgres.nodeSelector` on its own leaves the pod `Pending` (volume node affinity
+conflict). To move it you have to dump, delete the PVC, and restore. Run from `oai/`, with
+`TAG` set to the currently deployed `image.tag` (`helm get values oai -n oai`):
+
+```bash
+kubectl scale deploy/oai -n oai --replicas=0                       # stop writers + workers
+kubectl exec -n oai oai-postgres-0 -- pg_dump -U oai -d oai -Fc > ~/oai-pg.dump
+kubectl patch pv <old-pv> -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'  # safety net
+kubectl scale sts/oai-postgres -n oai --replicas=0
+kubectl delete pvc data-oai-postgres-0 -n oai
+# edit nodeSelector values (app + postgres), then deploy with the app still off:
+helm upgrade oai ./helm-chart -n oai --set image.tag=$TAG --set replicaCount=0
+kubectl exec -i -n oai oai-postgres-0 -- sh -c 'cat > /tmp/r.dump && pg_restore -U oai -d oai --no-owner --exit-on-error /tmp/r.dump && rm /tmp/r.dump' < ~/oai-pg.dump
+kubectl exec -n oai oai-postgres-0 -- psql -U oai -d oai -c ANALYZE
+helm upgrade oai ./helm-chart -n oai --set image.tag=$TAG             # app back
+```
+
+Keep the app at `replicaCount=0` until the restore finishes. Otherwise it runs migrations and
+bootstraps the root admin on the empty DB, and `pg_restore` then hits conflicts. Compare
+per-table `count(*)` before and after. Once things have run healthy for a while, delete the
+retained PV and its directory under `/var/lib/rancher/k3s/storage/` on the old node.
 
 ---
 
