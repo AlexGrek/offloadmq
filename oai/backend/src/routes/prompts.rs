@@ -196,10 +196,7 @@ pub async fn get_preview(
     Ok((
         [
             (header::CONTENT_TYPE, HeaderValue::from_static("image/jpeg")),
-            (
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("private, max-age=31536000, immutable"),
-            ),
+            (header::CACHE_CONTROL, crate::middleware::cache::IMMUTABLE_PRIVATE),
         ],
         bytes,
     ))

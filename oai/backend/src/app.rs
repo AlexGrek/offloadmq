@@ -21,7 +21,7 @@ use crate::{middleware, routes, services::image_processing, state::AppState};
 pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
     // All unmatched paths fall back to index.html for SPA client-side routing.
     let spa_fallback = ServeDir::new(static_dir)
-        .not_found_service(ServeFile::new(format!("{static_dir}/index.html")));
+        .fallback(ServeFile::new(format!("{static_dir}/index.html")));
 
     // Hashed Vite assets — no fallback so a missing chunk returns 404.
     let assets_dir = format!("{static_dir}/assets");
@@ -303,6 +303,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .nest_service("/assets", ServeDir::new(&assets_dir))
         .fallback_service(spa_fallback)
         .with_state(state.clone())
+        .layer(axum::middleware::from_fn(middleware::cache::cache_control))
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()

@@ -197,7 +197,9 @@ Three route groups with separate middleware layers:
 | `authenticated` | `jwt_auth_middleware` | `/api/me`, `/api/ws/*`, `/api/chats/*`, `/api/images/*`, every `/api/<feature>/jobs*`, `/api/progress/*`, `/api/tasks/*` |
 | `admin` | `admin_auth_middleware` (checks `is_admin=true`) | `/api/admin/*` (except `/api/admin/am_i_admin`, which is authenticated) |
 
-`/assets` is served by a `ServeDir` with **no** fallback (a missing hashed chunk must 404, not return HTML); all other unmatched paths fall back to `index.html`. CORS allows localhost:5173/5174 and `https://oai.alexgr.space` with credentials.
+`/assets` is served by a `ServeDir` with **no** fallback (a missing hashed chunk must 404, not return HTML); all other unmatched paths fall back to `index.html` (status 200).
+
+**Browser caching** — `middleware/cache.rs` (`cache_control`, a top-level layer) sets `Cache-Control` when the handler didn't: `/assets/*` 2xx/304 → `public, max-age=31536000, immutable` (else `no-store`); `/api/*` → `no-store`; everything else (`index.html`, `favicon.png`) → `no-cache` so a deploy is picked up on the next load. Blob endpoints whose bytes never change for a URL (image file/thumbnail, tts/music audio, chat document download, prompt preview) set `cache::IMMUTABLE_PRIVATE` themselves on success. A new blob route must only do that if the bytes behind the id are written once — otherwise version the URL (as prompt previews do with `?v=`). CORS allows localhost:5173/5174 and `https://oai.alexgr.space` with credentials.
 
 Two routes carry a `DefaultBodyLimit` override: `/api/images/upload` (`image_processing::MAX_UPLOAD_BYTES` = 32 MiB) and `/api/chat/attachments/upload` (`chat_attachments::MAX_DOCUMENT_BYTES` = 100 MiB).
 

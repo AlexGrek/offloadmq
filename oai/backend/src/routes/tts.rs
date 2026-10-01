@@ -143,6 +143,7 @@ pub async fn get_audio(
         axum::http::header::CONTENT_TYPE,
         HeaderValue::from_str(&content_type).unwrap_or(HeaderValue::from_static("audio/wav")),
     );
+    headers.insert(axum::http::header::CACHE_CONTROL, crate::middleware::cache::IMMUTABLE_PRIVATE);
     Ok((StatusCode::OK, headers, bytes))
 }
 

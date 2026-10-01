@@ -369,6 +369,7 @@ fn image_jpeg_response(bytes: Vec<u8>, content_type: &str) -> (StatusCode, axum:
         axum::http::header::CONTENT_TYPE,
         HeaderValue::from_str(content_type).unwrap_or(HeaderValue::from_static("image/jpeg")),
     );
+    headers.insert(axum::http::header::CACHE_CONTROL, crate::middleware::cache::IMMUTABLE_PRIVATE);
     (StatusCode::OK, headers, bytes)
 }
 

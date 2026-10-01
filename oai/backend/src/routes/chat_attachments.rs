@@ -110,6 +110,7 @@ pub async fn download_document(
         HeaderValue::from_str(&content_type)
             .unwrap_or(HeaderValue::from_static("application/octet-stream")),
     );
+    headers.insert(axum::http::header::CACHE_CONTROL, crate::middleware::cache::IMMUTABLE_PRIVATE);
     if let Ok(disp) = HeaderValue::from_str(&format!("inline; filename=\"{}\"", sanitize(&filename)))
     {
         headers.insert(axum::http::header::CONTENT_DISPOSITION, disp);
