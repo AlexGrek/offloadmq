@@ -34,6 +34,7 @@ import {
 import { NudeDetectResultsList } from '../components/nudedetect/NudeDetectResultView'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
 import { DEFAULT_NUDENET_THRESHOLD, totalDetectionCount } from '../lib/nudeDetectLabels'
@@ -73,11 +74,7 @@ export default function NudeDetectorPage() {
   const [deleting, setDeleting] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const isMobile = useIsMobile()
-  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
-  // Mobile: the sidebar is a full-screen overlay — collapse it on entering a narrow viewport.
-  useEffect(() => {
-    if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
+  const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
   const [error, setError] = useState<string | null>(null)
 
   const previewsRef = useRef<string[]>([])

@@ -30,7 +30,7 @@ import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MorphCollapse, MorphIn } from '@/components/Morph'
 import { useMorph } from '@/lib/motion'
-import { ImageLightbox } from '@/components/ImageLightbox'
+import { ImageLightbox, type ImageLightboxActions } from '@/components/ImageLightbox'
 import { LoadingImage } from '@/components/LoadingImage'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { SavedPromptsDrawer } from '../components/prompts/SavedPromptsDrawer'
@@ -52,6 +52,7 @@ import { Label } from '@/components/ui/label'
 import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { getSettings } from '../api/admin'
 import {
   externalResizeDefault,
@@ -85,11 +86,8 @@ import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImgGenModelPicker } from '../components/imggen/ImgGenModelPicker'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { VideoPromptGenerator } from '../components/imggen/VideoPromptGenerator'
-import {
-  ToolDebugHeaderButton,
-  ToolDebugModal,
-  toolDebugReady,
-} from '../components/ToolDebugModal'
+import { ToolDebugHeaderButton, ToolDebugModal } from '../components/ToolDebugModal'
+import { toolDebugReady } from '../lib/toolDebug'
 import { ToolSidebar } from '../components/ToolSidebar'
 import {
   MODE_DEFAULTS,
@@ -275,7 +273,7 @@ export default function ImageGenerationPage() {
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [timelineOpen, setTimelineOpen] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
+  const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
   const [debugOpen, setDebugOpen] = useState(false)
   const [deletingJob, setDeletingJob] = useState(false)
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -331,11 +329,6 @@ export default function ImageGenerationPage() {
   // Another page (e.g. image analysis "Use as prompt", files "Edit"/"Animate") can route
   // here with state to prefill. Handled after sendOutputToInputMode is defined below.
 
-  // On mobile the pipelines sidebar is a full-screen overlay — collapse it when
-  // we cross into a narrow viewport so it never starts covering the workspace.
-  useEffect(() => {
-    if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
 
   const capabilities = useMemo(
     () => filterCapabilitiesByWorkflow(allCapabilities, mode),
@@ -466,6 +459,12 @@ export default function ImageGenerationPage() {
       return next
     })
   }, [jobs])
+
+  const closeSlideshow = useCallback(() => {
+    setSlideshowOn(false)
+    slideshowQueueRef.current = []
+    setSlideshowCurrent(null)
+  }, [])
 
   // Slideshow: poll for freshly completed output images (not just the viewed job)
   // and surface each one full-screen as it appears, one per tick.
@@ -698,30 +697,29 @@ export default function ImageGenerationPage() {
     if (viewedJobId) await refreshJob(viewedJobId)
   }, [viewedJobId, refreshJob])
 
-  const lightboxActions = useCallback(
-    (
-      imageId: string,
-      filename: string,
-      direction: string,
-      onSendToImg2Img?: () => void,
-      onSendToImg2Video?: () => void,
-      withImgUtils?: boolean,
-    ) =>
-      token
-        ? {
-            imageId,
-            filename,
-            direction,
-            token,
-            onDeleted: onImageMutated,
-            onSendToImg2Img,
-            onSendToImg2Video,
-            imgUtils: withImgUtils ? { onResult: onImageMutated } : undefined,
-            onNudeDetect: () => setNudeDetectTarget({ imageId, filename }),
-          }
-        : undefined,
-    [token, onImageMutated],
-  )
+  /** Lightbox action set; `withImgUtils` (job outputs) adds Image Tools. Send-to-img2img/video
+   *  handlers are spread in at the call site (they touch refs, so stay out of render-time calls). */
+  function lightboxActions(imageId: string, filename: string, direction: string) {
+    return token ? lightboxActionsFor(token, imageId, filename, direction) : undefined
+  }
+
+  function lightboxActionsFor(
+    authToken: string,
+    imageId: string,
+    filename: string,
+    direction: string,
+    withImgUtils = false,
+  ): ImageLightboxActions {
+    return {
+      imageId,
+      filename,
+      direction,
+      token: authToken,
+      onDeleted: onImageMutated,
+      imgUtils: withImgUtils ? { onResult: onImageMutated } : undefined,
+      onNudeDetect: () => setNudeDetectTarget({ imageId, filename }),
+    }
+  }
 
   function sendOutputToInputMode(
     file: {
@@ -2159,14 +2157,15 @@ export default function ImageGenerationPage() {
                       alt={file.filename}
                       triggerClassName="group block w-full overflow-hidden"
                       testId={`imggen-compare-output-${file.image_id}`}
-                      actions={lightboxActions(
-                        file.image_id,
-                        file.filename,
-                        file.direction,
-                        () => sendToImg2Img(file),
-                        () => sendToImg2Video(file, selectedJob.prompt),
-                        true,
-                      )}
+                      actions={
+                        token
+                          ? {
+                              ...lightboxActionsFor(token, file.image_id, file.filename, file.direction, true),
+                              onSendToImg2Img: () => sendToImg2Img(file),
+                              onSendToImg2Video: () => sendToImg2Video(file, selectedJob.prompt),
+                            }
+                          : undefined
+                      }
                     >
                       <LoadingImage
                         src={imageFileUrl(file.image_id, token, mediaRevision)}
@@ -2216,14 +2215,15 @@ export default function ImageGenerationPage() {
                       caption={`${file.filename} — ${file.width}×${file.height}`}
                       triggerClassName="group block w-full overflow-hidden bg-muted/20"
                       testId={`imggen-output-${file.image_id}`}
-                      actions={lightboxActions(
-                        file.image_id,
-                        file.filename,
-                        file.direction,
-                        () => sendToImg2Img(file),
-                        () => sendToImg2Video(file, selectedJob.prompt),
-                        true,
-                      )}
+                      actions={
+                        token
+                          ? {
+                              ...lightboxActionsFor(token, file.image_id, file.filename, file.direction, true),
+                              onSendToImg2Img: () => sendToImg2Img(file),
+                              onSendToImg2Video: () => sendToImg2Video(file, selectedJob.prompt),
+                            }
+                          : undefined
+                      }
                     >
                       <LoadingImage
                         src={imageFileUrl(file.image_id, token, mediaRevision)}
@@ -2565,36 +2565,29 @@ export default function ImageGenerationPage() {
       <ImageLightbox
         open
         onOpenChange={next => {
-          if (!next) {
-            setSlideshowOn(false)
-            slideshowQueueRef.current = []
-            setSlideshowCurrent(null)
-          }
+          if (!next) closeSlideshow()
         }}
         src={imageFileUrl(slideshowCurrent.file.image_id, token, mediaRevision)}
         alt={slideshowCurrent.file.filename}
         caption={`${jobPromptTitle(slideshowCurrent.prompt, 72)} — ${slideshowCurrent.file.width}×${slideshowCurrent.file.height}`}
         testId="imggen-slideshow"
-        actions={lightboxActions(
-          slideshowCurrent.file.image_id,
-          slideshowCurrent.file.filename,
-          slideshowCurrent.file.direction,
-          () => {
-            const { file } = slideshowCurrent
-            setSlideshowOn(false)
-            slideshowQueueRef.current = []
-            setSlideshowCurrent(null)
-            sendToImg2Img(file)
+        actions={{
+          ...lightboxActionsFor(
+            token,
+            slideshowCurrent.file.image_id,
+            slideshowCurrent.file.filename,
+            slideshowCurrent.file.direction,
+            true,
+          ),
+          onSendToImg2Img: () => {
+            closeSlideshow()
+            sendToImg2Img(slideshowCurrent.file)
           },
-          () => {
-            const { file, prompt } = slideshowCurrent
-            setSlideshowOn(false)
-            slideshowQueueRef.current = []
-            setSlideshowCurrent(null)
-            sendToImg2Video(file, prompt)
+          onSendToImg2Video: () => {
+            closeSlideshow()
+            sendToImg2Video(slideshowCurrent.file, slideshowCurrent.prompt)
           },
-          true,
-        )}
+        }}
       />
     ) : null}
     <Dialog open={generateMultipleOpen} onOpenChange={setGenerateMultipleOpen}>

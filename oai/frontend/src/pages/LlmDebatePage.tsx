@@ -36,6 +36,7 @@ import { PromptTextarea } from '../components/PromptTextarea'
 import { ToolSidebar } from '../components/ToolSidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { nextDebateReqId, useWsDebate } from '../hooks/useWsDebate'
 import { capabilityBaseLabel, firstSelectableModel } from '../lib/modelAvailability'
 import { pickListedCapability } from '../lib/capability-picker'
@@ -73,6 +74,7 @@ export default function LlmDebatePage() {
   const { token } = useAuth()
   const isMobile = useIsMobile()
   const ws = useWsDebate(token)
+  const { send: wsSend, subscribe: wsSubscribe } = ws
   const watchReqRef = useRef<string | null>(null)
 
   const capabilities = ws.capabilities
@@ -103,12 +105,9 @@ export default function LlmDebatePage() {
   const [polling, setPolling] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [canceling, setCanceling] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
+  const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
 
   const viewingJob = activePanel !== LLM_DEBATE_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
@@ -160,7 +159,7 @@ export default function LlmDebatePage() {
   }, [])
 
   useEffect(() => {
-    return ws.subscribe(event => {
+    return wsSubscribe(event => {
       if (event.type === 'debate:update') {
         if (event.req_id === watchReqRef.current) {
           setPolling(false)
@@ -177,7 +176,7 @@ export default function LlmDebatePage() {
         setError(event.message)
       }
     })
-  }, [ws.subscribe, applyJobUpdate, viewedJobId])
+  }, [wsSubscribe, applyJobUpdate, viewedJobId])
 
   const viewedJobTerminal =
     selectedJob?.job_id === viewedJobId &&
@@ -188,8 +187,8 @@ export default function LlmDebatePage() {
     if (!viewedJobId || ws.status !== 'connected' || viewedJobTerminal) return
     const reqId = nextDebateReqId('watch')
     watchReqRef.current = reqId
-    ws.send({ type: 'watch_job', req_id: reqId, job_id: viewedJobId })
-  }, [viewedJobId, ws.status, viewedJobTerminal, ws.send])
+    wsSend({ type: 'watch_job', req_id: reqId, job_id: viewedJobId })
+  }, [viewedJobId, ws.status, viewedJobTerminal, wsSend])
 
   const refreshJob = useCallback(
     async (jobId: string) => {

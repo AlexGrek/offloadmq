@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Check, Loader2, RotateCcw } from 'lucide-react'
 import { approveMovieJob, type MovieJobView } from '../../api/movie'
 import { JobErrorBanner } from '../JobErrorBanner'
 import { Button } from '../ui/button'
+import { useResetOnChange } from '../../hooks/useResetOnChange'
 
 export interface OutlineApprovalPanelProps {
   job: MovieJobView
@@ -15,9 +16,8 @@ export function OutlineApprovalPanel({ job, token, onApproved }: OutlineApproval
   const [approving, setApproving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    setLines(job.outline)
-  }, [job.job_id, job.outline])
+  // A new outline from the server (or another job) replaces local edits.
+  useResetOnChange(job.outline, setLines)
 
   function updateLine(index: number, value: string) {
     setLines(prev => prev.map((line, i) => (i === index ? value : line)))

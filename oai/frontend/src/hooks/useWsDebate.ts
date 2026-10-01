@@ -42,8 +42,6 @@ export function useWsDebate(token: string | null): WsDebateHandle {
   const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const retryDelay = useRef(1500)
   const destroyed = useRef(false)
-  const tokenRef = useRef(token)
-  tokenRef.current = token
 
   const send = useCallback((cmd: DebateClientCommand): boolean => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -76,7 +74,7 @@ export function useWsDebate(token: string | null): WsDebateHandle {
     retryDelay.current = 1500
 
     function connect() {
-      const t = tokenRef.current
+      const t = token
       if (destroyed.current || !t) return
 
       const ws = new WebSocket(buildWsUrl('/api/ws/debate', t))

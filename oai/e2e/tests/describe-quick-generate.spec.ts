@@ -1,7 +1,8 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Request } from '@playwright/test'
 
-test('generates from a description with quick settings and stays on Describe Image', async ({ page }) => {
+test('generates a configurable batch from a description and stays on Describe Image', async ({ page }) => {
   const description = 'A red fox resting under a pine tree at dawn.'
+  const editedDescription = 'A red fox resting under a pine tree in early morning mist.'
   const now = '2026-09-30T12:00:00Z'
   const describeJob = {
     job_id: 'describe-1',
@@ -60,28 +61,32 @@ test('generates from a description with quick settings and stays on Describe Ima
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375)
   expect(bounds!.y).toBeGreaterThanOrEqual(0)
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(667)
-  await expect(page.getByTestId('describe-generate-prompt')).toHaveText(description)
+  await expect(page.getByTestId('describe-generate-prompt')).toHaveValue(description)
+  await page.getByTestId('describe-generate-prompt').fill(editedDescription)
   await expect(page.getByTestId('describe-generate-model')).toHaveValue('imggen.paint')
   await expect(page.getByTestId('describe-generate-model').locator('option')).toHaveCount(1)
   await page.getByTestId('describe-generate-size-1024x768').click()
   await expect(page.getByTestId('describe-generate-size-1024x768')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('describe-generate-count')).toHaveValue('1')
+  await page.getByTestId('describe-generate-count').fill('2')
 
-  const submitted = page.waitForRequest(request =>
-    request.url().endsWith('/api/images/jobs') && request.method() === 'POST',
-  )
+  const submitted: Request[] = []
+  page.on('request', request => {
+    if (request.url().endsWith('/api/images/jobs') && request.method() === 'POST') submitted.push(request)
+  })
   await page.getByTestId('describe-generate-submit').click()
-  const request = await submitted
-  expect(request.postDataJSON()).toEqual(expect.objectContaining({
-    capability: 'imggen.paint',
-    prompt: description,
-    prompt_template: description,
-    width: 1024,
-    height: 768,
-    workflow: 'txt2img',
-  }))
-  await expect(page.getByTestId('describe-generate-success')).toBeVisible()
-  await expect(page).toHaveURL(/\/app\/describe$/)
-  await dialog.getByRole('button', { name: 'Done' }).click()
+  await expect.poll(() => submitted).toHaveLength(2)
+  for (const request of submitted) {
+    expect(request.postDataJSON()).toEqual(expect.objectContaining({
+      capability: 'imggen.paint',
+      prompt: editedDescription,
+      prompt_template: editedDescription,
+      width: 1024,
+      height: 768,
+      workflow: 'txt2img',
+    }))
+  }
   await expect(dialog).not.toBeVisible()
+  await expect(page).toHaveURL(/\/app\/describe$/)
   await expect(page.getByTestId('describe-result')).toContainText(description)
 })

@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -13,6 +11,7 @@ import { useRunningImageJobs } from '../hooks/useRunningImageJobs'
 import { cancelImageJob, pollImageJob } from '../api/images'
 import { pollDescribeJob } from '../api/describe'
 import type { RunningJobItem } from '../api/progress'
+import { ProgressContext } from './ProgressContext'
 
 const BACKGROUND_POLL_MS = 5000
 const BACKGROUND_POLL_CONCURRENCY = 3
@@ -29,23 +28,6 @@ async function runWithConcurrency<T>(
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
 }
-
-type ProgressContextValue = {
-  drawerOpen: boolean
-  setDrawerOpen: (open: boolean) => void
-  toggleDrawer: () => void
-  runningImageJobs: RunningJobItem[]
-  runningDescribeJobs: RunningJobItem[]
-  runningImageJobsLoading: boolean
-  refreshRunningImageJobs: () => Promise<void>
-  /**
-   * Marks the job the open page is polling itself (`source` as in the progress
-   * feed: `image`, `describe`); the background loop skips it. `null` clears.
-   */
-  setForegroundJob: (source: string, jobId: string | null) => void
-}
-
-const ProgressContext = createContext<ProgressContextValue | null>(null)
 
 export function ProgressProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth()
@@ -152,10 +134,4 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   )
 
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>
-}
-
-export function useProgress(): ProgressContextValue {
-  const ctx = useContext(ProgressContext)
-  if (!ctx) throw new Error('useProgress must be used within ProgressProvider')
-  return ctx
 }

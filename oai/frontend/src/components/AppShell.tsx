@@ -1,6 +1,6 @@
 import { Outlet } from 'react-router-dom'
-import { ProgressProvider } from '../contexts/ProgressContext'
-import { WorkloadProvider } from '../contexts/WorkloadContext'
+import { ProgressProvider } from '../contexts/ProgressProvider'
+import { WorkloadProvider } from '../contexts/WorkloadProvider'
 import { GlobalProgressDrawer } from './GlobalProgressDrawer'
 import { TopBar } from './TopBar'
 import { UpdateBanner } from './UpdateBanner'

@@ -39,6 +39,7 @@ import {
 import { TtsHistorySidebar, TTS_NEW_PANEL } from '../components/tts/TtsHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
 
@@ -117,11 +118,7 @@ export default function TtsPage() {
   const [deleting, setDeleting] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const isMobile = useIsMobile()
-  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
-  // Mobile: the sidebar is a full-screen overlay — collapse it on entering a narrow viewport.
-  useEffect(() => {
-    if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
+  const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
   const [error, setError] = useState<string | null>(null)
 
   const viewingJob = activePanel !== TTS_NEW_PANEL

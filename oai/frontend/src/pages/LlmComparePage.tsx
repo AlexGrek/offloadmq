@@ -44,6 +44,7 @@ import { PromptTextarea } from '../components/PromptTextarea'
 import { ToolSidebar } from '../components/ToolSidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import { capabilityBaseLabel, firstSelectableModel } from '../lib/modelAvailability'
 import {
@@ -98,12 +99,9 @@ export default function LlmComparePage() {
   const [polling, setPolling] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [canceling, setCanceling] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
+  const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
 
   const viewingJob = activePanel !== LLM_COMPARE_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null

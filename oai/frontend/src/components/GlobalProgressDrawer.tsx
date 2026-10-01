@@ -12,10 +12,8 @@ import type { RunningJobItem } from '../api/progress'
 import type { ChatTaskRecord } from '../contexts/WorkloadContext'
 import {
   ProgressPanel,
-  chatProgressRows,
-  describeProgressRows,
-  imageProgressRows,
 } from './ProgressPanel'
+import { chatProgressRows, describeProgressRows, imageProgressRows } from '@/lib/progressRows'
 
 export function GlobalProgressDrawer() {
   const {

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { DEFAULT_NUDENET_THRESHOLD, totalDetectionCount } from '@/lib/nudeDetectLabels'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 
 const POLL_INTERVAL_MS = 2500
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
@@ -53,12 +54,15 @@ export function NudeDetectModal({
     }
   }, [])
 
-  useEffect(() => {
-    if (!open || !token) return
+  useResetOnChange(open ? token : null, t => {
+    if (!t) return
     setError(null)
     setJob(null)
     setRunning(false)
     setThreshold(DEFAULT_NUDENET_THRESHOLD)
+  })
+  useEffect(() => {
+    if (!open || !token) return
     getNudeDetectAvailability(token)
       .then(r => setAvailable(r.available))
       .catch((e: Error) => {

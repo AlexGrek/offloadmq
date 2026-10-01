@@ -8,6 +8,7 @@ import {
   type TtsCapability,
 } from '../api/tts'
 import { useAuth } from '../contexts/AuthContext'
+import { useResetOnChange } from '../hooks/useResetOnChange'
 import { pickListedCapability } from '../lib/capability-picker'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
@@ -84,7 +85,7 @@ export function SpeechListenWidget({
   const [capsChecked, setCapsChecked] = useState(false)
   const [capsError, setCapsError] = useState<string | null>(null)
   const [capability, setCapability] = useState('')
-  const [voice, setVoice] = useState(() => localStorage.getItem(VOICE_STORAGE_KEY) ?? '')
+  const [voicePref, setVoicePref] = useState(() => localStorage.getItem(VOICE_STORAGE_KEY) ?? '')
   const [isLoading, setIsLoading] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -94,6 +95,8 @@ export function SpeechListenWidget({
     const cap = capabilities.find(c => c.base === capability)
     return cap?.voices ?? []
   }, [capabilities, capability])
+  // The saved voice when the selected model offers it, else the model's first voice.
+  const voice = voices.length > 0 && !voices.includes(voicePref) ? voices[0] : voicePref
 
   const ttsOnline = capabilities.length > 0
   const unavailable = capsChecked && !ttsOnline && !capsLoading && !capsError
@@ -117,14 +120,17 @@ export function SpeechListenWidget({
   }, [])
 
   // Re-check OffloadMQ TTS availability every time the popover opens.
-  useEffect(() => {
-    if (!open || !token) return
-    let active = true
+  useResetOnChange(open ? token : null, t => {
+    if (!t) return
     setCapsLoading(true)
     setCapsError(null)
     setError(null)
     setCapabilities([])
     setCapability('')
+  })
+  useEffect(() => {
+    if (!open || !token) return
+    let active = true
 
     void listTtsCapabilities(token)
       .then(res => {
@@ -133,7 +139,7 @@ export function SpeechListenWidget({
         setCapabilities(online)
         const picked = pickDefaultCapability(online)
         setCapability(picked)
-        if (!picked) setVoice('')
+        if (!picked) setVoicePref('')
       })
       .catch(err => {
         if (!active) return
@@ -157,18 +163,13 @@ export function SpeechListenWidget({
     if (!open) return
     function onDocClick(e: MouseEvent) {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        stopPlayback()
         setOpen(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
-  }, [open])
-
-  useEffect(() => {
-    if (voices.length > 0 && !voices.includes(voice)) {
-      setVoice(voices[0])
-    }
-  }, [voices, voice])
+  }, [open, stopPlayback])
 
   useEffect(() => {
     if (capability) localStorage.setItem(CAPABILITY_STORAGE_KEY, capability)
@@ -182,9 +183,11 @@ export function SpeechListenWidget({
     stopPlayback()
   }, [stopPlayback])
 
-  useEffect(() => {
-    if (!open) stopPlayback()
-  }, [open, stopPlayback])
+  // Closing the popup stops playback.
+  const toggleOpen = () => {
+    if (open) stopPlayback()
+    setOpen(!open)
+  }
 
   const handlePlay = async () => {
     if (isPlaying) {
@@ -261,7 +264,7 @@ export function SpeechListenWidget({
         variant="ghost"
         size="sm"
         className="h-7 gap-1.5 text-xs"
-        onClick={() => setOpen(v => !v)}
+        onClick={toggleOpen}
         disabled={disabled || !trimmedText}
         data-testid={`${testIdPrefix}-trigger`}
         aria-expanded={open}
@@ -274,7 +277,7 @@ export function SpeechListenWidget({
     ) : (
       <button
         type="button"
-        onClick={() => setOpen(v => !v)}
+        onClick={toggleOpen}
         disabled={disabled || !trimmedText}
         data-testid={`${testIdPrefix}-trigger`}
         aria-expanded={open}
@@ -347,7 +350,7 @@ export function SpeechListenWidget({
                 <select
                   id={`${testIdPrefix}-voice`}
                   value={voice}
-                  onChange={e => setVoice(e.target.value)}
+                  onChange={e => setVoicePref(e.target.value)}
                   disabled={isLoading || isPlaying || voices.length === 0}
                   className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
                   data-testid={`${testIdPrefix}-voice`}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { Clapperboard, Loader2, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CapabilityModelPicker } from '@/components/CapabilityModelPicker'
@@ -45,6 +46,7 @@ export function VideoPromptGenerator({
   onError: (message: string) => void
 }) {
   const ws = useWsPromptGen(token)
+  const { subscribe: wsSubscribe } = ws
   const [capability, setCapability] = useState(() => localStorage.getItem(MODEL_STORAGE_KEY) ?? '')
   const [running, setRunning] = useState(false)
   // Shown right under the button so a failure (e.g. the model returning an
@@ -77,14 +79,14 @@ export function VideoPromptGenerator({
     }
   }, [token])
 
-  useEffect(() => {
-    if (ws.capabilitiesStatus !== 'ready' || visionCapabilities.length === 0) return
+  // Each fresh capability list re-validates the selection against it.
+  useResetOnChange(ws.capabilitiesStatus === 'ready' ? ws.capabilities : null, caps => {
+    if (!caps || visionCapabilities.length === 0) return
     setCapability(prev => pickDefaultCapability(prev, visionCapabilities))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ws.capabilities, ws.capabilitiesStatus])
+  })
 
   useEffect(() => {
-    return ws.subscribe(event => {
+    return wsSubscribe(event => {
       if (!aliveRef.current) return
       const reqId = reqIdRef.current
       if (!reqId) return
@@ -122,7 +124,7 @@ export function VideoPromptGenerator({
           break
       }
     })
-  }, [ws.subscribe, onGenerated, onError])
+  }, [wsSubscribe, onGenerated, onError])
 
   const canGenerate =
     ws.status === 'connected' && !running && !!capability && !!imageId && ws.capabilitiesStatus === 'ready'

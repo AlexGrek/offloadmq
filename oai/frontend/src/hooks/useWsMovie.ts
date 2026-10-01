@@ -49,8 +49,6 @@ export function useWsMovie(token: string | null): WsMovieHandle {
   const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const retryDelay = useRef(1500)
   const destroyed = useRef(false)
-  const tokenRef = useRef(token)
-  tokenRef.current = token
 
   const send = useCallback((cmd: MovieClientCommand): boolean => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -83,7 +81,7 @@ export function useWsMovie(token: string | null): WsMovieHandle {
     retryDelay.current = 1500
 
     function connect() {
-      const t = tokenRef.current
+      const t = token
       if (destroyed.current || !t) return
 
       const ws = new WebSocket(buildWsUrl('/api/ws/movie', t))

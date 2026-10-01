@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useWorkload } from '../contexts/WorkloadContext'
-import { ToolDebugModal, toolDebugReady } from '../components/ToolDebugModal'
+import { ToolDebugModal } from '../components/ToolDebugModal'
+import { toolDebugReady } from '../lib/toolDebug'
 import { cancelOffloadTask } from '../api/tasks'
 import { useWsChat, nextReqId } from '../hooks/useWsChat'
 import { useTranscriptScroll } from '../hooks/useTranscriptScroll'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import type { ServerEvent } from '../types/ws'
 import {
   listChats,
@@ -19,9 +21,8 @@ import {
 import { DEFAULT_PROMPT } from '../components/chat/SystemPromptStudio'
 import {
   ChatTimeoutDrawer,
-  type ChatTimeoutSettings,
-  DEFAULT_TIMEOUT_SETTINGS,
 } from '../components/chat/ChatTimeoutDrawer'
+import { DEFAULT_TIMEOUT_SETTINGS, type ChatTimeoutSettings } from '../lib/chat/timeoutSettings'
 import { ChatSidebar } from '../components/chat/ChatSidebar'
 import { ChatHeader } from '../components/chat/ChatHeader'
 import { ChatTranscript } from '../components/chat/ChatTranscript'
@@ -81,7 +82,7 @@ export default function ChatPage() {
   capsRef.current = ws.capabilities
   const [messages, setMessages] = useState<Message[]>([])
   const isMobile = useIsMobile()
-  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
+  const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [loadingChats, setLoadingChats] = useState(true)
@@ -105,11 +106,6 @@ export default function ChatPage() {
     setDocumentPickerOpen(false)
   }, [activeChatId])
 
-  // On mobile the sidebar is a full-screen overlay — collapse it when we cross
-  // into a narrow viewport so it never starts covering the conversation.
-  useEffect(() => {
-    if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
 
   const addAttachment = useCallback((att: ChatAttachment) => {
     setPendingAttachments(prev =>

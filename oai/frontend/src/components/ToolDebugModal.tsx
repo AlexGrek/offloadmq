@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Bug, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,6 +12,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchOffloadPoll } from '../api/debug'
+import { toolDebugReady } from '@/lib/toolDebug'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 
 export type ToolDebugModalProps = {
   open: boolean
@@ -21,10 +23,6 @@ export type ToolDebugModalProps = {
   disabledReason?: string
   /** e.g. chat title or "Image job 42" */
   subject?: string
-}
-
-export function toolDebugReady(cap: string | null | undefined, taskId: string | null | undefined): boolean {
-  return Boolean(cap?.trim() && taskId?.trim())
 }
 
 export function ToolDebugHeaderButton({
@@ -88,13 +86,12 @@ export function ToolDebugModal({
     }
   }, [token, cap, taskId])
 
-  useEffect(() => {
-    if (!open) {
-      setPollJson('')
-      setError(null)
-      setLoading(false)
-    }
-  }, [open])
+  useResetOnChange(open, isOpen => {
+    if (isOpen) return
+    setPollJson('')
+    setError(null)
+    setLoading(false)
+  })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

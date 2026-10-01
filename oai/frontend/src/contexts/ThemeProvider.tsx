@@ -1,16 +1,8 @@
-import { createContext, useCallback, useContext, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
-
-export type Theme = 'light' | 'dark'
+import { ThemeContext, type Theme } from './ThemeContext'
 
 const STORAGE_KEY = 'oai_theme'
-
-interface ThemeContextValue {
-  theme: Theme
-  toggle: () => void
-}
-
-const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 function resolveInitialTheme(): Theme {
   const stored = localStorage.getItem(STORAGE_KEY)
@@ -39,10 +31,4 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return <ThemeContext.Provider value={{ theme, toggle }}>{children}</ThemeContext.Provider>
-}
-
-export function useTheme() {
-  const ctx = useContext(ThemeContext)
-  if (!ctx) throw new Error('useTheme must be used inside ThemeProvider')
-  return ctx
 }

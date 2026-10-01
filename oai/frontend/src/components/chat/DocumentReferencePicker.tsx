@@ -9,6 +9,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { useAuth } from '@/contexts/AuthContext'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import {
   listChatDocuments,
   referenceDocumentAttachment,
@@ -39,11 +40,14 @@ export function DocumentReferencePicker({
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
 
+  useResetOnChange(open ? token : null, t => {
+    if (!t) return
+    setLoading(true)
+    setError(null)
+  })
   useEffect(() => {
     if (!open || !token) return
     let active = true
-    setLoading(true)
-    setError(null)
     listChatDocuments(token)
       .then(docs => {
         if (active) setDocuments(docs)

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useResetOnChange } from '../../hooks/useResetOnChange'
 import { Copy, Loader2, Sparkles } from 'lucide-react'
 import {
   Dialog,
@@ -79,11 +80,14 @@ export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Pr
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  useEffect(() => {
-    if (!open || !filename || !token) return
+  useResetOnChange(open && token ? filename : null, name => {
+    if (!name) return
     setData(null)
     setError(null)
     setLoading(true)
+  })
+  useEffect(() => {
+    if (!open || !filename || !token) return
     getFileProperties(token, filename)
       .then(res => {
         setData(res)

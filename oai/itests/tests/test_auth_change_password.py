@@ -6,55 +6,55 @@ from .helpers import login
 
 
 class TestChangePasswordSuccess:
-    def test_returns_200_and_ok(self, client: httpx.Client, fresh_user: dict):
+    def test_returns_200_and_ok(self, client: httpx.Client, new_user: dict):
         r = client.post(
             "/api/auth/change_password",
-            headers=fresh_user["headers"],
+            headers=new_user["headers"],
             json={
-                "current_password": fresh_user["password"],
+                "current_password": new_user["password"],
                 "new_password": "newpass456",
             },
         )
         assert r.status_code == 200
         assert r.json() == {"ok": True}
 
-    def test_can_login_with_new_password(self, client: httpx.Client, fresh_user: dict):
+    def test_can_login_with_new_password(self, client: httpx.Client, new_user: dict):
         client.post(
             "/api/auth/change_password",
-            headers=fresh_user["headers"],
+            headers=new_user["headers"],
             json={
-                "current_password": fresh_user["password"],
+                "current_password": new_user["password"],
                 "new_password": "newpass456",
             },
         )
-        token = login(client, fresh_user["login"], "newpass456")
+        token = login(client, new_user["login"], "newpass456")
         assert token
 
     def test_old_password_rejected_after_change(
-        self, client: httpx.Client, fresh_user: dict
+        self, client: httpx.Client, new_user: dict
     ):
         client.post(
             "/api/auth/change_password",
-            headers=fresh_user["headers"],
+            headers=new_user["headers"],
             json={
-                "current_password": fresh_user["password"],
+                "current_password": new_user["password"],
                 "new_password": "newpass456",
             },
         )
         r = client.post(
             "/api/auth/login",
-            json={"login": fresh_user["login"], "password": fresh_user["password"]},
+            json={"login": new_user["login"], "password": new_user["password"]},
         )
         assert r.status_code == 401
 
 
 class TestChangePasswordValidation:
     def test_wrong_current_password_returns_401(
-        self, client: httpx.Client, fresh_user: dict
+        self, client: httpx.Client, new_user: dict
     ):
         r = client.post(
             "/api/auth/change_password",
-            headers=fresh_user["headers"],
+            headers=new_user["headers"],
             json={
                 "current_password": "wrongpassword",
                 "new_password": "newpass456",
@@ -63,13 +63,13 @@ class TestChangePasswordValidation:
         assert r.status_code == 401
 
     def test_short_new_password_returns_400(
-        self, client: httpx.Client, fresh_user: dict
+        self, client: httpx.Client, new_user: dict
     ):
         r = client.post(
             "/api/auth/change_password",
-            headers=fresh_user["headers"],
+            headers=new_user["headers"],
             json={
-                "current_password": fresh_user["password"],
+                "current_password": new_user["password"],
                 "new_password": "abc12",
             },
         )

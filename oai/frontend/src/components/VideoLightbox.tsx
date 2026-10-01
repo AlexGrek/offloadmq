@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Download, Star, Trash2, X } from 'lucide-react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import {
   deleteImage,
   getImageStarred,
@@ -89,24 +90,30 @@ export function VideoLightbox({
     scheduleHide()
   }, [scheduleHide])
 
+  useResetOnChange(open, isOpen => {
+    if (isOpen) setChromeVisible(true)
+  })
   useEffect(() => {
     if (open) {
-      revealChrome()
+      scheduleHide()
     } else if (videoRef.current) {
       videoRef.current.pause()
     }
     return () => clearHideTimer()
-  }, [open, revealChrome, clearHideTimer])
+  }, [open, scheduleHide, clearHideTimer])
 
   const onPointerActivity = useCallback(() => {
     revealChrome()
   }, [revealChrome])
 
+  useResetOnChange(open && actions?.token ? actions.fileId : null, fileId => {
+    if (fileId === null) return
+    setActionError(null)
+    setStarLoading(true)
+  })
   useEffect(() => {
     if (!open || !actions?.token) return
     let cancelled = false
-    setActionError(null)
-    setStarLoading(true)
     getImageStarred(actions.token, actions.fileId)
       .then(res => {
         if (!cancelled) setStarred(res.starred)

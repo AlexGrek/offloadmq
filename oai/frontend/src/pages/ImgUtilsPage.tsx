@@ -46,6 +46,7 @@ import { ImageLightbox, type ImageLightboxActions } from '../components/ImageLig
 import { NudeDetectModal } from '../components/nudedetect/NudeDetectModal'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { useImgUtilsTools } from '../hooks/useImgUtilsTools'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { markImageDownloaded, triggerImageDownload } from '../lib/downloadedImages'
@@ -90,15 +91,7 @@ export default function ImgUtilsPage() {
   const [mediaRevision, setMediaRevision] = useState(0)
 
   const isMobile = useIsMobile()
-  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
-  // Mobile: the sidebar is a full-screen overlay — collapse it when the viewport
-  // becomes narrow. Done as a render-phase adjustment (React's "reset state when a
-  // value changes" pattern) rather than an effect, so it never double-renders.
-  const [prevIsMobile, setPrevIsMobile] = useState(isMobile)
-  if (isMobile !== prevIsMobile) {
-    setPrevIsMobile(isMobile)
-    if (isMobile) setSidebarOpen(false)
-  }
+  const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
 
   const viewingJob = activePanel !== IMGUTILS_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null

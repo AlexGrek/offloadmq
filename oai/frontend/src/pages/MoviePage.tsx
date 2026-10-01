@@ -40,6 +40,7 @@ import { ToolSidebar } from '../components/ToolSidebar'
 import { VideoLightbox } from '../components/VideoLightbox'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { nextMovieReqId, useWsMovie } from '../hooks/useWsMovie'
 import { filterCapabilitiesByWorkflow, parseVideoLength } from '../lib/imggen'
 import { pickListedCapability } from '../lib/capability-picker'
@@ -60,6 +61,7 @@ export default function MoviePage() {
   const { token } = useAuth()
   const isMobile = useIsMobile()
   const ws = useWsMovie(token)
+  const { send: wsSend, subscribe: wsSubscribe } = ws
   const watchReqRef = useRef<string | null>(null)
 
   const capabilities = ws.capabilities
@@ -95,12 +97,9 @@ export default function MoviePage() {
   const [stopping, setStopping] = useState(false)
   const [resuming, setResuming] = useState(false)
   const [retrying, setRetrying] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
+  const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
 
   const viewingJob = activePanel !== MOVIE_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
@@ -163,7 +162,7 @@ export default function MoviePage() {
   }, [])
 
   useEffect(() => {
-    return ws.subscribe(event => {
+    return wsSubscribe(event => {
       if (event.type === 'movie:update') {
         if (event.req_id === watchReqRef.current) {
           setPolling(false)
@@ -180,7 +179,7 @@ export default function MoviePage() {
         setError(event.message)
       }
     })
-  }, [ws.subscribe, applyJobUpdate, viewedJobId])
+  }, [wsSubscribe, applyJobUpdate, viewedJobId])
 
   const viewedJobTerminal =
     selectedJob?.job_id === viewedJobId &&
@@ -191,8 +190,8 @@ export default function MoviePage() {
     if (!viewedJobId || ws.status !== 'connected' || viewedJobTerminal) return
     const reqId = nextMovieReqId('watch')
     watchReqRef.current = reqId
-    ws.send({ type: 'watch_job', req_id: reqId, job_id: viewedJobId })
-  }, [viewedJobId, ws.status, viewedJobTerminal, ws.send])
+    wsSend({ type: 'watch_job', req_id: reqId, job_id: viewedJobId })
+  }, [viewedJobId, ws.status, viewedJobTerminal, wsSend])
 
   const refreshJob = useCallback(
     async (jobId: string) => {

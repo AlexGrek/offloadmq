@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { Download, Eye, Pencil, ShieldAlert, Star, Trash2, Video, Wand2, X } from 'lucide-react'
 import {
   deleteImage,
@@ -126,22 +127,26 @@ export function ImageLightbox({
   // Also re-fires when the displayed image changes without a close/reopen
   // (controlled mode, e.g. slideshow auto-advance), so the action bar resurfaces
   // for each new image.
+  useResetOnChange(open ? (actions?.imageId ?? '') : null, shown => {
+    if (shown !== null) setChromeVisible(true)
+  })
   useEffect(() => {
-    if (open) {
-      revealChrome()
-    }
+    if (open) scheduleHide()
     return () => clearHideTimer()
-  }, [open, actions?.imageId, revealChrome, clearHideTimer])
+  }, [open, actions?.imageId, scheduleHide, clearHideTimer])
 
   const onPointerActivity = useCallback(() => {
     revealChrome()
   }, [revealChrome])
 
+  useResetOnChange(open && actions?.token ? actions.imageId : null, imageId => {
+    if (imageId === null) return
+    setActionError(null)
+    setStarLoading(true)
+  })
   useEffect(() => {
     if (!open || !actions?.token) return
     let cancelled = false
-    setActionError(null)
-    setStarLoading(true)
     getImageStarred(actions.token, actions.imageId)
       .then(res => {
         if (!cancelled) setStarred(res.starred)
@@ -212,7 +217,7 @@ export function ImageLightbox({
     } finally {
       setDeleteLoading(false)
     }
-  }, [actions, canDelete])
+  }, [actions, canDelete, setOpen])
 
   const stop = useCallback((e: { stopPropagation: () => void }) => e.stopPropagation(), [])
 

@@ -57,6 +57,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
 import { keepIfUnchanged, mergeJobList, upsertJob } from '../lib/jobMerge'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
 import RescaleControls from '../components/imggen/RescaleControls'
@@ -151,11 +152,7 @@ export default function DescribeImagePage() {
   const [deleting, setDeleting] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const isMobile = useIsMobile()
-  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile)
-  // Mobile: the sidebar is a full-screen overlay — collapse it on entering a narrow viewport.
-  useEffect(() => {
-    if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
+  const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
