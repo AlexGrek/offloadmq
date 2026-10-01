@@ -90,18 +90,51 @@ impl JobReconciler for ImageAnalysisReconciler {
     }
 }
 
+/// Number of the user's most recent describe jobs considered when ranking models
+/// by usage — same window as image generation.
+const USAGE_HISTORY_RUNS: u64 = 20;
+
+/// Vision models for the picker: online first, ranked by how often the user ran
+/// them in their recent describe jobs, then by most recent availability.
 pub async fn list_vision_capabilities(
     state: &AppState,
+    user_id: i64,
 ) -> Result<Vec<LlmCapabilityInfo>, AppError> {
     let client = offload_factory::chat_client(state).await?;
     let online = client.list_llm_capabilities().await?;
     llm_capabilities::sync_online(&state.db, &online).await?;
     let online_bases: HashSet<String> = online.iter().map(|c| c.base.clone()).collect();
     let all = llm_capabilities::list_for_display(&state.db, &online_bases).await?;
-    Ok(all
+
+    let recent =
+        image_analysis::recent_job_capabilities(&state.db, user_id, USAGE_HISTORY_RUNS).await?;
+    let mut usage: HashMap<String, u32> = HashMap::new();
+    for capability in recent {
+        *usage.entry(capability).or_insert(0) += 1;
+    }
+
+    let vision = all
         .into_iter()
         .filter(|c| c.tags.iter().any(|t| t.eq_ignore_ascii_case("vision")))
-        .collect())
+        .collect();
+    Ok(rank_by_usage(vision, &usage))
+}
+
+/// Stamps `usage_count` and moves the most-used online models to the front.
+/// The sort is stable, so ties keep `list_for_display`'s online-first,
+/// most-recently-available order; offline models are never reordered by usage.
+fn rank_by_usage(
+    mut caps: Vec<LlmCapabilityInfo>,
+    usage: &HashMap<String, u32>,
+) -> Vec<LlmCapabilityInfo> {
+    for cap in &mut caps {
+        cap.usage_count = usage.get(&cap.base).copied().unwrap_or(0);
+    }
+    caps.sort_by_key(|c| {
+        let online_usage = if c.online { c.usage_count } else { 0 };
+        (!c.online, std::cmp::Reverse(online_usage))
+    });
+    caps
 }
 
 pub async fn start_job(
@@ -349,4 +382,49 @@ pub async fn run_background_reconcile_pass(
     batch_size: u64,
 ) -> Result<(), AppError> {
     offload_job::reconcile_pass(&ImageAnalysisReconciler, state, batch_size).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cap(base: &str, online: bool) -> LlmCapabilityInfo {
+        LlmCapabilityInfo {
+            base: base.to_string(),
+            tags: vec!["vision".into()],
+            raw: base.to_string(),
+            online,
+            last_available_at: String::new(),
+            usage_count: 0,
+        }
+    }
+
+    fn bases(caps: &[LlmCapabilityInfo]) -> Vec<&str> {
+        caps.iter().map(|c| c.base.as_str()).collect()
+    }
+
+    #[test]
+    fn most_used_online_model_comes_first() {
+        let usage = HashMap::from([("llm.a".to_string(), 1u32), ("llm.b".to_string(), 5u32)]);
+        let ranked = rank_by_usage(vec![cap("llm.a", true), cap("llm.b", true)], &usage);
+        assert_eq!(bases(&ranked), ["llm.b", "llm.a"]);
+        assert_eq!(ranked[0].usage_count, 5);
+    }
+
+    #[test]
+    fn usage_ties_keep_incoming_order() {
+        let usage = HashMap::new();
+        let ranked = rank_by_usage(vec![cap("llm.b", true), cap("llm.a", true)], &usage);
+        assert_eq!(bases(&ranked), ["llm.b", "llm.a"]);
+    }
+
+    #[test]
+    fn offline_never_jumps_ahead_of_online_or_reorders_by_usage() {
+        let usage = HashMap::from([("llm.c".to_string(), 100u32)]);
+        let ranked = rank_by_usage(
+            vec![cap("llm.a", true), cap("llm.b", false), cap("llm.c", false)],
+            &usage,
+        );
+        assert_eq!(bases(&ranked), ["llm.a", "llm.b", "llm.c"]);
+    }
 }

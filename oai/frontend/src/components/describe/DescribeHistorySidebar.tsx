@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Loader2, Plus } from 'lucide-react'
+import { Eye, Loader2, Plus } from 'lucide-react'
 import { capabilityBaseLabel } from '@/lib/modelAvailability'
 import { cn } from '@/lib/utils'
 import { imageThumbnailUrl } from '../../api/images'
@@ -101,7 +101,7 @@ const DescribeRow = memo(function DescribeRow({
   mediaRevision,
   onSelect,
 }: DescribeRowProps) {
-  const bgUrl = job.input_image_id
+  const thumbUrl = job.input_image_id
     ? imageThumbnailUrl(job.input_image_id, token, mediaRevision)
     : null
   const inProgress = statusLabel(job.status)
@@ -114,40 +114,32 @@ const DescribeRow = memo(function DescribeRow({
         onClick={() => onSelect(job.job_id)}
         data-testid={`describe-item-${job.job_id}`}
         className={cn(
-          'group/describe relative w-full overflow-hidden rounded-lg text-left transition-colors',
-          'min-h-17 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           active
-            ? 'ring-2 ring-sidebar-primary shadow-sm'
-            : 'ring-1 ring-sidebar-border hover:ring-sidebar-accent',
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'hover:bg-sidebar-accent/60',
         )}
       >
-        {bgUrl ? (
-          <>
+        <div className="relative size-12 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-sidebar-border">
+          {thumbUrl ? (
             <img
               key={`${job.job_id}-${job.input_image_id}-${mediaRevision}`}
-              src={bgUrl}
+              src={thumbUrl}
               alt=""
               aria-hidden
               loading="lazy"
               decoding="async"
-              className="absolute inset-0 h-full w-full scale-105 object-cover blur-[3px] saturate-[0.9] dark:saturate-[0.75] dark:brightness-[0.6] brightness-[0.95]"
+              className="size-full object-cover"
             />
-            <div
-              className="absolute inset-0 bg-linear-to-br from-background/72 via-background/55 to-background/76 dark:from-background/78 dark:via-background/62 dark:to-background/82"
-              aria-hidden
-            />
-          </>
-        ) : (
-          <div
-            className={cn(
-              'absolute inset-0',
-              active ? 'bg-sidebar-accent' : 'bg-sidebar-accent/40',
-            )}
-            aria-hidden
-          />
-        )}
+          ) : (
+            <div className="flex size-full items-center justify-center">
+              <Eye className="size-4 text-muted-foreground" />
+            </div>
+          )}
+        </div>
 
-        <div className="relative z-10 flex min-h-17 flex-col justify-center gap-0.5 px-3 py-2">
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
           <div className="flex items-start justify-between gap-1.5">
             <p className="line-clamp-2 min-w-0 flex-1 text-xs font-semibold leading-snug text-foreground">
               {jobTitle(job.prompt)}

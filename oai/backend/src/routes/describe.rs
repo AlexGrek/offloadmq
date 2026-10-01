@@ -26,9 +26,9 @@ pub struct CapabilitiesResponse {
 
 pub async fn list_capabilities(
     State(state): State<Arc<AppState>>,
-    AuthenticatedUser(_): AuthenticatedUser,
+    AuthenticatedUser(user_id): AuthenticatedUser,
 ) -> Result<Json<CapabilitiesResponse>, AppError> {
-    let capabilities = analysis::list_vision_capabilities(&state).await?;
+    let capabilities = analysis::list_vision_capabilities(&state, user_id).await?;
     Ok(Json(CapabilitiesResponse { capabilities }))
 }
 

@@ -125,6 +125,25 @@ pub async fn set_result(
     Ok(())
 }
 
+/// Capabilities of the user's most recent describe jobs, newest first — the
+/// usage tally behind the model picker reads only this column.
+pub async fn recent_job_capabilities(
+    db: &DatabaseConnection,
+    user_id: i64,
+    limit: u64,
+) -> Result<Vec<String>, AppError> {
+    ImageAnalysisJobEntity::find()
+        .select_only()
+        .column(image_analysis_jobs::Column::Capability)
+        .filter(image_analysis_jobs::Column::UserId.eq(user_id))
+        .order_by_desc(image_analysis_jobs::Column::CreatedAt)
+        .limit(limit)
+        .into_tuple::<String>()
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
 /// A user's non-terminal describe jobs, newest first — feeds the global Progress drawer.
 pub async fn list_user_active(
     db: &DatabaseConnection,
