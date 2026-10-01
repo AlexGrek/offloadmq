@@ -90,3 +90,59 @@ test('generates a configurable batch from a description and stays on Describe Im
   await expect(page).toHaveURL(/\/app\/describe$/)
   await expect(page.getByTestId('describe-result')).toContainText(description)
 })
+
+test('editing a description keeps its original image selected', async ({ page }) => {
+  const now = '2026-09-30T12:00:00Z'
+  const describeJob = {
+    job_id: 'describe-1',
+    status: 'completed',
+    prompt: 'Describe this image',
+    capability: 'llm.vision',
+    input_image_id: 'image-42',
+    result: 'A red fox resting under a pine tree at dawn.',
+    stage: null,
+    error: null,
+    offload_cap: null,
+    offload_task_id: null,
+    created_at: now,
+    updated_at: now,
+  }
+  const submissions: unknown[] = []
+
+  await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url())
+    if (!pathname.startsWith('/api/')) return route.continue()
+    const method = route.request().method()
+    const json = (body: unknown) => route.fulfill({ json: body })
+
+    if (pathname === '/api/me') {
+      return json({ id: 1, login: 'tester', google_id: null, created_at: now, used_storage_bytes: 0 })
+    }
+    if (pathname === '/api/describe/jobs' && method === 'GET') return json([describeJob])
+    if (pathname === '/api/describe/jobs/describe-1' && method === 'GET') return json(describeJob)
+    if (pathname === '/api/describe/capabilities') {
+      return json({
+        capabilities: [{ base: 'llm.vision', raw: 'llm.vision[vision]', tags: ['vision'], online: true, last_available_at: now, usage_count: 0 }],
+      })
+    }
+    if (pathname === '/api/describe/jobs' && method === 'POST') {
+      submissions.push(route.request().postDataJSON())
+      return json({ job_id: 'describe-2', status: 'submitted' })
+    }
+    if (pathname === '/api/describe/jobs/describe-2' && method === 'GET') return json({ ...describeJob, job_id: 'describe-2', status: 'submitted' })
+    if (pathname === '/api/images/external-resize') return json({ available: false, threshold_bytes: 0 })
+    if (pathname === '/api/progress/running') return json({ jobs: [] })
+    if (pathname.startsWith('/api/prompts/')) return json({})
+    return route.fulfill({ status: 404, json: { error: 'Not mocked' } })
+  })
+
+  await page.goto('/app/describe')
+  await page.getByTestId('describe-item-describe-1').click()
+  await page.getByTestId('describe-edit-prompt').click()
+
+  await expect(page.getByTestId('describe-image-preview')).toBeVisible()
+  await page.getByTestId('describe-submit').click()
+  await expect.poll(() => submissions).toHaveLength(1)
+  expect(submissions[0]).toEqual(expect.objectContaining({ image_id: 'image-42' }))
+})

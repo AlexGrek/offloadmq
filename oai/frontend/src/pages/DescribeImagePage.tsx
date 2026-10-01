@@ -471,6 +471,27 @@ export default function DescribeImagePage() {
     ) {
       setSelectedCap(selectedJob.capability)
     }
+    if (selectedJob.input_image_id) {
+      // A submitted job clears the temporary form input, but its persisted
+      // image id remains valid for the lifetime of the job. Put that image
+      // back into the form so editing a prompt does not turn the next run into
+      // an analysis without an image.
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current)
+        previewUrlRef.current = null
+      }
+      setUploadedInput({
+        image_id: selectedJob.input_image_id,
+        filename: 'Analyzed image',
+        content_type: 'image/*',
+        width: 0,
+        height: 0,
+        size_bytes: 0,
+        rescaled: false,
+        reencoded: false,
+      })
+      setImagePreview(imageFileUrl(selectedJob.input_image_id, token))
+    }
     setActivePanel(DESCRIBE_NEW_PANEL)
   }
 
