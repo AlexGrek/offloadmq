@@ -6,9 +6,10 @@ import { cn } from '@/lib/utils'
 import type { CapabilitiesStatus } from '@/lib/capabilitiesStatus'
 import type { LlmCapabilityInfo } from '@/types/ws'
 import type { ChatAttachment } from '@/api/chatAttachments'
-import { DOCUMENT_ACCEPT } from '@/api/chatAttachments'
+import { DOCUMENT_ACCEPT, MAX_ATTACHMENTS_PER_MESSAGE } from '@/api/chatAttachments'
 import { imageThumbnailUrl } from '@/api/images'
 import { useAuth } from '@/contexts/AuthContext'
+import { pastedImageFiles } from '@/lib/clipboardImages'
 import { ModelPicker } from './ModelPicker'
 
 /** Pinned message composer: auto-growing textarea, attachments, model picker, send/cancel. */
@@ -86,6 +87,14 @@ export function ChatComposer({
     }
   }
 
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const images = pastedImageFiles(e.clipboardData)
+    if (!images.length) return
+    e.preventDefault()
+    if (!hasActiveChat || attachDisabled || attaching) return
+    onUploadImages(images.slice(0, MAX_ATTACHMENTS_PER_MESSAGE - attachments.length))
+  }
+
   function pickFiles(ref: React.RefObject<HTMLInputElement | null>, close: () => void) {
     close()
     ref.current?.click()
@@ -152,6 +161,7 @@ export function ChatComposer({
             value={value}
             onChange={e => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={
               !hasActiveChat ? 'Select or create a chat first' :
               wsStatus === 'connected' ? 'Message…' : 'Connecting…'
@@ -257,7 +267,7 @@ export function ChatComposer({
           </p>
         )}
         <p className="text-center text-xs text-muted-foreground mt-2 select-none">
-          Shift+Enter for new line · Enter to send
+          Shift+Enter for new line · Enter to send · Paste images to attach
         </p>
       </div>
     </div>

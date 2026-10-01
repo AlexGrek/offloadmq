@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Copy,
@@ -62,6 +62,7 @@ import { ToolSidebar } from '../components/ToolSidebar'
 import RescaleControls from '../components/imggen/RescaleControls'
 import { rescaleDataPrep, type RescaleState } from '../lib/imggen'
 import { cn } from '../lib/utils'
+import { pastedImageFiles } from '../lib/clipboardImages'
 
 const DEFAULT_PROMPT = [
   'Describe this image in detail. Use the following rules:',
@@ -300,6 +301,23 @@ export default function DescribeImagePage() {
     }
   }
 
+  // Paste an image anywhere on the New panel (screenshot, copied image). Text
+  // pastes fall through untouched, so the prompt textarea keeps working.
+  const onWindowPaste = useEffectEvent((e: ClipboardEvent) => {
+    if (uploading || pickerOpen) return
+    const [file] = pastedImageFiles(e.clipboardData)
+    if (!file) return
+    e.preventDefault()
+    void onUpload(file)
+  })
+  const onNewPanel = activePanel === DESCRIBE_NEW_PANEL
+  useEffect(() => {
+    if (!onNewPanel) return
+    const handler = (e: ClipboardEvent) => onWindowPaste(e)
+    window.addEventListener('paste', handler)
+    return () => window.removeEventListener('paste', handler)
+  }, [onNewPanel])
+
   function selectLibraryImage(img: UploadedImage) {
     setError(null)
     if (previewUrlRef.current) {
@@ -532,7 +550,7 @@ export default function DescribeImagePage() {
                     New Analysis
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Upload an image, choose a vision model, and run a description in the background.
+                    Upload or paste an image, choose a vision model, and run a description in the background.
                   </p>
                 </header>
 
@@ -627,7 +645,7 @@ export default function DescribeImagePage() {
                           data-testid="describe-drop-zone"
                         >
                           <ImageUp className="size-8 text-muted-foreground/60" />
-                          <span className="text-sm font-medium">Click or drag an image here</span>
+                          <span className="text-sm font-medium">Click, drag, or paste an image here</span>
                           <span className="text-xs">PNG, JPEG, WebP, GIF…</span>
                           <input
                             type="file"

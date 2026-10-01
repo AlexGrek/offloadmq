@@ -87,7 +87,7 @@ model).
 | File | Role |
 |------|------|
 | `frontend/src/api/chatAttachments.ts` | upload/reference/list/download + `cloneAttachmentsForResend` |
-| `frontend/src/components/chat/ChatComposer.tsx` | image + document attach menus, chips, hidden file inputs |
+| `frontend/src/components/chat/ChatComposer.tsx` | image + document attach menus, chips, hidden file inputs, clipboard image paste (`lib/clipboardImages.ts`) |
 | `frontend/src/components/imggen/ImagePickerModal.tsx` | shared library picker (also used by chat) |
 | `frontend/src/components/chat/DocumentReferencePicker.tsx` | modal: prior documents only |
 | `frontend/src/components/chat/MessageAttachments.tsx` | transcript thumbnails + doc chips |
