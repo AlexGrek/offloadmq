@@ -6,7 +6,32 @@ use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use owo_colors::OwoColorize;
 use serde_json::Value;
 
-use crate::models::{Agent, QuotaUsage, RunnerStat, StorageQuotas, TaskSummary, TasksOverview};
+use crate::models::{
+    Agent, AgentLogRecord, HeuristicRecord, HeuristicStats, PodLogs, PodStatus, QuotaUsage,
+    RunnerStat, StorageBucketsResponse, StorageQuotas, TaskSummary, TasksOverview,
+};
+
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    if bytes == 0 {
+        return "0 B".into();
+    }
+    let index = ((bytes as f64).log2() / 10.0).floor().min(3.0) as usize;
+    let value = bytes as f64 / 1024_f64.powi(index as i32);
+    if value.fract() == 0.0 {
+        format!("{} {}", value as u64, UNITS[index])
+    } else {
+        format!("{value:.1} {}", UNITS[index])
+    }
+}
+
+fn format_ms(ms: Option<f64>) -> String {
+    match ms {
+        None => "-".into(),
+        Some(ms) if ms < 1000.0 => format!("{ms:.0} ms"),
+        Some(ms) => format!("{:.2} s", ms / 1000.0),
+    }
+}
 
 fn online_cell(online: bool) -> Cell {
     if online {
@@ -107,7 +132,10 @@ pub fn print_agent_detail(agent: &Agent) {
     );
     row(
         "Registered at",
-        agent.registered_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        agent
+            .registered_at
+            .format("%Y-%m-%d %H:%M:%S UTC")
+            .to_string(),
     );
     row(
         "Last contact",
@@ -151,7 +179,10 @@ pub fn print_agent_detail(agent: &Agent) {
             info.machine_id.clone().unwrap_or_else(|| "-".into()),
         );
         if let Some(gpu) = &info.gpu {
-            row("GPU", format!("{} {} ({} GB VRAM)", gpu.vendor, gpu.model, gpu.vram_gb));
+            row(
+                "GPU",
+                format!("{} {} ({} GB VRAM)", gpu.vendor, gpu.model, gpu.vram_gb),
+            );
         }
     }
 
@@ -212,7 +243,9 @@ pub fn print_status_agents(agents: &[Agent], stats: &[RunnerStat]) {
         let (os, cpu, gpu, mem) = match &agent.system_info {
             Some(info) => (
                 info.os.clone(),
-                info.cpu_model.clone().unwrap_or_else(|| info.cpu_arch.clone()),
+                info.cpu_model
+                    .clone()
+                    .unwrap_or_else(|| info.cpu_arch.clone()),
                 info.gpu
                     .as_ref()
                     .map(|g| format!("{} {}", g.vendor, g.model))
@@ -282,7 +315,11 @@ pub fn print_status_tasks(tasks: &TasksOverview, agents: &[Agent], limit: usize)
                 .copied()
                 .unwrap_or("?");
             let status = t.status.as_deref().unwrap_or("running");
-            let stage = t.stage.as_deref().map(|s| format!(" [{s}]")).unwrap_or_default();
+            let stage = t
+                .stage
+                .as_deref()
+                .map(|s| format!(" [{s}]"))
+                .unwrap_or_default();
             println!(
                 "  {}[{}] on {} — {}{} ({} ago)",
                 t.id.cap.cyan(),
@@ -294,12 +331,18 @@ pub fn print_status_tasks(tasks: &TasksOverview, agents: &[Agent], limit: usize)
             );
         }
         if running.len() > limit {
-            println!("  {}", format!("... and {} more", running.len() - limit).dimmed());
+            println!(
+                "  {}",
+                format!("... and {} more", running.len() - limit).dimmed()
+            );
         }
     }
 
     println!();
-    println!("{}", format!("Scheduled tasks ({})", scheduled.len()).bold());
+    println!(
+        "{}",
+        format!("Scheduled tasks ({})", scheduled.len()).bold()
+    );
     if scheduled.is_empty() {
         println!("{}", "  none".dimmed());
     } else {
@@ -343,7 +386,11 @@ pub fn print_status_buckets(quotas: &StorageQuotas) {
     let mut rows: Vec<(&String, &QuotaUsage)> = quotas.usage.iter().collect();
     rows.sort_by_key(|(_, usage)| std::cmp::Reverse(usage.bucket_count));
     for (key, usage) in rows {
-        table.add_row(vec![Cell::new(key), Cell::new(usage.bucket_count), Cell::new(max)]);
+        table.add_row(vec![
+            Cell::new(key),
+            Cell::new(usage.bucket_count),
+            Cell::new(max),
+        ]);
     }
     println!("{table}");
 }
@@ -354,12 +401,396 @@ pub fn print_status_capabilities(caps: &[String]) {
     println!();
     let mut sorted = caps.to_vec();
     sorted.sort();
-    println!("{}", format!("Available capabilities ({})", sorted.len()).bold());
+    println!(
+        "{}",
+        format!("Available capabilities ({})", sorted.len()).bold()
+    );
     if sorted.is_empty() {
         println!("{}", "  none".dimmed());
     } else {
         println!("  {}", sorted.join(", "));
     }
+}
+
+/// Persisted agent logs, newest first, as returned by the Agent Logs page.
+pub fn print_agent_logs(records: &[AgentLogRecord]) {
+    if records.is_empty() {
+        println!("{}", "No agent logs found.".yellow());
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec!["TIME", "SEVERITY", "AGENT", "MACHINE", "MESSAGE"]);
+    for record in records {
+        table.add_row(vec![
+            Cell::new(record.timestamp.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+            Cell::new(&record.severity),
+            Cell::new(record.agent_name.as_deref().unwrap_or(&record.agent_id)),
+            Cell::new(record.machine_fingerprint.as_deref().unwrap_or("-")),
+            Cell::new(&record.text),
+        ]);
+    }
+    println!("{table}");
+    println!("{}", format!("{} record(s)", records.len()).dimmed());
+}
+
+pub fn print_pod_status(status: &PodStatus) {
+    println!(
+        "{} {} ({}) · phase {}{}{}{}",
+        format!("{} pod", status.component).bold(),
+        format!("{}/{}", status.namespace, status.name).cyan(),
+        if status.ready {
+            "ready".green().to_string()
+        } else {
+            "not ready".yellow().to_string()
+        },
+        status.phase.as_deref().unwrap_or("unknown"),
+        status
+            .pod_ip
+            .as_deref()
+            .map_or_else(String::new, |ip| format!(" · IP {ip}")),
+        status
+            .host_ip
+            .as_deref()
+            .map_or_else(String::new, |ip| format!(" · host {ip}")),
+        status
+            .start_time
+            .as_deref()
+            .map_or_else(String::new, |time| format!(" · started {time}")),
+    );
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL).set_header(vec![
+        "CONTAINER",
+        "READY",
+        "RESTARTS",
+        "STATE",
+        "HAS PREVIOUS",
+        "PREVIOUS EXIT",
+    ]);
+    for container in &status.containers {
+        let state = container
+            .current_state
+            .as_ref()
+            .map(|s| s.phase.as_str())
+            .unwrap_or("-");
+        let previous = container.last_state.as_ref().map_or_else(
+            || "-".to_string(),
+            |s| match s.exit_code {
+                Some(code) => format!("{} (exit {code})", s.reason.as_deref().unwrap_or(&s.phase)),
+                None => s.reason.clone().unwrap_or_else(|| s.phase.clone()),
+            },
+        );
+        table.add_row(vec![
+            Cell::new(&container.name),
+            Cell::new(container.ready),
+            Cell::new(container.restart_count),
+            Cell::new(state),
+            Cell::new(container.has_previous_instance),
+            Cell::new(previous),
+        ]);
+    }
+    println!("{table}");
+}
+
+pub fn print_pod_logs(logs: &PodLogs) {
+    println!();
+    println!(
+        "{} {}/{} ({}) · {} · container {} · tail {}{}",
+        "Logs:".bold(),
+        logs.namespace,
+        logs.pod,
+        logs.component,
+        if logs.previous {
+            "previous instance"
+        } else {
+            "current instance"
+        },
+        logs.container.cyan(),
+        logs.tail_lines,
+        logs.previous_exit
+            .as_ref()
+            .map_or_else(String::new, |exit| {
+                let base = match exit.exit_code {
+                    Some(code) => format!("previous exit {code}"),
+                    None => "previous instance terminated".into(),
+                };
+                let reason = exit
+                    .reason
+                    .as_deref()
+                    .map_or_else(String::new, |reason| format!(" · {reason}"));
+                let finished = exit
+                    .finished_at
+                    .as_deref()
+                    .map_or_else(String::new, |time| format!(" · ended {time}"));
+                let detail = exit
+                    .message
+                    .as_deref()
+                    .map_or_else(String::new, |message| format!(" · {message}"));
+                let started = exit
+                    .started_at
+                    .as_deref()
+                    .map_or_else(String::new, |time| format!(" · started {time}"));
+                format!(" · {base}{reason}{started}{finished}{detail}")
+            })
+    );
+    if logs.content.is_empty() {
+        println!("{}", "No log output.".dimmed());
+    } else {
+        println!("{}", logs.content);
+    }
+}
+
+pub fn print_heuristic_records(records: &[HeuristicRecord], next_cursor: Option<&str>) {
+    if records.is_empty() {
+        println!("{}", "No heuristic records found.".yellow());
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            "TIME",
+            "CAPABILITY",
+            "RUNNER",
+            "MACHINE",
+            "DURATION",
+            "STATUS",
+        ]);
+    for record in records {
+        table.add_row(vec![
+            Cell::new(
+                record
+                    .completed_at
+                    .format("%Y-%m-%d %H:%M:%S UTC")
+                    .to_string(),
+            ),
+            Cell::new(&record.capability),
+            Cell::new(&record.runner_id),
+            Cell::new(record.machine_id.as_deref().unwrap_or("-")),
+            Cell::new(format_ms(Some(record.execution_time_ms))),
+            Cell::new(if record.success {
+                "ok".green().to_string()
+            } else {
+                "fail".red().to_string()
+            }),
+        ]);
+    }
+    println!("{table}");
+    if let Some(cursor) = next_cursor {
+        eprintln!(
+            "{} rerun with --cursor {cursor:?} to fetch the next page",
+            "next:".dimmed()
+        );
+    }
+}
+
+pub fn print_heuristic_stats(stats: &[HeuristicStats], id_label: &str) {
+    if stats.is_empty() {
+        println!("{}", "No heuristic statistics found.".yellow());
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            "CAPABILITY",
+            id_label,
+            "RUNS",
+            "OK",
+            "FAIL",
+            "SUCCESS",
+            "AVG OK",
+            "MIN OK",
+            "MAX OK",
+            "AVG FAIL",
+            "MIN FAIL",
+            "MAX FAIL",
+        ]);
+    for stat in stats {
+        let id = stat
+            .runner_id
+            .as_deref()
+            .or(stat.machine_id.as_deref())
+            .unwrap_or("-");
+        table.add_row(vec![
+            Cell::new(stat.capability.as_deref().unwrap_or("-")),
+            Cell::new(id),
+            Cell::new(stat.total_runs),
+            Cell::new(stat.success_count),
+            Cell::new(stat.fail_count),
+            Cell::new(format!("{:.1}%", stat.success_pct)),
+            Cell::new(format_ms(stat.success_avg_ms)),
+            Cell::new(format_ms(stat.success_min_ms)),
+            Cell::new(format_ms(stat.success_max_ms)),
+            Cell::new(format_ms(stat.fail_avg_ms)),
+            Cell::new(format_ms(stat.fail_min_ms)),
+            Cell::new(format_ms(stat.fail_max_ms)),
+        ]);
+    }
+    println!("{table}");
+}
+
+/// The management frontend's Machine Stats tab combines the API's
+/// per-(capability, machine) rows into one row per machine. Keep the terminal
+/// view consistent with that aggregation rather than presenting a subtly
+/// different result from the same endpoint.
+pub fn print_heuristic_machine_stats(stats: &[HeuristicStats]) {
+    #[derive(Default)]
+    struct Aggregate {
+        total_runs: u64,
+        success_count: u64,
+        success_weighted_ms: f64,
+        success_samples: u64,
+        success_min_ms: Option<f64>,
+        success_max_ms: Option<f64>,
+        fail_weighted_ms: f64,
+        fail_samples: u64,
+    }
+
+    let mut grouped: HashMap<&str, Aggregate> = HashMap::new();
+    for stat in stats {
+        let aggregate = grouped
+            .entry(stat.machine_id.as_deref().unwrap_or("unknown"))
+            .or_default();
+        aggregate.total_runs += stat.total_runs;
+        aggregate.success_count += stat.success_count;
+        if let Some(avg) = stat.success_avg_ms {
+            aggregate.success_weighted_ms += avg * stat.success_count as f64;
+            aggregate.success_samples += stat.success_count;
+        }
+        if let Some(min) = stat.success_min_ms {
+            aggregate.success_min_ms =
+                Some(aggregate.success_min_ms.map_or(min, |old| old.min(min)));
+        }
+        if let Some(max) = stat.success_max_ms {
+            aggregate.success_max_ms =
+                Some(aggregate.success_max_ms.map_or(max, |old| old.max(max)));
+        }
+        if let Some(avg) = stat.fail_avg_ms {
+            aggregate.fail_weighted_ms += avg * stat.fail_count as f64;
+            aggregate.fail_samples += stat.fail_count;
+        }
+    }
+
+    if grouped.is_empty() {
+        println!("{}", "No heuristic machine statistics found.".yellow());
+        return;
+    }
+    let mut rows: Vec<_> = grouped.into_iter().collect();
+    rows.sort_by_key(|(_, aggregate)| std::cmp::Reverse(aggregate.total_runs));
+
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            "MACHINE ID",
+            "RUNS",
+            "SUCCESS",
+            "AVG OK",
+            "MIN OK",
+            "MAX OK",
+            "AVG FAIL",
+        ]);
+    for (machine, aggregate) in rows {
+        let success_pct = if aggregate.total_runs == 0 {
+            0.0
+        } else {
+            aggregate.success_count as f64 / aggregate.total_runs as f64 * 100.0
+        };
+        table.add_row(vec![
+            Cell::new(machine),
+            Cell::new(aggregate.total_runs),
+            Cell::new(format!("{success_pct:.1}%")),
+            Cell::new(format_ms((aggregate.success_samples > 0).then_some(
+                aggregate.success_weighted_ms / aggregate.success_samples as f64,
+            ))),
+            Cell::new(format_ms(aggregate.success_min_ms)),
+            Cell::new(format_ms(aggregate.success_max_ms)),
+            Cell::new(format_ms((aggregate.fail_samples > 0).then_some(
+                aggregate.fail_weighted_ms / aggregate.fail_samples as f64,
+            ))),
+        ]);
+    }
+    println!("{table}");
+}
+
+pub fn print_storage_buckets(buckets: &StorageBucketsResponse, quotas: &StorageQuotas) {
+    print_storage_quotas(quotas);
+    if buckets.buckets_by_key.is_empty() {
+        println!("{}", "No buckets found.".yellow());
+        return;
+    }
+    let mut keys: Vec<_> = buckets.buckets_by_key.iter().collect();
+    keys.sort_by_key(|(key, _)| *key);
+    for (key, group) in keys {
+        println!();
+        println!(
+            "{} — {} bucket(s), {} file(s), {}",
+            key.cyan().bold(),
+            group.bucket_count,
+            group.total_files,
+            format_bytes(group.total_bytes)
+        );
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec!["BUCKET UID", "CREATED", "FILES", "USED", "TASKS"]);
+        for bucket in &group.buckets {
+            table.add_row(vec![
+                Cell::new(&bucket.bucket_uid),
+                Cell::new(
+                    bucket
+                        .created_at
+                        .map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                        .unwrap_or_else(|| "-".into()),
+                ),
+                Cell::new(bucket.file_count),
+                Cell::new(format_bytes(bucket.used_bytes)),
+                Cell::new(if bucket.tasks.is_empty() {
+                    "-".into()
+                } else {
+                    bucket.tasks.join(", ")
+                }),
+            ]);
+        }
+        println!("{table}");
+    }
+}
+
+pub fn print_storage_quotas(quotas: &StorageQuotas) {
+    println!(
+        "{} max {} bucket(s)/key · {} per bucket · TTL {} min",
+        "Storage quotas:".bold(),
+        quotas.limits.max_buckets_per_key,
+        format_bytes(quotas.limits.bucket_size_bytes),
+        quotas.limits.bucket_ttl_minutes
+    );
+    if quotas.usage.is_empty() {
+        println!("{}", "No storage in use.".dimmed());
+        return;
+    }
+    let mut entries: Vec<_> = quotas.usage.iter().collect();
+    entries.sort_by_key(|(key, _)| *key);
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec!["API KEY", "BUCKETS", "FILES", "USED"]);
+    for (key, usage) in entries {
+        table.add_row(vec![
+            Cell::new(key),
+            Cell::new(usage.bucket_count),
+            Cell::new(usage.total_files),
+            Cell::new(format_bytes(usage.total_bytes)),
+        ]);
+    }
+    println!("{table}");
 }
 
 /// `omqcli list tasks` — every task across all four buckets (urgent/regular ×
@@ -377,7 +808,11 @@ pub fn print_tasks_table(
         .map(|a| {
             (
                 a.uid.as_str(),
-                format!("{} ({})", a.uid_short, a.display_name.as_deref().unwrap_or("unnamed")),
+                format!(
+                    "{} ({})",
+                    a.uid_short,
+                    a.display_name.as_deref().unwrap_or("unnamed")
+                ),
             )
         })
         .collect();
@@ -403,18 +838,32 @@ pub fn print_tasks_table(
         }
         printed_any = true;
 
-        println!("{}", format!("{queue} / {bucket} ({})", filtered.len()).bold());
+        println!(
+            "{}",
+            format!("{queue} / {bucket} ({})", filtered.len()).bold()
+        );
         let mut table = Table::new();
         table
             .load_preset(UTF8_FULL)
             .set_content_arrangement(ContentArrangement::Dynamic)
-            .set_header(vec!["TASK ID", "CAPABILITY", "STATUS", "STAGE", "AGENT", "FLAGS", "CREATED"]);
+            .set_header(vec![
+                "TASK ID",
+                "CAPABILITY",
+                "STATUS",
+                "STAGE",
+                "AGENT",
+                "FLAGS",
+                "CREATED",
+            ]);
 
         for t in &filtered {
-            let status = t
-                .status
-                .clone()
-                .unwrap_or_else(|| if bucket == "assigned" { "assigned".into() } else { "queued".into() });
+            let status = t.status.clone().unwrap_or_else(|| {
+                if bucket == "assigned" {
+                    "assigned".into()
+                } else {
+                    "queued".into()
+                }
+            });
             let agent = t
                 .agent_id
                 .as_deref()
@@ -470,26 +919,45 @@ pub fn print_task_detail(queue: &str, assigned: bool, task: &TaskSummary, agents
     row("Capability", task.id.cap.clone());
     row(
         "Queue",
-        format!("{queue} ({})", if assigned { "assigned" } else { "unassigned" }),
+        format!(
+            "{queue} ({})",
+            if assigned { "assigned" } else { "unassigned" }
+        ),
     );
     row(
         "Status",
-        task.status
-            .clone()
-            .unwrap_or_else(|| if assigned { "assigned".into() } else { "queued".into() }),
+        task.status.clone().unwrap_or_else(|| {
+            if assigned {
+                "assigned".into()
+            } else {
+                "queued".into()
+            }
+        }),
     );
     if let Some(stage) = &task.stage {
         row("Stage", stage.clone());
     }
-    row("Created", task.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string());
+    row(
+        "Created",
+        task.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+    );
     if let Some(assigned_at) = task.assigned_at {
-        row("Assigned at", assigned_at.format("%Y-%m-%d %H:%M:%S UTC").to_string());
+        row(
+            "Assigned at",
+            assigned_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        );
     }
     if let Some(agent_id) = &task.agent_id {
         let name = agents
             .iter()
             .find(|a| &a.uid == agent_id)
-            .map(|a| format!("{} ({})", a.uid_short, a.display_name.as_deref().unwrap_or("unnamed")))
+            .map(|a| {
+                format!(
+                    "{} ({})",
+                    a.uid_short,
+                    a.display_name.as_deref().unwrap_or("unnamed")
+                )
+            })
             .unwrap_or_else(|| agent_id.clone());
         row("Agent", name);
     }
@@ -501,7 +969,14 @@ pub fn print_task_detail(queue: &str, assigned: bool, task: &TaskSummary, agents
         if data.restartable {
             flags.push("restartable");
         }
-        row("Flags", if flags.is_empty() { "-".into() } else { flags.join(", ") });
+        row(
+            "Flags",
+            if flags.is_empty() {
+                "-".into()
+            } else {
+                flags.join(", ")
+            },
+        );
     }
     println!("{table}");
 
@@ -538,7 +1013,10 @@ pub fn print_task_detail(queue: &str, assigned: bool, task: &TaskSummary, agents
         for h in &task.history {
             println!(
                 "  {} {}",
-                h.timestamp.format("%Y-%m-%d %H:%M:%S UTC").to_string().dimmed(),
+                h.timestamp
+                    .format("%Y-%m-%d %H:%M:%S UTC")
+                    .to_string()
+                    .dimmed(),
                 h.description
             );
         }

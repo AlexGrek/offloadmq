@@ -50,6 +50,9 @@ Commands:
   delete    Delete a resource
   agent     Run a slavemode command (self-management task) on one agent
   status    One-shot dashboard: online agents, running/scheduled tasks, bucket quotas, and available capabilities
+  logs      Fetch agent records or Kubernetes pod diagnostics and logs
+  heuristics Inspect execution-history records and aggregate statistics
+  storage   Inspect and manage buckets owned by every client API key
   cancel    Cancel a running or queued resource
   reset     Reset (permanently clear) all of a resource type
   help      Print this message or the help of the given subcommand(s)
@@ -175,6 +178,66 @@ A one-shot fleet dashboard. Makes four read-only management API calls and prints
 Exit code is non-zero only if one of the underlying API calls fails (e.g. bad
 management token, server unreachable) — an empty fleet or task queue is not an
 error and prints `none` for that section.
+
+### `logs`
+
+```bash
+# Latest persisted records across all agents; limit defaults to 100.
+omqcli logs agent
+omqcli logs agent --agent <agent-uid> --limit -1
+omqcli logs agent --severity ERROR --severity CRITICAL --limit 200
+
+# Kubernetes diagnostics for the server or management frontend (in-cluster only).
+omqcli logs pod --component server --tail-lines 500
+omqcli logs pod --component frontend --container frontend --timestamps
+omqcli logs pod --previous
+```
+
+`logs agent` mirrors the Agent Logs page: with no filter it reads the latest
+records; `--agent` fetches every severity for one agent; repeated `--severity`
+fetches, merges, sorts, and limits the selected severities exactly as the page
+does. It prints the timestamp, severity, agent name/UID, machine fingerprint,
+and message.
+
+`logs pod` mirrors the Pod Logs page by showing pod/container readiness,
+restart state, and the requested container's logs. `--previous` selects the
+previous terminated instance; `--tail-lines`, `--container`, and `--timestamps`
+map directly to the frontend controls. These commands require the server to run
+in Kubernetes with its in-cluster service-account configuration; a non-cluster
+server returns the same management API error as the frontend.
+
+### `heuristics`
+
+```bash
+omqcli heuristics records [--capability <cap>] [--runner-id <uid>] \
+  [--machine-id <id>] [--limit 50] [--cursor <cursor>]
+omqcli heuristics runners
+omqcli heuristics machines
+```
+
+These commands cover the management frontend's three Heuristics views. `records`
+shows raw completed-task timings and accepts the page filters and cursor; its
+stderr output prints a ready-to-copy cursor when more records exist. `runners`
+shows the per-capability/agent aggregates, while `machines` combines the
+per-capability rows into the same per-machine totals shown by the frontend.
+
+### `storage`
+
+```bash
+omqcli storage list
+omqcli storage quotas [--api-key <client-key>]
+omqcli storage delete <bucket-uid> [-y|--yes]
+omqcli storage delete-key <client-key> [-y|--yes]
+omqcli storage purge [-y|--yes]
+```
+
+`storage list` is the Storage page in terminal form: it combines bucket groups,
+per-bucket file/byte/task details, and the configured quota limits. `quotas`
+prints the same quota/usage data and can narrow it to one API key.
+
+The three delete commands map to the page's bucket, per-key, and global purge
+actions. They permanently remove staged files and metadata, so each asks for
+confirmation unless `-y`/`--yes` is supplied.
 
 ### `agent <id> <action>` — slavemode commands
 

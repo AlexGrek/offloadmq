@@ -88,14 +88,22 @@ specific agent, `status` prints a one-shot fleet dashboard (online agents +
 success rate, up to 5 running/scheduled tasks, bucket usage vs. quota per API
 key, available capabilities), and full task control (`list tasks`, `describe
 task`, `cancel task`, `reset tasks`) matches everything the Tasks page in
-management-frontend can do. Talks to the management API + the client API's
-management override (`X-MGMT-API-KEY`), authenticated with `MGMT_TOKEN`. Full
-docs: [offloadmq-cli/README.md](offloadmq-cli/README.md).
+management-frontend can do. It also mirrors the Agent Logs, Pod Logs,
+Heuristics, and Storage pages with `logs agent|pod`, `heuristics
+records|runners|machines`, and `storage list|quotas|delete|delete-key|purge`.
+Talks to the management API + the client API's management override
+(`X-MGMT-API-KEY`), authenticated with `MGMT_TOKEN`. Full docs:
+[offloadmq-cli/README.md](offloadmq-cli/README.md).
 ```bash
 cd offloadmq-cli
+cargo fmt --check
+cargo test
+cargo clippy -- -D warnings
 cargo build --release
 ./target/release/omqcli auth --key <management-token>
 ./target/release/omqcli status
+./target/release/omqcli logs agent --severity ERROR
+./target/release/omqcli storage list
 ./target/release/omqcli agent <id-or-fingerprint> force-rescan
 ```
 

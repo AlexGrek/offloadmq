@@ -42,20 +42,40 @@ pub fn force_rescan(id: &str, timeout: u64) -> Result<()> {
 }
 
 pub fn update(id: &str, check: bool, timeout: u64) -> Result<()> {
-    run(id, "slavemode.agent-update", json!({ "check": check }), timeout)
+    run(
+        id,
+        "slavemode.agent-update",
+        json!({ "check": check }),
+        timeout,
+    )
 }
 
 pub fn caps_get(id: &str, timeout: u64) -> Result<()> {
-    run(id, "slavemode.special-caps-ctrl", json!({ "get": true }), timeout)
+    run(
+        id,
+        "slavemode.special-caps-ctrl",
+        json!({ "get": true }),
+        timeout,
+    )
 }
 
 pub fn caps_set(id: &str, cap_json: &str, timeout: u64) -> Result<()> {
     let cap = parse_json_arg(cap_json)?;
-    run(id, "slavemode.special-caps-ctrl", json!({ "set": cap }), timeout)
+    run(
+        id,
+        "slavemode.special-caps-ctrl",
+        json!({ "set": cap }),
+        timeout,
+    )
 }
 
 pub fn caps_delete(id: &str, name: &str, timeout: u64) -> Result<()> {
-    run(id, "slavemode.special-caps-ctrl", json!({ "delete": name }), timeout)
+    run(
+        id,
+        "slavemode.special-caps-ctrl",
+        json!({ "delete": name }),
+        timeout,
+    )
 }
 
 pub fn ollama_list(id: &str, timeout: u64) -> Result<()> {
@@ -63,11 +83,21 @@ pub fn ollama_list(id: &str, timeout: u64) -> Result<()> {
 }
 
 pub fn ollama_pull(id: &str, model: &str, timeout: u64) -> Result<()> {
-    run(id, "slavemode.ollama-pull", json!({ "model": model }), timeout)
+    run(
+        id,
+        "slavemode.ollama-pull",
+        json!({ "model": model }),
+        timeout,
+    )
 }
 
 pub fn ollama_delete(id: &str, model: &str, timeout: u64) -> Result<()> {
-    run(id, "slavemode.ollama-delete", json!({ "model": model }), timeout)
+    run(
+        id,
+        "slavemode.ollama-delete",
+        json!({ "model": model }),
+        timeout,
+    )
 }
 
 pub fn onnx_list(id: &str, timeout: u64) -> Result<()> {
@@ -75,9 +105,19 @@ pub fn onnx_list(id: &str, timeout: u64) -> Result<()> {
 }
 
 pub fn onnx_prepare(id: &str, model: &str, timeout: u64) -> Result<()> {
-    run(id, "slavemode.onnx-models-prepare", json!({ "model": model }), timeout)
+    run(
+        id,
+        "slavemode.onnx-models-prepare",
+        json!({ "model": model }),
+        timeout,
+    )
 }
 
 pub fn onnx_delete(id: &str, model: &str, timeout: u64) -> Result<()> {
-    run(id, "slavemode.onnx-models-delete", json!({ "model": model }), timeout)
+    run(
+        id,
+        "slavemode.onnx-models-delete",
+        json!({ "model": model }),
+        timeout,
+    )
 }

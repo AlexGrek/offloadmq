@@ -13,7 +13,10 @@ pub fn run(task_limit: usize) -> Result<()> {
     let (server, key) = cfg.require()?;
     let client = Client::new(&server, &key)?;
 
-    println!("{}", format!("OffloadMQ status — {server}").bold().underline());
+    println!(
+        "{}",
+        format!("OffloadMQ status — {server}").bold().underline()
+    );
     println!();
 
     let agents = client.list_agents(false)?;

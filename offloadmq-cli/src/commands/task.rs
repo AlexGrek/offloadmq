@@ -10,7 +10,11 @@ use crate::output;
 
 /// Find one task by (cap, id) across all four buckets and report which queue/
 /// bucket it lives in — there's no server-side get-by-id, only the full list.
-fn find_task<'a>(tasks: &'a TasksOverview, cap: &str, id: &str) -> Option<(&'static str, bool, &'a TaskSummary)> {
+fn find_task<'a>(
+    tasks: &'a TasksOverview,
+    cap: &str,
+    id: &str,
+) -> Option<(&'static str, bool, &'a TaskSummary)> {
     let buckets: [(&'static str, bool, &Vec<TaskSummary>); 4] = [
         ("urgent", true, &tasks.urgent.assigned),
         ("urgent", false, &tasks.urgent.unassigned),
@@ -42,7 +46,10 @@ fn warn_if_truncated(tasks: &TasksOverview) {
     }
     let t = &meta.totals;
     let advice = if meta.limit < TaskQuery::MAX {
-        format!("raise --limit (max {}) or narrow with --status active|terminal", TaskQuery::MAX)
+        format!(
+            "raise --limit (max {}) or narrow with --status active|terminal",
+            TaskQuery::MAX
+        )
     } else {
         "already at the server maximum — narrow with --status active|terminal".to_string()
     };
@@ -120,9 +127,16 @@ pub fn cancel(cap: &str, id: &str, yes: bool) -> Result<()> {
     }
 
     let raw = client.cancel_task(cap, id)?;
-    let status = raw.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let status = raw
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     let message = raw.get("message").and_then(|v| v.as_str()).unwrap_or("");
-    println!("{} {cap}[{id}] → {} {message}", "OK".green().bold(), status.yellow());
+    println!(
+        "{} {cap}[{id}] → {} {message}",
+        "OK".green().bold(),
+        status.yellow()
+    );
     Ok(())
 }
 
@@ -146,4 +160,3 @@ pub fn reset(yes: bool) -> Result<()> {
     println!("{} all tasks reset", "OK".green().bold());
     Ok(())
 }
-

@@ -63,6 +63,21 @@ enum Command {
         #[arg(long, default_value_t = 5)]
         task_limit: usize,
     },
+    /// Fetch agent records or Kubernetes pod diagnostics and logs
+    Logs {
+        #[command(subcommand)]
+        target: LogsTarget,
+    },
+    /// Inspect execution-history records and aggregate statistics
+    Heuristics {
+        #[command(subcommand)]
+        target: HeuristicsTarget,
+    },
+    /// Inspect and manage buckets owned by every client API key
+    Storage {
+        #[command(subcommand)]
+        target: StorageTarget,
+    },
     /// Cancel a running or queued resource
     Cancel {
         #[command(subcommand)]
@@ -262,6 +277,93 @@ enum ResetTarget {
     },
 }
 
+#[derive(Subcommand)]
+enum LogsTarget {
+    /// Fetch persisted agent logs (latest, one agent, or selected severities)
+    Agent {
+        /// Restrict records to one agent UID
+        #[arg(long, conflicts_with = "severity")]
+        agent: Option<String>,
+        /// Restrict records to a severity; repeat for multiple values
+        #[arg(long, value_parser = ["CRITICAL", "ERROR", "INFO"], conflicts_with = "agent")]
+        severity: Vec<String>,
+        /// Maximum records to return; pass -1 for all matching records
+        #[arg(long, default_value_t = 100, allow_hyphen_values = true)]
+        limit: i64,
+    },
+    /// Fetch pod status and container logs (in-cluster deployments only)
+    Pod {
+        /// Stack component to inspect
+        #[arg(long, default_value = "server", value_parser = ["server", "frontend"])]
+        component: String,
+        /// Number of log lines to request (1–10000)
+        #[arg(
+            long,
+            default_value_t = 500,
+            value_parser = clap::value_parser!(u32).range(1..=10_000)
+        )]
+        tail_lines: u32,
+        /// Container name; defaults to the component's primary container
+        #[arg(long)]
+        container: Option<String>,
+        /// Fetch logs from the previous terminated container instance
+        #[arg(long)]
+        previous: bool,
+        /// Include Kubernetes timestamps in the log stream
+        #[arg(long)]
+        timestamps: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum HeuristicsTarget {
+    /// List raw execution records, optionally continuing from a cursor
+    Records {
+        #[arg(long)]
+        capability: Option<String>,
+        #[arg(long)]
+        runner_id: Option<String>,
+        #[arg(long)]
+        machine_id: Option<String>,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// List aggregate execution statistics by capability and agent
+    Runners,
+    /// List aggregate execution statistics by capability and machine
+    Machines,
+}
+
+#[derive(Subcommand)]
+enum StorageTarget {
+    /// List every bucket, grouped by owning client API key, with quotas
+    List,
+    /// Show quota usage, optionally for one client API key
+    Quotas {
+        #[arg(long)]
+        api_key: Option<String>,
+    },
+    /// Permanently delete one bucket and all of its files
+    Delete {
+        bucket_uid: String,
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+    /// Permanently delete every bucket for one client API key
+    DeleteKey {
+        api_key: String,
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+    /// Permanently delete every bucket across all client API keys
+    Purge {
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+}
+
 fn main() {
     let cli = Cli::parse();
     if let Some(secs) = cli
@@ -276,9 +378,13 @@ fn main() {
         Command::List { target } => match target {
             ListTarget::Agents { online } => commands::list::agents(online),
             ListTarget::Caps { ext } => commands::list::capabilities(ext),
-            ListTarget::Tasks { unassigned_only, cap, status, limit, all } => {
-                commands::task::list(unassigned_only, cap, status, limit, all)
-            }
+            ListTarget::Tasks {
+                unassigned_only,
+                cap,
+                status,
+                limit,
+                all,
+            } => commands::task::list(unassigned_only, cap, status, limit, all),
         },
         Command::Describe { target } => match target {
             DescribeTarget::Agent { id } => commands::describe::agent(&id),
@@ -293,7 +399,9 @@ fn main() {
             AgentAction::Caps { action } => match action {
                 CapsAction::Get { timeout } => commands::agent::caps_get(&id, timeout),
                 CapsAction::Set { json, timeout } => commands::agent::caps_set(&id, &json, timeout),
-                CapsAction::Delete { name, timeout } => commands::agent::caps_delete(&id, &name, timeout),
+                CapsAction::Delete { name, timeout } => {
+                    commands::agent::caps_delete(&id, &name, timeout)
+                }
             },
             AgentAction::Ollama { action } => match action {
                 OllamaAction::List { timeout } => commands::agent::ollama_list(&id, timeout),
@@ -315,6 +423,54 @@ fn main() {
             },
         },
         Command::Status { task_limit } => commands::status::run(task_limit),
+        Command::Logs { target } => match target {
+            LogsTarget::Agent {
+                agent,
+                severity,
+                limit,
+            } => commands::logs::agent(agent.as_deref(), &severity, limit),
+            LogsTarget::Pod {
+                component,
+                tail_lines,
+                container,
+                previous,
+                timestamps,
+            } => commands::logs::pod(
+                &component,
+                tail_lines,
+                container.as_deref(),
+                previous,
+                timestamps,
+            ),
+        },
+        Command::Heuristics { target } => match target {
+            HeuristicsTarget::Records {
+                capability,
+                runner_id,
+                machine_id,
+                limit,
+                cursor,
+            } => commands::heuristics::records(
+                capability.as_deref(),
+                runner_id.as_deref(),
+                machine_id.as_deref(),
+                limit,
+                cursor.as_deref(),
+            ),
+            HeuristicsTarget::Runners => commands::heuristics::runners(),
+            HeuristicsTarget::Machines => commands::heuristics::machines(),
+        },
+        Command::Storage { target } => match target {
+            StorageTarget::List => commands::storage::list(),
+            StorageTarget::Quotas { api_key } => commands::storage::quotas(api_key.as_deref()),
+            StorageTarget::Delete { bucket_uid, yes } => {
+                commands::storage::delete(&bucket_uid, yes)
+            }
+            StorageTarget::DeleteKey { api_key, yes } => {
+                commands::storage::delete_key(&api_key, yes)
+            }
+            StorageTarget::Purge { yes } => commands::storage::purge(yes),
+        },
         Command::Cancel { target } => match target {
             CancelTarget::Task { cap, id, yes } => commands::task::cancel(&cap, &id, yes),
         },

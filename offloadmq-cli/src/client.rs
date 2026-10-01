@@ -6,7 +6,11 @@ use reqwest::blocking::Client as HttpClient;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde_json::Value;
 
-use crate::models::{Agent, RunnerStat, RunnerStatsResponse, StorageQuotas, TasksOverview};
+use crate::models::{
+    Agent, AgentLogRecord, AgentLogsResponse, HeuristicRecordsResponse, HeuristicStats,
+    HeuristicStatsResponse, PodLogs, PodStatus, RunnerStat, RunnerStatsResponse,
+    StorageBucketsResponse, StorageQuotas, TasksOverview,
+};
 
 /// Percent-encode one URL path segment. Capabilities can contain `/`
 /// (namespaced models like `hf.co/org/model`) and `:` (tags like `qwen3:8b`),
@@ -47,11 +51,17 @@ impl TaskQuery {
     pub const MAX: usize = 1000;
 
     pub fn active() -> Self {
-        Self { status: Some("active"), limit: Some(Self::MAX) }
+        Self {
+            status: Some("active"),
+            limit: Some(Self::MAX),
+        }
     }
 
     pub fn everything() -> Self {
-        Self { status: Some("all"), limit: Some(Self::MAX) }
+        Self {
+            status: Some("all"),
+            limit: Some(Self::MAX),
+        }
     }
 }
 
@@ -70,7 +80,9 @@ impl Client {
 
         let http = HttpClient::builder()
             .default_headers(headers)
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS.load(Ordering::Relaxed)))
+            .timeout(Duration::from_secs(
+                HTTP_TIMEOUT_SECS.load(Ordering::Relaxed),
+            ))
             .build()?;
 
         Ok(Client {
@@ -158,9 +170,173 @@ impl Client {
     }
 
     pub fn storage_quotas(&self) -> Result<StorageQuotas> {
-        let resp =
-            Self::check_status(self.http.get(self.url("/management/storage/quotas")).send()?)?;
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/storage/quotas"))
+                .send()?,
+        )?;
         Ok(resp.json()?)
+    }
+
+    pub fn storage_buckets(&self) -> Result<StorageBucketsResponse> {
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/storage/buckets"))
+                .send()?,
+        )?;
+        Ok(resp.json()?)
+    }
+
+    pub fn storage_quotas_for_key(&self, api_key: Option<&str>) -> Result<StorageQuotas> {
+        let mut request = self.http.get(self.url("/management/storage/quotas"));
+        if let Some(api_key) = api_key {
+            request = request.query(&[("api_key", api_key)]);
+        }
+        let resp = Self::check_status(request.send()?)?;
+        Ok(resp.json()?)
+    }
+
+    pub fn delete_storage_bucket(&self, bucket_uid: &str) -> Result<Value> {
+        let path = format!(
+            "/management/storage/bucket/{}",
+            encode_path_segment(bucket_uid)
+        );
+        let resp = Self::check_status(self.http.delete(self.url(&path)).send()?)?;
+        Ok(resp.json()?)
+    }
+
+    pub fn delete_storage_key_buckets(&self, api_key: &str) -> Result<Value> {
+        let path = format!(
+            "/management/storage/key/{}/buckets",
+            encode_path_segment(api_key)
+        );
+        let resp = Self::check_status(self.http.delete(self.url(&path)).send()?)?;
+        Ok(resp.json()?)
+    }
+
+    pub fn purge_storage_buckets(&self) -> Result<Value> {
+        let resp = Self::check_status(
+            self.http
+                .delete(self.url("/management/storage/buckets"))
+                .send()?,
+        )?;
+        Ok(resp.json()?)
+    }
+
+    pub fn agent_logs_latest(&self, limit: i64) -> Result<Vec<AgentLogRecord>> {
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/agent_logs/latest"))
+                .query(&[("limit", limit)])
+                .send()?,
+        )?;
+        Ok(resp.json::<AgentLogsResponse>()?.items)
+    }
+
+    pub fn agent_logs_by_agent(&self, agent_id: &str, limit: i64) -> Result<Vec<AgentLogRecord>> {
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/agent_logs/by_agent"))
+                .query(&[("agent_id", agent_id), ("limit", &limit.to_string())])
+                .send()?,
+        )?;
+        Ok(resp.json::<AgentLogsResponse>()?.items)
+    }
+
+    pub fn agent_logs_by_severity(
+        &self,
+        severity: &str,
+        limit: i64,
+    ) -> Result<Vec<AgentLogRecord>> {
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/agent_logs/by_severity"))
+                .query(&[("severity", severity), ("limit", &limit.to_string())])
+                .send()?,
+        )?;
+        Ok(resp.json::<AgentLogsResponse>()?.items)
+    }
+
+    pub fn pod_status(&self, component: &str) -> Result<PodStatus> {
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/k8s/self/pod"))
+                .query(&[("component", component)])
+                .send()?,
+        )?;
+        Ok(resp.json()?)
+    }
+
+    pub fn pod_logs(
+        &self,
+        component: &str,
+        tail_lines: u32,
+        container: Option<&str>,
+        previous: bool,
+        timestamps: bool,
+    ) -> Result<PodLogs> {
+        let mut params = vec![
+            ("component", component.to_string()),
+            ("tail_lines", tail_lines.to_string()),
+            ("previous", previous.to_string()),
+            ("timestamps", timestamps.to_string()),
+        ];
+        if let Some(container) = container.filter(|s| !s.is_empty()) {
+            params.push(("container", container.to_string()));
+        }
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/k8s/self/logs"))
+                .query(&params)
+                .send()?,
+        )?;
+        Ok(resp.json()?)
+    }
+
+    pub fn heuristic_records(
+        &self,
+        capability: Option<&str>,
+        runner_id: Option<&str>,
+        machine_id: Option<&str>,
+        limit: usize,
+        cursor: Option<&str>,
+    ) -> Result<HeuristicRecordsResponse> {
+        let mut params = vec![("limit", limit.to_string())];
+        for (name, value) in [
+            ("capability", capability),
+            ("runner_id", runner_id),
+            ("machine_id", machine_id),
+            ("cursor", cursor),
+        ] {
+            if let Some(value) = value.filter(|s| !s.is_empty()) {
+                params.push((name, value.to_string()));
+            }
+        }
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/heuristics/records"))
+                .query(&params)
+                .send()?,
+        )?;
+        Ok(resp.json()?)
+    }
+
+    pub fn heuristic_runner_stats(&self) -> Result<Vec<HeuristicStats>> {
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/heuristics/stats/runners"))
+                .send()?,
+        )?;
+        Ok(resp.json::<HeuristicStatsResponse>()?.items)
+    }
+
+    pub fn heuristic_machine_stats(&self) -> Result<Vec<HeuristicStats>> {
+        let resp = Self::check_status(
+            self.http
+                .get(self.url("/management/heuristics/stats/machines"))
+                .send()?,
+        )?;
+        Ok(resp.json::<HeuristicStatsResponse>()?.items)
     }
 
     pub fn delete_agent(&self, agent_id: &str) -> Result<()> {
