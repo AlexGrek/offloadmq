@@ -87,6 +87,8 @@ sequenceDiagram
 | `frontend/src/components/imggen/ImageJobHistorySidebar.tsx` | Pipelines list; `IMGGEN_NEW_PANEL = 'new'` |
 | `frontend/src/components/imggen/ImageQueueEstimate.tsx` | "Queue: N jobs · ~time" under the sidebar's New button while anything is in flight; math in `estimateQueue` (`lib/imggen.ts`): sequential sum of `typical − elapsed` (running) / `typical` (queued), missing typicals fall back to same-capability history then in-flight mean; `≥` prefix when some jobs couldn't be estimated. `data-testid=imggen-queue-estimate` |
 | `frontend/src/components/imggen/RescaleControls.tsx` | img2img `dataPreparation` (exact / max) |
+| `frontend/src/components/imggen/InputImageGrid.tsx` | Removable thumbnail grid for a multi-image input set (shared with Describe image) |
+| `frontend/src/components/imggen/ImagePickerModal.tsx` | Library picker; passing `onSelectMany` turns on multi-select (img2img/img2video, Describe) |
 | `frontend/src/components/imggen/VideoPromptGenerator.tsx` | img2video "what happens next" prompt generator (vision LLM over `/api/ws/promptgen`) |
 | `frontend/src/components/prompts/SavedPromptsDrawer.tsx` | Saved prompts drawer; opened by the Starred prompts button and the textarea list icon |
 | `frontend/src/lib/imggen.ts` | `rescaleDataPrep`, capability filter, pipeline UI helpers, `MODE_DEFAULTS` |
@@ -111,7 +113,34 @@ sequenceDiagram
 
 - Non-empty prompt
 - Capability starts with `imggen.`
-- **img2img:** `uploadedInput` required
+- **img2img / img2video:** at least one input image (`uploadedInputs`)
+
+### Multiple input images (one job per image)
+
+img2img, img2video and Describe image (`DescribeImagePage`) take a **set** of up to
+`MAX_BATCH_INPUT_IMAGES` (10, `lib/imggen.ts`) input images; submit creates **one job per
+image** with the same settings. Frontend-only — the backend still takes one
+`input_image_id` / `image_id` per job.
+
+- State is `uploadedInputs: UploadedImage[]`; `uploadedInput = uploadedInputs[0]` is the
+  "primary" that drives the single-image form (dims, presets, preview, copy-from-input).
+- Adding **appends** (upload with `multiple`, library multi-select, Describe paste/drop),
+  deduped by `image_id` (`appendInputs`). Thumbnails get their own remove; "Clear all".
+  An explicit "use this image" (lightbox Edit/Animate, route state, retry / Edit prompt
+  via `setUploadedInput`) **replaces** the set with that one image.
+- With >1 input: **"Generate multiple" is disabled** (N inputs already mean N jobs), the
+  button reads "Edit N Images" / "Animate N Images" / "Analyze N images",
+  `VideoPromptGenerator` is hidden (its prompt comes from one frame but is shared by
+  every job), and External resize is ticked if **any** input is over the threshold.
+- img2img sizing per job (`batchInputDims`, only when >1 input — a single input submits
+  the form's dims unchanged): Original resolution (offered only when **every** input is
+  under 4K) → each input's own size; Keep proportions → each input's aspect ratio at the
+  form's long edge (`max(width, height)`); neither → the form's fixed size. An exact
+  rescale the user hasn't edited follows each job's size.
+- Submission goes through `submitBatch(count, requestFor)` — the same loop "Generate
+  multiple" uses (shared placeholder usage, partial-failure message, shows the last job).
+  Describe loops `startDescribeJob`; on partial failure it keeps only the unsubmitted
+  images in the form so re-submitting doesn't duplicate jobs.
 
 ---
 
@@ -396,6 +425,10 @@ imggen-width, imggen-height, imggen-swap-dims, imggen-copy-from-input,
 imggen-resolution-toggles, imggen-original-resolution, imggen-keep-proportions,
 imggen-external-resize, imggen-external-resize-checkbox,
 describe-external-resize, describe-external-resize-checkbox,
+imggen-input-grid, imggen-input-thumb-{id}, imggen-input-remove-{id}, imggen-input-clear,
+imggen-multi-input-dims-hint, imggen-generate-multiple-open, imggen-picker-selected-count,
+describe-upload-input, describe-input-grid, describe-input-thumb-{id},
+describe-input-remove-{id}, describe-input-clear,
 imggen-submit-job,
 imggen-job-detail, imggen-poll-job, imggen-cancel-job,
 imggen-pipeline, imggen-pipeline-toggle, imggen-pipeline-status,
@@ -454,6 +487,9 @@ Record via `record_event` (`image_jobs/mod.rs`); add to timeline unless poll noi
 - `oai/itests/tests/test_admin.py` — 403 on `/api/admin/images/jobs`, `/api/admin/images/files`
 - No `test_images.py` yet — add when stabilizing REST contract
 - Frontend E2E tests (Playwright) live in `oai/e2e/tests/images.spec.ts`.
+- `oai/e2e/tests/multi-input.spec.ts` — fully mocked (`page.route('**/api/**')`, no
+  backend) multi-image input for img2img and Describe: one job per image, per-input dims,
+  Generate multiple disabled, append/remove/clear, library multi-select.
   - **Run E2E tests:** `cd oai/e2e && npm test` (Requires `task dev` running)
 
 ---

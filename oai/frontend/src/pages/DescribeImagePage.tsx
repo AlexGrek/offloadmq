@@ -40,6 +40,7 @@ import {
 import { ExternalResizeToggle } from '../components/ExternalResizeToggle'
 import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
+import { InputImageGrid } from '../components/imggen/InputImageGrid'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { Button } from '../components/ui/button'
 import { Label } from '../components/ui/label'
@@ -61,7 +62,12 @@ import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { ToolSidebar } from '../components/ToolSidebar'
 import RescaleControls from '../components/imggen/RescaleControls'
-import { rescaleDataPrep, type RescaleState } from '../lib/imggen'
+import {
+  appendInputs,
+  MAX_BATCH_INPUT_IMAGES,
+  rescaleDataPrep,
+  type RescaleState,
+} from '../lib/imggen'
 import { cn } from '../lib/utils'
 import { pastedImageFiles } from '../lib/clipboardImages'
 
@@ -126,16 +132,22 @@ export default function DescribeImagePage() {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
   const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
 
-  const [uploadedInput, setUploadedInput] = useState<UploadedImage | null>(routeImage)
+  // Each input image becomes its own analysis job on submit.
+  const [uploadedInputs, setUploadedInputs] = useState<UploadedImage[]>(() =>
+    routeImage ? [routeImage] : [],
+  )
   // External resize: shrink the image on an `image_resize` agent rather than in
   // the backend. Only offered while such an agent is online.
   const [externalResizeInfo, setExternalResizeInfo] = useState<ExternalResizeInfo | null>(null)
   const [externalResize, setExternalResize] = useState(false)
   const previewUrlRef = useRef<string | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(() =>
-    routeImage ? imageFileUrl(routeImage.image_id, token) : null,
+  // Local blob of a single upload — in flight (`imageId` null) or finished — so
+  // the preview doesn't re-download the image the user just picked.
+  const [blobPreview, setBlobPreview] = useState<{ url: string; imageId: string | null } | null>(
+    null,
   )
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [generateOpen, setGenerateOpen] = useState(false)
@@ -265,47 +277,84 @@ export default function DescribeImagePage() {
     [selectJob, isMobile],
   )
 
-  function clearInput() {
-    setUploadedInput(null)
+  function dropBlobPreview() {
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current)
       previewUrlRef.current = null
     }
-    setImagePreview(null)
+    setBlobPreview(null)
   }
 
-  async function onUpload(file: File) {
-    if (!token) return
+  function clearInput() {
+    setUploadedInputs([])
+    dropBlobPreview()
+  }
+
+  /** Publishes a changed input set. Large uploads are stored at full size by
+   *  the backend, so they are the ones worth handing to an agent. */
+  function applyInputs(next: UploadedImage[]) {
+    if (next.length === 0) {
+      clearInput()
+      return
+    }
+    setUploadedInputs(next)
+    const threshold = externalResizeInfo?.threshold_bytes ?? Infinity
+    setExternalResize(next.some(img => externalResizeDefault(img.size_bytes, threshold)))
+  }
+
+  /** Uploads `files` one by one and appends them to the input set. */
+  async function onUpload(files: File[]) {
+    if (!token || files.length === 0) return
+    const room = MAX_BATCH_INPUT_IMAGES - uploadedInputs.length
+    if (room <= 0) {
+      setError(`At most ${MAX_BATCH_INPUT_IMAGES} images — remove one to add another.`)
+      return
+    }
+    const batch = files.slice(0, room)
     setError(null)
     setUploading(true)
-    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
-    const preview = URL.createObjectURL(file)
-    previewUrlRef.current = preview
-    setImagePreview(preview)
-    try {
-      const img = await uploadImage(token, file)
-      setUploadedInput(img)
-      // Large uploads are stored at full size by the backend, so they are the
-      // ones worth handing to an agent.
-      setExternalResize(
-        externalResizeDefault(img.size_bytes, externalResizeInfo?.threshold_bytes ?? Infinity),
-      )
-    } catch (e) {
-      setError((e as Error).message)
-      clearInput()
-    } finally {
-      setUploading(false)
+    const single = uploadedInputs.length === 0 && batch.length === 1
+    let blobUrl: string | null = null
+    if (single) {
+      dropBlobPreview()
+      blobUrl = URL.createObjectURL(batch[0])
+      previewUrlRef.current = blobUrl
+      setBlobPreview({ url: blobUrl, imageId: null })
     }
+    let next = uploadedInputs
+    const failures: string[] = []
+    for (const [i, file] of batch.entries()) {
+      setUploadProgress({ done: i + 1, total: batch.length })
+      try {
+        const img = await uploadImage(token, file)
+        next = appendInputs(next, [img])
+        setUploadedInputs(next)
+        if (blobUrl) setBlobPreview({ url: blobUrl, imageId: img.image_id })
+      } catch (e) {
+        failures.push(batch.length > 1 ? `${file.name}: ${(e as Error).message}` : (e as Error).message)
+      }
+    }
+    setUploading(false)
+    setUploadProgress(null)
+    applyInputs(next)
+    if (files.length > batch.length) {
+      failures.push(`${files.length - batch.length} more skipped — at most ${MAX_BATCH_INPUT_IMAGES} images.`)
+    }
+    if (failures.length > 0) setError(failures.join('; '))
   }
 
-  // Paste an image anywhere on the New panel (screenshot, copied image). Text
+  function removeInput(imageId: string) {
+    applyInputs(uploadedInputs.filter(img => img.image_id !== imageId))
+  }
+
+  // Paste images anywhere on the New panel (screenshot, copied image). Text
   // pastes fall through untouched, so the prompt textarea keeps working.
   const onWindowPaste = useEffectEvent((e: ClipboardEvent) => {
     if (uploading || pickerOpen) return
-    const [file] = pastedImageFiles(e.clipboardData)
-    if (!file) return
+    const files = pastedImageFiles(e.clipboardData)
+    if (files.length === 0) return
     e.preventDefault()
-    void onUpload(file)
+    void onUpload(files)
   })
   const onNewPanel = activePanel === DESCRIBE_NEW_PANEL
   useEffect(() => {
@@ -315,39 +364,49 @@ export default function DescribeImagePage() {
     return () => window.removeEventListener('paste', handler)
   }, [onNewPanel])
 
-  function selectLibraryImage(img: UploadedImage) {
+  /** Appends library picks to the input set. */
+  function onPickInputs(picked: UploadedImage[]) {
     setError(null)
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current)
-      previewUrlRef.current = null
-    }
-    setUploadedInput(img)
-    setImagePreview(imageFileUrl(img.image_id, token))
-    setExternalResize(
-      externalResizeDefault(img.size_bytes, externalResizeInfo?.threshold_bytes ?? Infinity),
-    )
+    applyInputs(appendInputs(uploadedInputs, picked))
   }
 
+  /** Submits one analysis job per input image, all with the same settings. */
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!token || !uploadedInput || !selectedCap || submitting) return
+    if (!token || uploadedInputs.length === 0 || !selectedCap || submitting) return
     setError(null)
     setSubmitting(true)
     setJobDetailLoading(true)
+    const inputs = uploadedInputs
+    const submittedIds: string[] = []
     try {
-      const res = await startDescribeJob(token, {
-        capability: selectedCap,
-        prompt: prompt.trim() || DEFAULT_PROMPT,
-        image_id: uploadedInput.image_id,
-        // null -> send the OAI-normalized upload without extra agent-side rescale.
-        data_preparation: rescaleDataPrep(rescale.enabled, rescale),
-        external_resize: externalResize,
-      })
-      setActivePanel(res.job_id)
+      for (const img of inputs) {
+        const res = await startDescribeJob(token, {
+          capability: selectedCap,
+          prompt: prompt.trim() || DEFAULT_PROMPT,
+          image_id: img.image_id,
+          // null -> send the OAI-normalized upload without extra agent-side rescale.
+          data_preparation: rescaleDataPrep(rescale.enabled, rescale),
+          external_resize: externalResize,
+        })
+        submittedIds.push(res.job_id)
+      }
+      const lastId = submittedIds[submittedIds.length - 1]
+      setActivePanel(lastId)
       clearInput()
-      await refreshJob(res.job_id)
+      if (inputs.length > 1) await loadJobs()
+      await refreshJob(lastId)
     } catch (err) {
-      setError((err as Error).message)
+      const message = (err as Error).message
+      if (submittedIds.length > 0) {
+        // Keep only the images that didn't make it, so pressing Analyze again
+        // doesn't duplicate the jobs that did.
+        applyInputs(inputs.slice(submittedIds.length))
+        void loadJobs()
+        setError(`Failed after ${submittedIds.length} of ${inputs.length} analyses: ${message}`)
+      } else {
+        setError(message)
+      }
     } finally {
       setSubmitting(false)
       setJobDetailLoading(false)
@@ -476,21 +535,19 @@ export default function DescribeImagePage() {
       // image id remains valid for the lifetime of the job. Put that image
       // back into the form so editing a prompt does not turn the next run into
       // an analysis without an image.
-      if (previewUrlRef.current) {
-        URL.revokeObjectURL(previewUrlRef.current)
-        previewUrlRef.current = null
-      }
-      setUploadedInput({
-        image_id: selectedJob.input_image_id,
-        filename: 'Analyzed image',
-        content_type: 'image/*',
-        width: 0,
-        height: 0,
-        size_bytes: 0,
-        rescaled: false,
-        reencoded: false,
-      })
-      setImagePreview(imageFileUrl(selectedJob.input_image_id, token))
+      dropBlobPreview()
+      setUploadedInputs([
+        {
+          image_id: selectedJob.input_image_id,
+          filename: 'Analyzed image',
+          content_type: 'image/*',
+          width: 0,
+          height: 0,
+          size_bytes: 0,
+          rescaled: false,
+          reencoded: false,
+        },
+      ])
     }
     setActivePanel(DESCRIBE_NEW_PANEL)
   }
@@ -498,8 +555,40 @@ export default function DescribeImagePage() {
   const canSubmit = useMemo(
     () =>
       capabilitiesStatus === 'ready' &&
-      Boolean(uploadedInput && selectedCap && !submitting && !uploading),
-    [uploadedInput, selectedCap, submitting, uploading, capabilitiesStatus],
+      Boolean(uploadedInputs.length > 0 && selectedCap && !submitting && !uploading),
+    [uploadedInputs, selectedCap, submitting, uploading, capabilitiesStatus],
+  )
+
+  const multiInput = uploadedInputs.length > 1
+  const singleInput = uploadedInputs.length === 1 ? uploadedInputs[0] : null
+  // One image: its blob if that's what we have, else the stored file. None:
+  // the blob of an upload still in flight.
+  const imagePreview = singleInput
+    ? blobPreview?.imageId === singleInput.image_id
+      ? blobPreview.url
+      : imageFileUrl(singleInput.image_id, token)
+    : uploadedInputs.length === 0
+      ? (blobPreview?.url ?? null)
+      : null
+  const largestInputBytes = Math.max(0, ...uploadedInputs.map(img => img.size_bytes))
+  const uploadLabel =
+    uploading && uploadProgress && uploadProgress.total > 1
+      ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+      : 'Add images'
+  const imageFileInput = (
+    <input
+      type="file"
+      accept="image/*"
+      multiple
+      className="hidden"
+      disabled={uploading}
+      onChange={e => {
+        const files = Array.from(e.target.files ?? [])
+        if (files.length > 0) void onUpload(files)
+        e.target.value = ''
+      }}
+      data-testid="describe-upload-input"
+    />
   )
 
   const status = selectedJob?.status
@@ -568,7 +657,7 @@ export default function DescribeImagePage() {
                     New Analysis
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Upload or paste an image, choose a vision model, and run a description in the background.
+                    Upload or paste images, choose a vision model, and run a description of each in the background.
                   </p>
                 </header>
 
@@ -596,8 +685,46 @@ export default function DescribeImagePage() {
 
                   {/* Image upload */}
                   <div className="space-y-1.5" data-testid="describe-image-upload">
-                    <Label>Image</Label>
-                    {imagePreview ? (
+                    <Label>
+                      {multiInput
+                        ? `Images (${uploadedInputs.length}) · one analysis per image`
+                        : 'Image'}
+                    </Label>
+                    {multiInput ? (
+                      <div className="space-y-2">
+                        <InputImageGrid
+                          images={uploadedInputs}
+                          token={token}
+                          onRemove={removeInput}
+                          onClear={clearInput}
+                          testIdPrefix="describe"
+                          disabled={uploading || submitting}
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+                            {uploading ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <ImageUp className="size-3.5" />
+                            )}
+                            {uploadLabel}
+                            {imageFileInput}
+                          </label>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-9"
+                            onClick={() => setPickerOpen(true)}
+                            disabled={uploading}
+                            data-testid="describe-pick-from-library"
+                          >
+                            <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+                            From library
+                          </Button>
+                        </div>
+                      </div>
+                    ) : imagePreview ? (
                       <div className="relative inline-block">
                         <img
                           src={imagePreview}
@@ -620,18 +747,8 @@ export default function DescribeImagePage() {
                           </div>
                         )}
                         <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            disabled={uploading}
-                            onChange={e => {
-                              const file = e.target.files?.[0]
-                              if (file) void onUpload(file)
-                              e.target.value = ''
-                            }}
-                          />
-                          Change image
+                          {imageFileInput}
+                          {uploadLabel}
                         </label>
                         <Button
                           type="button"
@@ -639,6 +756,7 @@ export default function DescribeImagePage() {
                           size="sm"
                           className="mt-2"
                           onClick={() => setPickerOpen(true)}
+                          disabled={uploading}
                           data-testid="describe-pick-from-library"
                         >
                           <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
@@ -657,25 +775,23 @@ export default function DescribeImagePage() {
                           onDrop={e => {
                             e.preventDefault()
                             setDragOver(false)
-                            const file = e.dataTransfer.files[0]
-                            if (file?.type.startsWith('image/')) void onUpload(file)
+                            const files = Array.from(e.dataTransfer.files).filter(f =>
+                              f.type.startsWith('image/'),
+                            )
+                            if (files.length > 0) void onUpload(files)
                           }}
                           data-testid="describe-drop-zone"
                         >
                           <ImageUp className="size-8 text-muted-foreground/60" />
-                          <span className="text-sm font-medium">Click, drag, or paste an image here</span>
-                          <span className="text-xs">PNG, JPEG, WebP, GIF…</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            disabled={uploading}
-                            onChange={e => {
-                              const file = e.target.files?.[0]
-                              if (file) void onUpload(file)
-                              e.target.value = ''
-                            }}
-                          />
+                          <span className="text-sm font-medium">
+                            {uploading && uploadProgress && uploadProgress.total > 1
+                              ? uploadLabel
+                              : 'Click, drag, or paste images here'}
+                          </span>
+                          <span className="text-xs">
+                            PNG, JPEG, WebP, GIF… · up to {MAX_BATCH_INPUT_IMAGES}, one analysis each
+                          </span>
+                          {imageFileInput}
                         </label>
                         <Button
                           type="button"
@@ -683,6 +799,7 @@ export default function DescribeImagePage() {
                           size="sm"
                           className="w-full"
                           onClick={() => setPickerOpen(true)}
+                          disabled={uploading}
                           data-testid="describe-pick-from-library"
                         >
                           <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
@@ -721,11 +838,12 @@ export default function DescribeImagePage() {
                     </p>
                   </div>
 
-                  {externalResizeInfo?.available && uploadedInput && (
+                  {externalResizeInfo?.available && uploadedInputs.length > 0 && (
                     <ExternalResizeToggle
                       checked={externalResize}
                       onChange={setExternalResize}
-                      sizeBytes={uploadedInput.size_bytes}
+                      sizeBytes={largestInputBytes}
+                      imageCount={uploadedInputs.length}
                       thresholdBytes={externalResizeInfo.threshold_bytes}
                       testId="describe-external-resize"
                     />
@@ -746,7 +864,7 @@ export default function DescribeImagePage() {
                     ) : (
                       <>
                         <Eye className="mr-2 size-4" />
-                        Analyze
+                        {multiInput ? `Analyze ${uploadedInputs.length} images` : 'Analyze'}
                       </>
                     )}
                   </Button>
@@ -944,7 +1062,7 @@ export default function DescribeImagePage() {
         <ImagePickerModal
           open={pickerOpen}
           onClose={() => setPickerOpen(false)}
-          onSelect={selectLibraryImage}
+          onSelectMany={onPickInputs}
           token={token}
         />
       )}

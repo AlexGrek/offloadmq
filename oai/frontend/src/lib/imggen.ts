@@ -94,6 +94,35 @@ export function proportionalCounterpart(
     : roundToMultiple(value * ratio, 8)
 }
 
+/** Most input images one submission takes; each becomes its own job. */
+export const MAX_BATCH_INPUT_IMAGES = 10
+
+/** Appends `added` to the input set — duplicates (by `image_id`) skipped, capped at `MAX_BATCH_INPUT_IMAGES`. */
+export function appendInputs<T extends { image_id: string }>(prev: T[], added: T[]): T[] {
+  const next = [...prev]
+  for (const img of added) {
+    if (next.length >= MAX_BATCH_INPUT_IMAGES) break
+    if (!next.some(existing => existing.image_id === img.image_id)) next.push(img)
+  }
+  return next
+}
+
+/**
+ * Output dims for one input of a multi-image img2img batch: its own size with
+ * "Original resolution", its own aspect ratio at the form's long edge with
+ * "Keep proportions", else the form's fixed size.
+ */
+export function batchInputDims(
+  img: { width: number; height: number },
+  opts: { originalResolution: boolean; keepProportions: boolean; width: number; height: number },
+): [number, number] {
+  if (opts.originalResolution) return [img.width, img.height]
+  if (opts.keepProportions) {
+    return proportionalSize(img.width, img.height, Math.max(opts.width, opts.height))
+  }
+  return [opts.width, opts.height]
+}
+
 export interface RescaleState {
   enabled: boolean
   mode: RescaleMode

@@ -85,6 +85,7 @@ import { PipelineJobParamsPanel } from '../components/imggen/PipelineJobParamsPa
 import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImgGenModelPicker } from '../components/imggen/ImgGenModelPicker'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
+import { InputImageGrid } from '../components/imggen/InputImageGrid'
 import { VideoPromptGenerator } from '../components/imggen/VideoPromptGenerator'
 import { ToolDebugHeaderButton, ToolDebugModal } from '../components/ToolDebugModal'
 import { toolDebugReady } from '../lib/toolDebug'
@@ -106,6 +107,9 @@ import {
   proportionalCounterpart,
   proportionalPresets,
   proportionalSize,
+  appendInputs,
+  batchInputDims,
+  MAX_BATCH_INPUT_IMAGES,
 
   pipelineEventsWithoutPolls,
   pipelineStatusLine,
@@ -156,14 +160,14 @@ const MODE_TABS: { mode: ImgGenMode; label: string; icon: LucideIcon }[] = [
   { mode: 'img2video', label: 'Img2Video', icon: Video },
 ]
 
-function submitLabelFor(mode: ImgGenMode): string {
+function submitLabelFor(mode: ImgGenMode, inputCount: number): string {
   switch (mode) {
     case 'img2img':
-      return 'Edit Image'
+      return inputCount > 1 ? `Edit ${inputCount} Images` : 'Edit Image'
     case 'txt2video':
       return 'Generate Video'
     case 'img2video':
-      return 'Animate Image'
+      return inputCount > 1 ? `Animate ${inputCount} Images` : 'Animate Image'
     default:
       return 'Generate Image'
   }
@@ -259,9 +263,18 @@ export default function ImageGenerationPage() {
   const [externalResizeInfo, setExternalResizeInfo] = useState<ExternalResizeInfo | null>(null)
   const [externalResize, setExternalResize] = useState(false)
 
-  const [uploadedInput, setUploadedInput] = useState<UploadedImage | null>(null)
+  const [uploadedInputs, setUploadedInputs] = useState<UploadedImage[]>([])
+  // The first input drives the form (dims, presets, preview). With several,
+  // each one becomes its own job on submit and "Generate multiple" is off.
+  const uploadedInput = uploadedInputs[0] ?? null
+  const multiInput = uploadedInputs.length > 1
+  const largestInputBytes = useMemo(
+    () => Math.max(0, ...uploadedInputs.map(img => img.size_bytes)),
+    [uploadedInputs],
+  )
   const [inputPreviewUrl, setInputPreviewUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [polling, setPolling] = useState(false)
@@ -343,13 +356,14 @@ export default function ImageGenerationPage() {
     return true
   }, [prompt, capability, mode, uploadedInput, capabilitiesStatus])
 
-  // "Original resolution" is only meaningful for img2img (not img2video).
+  // "Original resolution" is only meaningful for img2img (not img2video), and
+  // needs every input under 4K — each job then runs at its own input's size.
   const canUseOriginalResolution = useMemo(
     () =>
       mode === 'img2img' &&
-      uploadedInput != null &&
-      fitsOriginalResolution(uploadedInput.width, uploadedInput.height),
-    [mode, uploadedInput],
+      uploadedInputs.length > 0 &&
+      uploadedInputs.every(img => fitsOriginalResolution(img.width, img.height)),
+    [mode, uploadedInputs],
   )
 
   // Output aspect ratio is locked to the input whenever either toggle is on.
@@ -562,16 +576,24 @@ export default function ImageGenerationPage() {
       ? 'loading'
       : capabilitiesStatus
 
-  // Apply defaults after an input image is set. For img2img: lock proportions + use original
-  // resolution when sub-4K. For video modes: leave output resolution untouched — the user sets
-  // it independently. `forMode` defaults to current `mode` but must be passed explicitly when
-  // called from switchMode (where React state hasn't flushed yet).
-  function applyInputDefaults(img: UploadedImage, forMode: ImgGenMode = mode): boolean {
+  // Apply defaults after the input images change. For img2img: lock proportions + use original
+  // resolution when every input is sub-4K; dims come from the first input. For video modes: leave
+  // output resolution untouched — the user sets it independently. `forMode` defaults to current
+  // `mode` but must be passed explicitly when called from switchMode (where React state hasn't
+  // flushed yet).
+  function applyInputDefaults(imgs: UploadedImage[], forMode: ImgGenMode = mode): boolean {
+    const [first] = imgs
+    if (!first) {
+      setOriginalResolution(false)
+      setKeepProportions(false)
+      return false
+    }
     // Big uploads are the ones the backend stored at full size, so they are
     // exactly the ones worth shrinking on an agent.
+    const threshold = externalResizeInfo?.threshold_bytes ?? Infinity
     setExternalResize(
       isInputImageMode(forMode) &&
-        externalResizeDefault(img.size_bytes, externalResizeInfo?.threshold_bytes ?? Infinity),
+        imgs.some(img => externalResizeDefault(img.size_bytes, threshold)),
     )
     if (forMode !== 'img2img') {
       setKeepProportions(false)
@@ -579,15 +601,15 @@ export default function ImageGenerationPage() {
       rescaleUserEditedRef.current = false
       return false
     }
-    const fits = fitsOriginalResolution(img.width, img.height)
+    const fits = imgs.every(img => fitsOriginalResolution(img.width, img.height))
     setKeepProportions(true)
     setOriginalResolution(fits)
     rescaleUserEditedRef.current = false
     if (fits) {
-      setWidth(img.width)
-      setHeight(img.height)
+      setWidth(first.width)
+      setHeight(first.height)
     } else {
-      const [w, h] = proportionalSize(img.width, img.height, 1024)
+      const [w, h] = proportionalSize(first.width, first.height, 1024)
       setWidth(w)
       setHeight(h)
     }
@@ -617,53 +639,97 @@ export default function ImageGenerationPage() {
       ...defaults.rescale,
     }))
     if (!isInputImageMode(next)) {
-      setUploadedInput(null)
+      setUploadedInputs([])
       setInputPreviewUrl(null)
       setOriginalResolution(false)
       setKeepProportions(false)
-    } else if (uploadedInput) {
-      applyInputDefaults(uploadedInput, next)
+    } else if (uploadedInputs.length > 0) {
+      applyInputDefaults(uploadedInputs, next)
     } else {
       setOriginalResolution(false)
       setKeepProportions(false)
     }
   }
 
-  async function onUpload(file: File) {
-    if (!token) return
+  /** Info line after the input set changed; `skipped` counts files dropped by the cap. */
+  function inputSetInfo(imgs: UploadedImage[], original: boolean, skipped: number): string {
+    const capNote = skipped > 0
+      ? ` ${skipped} more skipped — at most ${MAX_BATCH_INPUT_IMAGES} input images.`
+      : ''
+    if (imgs.length > 1) return `${imgs.length} input images — one job per image.${capNote}`
+    const [img] = imgs
+    return (
+      (original
+        ? `Uploaded ${img.filename} (${img.width}×${img.height}). Generating at original resolution.`
+        : `Uploaded ${img.filename} as ${img.width}×${img.height}.`) + capNote
+    )
+  }
+
+  /** Uploads `files` one by one and appends them to the input set. */
+  async function onUpload(files: File[]) {
+    if (!token || files.length === 0) return
+    const room = MAX_BATCH_INPUT_IMAGES - uploadedInputs.length
+    if (room <= 0) {
+      setError(`At most ${MAX_BATCH_INPUT_IMAGES} input images — remove one to add another.`)
+      return
+    }
+    const batch = files.slice(0, room)
     setUploading(true)
     setError(null)
     setInfo('Uploading and normalizing image (EXIF-aware, max 1920px).')
-    const preview = URL.createObjectURL(file)
-    setInputPreviewUrl(prev => {
-      if (prev) URL.revokeObjectURL(prev)
-      return preview
-    })
-    try {
-      const img = await uploadImage(token, file)
-      setUploadedInput(img)
-      const original = applyInputDefaults(img)
-      setInfo(
-        original
-          ? `Uploaded ${img.filename} (${img.width}×${img.height}). Generating at original resolution.`
-          : `Uploaded ${img.filename} as ${img.width}×${img.height}.`,
-      )
-    } catch (e) {
-      setError((e as Error).message)
-      setUploadedInput(null)
-      setOriginalResolution(false)
-      setKeepProportions(false)
+    // Instant local preview only for the plain single-image case; a set shows server thumbnails.
+    if (uploadedInputs.length === 0 && batch.length === 1) {
+      const preview = URL.createObjectURL(batch[0])
       setInputPreviewUrl(prev => {
         if (prev) URL.revokeObjectURL(prev)
-        return null
+        return preview
       })
-    } finally {
-      setUploading(false)
+    }
+    let next = uploadedInputs
+    const failures: string[] = []
+    for (const [i, file] of batch.entries()) {
+      setUploadProgress({ done: i + 1, total: batch.length })
+      try {
+        next = appendInputs(next, [await uploadImage(token, file)])
+        setUploadedInputs(next)
+      } catch (e) {
+        failures.push(batch.length > 1 ? `${file.name}: ${(e as Error).message}` : (e as Error).message)
+      }
+    }
+    setUploading(false)
+    setUploadProgress(null)
+    if (next.length === 0) {
+      clearInput()
+    } else {
+      setInfo(inputSetInfo(next, applyInputDefaults(next), files.length - batch.length))
+    }
+    if (failures.length > 0) setError(failures.join('; '))
+  }
+
+  /** Appends library picks to the input set. */
+  function onPickInputs(picked: UploadedImage[]) {
+    const next = appendInputs(uploadedInputs, picked)
+    setUploadedInputs(next)
+    setInputPreviewUrl(null)
+    const original = applyInputDefaults(next)
+    if (next.length > 1) {
+      const fresh = picked.filter(p => !uploadedInputs.some(img => img.image_id === p.image_id))
+      setInfo(inputSetInfo(next, original, fresh.length - (next.length - uploadedInputs.length)))
     }
   }
 
+  function removeInput(imageId: string) {
+    const next = uploadedInputs.filter(img => img.image_id !== imageId)
+    if (next.length === 0) {
+      clearInput()
+      return
+    }
+    setUploadedInputs(next)
+    applyInputDefaults(next)
+  }
+
   function clearInput() {
-    setUploadedInput(null)
+    setUploadedInputs([])
     setOriginalResolution(false)
     setKeepProportions(false)
     setInputPreviewUrl(prev => {
@@ -746,8 +812,8 @@ export default function ImageGenerationPage() {
       rescaled: file.rescaled,
       reencoded: file.reencoded,
     }
-    setUploadedInput(img)
-    const original = applyInputDefaults(img, targetMode)
+    setUploadedInputs([img])
+    const original = applyInputDefaults([img], targetMode)
     setInputPreviewUrl(null)
     setActivePanel(IMGGEN_NEW_PANEL)
     if (sourcePrompt) setPrompt(sourcePrompt)
@@ -812,7 +878,8 @@ export default function ImageGenerationPage() {
       setRescale,
       setOriginalResolution,
       setKeepProportions,
-      setUploadedInput,
+      // Retry / "Edit prompt" restore a job's single input.
+      setUploadedInput: (img: UploadedImage | null) => setUploadedInputs(img ? [img] : []),
       setInputPreviewUrl,
       setExternalResize,
       rescaleUserEditedRef,
@@ -1038,6 +1105,11 @@ export default function ImageGenerationPage() {
 
   async function onSubmit() {
     if (!token || !canSubmit) return
+    if (multiInput) {
+      const inputs = uploadedInputs
+      await submitBatch(inputs.length, (expandedPrompt, i) => buildSubmitRequest(expandedPrompt, inputs[i]))
+      return
+    }
     setSubmitting(true)
     setJobDetailLoading(true)
     setError(null)
@@ -1074,6 +1146,19 @@ export default function ImageGenerationPage() {
     if (!token || !canSubmit) return
     const count = parseGenerateMultipleCount(generateMultipleCountInput)
     setGenerateMultipleOpen(false)
+    await submitBatch(count, expandedPrompt => buildSubmitRequest(expandedPrompt))
+  }
+
+  /**
+   * Submits `count` jobs in sequence — "Generate multiple" (same input) or one
+   * job per input image. One placeholder usage map spans the whole batch, so no
+   * `{color}`/`{animal}` value repeats across its jobs.
+   */
+  async function submitBatch(
+    count: number,
+    requestFor: (expandedPrompt: string, index: number) => StartImageJobRequest,
+  ) {
+    if (!token) return
     setSubmitting(true)
     setJobDetailLoading(true)
     setError(null)
@@ -1085,7 +1170,7 @@ export default function ImageGenerationPage() {
       for (let i = 0; i < count; i++) {
         setInfo(`Submitting job ${i + 1} of ${count}…`)
         const expandedPrompt = expandPromptPlaceholders(prompt, placeholderUsage, customDefs)
-        const res = await startImageJob(token, buildSubmitRequest(expandedPrompt))
+        const res = await startImageJob(token, requestFor(expandedPrompt, i))
         submittedIds.push(res.job_id)
         await refreshJob(res.job_id)
       }
@@ -1145,37 +1230,55 @@ export default function ImageGenerationPage() {
     copyPipelineToNewForm(selectedJob)
   }
 
-  function rescaleForSubmit(): ImagePipelineRescaleParams | null {
+  function rescaleForSubmit(
+    jobRescale: RescaleState,
+    jobWidth: number,
+    jobHeight: number,
+  ): ImagePipelineRescaleParams | null {
     if (mode !== 'img2img' && mode !== 'img2video') return null
     // Original-resolution (img2img only): persist rescale as disabled so the job reconstructs as pass-through.
     if (mode === 'img2img' && originalResolution) {
-      return { enabled: false, mode: rescale.mode, width, height, px: null, mp: null }
+      return { enabled: false, mode: jobRescale.mode, width: jobWidth, height: jobHeight, px: null, mp: null }
     }
     return {
-      enabled: rescale.enabled,
-      mode: rescale.mode,
-      width: rescale.width,
-      height: rescale.height,
-      px: rescale.px === '' ? null : Number(rescale.px),
-      mp: rescale.mp === '' ? null : Number(rescale.mp),
+      enabled: jobRescale.enabled,
+      mode: jobRescale.mode,
+      width: jobRescale.width,
+      height: jobRescale.height,
+      px: jobRescale.px === '' ? null : Number(jobRescale.px),
+      mp: jobRescale.mp === '' ? null : Number(jobRescale.mp),
     }
   }
 
-  function buildSubmitRequest(promptOverride?: string): StartImageJobRequest {
+  function buildSubmitRequest(
+    promptOverride?: string,
+    input: UploadedImage | null = uploadedInput,
+  ): StartImageJobRequest {
+    // With several img2img inputs each job is sized from its own image, and an
+    // exact rescale the user hasn't edited follows that size. A single input
+    // uses the form's dims as-is.
+    const perInput = multiInput && mode === 'img2img' && input != null
+    const [jobWidth, jobHeight] = perInput
+      ? batchInputDims(input, { originalResolution, keepProportions, width, height })
+      : [width, height]
+    const jobRescale =
+      perInput && rescale.mode === 'exact' && !rescaleUserEditedRef.current
+        ? { ...rescale, width: jobWidth, height: jobHeight }
+        : rescale
     const dataPrep =
-      mode === 'img2img' && !originalResolution ? rescaleDataPrep(rescale.enabled, rescale) : null
+      mode === 'img2img' && !originalResolution ? rescaleDataPrep(jobRescale.enabled, jobRescale) : null
     return {
       capability: capability.trim(),
       prompt: (promptOverride ?? prompt).trim(),
       negative_prompt: overrideNegative ? negativePrompt.trim() || null : null,
       override_negative: overrideNegative,
-      width,
-      height,
+      width: jobWidth,
+      height: jobHeight,
       seed: seed.trim() ? Number(seed) : null,
       workflow: mode,
-      input_image_id: uploadedInput?.image_id ?? null,
+      input_image_id: input?.image_id ?? null,
       data_preparation: dataPrep,
-      rescale: rescaleForSubmit(),
+      rescale: rescaleForSubmit(jobRescale, jobWidth, jobHeight),
       video_length: isVideoMode(mode) ? parseVideoLength(videoLength) : null,
       external_resize: isInputImageMode(mode) && externalResize,
       prompt_template: prompt.trim() || null,
@@ -1571,19 +1674,30 @@ export default function ImageGenerationPage() {
                 data-testid="imggen-input-section"
               >
                 <div className="space-y-3">
-                  <Label>Input image</Label>
+                  <Label>
+                    {multiInput
+                      ? `Input images (${uploadedInputs.length}) · one job per image`
+                      : 'Input image'}
+                  </Label>
                   <div className="flex flex-wrap items-start gap-2">
                     <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm transition-colors hover:bg-muted/50">
                       <Upload className="h-3.5 w-3.5" />
-                      {uploading ? 'Uploading…' : 'Upload'}
+                      {uploading
+                        ? uploadProgress && uploadProgress.total > 1
+                          ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+                          : 'Uploading…'
+                        : uploadedInput
+                          ? 'Add'
+                          : 'Upload'}
                       <input
                         type="file"
                         accept="image/*"
+                        multiple
                         className="hidden"
                         disabled={uploading}
                         onChange={e => {
-                          const file = e.target.files?.[0]
-                          if (file) void onUpload(file)
+                          const files = Array.from(e.target.files ?? [])
+                          if (files.length > 0) void onUpload(files)
                           e.target.value = ''
                         }}
                         data-testid="imggen-upload-input"
@@ -1595,13 +1709,14 @@ export default function ImageGenerationPage() {
                       size="sm"
                       className="h-9"
                       onClick={() => setPickerOpen(true)}
+                      disabled={uploading}
                       data-testid="imggen-pick-from-library"
                     >
                       <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
                       From library
                     </Button>
-                    <MorphIn show={Boolean(uploadedInput)}>
-                      {uploadedInput && (
+                    <MorphIn show={Boolean(uploadedInput) && !multiInput}>
+                      {uploadedInput && !multiInput && (
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span>
                             {uploadedInput.filename} ({uploadedInput.width}×{uploadedInput.height})
@@ -1613,8 +1728,20 @@ export default function ImageGenerationPage() {
                       )}
                     </MorphIn>
                   </div>
-                  <MorphCollapse show={Boolean(inputPreviewUrl || uploadedInput)}>
-                    {(inputPreviewUrl || uploadedInput) && (
+                  <MorphCollapse show={multiInput}>
+                    {multiInput && (
+                      <InputImageGrid
+                        images={uploadedInputs}
+                        token={token}
+                        onRemove={removeInput}
+                        onClear={clearInput}
+                        testIdPrefix="imggen"
+                        disabled={uploading || submitting}
+                      />
+                    )}
+                  </MorphCollapse>
+                  <MorphCollapse show={!multiInput && Boolean(inputPreviewUrl || uploadedInput)}>
+                    {!multiInput && (inputPreviewUrl || uploadedInput) && (
                     <ImageLightbox
                       src={
                         uploadedInput
@@ -1655,14 +1782,16 @@ export default function ImageGenerationPage() {
                       <ExternalResizeToggle
                         checked={externalResize}
                         onChange={setExternalResize}
-                        sizeBytes={uploadedInput.size_bytes}
+                        sizeBytes={largestInputBytes}
+                        imageCount={uploadedInputs.length}
                         thresholdBytes={externalResizeInfo.threshold_bytes}
                         testId="imggen-external-resize"
                       />
                     )}
                   </MorphCollapse>
-                  <MorphCollapse show={mode === 'img2video' && Boolean(uploadedInput)}>
-                    {uploadedInput && (
+                  {/* Writes a prompt from one frame — hidden for a set, whose jobs share one prompt. */}
+                  <MorphCollapse show={mode === 'img2video' && Boolean(uploadedInput) && !multiInput}>
+                    {uploadedInput && !multiInput && (
                       <VideoPromptGenerator
                         token={token}
                         imageId={uploadedInput.image_id}
@@ -1890,7 +2019,9 @@ export default function ImageGenerationPage() {
                           className="rounded border-border"
                           data-testid="imggen-original-resolution"
                         />
-                        Original resolution ({uploadedInput.width}×{uploadedInput.height})
+                        {multiInput
+                          ? 'Original resolution (each image)'
+                          : `Original resolution (${uploadedInput.width}×${uploadedInput.height})`}
                       </label>
                     </MorphCollapse>
                     <label
@@ -1917,8 +2048,19 @@ export default function ImageGenerationPage() {
                         data-testid="imggen-keep-proportions"
                       />
                       Keep proportions
-                      {originalResolution && ' (locked to original)'}
+                      {originalResolution
+                        ? ' (locked to original)'
+                        : multiInput && ' (each image)'}
                     </label>
+                    {multiInput && (
+                      <p className="text-xs text-muted-foreground" data-testid="imggen-multi-input-dims-hint">
+                        {originalResolution
+                          ? 'Each image is generated at its own size.'
+                          : ratioLocked
+                            ? `Each image keeps its own aspect ratio at a ${Math.max(width, height)}px long edge.`
+                            : `Every image is generated at ${width}×${height}.`}
+                      </p>
+                    )}
                   </div>
                   )}
                 </MorphCollapse>
@@ -2026,14 +2168,14 @@ export default function ImageGenerationPage() {
                       </motion.span>
                     ) : (
                       <motion.span
-                        key={submitLabelFor(mode)}
+                        key={submitLabelFor(mode, uploadedInputs.length)}
                         layout="position"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         className="flex items-center gap-1.5"
                       >
-                        {submitLabelFor(mode)}
+                        {submitLabelFor(mode, uploadedInputs.length)}
                       </motion.span>
                     )}
                   </AnimatePresence>
@@ -2041,17 +2183,21 @@ export default function ImageGenerationPage() {
                 </Button>
               </motion.div>
 
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                className="h-auto px-0 text-xs"
-                onClick={() => setGenerateMultipleOpen(true)}
-                disabled={!canSubmit || submitting}
-                data-testid="imggen-generate-multiple-open"
-              >
-                Generate multiple
-              </Button>
+              {/* N input images already mean N jobs. The title sits on a wrapper
+                  because a disabled button gets no pointer events. */}
+              <span title={multiInput ? 'One job per input image — remove extra images to generate multiple' : undefined}>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-0 text-xs"
+                  onClick={() => setGenerateMultipleOpen(true)}
+                  disabled={!canSubmit || submitting || multiInput}
+                  data-testid="imggen-generate-multiple-open"
+                >
+                  Generate multiple
+                </Button>
+              </span>
 
               <AnimatePresence>
                 {submitBurst &&
@@ -2522,11 +2668,7 @@ export default function ImageGenerationPage() {
       <ImagePickerModal
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onSelect={img => {
-          setUploadedInput(img)
-          applyInputDefaults(img)
-          setInputPreviewUrl(null)
-        }}
+        onSelectMany={onPickInputs}
         token={token}
       />
     )}

@@ -48,11 +48,14 @@ function userFileToUploadedImage(file: UserFile): UploadedImage {
 interface ImagePickerModalProps {
   open: boolean
   onClose: () => void
-  onSelect: (image: UploadedImage) => void
+  onSelect?: (image: UploadedImage) => void
+  /** Passing this turns on multi-select: images are toggled and confirmed together, in click order. */
+  onSelectMany?: (images: UploadedImage[]) => void
   token: string
 }
 
-export function ImagePickerModal({ open, onClose, onSelect, token }: ImagePickerModalProps) {
+export function ImagePickerModal({ open, onClose, onSelect, onSelectMany, token }: ImagePickerModalProps) {
+  const multiple = Boolean(onSelectMany)
   const [files, setFiles] = useState<UserFile[]>([])
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useState(false)
@@ -60,7 +63,8 @@ export function ImagePickerModal({ open, onClose, onSelect, token }: ImagePicker
   const [filter, setFilter] = useState<DirectionFilter>('all')
   const [starredOnly, setStarredOnly] = useState(false)
   const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)
+  // Whole file objects (not ids) so a selection survives filter/search changes.
+  const [selected, setSelected] = useState<UserFile[]>([])
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState({ width: 0, height: 0 })
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -102,7 +106,7 @@ export function ImagePickerModal({ open, onClose, onSelect, token }: ImagePicker
   useEffect(() => {
     if (open && !prevOpenRef.current) {
       setQuery('')
-      setSelected(null)
+      setSelected([])
     }
     prevOpenRef.current = open
   }, [open])
@@ -154,14 +158,21 @@ export function ImagePickerModal({ open, onClose, onSelect, token }: ImagePicker
     load(false)
   }, [hasMore, load, loading, rowStride, totalHeight])
 
+  function toggle(file: UserFile) {
+    setSelected(previous => {
+      if (previous.some(item => item.id === file.id)) return previous.filter(item => item.id !== file.id)
+      return multiple ? [...previous, file] : [file]
+    })
+  }
+
   function confirm() {
-    const file = files.find(item => item.id === selected)
-    if (!file) return
-    onSelect(userFileToUploadedImage(file))
+    if (selected.length === 0) return
+    if (onSelectMany) onSelectMany(selected.map(userFileToUploadedImage))
+    else onSelect?.(userFileToUploadedImage(selected[0]))
     onClose()
   }
 
-  const selectedFile = files.find(file => file.id === selected)
+  const selectedFile = selected.length === 1 ? selected[0] : null
 
   return (
     <AnimatePresence>
@@ -241,9 +252,9 @@ export function ImagePickerModal({ open, onClose, onSelect, token }: ImagePicker
                     }}
                   >
                     {files.slice(row * columns, (row + 1) * columns).map(file => {
-                      const isSelected = selected === file.id
+                      const isSelected = selected.some(item => item.id === file.id)
                       return (
-                        <motion.button key={file.id} type="button" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => setSelected(previous => previous === file.id ? null : file.id)} className={cn(
+                        <motion.button key={file.id} type="button" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => toggle(file)} className={cn(
                           'group relative min-w-0 overflow-hidden rounded-xl border-2 bg-muted/30 transition-colors',
                           isSelected ? 'border-primary' : 'border-transparent',
                         )} data-testid={`imggen-picker-file-${file.id}`}>
@@ -267,20 +278,27 @@ export function ImagePickerModal({ open, onClose, onSelect, token }: ImagePicker
 
             <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-3">
               <AnimatePresence mode="wait">
-                {selectedFile ? (
+                {selected.length > 1 ? (
+                  <motion.span key="selected-many" initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -6 }} transition={{ duration: 0.15 }} className="flex items-center gap-1.5 text-xs text-foreground" data-testid="imggen-picker-selected-count">
+                    <Check className="size-3 shrink-0 text-primary" strokeWidth={3} />
+                    {selected.length} selected
+                  </motion.span>
+                ) : selectedFile ? (
                   <motion.span key="selected" initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -6 }} transition={{ duration: 0.15 }} className="flex max-w-xs items-center gap-1.5 truncate text-xs text-foreground">
                     <Check className="size-3 shrink-0 text-primary" strokeWidth={3} />
                     <span className="truncate">{selectedFile.filename}</span>
                     <span className="shrink-0 text-muted-foreground">{selectedFile.width}×{selectedFile.height}</span>
                   </motion.span>
                 ) : (
-                  <motion.span key="hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-xs text-muted-foreground">Click an image to select it</motion.span>
+                  <motion.span key="hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-xs text-muted-foreground">{multiple ? 'Click images to select them' : 'Click an image to select it'}</motion.span>
                 )}
               </AnimatePresence>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-                <motion.div whileTap={{ scale: selected ? 0.95 : 1 }}>
-                  <Button size="sm" disabled={!selected} onClick={confirm} data-testid="imggen-picker-confirm">Use image</Button>
+                <motion.div whileTap={{ scale: selected.length > 0 ? 0.95 : 1 }}>
+                  <Button size="sm" disabled={selected.length === 0} onClick={confirm} data-testid="imggen-picker-confirm">
+                    {selected.length > 1 ? `Use ${selected.length} images` : 'Use image'}
+                  </Button>
                 </motion.div>
               </div>
             </div>

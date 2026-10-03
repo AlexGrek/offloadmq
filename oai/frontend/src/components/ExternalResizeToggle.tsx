@@ -6,8 +6,10 @@ import { cn } from '@/lib/utils'
 interface ExternalResizeToggleProps {
   checked: boolean
   onChange: (checked: boolean) => void
-  /** Stored size of the picked input, used to explain why the box is ticked. */
+  /** Stored size of the picked input (the largest, for several), used to explain why the box is ticked. */
   sizeBytes?: number | null
+  /** Number of picked inputs; above 1 the wording covers the whole set. */
+  imageCount?: number
   /** Size above which the option is ticked automatically. */
   thresholdBytes: number
   disabled?: boolean
@@ -26,11 +28,13 @@ export function ExternalResizeToggle({
   checked,
   onChange,
   sizeBytes,
+  imageCount = 1,
   thresholdBytes,
   disabled,
   testId = 'external-resize-toggle',
 }: ExternalResizeToggleProps) {
   const isLarge = sizeBytes != null && sizeBytes > thresholdBytes
+  const many = imageCount > 1
 
   return (
     <div
@@ -54,10 +58,10 @@ export function ExternalResizeToggle({
       </label>
       <p className="pl-6 text-xs text-muted-foreground">
         {isLarge
-          ? `This image is ${formatBytes(sizeBytes)} — larger than ${formatBytes(
+          ? `${many ? 'The largest image' : 'This image'} is ${formatBytes(sizeBytes)} — larger than ${formatBytes(
               thresholdBytes,
-            )}, so it was stored at full size. An agent will shrink it first.`
-          : `Shrinks the image on an agent before the job runs, instead of in the server. On by default above ${formatBytes(
+            )}, so it was stored at full size. An agent will shrink ${many ? 'the images' : 'it'} first.`
+          : `Shrinks ${many ? 'each image' : 'the image'} on an agent before the job runs, instead of in the server. On by default above ${formatBytes(
               thresholdBytes,
             )}.`}
       </p>
