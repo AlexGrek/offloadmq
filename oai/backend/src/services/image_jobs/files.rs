@@ -240,7 +240,7 @@ pub async fn list_user_files(
     user_id: i64,
     limit: u64,
 ) -> Result<UserFileListing, AppError> {
-    let files = image_generation::list_user_image_files(&state.db, user_id, limit).await?;
+    let files = image_generation::list_user_visible_image_files(&state.db, user_id, limit).await?;
     let user = users::find_by_id(&state.db, user_id)
         .await?
         .ok_or(AppError::NotFound)?;

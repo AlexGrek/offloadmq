@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use sea_orm::{
     sea_query::{extension::postgres::PgExpr, Condition, Expr, ExprTrait, Order, Query},
     ActiveModelTrait, ActiveValue, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    DatabaseTransaction, FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    Statement, TransactionTrait,
 };
 
 use crate::{
@@ -21,6 +22,48 @@ pub type ImageGenerationJob = image_generation_jobs::Model;
 pub type ImageFile = image_files::Model;
 pub type ImagePipelineEvent = image_pipeline_events::Model;
 pub type ImageOffloadTask = image_offload_tasks::Model;
+
+/// Serialize output downloads across page polls, workers, and backend replicas.
+/// The transaction holds only an advisory lock, so normal job/file writes can
+/// continue on the pool. Dropping it on errors or cancellation releases the lock.
+pub async fn try_lock_output_download(
+    db: &DatabaseConnection,
+    job_id: i64,
+) -> Result<Option<DatabaseTransaction>, AppError> {
+    let transaction = db.begin().await?;
+    let row = transaction
+        .query_one(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "SELECT pg_try_advisory_xact_lock($1) AS acquired",
+            [job_id.into()],
+        ))
+        .await?
+        .ok_or_else(|| AppError::Internal("missing output download lock result".into()))?;
+    if row.try_get::<bool>("", "acquired")? {
+        Ok(Some(transaction))
+    } else {
+        transaction.rollback().await?;
+        Ok(None)
+    }
+}
+
+/// Hide legacy/raced extra outputs before applying pagination. Prefer a video
+/// over preview images, then the newest result. Uploads and standalone tool
+/// outputs have no job id and remain independent files.
+fn preferred_job_output() -> Condition {
+    Condition::any()
+        .add(image_files::Column::Direction.ne("output"))
+        .add(image_files::Column::JobId.is_null())
+        .add(Expr::cust(r#"image_files.id = (
+            SELECT result.id FROM image_files AS result
+            WHERE result.job_id = image_files.job_id
+              AND result.user_id = image_files.user_id
+              AND result.direction = 'output'
+            ORDER BY (result.content_type LIKE 'video/%') DESC,
+                     result.created_at DESC, result.id DESC
+            LIMIT 1
+        )"#))
+}
 
 pub struct NewJobInput<'a> {
     pub id: i64,
@@ -685,7 +728,7 @@ pub async fn get_job_global(
         .map_err(AppError::Database)
 }
 
-/// All files owned by a user, newest first — backs the user file browser.
+/// All files owned by a user, including legacy duplicate outputs for cleanup.
 pub async fn list_user_image_files(
     db: &DatabaseConnection,
     user_id: i64,
@@ -694,6 +737,23 @@ pub async fn list_user_image_files(
     ImageFileEntity::find()
         .filter(image_files::Column::UserId.eq(user_id))
         .order_by_desc(image_files::Column::CreatedAt)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
+/// The file browser shows one generated result per job.
+pub async fn list_user_visible_image_files(
+    db: &DatabaseConnection,
+    user_id: i64,
+    limit: u64,
+) -> Result<Vec<ImageFile>, AppError> {
+    ImageFileEntity::find()
+        .filter(image_files::Column::UserId.eq(user_id))
+        .filter(preferred_job_output())
+        .order_by_desc(image_files::Column::CreatedAt)
+        .order_by_desc(image_files::Column::Id)
         .limit(limit)
         .all(db)
         .await
@@ -720,6 +780,7 @@ pub async fn list_user_image_files_page(
 
     let mut query = ImageFileEntity::find()
         .filter(image_files::Column::UserId.eq(user_id))
+        .filter(preferred_job_output())
         .filter(Expr::col(image_files::Column::ContentType).like("image/%"));
 
     if let Some(direction) = direction {
@@ -794,4 +855,70 @@ pub async fn list_offload_tasks_global(
         .all(db)
         .await
         .map_err(AppError::Database)
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+    use sea_orm::{Database, sea_query::PostgresQueryBuilder};
+
+    async fn test_database() -> DatabaseConnection {
+        Database::connect(std::env::var("DATABASE_URL").expect("set DATABASE_URL for these tests"))
+            .await.unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL via DATABASE_URL"]
+    async fn output_download_lock_excludes_other_connections_and_releases() {
+        let db = test_database().await;
+        let other = test_database().await;
+        let job = -chrono::Utc::now().timestamp_micros();
+        let lock = try_lock_output_download(&db, job).await.unwrap().unwrap();
+        assert!(try_lock_output_download(&other, job).await.unwrap().is_none());
+        let independent = try_lock_output_download(&other, job - 1).await.unwrap().unwrap();
+        independent.rollback().await.unwrap();
+        lock.rollback().await.unwrap();
+        let lock = try_lock_output_download(&other, job).await.unwrap().unwrap();
+        // Cancellation/error unwinding drops the transaction without explicit rollback.
+        drop(lock);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if let Some(lock) = try_lock_output_download(&db, job).await.unwrap() {
+                    lock.rollback().await.unwrap();
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        }).await.expect("dropped transaction must release the lock");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL via DATABASE_URL"]
+    async fn file_listing_selects_one_output_and_preserves_video_before_pagination() {
+        let db = test_database().await;
+        let select = Query::select()
+            .column(image_files::Column::Id)
+            .from(ImageFileEntity)
+            .cond_where(preferred_job_output())
+            .order_by(image_files::Column::Id, Order::Desc)
+            .limit(5)
+            .to_string(PostgresQueryBuilder);
+        // No writes or fixtures: a CTE supplies legacy output rows to the real
+        // PostgreSQL predicate, including a newer preview alongside a video.
+        let sql = format!(r#"
+            WITH image_files(id, user_id, job_id, direction, content_type, created_at) AS (
+                VALUES (1, 1, NULL::bigint, 'input', 'image/jpeg', 1),
+                       (2, 1, NULL, 'output', 'image/jpeg', 2),
+                       (3, 1, NULL, 'output', 'image/jpeg', 3),
+                       (4, 1, 10, 'output', 'image/jpeg', 4),
+                       (5, 1, 10, 'output', 'image/jpeg', 5),
+                       (6, 1, 11, 'output', 'video/mp4', 6),
+                       (7, 1, 11, 'output', 'image/jpeg', 7),
+                       (8, 1, 10, 'output', 'image/jpeg', 5)
+            ) {select}
+        "#);
+        let rows = db.query_all(Statement::from_string(db.get_database_backend(), sql)).await.unwrap();
+        let ids: Vec<i32> = rows.iter().map(|row| row.try_get("", "id").unwrap()).collect();
+        assert_eq!(ids, vec![8, 6, 3, 2, 1]);
+    }
 }

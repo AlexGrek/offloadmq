@@ -3,6 +3,11 @@
 
 use super::*;
 
+// Each download holds one pool connection for its advisory lock and uses the
+// pool for normal writes. Bound these reservations so concurrent completions
+// cannot occupy the entire (default ten-connection) pool, especially for videos.
+static OUTPUT_DOWNLOAD_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(3);
+
 /// Persist an image produced by an OffloadMQ task that has no
 /// `image_generation_jobs` row — the `img-utils` transforms own their own job
 /// table but reuse `image_files` (and therefore the existing
@@ -83,6 +88,27 @@ pub(super) async fn fetch_and_store_outputs(
     job: &image_generation::ImageGenerationJob,
     output: Option<Value>,
 ) -> Result<(), AppError> {
+    let Ok(_slot) = OUTPUT_DOWNLOAD_SLOTS.try_acquire() else {
+        // The next page/worker poll will retry without reserving a connection.
+        return Ok(());
+    };
+    let Some(lock) = image_generation::try_lock_output_download(&state.db, job.id).await? else {
+        // Another poll is already fetching this result. Leave it to finish;
+        // waiting here would reserve another DB connection for a large video.
+        return Ok(());
+    };
+    let result = fetch_and_store_outputs_locked(state, user_id, job, output).await;
+    lock.rollback().await?;
+    result
+}
+
+async fn fetch_and_store_outputs_locked(
+    state: &AppState,
+    user_id: i64,
+    job: &image_generation::ImageGenerationJob,
+    output: Option<Value>,
+) -> Result<(), AppError> {
+    // This check must happen after taking the lock, before any download.
     let existing = image_generation::list_job_files(&state.db, job.id).await?;
     if existing.iter().any(|f| f.direction == "output") {
         if job.status != "completed" {
@@ -241,11 +267,16 @@ pub(super) fn images_array(value: Option<&Value>) -> Vec<Value> {
         .unwrap_or_default()
 }
 
-/// When duplicate output rows exist (race/legacy), expose only the latest one.
+/// When duplicate output rows exist (race/legacy), expose one result. Keep the
+/// video rather than a preview image, then prefer the latest timestamp/id.
 pub(super) fn limit_job_output_files(
     files: Vec<image_generation::ImageFile>,
 ) -> Vec<image_generation::ImageFile> {
-    let last_output = files.iter().filter(|f| f.direction == "output").last().cloned();
+    let last_output = files
+        .iter()
+        .filter(|f| f.direction == "output")
+        .max_by_key(|f| (f.content_type.starts_with("video/"), f.created_at, f.id))
+        .cloned();
     let mut kept: Vec<_> = files.into_iter().filter(|f| f.direction != "output").collect();
     if let Some(out) = last_output {
         kept.push(out);

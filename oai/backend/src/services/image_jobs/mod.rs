@@ -166,5 +166,37 @@ mod tests {
         assert_eq!(files[0].direction, "input");
         assert_eq!(files[1].id, 2);
     }
-}
 
+    #[test]
+    fn limit_job_output_files_keeps_video_over_newer_preview() {
+        let mut video = output_file(1, 100);
+        video.content_type = "video/mp4".into();
+        let files = limit_job_output_files(vec![video, output_file(2, 200)]);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].id, 1);
+        assert_eq!(files[0].content_type, "video/mp4");
+    }
+
+    #[test]
+    fn limit_job_output_files_uses_timestamp_and_id_not_input_order() {
+        let files = limit_job_output_files(vec![
+            output_file(3, 200), output_file(2, 200), output_file(9, 100),
+        ]);
+        assert_eq!(files[0].id, 3);
+    }
+
+    #[test]
+    fn video_output_does_not_select_preview_images() {
+        let live = serde_json::json!({
+            "images": [{"file_uid": "preview"}],
+            "video": {"file_uid": "movie", "content_type": "video/mp4"}
+        });
+        assert_eq!(collect_output_video(Some(&live), None).unwrap()["file_uid"], "movie");
+        let previews = serde_json::json!({"images": [{"file_uid": "preview"}]});
+        assert!(collect_output_video(Some(&previews), None).is_none());
+        assert_eq!(
+            collect_output_video(Some(&previews), Some(&live.to_string())).unwrap()["file_uid"],
+            "movie"
+        );
+    }
+}
