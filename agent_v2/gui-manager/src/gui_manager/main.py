@@ -95,7 +95,7 @@ def main() -> None:
     _maybe_autostart(orch)
 
     if args.server:
-        print(f"OffloadMQ Agent UI → http://127.0.0.1:{port}")
+        print(f"OffloadMQ Agent UI -> http://127.0.0.1:{port}")
         try:
             run_blocking(orch, host="127.0.0.1", port=port)
         finally:
