@@ -75,7 +75,7 @@ test.describe('Image Generation Functionality', () => {
     const promptInput = page.locator('data-testid=imggen-prompt');
     const drawer = page.locator('data-testid=prompt-library-drawer');
 
-    // The prompt generator is gone; its slot now holds the Starred prompts button.
+    // The old prompt generator remains removed; starred prompts have their own action.
     await expect(page.locator('data-testid=imggen-promptgen-open')).toHaveCount(0);
 
     await promptInput.fill('A lighthouse in a storm');
@@ -108,6 +108,76 @@ test.describe('Image Generation Functionality', () => {
     await expect(drawer).not.toBeVisible();
     await page.locator('data-testid=imggen-starred-prompts-open').click();
     await expect(page.locator('data-testid=prompt-tab-starred')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('rewrites the current prompt using modification prompts and applies only on acceptance', async ({ page }) => {
+    await page.route('**/api/images/rewrite-prompt/capabilities', route => route.fulfill({ json: [{
+      base: 'llm.rewriter', raw: 'llm.rewriter[tools]', tags: ['tools'], online: true,
+      last_available_at: new Date().toISOString(), usage_count: 0,
+    }] }));
+    await page.route('**/api/images/rewrite-prompt', async route => {
+      expect(route.request().postDataJSON()).toEqual({
+        capability: 'llm.rewriter', prompt: 'A {color} bird named {?}',
+        system_prompt: 'Return only an improved prompt.', user_prompt: 'Make this cinematic: {}',
+      });
+      await route.fulfill({ json: { text: 'A cinematic {color} bird named {?}' } });
+    });
+    await page.goto('/app/images');
+    const prompt = page.getByTestId('imggen-prompt');
+    await prompt.fill('A {color} bird named {?}');
+    await page.getByTestId('imggen-rewrite-open').click();
+    await expect(page.getByTestId('imggen-rewrite-input')).toHaveValue('A {color} bird named {?}');
+    await page.getByTestId('imggen-rewrite-system').fill('Return only an improved prompt.');
+    await page.getByTestId('imggen-rewrite-user').fill('Make this cinematic: {}');
+    await page.getByTestId('imggen-rewrite-generate').click();
+    await expect(page.getByTestId('imggen-rewrite-result')).toHaveValue('A cinematic {color} bird named {?}');
+    await expect(prompt).toHaveValue('A {color} bird named {?}');
+    await page.getByTestId('imggen-rewrite-result').fill('An edited cinematic bird');
+    await page.getByTestId('imggen-rewrite-apply').click();
+    await expect(page.getByTestId('imggen-rewrite-dialog')).not.toBeVisible();
+    await expect(prompt).toHaveValue('An edited cinematic bird');
+    await page.getByTestId('imggen-rewrite-open').click();
+    await expect(page.getByTestId('imggen-rewrite-input')).toHaveValue('An edited cinematic bird');
+    await expect(page.getByTestId('imggen-rewrite-system')).toHaveValue('Return only an improved prompt.');
+    await expect(page.getByTestId('imggen-rewrite-user')).toHaveValue('Make this cinematic: {}');
+    await expect(page.getByTestId('imggen-rewrite-result')).toHaveCount(0);
+  });
+
+  test('shows rewrite failures, allows retry, and keeps the original when dismissed', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.route('**/api/images/rewrite-prompt/capabilities', route => route.fulfill({ json: [{
+      base: 'llm.rewriter', raw: 'llm.rewriter', tags: [], online: true,
+      last_available_at: new Date().toISOString(), usage_count: 0,
+    }] }));
+    let attempt = 0;
+    await page.route('**/api/images/rewrite-prompt', route => route.fulfill(++attempt === 1
+      ? { status: 502, json: { error: 'Model returned an empty response' } }
+      : { json: { text: 'Rewritten landscape' } }));
+    await page.goto('/app/images');
+    await page.getByTestId('imggen-prompt').fill('A landscape');
+    await page.getByTestId('imggen-rewrite-open').click();
+    const dialog = page.getByTestId('imggen-rewrite-dialog');
+    await page.getByTestId('imggen-rewrite-generate').click();
+    await expect(page.getByTestId('imggen-rewrite-error')).toHaveText('Model returned an empty response');
+    await expect(page.getByTestId('imggen-rewrite-apply')).toHaveCount(0);
+    await page.getByTestId('imggen-rewrite-generate').click();
+    await expect(page.getByTestId('imggen-rewrite-result')).toHaveValue('Rewritten landscape');
+    const bounds = await dialog.boundingBox();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).last().click();
+    await expect(page.getByTestId('imggen-prompt')).toHaveValue('A landscape');
+  });
+
+  test('requires a nonempty current prompt and an online rewrite model', async ({ page }) => {
+    await page.route('**/api/images/rewrite-prompt/capabilities', route => route.fulfill({ json: [] }));
+    await page.goto('/app/images');
+    await page.getByTestId('imggen-prompt').fill('');
+    await expect(page.getByTestId('imggen-rewrite-open')).toBeDisabled();
+    await page.getByTestId('imggen-prompt').fill('A bird');
+    await page.getByTestId('imggen-rewrite-open').click();
+    await expect(page.getByText('No LLM models are online. Refresh the model list to try again.')).toBeVisible();
+    await expect(page.getByTestId('imggen-rewrite-generate')).toBeDisabled();
   });
 
   test('saved prompts drawer searches favorites and switches view modes', async ({ page }) => {

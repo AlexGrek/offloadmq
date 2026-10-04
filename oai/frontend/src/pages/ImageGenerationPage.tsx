@@ -34,6 +34,7 @@ import { ImageLightbox, type ImageLightboxActions } from '@/components/ImageLigh
 import { LoadingImage } from '@/components/LoadingImage'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { SavedPromptsDrawer } from '../components/prompts/SavedPromptsDrawer'
+import { RewritePromptDialog } from '../components/imggen/RewritePromptDialog'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -292,6 +293,7 @@ export default function ImageGenerationPage() {
   const [jobsLoading, setJobsLoading] = useState(true)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [starredPromptsOpen, setStarredPromptsOpen] = useState(false)
+  const [rewritePromptOpen, setRewritePromptOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [slideshowOn, setSlideshowOn] = useState(false)
@@ -1808,7 +1810,7 @@ export default function ImageGenerationPage() {
               </MorphCollapse>
 
               <div className="space-y-1.5 sm:col-span-2">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-0.5">
                     <Label htmlFor="prompt">Prompt</Label>
                     {mode === 'txt2img' || mode === 'txt2video' ? (
@@ -1831,18 +1833,32 @@ export default function ImageGenerationPage() {
                       </Button>
                     ) : null}
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => setStarredPromptsOpen(true)}
-                    disabled={!token}
-                    data-testid="imggen-starred-prompts-open"
-                  >
-                    <Star className="mr-1 size-3.5" />
-                    Starred prompts
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 text-xs"
+                      onClick={() => setRewritePromptOpen(true)}
+                      disabled={!token || !prompt.trim()}
+                      data-testid="imggen-rewrite-open"
+                    >
+                      <Wand2 className="mr-1 size-3.5" />
+                      Rewrite prompt
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setStarredPromptsOpen(true)}
+                      disabled={!token}
+                      data-testid="imggen-starred-prompts-open"
+                    >
+                      <Star className="mr-1 size-3.5" />
+                      Starred prompts
+                    </Button>
+                  </div>
                 </div>
                 <PromptTextarea
                   id="prompt"
@@ -2732,6 +2748,9 @@ export default function ImageGenerationPage() {
         }}
       />
     ) : null}
+    <RewritePromptDialog open={rewritePromptOpen} onOpenChange={setRewritePromptOpen}
+      prompt={prompt} mode={mode} token={token} onUsePrompt={setPrompt} />
+
     <Dialog open={generateMultipleOpen} onOpenChange={setGenerateMultipleOpen}>
       <DialogContent className="sm:max-w-sm" data-testid="imggen-generate-multiple-dialog">
         <DialogHeader>

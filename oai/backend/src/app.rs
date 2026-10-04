@@ -126,6 +126,8 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/images/jobs", post(routes::images::start_job))
         .route("/api/images/jobs", get(routes::images::list_jobs))
         .route("/api/images/capabilities", get(routes::images::list_imggen_capabilities))
+        .route("/api/images/rewrite-prompt", post(routes::prompt_rewrite::rewrite))
+        .route("/api/images/rewrite-prompt/capabilities", get(routes::prompt_rewrite::capabilities))
         .route("/api/images/external-resize", get(routes::images::external_resize_info))
         .route(
             "/api/images/jobs/{id}",

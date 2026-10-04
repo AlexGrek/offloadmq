@@ -119,6 +119,11 @@ impl TaskWatch {
         (watch, cmd_rx)
     }
 
+    #[cfg(test)]
+    pub(super) fn for_test() -> Arc<Self> {
+        Self::detached().0
+    }
+
     /// Whether a connection is currently up (see the `connected` field).
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Acquire)

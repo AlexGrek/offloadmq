@@ -9,6 +9,7 @@ pub mod nude_detect;
 pub mod progress;
 pub mod prompt_usage;
 pub mod promptgen;
+pub mod prompt_rewrite;
 pub mod prompt_previews;
 pub mod image_jobs;
 pub mod image_job_names;

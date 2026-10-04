@@ -190,6 +190,44 @@ impl OffloadClient {
         Ok(TaskId { cap, id })
     }
 
+    /// Same messages contract as chat, with one urgent blocking request and no polling.
+    pub async fn submit_chat_blocking(
+        &self,
+        capability: &str,
+        messages: Vec<ChatMessage>,
+    ) -> Result<String, AppError> {
+        let resp = self
+            .http
+            .post(format!("{}/api/task/submit_blocking", self.base_url))
+            .timeout(std::time::Duration::from_secs(190))
+            .json(&serde_json::json!({
+                "apiKey": self.api_key,
+                "capability": base_capability(capability),
+                "urgent": true,
+                "restartable": false,
+                "payload": { "stream": false, "messages": messages },
+                "fetchFiles": [],
+                "file_bucket": [],
+                "artifacts": [],
+                "timeoutSecs": 180,
+                "maxWaitSecs": 60,
+                "runtimeSecs": 120
+            }))
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(e.to_string()))?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("blocking chat failed (HTTP {status}): {text}")));
+        }
+        let result: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(e.to_string()))?;
+        blocking_chat_text(result)
+    }
+
     pub async fn submit_vision_task(
         &self,
         capability: &str,
@@ -373,6 +411,21 @@ impl OffloadClient {
     }
 }
 
+fn blocking_chat_text(result: serde_json::Value) -> Result<String, AppError> {
+    // Blocking submission returns the full AssignedTask (`result`); poll
+    // responses use `output`. Accept both response shapes.
+    let output = result.get("result").or_else(|| result.get("output")).cloned();
+    if result["status"].as_str() != Some("completed") {
+        let fallback = result["message"].as_str().unwrap_or("Prompt rewrite failed");
+        return Err(AppError::ExternalService(task_status::extract_error_text(&output, fallback)));
+    }
+    let text = task_status::extract_llm_text(&output).trim().to_string();
+    if text.is_empty() {
+        return Err(AppError::ExternalService("Model returned an empty response".into()));
+    }
+    Ok(text)
+}
+
 /// Delete a bucket through the client storage API.
 ///
 /// Shared by both clients: they carry the same base URL and key, and bucket
@@ -493,4 +546,57 @@ pub fn parse_capabilities_with_prefix(raw: &[String], prefix: &str) -> Vec<Capab
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod blocking_chat_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn submits_urgent_blocking_chat_with_base_capability_and_messages() {
+        use axum::{Json, Router, routing::post};
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new().route("/api/task/submit_blocking", post(
+            move |Json(body): Json<serde_json::Value>| async move {
+                tx.send(body).unwrap();
+                Json(serde_json::json!({
+                    "status": "completed", "result": {"message": {"content": "  Rewritten bird  "}}
+                }))
+            }
+        ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = OffloadClient::new(Client::new(), format!("http://{address}"), "test-key".into(),
+            watch::TaskWatch::for_test());
+        let text = client.submit_chat_blocking("llm.test[tools]", vec![
+            ChatMessage { role: "system".into(), content: "Modify prompts".into() },
+            ChatMessage { role: "user".into(), content: "Rewrite a bird".into() },
+        ]).await.unwrap();
+        assert_eq!(text, "Rewritten bird");
+        let body = rx.recv().await.unwrap();
+        assert_eq!(body["apiKey"], "test-key");
+        assert_eq!(body["capability"], "llm.test");
+        assert_eq!(body["urgent"], true);
+        assert_eq!(body["payload"]["stream"], false);
+        assert_eq!(body["payload"]["messages"][0]["role"], "system");
+        assert_eq!(body["payload"]["messages"][1]["content"], "Rewrite a bird");
+        server.abort();
+    }
+
+    #[test]
+    fn rejects_failed_canceled_partial_and_empty_responses() {
+        for result in [
+            serde_json::json!({"status": "failed", "result": {"error": "Agent failed"}}),
+            serde_json::json!({"status": "canceled", "message": "Canceled"}),
+            serde_json::json!({"status": "completed", "message": "Missing assignment"}),
+            serde_json::json!({"status": "completed", "result": {"message": {"content": " "}}}),
+        ] {
+            assert!(blocking_chat_text(result).is_err());
+        }
+        let error = blocking_chat_text(serde_json::json!({
+            "status": "failed", "result": {"error": "Agent failed"}
+        })).unwrap_err();
+        assert!(error.to_string().contains("Agent failed"));
+    }
 }
