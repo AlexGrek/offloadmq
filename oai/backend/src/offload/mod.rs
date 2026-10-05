@@ -35,6 +35,12 @@ pub struct TaskId {
     pub id: String,
 }
 
+pub struct BlockingPromptResult {
+    pub task_id: TaskId,
+    pub text: String,
+    pub log: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
@@ -196,6 +202,35 @@ impl OffloadClient {
         capability: &str,
         messages: Vec<ChatMessage>,
     ) -> Result<String, AppError> {
+        blocking_chat_text(self.submit_llm_blocking(capability, messages, None).await?)
+    }
+
+    pub async fn submit_vision_task_blocking(
+        &self,
+        capability: &str,
+        messages: Vec<ChatMessage>,
+        bucket_uid: &str,
+    ) -> Result<BlockingPromptResult, AppError> {
+        let result = self.submit_llm_blocking(capability, messages, Some(bucket_uid)).await?;
+        let text = blocking_chat_text(result.clone())?;
+        let cap = result["id"]["cap"].as_str()
+            .ok_or_else(|| AppError::ExternalService("missing id.cap in blocking response".into()))?;
+        let id = result["id"]["id"].as_str()
+            .ok_or_else(|| AppError::ExternalService("missing id.id in blocking response".into()))?;
+        Ok(BlockingPromptResult {
+            task_id: TaskId { cap: cap.to_string(), id: id.to_string() },
+            text,
+            log: result["log"].as_str().map(str::to_string),
+        })
+    }
+
+    async fn submit_llm_blocking(
+        &self,
+        capability: &str,
+        messages: Vec<ChatMessage>,
+        file_bucket: Option<&str>,
+    ) -> Result<serde_json::Value, AppError> {
+        let buckets: Vec<&str> = file_bucket.into_iter().collect();
         let resp = self
             .http
             .post(format!("{}/api/task/submit_blocking", self.base_url))
@@ -207,7 +242,7 @@ impl OffloadClient {
                 "restartable": false,
                 "payload": { "stream": false, "messages": messages },
                 "fetchFiles": [],
-                "file_bucket": [],
+                "file_bucket": buckets,
                 "artifacts": [],
                 "timeoutSecs": 180,
                 "maxWaitSecs": 60,
@@ -221,11 +256,7 @@ impl OffloadClient {
             let text = resp.text().await.unwrap_or_default();
             return Err(AppError::ExternalService(format!("blocking chat failed (HTTP {status}): {text}")));
         }
-        let result: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| AppError::ExternalService(e.to_string()))?;
-        blocking_chat_text(result)
+        resp.json().await.map_err(|e| AppError::ExternalService(e.to_string()))
     }
 
     pub async fn submit_vision_task(
@@ -598,5 +629,44 @@ mod blocking_chat_tests {
             "status": "failed", "result": {"error": "Agent failed"}
         })).unwrap_err();
         assert!(error.to_string().contains("Agent failed"));
+    }
+
+    #[tokio::test]
+    async fn submits_urgent_blocking_vision_with_frame_bucket_and_returns_task_result() {
+        use axum::{Json, Router, routing::post};
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new().route("/api/task/submit_blocking", post(
+            move |Json(body): Json<serde_json::Value>| async move {
+                tx.send(body).unwrap();
+                Json(serde_json::json!({
+                    "id": { "cap": "llm.vision", "id": "video-prompt-task" },
+                    "status": "completed",
+                    "result": { "message": { "content": "  The bird takes flight.  " } },
+                    "log": "vision inference finished"
+                }))
+            }
+        ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = OffloadClient::new(Client::new(), format!("http://{address}"), "test-key".into(),
+            watch::TaskWatch::for_test());
+        let result = client.submit_vision_task_blocking("llm.vision[vision]", vec![
+            ChatMessage { role: "system".into(), content: "Predict what happens next".into() },
+            ChatMessage { role: "user".into(), content: "Describe the next action from this frame".into() },
+        ], "frame-bucket").await.unwrap();
+        assert_eq!(result.text, "The bird takes flight.");
+        assert_eq!(result.task_id.cap, "llm.vision");
+        assert_eq!(result.task_id.id, "video-prompt-task");
+        assert_eq!(result.log.as_deref(), Some("vision inference finished"));
+        let body = rx.recv().await.unwrap();
+        assert_eq!(body["capability"], "llm.vision");
+        assert_eq!(body["urgent"], true);
+        assert_eq!(body["file_bucket"], serde_json::json!(["frame-bucket"]));
+        assert_eq!(body["payload"]["stream"], false);
+        assert_eq!(body["payload"]["messages"][0]["role"], "system");
+        assert_eq!(body["payload"]["messages"][1]["role"], "user");
+        assert_eq!(body["timeoutSecs"], 180);
+        server.abort();
     }
 }

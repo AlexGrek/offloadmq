@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button'
 import { CapabilityModelPicker } from '@/components/CapabilityModelPicker'
 import { capabilityBaseLabel } from '@/lib/modelAvailability'
 import { nextPromptGenReqId, useWsPromptGen } from '@/hooks/useWsPromptGen'
-import { cancelOffloadTask } from '@/api/tasks'
-import type { PromptGenTaskId, LlmCapabilityInfo } from '@/types/ws-promptgen'
+import type { LlmCapabilityInfo } from '@/types/ws-promptgen'
+import { isListedCapability } from '@/lib/capability-picker'
 
 const MODEL_STORAGE_KEY = 'oai_video_promptgen_model'
 
@@ -53,12 +53,11 @@ export function VideoPromptGenerator({
   // empty response — occasional with some vision models) can't be missed by
   // scrolling past the page-level error banner further down the form.
   const [localError, setLocalError] = useState<string | null>(null)
-  const taskRef = useRef<PromptGenTaskId | null>(null)
   const reqIdRef = useRef<string | null>(null)
   const aliveRef = useRef(true)
 
   const visionCapabilities = ws.capabilities.filter(c =>
-    c.tags.some(t => t.toLowerCase() === 'vision'),
+    c.online && c.tags.some(t => t.toLowerCase() === 'vision'),
   )
 
   useEffect(() => {
@@ -69,13 +68,7 @@ export function VideoPromptGenerator({
     aliveRef.current = true
     return () => {
       aliveRef.current = false
-      const task = taskRef.current
-      taskRef.current = null
       reqIdRef.current = null
-      if (token && task) {
-        log('unmounting mid-run, canceling task', task)
-        void cancelOffloadTask(token, task.cap, task.id).catch(() => {})
-      }
     }
   }, [token])
 
@@ -94,19 +87,14 @@ export function VideoPromptGenerator({
 
       log('event', event)
       switch (event.type) {
-        case 'task:queued':
-          taskRef.current = { cap: event.cap, id: event.id }
-          break
         case 'task:result':
           setRunning(false)
-          taskRef.current = null
           reqIdRef.current = null
           setLocalError(null)
           onGenerated(event.text)
           break
         case 'task:failed':
           setRunning(false)
-          taskRef.current = null
           reqIdRef.current = null
           if (event.error !== 'Task was canceled') {
             logError('task failed:', event.error)
@@ -116,7 +104,6 @@ export function VideoPromptGenerator({
           break
         case 'error':
           setRunning(false)
-          taskRef.current = null
           reqIdRef.current = null
           logError('ws error event:', event.message)
           setLocalError(event.message)
@@ -127,7 +114,8 @@ export function VideoPromptGenerator({
   }, [wsSubscribe, onGenerated, onError])
 
   const canGenerate =
-    ws.status === 'connected' && !running && !!capability && !!imageId && ws.capabilitiesStatus === 'ready'
+    ws.status === 'connected' && !running && isListedCapability(capability, visionCapabilities) &&
+    !!imageId && ws.capabilitiesStatus === 'ready'
 
   function handleGenerate() {
     if (!canGenerate) return
@@ -154,12 +142,9 @@ export function VideoPromptGenerator({
   }
 
   function handleStop() {
-    const task = taskRef.current
-    if (!token || !task) return
-    log('stop requested for', task)
-    void cancelOffloadTask(token, task.cap, task.id).catch(() => {})
+    // A blocking submission exposes no task id until it finishes. Dismiss the
+    // wait and ignore its eventual result; upstream execution remains bounded.
     setRunning(false)
-    taskRef.current = null
     reqIdRef.current = null
   }
 
@@ -187,9 +172,10 @@ export function VideoPromptGenerator({
             className="h-9 text-xs"
             onClick={handleStop}
             data-testid="video-promptgen-stop"
+            title="Stop waiting and keep the current prompt"
           >
             <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-            Analyzing frame…
+            Analyzing frame… Stop waiting
             <Square className="ml-1.5 size-3 fill-current" />
           </Button>
         ) : (

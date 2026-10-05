@@ -1,22 +1,17 @@
 //! Video prompt generator (img2video "Video prompt generator" button): sends the
 //! input frame plus fixed system/user text to a vision LLM over the `/api/ws/promptgen`
-//! socket and streams back what happens next in the video.
+//! socket. Inference uses one urgent, blocking OffloadMQ request.
 
 use crate::error::ResultExt;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     db::{image_generation, llm_capabilities},
     error::AppError,
-    offload::{
-        base_capability,
-        task_status::{extract_error_text, extract_llm_text},
-        LlmCapabilityInfo, OffloadClient, TaskId,
-    },
+    offload::{BlockingPromptResult, ChatMessage, LlmCapabilityInfo, base_capability},
     services::{image_processing, offload_factory, storage},
     state::AppState,
     ws::events::ServerEvent,
@@ -35,23 +30,9 @@ Omit "on this image" or "in this video", as well as any "I think" statements. Yo
 
 const VIDEO_PROMPT_USER: &str = "Write what happens next in this video, given this frame";
 
-/// Poll deadline for a single generation; the WS poll loop gives up after this.
-const TIMEOUT_SECS: u32 = 900;
-
-/// Agent flushes streaming log to OffloadMQ about every 2s; poll slightly faster.
-const POLL_INTERVAL: Duration = Duration::from_secs(1);
-
-struct PollContext {
-    req_id: String,
-    cap: String,
-    id: String,
-}
-
 /// All online-tracked text LLM capabilities (no vision filter — any chat-capable
 /// model can rewrite a prompt).
-pub async fn list_llm_capabilities(
-    state: &AppState,
-) -> Result<Vec<LlmCapabilityInfo>, AppError> {
+pub async fn list_llm_capabilities(state: &AppState) -> Result<Vec<LlmCapabilityInfo>, AppError> {
     let client = offload_factory::chat_client(state).await?;
     let online = client.list_llm_capabilities().await?;
     llm_capabilities::sync_online(&state.db, &online).await?;
@@ -68,7 +49,10 @@ pub async fn list_capabilities_ws(
 ) {
     match list_llm_capabilities(state).await {
         Ok(capabilities) => {
-            let _ = tx.send(ServerEvent::Capabilities { req_id, capabilities });
+            let _ = tx.send(ServerEvent::Capabilities {
+                req_id,
+                capabilities,
+            });
         }
         Err(e) => send_error(tx, &req_id, &e.to_string()),
     }
@@ -99,16 +83,23 @@ async fn run_generate_video_ws(
     user_id: i64,
     scope: &Arc<crate::ws::promptgen::ConnectionScope>,
 ) -> Result<(), String> {
-    tracing::debug!(user_id, %capability, %image_id, req_id, "video prompt generator: submitting");
-    let task_id = submit_video_prompt_task(state, user_id, &capability, &image_id)
+    if !scope.is_open() {
+        return Ok(());
+    }
+    tracing::debug!(user_id, %capability, %image_id, req_id, "video prompt generator: submitting urgent request");
+    let result = submit_video_prompt_task(state, user_id, &capability, &image_id)
         .await
-        .map_err(|e| {
-            tracing::warn!(user_id, %capability, %image_id, req_id, error = %e, "video prompt generator: submit failed");
-            e.to_string()
-        })?;
-    tracing::debug!(user_id, cap = %task_id.cap, id = %task_id.id, req_id, "video prompt generator: task queued");
-
-    queue_and_poll(req_id, task_id, tx, state, scope).await
+        .map_err(|e| e.to_string())?;
+    if scope.is_open() {
+        let _ = tx.send(ServerEvent::TaskResult {
+            req_id: req_id.to_string(),
+            cap: result.task_id.cap,
+            id: result.task_id.id,
+            text: result.text,
+            log: result.log,
+        });
+    }
+    Ok(())
 }
 
 /// Stage the input frame in a one-shot OffloadMQ bucket and submit a vision
@@ -118,10 +109,10 @@ async fn submit_video_prompt_task(
     user_id: i64,
     capability: &str,
     image_id: &str,
-) -> Result<TaskId, AppError> {
+) -> Result<BlockingPromptResult, AppError> {
     let capability = capability.trim();
-    if capability.is_empty() {
-        return Err(AppError::BadRequest("capability is required".into()));
+    if !base_capability(capability).starts_with("llm.") {
+        return Err(AppError::BadRequest("an LLM capability is required".into()));
     }
     let capability = base_capability(capability).to_string();
 
@@ -132,205 +123,47 @@ async fn submit_video_prompt_task(
         .await?
         .ok_or(AppError::NotFound)?;
 
+    let op = storage::operator(state)?;
+    let bytes = storage::read(op, &input.storage_path).await?;
+    let processed =
+        image_processing::process_image_async(bytes, Some(input.content_type.clone())).await?;
+    let chat_client = offload_factory::chat_client(state).await?;
     let img_client = offload_factory::image_client(state).await?;
     let bucket = img_client.create_bucket(true).await?;
 
-    let op = storage::operator(state)?;
-    let bytes = storage::read(op, &input.storage_path).await?;
-    let processed = image_processing::process_image_async(bytes, Some(input.content_type.clone())).await?;
+    let result = async {
+        img_client
+            .upload_bucket_file(
+                &bucket.bucket_uid,
+                processed.bytes,
+                &input.filename,
+                &processed.content_type,
+            )
+            .await?;
+        chat_client
+            .submit_vision_task_blocking(&capability, video_prompt_messages(), &bucket.bucket_uid)
+            .await
+    }
+    .await;
+    // Blocking submission has finished: release the frame on success and failure.
     img_client
-        .upload_bucket_file(&bucket.bucket_uid, processed.bytes, &input.filename, &processed.content_type)
-        .await?;
-
-    let chat_client = offload_factory::chat_client(state).await?;
-    let messages = vec![
-        serde_json::json!({ "role": "system", "content": VIDEO_PROMPT_SYSTEM }),
-        serde_json::json!({ "role": "user", "content": VIDEO_PROMPT_USER }),
-    ];
-    chat_client
-        .submit_vision_task(&capability, messages, &bucket.bucket_uid, None)
+        .delete_bucket(&bucket.bucket_uid)
         .await
+        .log_warn("release video prompt frame bucket");
+    result
 }
 
-/// Shared tail of the WS generate flow: announce `task:queued`, track the task
-/// on the connection scope (canceled if the client already closed), and spawn
-/// the poll loop that streams progress/result back over the socket.
-async fn queue_and_poll(
-    req_id: &str,
-    task_id: TaskId,
-    tx: &UnboundedSender<ServerEvent>,
-    state: &Arc<AppState>,
-    scope: &Arc<crate::ws::promptgen::ConnectionScope>,
-) -> Result<(), String> {
-    if !scope.is_open() {
-        let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
-        client.cancel_task(&task_id).await.log_warn("cancel promptgen task");
-        return Ok(());
-    }
-
-    let _ = tx.send(ServerEvent::TaskQueued {
-        req_id: req_id.to_string(),
-        cap: task_id.cap.clone(),
-        id: task_id.id.clone(),
-    });
-
-    scope.track(task_id.clone());
-    state.watch.track(&task_id.cap, &task_id.id).await;
-    let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
-    let deadline_secs = Some(TIMEOUT_SECS as u64);
-    let ctx = PollContext {
-        req_id: req_id.to_string(),
-        cap: task_id.cap.clone(),
-        id: task_id.id.clone(),
-    };
-    let scope = scope.clone();
-    tokio::spawn(poll_loop_ws(ctx, task_id, client, tx.clone(), deadline_secs, scope, state.clone()));
-    Ok(())
-}
-
-async fn poll_loop_ws(
-    ctx: PollContext,
-    task_id: TaskId,
-    client: OffloadClient,
-    tx: UnboundedSender<ServerEvent>,
-    deadline_secs: Option<u64>,
-    scope: Arc<crate::ws::promptgen::ConnectionScope>,
-    state: Arc<AppState>,
-) {
-    let started_at = tokio::time::Instant::now();
-    let mut first = true;
-    let mut events = state.watch.subscribe();
-    loop {
-        if !scope.is_open() {
-            client.cancel_task(&task_id).await.log_warn("cancel promptgen task");
-            scope.untrack(&task_id);
-            state.watch.untrack(&task_id.cap, &task_id.id).await;
-            return;
-        }
-
-        if !first {
-            tokio::select! {
-                _ = tokio::time::sleep(POLL_INTERVAL) => {}
-                _ = events.recv() => {}
-            }
-        }
-        first = false;
-
-        if let Some(limit) = deadline_secs {
-            if started_at.elapsed().as_secs() >= limit {
-                tracing::warn!(req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, limit, "promptgen: task timed out");
-                client.cancel_task(&task_id).await.log_warn("cancel promptgen task");
-                let _ = tx.send(ServerEvent::TaskFailed {
-                    req_id: ctx.req_id.clone(),
-                    cap: ctx.cap.clone(),
-                    id: ctx.id.clone(),
-                    error: "Task timed out waiting for result".to_string(),
-                    log: None,
-                });
-                scope.untrack(&task_id);
-                state.watch.untrack(&task_id.cap, &task_id.id).await;
-                return;
-            }
-        }
-
-        let resp = match client.poll_task(&task_id).await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!(req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, error = %e, "promptgen: poll request failed");
-                let _ = tx.send(ServerEvent::Error {
-                    req_id: Some(ctx.req_id.clone()),
-                    message: e.to_string(),
-                });
-                scope.untrack(&task_id);
-                state.watch.untrack(&task_id.cap, &task_id.id).await;
-                return;
-            }
-        };
-
-        match resp.status.as_str() {
-            "completed" => {
-                let text = extract_llm_text(&resp.output);
-                if text.trim().is_empty() {
-                    tracing::warn!(
-                        req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id,
-                        "promptgen: model returned an empty response"
-                    );
-                    let _ = tx.send(ServerEvent::TaskFailed {
-                        req_id: ctx.req_id.clone(),
-                        cap: ctx.cap.clone(),
-                        id: ctx.id.clone(),
-                        error: "model returned an empty response".to_string(),
-                        log: resp.log,
-                    });
-                } else {
-                    tracing::debug!(
-                        req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, chars = text.trim().len(),
-                        "promptgen: completed"
-                    );
-                    let _ = tx.send(ServerEvent::TaskResult {
-                        req_id: ctx.req_id.clone(),
-                        cap: ctx.cap.clone(),
-                        id: ctx.id.clone(),
-                        text: text.trim().to_string(),
-                        log: resp.log,
-                    });
-                }
-                scope.untrack(&task_id);
-                state.watch.untrack(&task_id.cap, &task_id.id).await;
-                return;
-            }
-            "failed" => {
-                let error = extract_error_text(&resp.output, "Unknown error");
-                tracing::warn!(req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, %error, "promptgen: task failed");
-                let _ = tx.send(ServerEvent::TaskFailed {
-                    req_id: ctx.req_id.clone(),
-                    cap: ctx.cap.clone(),
-                    id: ctx.id.clone(),
-                    error,
-                    log: resp.log,
-                });
-                scope.untrack(&task_id);
-                state.watch.untrack(&task_id.cap, &task_id.id).await;
-                return;
-            }
-            "canceled" => {
-                tracing::debug!(req_id = %ctx.req_id, cap = %ctx.cap, id = %ctx.id, "promptgen: task canceled");
-                let _ = tx.send(ServerEvent::TaskFailed {
-                    req_id: ctx.req_id.clone(),
-                    cap: ctx.cap.clone(),
-                    id: ctx.id.clone(),
-                    error: "Task was canceled".to_string(),
-                    log: resp.log,
-                });
-                scope.untrack(&task_id);
-                state.watch.untrack(&task_id.cap, &task_id.id).await;
-                return;
-            }
-            "cancelRequested" => {
-                client.cancel_task(&task_id).await.log_warn("cancel promptgen task");
-                let stream_log = progress_stream_text(&resp);
-                let _ = tx.send(ServerEvent::TaskProgress {
-                    req_id: ctx.req_id.clone(),
-                    cap: ctx.cap.clone(),
-                    id: ctx.id.clone(),
-                    status: "cancelRequested".to_string(),
-                    stage: resp.stage.clone(),
-                    log: stream_log,
-                });
-            }
-            status => {
-                let stream_log = progress_stream_text(&resp);
-                let _ = tx.send(ServerEvent::TaskProgress {
-                    req_id: ctx.req_id.clone(),
-                    cap: ctx.cap.clone(),
-                    id: ctx.id.clone(),
-                    status: status.to_string(),
-                    stage: resp.stage,
-                    log: stream_log,
-                });
-            }
-        }
-    }
+fn video_prompt_messages() -> Vec<ChatMessage> {
+    vec![
+        ChatMessage {
+            role: "system".into(),
+            content: VIDEO_PROMPT_SYSTEM.into(),
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: VIDEO_PROMPT_USER.into(),
+        },
+    ]
 }
 
 fn send_error(tx: &UnboundedSender<ServerEvent>, req_id: &str, message: &str) {
@@ -338,18 +171,4 @@ fn send_error(tx: &UnboundedSender<ServerEvent>, req_id: &str, message: &str) {
         req_id: Some(req_id.to_string()),
         message: message.to_string(),
     });
-}
-
-fn progress_stream_text(resp: &crate::offload::PollResponse) -> Option<String> {
-    if let Some(log) = resp.log.as_ref() {
-        if !log.is_empty() {
-            return Some(log.clone());
-        }
-    }
-    let partial = extract_llm_text(&resp.output);
-    if partial.is_empty() {
-        None
-    } else {
-        Some(partial)
-    }
 }

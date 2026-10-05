@@ -2,39 +2,34 @@
 //! management, frame decoding, and command dispatch. Domain logic lives in
 //! `services::promptgen`.
 
-use crate::error::ResultExt;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
 use futures::StreamExt;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::time::interval;
 
 use crate::middleware::AuthenticatedUser;
-use crate::offload::TaskId;
-use crate::services::{offload_factory, promptgen};
+use crate::services::promptgen;
 use crate::state::AppState;
 use crate::ws::events::{PromptGenClientCommand, ServerEvent};
 
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Tracks in-flight OffloadMQ tasks for one WS connection so they can be
-/// canceled when the client disconnects or closes the prompt generator modal.
+/// Prevents an urgent blocking result from being sent after the WS disconnects.
 pub struct ConnectionScope {
     open: AtomicBool,
-    tasks: Mutex<Vec<TaskId>>,
 }
 
 impl ConnectionScope {
     fn new() -> Self {
         Self {
             open: AtomicBool::new(true),
-            tasks: Mutex::new(Vec::new()),
         }
     }
 
@@ -42,36 +37,8 @@ impl ConnectionScope {
         self.open.load(Ordering::SeqCst)
     }
 
-    pub fn track(&self, task: TaskId) {
-        if let Ok(mut tasks) = self.tasks.lock() {
-            tasks.push(task);
-        }
-    }
-
-    pub fn untrack(&self, task: &TaskId) {
-        if let Ok(mut tasks) = self.tasks.lock() {
-            tasks.retain(|t| t.cap != task.cap || t.id != task.id);
-        }
-    }
-
     fn close(&self) {
         self.open.store(false, Ordering::SeqCst);
-    }
-
-    async fn cancel_tracked(&self, state: &AppState) {
-        let tasks: Vec<TaskId> = self
-            .tasks
-            .lock()
-            .map(|mut t| std::mem::take(&mut *t))
-            .unwrap_or_default();
-        if tasks.is_empty() {
-            return;
-        }
-        if let Ok(client) = offload_factory::chat_client(state).await {
-            for task in tasks {
-                client.cancel_task(&task).await.log_warn("cancel promptgen task on disconnect");
-            }
-        }
     }
 }
 
@@ -91,7 +58,13 @@ async fn run_connection(socket: WebSocket, state: Arc<AppState>, user_id: i64) {
     let (sink, stream) = socket.split();
 
     let writer = tokio::spawn(writer_loop(sink, rx));
-    let reader = tokio::spawn(reader_loop(stream, tx, state.clone(), user_id, scope.clone()));
+    let reader = tokio::spawn(reader_loop(
+        stream,
+        tx,
+        state.clone(),
+        user_id,
+        scope.clone(),
+    ));
     let writer_abort = writer.abort_handle();
     let reader_abort = reader.abort_handle();
 
@@ -101,7 +74,6 @@ async fn run_connection(socket: WebSocket, state: Arc<AppState>, user_id: i64) {
     }
 
     scope.close();
-    scope.cancel_tracked(&state).await;
 }
 
 async fn writer_loop(
@@ -196,8 +168,8 @@ async fn handle_text(
                 user_id, req_id = %req_id, capability = %capability, image_id = %image_id,
                 "ws: generate_video_prompt received"
             );
-            // Don't block the reader on OffloadMQ submit — the client may close
-            // while we're waiting; connection scope cancels tracked tasks on drop.
+            // Keep the WS reader responsive during the urgent blocking request.
+            // Upstream deadlines bound inference; the service releases its frame bucket.
             let tx = tx.clone();
             let state = state.clone();
             let scope = scope.clone();
