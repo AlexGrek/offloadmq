@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, ChevronDown, Copy, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, Eye, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MorphCollapse } from '@/components/Morph'
@@ -51,7 +51,7 @@ export function PromptPlaceholdersPanel({ onClose, className }: PromptPlaceholde
       // contain` swallows wheel/touch input instead of chaining it to a
       // scrollable ancestor, and on the standalone page this element never
       // has a bounded height, so it never had real overflow to begin with.
-      className={cn('flex min-h-0 min-w-0 max-w-full flex-col gap-5 text-sm [overflow-wrap:anywhere]', className)}
+      className={cn('flex min-h-0 flex-col gap-5 text-sm', className)}
       data-testid="prompt-placeholders-panel"
     >
       <div className="flex items-start justify-between gap-2">
@@ -95,42 +95,6 @@ export function PromptPlaceholdersPanel({ onClose, className }: PromptPlaceholde
   )
 }
 
-function CopyTagButton({ text, testId }: { text: string; testId: string }) {
-  const [status, setStatus] = useState<'idle' | 'copied' | 'error'>('idle')
-
-  useEffect(() => {
-    if (status === 'idle') return
-    const timeout = window.setTimeout(() => setStatus('idle'), 1500)
-    return () => window.clearTimeout(timeout)
-  }, [status])
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text)
-      setStatus('copied')
-    } catch {
-      setStatus('error')
-    }
-  }
-
-  const label = status === 'copied' ? 'Copied' : status === 'error' ? 'Copy failed — try again' : `Copy ${text}`
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-xs"
-      onClick={() => void copy()}
-      aria-label={label}
-      title={label}
-      data-testid={testId}
-      className={cn('rounded-full text-muted-foreground', status === 'copied' && 'text-emerald-600 dark:text-emerald-400', status === 'error' && 'text-destructive')}
-    >
-      {status === 'copied' ? <Check className="size-3" /> : <Copy className="size-3" />}
-      <span className="sr-only" aria-live="polite">{status === 'idle' ? '' : label}</span>
-    </Button>
-  )
-}
-
 function QuickNamesSection({ token }: { token: string | null }) {
   // Collapsed by default: generating names is a side effect (and a network
   // call) that shouldn't fire just because the panel was opened.
@@ -139,6 +103,7 @@ function QuickNamesSection({ token }: { token: string | null }) {
   const [names, setNames] = useState<GeneratedName[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [copiedPhrase, setCopiedPhrase] = useState<string | null>(null)
 
   const loadNames = useCallback(async () => {
     if (!token) return
@@ -161,6 +126,16 @@ function QuickNamesSection({ token }: { token: string | null }) {
     if (!expanded || loaded) return
     void loadNames()
   }, [expanded, loaded, loadNames])
+
+  useEffect(() => {
+    if (!copiedPhrase) return
+    const t = window.setTimeout(() => setCopiedPhrase(null), 1500)
+    return () => window.clearTimeout(t)
+  }, [copiedPhrase])
+
+  function copyPhrase(phrase: string) {
+    void navigator.clipboard.writeText(phrase).then(() => setCopiedPhrase(phrase))
+  }
 
   return (
     <section data-testid="random-names-section">
@@ -198,17 +173,28 @@ function QuickNamesSection({ token }: { token: string | null }) {
               {error}
             </p>
           ) : (
-            <ul className="flex min-w-0 flex-wrap gap-2" data-testid="random-names-list">
-              {names.map(name => (
-                <li
-                  key={name.slug}
-                  className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-muted/60 py-1 pr-1 pl-3"
-                  data-testid={`random-names-item-${name.slug}`}
-                >
-                  <span className="min-w-0 text-xs text-foreground" title={name.slug}>{name.phrase}</span>
-                  <CopyTagButton text={name.phrase} testId={`random-names-copy-${name.slug}`} />
-                </li>
-              ))}
+            <ul className="space-y-1" data-testid="random-names-list">
+              {names.map(name => {
+                const copied = copiedPhrase === name.phrase
+                return (
+                  <li key={name.slug}>
+                    <button
+                      type="button"
+                      onClick={() => copyPhrase(name.phrase)}
+                      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/70"
+                      data-testid={`random-names-item-${name.slug}`}
+                    >
+                      <span className="min-w-0">
+                        <span className="font-medium text-foreground">{name.phrase}</span>
+                        <span className="ml-2 font-mono text-[10px] text-muted-foreground">{name.slug}</span>
+                      </span>
+                      {copied ? (
+                        <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      ) : null}
+                    </button>
+                  </li>
+                )
+              })}
               {!loading && names.length === 0 ? (
                 <li className="px-2 py-1 text-xs text-muted-foreground">No names yet.</li>
               ) : null}
@@ -327,8 +313,8 @@ function CustomPlaceholdersSection({ token }: { token: string | null }) {
     }
   }
 
-  function togglePreview(item: PromptPlaceholder, regenerate = false) {
-    if (previewId === item.id && !regenerate) {
+  function togglePreview(item: PromptPlaceholder) {
+    if (previewId === item.id) {
       setPreviewId(null)
       return
     }
@@ -338,8 +324,6 @@ function CustomPlaceholdersSection({ token }: { token: string | null }) {
     setPreviewId(item.id)
     setPreviewText(result)
   }
-
-  const previewItem = items.find(item => item.id === previewId)
 
   return (
     <section>
@@ -415,85 +399,70 @@ function CustomPlaceholdersSection({ token }: { token: string | null }) {
             No custom placeholders yet — add one above, e.g. <span className="font-mono">{'{.cinematic}'}</span>.
           </p>
         ) : (
-          <ul className="flex min-w-0 flex-wrap gap-2">
+          <div className="flex flex-col divide-y divide-border rounded-md border border-border/60">
             {items.map(item => (
-              <li
-                key={item.id}
-                className={cn('inline-flex min-w-0 max-w-full items-center gap-1 rounded-2xl bg-muted/60 py-1 pr-1 pl-3', previewId === item.id && 'bg-violet-500/10')}
-                data-testid={`prompt-placeholders-item-${item.id}`}
-              >
-                <button
-                  type="button"
-                  onClick={() => togglePreview(item)}
-                  aria-expanded={previewId === item.id}
-                  aria-label={`Preview {${item.name}}`}
-                  title={`${item.variants.length} variants — preview and manage`}
-                  data-testid={`prompt-placeholders-preview-${item.id}`}
-                  className="min-w-0 rounded-sm py-0.5 text-left font-mono text-xs text-foreground outline-none hover:text-violet-600 focus-visible:ring-2 focus-visible:ring-ring dark:hover:text-violet-400"
-                >
-                  {`{${item.name}}`}
-                </button>
-                <CopyTagButton text={`{${item.name}}`} testId={`prompt-placeholders-copy-${item.id}`} />
-              </li>
+              <div key={item.id} data-testid={`prompt-placeholders-item-${item.id}`}>
+                <div className="group flex items-center gap-2 px-2.5 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-mono text-xs text-foreground">{`{${item.name}}`}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {item.variants.length} variant{item.variants.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-0.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => togglePreview(item)}
+                      title="Preview"
+                      aria-label="Preview"
+                      data-testid={`prompt-placeholders-preview-${item.id}`}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Eye className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={busy}
+                      onClick={() => openEdit(item)}
+                      title="Edit"
+                      aria-label="Edit"
+                      data-testid={`prompt-placeholders-edit-${item.id}`}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={busy}
+                      onClick={() => void remove(item)}
+                      title="Delete"
+                      aria-label="Delete"
+                      data-testid={`prompt-placeholders-delete-${item.id}`}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+                {previewId === item.id ? (
+                  <p
+                    className="px-2.5 pb-2 font-mono text-[11px] text-muted-foreground"
+                    data-testid={`prompt-placeholders-preview-result-${item.id}`}
+                  >
+                    {previewText}
+                  </p>
+                ) : null}
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </div>
-      {previewItem ? (
-        <div className="mt-2 min-w-0 rounded-lg bg-muted/30 p-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <p className="min-w-0 text-xs text-muted-foreground">
-              <span className="font-mono text-foreground">{`{${previewItem.name}}`}</span>
-              {' · '}{previewItem.variants.length} variant{previewItem.variants.length === 1 ? '' : 's'}
-            </p>
-            <div className="flex shrink-0 gap-0.5">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => togglePreview(previewItem, true)}
-                title="Another preview"
-                aria-label="Another preview"
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <RefreshCw className="size-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                disabled={busy}
-                onClick={() => openEdit(previewItem)}
-                title="Edit"
-                aria-label="Edit"
-                data-testid={`prompt-placeholders-edit-${previewItem.id}`}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <Pencil className="size-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                disabled={busy}
-                onClick={() => void remove(previewItem)}
-                title="Delete"
-                aria-label="Delete"
-                data-testid={`prompt-placeholders-delete-${previewItem.id}`}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          </div>
-          <p
-            className="mt-2 min-w-0 font-mono text-[11px] text-muted-foreground [overflow-wrap:anywhere]"
-            data-testid={`prompt-placeholders-preview-result-${previewItem.id}`}
-          >
-            {previewText}
-          </p>
-        </div>
-      ) : null}
     </section>
   )
 }
@@ -504,16 +473,10 @@ function ReservedNamesSection() {
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Built-in (reserved) names
       </p>
-      <ul className="mt-2 flex min-w-0 flex-wrap gap-2">
-        {['?', ...PLACEHOLDER_CATEGORIES].map(name => (
-          <li key={name} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-muted/60 py-1 pr-1 pl-3">
-            <span className="min-w-0 font-mono text-xs text-foreground">{`{${name}}`}</span>
-            <CopyTagButton text={`{${name}}`} testId={`prompt-placeholders-copy-reserved-${name}`} />
-          </li>
-        ))}
-      </ul>
-      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-        Copy a tag into your prompt for a random word or name. These names are reserved for built-in placeholders.
+      <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+        <span className="font-mono">{PLACEHOLDER_CATEGORIES.map(c => `{${c}}`).join(', ')}</span> each resolve
+        to a random word from a built-in dictionary, and <span className="font-mono">{'{?}'}</span> resolves to
+        a random two-word name on the server. Your own placeholder names can't reuse any of these.
       </p>
     </section>
   )
