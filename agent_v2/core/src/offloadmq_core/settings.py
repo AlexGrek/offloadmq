@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +94,10 @@ class Settings(BaseModel):
         return [*self.capabilities, *self.custom_caps]
 
 
+def _backup_path(path: Path) -> Path:
+    return path.with_name(path.name + ".bak")
+
+
 def load_settings(path: Path = SETTINGS_FILE) -> Settings:
     if not path.exists():
         return Settings()
@@ -104,8 +110,33 @@ def load_settings(path: Path = SETTINGS_FILE) -> Settings:
         # without it, a corrupt/truncated file looks identical to "never
         # configured" with no way to tell why.
         logger.error("Failed to load settings from %s, using defaults: %s", path, exc)
+        bak_path = _backup_path(path)
+        if bak_path.exists():
+            try:
+                recovered = Settings.model_validate(json.loads(bak_path.read_text()))
+                logger.error("Recovered settings from backup %s", bak_path)
+                return recovered
+            except (json.JSONDecodeError, ValueError, OSError) as bak_exc:
+                logger.error("Backup %s is also unreadable: %s", bak_path, bak_exc)
         return Settings()
 
 
 def save_settings(cfg: Settings, path: Path = SETTINGS_FILE) -> None:
-    path.write_text(cfg.model_dump_json(indent=2))
+    """Snapshot the previous file to ``.bak``, then write atomically.
+
+    A killed/crashed process must never leave a truncated settings file as the
+    only copy — writing to a temp file and renaming it over the target is
+    atomic on both POSIX and Windows, so a kill mid-write loses the in-flight
+    change but never corrupts what's on disk. The ``.bak`` snapshot is the
+    second line of defense: it survives even a *logically* bad write (e.g. a
+    hand-edited file with the wrong shape), and ``load_settings`` falls back
+    to it automatically.
+    """
+    if path.exists():
+        try:
+            shutil.copyfile(path, _backup_path(path))
+        except OSError as exc:
+            logger.warning("Could not snapshot %s to .bak: %s", path, exc)
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(cfg.model_dump_json(indent=2))
+    os.replace(tmp_path, path)
