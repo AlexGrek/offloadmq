@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 import { api } from "@/api/client";
+import { ComfyGraphJsonEditor } from "@/components/ComfyGraphJsonEditor";
 import { ComfyParamMapEditor } from "@/components/ComfyParamMapEditor";
+import { JsonCodeEditor } from "@/components/JsonCodeEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -29,6 +31,7 @@ import {
 } from "@/components/ui/sheet";
 import { SaveIndicator } from "@/components/SaveIndicator";
 import { useDebouncedSave } from "@/hooks/useDebouncedSave";
+import { validateJsonObject } from "@/lib/jsonValidate";
 import type { ParamNotes } from "@/types";
 
 type Workflow = { name: string; namespace: string; task_types: string[] };
@@ -101,6 +104,8 @@ function AddWorkflowDialog({
     setError("");
     if (!name.trim()) { setError("Workflow name is required"); return; }
     if (!graphJson.trim()) { setError("Graph JSON is required"); return; }
+    const jsonErr = validateJsonObject(graphJson);
+    if (jsonErr) { setError(jsonErr); return; }
     setSaving(true);
     const label = `${namespace.trim() || "imggen"}.${name.trim()} / ${taskType}`;
     try {
@@ -204,11 +209,12 @@ function AddWorkflowDialog({
                 </span>
               )}
             </div>
-            <textarea
-              className="w-full h-40 rounded-md border border-input bg-background text-foreground px-3 py-2 text-xs font-mono shadow-sm resize-y"
-              placeholder='{"1": {"class_type": "...", "inputs": {...}}, ...}'
+            <JsonCodeEditor
               value={graphJson}
-              onChange={(e) => setGraphJson(e.target.value)}
+              onChange={setGraphJson}
+              minHeight="160px"
+              maxHeight="320px"
+              placeholder='{"1": {"class_type": "...", "inputs": {...}}, ...}'
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -237,6 +243,10 @@ export function ComfyPage() {
   // Param map drawer state
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorWorkflowKey, setEditorWorkflowKey] = useState<string>("");
+
+  // Graph JSON drawer state
+  const [jsonEditorOpen, setJsonEditorOpen] = useState(false);
+  const [jsonEditorWorkflowKey, setJsonEditorWorkflowKey] = useState<string>("");
 
   const refreshWorkflows = () =>
     api.getComfyWorkflows().then((r) => {
@@ -273,6 +283,11 @@ export function ComfyPage() {
   const openEditor = (w: Workflow) => {
     setEditorWorkflowKey(`${w.namespace}::${w.name}`);
     setEditorOpen(true);
+  };
+
+  const openJsonEditor = (w: Workflow) => {
+    setJsonEditorWorkflowKey(`${w.namespace}::${w.name}`);
+    setJsonEditorOpen(true);
   };
 
   return (
@@ -357,6 +372,13 @@ export function ComfyPage() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => openJsonEditor(w)}
+                  >
+                    Edit JSON
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => openEditor(w)}
                   >
                     Edit params
@@ -401,6 +423,24 @@ export function ComfyPage() {
               workflows={workflows}
               taskTypes={standardTaskTypes}
               initialWorkflowKey={editorWorkflowKey}
+            />
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+
+      {/* Graph JSON editor — right-side drawer */}
+      <Sheet open={jsonEditorOpen} onOpenChange={setJsonEditorOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Workflow graph JSON editor</SheetTitle>
+          </SheetHeader>
+          <SheetBody>
+            {/* key remounts the editor when the selected workflow changes */}
+            <ComfyGraphJsonEditor
+              key={jsonEditorWorkflowKey}
+              workflows={workflows}
+              taskTypes={standardTaskTypes}
+              initialWorkflowKey={jsonEditorWorkflowKey}
             />
           </SheetBody>
         </SheetContent>

@@ -43,6 +43,20 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @router.get("/comfy/workflows/graph")
+    def comfy_get_workflow_graph(
+        workflow_name: str = Query(""),
+        task_type: str = Query(""),
+        namespace: str = Query(""),
+    ) -> dict[str, str]:
+        try:
+            graph_json = orch.get_comfy_workflow_graph(workflow_name, task_type, namespace)
+            return {"graph_json": graph_json}
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @router.post("/comfy/workflows/delete")
     def comfy_delete_workflow(payload: WorkflowDeletePayload) -> dict[str, bool]:
         orch.delete_comfy_workflow(payload.workflow_name, payload.namespace)

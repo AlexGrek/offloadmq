@@ -145,6 +145,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ workflow_name, namespace }),
     }),
+  getComfyWorkflowGraph: (p: {
+    workflow_name: string;
+    task_type: string;
+    namespace: string;
+  }) => {
+    const q = new URLSearchParams(p).toString();
+    return request<{ graph_json: string }>(`/comfy/workflows/graph?${q}`);
+  },
   getComfyParamMap: (p: {
     workflow_name: string;
     task_type: string;

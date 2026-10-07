@@ -22,6 +22,7 @@ __all__ = [
     "list_workflows",
     "workflows_dir",
     "add_workflow",
+    "get_workflow_graph",
     "delete_workflow",
     "get_param_map",
     "save_param_map",
@@ -367,6 +368,18 @@ def add_workflow(workflow_name: str, task_type: str, namespace: str, graph_json:
     path = _resolve_workflow_graph_path(workflow_name, task_type, namespace)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json_module.dumps(graph, indent=2))
+
+
+def get_workflow_graph(workflow_name: str, task_type: str, namespace: str = "") -> str:
+    """Raw graph JSON text for one workflow/task-type, for the UI's JSON editor.
+
+    Raises ``ValueError`` for invalid names, ``FileNotFoundError`` if the workflow
+    graph doesn't exist.
+    """
+    graph_path = _resolve_workflow_graph_path(workflow_name, task_type, namespace)
+    if not graph_path.exists():
+        raise FileNotFoundError("workflow graph JSON not found")
+    return graph_path.read_text()
 
 
 def delete_workflow(workflow_name: str, namespace: str = "") -> None:
