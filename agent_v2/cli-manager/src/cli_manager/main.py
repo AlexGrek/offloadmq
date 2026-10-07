@@ -124,7 +124,7 @@ def webui(
             console.print("[green]Agent started.[/green]")
         except RuntimeError as exc:
             console.print(f"[yellow]Agent not started: {exc}[/yellow]")
-    console.print(f"[green]Web UI →[/green] http://{host}:{port}")
+    console.print(f"[green]Web UI ->[/green] http://{host}:{port}")
     try:
         run_blocking(orch, host=host, port=port)
     except KeyboardInterrupt:
