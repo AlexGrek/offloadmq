@@ -246,6 +246,14 @@ pub fn thumbnail_from_main_jpeg(bytes: &[u8]) -> Result<Vec<u8>, AppError> {
     Ok(thumbnail_bytes)
 }
 
+/// Downscale an image to fit `max_edge` (shrink-only) as a JPEG at `quality` — a
+/// size-bounded preview, e.g. for embedding in an MCP tool result.
+pub fn downscaled_jpeg(bytes: &[u8], max_edge: u32, quality: u8) -> Result<Vec<u8>, AppError> {
+    let input = TempFile::write(bytes, ".jpg")?;
+    let (jpeg, _, _) = vips_thumbnail(&input.0, max_edge, quality)?;
+    Ok(jpeg)
+}
+
 /// Extract a JPEG thumbnail from a video blob via ffmpeg (first frame at ~0.5s).
 pub fn thumbnail_from_video(bytes: &[u8]) -> Result<Vec<u8>, AppError> {
     if bytes.is_empty() {
@@ -325,6 +333,11 @@ pub async fn ensure_jpeg_response_async(
 /// Async [`thumbnail_from_main_jpeg`].
 pub async fn thumbnail_from_main_jpeg_async(bytes: Vec<u8>) -> Result<Vec<u8>, AppError> {
     blocking(move || thumbnail_from_main_jpeg(&bytes)).await
+}
+
+/// Async [`downscaled_jpeg`].
+pub async fn downscaled_jpeg_async(bytes: Vec<u8>, max_edge: u32, quality: u8) -> Result<Vec<u8>, AppError> {
+    blocking(move || downscaled_jpeg(&bytes, max_edge, quality)).await
 }
 
 /// Async [`thumbnail_from_video`]. Videos are large and callers usually still need them

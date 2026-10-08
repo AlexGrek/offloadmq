@@ -6,6 +6,7 @@ mod app;
 mod db;
 mod error;
 mod jobs;
+mod mcp;
 mod middleware;
 mod offload;
 mod routes;
@@ -61,6 +62,7 @@ async fn main() -> Result<()> {
     jobs::movie_worker::spawn(state.clone());
     jobs::stale_job_reaper::spawn(state.clone());
     jobs::pipeline_events_cleanup_worker::spawn(state.clone());
+    jobs::oauth_cleanup_worker::spawn(state.clone());
 
     let app = app::create_app(state, &static_dir);
     let listener = tokio::net::TcpListener::bind(&addr).await?;

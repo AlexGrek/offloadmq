@@ -22,3 +22,4 @@ pub mod llm_compare;
 pub mod llm_debate;
 pub mod movie;
 pub mod names;
+pub mod oauth;

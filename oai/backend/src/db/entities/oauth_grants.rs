@@ -1,0 +1,22 @@
+use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
+
+/// One approved connection (a user consenting to a client). Every token belongs to a
+/// grant; revoking the grant kills all of its tokens at once.
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "oauth_grants")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: i64,
+    pub user_id: i64,
+    pub client_id: String,
+    pub scope: String,
+    pub created_at: DateTimeWithTimeZone,
+    pub last_used_at: Option<DateTimeWithTimeZone>,
+    pub revoked_at: Option<DateTimeWithTimeZone>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}

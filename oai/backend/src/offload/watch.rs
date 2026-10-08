@@ -120,7 +120,7 @@ impl TaskWatch {
     }
 
     #[cfg(test)]
-    pub(super) fn for_test() -> Arc<Self> {
+    pub(crate) fn for_test() -> Arc<Self> {
         Self::detached().0
     }
 

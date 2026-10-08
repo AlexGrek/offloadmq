@@ -1,4 +1,6 @@
 use bcrypt::{hash, verify, DEFAULT_COST};
+use hmac::{Hmac, Mac};
+use sha2::{Digest, Sha256};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -13,6 +15,9 @@ pub struct Auth {
     /// Valid bcrypt hash of a throwaway string, used to spend the same time on a
     /// login for an unknown user as on one for a real user (see `verify_dummy`).
     dummy_hash: String,
+    /// HMAC key for signed URLs (MCP file links), derived from the JWT secret so no
+    /// extra secret has to be configured — but never equal to it.
+    link_key: [u8; 32],
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,6 +35,12 @@ impl Auth {
             // If hashing ever fails this is empty and `verify_dummy` just returns
             // early — the timing side channel returns, nothing else breaks.
             dummy_hash: hash("oai-timing-equalizer", DEFAULT_COST).unwrap_or_default(),
+            link_key: {
+                let mut h = Sha256::new();
+                h.update(b"oai-signed-link-v1\0");
+                h.update(jwt_secret);
+                h.finalize().into()
+            },
         }
     }
 
@@ -60,6 +71,23 @@ impl Auth {
         let exp = now.as_secs() as usize + self.expiry_seconds;
         let claims = Claims { sub: user_id, exp };
         encode(&Header::default(), &claims, &self.encoding_key).map_err(AppError::Jwt)
+    }
+
+    /// HMAC-SHA256 of `message` under the signed-link key, hex-encoded.
+    pub fn sign_link(&self, message: &str) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.link_key).expect("HMAC accepts any key size");
+        mac.update(message.as_bytes());
+        hex::encode(mac.finalize().into_bytes())
+    }
+
+    /// Constant-time check of a [`sign_link`](Self::sign_link) signature.
+    pub fn verify_link(&self, message: &str, signature_hex: &str) -> bool {
+        let Ok(sig) = hex::decode(signature_hex) else {
+            return false;
+        };
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.link_key).expect("HMAC accepts any key size");
+        mac.update(message.as_bytes());
+        mac.verify_slice(&sig).is_ok()
     }
 
     pub fn decode_token(&self, token: &str) -> Result<Claims, AppError> {
