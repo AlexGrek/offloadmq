@@ -120,6 +120,32 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ comfyui_url }),
     }),
+  getComfyProcess: () =>
+    request<import("@/types").ComfyProcessStatus>("/comfy/process"),
+  comfyProcessAction: (action: "start" | "stop" | "restart") =>
+    request<import("@/types").ComfyProcessStatus>(`/comfy/process/${action}`, {
+      method: "POST",
+    }),
+  saveComfyLaunch: (
+    p: Partial<
+      Pick<
+        Settings,
+        | "comfyui_launch_on_startup"
+        | "comfyui_restart_on_crash"
+        | "comfyui_python"
+        | "comfyui_main_py"
+        | "comfyui_args"
+      >
+    >
+  ) =>
+    request<Settings>("/comfy/process/settings", {
+      method: "POST",
+      body: JSON.stringify(p),
+    }),
+  detectComfyInstall: () =>
+    request<{ install: import("@/types").ComfyInstall | null }>(
+      "/comfy/process/detect"
+    ),
 
   saveKokoroSettings: (p: { kokoro_api_url: string; kokoro_api_key: string }) =>
     request<Settings>("/kokoro/settings", {
@@ -144,6 +170,26 @@ export const api = {
     request<{ ok: boolean }>("/comfy/workflows/delete", {
       method: "POST",
       body: JSON.stringify({ workflow_name, namespace }),
+    }),
+  renameComfyWorkflow: (p: {
+    workflow_name: string;
+    namespace: string;
+    new_workflow_name: string;
+    new_namespace: string;
+  }) =>
+    request<{ ok: boolean }>("/comfy/workflows/rename", {
+      method: "POST",
+      body: JSON.stringify(p),
+    }),
+  duplicateComfyWorkflow: (p: {
+    workflow_name: string;
+    namespace: string;
+    new_workflow_name: string;
+    new_namespace: string;
+  }) =>
+    request<{ ok: boolean }>("/comfy/workflows/duplicate", {
+      method: "POST",
+      body: JSON.stringify(p),
     }),
   getComfyWorkflowGraph: (p: {
     workflow_name: string;

@@ -32,6 +32,7 @@ agent_v2 implements the catalog below (`agent_v2/agent/src/offloadmq_agent/slave
 | Capability | Payload | Purpose |
 |---|---|---|
 | `slavemode.agent-update` | `{}` / `{"check": true}` | Self-update the agent binary and restart (Linux CLI under systemd only) |
+| `slavemode.comfy-ctrl` | `{"action": "start" \| "stop" \| "restart" \| "status"}` | Control the agent-managed local ComfyUI server |
 | `slavemode.force-rescan` | `{}` | Re-detect capabilities and push the new list to the server |
 | `slavemode.special-caps-ctrl` | `{"get": true}` / `{"set": {...}}` / `{"delete": "<name>"}` | List, create/replace, or remove a custom capability definition |
 | `slavemode.ollama-list` | `{}` | List installed Ollama models |
@@ -81,6 +82,38 @@ swap binary (previous kept as `omq.prev`) → exit 75 → systemd restarts it. W
 
 The management UI shows an **Agent update** button (check first, then **Update now**) on agents
 advertising this cap.
+
+### `slavemode.comfy-ctrl`
+
+**Purpose:** Start, stop, or restart the ComfyUI server the agent manages locally, or read
+its state. Not seeded by default — enable it per agent.
+
+The agent can own a ComfyUI process
+(`agent_v2/core/src/offloadmq_core/comfy_process.py`). It is configured on the agent's
+**ComfyUI** page ("Local ComfyUI server" card) or in `~/.offloadmq-agent.json`:
+
+| Setting | Meaning |
+|---|---|
+| `comfyui_python`, `comfyui_main_py`, `comfyui_args` | Launch command. `--port` / `--listen` are derived from `comfyui_url` unless listed in `comfyui_args`. **Detect from Comfy Desktop** fills these from Desktop's `installations.json`, mirroring how Desktop launches the install. |
+| `comfyui_launch_on_startup` | Launch when the agent app starts (once per process — stopping it by hand is never undone by an agent reconnect). |
+| `comfyui_restart_on_crash` | Relaunch after an unexpected exit — **at most 5 times in any 20-minute window**. Past that the state becomes `crash-loop`, a `CRITICAL` log goes to the server, and it stays down until started manually (which clears the counter). |
+
+Ownership rules: only a process the agent started is ever stopped/restarted. If a ComfyUI the
+agent didn't start (e.g. Comfy Desktop) already answers on `comfyui_url`, the state is
+`external` and `start` is refused. ComfyUI output goes to `~/.offloadmq-agent-comfy.log`; the
+pid lives in `~/.offloadmq-agent-comfy.json`, so a ComfyUI left running by a hard agent exit
+(e.g. self-update restart) is re-adopted by the next run. On a normal agent exit the process
+tree is killed.
+
+| Payload | Result |
+|---|---|
+| `{"action": "status"}` | `{state, managed, adopted, pid, startedAt, lastExitCode, lastError, restartsInWindow, maxRestarts, windowMinutes, url, configProblem, command, logPath, output}` (`output` = last 20 log lines) |
+| `{"action": "start"}` / `{"action": "restart"}` | Same status once ComfyUI answers `/system_stats`. Waits up to `min(runtime − 15 s, 300 s)` and reports progress every ~15 s (keeps urgent tasks from expiring); **Failed** if it never comes up, with the last error |
+| `{"action": "stop"}` | Status after the process tree is gone |
+
+The capability rescan that follows every slavemode task advertises or withdraws the
+`imggen.*` / `img-utils.*` / `txt2music.*` caps accordingly; readiness and crashes also
+trigger a rescan on their own. `omqcli agent <id> comfy start|stop|restart|status` wraps it.
 
 ### `slavemode.force-rescan`
 

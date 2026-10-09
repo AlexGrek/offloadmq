@@ -36,6 +36,13 @@ class Settings(BaseModel):
 
     # ComfyUI / workflows
     comfyui_url: str = "http://127.0.0.1:8188"
+    # Agent-managed local ComfyUI server (see comfy_process.py). --port/--listen
+    # are derived from comfyui_url unless given in comfyui_args.
+    comfyui_launch_on_startup: bool = False
+    comfyui_restart_on_crash: bool = False
+    comfyui_python: str = ""
+    comfyui_main_py: str = ""
+    comfyui_args: list[str] = Field(default_factory=list)
 
     # Kokoro TTS (OpenAI-compatible speech API)
     kokoro_api_url: str = "https://localhost:8443/v1/audio/speech"
@@ -69,6 +76,8 @@ class Settings(BaseModel):
         "api_key",
         "display_name",
         "comfyui_url",
+        "comfyui_python",
+        "comfyui_main_py",
         "kokoro_api_url",
         "kokoro_api_key",
         mode="before",

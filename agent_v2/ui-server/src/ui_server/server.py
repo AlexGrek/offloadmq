@@ -37,6 +37,7 @@ def create_app(orchestrator: OrchestratorAPI) -> FastAPI:
             except RuntimeError as exc:
                 logger.warning("Autostart failed (agent left stopped): %s", exc)
         orchestrator.sync_keep_awake_from_settings()
+        orchestrator.startup_comfy()
 
     @app.on_event("shutdown")
     async def _on_shutdown() -> None:

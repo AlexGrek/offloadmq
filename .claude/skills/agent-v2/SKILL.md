@@ -211,6 +211,7 @@ Single object both entry points drive. Settings, task store, executor pool, WS s
 | `scan_state.py` | Background scan state for capabilities UI |
 | `webui.py` | uvicorn lifecycle |
 | `custom_caps_service.py`, `comfy_service.py`, `startup_win/mac.py`, `systemd_service.py` | UI-backed ops |
+| `comfy_process.py` | Agent-managed local ComfyUI: `ComfyProcessManager` (launch-on-startup, start/stop/restart, crash watchdog capped by `RestartLimiter` at 5 restarts / 20 min, pid-file adoption, output in `~/.offloadmq-agent-comfy.log`) + `detect_desktop_install()`. Only ever stops a process it spawned. Exposed via `/api/comfy/process*` and `slavemode.comfy-ctrl` (bridge: `offloadmq_agent/comfy_control.py`) |
 | `version.py` | Running version — entry point calls `set_app_version()` with the release stamp; core never imports `cli_manager` |
 | `updater.py` | dl.alexgr.space check + download/verify/swap of `omq-<os>-<arch>` (keeps `<exe>.prev`) |
 | `auto_update.py` | `AutoUpdater` thread owned by the orchestrator — see *Self-update* below |

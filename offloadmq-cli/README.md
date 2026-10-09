@@ -254,6 +254,7 @@ Commands:
   caps          Manage custom capability definitions
   ollama        Manage Ollama models
   onnx          Manage ONNX models
+  comfy         Control the agent-managed local ComfyUI server
 ```
 
 | Command | Server capability | Notes |
@@ -269,6 +270,9 @@ Commands:
 | `agent <id> onnx list` | `slavemode.onnx-models-list` | Lists known ONNX models and their install state. |
 | `agent <id> onnx prepare <model>` | `slavemode.onnx-models-prepare` | Downloads an ONNX model; streams progress. Default `--timeout 1800`. |
 | `agent <id> onnx delete <model>` | `slavemode.onnx-models-delete` | Deletes a downloaded ONNX model. |
+| `agent <id> comfy start\|restart` | `slavemode.comfy-ctrl` (`{"action": "start"}`) | Launches (or stop+launches) the agent's local ComfyUI and waits until it answers; fails if it doesn't come up. Default `--timeout 360`. Refused if a ComfyUI the agent didn't start already holds the port. |
+| `agent <id> comfy stop` | `slavemode.comfy-ctrl` (`{"action": "stop"}`) | Stops ComfyUI — only one the agent started. |
+| `agent <id> comfy status` | `slavemode.comfy-ctrl` (`{"action": "status"}`) | Prints state (`stopped`/`starting`/`running`/`crashed`/`crash-loop`/`external`), pid, crash-restart count, last output lines. |
 
 Every `agent` subcommand accepts `--timeout <seconds>` (default `60`, or `1800` for
 `ollama pull` / `onnx prepare`). All of these exit non-zero and print the failure

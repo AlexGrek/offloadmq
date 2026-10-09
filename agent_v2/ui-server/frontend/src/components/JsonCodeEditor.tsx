@@ -46,7 +46,7 @@ export function JsonCodeEditor({
         maxHeight={maxHeight}
         readOnly={readOnly}
         placeholder={placeholder}
-        theme="light"
+        theme="dark"
       />
     </div>
   );

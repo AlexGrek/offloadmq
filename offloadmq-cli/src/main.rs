@@ -122,6 +122,36 @@ enum AgentAction {
         #[command(subcommand)]
         action: OnnxAction,
     },
+    /// Control the agent-managed local ComfyUI server
+    Comfy {
+        #[command(subcommand)]
+        action: ComfyAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ComfyAction {
+    /// Start ComfyUI and wait until it answers
+    Start {
+        /// Max seconds to wait (ComfyUI with many custom nodes boots slowly)
+        #[arg(long, default_value_t = 360)]
+        timeout: u64,
+    },
+    /// Stop ComfyUI (only if the agent started it)
+    Stop {
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Restart ComfyUI and wait until it answers
+    Restart {
+        #[arg(long, default_value_t = 360)]
+        timeout: u64,
+    },
+    /// Show ComfyUI process state
+    Status {
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -420,6 +450,12 @@ fn main() {
                 OnnxAction::Delete { model, timeout } => {
                     commands::agent::onnx_delete(&id, &model, timeout)
                 }
+            },
+            AgentAction::Comfy { action } => match action {
+                ComfyAction::Start { timeout } => commands::agent::comfy(&id, "start", timeout),
+                ComfyAction::Stop { timeout } => commands::agent::comfy(&id, "stop", timeout),
+                ComfyAction::Restart { timeout } => commands::agent::comfy(&id, "restart", timeout),
+                ComfyAction::Status { timeout } => commands::agent::comfy(&id, "status", timeout),
             },
         },
         Command::Status { task_limit } => commands::status::run(task_limit),

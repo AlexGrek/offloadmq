@@ -42,13 +42,14 @@ from offloadmq_agent.models import (
     TaskResult,
     TaskStatus,
 )
-from offloadmq_agent import self_update
+from offloadmq_agent import comfy_control, self_update
 from offloadmq_agent.slavemode_policy import ALL_SLAVEMODE_CAPS
 from offloadmq_agent.systeminfo import calculate_tier, collect_system_info
 from offloadmq_agent.transport_sync import SyncAgentTransport
 
 from offloadmq_core.agent_log import AgentLogBuffer
 from offloadmq_core.auto_update import AutoUpdater
+from offloadmq_core.comfy_process import ComfyProcessManager, detect_desktop_install
 from offloadmq_core.error_pool import ErrorPool, PendingLog, Severity
 from offloadmq_core.executor_pool import ExecutorPool
 from offloadmq_core.scan_state import ScanState
@@ -158,6 +159,15 @@ class Orchestrator:
             None if self.auto_update.unsupported_reason()
             else self.auto_update.handle_remote_request
         )
+        # Agent-managed local ComfyUI. Readiness / crash flips which imggen.*
+        # etc. caps exist, so every transition triggers a rescan + push.
+        self.comfy = ComfyProcessManager(
+            get_settings=self.get_settings,
+            log=self._log,
+            report_error=self._record_error,
+            on_change=self._trigger_rescan_async,
+        )
+        comfy_control.set_handler(self._comfy_remote_request)
 
     # ==================================================================
     # Local logging + error pool
@@ -574,6 +584,9 @@ class Orchestrator:
         if paused:
             self._record_error("INFO", "[power] on battery — agent starts paused")
         self.auto_update.start()
+        # Once per process; the UI server also calls it so a GUI with agent
+        # autostart off still brings ComfyUI up.
+        self.startup_comfy()
 
     def stop(self) -> None:
         self.auto_update.stop()
@@ -696,6 +709,16 @@ class Orchestrator:
     def delete_comfy_workflow(self, workflow_name: str, namespace: str = "") -> None:
         comfy_service.delete_workflow(workflow_name, namespace)
 
+    def rename_comfy_workflow(
+        self, workflow_name: str, namespace: str, new_workflow_name: str, new_namespace: str
+    ) -> None:
+        comfy_service.rename_workflow(workflow_name, namespace, new_workflow_name, new_namespace)
+
+    def duplicate_comfy_workflow(
+        self, workflow_name: str, namespace: str, new_workflow_name: str, new_namespace: str
+    ) -> None:
+        comfy_service.duplicate_workflow(workflow_name, namespace, new_workflow_name, new_namespace)
+
     def get_comfy_workflow_graph(
         self, workflow_name: str, task_type: str, namespace: str = ""
     ) -> str:
@@ -716,6 +739,43 @@ class Orchestrator:
     ) -> dict[str, Any]:
         params, notes = comfy_service.autodetect_param_map(workflow_name, task_type, namespace)
         return {"paramMap": params, "notes": notes}
+
+    # ---- Agent-managed ComfyUI server ----
+
+    def startup_comfy(self) -> None:
+        """Honour ``comfyui_launch_on_startup`` (and adopt a leftover process).
+
+        Runs off-thread: a spawn is quick, but it must never delay the agent
+        or UI server coming up.
+        """
+        threading.Thread(target=self.comfy.autostart, name="omq-comfy-autostart", daemon=True).start()
+
+    def comfy_process_status(self) -> dict[str, Any]:
+        return self.comfy.status()
+
+    def comfy_process_action(self, action: str) -> dict[str, Any]:
+        """start / stop / restart / status. Returns immediately; poll status for readiness.
+
+        Shared by the UI routes and ``slavemode.comfy-ctrl`` (via comfy_control).
+        """
+        if action == "status":
+            return self.comfy.status()
+        if action == "start":
+            return self.comfy.start()
+        if action == "stop":
+            return self.comfy.stop()
+        if action == "restart":
+            return self.comfy.restart()
+        raise ValueError(f"Unknown action {action!r}")
+
+    def _comfy_remote_request(self, action: str) -> dict[str, Any]:
+        """``slavemode.comfy-ctrl`` handler (runs on a pool worker thread)."""
+        if action != "status":
+            self._log(f"[comfy] remote {action} requested")
+        return self.comfy_process_action(action)
+
+    def detect_comfy_install(self) -> dict[str, Any] | None:
+        return detect_desktop_install()
 
     def check_update(self) -> dict[str, Any]:
         return check_for_update(get_app_version())

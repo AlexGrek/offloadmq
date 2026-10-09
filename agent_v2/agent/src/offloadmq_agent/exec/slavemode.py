@@ -75,6 +75,86 @@ def _agent_update(transport: AgentTransport, task_id: TaskId, capability: str, p
     return report_result(transport, make_success_report(task_id, capability, out))
 
 
+def _comfy_ctrl(
+    transport: AgentTransport,
+    task_id: TaskId,
+    capability: str,
+    payload: dict[str, Any],
+    job_timeout: int,
+) -> bool:
+    """Start, stop, restart, or query the agent-managed local ComfyUI server.
+
+    Payload: { "action": "start" | "stop" | "restart" | "status" }
+
+    start/restart wait (bounded by the task timeout, at most 5 min) until
+    ComfyUI answers, so a completed result means it is ready for imggen tasks.
+    The wait sends progress every ~15 s: an urgent task whose ``last_update``
+    goes stale past its TTL (60 s by default) is expired server-side, and
+    ComfyUI with a pile of custom nodes can take longer than that to boot.
+    The orchestrator rescans after every slavemode task, which advertises or
+    withdraws the ComfyUI-backed capabilities.
+    """
+    import time
+
+    from offloadmq_agent.comfy_control import ACTIONS, request as comfy_request
+    from offloadmq_agent.exec.reporting import report_progress, report_starting
+
+    action = payload.get("action", "")
+    if action not in ACTIONS:
+        msg = f"'action' must be one of: {', '.join(ACTIONS)}"
+        return report_result(transport, make_failure_report(task_id, capability, msg))
+
+    logger.info(f"[slavemode] comfy-ctrl: {action}")
+    try:
+        status = comfy_request(action)
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        logger.warning(f"[slavemode] comfy-ctrl {action}: {msg}")
+        return report_result(transport, make_failure_report(task_id, capability, msg))
+
+    if action in ("start", "restart"):
+        wait_secs = max(10, min(job_timeout - 15, 300))
+        report_starting(transport, task_id)
+        report_progress(
+            transport,
+            log=f"ComfyUI {action}ed (pid {status.get('pid')}); waiting up to {wait_secs}s for it to answer\n",
+            stage="starting",
+            task_id=task_id,
+        )
+        started = time.monotonic()
+        last_report = started
+        crashed_polls = 0
+        while status.get("state") != "running":
+            if time.monotonic() - started > wait_secs:
+                break
+            # "crashed" is transient when restart-on-crash is on (it respawns
+            # ~5 s later); only give up once it has stuck for a few polls.
+            crashed_polls = crashed_polls + 1 if status.get("state") == "crashed" else 0
+            if status.get("state") in ("stopped", "crash-loop") or crashed_polls >= 4:
+                break
+            time.sleep(3)
+            status = comfy_request("status")
+            if time.monotonic() - last_report >= 15:
+                last_report = time.monotonic()
+                tail = (status.get("output") or [""])[-1]
+                report_progress(
+                    transport,
+                    log=f"[{time.monotonic() - started:.0f}s] {status.get('state')}: {tail}\n",
+                    stage="starting",
+                    task_id=task_id,
+                )
+
+    # The output tail is for the local UI; send only the last few lines.
+    status = {**status, "output": list(status.get("output") or [])[-20:]}
+    if action in ("start", "restart") and status.get("state") != "running":
+        msg = (
+            f"ComfyUI did not become ready (state: {status.get('state')}). "
+            f"{status.get('lastError') or ''}".strip()
+        )
+        return report_result(transport, make_failure_report(task_id, capability, msg))
+    return report_result(transport, make_success_report(task_id, capability, status))
+
+
 def _special_caps_ctrl(transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any]) -> bool:
     """Get, set, or delete a special (custom) capability definition.
 
@@ -310,6 +390,8 @@ def execute_slavemode(
     match capability:
         case "slavemode.agent-update":
             return _agent_update(transport, task_id, capability, payload)
+        case "slavemode.comfy-ctrl":
+            return _comfy_ctrl(transport, task_id, capability, payload, job_timeout)
         case "slavemode.force-rescan":
             return _force_rescan(transport, task_id, capability)
         case "slavemode.special-caps-ctrl":
