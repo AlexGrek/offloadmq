@@ -21,6 +21,7 @@ class SettingsPayload(BaseModel):
     comfyui_python: str | None = None
     comfyui_main_py: str | None = None
     comfyui_args: list[str] | None = None
+    ollama_base_url: str | None = None
     kokoro_api_url: str | None = None
     kokoro_api_key: str | None = None
     rescan_interval_secs: int | None = None
@@ -95,6 +96,12 @@ class WorkflowMovePayload(BaseModel):
     namespace: str = ""
     new_workflow_name: str
     new_namespace: str = ""
+class WorkflowImportPayload(BaseModel):
+    bundle: dict[str, Any]
+    # Blank/None keep the name / namespace recorded in the bundle.
+    name: str = ""
+    namespace: str | None = None
+    overwrite: bool = False
 
 
 class ParamMapPayload(BaseModel):

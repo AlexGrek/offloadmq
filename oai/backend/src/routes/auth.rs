@@ -107,5 +107,7 @@ pub async fn change_password(
     }
     let new_hash = state.auth.hash_password(req.new_password).await?;
     users::update_password_hash(&state.db, user_id, new_hash).await?;
+    // A new password ends every connected MCP client (OAuth grant) as well.
+    crate::db::oauth::revoke_user_grants(&state.db, user_id).await?;
     Ok(Json(ChangePasswordResponse { ok: true }))
 }

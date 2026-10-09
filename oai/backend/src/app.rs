@@ -3,15 +3,15 @@ use std::sync::Arc;
 use axum::{
     extract::DefaultBodyLimit,
     http::{
-        header::{AUTHORIZATION, CONTENT_TYPE},
-        HeaderValue, Method,
+        header::{AUTHORIZATION, CONTENT_TYPE, WWW_AUTHENTICATE},
+        HeaderName, HeaderValue, Method,
     },
     middleware::from_fn_with_state,
     routing::{get, post},
     Router,
 };
 use tower_http::{
-    cors::CorsLayer,
+    cors::{AllowOrigin, CorsLayer},
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
@@ -36,6 +36,39 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         "/api/auth/change_password",
         post(routes::auth::change_password),
     ));
+
+    // MCP server + its OAuth authorization server (see docs/mcp.md). Claude calls the
+    // token/registration endpoints and /mcp from a shared egress range, so those must
+    // not sit behind the per-IP limiter; only the consent form (bcrypt) does.
+    let oauth_public = Router::new()
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(routes::oauth::protected_resource_metadata),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(routes::oauth::protected_resource_metadata),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(routes::oauth::authorization_server_metadata),
+        )
+        .route("/oauth/register", post(routes::oauth::register))
+        .route("/oauth/token", post(routes::oauth::token))
+        .route("/oauth/revoke", post(routes::oauth::revoke))
+        .route("/oauth/authorize", get(routes::oauth::authorize_page))
+        .route("/mcp/files/{image_id}", get(crate::mcp::files::get_file));
+    let oauth_consent = middleware::rate_limit::limit(
+        Router::new().route("/oauth/authorize", post(routes::oauth::authorize_submit)),
+    );
+    let mcp = Router::new()
+        .route(
+            "/mcp",
+            post(crate::mcp::post_mcp)
+                .get(crate::mcp::method_not_allowed)
+                .delete(crate::mcp::method_not_allowed),
+        )
+        .layer(from_fn_with_state(state.clone(), crate::mcp::auth::mcp_auth_middleware));
 
     let public = Router::new()
         .route("/api/health", get(routes::health::health))
@@ -302,6 +335,9 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .merge(public)
         .merge(authenticated)
         .merge(admin)
+        .merge(oauth_public)
+        .merge(oauth_consent)
+        .merge(mcp)
         .nest_service("/assets", ServeDir::new(&assets_dir))
         .fallback_service(spa_fallback)
         .with_state(state.clone())
@@ -309,9 +345,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
-                .allow_origin(cors_allowed_origins(
-                    std::env::var("CORS_ALLOWED_ORIGINS").ok().as_deref(),
-                ))
+                .allow_origin(cors_allow_origin())
                 .allow_methods([
                     Method::GET,
                     Method::POST,
@@ -320,9 +354,47 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
                     Method::DELETE,
                     Method::OPTIONS,
                 ])
-                .allow_headers([CONTENT_TYPE, AUTHORIZATION])
+                .allow_headers([
+                    CONTENT_TYPE,
+                    AUTHORIZATION,
+                    HeaderName::from_static("mcp-protocol-version"),
+                    HeaderName::from_static("mcp-method"),
+                    HeaderName::from_static("mcp-name"),
+                    HeaderName::from_static("mcp-session-id"),
+                    HeaderName::from_static("last-event-id"),
+                ])
+                .expose_headers([WWW_AUTHENTICATE])
                 .allow_credentials(true),
         )
+}
+
+/// The listed origins (`CORS_ALLOWED_ORIGINS`) everywhere; any origin on the MCP and
+/// OAuth endpoints, which browser-based MCP clients (e.g. MCP Inspector) call
+/// cross-origin. Safe: `/mcp` authenticates by `Authorization` header only, never by
+/// cookie, and the OAuth endpoints carry no ambient credentials.
+fn cors_allow_origin() -> AllowOrigin {
+    let listed = configured_cors_origins_headers();
+    AllowOrigin::predicate(move |origin, parts| {
+        listed.contains(origin) || is_open_cors_path(parts.uri.path())
+    })
+}
+
+fn is_open_cors_path(path: &str) -> bool {
+    path == "/mcp"
+        || path.starts_with("/.well-known/")
+        || matches!(path, "/oauth/token" | "/oauth/register" | "/oauth/revoke")
+}
+
+fn configured_cors_origins_headers() -> Vec<HeaderValue> {
+    cors_allowed_origins(std::env::var("CORS_ALLOWED_ORIGINS").ok().as_deref())
+}
+
+/// The configured CORS origins as strings (also trusted as MCP `Origin`s).
+pub fn configured_cors_origins() -> Vec<String> {
+    configured_cors_origins_headers()
+        .into_iter()
+        .filter_map(|h| h.to_str().ok().map(str::to_string))
+        .collect()
 }
 
 /// Origins allowed to make credentialed cross-origin requests when `CORS_ALLOWED_ORIGINS`

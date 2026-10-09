@@ -58,6 +58,14 @@ class OrchestratorAPI(Protocol):
     def duplicate_comfy_workflow(
         self, workflow_name: str, namespace: str, new_workflow_name: str, new_namespace: str
     ) -> None: ...
+    def export_comfy_workflow(self, workflow_name: str, namespace: str = "") -> dict[str, Any]: ...
+    def import_comfy_workflow(
+        self,
+        bundle: Any,
+        name: str = "",
+        namespace: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, Any]: ...
     def get_comfy_workflow_graph(
         self, workflow_name: str, task_type: str, namespace: str = ""
     ) -> str: ...

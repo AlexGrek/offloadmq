@@ -35,6 +35,7 @@ const EMPTY: Settings = {
   comfyui_python: "",
   comfyui_main_py: "",
   comfyui_args: [],
+  ollama_base_url: "http://127.0.0.1:11434",
   kokoro_api_url: "",
   kokoro_api_key: "",
   win_startup_enabled: false,

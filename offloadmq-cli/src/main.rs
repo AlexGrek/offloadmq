@@ -112,6 +112,11 @@ enum AgentAction {
         #[command(subcommand)]
         action: CapsAction,
     },
+    /// ComfyUI: export / import workflows, and control the agent-managed local server
+    Comfy {
+        #[command(subcommand)]
+        action: ComfyAction,
+    },
     /// Manage Ollama models
     Ollama {
         #[command(subcommand)]
@@ -121,36 +126,6 @@ enum AgentAction {
     Onnx {
         #[command(subcommand)]
         action: OnnxAction,
-    },
-    /// Control the agent-managed local ComfyUI server
-    Comfy {
-        #[command(subcommand)]
-        action: ComfyAction,
-    },
-}
-
-#[derive(Subcommand)]
-enum ComfyAction {
-    /// Start ComfyUI and wait until it answers
-    Start {
-        /// Max seconds to wait (ComfyUI with many custom nodes boots slowly)
-        #[arg(long, default_value_t = 360)]
-        timeout: u64,
-    },
-    /// Stop ComfyUI (only if the agent started it)
-    Stop {
-        #[arg(long, default_value_t = 60)]
-        timeout: u64,
-    },
-    /// Restart ComfyUI and wait until it answers
-    Restart {
-        #[arg(long, default_value_t = 360)]
-        timeout: u64,
-    },
-    /// Show ComfyUI process state
-    Status {
-        #[arg(long, default_value_t = 60)]
-        timeout: u64,
     },
 }
 
@@ -171,6 +146,58 @@ enum CapsAction {
     /// Delete a custom capability definition by name
     Delete {
         name: String,
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum ComfyAction {
+    /// Export one workflow, or all of them, as portable bundle files
+    Export {
+        /// Workflow to export, e.g. `my-sdxl` or `img-utils.depth` (default: all)
+        workflow: Option<String>,
+        /// Output directory (or file, for a single workflow); `-` prints to stdout
+        #[arg(short, long)]
+        output: Option<String>,
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Install workflow bundle files (from `comfy export`) on the agent
+    Import {
+        /// Bundle file(s)
+        #[arg(required = true)]
+        files: Vec<String>,
+        /// Replace task types that already exist
+        #[arg(long)]
+        overwrite: bool,
+        /// Install under this workflow name (single file only)
+        #[arg(long)]
+        name: Option<String>,
+        /// Override the namespace: img-utils, txt2music, or "" for imggen (single file only)
+        #[arg(long)]
+        namespace: Option<String>,
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Start ComfyUI and wait until it answers
+    Start {
+        /// Max seconds to wait (ComfyUI with many custom nodes boots slowly)
+        #[arg(long, default_value_t = 360)]
+        timeout: u64,
+    },
+    /// Stop ComfyUI (only if the agent started it)
+    Stop {
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Restart ComfyUI and wait until it answers
+    Restart {
+        #[arg(long, default_value_t = 360)]
+        timeout: u64,
+    },
+    /// Show ComfyUI process state
+    Status {
         #[arg(long, default_value_t = 60)]
         timeout: u64,
     },
@@ -433,6 +460,36 @@ fn main() {
                     commands::agent::caps_delete(&id, &name, timeout)
                 }
             },
+            AgentAction::Comfy { action } => match action {
+                ComfyAction::Export {
+                    workflow,
+                    output,
+                    timeout,
+                } => commands::agent::comfy_export(
+                    &id,
+                    workflow.as_deref(),
+                    output.as_deref(),
+                    timeout,
+                ),
+                ComfyAction::Import {
+                    files,
+                    overwrite,
+                    name,
+                    namespace,
+                    timeout,
+                } => commands::agent::comfy_import(
+                    &id,
+                    &files,
+                    overwrite,
+                    name.as_deref(),
+                    namespace.as_deref(),
+                    timeout,
+                ),
+                ComfyAction::Start { timeout } => commands::agent::comfy(&id, "start", timeout),
+                ComfyAction::Stop { timeout } => commands::agent::comfy(&id, "stop", timeout),
+                ComfyAction::Restart { timeout } => commands::agent::comfy(&id, "restart", timeout),
+                ComfyAction::Status { timeout } => commands::agent::comfy(&id, "status", timeout),
+            },
             AgentAction::Ollama { action } => match action {
                 OllamaAction::List { timeout } => commands::agent::ollama_list(&id, timeout),
                 OllamaAction::Pull { model, timeout } => {
@@ -450,12 +507,6 @@ fn main() {
                 OnnxAction::Delete { model, timeout } => {
                     commands::agent::onnx_delete(&id, &model, timeout)
                 }
-            },
-            AgentAction::Comfy { action } => match action {
-                ComfyAction::Start { timeout } => commands::agent::comfy(&id, "start", timeout),
-                ComfyAction::Stop { timeout } => commands::agent::comfy(&id, "stop", timeout),
-                ComfyAction::Restart { timeout } => commands::agent::comfy(&id, "restart", timeout),
-                ComfyAction::Status { timeout } => commands::agent::comfy(&id, "status", timeout),
             },
         },
         Command::Status { task_limit } => commands::status::run(task_limit),

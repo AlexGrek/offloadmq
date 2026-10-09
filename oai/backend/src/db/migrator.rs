@@ -40,6 +40,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260806_000032_image_analysis_external_resize::Migration),
             Box::new(m20260903_000033_create_prompt_placeholders::Migration),
             Box::new(m20260926_000034_prompt_entry_previews::Migration),
+            Box::new(m20261009_000035_create_oauth_tables::Migration),
         ]
     }
 }
@@ -114,6 +115,7 @@ mod m20260903_000033_create_prompt_placeholders;
 /// entries with identical text share it. The second index serves keyset paging of
 /// favorites, which sort by `updated_at` (recents reuse the `last_used_at` index).
 mod m20260926_000034_prompt_entry_previews;
+mod m20261009_000035_create_oauth_tables;
 
 
 #[cfg(test)]

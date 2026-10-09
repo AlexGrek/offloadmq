@@ -337,6 +337,146 @@ function RenameDuplicateDialog({
   );
 }
 
+function ImportWorkflowDialog({
+  open,
+  onClose,
+  onImported,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImported: (label: string) => void;
+}) {
+  const [bundle, setBundle] = useState<Record<string, unknown> | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [name, setName] = useState("");
+  const [namespace, setNamespace] = useState<string | null>(null);
+  const [overwrite, setOverwrite] = useState(false);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const reset = () => {
+    setBundle(null);
+    setFileName("");
+    setName("");
+    setNamespace(null);
+    setOverwrite(false);
+    setError("");
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const handleClose = () => {
+    reset();
+    onClose();
+  };
+
+  const loadFile = (file: File) => {
+    setError("");
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(String(e.target?.result));
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("not a JSON object");
+        }
+        setBundle(parsed as Record<string, unknown>);
+        setFileName(file.name);
+        setName(String(parsed.name ?? ""));
+        setNamespace(null);
+      } catch (err) {
+        setBundle(null);
+        setError(`Not a valid bundle file: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const taskTypes = bundle?.task_types && typeof bundle.task_types === "object"
+    ? Object.keys(bundle.task_types as object)
+    : [];
+  const effectiveNamespace = namespace ?? String(bundle?.namespace ?? "");
+
+  const submit = async () => {
+    if (!bundle) { setError("Choose a bundle file first"); return; }
+    setError("");
+    setSaving(true);
+    try {
+      const r = await api.importComfyWorkflow({ bundle, name: name.trim(), namespace, overwrite });
+      reset();
+      onImported(`${r.namespace || "imggen"}.${r.name} (${r.task_types.join(", ")})`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Import workflow bundle</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1">
+            <Label>Bundle file (.omqwf.json)</Label>
+            <input
+              type="file"
+              ref={fileRef}
+              accept=".json"
+              className="block text-xs file:rounded file:border-0 file:bg-secondary file:text-secondary-foreground file:text-xs file:font-medium file:px-2 file:py-1 file:mr-2 file:cursor-pointer cursor-pointer"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) loadFile(f);
+              }}
+            />
+          </div>
+          {bundle && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {fileName}: {taskTypes.length} task type{taskTypes.length === 1 ? "" : "s"}
+                {taskTypes.length > 0 && ` (${taskTypes.join(", ")})`}, param maps included
+                where configured.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Workflow name</Label>
+                  <Input value={name} onChange={(e) => setName(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Namespace</Label>
+                  <Input
+                    placeholder="blank for imggen.*"
+                    value={effectiveNamespace}
+                    onChange={(e) => setNamespace(e.target.value)}
+                  />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={overwrite}
+                  onChange={(e) => setOverwrite(e.target.checked)}
+                />
+                Overwrite task types that already exist
+              </label>
+            </>
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={saving || !bundle}>
+            {saving ? "Importing…" : "Import"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ComfyPage() {
   const [url, setUrl] = useState("");
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -345,6 +485,9 @@ export function ComfyPage() {
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [unwired, setUnwired] = useState<UnwiredReport | null>(null);
+  const [showImport, setShowImport] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [exportError, setExportError] = useState("");
 
   // Param map drawer state
   const [editorOpen, setEditorOpen] = useState(false);
@@ -390,6 +533,26 @@ export function ComfyPage() {
       setDeleteErr(e instanceof Error ? e.message : String(e));
     } finally {
       setDeletingKey(null);
+    }
+  };
+
+  const exportWorkflow = async (w: Workflow) => {
+    setExportError("");
+    setNotice("");
+    try {
+      const bundle = await api.exportComfyWorkflow({
+        workflow_name: w.name,
+        namespace: w.namespace,
+      });
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `${w.name}.omqwf.json`;
+      a.click();
+      URL.revokeObjectURL(href);
+    } catch (e) {
+      setExportError(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -469,12 +632,19 @@ export function ComfyPage() {
             <Button size="sm" variant="outline" onClick={() => { setEditorWorkflowKey(""); setEditorOpen(true); }}>
               Edit param maps
             </Button>
+            <Button size="sm" variant="outline" onClick={() => setShowImport(true)}>
+              Import bundle
+            </Button>
             <Button size="sm" onClick={() => setShowAdd(true)}>
               Add workflow
             </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-2">
+          {notice && (
+            <p className="text-sm text-emerald-500">Imported {notice}.</p>
+          )}
+          {exportError && <p className="text-sm text-destructive">{exportError}</p>}
           {deleteErr && <p className="text-sm text-destructive">{deleteErr}</p>}
           {workflows.length === 0 && (
             <p className="text-sm text-muted-foreground">No workflows found</p>
@@ -496,6 +666,13 @@ export function ComfyPage() {
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => exportWorkflow(w)}
+                  >
+                    Export
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -558,6 +735,16 @@ export function ComfyPage() {
         onDone={() => {
           setMoveMode(null);
           setMoveTarget(null);
+          refreshWorkflows();
+        }}
+      />
+
+      <ImportWorkflowDialog
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={(label) => {
+          setShowImport(false);
+          setNotice(label);
           refreshWorkflows();
         }}
       />

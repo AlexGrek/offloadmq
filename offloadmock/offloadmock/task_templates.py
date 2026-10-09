@@ -141,6 +141,8 @@ _BUILDERS: Dict[str, Callable[[str, bool], Dict[str, Any]]] = {
 SLAVEMODE_COMMANDS: Dict[str, Dict[str, Any]] = {
     "slavemode.agent-update": {"check": True},
     "slavemode.comfy-ctrl": {"action": "status"},
+    "slavemode.comfy-export": {},
+    "slavemode.comfy-import": {"bundles": []},
     "slavemode.force-rescan": {},
     "slavemode.ollama-list": {},
     "slavemode.ollama-pull": {"model": "qwen3:8b"},

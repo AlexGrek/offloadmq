@@ -44,6 +44,8 @@ class Settings(BaseModel):
     comfyui_main_py: str = ""
     comfyui_args: list[str] = Field(default_factory=list)
 
+    ollama_base_url: str = "http://127.0.0.1:11434"
+
     # Kokoro TTS (OpenAI-compatible speech API)
     kokoro_api_url: str = "https://localhost:8443/v1/audio/speech"
     kokoro_api_key: str = ""
@@ -78,6 +80,7 @@ class Settings(BaseModel):
         "comfyui_url",
         "comfyui_python",
         "comfyui_main_py",
+        "ollama_base_url",
         "kokoro_api_url",
         "kokoro_api_key",
         mode="before",

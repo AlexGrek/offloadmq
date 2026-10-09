@@ -20,4 +20,8 @@ pub mod music_generation_jobs;
 pub mod llm_compare_jobs;
 pub mod llm_debate_jobs;
 pub mod movie_jobs;
+pub mod oauth_auth_codes;
+pub mod oauth_clients;
+pub mod oauth_grants;
+pub mod oauth_tokens;
 pub mod users;

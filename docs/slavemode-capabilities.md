@@ -33,6 +33,8 @@ agent_v2 implements the catalog below (`agent_v2/agent/src/offloadmq_agent/slave
 |---|---|---|
 | `slavemode.agent-update` | `{}` / `{"check": true}` | Self-update the agent binary and restart (Linux CLI under systemd only) |
 | `slavemode.comfy-ctrl` | `{"action": "start" \| "stop" \| "restart" \| "status"}` | Control the agent-managed local ComfyUI server |
+| `slavemode.comfy-export` | `{}` / `{"workflow": "[ns.]<name>"}` | Export all (or one) ComfyUI workflow as a portable bundle: graphs + configured node mappings |
+| `slavemode.comfy-import` | `{"bundles": [...]}` / `{"bundle": {...}}` + `overwrite`, `name`, `namespace` | Install workflow bundles (and their node mappings) on the agent |
 | `slavemode.force-rescan` | `{}` | Re-detect capabilities and push the new list to the server |
 | `slavemode.special-caps-ctrl` | `{"get": true}` / `{"set": {...}}` / `{"delete": "<name>"}` | List, create/replace, or remove a custom capability definition |
 | `slavemode.ollama-list` | `{}` | List installed Ollama models |
@@ -42,8 +44,8 @@ agent_v2 implements the catalog below (`agent_v2/agent/src/offloadmq_agent/slave
 | `slavemode.onnx-models-prepare` | `{"model": "<name>"}` | Download an ONNX model (streams progress) |
 | `slavemode.onnx-models-delete` | `{"model": "<name>"}` | Delete a downloaded ONNX model |
 
-Any cap that changes what the agent can do (`special-caps-ctrl`, and the `onnx-models-*`
-mutations) runs a rescan-and-push afterwards, so the server's view stays current without a
+Any cap that changes what the agent can do (`special-caps-ctrl`, `comfy-import`, and the
+`onnx-models-*` mutations) runs a rescan-and-push afterwards, so the server's view stays current without a
 separate `force-rescan`.
 
 ### First-launch defaults (agent_v2)
@@ -56,6 +58,26 @@ To make a fresh node useful without hand-editing config, agent_v2 seeds the allo
 Seeding is recorded via the `ollama_slavemode_initialized` / `onnx_slavemode_initialized` flags,
 so it happens at most once per agent. Clearing the allow-list afterwards (the Slavemode tab's
 **Deny all**) is respected permanently and is never silently repopulated.
+
+### `slavemode.comfy-export` / `slavemode.comfy-import`
+
+Move ComfyUI workflows between agents without touching their disks. Both use the bundle format
+documented in [comfy-api.md](comfy-api.md#exporting--importing-workflows) (the same one the
+agent's web UI and `omq comfy export|import` read and write).
+
+- **Export** — payload `{}` exports every installed workflow; `{"workflow": "my-sdxl"}` or
+  `{"workflow": "img-utils.depth"}` exports one. Result: `{"bundles": [...], "count": N}`.
+  Fails if the named workflow has no task types. In export-all mode a workflow that cannot be
+  read (e.g. corrupt JSON) is left out and listed under `"skipped"` rather than failing the rest.
+- **Import** — payload `{"bundles": [bundle, ...]}` (or `{"bundle": bundle}`). Optional:
+  `"overwrite": true` to replace task types that already exist (default: refuse),
+  `"name"` / `"namespace"` to rename or re-namespace (single bundle only; `""` = imggen).
+  Each bundle is fully validated before any of its files are written; one bad bundle doesn't stop the others, but
+  the task then **fails** with a message listing what failed and what was imported. A successful
+  import returns `{"imported": [{name, namespace, task_types}], "caps": [...]}` after a rescan-and-push.
+
+`comfy-import` makes the agent write graph files that its ComfyUI will execute, so — like
+`special-caps-ctrl` — it is opt-in and **not** part of the first-launch defaults.
 
 ### `slavemode.agent-update`
 

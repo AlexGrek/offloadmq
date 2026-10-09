@@ -109,6 +109,7 @@ worker threads.
 | `capabilities_sync.py` | Full runtime probes (Ollama, docker, ComfyUI, custom, ONNX, …) |
 | `cap_policy.py` | 3-tier policy: `compute_registration_caps()`, `classify_capabilities()` |
 | `slavemode_policy.py` | Slavemode allow-list merge |
+| `comfy_workflows.py` | ComfyUI workflow dir listing/validation + portable bundles (`export_workflow`/`import_workflow`); shared by core's `comfy_service` and `slavemode.comfy-export/import` |
 | `pipeline.py` | Full task pipeline: bucket download, data prep, routed executor, capture result |
 | `transport_sync.py` | `SyncAgentTransport` — sync HTTP for executors (buckets, resolve wire) |
 | `transport_exec.py` | `CaptureTransport` — forwards I/O, captures `TaskResultReport`, maps progress to ctx |
@@ -267,6 +268,7 @@ orch.list_tasks() / get_task(id) / cancel_task(id)
 orch.list_custom_caps() / get_custom_cap(name) / save_custom_cap(name, yaml) / delete_custom_cap(name)
 orch.list_comfy_workflows() / add_comfy_workflow(...) / delete_comfy_workflow(...)
 orch.get_comfy_param_map(...) / save_comfy_param_map(...) / autodetect_comfy_param_map(...)
+orch.export_comfy_workflow(name, ns) / import_comfy_workflow(bundle, name, ns, overwrite)  # portable bundle: graphs + param maps
 orch.check_update() / download_update()
 orch.get_startup_status() / set_keep_awake(enable) / set_win_startup(enable) / set_mac_startup(enable)
 orch.install_systemd(host=None, port=None) / uninstall_systemd()
@@ -336,6 +338,7 @@ omq webui [--start] [-p PORT]
 omq register
 omq capabilities
 omq status
+omq comfy list | export <[ns.]name> [-o FILE|-] | import FILE [--name N --namespace NS --overwrite]
 omq config show | set ...
 omq config import-legacy [--from PATH] [--merge/--replace]
 ```

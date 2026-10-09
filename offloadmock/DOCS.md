@@ -526,6 +526,8 @@ Default payloads from the catalog:
 | Command | Default payload |
 |---------|-----------------|
 | `slavemode.agent-update` | `{"check": true}` |
+| `slavemode.comfy-export` | `{}` |
+| `slavemode.comfy-import` | `{"bundles": []}` |
 | `slavemode.force-rescan` | `{}` |
 | `slavemode.ollama-list` | `{}` |
 | `slavemode.ollama-pull` | `{"model": "qwen3:8b"}` |

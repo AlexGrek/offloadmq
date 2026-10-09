@@ -24,16 +24,16 @@ OLLAMA_SHOW_URL = f"{DEFAULT_OLLAMA_BASE}/api/show"
 def get_ollama_base_url() -> str:
     """Return the configured Ollama base URL.
 
-    Reads ``ollamaBaseUrl`` from the agent config.  Falls back to
+    Reads ``ollama_base_url`` (legacy ``ollamaBaseUrl``) from the agent config.  Falls back to
     ``DEFAULT_OLLAMA_BASE`` (``http://127.0.0.1:11434``) when unset.
 
-    Config key: ``ollamaBaseUrl``
+    Config key: ``ollama_base_url``
     Example:    ``"http://192.168.1.10:11434"``
     """
     from offloadmq_agent.settings_util import load_agent_settings as load_config
 
     cfg = load_config()
-    base = cfg.get("ollamaBaseUrl", "").strip().rstrip("/")
+    base = (cfg.get("ollama_base_url") or cfg.get("ollamaBaseUrl") or "").strip().rstrip("/")
     return base if base else DEFAULT_OLLAMA_BASE
 
 

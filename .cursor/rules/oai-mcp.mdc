@@ -1,0 +1,9 @@
+---
+description: OAI MCP server + OAuth — read oai-mcp skill before editing
+globs: oai/backend/src/mcp/**, oai/backend/src/routes/oauth.rs, oai/backend/src/services/oauth.rs, oai/backend/src/db/oauth.rs, oai/backend/src/services/prompt_expansion.rs, oai/backend/src/jobs/oauth_cleanup_worker.rs
+alwaysApply: false
+---
+
+Before editing, read `.claude/skills/oai-mcp/SKILL.md`, then `oai-backend` and `oai-img` for shared patterns and image-job semantics.
+
+See CLAUDE.md § OAI → Skills and `oai/docs/mcp.md`.

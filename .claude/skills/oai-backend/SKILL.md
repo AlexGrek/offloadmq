@@ -69,6 +69,7 @@ oai/backend/src/
     tasks.rs                      # POST /api/tasks/cancel/{cap}/{id}
     debug.rs                      # POST /api/debug/offload_poll — raw OffloadMQ poll for ToolDebug
 
+  mcp/                            # remote MCP server (POST /mcp) + tools mirroring `oai image …` — see oai-mcp skill, docs/mcp.md
   ws/
     chat.rs                       # /api/ws/chat — upgrade + ping/idle loop (transport only)
     promptgen.rs                  # /api/ws/promptgen — video-prompt generation + LLM capability list
@@ -195,6 +196,8 @@ Three route groups with separate middleware layers:
 |-------|-----------|-----------------|
 | `public` | none | `/api/health`, `/api/version`, `/api/auth/register`, `/api/auth/login` |
 | `authenticated` | `jwt_auth_middleware` | `/api/me`, `/api/ws/*`, `/api/chats/*`, `/api/images/*`, every `/api/<feature>/jobs*`, `/api/progress/*`, `/api/tasks/*` |
+| `oauth_public` / `oauth_consent` | none / per-IP limiter (consent POST only) | `/.well-known/oauth-*`, `/oauth/{register,authorize,token,revoke}`, `/mcp/files/{id}` (signed links) |
+| `mcp` | `mcp::auth::mcp_auth_middleware` (Bearer OAuth token or user JWT, header only) | `/mcp` |
 | `admin` | `admin_auth_middleware` (checks `is_admin=true`) | `/api/admin/*` (except `/api/admin/am_i_admin`, which is authenticated) |
 
 `/assets` is served by a `ServeDir` with **no** fallback (a missing hashed chunk must 404, not return HTML); all other unmatched paths fall back to `index.html` (status 200).

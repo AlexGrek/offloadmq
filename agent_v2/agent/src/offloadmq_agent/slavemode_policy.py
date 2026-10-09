@@ -6,6 +6,8 @@ from typing import Any
 ALL_SLAVEMODE_CAPS: list[str] = [
     "slavemode.agent-update",
     "slavemode.comfy-ctrl",
+    "slavemode.comfy-export",
+    "slavemode.comfy-import",
     "slavemode.force-rescan",
     "slavemode.ollama-delete",
     "slavemode.ollama-list",

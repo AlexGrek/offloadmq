@@ -151,6 +151,9 @@ class Orchestrator:
         # On battery with pause_on_battery set: new pushed tasks are refused, and
         # once idle the session is closed and the supervisor holds off reconnecting.
         self._power_paused = False
+        # Last keep-awake decision handed to ``keep_awake``; lets the power
+        # monitor re-evaluate every tick without re-logging an unchanged state.
+        self._keep_awake_applied: bool | None = None
         self._power_thread: threading.Thread | None = None
         self.auto_update = AutoUpdater(self)
         # Registered only where self-update can work, which is also what makes
@@ -352,12 +355,10 @@ class Orchestrator:
             return
         if changed & self._SERVER_FACING and self._online:
             self.push_capabilities_to_server()
-        if "keep_awake_enabled" in changed:
-            from offloadmq_core import keep_awake
-
-            keep_awake.sync_from_settings(after.keep_awake_enabled, self._log)
         if "pause_on_battery" in changed and self.is_running():
             self._check_power()
+        if changed & {"keep_awake_enabled", "pause_on_battery"}:
+            self._apply_keep_awake(force=True)
 
     def _resize_pool(self, max_workers: int) -> None:
         with self._lock:
@@ -583,6 +584,7 @@ class Orchestrator:
             self._power_thread.start()
         if paused:
             self._record_error("INFO", "[power] on battery — agent starts paused")
+        self._apply_keep_awake()
         self.auto_update.start()
         # Once per process; the UI server also calls it so a GUI with agent
         # autostart off still brings ComfyUI up.
@@ -718,6 +720,17 @@ class Orchestrator:
         self, workflow_name: str, namespace: str, new_workflow_name: str, new_namespace: str
     ) -> None:
         comfy_service.duplicate_workflow(workflow_name, namespace, new_workflow_name, new_namespace)
+    def export_comfy_workflow(self, workflow_name: str, namespace: str = "") -> dict[str, Any]:
+        return comfy_service.export_workflow(workflow_name, namespace)
+
+    def import_comfy_workflow(
+        self,
+        bundle: Any,
+        name: str = "",
+        namespace: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        return comfy_service.import_workflow(bundle, name, namespace, overwrite)
 
     def get_comfy_workflow_graph(
         self, workflow_name: str, task_type: str, namespace: str = ""
@@ -819,7 +832,6 @@ class Orchestrator:
     def set_keep_awake(self, enable: bool) -> Settings:
         if enable and not keep_awake.available():
             raise ValueError("Keep awake is not available on this platform")
-        keep_awake.sync_from_settings(enable, self._log)
         return self.apply_settings(keep_awake_enabled=enable)
 
     def set_pause_on_battery(self, enable: bool) -> Settings:
@@ -855,7 +867,7 @@ class Orchestrator:
         re-persisting it (unlike :meth:`set_keep_awake`, which is the user-facing
         toggle)."""
         if self.get_settings().keep_awake_enabled:
-            keep_awake.sync_from_settings(True, self._log)
+            self._apply_keep_awake(force=True)
 
     def shutdown_keep_awake(self) -> None:
         keep_awake.shutdown()
@@ -974,6 +986,7 @@ class Orchestrator:
         while not self._stop.wait(_POWER_POLL_SECS):
             self._disconnect_if_idle_for_pause()
             self._check_power()
+            self._apply_keep_awake()
 
     def _check_power(self) -> None:
         settings = self.get_settings()
@@ -988,6 +1001,28 @@ class Orchestrator:
             )
         else:
             self._record_error("INFO", "[power] resuming (external power or pause disabled)")
+
+    def _keep_awake_wanted(self) -> bool:
+        """Keep-awake setting, withheld while the agent is paused on battery.
+
+        A pause still lets running tasks (and their undelivered results)
+        finish, so the machine stays awake until the agent is idle.
+        """
+        if not self.get_settings().keep_awake_enabled:
+            return False
+        with self._lock:
+            if not self._power_paused:
+                return True
+            return bool(
+                self._store.active_count() or self._pending_resolves or self._resolving
+            )
+
+    def _apply_keep_awake(self, *, force: bool = False) -> None:
+        wanted = self._keep_awake_wanted()
+        if not force and wanted == self._keep_awake_applied:
+            return
+        self._keep_awake_applied = wanted
+        keep_awake.sync_from_settings(wanted, self._log)
 
     def _disconnect_if_idle_for_pause(self) -> None:
         with self._lock:
