@@ -17,6 +17,7 @@ from ui_server.schemas import (
     ParamMapSavePayload,
     WorkflowAddPayload,
     WorkflowDeletePayload,
+    WorkflowImportPayload,
     dump,
 )
 
@@ -56,6 +57,33 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.get("/comfy/workflows/export")
+    def comfy_export_workflow(
+        workflow_name: str = Query(""),
+        namespace: str = Query(""),
+    ) -> dict[str, Any]:
+        try:
+            return orch.export_comfy_workflow(workflow_name, namespace)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.post("/comfy/workflows/import")
+    def comfy_import_workflow(payload: WorkflowImportPayload) -> dict[str, Any]:
+        try:
+            result = orch.import_comfy_workflow(
+                payload.bundle, payload.name, payload.namespace, payload.overwrite
+            )
+            orch.start_background_scan()
+            return {"ok": True, **result}
+        except FileExistsError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"could not write workflow files: {exc}") from exc
 
     @router.post("/comfy/workflows/delete")
     def comfy_delete_workflow(payload: WorkflowDeletePayload) -> dict[str, bool]:

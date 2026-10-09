@@ -8,12 +8,25 @@ Workflow listing, param-map metadata, and graph validation.  The HTTP routes liv
 from __future__ import annotations
 
 import json as json_module
-import re
 import shutil
-from pathlib import Path
 from typing import Any
 
-from offloadmq_core.comfy_autowire import guess_params, guess_params_ex, is_wire
+from offloadmq_agent.comfy_workflows import (
+    BUNDLE_FORMAT,
+    NAMESPACED_PREFIXES as _NAMESPACED_PREFIXES,
+    PARAM_FIELD_KEY_RE as _PARAM_FIELD_KEY_RE,
+    WF_SAFE_RE,
+    export_workflow,
+    import_workflow,
+    is_wire,
+    list_workflows,
+    parse_workflow_ref,
+    resolve_graph_path as _resolve_workflow_graph_path,
+    validate_graph as _validate_comfy_api_workflow,
+    validate_param_map as _validate_param_map,
+    workflows_dir,
+)
+from offloadmq_core.comfy_autowire import guess_params, guess_params_ex
 
 __all__ = [
     "STANDARD_TASK_TYPES",
@@ -24,15 +37,14 @@ __all__ = [
     "add_workflow",
     "get_workflow_graph",
     "delete_workflow",
+    "export_workflow",
+    "import_workflow",
+    "parse_workflow_ref",
+    "BUNDLE_FORMAT",
     "get_param_map",
     "save_param_map",
     "autodetect_param_map",
 ]
-
-WF_SAFE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
-# Namespaced capability prefixes — workflows live in a subdirectory with this name.
-_NAMESPACED_PREFIXES: tuple[str, ...] = ("txt2music", "img-utils")
 
 STANDARD_TASK_TYPES = [
     "txt2img",
@@ -48,95 +60,8 @@ STANDARD_TASK_TYPES = [
 ]
 
 
-def workflows_dir() -> Path:
-    from offloadmq_agent.exec.imggen.workflow import _find_workflows_dir
-
-    return _find_workflows_dir()
-
-
-def list_workflows() -> list[dict[str, Any]]:
-    wdir = workflows_dir()
-    if not wdir.is_dir():
-        return []
-    result = []
-    for entry in sorted(wdir.iterdir()):
-        if not entry.is_dir() or not WF_SAFE_RE.match(entry.name):
-            continue
-        # Namespace subdirectory — recurse one level.
-        if entry.name in _NAMESPACED_PREFIXES:
-            for child in sorted(entry.iterdir()):
-                if not child.is_dir() or not WF_SAFE_RE.match(child.name):
-                    continue
-                task_types = sorted(
-                    p.stem
-                    for p in child.glob("*.json")
-                    if not p.name.endswith(".params.json") and WF_SAFE_RE.match(p.stem)
-                )
-                result.append({"name": child.name, "namespace": entry.name, "task_types": task_types})
-            continue
-        task_types = sorted(
-            p.stem
-            for p in entry.glob("*.json")
-            if not p.name.endswith(".params.json") and WF_SAFE_RE.match(p.stem)
-        )
-        result.append({"name": entry.name, "namespace": "", "task_types": task_types})
-    return result
-
-
-def _resolve_workflow_graph_path(
-    workflow_name: str, task_type: str, namespace: str = ""
-) -> Path:
-    wf = workflow_name.strip()
-    tt = task_type.strip()
-    ns = namespace.strip()
-    if not wf or not WF_SAFE_RE.match(wf):
-        raise ValueError("invalid workflow_name")
-    if not tt or not WF_SAFE_RE.match(tt):
-        raise ValueError("invalid task_type")
-    if ns and not WF_SAFE_RE.match(ns):
-        raise ValueError("invalid namespace")
-    root = workflows_dir().resolve()
-    if ns:
-        base = (workflows_dir() / ns / wf).resolve()
-    else:
-        base = (workflows_dir() / wf).resolve()
-    if not str(base).startswith(str(root)):
-        raise ValueError("path traversal")
-    graph_path = (base / f"{tt}.json").resolve()
-    try:
-        graph_path.relative_to(root)
-    except ValueError as exc:
-        raise ValueError("path escapes workflows directory") from exc
-    return graph_path
-
-
 def _is_comfy_wire_ref(value: Any) -> bool:
     return is_wire(value)
-
-
-def _validate_comfy_api_workflow(graph: Any) -> None:
-    if not isinstance(graph, dict) or not graph:
-        raise ValueError("workflow graph must be a non-empty JSON object")
-    node_ids = set(graph.keys())
-    for nid, node in graph.items():
-        if not isinstance(node, dict):
-            raise ValueError(f"node {nid!r} must be an object")
-        if "class_type" not in node or not isinstance(node["class_type"], str):
-            raise ValueError(f"node {nid!r} must have a string class_type")
-        inputs = node.get("inputs")
-        if inputs is not None:
-            if not isinstance(inputs, dict):
-                raise ValueError(f"node {nid!r} inputs must be an object")
-            for in_key, in_val in inputs.items():
-                if _is_comfy_wire_ref(in_val):
-                    src = str(in_val[0])
-                    if src not in node_ids:
-                        raise ValueError(
-                            f"node {nid!r} input {in_key!r}: wire source {src!r} missing from graph"
-                        )
-
-
-_PARAM_FIELD_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def _param_ui_txt_base_rows() -> list[dict[str, str]]:
@@ -319,31 +244,6 @@ def _build_comfy_input_options(graph: dict[str, Any]) -> list[dict[str, Any]]:
                 }
             )
     return out
-
-
-def _validate_param_map(params: Any) -> None:
-    """Validate param map structure only. Target existence is not checked — the
-    executor silently skips targets whose node_id or input_name are absent from
-    the graph at runtime, so unknown targets are valid (workflows evolve)."""
-    if not isinstance(params, dict):
-        raise ValueError("params must be a JSON object")
-    for field, targets in params.items():
-        if not _PARAM_FIELD_KEY_RE.match(field):
-            raise ValueError(f"invalid param field name: {field!r}")
-        if targets is None:
-            continue
-        if not isinstance(targets, list):
-            raise ValueError(f"param {field!r} must be null or a list")
-        for pair in targets:
-            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
-                raise ValueError(
-                    f"param {field!r}: each target must be [node_id, input_name]"
-                )
-            _, inp_name = pair[0], pair[1]
-            if not isinstance(inp_name, str):
-                raise ValueError(
-                    f"param {field!r}: input slot name must be a string"
-                )
 
 
 # ----------------------------------------------------------------------

@@ -70,6 +70,9 @@ def _maybe_autostart(orch: Orchestrator) -> None:
 def _run_window(port: int) -> None:
     import webview  # lazy — only needed in GUI mode
 
+    # Off by default; without it the ComfyUI page's workflow "Export" (a blob download)
+    # silently does nothing inside the native window.
+    webview.settings["ALLOW_DOWNLOADS"] = True
     webview.create_window(
         title="OffloadMQ Agent",
         url=f"http://127.0.0.1:{port}",

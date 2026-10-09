@@ -74,6 +74,14 @@ class WorkflowDeletePayload(BaseModel):
     namespace: str = ""
 
 
+class WorkflowImportPayload(BaseModel):
+    bundle: dict[str, Any]
+    # Blank/None keep the name / namespace recorded in the bundle.
+    name: str = ""
+    namespace: str | None = None
+    overwrite: bool = False
+
+
 class ParamMapPayload(BaseModel):
     workflow_name: str
     task_type: str

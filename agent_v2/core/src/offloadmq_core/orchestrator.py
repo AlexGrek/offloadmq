@@ -698,6 +698,18 @@ class Orchestrator:
     def delete_comfy_workflow(self, workflow_name: str, namespace: str = "") -> None:
         comfy_service.delete_workflow(workflow_name, namespace)
 
+    def export_comfy_workflow(self, workflow_name: str, namespace: str = "") -> dict[str, Any]:
+        return comfy_service.export_workflow(workflow_name, namespace)
+
+    def import_comfy_workflow(
+        self,
+        bundle: Any,
+        name: str = "",
+        namespace: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        return comfy_service.import_workflow(bundle, name, namespace, overwrite)
+
     def get_comfy_workflow_graph(
         self, workflow_name: str, task_type: str, namespace: str = ""
     ) -> str:

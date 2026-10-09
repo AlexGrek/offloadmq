@@ -317,6 +317,29 @@ Fields absent from the payload are left at the workflow template's default value
 
 ---
 
+## Exporting / Importing Workflows
+
+A workflow (every task type, with its configured node mapping / `.params.json`) travels as one
+JSON bundle (`format: "offloadmq-comfy-workflow"`, `version: 1`):
+
+```json
+{"format": "offloadmq-comfy-workflow", "version": 1, "name": "my-sdxl", "namespace": "",
+ "task_types": {"txt2img": {"graph": {...}, "params": {"prompt": [["6", "text"]]}}}}
+```
+
+`params` is `null` for a task type with no mapping. Import validates the whole bundle before
+writing, refuses to replace existing task types unless overwriting, and a `null` mapping removes
+any stale `.params.json`. Namespace must be blank (imggen), `img-utils` or `txt2music`.
+
+- **GUI** (ComfyUI page): **Export** per workflow downloads `<name>.omqwf.json`; **Import bundle**
+  lets you rename / re-namespace and tick *overwrite*. REST: `GET /api/comfy/workflows/export`,
+  `POST /api/comfy/workflows/import`.
+- **CLI**: `omq comfy list`, `omq comfy export <[ns.]name> [-o FILE|-]`,
+  `omq comfy import FILE [--name N] [--namespace NS] [--overwrite]`. A running agent picks the
+  workflow up on its next rescan.
+- **Remote** (no access to the agent's disk): `slavemode.comfy-export` / `slavemode.comfy-import`
+  ([slavemode-capabilities.md](slavemode-capabilities.md)), or `omqcli agent <id> comfy export|import`.
+
 ## Examples
 
 ### txt2img with output_bucket

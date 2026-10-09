@@ -5,7 +5,9 @@ capabilities / status) but drives the new core Orchestrator internally.
 """
 from __future__ import annotations
 
+import json
 import threading
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -241,6 +243,88 @@ def selftest() -> None:
         console.print(f"[red]selftest failed: {exc}[/red]")
         raise typer.Exit(1)
     console.print("[green]ok[/green]")
+
+
+# ------------------------------------------------------------------
+# comfy — workflow export / import
+# ------------------------------------------------------------------
+
+
+comfy_app = typer.Typer(help="ComfyUI workflows: list, export and import (graphs + param maps)")
+app.add_typer(comfy_app, name="comfy")
+
+
+@comfy_app.command("list")
+def comfy_list() -> None:
+    """List installed ComfyUI workflows."""
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Workflow")
+    table.add_column("Task types")
+    for w in _orch().list_comfy_workflows()["workflows"]:
+        table.add_row(f"{w['namespace'] or 'imggen'}.{w['name']}", ", ".join(w["task_types"]))
+    console.print(table)
+
+
+@comfy_app.command("export")
+def comfy_export(
+    workflow: str = typer.Argument(..., help="e.g. my-sdxl, imggen.my-sdxl or img-utils.depth"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Bundle file to write (default: [<ns>.]<name>.omqwf.json; '-' = stdout)"
+    ),
+) -> None:
+    """Export a workflow (all task types, with their param maps) to one JSON bundle."""
+    from offloadmq_core.comfy_service import parse_workflow_ref
+
+    name, namespace = parse_workflow_ref(workflow)
+    try:
+        bundle = _orch().export_comfy_workflow(name, namespace)
+    except (ValueError, OSError) as exc:  # FileNotFoundError is an OSError
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    text = json.dumps(bundle, indent=2)
+    if output is not None and str(output) == "-":
+        typer.echo(text)
+        return
+    dest = output or Path(f"{namespace + '.' if namespace else ''}{name}.omqwf.json")
+    try:
+        dest.write_text(text)
+    except OSError as exc:
+        console.print(f"[red]Cannot write {dest}: {exc}[/red]")
+        raise typer.Exit(1)
+    mapped = sum(1 for t in bundle["task_types"].values() if t["params"] is not None)
+    console.print(
+        f"[green]Exported[/green] {workflow} ({len(bundle['task_types'])} task types, "
+        f"{mapped} with param maps) -> {dest}"
+    )
+
+
+@comfy_app.command("import")
+def comfy_import(
+    file: Path = typer.Argument(..., exists=True, dir_okay=False, help="Bundle from `omq comfy export`"),
+    name: str = typer.Option("", "--name", "-n", help="Install under this workflow name"),
+    namespace: Optional[str] = typer.Option(
+        None, "--namespace", help="Override namespace: img-utils, txt2music, or '' for imggen"
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace task types that already exist"),
+) -> None:
+    """Install a workflow bundle, including its configured param maps."""
+    try:
+        bundle = json.loads(file.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        console.print(f"[red]Cannot read {file}: {exc}[/red]")
+        raise typer.Exit(1)
+    try:
+        result = _orch().import_comfy_workflow(bundle, name, namespace, overwrite)
+    except FileExistsError as exc:
+        console.print(f"[red]{exc}[/red] (use --overwrite to replace)")
+        raise typer.Exit(1)
+    except (ValueError, OSError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print(
+        f"[green]Imported[/green] {result['namespace'] or 'imggen'}.{result['name']} "
+        f"({', '.join(result['task_types'])}). Restart or rescan the agent to advertise it."
+    )
 
 
 # ------------------------------------------------------------------

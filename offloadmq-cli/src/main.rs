@@ -112,6 +112,11 @@ enum AgentAction {
         #[command(subcommand)]
         action: CapsAction,
     },
+    /// Export / import ComfyUI workflows (graphs + node mappings)
+    Comfy {
+        #[command(subcommand)]
+        action: ComfyAction,
+    },
     /// Manage Ollama models
     Ollama {
         #[command(subcommand)]
@@ -141,6 +146,37 @@ enum CapsAction {
     /// Delete a custom capability definition by name
     Delete {
         name: String,
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum ComfyAction {
+    /// Export one workflow, or all of them, as portable bundle files
+    Export {
+        /// Workflow to export, e.g. `my-sdxl` or `img-utils.depth` (default: all)
+        workflow: Option<String>,
+        /// Output directory (or file, for a single workflow); `-` prints to stdout
+        #[arg(short, long)]
+        output: Option<String>,
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Install workflow bundle files (from `comfy export`) on the agent
+    Import {
+        /// Bundle file(s)
+        #[arg(required = true)]
+        files: Vec<String>,
+        /// Replace task types that already exist
+        #[arg(long)]
+        overwrite: bool,
+        /// Install under this workflow name (single file only)
+        #[arg(long)]
+        name: Option<String>,
+        /// Override the namespace: img-utils, txt2music, or "" for imggen (single file only)
+        #[arg(long)]
+        namespace: Option<String>,
         #[arg(long, default_value_t = 60)]
         timeout: u64,
     },
@@ -402,6 +438,32 @@ fn main() {
                 CapsAction::Delete { name, timeout } => {
                     commands::agent::caps_delete(&id, &name, timeout)
                 }
+            },
+            AgentAction::Comfy { action } => match action {
+                ComfyAction::Export {
+                    workflow,
+                    output,
+                    timeout,
+                } => commands::agent::comfy_export(
+                    &id,
+                    workflow.as_deref(),
+                    output.as_deref(),
+                    timeout,
+                ),
+                ComfyAction::Import {
+                    files,
+                    overwrite,
+                    name,
+                    namespace,
+                    timeout,
+                } => commands::agent::comfy_import(
+                    &id,
+                    &files,
+                    overwrite,
+                    name.as_deref(),
+                    namespace.as_deref(),
+                    timeout,
+                ),
             },
             AgentAction::Ollama { action } => match action {
                 OllamaAction::List { timeout } => commands::agent::ollama_list(&id, timeout),

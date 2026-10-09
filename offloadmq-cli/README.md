@@ -252,6 +252,7 @@ Commands:
   force-rescan  Re-detect capabilities and push the updated list to the server
   update        Check for, or install, an agent binary update
   caps          Manage custom capability definitions
+  comfy         Export / import ComfyUI workflows (graphs + node mappings)
   ollama        Manage Ollama models
   onnx          Manage ONNX models
 ```
@@ -263,6 +264,8 @@ Commands:
 | `agent <id> caps get` | `slavemode.special-caps-ctrl` (`{"get": true}`) | Lists the agent's custom capability definitions. |
 | `agent <id> caps set <json\|@file>` | `slavemode.special-caps-ctrl` (`{"set": {...}}`) | Creates/replaces a custom capability. Accepts a literal JSON object or `@path/to/file.json`. Triggers a rescan-and-push afterwards. |
 | `agent <id> caps delete <name>` | `slavemode.special-caps-ctrl` (`{"delete": "<name>"}`) | Removes a custom capability by name. Triggers a rescan-and-push afterwards. |
+| `agent <id> comfy export [workflow] [-o PATH]` | `slavemode.comfy-export` | Exports one workflow (`my-sdxl`, `img-utils.depth`) or, with no argument, all of them, as `.omqwf.json` bundles. `-o` is a directory (or a file, for a single workflow); `-o -` prints JSON to stdout. Default: current directory. |
+| `agent <id> comfy import <file>... [--overwrite] [--name N] [--namespace NS]` | `slavemode.comfy-import` | Installs bundle files (one bundle each, or an array of them), node mappings included, then rescans. Existing task types are refused unless `--overwrite`. `--name` / `--namespace` apply to a single file only. Format: [`docs/comfy-api.md`](../docs/comfy-api.md#exporting--importing-workflows). |
 | `agent <id> ollama list` | `slavemode.ollama-list` | Lists installed Ollama models. |
 | `agent <id> ollama pull <model>` | `slavemode.ollama-pull` | Downloads an Ollama model; streams progress on the agent side. Default `--timeout 1800`. |
 | `agent <id> ollama delete <model>` | `slavemode.ollama-delete` | Deletes an installed Ollama model. |

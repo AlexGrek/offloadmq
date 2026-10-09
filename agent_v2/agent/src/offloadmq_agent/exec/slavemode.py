@@ -133,6 +133,96 @@ def _special_caps_ctrl(transport: AgentTransport, task_id: TaskId, capability: s
     return report_result(transport, report)
 
 
+def _comfy_export(transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any]) -> bool:
+    """Export ComfyUI workflows (graphs + configured node mappings) as portable bundles.
+
+    Payload variants:
+      {}                               — export every installed workflow
+      { "workflow": "[ns.]<name>" }    — export one, e.g. "my-sdxl", "img-utils.depth"
+    """
+    from offloadmq_agent.comfy_workflows import export_all_workflows, export_workflow, parse_workflow_ref
+
+    ref = payload.get("workflow")
+    skipped: list[str] = []
+    try:
+        if ref is None:
+            bundles, skipped = export_all_workflows()
+        elif isinstance(ref, str) and ref.strip():
+            name, namespace = parse_workflow_ref(ref)
+            bundles = [export_workflow(name, namespace)]
+        else:
+            raise ValueError("'workflow' must be a non-empty string like 'my-sdxl' or 'img-utils.depth'")
+    except (ValueError, OSError) as exc:  # FileNotFoundError is an OSError
+        msg = f"Failed to export workflow(s): {exc}"
+        logger.warning(f"[slavemode] comfy-export: {msg}")
+        return report_result(transport, make_failure_report(task_id, capability, msg))
+
+    logger.info(f"[slavemode] comfy-export: exported {len(bundles)} workflow(s), skipped {len(skipped)}")
+    output: dict[str, Any] = {"bundles": bundles, "count": len(bundles)}
+    if skipped:
+        output["skipped"] = skipped
+    report = make_success_report(task_id, capability, output)
+    return report_result(transport, report)
+
+
+def _comfy_import(transport: AgentTransport, task_id: TaskId, capability: str, payload: dict[str, Any]) -> bool:
+    """Install workflow bundles produced by ``slavemode.comfy-export``.
+
+    Payload:
+      { "bundles": [ {...}, ... ] }  or  { "bundle": {...} }
+      "overwrite": bool              — replace task types that already exist (default false)
+      "name": str, "namespace": str  — rename / re-namespace; single-bundle imports only
+
+    Each bundle is fully validated before any of its files are written; a bad bundle does not
+    stop the others, but any failure makes the task fail (the message lists what failed and
+    what was imported).
+    """
+    from offloadmq_agent.comfy_workflows import import_workflow
+
+    bundles = payload.get("bundles")
+    if bundles is None and "bundle" in payload:
+        bundles = [payload["bundle"]]
+    if not isinstance(bundles, list) or not bundles:
+        msg = "Payload must contain 'bundles' (non-empty list) or 'bundle' (object)"
+        return report_result(transport, make_failure_report(task_id, capability, msg))
+    name = payload.get("name") or ""
+    namespace = payload.get("namespace")
+    if not isinstance(name, str) or not (namespace is None or isinstance(namespace, str)):
+        msg = "'name' and 'namespace' must be strings"
+        return report_result(transport, make_failure_report(task_id, capability, msg))
+    if (name or namespace is not None) and len(bundles) != 1:
+        msg = "'name' / 'namespace' overrides apply to a single bundle only"
+        return report_result(transport, make_failure_report(task_id, capability, msg))
+    overwrite = bool(payload.get("overwrite"))
+
+    imported: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for i, bundle in enumerate(bundles):
+        label = (
+            f"{bundle.get('namespace') or 'imggen'}.{bundle.get('name')}"
+            if isinstance(bundle, dict)
+            else f"bundle #{i + 1}"
+        )
+        try:
+            imported.append(import_workflow(bundle, name, namespace, overwrite))
+        except (ValueError, OSError) as exc:  # FileExistsError is an OSError
+            errors.append(f"{label}: {exc}")
+    for res in imported:
+        logger.info(f"[slavemode] comfy-import: imported {res['namespace'] or 'imggen'}.{res['name']}")
+    for err in errors:
+        logger.warning(f"[slavemode] comfy-import: {err}")
+
+    from offloadmq_agent.rescan import rescan_and_push
+
+    updated_caps = rescan_and_push(transport, lambda msg: logger.info(msg)) if imported else []
+    if errors:
+        done = ", ".join(f"{r['namespace'] or 'imggen'}.{r['name']}" for r in imported) or "none"
+        msg = f"{len(errors)} of {len(bundles)} bundle(s) failed ({'; '.join(errors)}). Imported: {done}"
+        return report_result(transport, make_failure_report(task_id, capability, msg))
+    report = make_success_report(task_id, capability, {"imported": imported, "caps": updated_caps})
+    return report_result(transport, report)
+
+
 def _ollama_list(transport: AgentTransport, task_id: TaskId, capability: str) -> bool:
     """List installed Ollama models and return their metadata."""
     from offloadmq_agent.ollama import list_ollama_models_raw
@@ -310,6 +400,10 @@ def execute_slavemode(
     match capability:
         case "slavemode.agent-update":
             return _agent_update(transport, task_id, capability, payload)
+        case "slavemode.comfy-export":
+            return _comfy_export(transport, task_id, capability, payload)
+        case "slavemode.comfy-import":
+            return _comfy_import(transport, task_id, capability, payload)
         case "slavemode.force-rescan":
             return _force_rescan(transport, task_id, capability)
         case "slavemode.special-caps-ctrl":

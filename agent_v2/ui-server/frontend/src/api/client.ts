@@ -144,6 +144,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify(p),
     }),
+  exportComfyWorkflow: (p: { workflow_name: string; namespace: string }) => {
+    const q = new URLSearchParams(p).toString();
+    return request<Record<string, unknown>>(`/comfy/workflows/export?${q}`);
+  },
+  importComfyWorkflow: (p: {
+    bundle: Record<string, unknown>;
+    name: string;
+    namespace: string | null;
+    overwrite: boolean;
+  }) =>
+    request<{ ok: boolean; name: string; namespace: string; task_types: string[] }>(
+      "/comfy/workflows/import",
+      { method: "POST", body: JSON.stringify(p) },
+    ),
   deleteComfyWorkflow: (workflow_name: string, namespace: string) =>
     request<{ ok: boolean }>("/comfy/workflows/delete", {
       method: "POST",
