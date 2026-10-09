@@ -13,7 +13,10 @@
 //!
 //! One [`PromptExpander`] tracks the values it has handed out per placeholder name, so
 //! expanding a batch of prompts through the same expander never repeats a value until
-//! that dictionary or variant list is exhausted.
+//! that dictionary or variant list is exhausted. It also remembers what it could *not*
+//! expand — unknown `{names}` (typos, deleted placeholders) and text cut off by the
+//! nesting cap — so callers without a UI can tell the user instead of silently sending
+//! the braces to the model.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -78,6 +81,11 @@ pub struct PromptExpander {
     /// Lowercased custom placeholder name → variants.
     custom: HashMap<String, Vec<String>>,
     used: HashMap<String, HashSet<String>>,
+    /// `{token}`s left as written because no builtin or custom placeholder has that
+    /// name, in first-seen order, deduped case-insensitively.
+    unknown: Vec<String>,
+    /// Whether some text still containing `{` hit [`MAX_PLACEHOLDER_DEPTH`].
+    depth_capped: bool,
 }
 
 impl PromptExpander {
@@ -88,7 +96,20 @@ impl PromptExpander {
                 .map(|(name, variants)| (name.trim().to_lowercase(), variants))
                 .collect(),
             used: HashMap::new(),
+            unknown: Vec::new(),
+            depth_capped: false,
         }
+    }
+
+    /// Unknown `{token}`s seen so far (`{?}` never counts — it is not a token here).
+    pub fn unknown_tokens(&self) -> &[String] {
+        &self.unknown
+    }
+
+    /// Whether a placeholder chain nested deeper than [`MAX_PLACEHOLDER_DEPTH`]
+    /// (usually a cycle) left braces in the output.
+    pub fn hit_depth_cap(&self) -> bool {
+        self.depth_capped
     }
 
     /// An expander over the user's custom placeholders.
@@ -120,7 +141,11 @@ impl PromptExpander {
         out: &mut String,
         remaining: &mut usize,
     ) -> Result<(), AppError> {
-        if !text.contains('{') || depth >= MAX_PLACEHOLDER_DEPTH {
+        if !text.contains('{') {
+            return push_bounded(out, text);
+        }
+        if depth >= MAX_PLACEHOLDER_DEPTH {
+            self.depth_capped = true;
             return push_bounded(out, text);
         }
         let mut rest = text;
@@ -140,7 +165,11 @@ impl PromptExpander {
                 if let Some(replacement) = self.resolve(token) {
                     self.expand_level(&replacement, depth + 1, out, remaining)?;
                 } else {
-                    push_bounded(out, &rest[open..open + token_len + 2])?;
+                    let literal = &rest[open..open + token_len + 2];
+                    if !self.unknown.iter().any(|u| u.eq_ignore_ascii_case(literal)) {
+                        self.unknown.push(literal.to_string());
+                    }
+                    push_bounded(out, literal)?;
                 }
                 rest = &after[token_len + 1..];
             } else {
@@ -273,6 +302,76 @@ mod tests {
         let mut e = expander(&[("pet", &["cat", "dog"])]);
         let out = e.expand("{pet}+{pet}").unwrap();
         assert!(out == "cat+dog" || out == "dog+cat", "{out}");
+    }
+
+    /// Pinned from the web UI's own `expandPromptPlaceholders`
+    /// (`frontend/src/lib/promptPlaceholders.ts`, run under Node with these exact
+    /// single-variant definitions) — the MCP must substitute exactly as the page does.
+    #[test]
+    fn matches_the_web_ui_expander_on_edge_cases() {
+        let mut defs: Vec<(&str, &[&str])> = vec![
+            ("a", &["A"]),
+            ("b", &["B"]),
+            ("x.y-z_w", &["XYZ"]),
+            ("outer", &["big {inner}"]),
+            ("inner", &["cat"]),
+            ("c1", &["<{c2}>"]),
+            ("c2", &["[{c1}]"]),
+            ("q", &["{?} here"]),
+            ("up", &["Up"]),
+        ];
+        defs.push(("empty", &[]));
+        let cases = [
+            ("{a}{b}", "AB"),
+            ("{{a}}", "{A}"),
+            ("{a{b}", "{aB"),
+            ("{A} {UP}", "A Up"),
+            ("{ a }", "{ a }"),
+            ("{x.y-z_w}", "XYZ"),
+            ("{}", "{}"),
+            ("{?}", "{?}"),
+            ("{outer}", "big cat"),
+            ("{c1}", "<[<[<{c2}>]>]>"),
+            ("{q}", "{?} here"),
+            ("{unknown} {a}", "{unknown} A"),
+            ("no braces", "no braces"),
+            ("{a", "{a"),
+            ("a}", "a}"),
+            ("{a}}", "A}"),
+            ("{{", "{{"),
+            ("{-}", "{-}"),
+            ("{a b}", "{a b}"),
+            ("{empty}", "{empty}"),
+        ];
+        for (input, want) in cases {
+            let mut e = expander(&defs);
+            assert_eq!(e.expand(input).unwrap(), want, "input {input:?}");
+        }
+    }
+
+    #[test]
+    fn builtin_words_keep_the_dictionary_casing_like_the_web_ui() {
+        // unique-names-generator's default style leaves words as listed, e.g. countries
+        // and Star Wars names stay capitalized; only the CLI lowercases.
+        let mut e = expander(&[]);
+        let country = e.expand("{country}").unwrap();
+        assert!(
+            builtin_dictionary("country")
+                .unwrap()
+                .contains(&country.as_str())
+        );
+    }
+
+    #[test]
+    fn unknown_tokens_and_depth_cap_are_reported() {
+        let mut e = expander(&[("a", &["A"]), ("c1", &["<{c2}>"]), ("c2", &["[{c1}]"])]);
+        e.expand("{a} {Typo} {?} {} {typo} {nope}").unwrap();
+        assert_eq!(e.unknown_tokens(), ["{Typo}", "{nope}"]);
+        assert!(!e.hit_depth_cap());
+        e.expand("{c1}").unwrap();
+        assert!(e.hit_depth_cap());
+        // A depth-capped token is not "unknown" — it is defined, just nested too deep.
+        assert_eq!(e.unknown_tokens(), ["{Typo}", "{nope}"]);
     }
 
     #[test]

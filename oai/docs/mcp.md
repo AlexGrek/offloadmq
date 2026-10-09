@@ -57,7 +57,7 @@ and URL `…/mcp`. CORS on `/mcp` and the OAuth endpoints allows any origin.
 | `list_placeholders` | `oai image placeholders list` | Custom placeholders plus the built-ins |
 | `save_placeholder` | `create` / `set` / `add` / `remove` / `rename` | Create if missing; `variants` (replace), `add_variants`, `remove_variants`, `rename_to` |
 | `delete_placeholders` | `oai image placeholders delete` | By name or ID |
-| `expand_prompt` | `oai image placeholders expand` | Same expander as `generate_images` |
+| `expand_prompt` | `oai image placeholders expand` | Same expander as `generate_images`; resolves `{?}` (unless `resolve_names:false`); reports unknown tokens |
 
 The CLI and this table should stay in step: a new `oai image` feature gets a tool here too.
 
@@ -80,14 +80,35 @@ The CLI and this table should stay in step: a new `oai image` feature gets a too
     from `JWT_SECRET`. They are valid for `MCP_FILE_LINK_TTL_HOURS` (default 24), so no user
     JWT ever appears in a transcript.
 
-### Placeholders
+### Placeholders (`{substitutions}`)
 
-`generate_images` expands `{color} {animal} {adjective} {country} {language} {name} {starwars}`
-and the user's custom placeholders on the server. It uses one expander per call, so a batch
-never repeats a value, and the word lists are the web UI's own (`unique-names-generator`,
-copied into `backend/src/services/placeholder_dicts/` by
-`backend/scripts/gen-placeholder-dicts.mjs`). `{?}` is left for job creation, as everywhere
-else. The raw template is sent as `prompt_template`, so saved-prompt previews attach to it.
+The MCP substitutes exactly as the image generation page does. `services/prompt_expansion.rs`
+is a port of `frontend/src/lib/promptPlaceholders.ts`, and
+`matches_the_web_ui_expander_on_edge_cases` pins outputs produced by the web UI's own code
+under Node.
+
+- **Built-ins:** `{color} {animal} {adjective} {country} {language} {name} {starwars}`, using
+  the web UI's word lists with their original casing. `backend/scripts/gen-placeholder-dicts.mjs`
+  copies `unique-names-generator` into `backend/src/services/placeholder_dicts/`.
+- **Custom placeholders.** Names are matched case-insensitively. A variant may contain more
+  placeholders, which are expanded up to 5 levels deep; that limit also stops cycles.
+- **`{?}`** becomes a random two-word name at job creation (`image_job_names`), as everywhere
+  else.
+- **No repeats.** One expander per call means a batch (`count`) never repeats a value until a
+  word list or variant list runs out.
+- **Unknown `{tokens}`.** A typo or deleted placeholder is left in the prompt, like the web
+  UI does, but `generate_images` and `expand_prompt` warn about it and list it in
+  `unknown_placeholders`. Hitting the nesting limit is reported too.
+- **Prompts in results.** Each job shows the final prompt the model received. The raw text is
+  kept as `prompt_template`, which is also stored for saved-prompt previews.
+  `generate_images(prompt=<prompt_template>)` regenerates with fresh values, like
+  "Edit prompt"; `retry_image_job` replays the exact same prompt.
+- **History and starring** store the unexpanded template, as the web UI does.
+- **`expand_prompt`** resolves `{?}` by default, so the preview is the prompt a job would
+  actually get. Pass `resolve_names: false` to keep it literal.
+
+Not covered: the web UI's "recent placeholders" chips live only in browser localStorage, so
+MCP use doesn't add to them.
 
 ## OAuth
 

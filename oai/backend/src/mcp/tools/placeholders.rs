@@ -7,7 +7,10 @@ use serde_json::{Value, json};
 use crate::{
     db::prompt_placeholders::{self, Placeholder},
     error::AppError,
-    services::prompt_expansion::{BUILTIN_CATEGORIES, PromptExpander},
+    services::{
+        image_job_names,
+        prompt_expansion::{BUILTIN_CATEGORIES, MAX_PLACEHOLDER_DEPTH, PromptExpander},
+    },
 };
 
 use super::{
@@ -72,13 +75,15 @@ pub fn definitions() -> Vec<Value> {
             "expand_prompt",
             "Preview prompt expansion",
             "Show what a prompt with placeholders expands to, exactly as generate_images would \
-             expand it (no repeats within the batch). {?} is shown as-is: it becomes a random \
-             name only when a job is created. Same as `oai image placeholders expand`.",
+             expand it (no repeats within the batch), including {?} random names unless \
+             resolve_names is false. Flags unknown {tokens}, which would otherwise reach the \
+             image model literally. Same as `oai image placeholders expand`.",
             json!({
                 "type": "object",
                 "properties": {
                     "prompt": { "type": "string" },
                     "count": { "type": "integer", "minimum": 1, "maximum": MAX_EXPANSIONS, "default": 1 },
+                    "resolve_names": { "type": "boolean", "default": true, "description": "Also replace {?} with random names, as job creation does." },
                 },
                 "required": ["prompt"],
             }),
@@ -252,11 +257,39 @@ async fn delete(ctx: &ToolContext, a: DeleteArgs) -> Result<ToolOutput, AppError
     Ok(ToolOutput::text(lines.join("\n")))
 }
 
+/// What the expander could not substitute, phrased for the model: unknown
+/// `{tokens}` are sent to the image model literally, which is almost never intended.
+pub(super) fn expansion_warnings(expander: &PromptExpander) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let unknown = expander.unknown_tokens();
+    if !unknown.is_empty() {
+        let (verb, noun, sent) = if unknown.len() == 1 {
+            ("is", "a known placeholder", "was")
+        } else {
+            ("are", "known placeholders", "were")
+        };
+        warnings.push(format!(
+            "Warning: {} {verb} not {noun} and {sent} sent literally. Check the spelling \
+             (list_placeholders) or create it with save_placeholder.",
+            unknown.join(", "),
+        ));
+    }
+    if expander.hit_depth_cap() {
+        warnings.push(format!(
+            "Warning: placeholders nested deeper than {MAX_PLACEHOLDER_DEPTH} levels (likely a \
+             placeholder that refers back to itself) were left unexpanded."
+        ));
+    }
+    warnings
+}
+
 #[derive(Deserialize)]
 struct ExpandArgs {
     prompt: String,
     #[serde(default)]
     count: Option<u32>,
+    #[serde(default)]
+    resolve_names: Option<bool>,
 }
 
 async fn expand(ctx: &ToolContext, a: ExpandArgs) -> Result<ToolOutput, AppError> {
@@ -268,11 +301,30 @@ async fn expand(ctx: &ToolContext, a: ExpandArgs) -> Result<ToolOutput, AppError
     }
     let mut expander = PromptExpander::for_user(&ctx.state.db, ctx.user_id).await?;
     let template = a.prompt.trim();
+    let resolve_names = a.resolve_names.unwrap_or(true);
     let expansions: Vec<String> = (0..count)
-        .map(|_| expander.expand(template).map(|p| p.trim().to_string()))
+        .map(|_| {
+            expander.expand(template).map(|p| {
+                let p = p.trim();
+                // `{?}` is substituted at job creation; resolving it here makes the
+                // preview the exact prompt a job would get.
+                if resolve_names {
+                    image_job_names::expand_prompt_placeholders(p)
+                } else {
+                    p.to_string()
+                }
+            })
+        })
         .collect::<Result<_, _>>()?;
-    let mut out = ToolOutput::text(expansions.join("\n"));
-    out.set_structured(json!({ "expansions": expansions }));
+    let warnings = expansion_warnings(&expander);
+    let mut lines = expansions.clone();
+    lines.extend(warnings.iter().cloned());
+    let mut out = ToolOutput::text(lines.join("\n"));
+    out.set_structured(json!({
+        "expansions": expansions,
+        "unknown_placeholders": expander.unknown_tokens(),
+        "depth_capped": expander.hit_depth_cap(),
+    }));
     Ok(out)
 }
 
@@ -299,6 +351,24 @@ mod tests {
         assert_eq!(find(&all, "MOOD").map(|p| p.id), Some(20));
         assert_eq!(find(&all, "20").map(|p| p.id), Some(20));
         assert!(find(&all, "nope").is_none());
+    }
+
+    #[test]
+    fn warnings_name_unknown_tokens_with_correct_grammar() {
+        let mut e = PromptExpander::new([("ok".to_string(), vec!["x".to_string()])]);
+        e.expand("{ok} {typo}").unwrap();
+        assert_eq!(
+            expansion_warnings(&e),
+            [
+                "Warning: {typo} is not a known placeholder and was sent literally. Check the \
+              spelling (list_placeholders) or create it with save_placeholder."
+            ]
+        );
+        e.expand("{other}").unwrap();
+        assert!(expansion_warnings(&e)[0].starts_with(
+            "Warning: {typo}, {other} are not known placeholders and were sent literally."
+        ));
+        assert!(expansion_warnings(&PromptExpander::new([])).is_empty());
     }
 
     #[test]

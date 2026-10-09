@@ -84,7 +84,10 @@ pub fn definitions() -> Vec<Value> {
              workflow img2img + input_image_id). Submits one job per image, waits for them, and \
              returns preview thumbnails plus signed links to the full-resolution files. Prompt \
              placeholders like {color}, {animal}, the user's custom {placeholders} and {?} are \
-             expanded per job, never repeating a value within a batch. Same as `oai image generate`.",
+             expanded per job, never repeating a value within a batch; pass them through as \
+             the user wrote them (don't pre-fill them yourself). Unknown {tokens} are reported. \
+             Results show each job's final prompt and keep the raw text as prompt_template. \
+             Same as `oai image generate`.",
             json!({
                 "type": "object",
                 "properties": {
@@ -154,7 +157,8 @@ pub fn definitions() -> Vec<Value> {
             "Retry image job",
             "Run a finished job (completed, failed or canceled) again with exactly the same \
              settings and already-expanded prompt, as a new job. Waits like generate_images. \
-             Same as `oai image retry`.",
+             For fresh placeholder values instead, call generate_images with the job's \
+             prompt_template. Same as `oai image retry`.",
             json!({
                 "type": "object",
                 "properties": { "job_id": { "type": "string" }, "wait_seconds": wait_schema(DEFAULT_WAIT_SECS) },
@@ -394,13 +398,13 @@ async fn generate(ctx: &ToolContext, a: GenerateArgs) -> Result<ToolOutput, AppE
     let expanded_prompts: Vec<String> = (0..count)
         .map(|_| expander.expand(&template).map(|p| p.trim().to_string()))
         .collect::<Result<_, _>>()?;
+    notes.extend(super::placeholders::expansion_warnings(&expander));
     let mut job_ids = Vec::new();
-    let mut prompts = Vec::new();
     let mut submit_error = None;
     for (i, expanded) in (0..count).zip(expanded_prompts) {
         let params = StartJobParams {
             capability: model.clone(),
-            prompt: expanded.clone(),
+            prompt: expanded,
             negative_prompt: negative.clone(),
             override_negative: negative.is_some(),
             width,
@@ -416,10 +420,7 @@ async fn generate(ctx: &ToolContext, a: GenerateArgs) -> Result<ToolOutput, AppE
             prompt_template: Some(template.clone()),
         };
         match image_jobs::start_job(&ctx.state, ctx.user_id, params).await {
-            Ok(id) => {
-                job_ids.push(id);
-                prompts.push(expanded);
-            }
+            Ok(id) => job_ids.push(id),
             Err(e) => {
                 submit_error = Some(format!(
                     "submitting job {} of {count} failed: {}",
@@ -462,15 +463,6 @@ async fn generate(ctx: &ToolContext, a: GenerateArgs) -> Result<ToolOutput, AppE
                 "Warning: could not star the prompt: {}",
                 error_text(&e)
             )),
-        }
-    }
-    if prompts.iter().any(|p| *p != template) {
-        for (i, p) in prompts.iter().enumerate() {
-            notes.push(if prompts.len() == 1 {
-                format!("Prompt: {p}")
-            } else {
-                format!("Prompt {}: {p}", i + 1)
-            });
         }
     }
     if let Some(e) = submit_error {
@@ -589,6 +581,15 @@ fn job_line(detail: &JobDetail, outputs: usize) -> String {
     line
 }
 
+/// The prompt as typed, before `{placeholder}` substitution — what to resubmit for
+/// fresh random values (the web UI's "Edit prompt"). `None` for jobs created without
+/// one (older API/CLI jobs); then the stored prompt *is* the template.
+fn prompt_template(job: &image_generation::ImageGenerationJob) -> Option<String> {
+    image_jobs::pipeline_params_for_job(job)
+        .prompt_template
+        .filter(|t| !t.trim().is_empty())
+}
+
 fn job_json(ctx: &ToolContext, detail: &JobDetail, outputs: &[ImageView]) -> Value {
     let job = &detail.job;
     json!({
@@ -597,6 +598,7 @@ fn job_json(ctx: &ToolContext, detail: &JobDetail, outputs: &[ImageView]) -> Val
         "status": job.status,
         "error": job.error,
         "prompt": job.prompt,
+        "prompt_template": prompt_template(job),
         "negative_prompt": job.negative_prompt,
         "model": job.capability,
         "workflow": job.workflow,
@@ -628,6 +630,11 @@ async fn render_jobs(
         let detail = image_jobs::user_job_detail(&ctx.state, id, ctx.user_id).await?;
         let outputs = job_outputs(&detail);
         lines.push(job_line(&detail, outputs.len()));
+        // The prompt the model actually got, whenever substitution changed it
+        // (placeholders, including `{?}` resolved at job creation).
+        if prompt_template(&detail.job).is_some_and(|t| t.trim() != detail.job.prompt.trim()) {
+            lines.push(format!("  prompt: {}", detail.job.prompt));
+        }
         for img in &outputs {
             lines.push(format!(
                 "  image {} ({}×{}): {}",

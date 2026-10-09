@@ -405,7 +405,7 @@ class TestTools:
         listed = tool(client, token, "list_placeholders", {})
         assert any(p["name"] == name for p in listed["structuredContent"]["custom"])
 
-        res = tool(client, token, "expand_prompt", {"prompt": "a {" + name + "} and {?}", "count": 2})
+        res = tool(client, token, "expand_prompt", {"prompt": "a {" + name + "} and {?}", "count": 2, "resolve_names": False})
         assert res["structuredContent"]["expansions"] == ["a blue whale and {?}"] * 2
 
         res = tool(client, token, "expand_prompt", {"prompt": "{color}", "count": 3})
@@ -471,3 +471,70 @@ class TestSignedLinks:
         assert fresh_client.get("/mcp/files/1", params={"u": 1, "exp": 9999999999, "sig": "00"}).status_code == 403
         assert fresh_client.get("/mcp/files/1", params={"u": 1, "exp": 1, "sig": "00"}).status_code == 403
         assert fresh_client.get("/mcp/files/1").status_code == 400
+
+
+class TestSubstitutions:
+    """`{placeholder}` substitution parity with the web UI (frontend/src/lib/promptPlaceholders.ts)."""
+
+    def _ph(self, client, token, name, variants):
+        res = tool(client, token, "save_placeholder", {"name": name, "variants": variants})
+        assert not res["isError"], res
+
+    def test_question_mark_is_resolved_in_previews_by_default(self, client: httpx.Client, tokens: dict):
+        token = tokens["access_token"]
+        res = tool(client, token, "expand_prompt", {"prompt": "portrait of {?}", "count": 3})
+        values = res["structuredContent"]["expansions"]
+        assert all(v.startswith("portrait of ") and "{" not in v for v in values), values
+        assert len(set(values)) == 3, "random names should differ"
+        raw = tool(client, token, "expand_prompt", {"prompt": "portrait of {?}", "resolve_names": False})
+        assert raw["structuredContent"]["expansions"] == ["portrait of {?}"]
+
+    def test_unknown_placeholders_are_flagged(self, client: httpx.Client, tokens: dict):
+        token = tokens["access_token"]
+        res = tool(client, token, "expand_prompt", {"prompt": "a {Zz_Nope} and {zz_nope} {color}"})
+        sc = res["structuredContent"]
+        assert sc["unknown_placeholders"] == ["{Zz_Nope}"]
+        assert sc["expansions"][0].startswith("a {Zz_Nope} and {zz_nope} ")
+        assert "not a known placeholder" in text_of(res)
+
+    def test_nested_custom_builtin_and_names_case_insensitive(self, client: httpx.Client, tokens: dict):
+        token = tokens["access_token"]
+        sfx = uuid.uuid4().hex[:6]
+        inner, outer = f"in{sfx}", f".out{sfx}"
+        self._ph(client, token, inner, ["[{?}]"])
+        self._ph(client, token, outer, ["{" + inner + "} in {color}"])
+        res = tool(client, token, "expand_prompt", {"prompt": "{" + outer.upper() + "}", "count": 3})
+        values = res["structuredContent"]["expansions"]
+        assert res["structuredContent"]["unknown_placeholders"] == []
+        for v in values:
+            assert v.startswith("[") and "] in " in v and "{" not in v, v
+        colors = [v.split("] in ", 1)[1] for v in values]
+        assert len(set(colors)) == 3, f"batch repeated a {{color}}: {colors}"
+
+    def test_cycles_stop_at_the_depth_cap(self, client: httpx.Client, tokens: dict):
+        token = tokens["access_token"]
+        sfx = uuid.uuid4().hex[:6]
+        a, b = f"cyca{sfx}", f"cycb{sfx}"
+        self._ph(client, token, a, ["<{" + b + "}>"])
+        self._ph(client, token, b, ["[{" + a + "}]"])
+        res = tool(client, token, "expand_prompt", {"prompt": "{" + a + "}"})
+        assert res["structuredContent"]["depth_capped"] is True
+        assert res["structuredContent"]["expansions"] == ["<[<[<{" + b + "}>]>]>"]
+        assert "nested deeper" in text_of(res)
+
+    def test_reserved_names_and_variants_with_placeholders(self, client: httpx.Client, tokens: dict):
+        token = tokens["access_token"]
+        for reserved in ("color", "STARWARS", "{name}"):
+            res = tool(client, token, "save_placeholder", {"name": reserved, "variants": ["x"]})
+            assert res["isError"], reserved
+        listed = tool(client, token, "list_placeholders", {})
+        assert listed["structuredContent"]["builtin"] == [
+            "adjective", "animal", "color", "country", "language", "name", "starwars"
+        ]
+
+    def test_every_builtin_expands(self, client: httpx.Client, tokens: dict):
+        token = tokens["access_token"]
+        prompt = " | ".join("{%s}" % c for c in ("adjective", "animal", "color", "country", "language", "name", "starwars"))
+        res = tool(client, token, "expand_prompt", {"prompt": prompt})
+        out = res["structuredContent"]["expansions"][0]
+        assert "{" not in out and len(out.split(" | ")) == 7, out
