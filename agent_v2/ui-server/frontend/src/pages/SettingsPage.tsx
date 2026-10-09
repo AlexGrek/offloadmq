@@ -30,6 +30,7 @@ const EMPTY: Settings = {
   slavemode_allowed_caps: [],
   rescan_interval_secs: 180,
   comfyui_url: "http://127.0.0.1:8188",
+  ollama_base_url: "http://127.0.0.1:11434",
   kokoro_api_url: "",
   kokoro_api_key: "",
   win_startup_enabled: false,

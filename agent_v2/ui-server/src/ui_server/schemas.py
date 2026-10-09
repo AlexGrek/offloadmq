@@ -16,6 +16,7 @@ class SettingsPayload(BaseModel):
     autostart: bool | None = None
     webui_port: int | None = None
     comfyui_url: str | None = None
+    ollama_base_url: str | None = None
     kokoro_api_url: str | None = None
     kokoro_api_key: str | None = None
     rescan_interval_secs: int | None = None

@@ -65,6 +65,7 @@ export interface Settings {
   slavemode_allowed_caps: string[];
   rescan_interval_secs: number;
   comfyui_url: string;
+  ollama_base_url: string;
   kokoro_api_url: string;
   kokoro_api_key: string;
   win_startup_enabled: boolean;
