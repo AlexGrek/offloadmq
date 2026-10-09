@@ -78,6 +78,10 @@ spec:
             # permanently raises RSS. Capping the arena count bounds that floor.
             - name: MALLOC_ARENA_MAX
               value: {{ .Values.config.mallocArenaMax | quote }}
+            # Public origin: the MCP OAuth issuer and the /mcp resource URL Claude
+            # connects to (docs/mcp.md). Must match what users type in Claude.
+            - name: PUBLIC_BASE_URL
+              value: {{ printf "https://%s" .Values.ingress.host | quote }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

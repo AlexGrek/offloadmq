@@ -380,6 +380,7 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 - User accounts with per-user usage quotas
 - React UI built with shadcn/ui components
 - Deployed at `oai.alexgr.space`; Docker image `grekodocker/oai`
+- Remote MCP server at `/mcp` with OAuth sign-in, so Claude (web, desktop, mobile, Claude Code) can generate images and manage jobs/prompts/placeholders — see [oai/docs/mcp.md](oai/docs/mcp.md)
 - Also has a Go command-line client, [oai/cli/](oai/cli/) (`oai login`, `oai image generate|describe|prompts`, `oai nude`), that talks to the same HTTP API as the SPA
 
 ### Skills
@@ -397,6 +398,7 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 | **oai-img-tools** | `.claude/skills/oai-img-tools/SKILL.md` | Image Tools (`img-utils.*` / resize) feature files (patterns below) |
 | **oai-movie** | `.claude/skills/oai-movie/SKILL.md` | Movie Studio feature files (patterns below) |
 | **oai-cli** | `.claude/skills/oai-cli/SKILL.md` | `oai/cli/**` (Go CLI client) |
+| **oai-mcp** | `.claude/skills/oai-mcp/SKILL.md` | `oai/backend/src/mcp/**`, `routes/oauth.rs`, `services/oauth.rs`, `db/oauth.rs`, `services/prompt_expansion.rs`, `jobs/oauth_cleanup_worker.rs` (MCP server + OAuth) |
 | **oai-backend** | `.claude/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |
 | **oai-frontend** | `.claude/skills/oai-frontend/SKILL.md` | Any `oai/frontend/**` file, or cross-cutting SPA work |
 
@@ -407,6 +409,7 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 3. **DevOps** — Helm/Docker/deploy-only changes → `oai-devops` (skip feature skills unless app code changes too).
 4. **Tests** — `oai/itests/**` → `oai-itests` plus the skill for the route/feature under test.
 5. **CLI** — `oai/cli/**` → `oai-cli`, plus `oai-backend` and the feature skill (`oai-img`, `oai-chat`, …) for the API contract the command calls. The CLI is a pure API client: a new command needs an existing backend route.
+6. **MCP** — `oai/backend/src/mcp/**` and the OAuth files → `oai-mcp` + `oai-backend`, plus `oai-img` for image-job semantics. A new `oai image` CLI command usually wants a matching MCP tool.
 
 #### oai-chat — file patterns
 
@@ -450,6 +453,7 @@ Paths are relative to `oai/`.
 - **oai-img-tools** — Image Tools at `/app/img-utils`: one-shot transforms (image in, one out, no prompt). Two families sharing the page/table/endpoints — `img-utils.*` ComfyUI tools (depth, face swap, SeedVR2 upscale) and built-in `image_resize` "Basic resize". Spans the agent workflow install/autowiring, the OAI offload-job backend, and `ImgUtilsPage`. Pack=model / operation=file convention; scalar knobs via `secondary_prompts`.
 - **oai-movie** — Multi-scene AI film generator at `/app/movie`: director LLM outline, per-scene vision prompt + video render, long-shot continuity via ffmpeg, final concat.
 - **oai-backend** — Rust/Axum backend: routes, services, DB migrations (SeaORM), middleware, OffloadMQ client, background workers.
+- **oai-mcp** — Remote MCP server at `/mcp` (Claude connector, incl. mobile) with built-in OAuth 2.1 (DCR + PKCE, rotating refresh tokens); tools mirror `oai image …`. Reference: `oai/docs/mcp.md`.
 - **oai-cli** — Go CLI at `oai/cli/`: file layout, conventions (flags, `doJSON`, capability picking, submit→poll→terminal), how to add a command, manual verification against a live backend, debugging table.
 - **oai-itests** — Python integration tests (httpx + pytest-xdist) against the live backend; one test file per route group; no mocking.
 - **oai-devops** — Helm/Kubernetes deploy, Garage init job, Docker publish, troubleshooting (`garage-init`, `wait-garage-creds`, ImagePullBackOff).
@@ -547,6 +551,9 @@ so no finished job leaves an OffloadMQ bucket behind (image generation does the 
 | `JWT_SECRET` | Secret for signing user JWT tokens — **required**: the backend refuses to start without it |
 | `ROOT_ADMIN_PASSWORD` | Password for the `root` admin created on first boot (default `000000` — set it in real deployments; it is never logged) |
 | `AUTH_RATE_LIMIT_BURST` / `AUTH_RATE_LIMIT_REPLENISH_SECS` | Per-IP limit on login/register/change_password (default burst 10, +1 per 6 s). `AUTH_RATE_LIMIT_TRUST_FORWARDED=false` when not behind a proxy; `AUTH_RATE_LIMIT_DISABLED=1` turns it off |
+| `PUBLIC_BASE_URL` | Public origin (e.g. `https://oai.alexgr.space`) — MCP OAuth issuer and `/mcp` resource URL; Helm sets it from `ingress.host` |
+| `MCP_FILE_LINK_TTL_HOURS` | Lifetime of signed full-resolution image links in MCP results (default 24) |
+| `OAUTH_CLEANUP_TICK_SECS` | MCP OAuth cleanup interval (default 3600) |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed for credentialed CORS (default: local Vite ports + `oai.alexgr.space`) |
 | `SERVER_ADDRESS` | Bind address (default `0.0.0.0:3000`) |
 | `STATIC_DIR` | Path to built frontend assets (default `/app/static`) |

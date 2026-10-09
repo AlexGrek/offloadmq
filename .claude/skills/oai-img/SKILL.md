@@ -19,6 +19,12 @@ End-user image pipelines at `/app/images`. **REST-only** (no WebSocket). OAI own
 
 ---
 
+## MCP entry point
+
+Image generation is also driven by the MCP server at `/mcp` (`backend/src/mcp/tools/images.rs`, skill `oai-mcp`). It calls `image_jobs::{start_job, poll_job, retry_job, cancel_job, delete_job}` directly and expands `{placeholders}` server-side (`services/prompt_expansion.rs`). Changes to `StartJobParams`, job statuses or output storage must keep those tools working.
+
+---
+
 ## Running locally
 
 ```bash

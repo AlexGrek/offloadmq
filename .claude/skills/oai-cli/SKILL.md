@@ -16,6 +16,10 @@ A standalone Go CLI that drives the **same HTTP API the React SPA uses** (`oai/f
 
 Style: flat `package main`, stdlib only (`net/http`, `encoding/json`, `flag`) plus `golang.org/x/term` for password prompts. No CLI framework. Modelled on `micro-agent/`.
 
+## MCP twin
+
+`oai/backend/src/mcp/` (skill `oai-mcp`, doc `oai/docs/mcp.md`) exposes the same `oai image …` surface as MCP tools for Claude, including the mobile app. When you add or change an `oai image` command, update the matching tool (or add one) and the CLI→tool table in `docs/mcp.md`.
+
 ## Layout
 
 | File | Role |
