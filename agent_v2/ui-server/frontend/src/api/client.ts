@@ -126,6 +126,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(p),
     }),
+  getOllamaStatus: () =>
+    request<{ ok: boolean; capabilities: string[]; reason: string }>(
+      "/ollama/status"
+    ),
   getKokoroStatus: () =>
     request<{ ok: boolean; capabilities: string[]; reason: string }>(
       "/kokoro/status"

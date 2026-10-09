@@ -324,9 +324,6 @@ def check_ollama() -> CapResult:
 
     from offloadmq_agent.ollama import build_llm_cap_strings, get_ollama_base_url
 
-    if not shutil.which("ollama"):
-        return CapResult([], False, "llm.*", "ollama binary not found in PATH")
-
     base_url = get_ollama_base_url()
     try:
         r = requests.get(f"{base_url}/", timeout=2)

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import {
+  Bot,
   FileCode,
   Image,
   LayoutDashboard,
@@ -29,6 +30,7 @@ const NAV = [
   { to: "/slavemode", label: "Slavemode", icon: Terminal },
   { to: "/custom", label: "Custom caps", icon: FileCode },
   { to: "/comfy", label: "ComfyUI", icon: Image },
+  { to: "/ollama", label: "Ollama", icon: Bot },
   { to: "/kokoro", label: "Kokoro", icon: Mic },
   { to: "/system", label: "System", icon: Wrench },
   { to: "/logs", label: "Logs", icon: ScrollText },
