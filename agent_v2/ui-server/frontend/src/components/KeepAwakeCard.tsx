@@ -1,3 +1,4 @@
+import { MoonStar } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "@/api/client";
@@ -25,6 +26,37 @@ function powerState(status: StartupStatus): string {
   if (status.on_battery === true) return "On battery";
   if (status.on_battery === false) return "On external power";
   return "";
+}
+
+// Keep awake is switched on but withheld because the agent is paused on battery
+// (only once its running tasks are done — until then it stays active).
+function keepAwakeSuspended(status: StartupStatus): boolean {
+  return (
+    status.gui_mode &&
+    status.keep_awake_enabled &&
+    status.keep_awake_available &&
+    status.pause_on_battery &&
+    status.power_paused &&
+    !status.keep_awake_active
+  );
+}
+
+function KeepAwakeDisabledBanner() {
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400"
+    >
+      <MoonStar className="mt-0.5 size-4 shrink-0" />
+      <div>
+        <p className="font-medium">Keep awake is disabled</p>
+        <p className="text-xs opacity-90">
+          Running on battery with &quot;pause on battery&quot; on — this computer may
+          sleep. Keep awake resumes when external power returns.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function Checkbox({
@@ -58,6 +90,7 @@ export function KeepAwakeCard({ compact = false }: { compact?: boolean }) {
 
   if (!status) return null;
   const showKeepAwake = status.gui_mode;
+  const suspended = keepAwakeSuspended(status);
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -98,6 +131,7 @@ export function KeepAwakeCard({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
       <div className="space-y-1">
+        {suspended && <KeepAwakeDisabledBanner />}
         {showKeepAwake && (
           <div className="flex items-center justify-between gap-4 rounded-lg border px-3 py-2">
             <div className="min-w-0">
@@ -136,6 +170,7 @@ export function KeepAwakeCard({ compact = false }: { compact?: boolean }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {suspended && <KeepAwakeDisabledBanner />}
         {showKeepAwake && (
           <>
             <div className="flex items-center justify-between gap-4">

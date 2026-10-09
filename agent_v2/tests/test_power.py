@@ -146,3 +146,69 @@ def test_supervisor_hold_ends_on_stop(tmp_path: Path) -> None:
     orch._power_paused = True
     threading.Timer(0.2, orch._stop.set).start()
     assert orch._wait_while_power_paused() is True
+
+
+def _keep_awake_calls(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    from offloadmq_core import keep_awake
+
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        keep_awake, "sync_from_settings", lambda enabled, log_fn=None: calls.append(enabled)
+    )
+    return calls
+
+
+def test_keep_awake_released_while_paused_on_battery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _keep_awake_calls(monkeypatch)
+    orch = _orchestrator(tmp_path, pause_on_battery=True)
+    orch.update_settings(keep_awake_enabled=True)
+
+    orch._apply_keep_awake()
+    assert calls == [True]
+
+    orch._power_paused = True
+    orch._apply_keep_awake()
+    assert calls == [True, False]
+
+    orch._apply_keep_awake()
+    assert calls == [True, False], "unchanged state must not be re-applied"
+
+    orch._power_paused = False
+    orch._apply_keep_awake()
+    assert calls == [True, False, True]
+
+
+def test_keep_awake_held_until_paused_agent_is_idle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _keep_awake_calls(monkeypatch)
+    orch = _orchestrator(tmp_path, pause_on_battery=True)
+    orch.update_settings(keep_awake_enabled=True)
+    orch._power_paused = True
+
+    orch._store.create(Task(id="t-1", capability="debug.echo"))
+    assert orch._keep_awake_wanted() is True
+
+    result = TaskResult(task_id="t-1", status=TaskStatus.COMPLETED, output={})
+    orch._store.finish("t-1", result)
+    assert orch._keep_awake_wanted() is False
+
+
+def test_keep_awake_unaffected_by_battery_when_pause_unchecked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _keep_awake_calls(monkeypatch)
+    orch = _orchestrator(tmp_path, pause_on_battery=False)
+    orch.update_settings(keep_awake_enabled=True)
+    monkeypatch.setattr(power, "on_battery", lambda: True)
+    orch._check_power()
+    assert orch._power_paused is False
+    assert orch._keep_awake_wanted() is True
+
+
+def test_keep_awake_off_stays_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _keep_awake_calls(monkeypatch)
+    orch = _orchestrator(tmp_path, pause_on_battery=True)
+    assert orch._keep_awake_wanted() is False
