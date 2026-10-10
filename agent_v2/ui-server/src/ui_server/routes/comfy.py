@@ -12,11 +12,13 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ui_server.protocol import OrchestratorAPI
 from ui_server.schemas import (
+    ComfyLaunchPayload,
     ComfyUrlPayload,
     ParamMapPayload,
     ParamMapSavePayload,
     WorkflowAddPayload,
     WorkflowDeletePayload,
+    WorkflowMovePayload,
     WorkflowImportPayload,
     dump,
 )
@@ -32,6 +34,32 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
     @router.post("/comfy/url")
     def comfy_url(payload: ComfyUrlPayload) -> dict[str, Any]:
         return dump(orch.apply_settings(comfyui_url=payload.comfyui_url.strip()))
+
+    # ---- Agent-managed local ComfyUI server ----
+
+    @router.get("/comfy/process")
+    def comfy_process_status() -> dict[str, Any]:
+        return orch.comfy_process_status()
+
+    @router.post("/comfy/process/settings")
+    def comfy_process_settings(payload: ComfyLaunchPayload) -> dict[str, Any]:
+        fields = payload.model_dump(exclude_none=True)
+        if "comfyui_args" in fields:
+            fields["comfyui_args"] = [a.strip() for a in fields["comfyui_args"] if a.strip()]
+        return dump(orch.apply_settings(**fields))
+
+    @router.get("/comfy/process/detect")
+    def comfy_process_detect() -> dict[str, Any]:
+        return {"install": orch.detect_comfy_install()}
+
+    @router.post("/comfy/process/{action}")
+    def comfy_process_action(action: str) -> dict[str, Any]:
+        if action not in ("start", "stop", "restart"):
+            raise HTTPException(status_code=404, detail=f"Unknown action {action!r}")
+        try:
+            return orch.comfy_process_action(action)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.post("/comfy/workflows/add")
     def comfy_add_workflow(payload: WorkflowAddPayload) -> dict[str, Any]:
@@ -87,9 +115,44 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
 
     @router.post("/comfy/workflows/delete")
     def comfy_delete_workflow(payload: WorkflowDeletePayload) -> dict[str, bool]:
-        orch.delete_comfy_workflow(payload.workflow_name, payload.namespace)
+        try:
+            orch.delete_comfy_workflow(payload.workflow_name, payload.namespace)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         orch.start_background_scan()
         return {"ok": True}
+
+    @router.post("/comfy/workflows/rename")
+    def comfy_rename_workflow(payload: WorkflowMovePayload) -> dict[str, bool]:
+        try:
+            orch.rename_comfy_workflow(
+                payload.workflow_name,
+                payload.namespace,
+                payload.new_workflow_name,
+                payload.new_namespace,
+            )
+            orch.start_background_scan()
+            return {"ok": True}
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.post("/comfy/workflows/duplicate")
+    def comfy_duplicate_workflow(payload: WorkflowMovePayload) -> dict[str, bool]:
+        try:
+            orch.duplicate_comfy_workflow(
+                payload.workflow_name,
+                payload.namespace,
+                payload.new_workflow_name,
+                payload.new_namespace,
+            )
+            orch.start_background_scan()
+            return {"ok": True}
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.get("/comfy/workflows/param-map")
     def comfy_get_param_map(

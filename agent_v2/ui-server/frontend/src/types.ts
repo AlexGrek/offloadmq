@@ -65,6 +65,11 @@ export interface Settings {
   slavemode_allowed_caps: string[];
   rescan_interval_secs: number;
   comfyui_url: string;
+  comfyui_launch_on_startup: boolean;
+  comfyui_restart_on_crash: boolean;
+  comfyui_python: string;
+  comfyui_main_py: string;
+  comfyui_args: string[];
   ollama_base_url: string;
   kokoro_api_url: string;
   kokoro_api_key: string;
@@ -78,6 +83,41 @@ export interface Settings {
   key: string;
   jwt_token: string;
   token_expires_in: number;
+}
+
+export type ComfyProcessState =
+  | "stopped"
+  | "starting"
+  | "running"
+  | "crashed"
+  | "crash-loop"
+  | "external";
+
+export interface ComfyProcessStatus {
+  state: ComfyProcessState;
+  managed: boolean;
+  adopted: boolean;
+  pid: number | null;
+  startedAt: string | null;
+  lastExitCode: number | null;
+  lastError: string;
+  restartsInWindow: number;
+  maxRestarts: number;
+  windowMinutes: number;
+  url: string;
+  configProblem: string | null;
+  command: string[];
+  logPath: string;
+  output: string[];
+}
+
+export interface ComfyInstall {
+  name: string;
+  source: string;
+  python: string;
+  mainPy: string;
+  args: string[];
+  url: string;
 }
 
 export interface TierCaps {

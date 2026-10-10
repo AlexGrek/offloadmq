@@ -140,6 +140,7 @@ _BUILDERS: Dict[str, Callable[[str, bool], Dict[str, Any]]] = {
 # executor catalog in agent_v2 (`exec/slavemode.py` → ALL_SLAVEMODE_CAPS).
 SLAVEMODE_COMMANDS: Dict[str, Dict[str, Any]] = {
     "slavemode.agent-update": {"check": True},
+    "slavemode.comfy-ctrl": {"action": "status"},
     "slavemode.comfy-export": {},
     "slavemode.comfy-import": {"bundles": []},
     "slavemode.force-rescan": {},

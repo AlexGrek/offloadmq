@@ -69,6 +69,16 @@ pub fn update(id: &str, check: bool, timeout: u64) -> Result<()> {
     )
 }
 
+/// `action` is one of start / stop / restart / status (see slavemode.comfy-ctrl).
+pub fn comfy(id: &str, action: &str, timeout: u64) -> Result<()> {
+    run(
+        id,
+        "slavemode.comfy-ctrl",
+        json!({ "action": action }),
+        timeout,
+    )
+}
+
 pub fn caps_get(id: &str, timeout: u64) -> Result<()> {
     run(
         id,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json as json_module
 import shutil
+from pathlib import Path
 from typing import Any
 
 from offloadmq_agent.comfy_workflows import (
@@ -37,6 +38,8 @@ __all__ = [
     "add_workflow",
     "get_workflow_graph",
     "delete_workflow",
+    "rename_workflow",
+    "duplicate_workflow",
     "export_workflow",
     "import_workflow",
     "parse_workflow_ref",
@@ -58,6 +61,31 @@ STANDARD_TASK_TYPES = [
     "txt2music",
     "depth",
 ]
+
+
+def _resolve_workflow_dir(workflow_name: str, namespace: str = "") -> Path:
+    """Validated, containment-checked path to one workflow's directory.
+
+    Shared by every operation that touches a workflow directory as a whole
+    (delete/rename/duplicate) and by ``_resolve_workflow_graph_path`` below —
+    the single place name/namespace validation and the workflows-dir
+    containment check happen, so none of those call sites can be fooled by a
+    crafted ``workflow_name``/``namespace`` into touching a path outside
+    ``workflows_dir()``.
+    """
+    wf = workflow_name.strip()
+    ns = namespace.strip()
+    if not wf or not WF_SAFE_RE.match(wf):
+        raise ValueError("invalid workflow_name")
+    if ns and not WF_SAFE_RE.match(ns):
+        raise ValueError("invalid namespace")
+    root = workflows_dir().resolve()
+    base = (workflows_dir() / ns / wf).resolve() if ns else (workflows_dir() / wf).resolve()
+    try:
+        base.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("path escapes workflows directory") from exc
+    return base
 
 
 def _is_comfy_wire_ref(value: Any) -> bool:
@@ -283,12 +311,53 @@ def get_workflow_graph(workflow_name: str, task_type: str, namespace: str = "") 
 
 
 def delete_workflow(workflow_name: str, namespace: str = "") -> None:
-    wdir = workflows_dir()
-    ns = namespace.strip()
-    name = workflow_name.strip()
-    target = (wdir / ns / name) if ns else (wdir / name)
+    """Raises ``ValueError`` for an invalid/unsafe workflow_name or namespace."""
+    target = _resolve_workflow_dir(workflow_name, namespace)
     if target.is_dir():
         shutil.rmtree(target)
+
+
+def rename_workflow(
+    workflow_name: str, namespace: str, new_workflow_name: str, new_namespace: str
+) -> None:
+    """Move a workflow directory (all its task-type graphs and param maps) to a
+    new name/namespace.
+
+    Raises ``ValueError`` for invalid names or if the destination already
+    exists, ``FileNotFoundError`` if the source workflow doesn't exist.
+    """
+    src = _resolve_workflow_dir(workflow_name, namespace)
+    if not src.is_dir():
+        raise FileNotFoundError("workflow not found")
+    dst = _resolve_workflow_dir(new_workflow_name, new_namespace)
+    if dst == src:
+        return
+    if dst.exists():
+        raise ValueError(f"a workflow named {new_workflow_name!r} already exists in that namespace")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dst))
+
+
+def duplicate_workflow(
+    workflow_name: str, namespace: str, new_workflow_name: str, new_namespace: str
+) -> None:
+    """Copy a workflow directory (all its task-type graphs and param maps) to a
+    new name/namespace.
+
+    Raises ``ValueError`` for invalid names, if source and destination are the
+    same, or if the destination already exists; ``FileNotFoundError`` if the
+    source workflow doesn't exist.
+    """
+    src = _resolve_workflow_dir(workflow_name, namespace)
+    if not src.is_dir():
+        raise FileNotFoundError("workflow not found")
+    dst = _resolve_workflow_dir(new_workflow_name, new_namespace)
+    if dst == src:
+        raise ValueError("duplicate target must differ from the source workflow")
+    if dst.exists():
+        raise ValueError(f"a workflow named {new_workflow_name!r} already exists in that namespace")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dst)
 
 
 def get_param_map(workflow_name: str, task_type: str, namespace: str = "") -> dict[str, Any]:

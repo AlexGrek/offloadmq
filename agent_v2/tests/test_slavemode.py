@@ -71,6 +71,87 @@ def test_non_allowlisted_cap_is_refused(tmp_path: Path, monkeypatch) -> None:
     assert not _is_allowed("slavemode.not-a-real-cap")
 
 
+class _Response:
+    status_code = 200
+    content = b""
+
+    def raise_for_status(self) -> None:
+        pass
+
+
+class _RecordingTransport:
+    def __init__(self) -> None:
+        self.progress: list[object] = []
+        self.result: object | None = None
+
+    def post_task_progress(self, task_id, report, timeout: int = 10) -> _Response:  # type: ignore[no-untyped-def]
+        self.progress.append(report)
+        return _Response()
+
+    def post_task_result(self, report, timeout: int = 60) -> _Response:  # type: ignore[no-untyped-def]
+        self.result = report
+        return _Response()
+
+
+def _run_comfy_ctrl(monkeypatch, tmp_path: Path, handler, payload: dict) -> _RecordingTransport:  # type: ignore[no-untyped-def]
+    from offloadmq_agent import comfy_control
+    from offloadmq_agent.exec import slavemode
+    from offloadmq_agent.wire import TaskId
+
+    cfg_file = tmp_path / ".offloadmq-agent.json"
+    save_settings(Settings(slavemode_allowed_caps=["slavemode.comfy-ctrl"]), cfg_file)
+    monkeypatch.setattr(settings_util, "SETTINGS_FILE", cfg_file)
+    monkeypatch.setattr(comfy_control, "_handler", handler)
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+    t = _RecordingTransport()
+    slavemode.execute_slavemode(
+        t, TaskId(id="t1", cap="slavemode.comfy-ctrl"), "slavemode.comfy-ctrl",
+        payload, tmp_path, job_timeout=120,
+    )
+    return t
+
+
+def _result_status(t: _RecordingTransport) -> str:
+    return str(getattr(t.result, "status"))
+
+
+def test_comfy_ctrl_start_waits_until_running(tmp_path: Path, monkeypatch) -> None:
+    states = iter(["starting", "starting", "starting", "running"])
+    calls: list[str] = []
+
+    def handler(action: str) -> dict:
+        calls.append(action)
+        state = "starting" if action == "start" else next(states)
+        return {"state": state, "pid": 42, "output": ["x"] * 50, "lastError": ""}
+
+    t = _run_comfy_ctrl(monkeypatch, tmp_path, handler, {"action": "start"})
+    assert calls[0] == "start" and set(calls[1:]) == {"status"}
+    assert "success" in _result_status(t).lower() or "completed" in _result_status(t).lower()
+    assert t.progress, "start must report progress so the urgent task stays alive"
+
+
+def test_comfy_ctrl_start_fails_on_crash_loop(tmp_path: Path, monkeypatch) -> None:
+    def handler(action: str) -> dict:
+        state = "starting" if action == "start" else "crash-loop"
+        return {"state": state, "output": [], "lastError": "crashed 5 times"}
+
+    t = _run_comfy_ctrl(monkeypatch, tmp_path, handler, {"action": "start"})
+    assert "fail" in _result_status(t).lower()
+
+
+def test_comfy_ctrl_rejects_unknown_action(tmp_path: Path, monkeypatch) -> None:
+    def handler(action: str) -> dict:
+        raise AssertionError("handler must not be called")
+
+    t = _run_comfy_ctrl(monkeypatch, tmp_path, handler, {"action": "explode"})
+    assert "fail" in _result_status(t).lower()
+
+
+def test_comfy_ctrl_without_handler_fails_cleanly(tmp_path: Path, monkeypatch) -> None:
+    t = _run_comfy_ctrl(monkeypatch, tmp_path, None, {"action": "status"})
+    assert "fail" in _result_status(t).lower()
+
+
 def test_legacy_hyphenated_key_still_honoured() -> None:
     """v1 configs imported verbatim must keep working."""
     cfg = {"slavemode-allowed-caps": ["slavemode.force-rescan"]}

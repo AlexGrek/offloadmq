@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "@/api/client";
 import { ComfyGraphJsonEditor } from "@/components/ComfyGraphJsonEditor";
 import { ComfyParamMapEditor } from "@/components/ComfyParamMapEditor";
+import { ComfyServerCard } from "@/components/ComfyServerCard";
 import { JsonCodeEditor } from "@/components/JsonCodeEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -232,6 +233,110 @@ function AddWorkflowDialog({
   );
 }
 
+type MoveMode = "rename" | "duplicate";
+
+function RenameDuplicateDialog({
+  mode,
+  workflow,
+  onClose,
+  onDone,
+}: {
+  mode: MoveMode | null;
+  workflow: Workflow | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [namespace, setNamespace] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!workflow || !mode) return;
+    setName(mode === "duplicate" ? `${workflow.name}-copy` : workflow.name);
+    setNamespace(workflow.namespace);
+    setError("");
+  }, [workflow, mode]);
+
+  const open = mode !== null && workflow !== null;
+
+  const handleClose = () => {
+    setError("");
+    onClose();
+  };
+
+  const submit = async () => {
+    if (!workflow || !mode) return;
+    setError("");
+    if (!name.trim()) { setError("Name is required"); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        workflow_name: workflow.name,
+        namespace: workflow.namespace,
+        new_workflow_name: name.trim(),
+        new_namespace: namespace.trim(),
+      };
+      if (mode === "rename") {
+        await api.renameComfyWorkflow(payload);
+      } else {
+        await api.duplicateComfyWorkflow(payload);
+      }
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{mode === "rename" ? "Rename workflow" : "Duplicate workflow"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          {workflow && (
+            <p className="text-xs text-muted-foreground">
+              {mode === "rename" ? "Renaming" : "Duplicating"}{" "}
+              <code className="text-foreground">
+                {workflow.namespace ? `${workflow.namespace}.` : "imggen."}
+                {workflow.name}
+              </code>
+              . All of its task-type graphs and param maps move together.
+            </p>
+          )}
+          <div className="space-y-1">
+            <Label>New name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>
+              Namespace{" "}
+              <span className="text-muted-foreground font-normal">(blank for imggen.*)</span>
+            </Label>
+            <Input value={namespace} onChange={(e) => setNamespace(e.target.value)} />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving
+              ? "Saving…"
+              : mode === "rename"
+                ? "Rename"
+                : "Duplicate"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ImportWorkflowDialog({
   open,
   onClose,
@@ -378,6 +483,7 @@ export function ComfyPage() {
   const [standardTaskTypes, setStandardTaskTypes] = useState<string[]>(DEFAULT_TASK_TYPES);
   const [showAdd, setShowAdd] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [unwired, setUnwired] = useState<UnwiredReport | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [notice, setNotice] = useState("");
@@ -390,6 +496,10 @@ export function ComfyPage() {
   // Graph JSON drawer state
   const [jsonEditorOpen, setJsonEditorOpen] = useState(false);
   const [jsonEditorWorkflowKey, setJsonEditorWorkflowKey] = useState<string>("");
+
+  // Rename / duplicate dialog state
+  const [moveMode, setMoveMode] = useState<MoveMode | null>(null);
+  const [moveTarget, setMoveTarget] = useState<Workflow | null>(null);
 
   const refreshWorkflows = () =>
     api.getComfyWorkflows().then((r) => {
@@ -415,9 +525,12 @@ export function ComfyPage() {
   const deleteWorkflow = async (w: Workflow) => {
     const key = `${w.namespace}/${w.name}`;
     setDeletingKey(key);
+    setDeleteErr(null);
     try {
       await api.deleteComfyWorkflow(w.name, w.namespace);
       await refreshWorkflows();
+    } catch (e) {
+      setDeleteErr(e instanceof Error ? e.message : String(e));
     } finally {
       setDeletingKey(null);
     }
@@ -453,6 +566,11 @@ export function ComfyPage() {
     setJsonEditorOpen(true);
   };
 
+  const openMoveDialog = (mode: MoveMode, w: Workflow) => {
+    setMoveMode(mode);
+    setMoveTarget(w);
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">ComfyUI workflows</h1>
@@ -471,6 +589,14 @@ export function ComfyPage() {
           />
         </CardContent>
       </Card>
+
+      <ComfyServerCard
+        url={url}
+        onUseUrl={(next) => {
+          edit(next);
+          flush();
+        }}
+      />
 
       {unwired && (
         <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-4 py-3">
@@ -519,6 +645,7 @@ export function ComfyPage() {
             <p className="text-sm text-emerald-500">Imported {notice}.</p>
           )}
           {exportError && <p className="text-sm text-destructive">{exportError}</p>}
+          {deleteErr && <p className="text-sm text-destructive">{deleteErr}</p>}
           {workflows.length === 0 && (
             <p className="text-sm text-muted-foreground">No workflows found</p>
           )}
@@ -527,7 +654,7 @@ export function ComfyPage() {
             return (
               <div
                 key={key}
-                className="flex items-center justify-between rounded-md border px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
               >
                 <div>
                   <span className="font-mono text-sm font-medium">
@@ -538,7 +665,7 @@ export function ComfyPage() {
                     {w.task_types.join(", ")}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -563,6 +690,20 @@ export function ComfyPage() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => openMoveDialog("duplicate", w)}
+                  >
+                    Duplicate
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openMoveDialog("rename", w)}
+                  >
+                    Rename
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     disabled={deletingKey === key}
                     onClick={() => deleteWorkflow(w)}
                     className="text-destructive hover:text-destructive"
@@ -583,6 +724,17 @@ export function ComfyPage() {
         onAdded={(report) => {
           setShowAdd(false);
           setUnwired(report);
+          refreshWorkflows();
+        }}
+      />
+
+      <RenameDuplicateDialog
+        mode={moveMode}
+        workflow={moveTarget}
+        onClose={() => { setMoveMode(null); setMoveTarget(null); }}
+        onDone={() => {
+          setMoveMode(null);
+          setMoveTarget(null);
           refreshWorkflows();
         }}
       />

@@ -112,7 +112,7 @@ enum AgentAction {
         #[command(subcommand)]
         action: CapsAction,
     },
-    /// Export / import ComfyUI workflows (graphs + node mappings)
+    /// ComfyUI: export / import workflows, and control the agent-managed local server
     Comfy {
         #[command(subcommand)]
         action: ComfyAction,
@@ -177,6 +177,27 @@ enum ComfyAction {
         /// Override the namespace: img-utils, txt2music, or "" for imggen (single file only)
         #[arg(long)]
         namespace: Option<String>,
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Start ComfyUI and wait until it answers
+    Start {
+        /// Max seconds to wait (ComfyUI with many custom nodes boots slowly)
+        #[arg(long, default_value_t = 360)]
+        timeout: u64,
+    },
+    /// Stop ComfyUI (only if the agent started it)
+    Stop {
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Restart ComfyUI and wait until it answers
+    Restart {
+        #[arg(long, default_value_t = 360)]
+        timeout: u64,
+    },
+    /// Show ComfyUI process state
+    Status {
         #[arg(long, default_value_t = 60)]
         timeout: u64,
     },
@@ -464,6 +485,10 @@ fn main() {
                     namespace.as_deref(),
                     timeout,
                 ),
+                ComfyAction::Start { timeout } => commands::agent::comfy(&id, "start", timeout),
+                ComfyAction::Stop { timeout } => commands::agent::comfy(&id, "stop", timeout),
+                ComfyAction::Restart { timeout } => commands::agent::comfy(&id, "restart", timeout),
+                ComfyAction::Status { timeout } => commands::agent::comfy(&id, "status", timeout),
             },
             AgentAction::Ollama { action } => match action {
                 OllamaAction::List { timeout } => commands::agent::ollama_list(&id, timeout),

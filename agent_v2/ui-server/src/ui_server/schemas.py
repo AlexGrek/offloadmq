@@ -16,6 +16,11 @@ class SettingsPayload(BaseModel):
     autostart: bool | None = None
     webui_port: int | None = None
     comfyui_url: str | None = None
+    comfyui_launch_on_startup: bool | None = None
+    comfyui_restart_on_crash: bool | None = None
+    comfyui_python: str | None = None
+    comfyui_main_py: str | None = None
+    comfyui_args: list[str] | None = None
     ollama_base_url: str | None = None
     kokoro_api_url: str | None = None
     kokoro_api_key: str | None = None
@@ -57,6 +62,16 @@ class ComfyUrlPayload(BaseModel):
     comfyui_url: str = ""
 
 
+class ComfyLaunchPayload(BaseModel):
+    """Agent-managed ComfyUI launch config; omitted fields are left unchanged."""
+
+    comfyui_launch_on_startup: bool | None = None
+    comfyui_restart_on_crash: bool | None = None
+    comfyui_python: str | None = None
+    comfyui_main_py: str | None = None
+    comfyui_args: list[str] | None = None
+
+
 class KokoroSettingsPayload(BaseModel):
     kokoro_api_url: str = ""
     kokoro_api_key: str = ""
@@ -74,6 +89,13 @@ class WorkflowDeletePayload(BaseModel):
     namespace: str = ""
 
 
+class WorkflowMovePayload(BaseModel):
+    """Shared by rename and duplicate — both relocate a workflow directory."""
+
+    workflow_name: str
+    namespace: str = ""
+    new_workflow_name: str
+    new_namespace: str = ""
 class WorkflowImportPayload(BaseModel):
     bundle: dict[str, Any]
     # Blank/None keep the name / namespace recorded in the bundle.
