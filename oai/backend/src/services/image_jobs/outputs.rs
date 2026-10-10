@@ -398,7 +398,7 @@ pub(super) async fn store_output_image(
         image,
         file_uid,
         job.prompt.trim(),
-        image_processing::MAX_IMAGE_EDGE,
+        image_processing::MAX_GENERATED_EDGE,
         None,
     )
     .await?;

@@ -34,7 +34,7 @@ Every stored image is normalized on ingest (upload or OffloadMQ output download)
 |------|--------|
 | Output format | JPEG (`image/jpeg`) |
 | JPEG quality | 90 |
-| Max edge (full image) | 1920 px (downscale if larger) |
+| Max edge (full image) | 1920 px for uploads; 4096 px for image-generation outputs (downscale if larger) |
 | EXIF orientation | Baked into pixels by `vipsthumbnail`'s auto-rotate; the orientation tag is removed from the output |
 | Thumbnail | Always created; max edge 384 px, JPEG quality 90 |
 
@@ -113,7 +113,7 @@ Optional metadata from the multipart part:
 | `content_type` | Always `image/jpeg` after processing |
 | `width` / `height` | Stored dimensions after orientation + rescale |
 | `size_bytes` | Stored main JPEG size (thumbnail stored separately) |
-| `rescaled` | `true` if longest edge was reduced to 1920 |
+| `rescaled` | `true` if longest edge was reduced to the cap (1920 for uploads, 4096 for generation outputs) |
 | `reencoded` | Always `true` — all images are normalized through `vipsthumbnail` |
 
 ### Example

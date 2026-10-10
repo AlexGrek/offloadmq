@@ -97,6 +97,7 @@ import {
   randomTxt2videoPrompt,
   applyPipelineParamsToNewForm,
   applyStoredGenerationParamsToNewForm,
+  DIMENSION_PRESETS,
   filterCapabilitiesByWorkflow,
   fitsOriginalResolution,
   isInputImageMode,
@@ -376,9 +377,7 @@ export default function ImageGenerationPage() {
     if (ratioLocked && uploadedInput) {
       return proportionalPresets(uploadedInput.width, uploadedInput.height)
     }
-    return [
-      [512, 512], [768, 768], [1024, 1024], [1024, 768], [768, 1024],
-    ]
+    return DIMENSION_PRESETS
   }, [ratioLocked, uploadedInput])
 
   const patchRescale = useCallback((patch: Partial<RescaleState>) => {

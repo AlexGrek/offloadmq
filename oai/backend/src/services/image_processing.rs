@@ -23,6 +23,10 @@ use crate::error::AppError;
 use super::subprocess::{blocking, run_gated, TempFile};
 
 pub const MAX_IMAGE_EDGE: u32 = 1920;
+/// Longest edge kept for image-generation outputs. Higher than [`MAX_IMAGE_EDGE`] so the
+/// larger size presets (up to 2048) are stored as generated; anything beyond is still
+/// shrunk, bounding storage and the cost of serving the file.
+pub const MAX_GENERATED_EDGE: u32 = 4096;
 /// Effectively "no cap" for [`vips_thumbnail`]'s shrink-only (`>`) box size — used for
 /// outputs where downscaling to [`MAX_IMAGE_EDGE`] would defeat the point of the tool
 /// (e.g. img-utils upscale). Large enough that no realistic image exceeds it, so it's a

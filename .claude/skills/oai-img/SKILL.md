@@ -208,7 +208,7 @@ start_job(external_resize) → submit `image_resize`  ← the job's offload task
 **img2img resolution toggles** (page state, near Width/Height; helpers in `lib/imggen.ts`):
 
 - **Original resolution** (`imggen-original-resolution`) — offered only when the input fits under 4K (`fitsOriginalResolution`, `FOUR_K_EDGE = 3840` on the larger edge). Default-**on** after upload/pick for sub-4K inputs. Locks Width/Height to the input's stored dims and submits with `data_preparation = null` (input passed through un-rescaled → output at original size). Hides the "Offload rescaling" advanced section while on.
-- **Keep proportions** (`imggen-keep-proportions`) — offered for any img2img input; default-on whenever an input is present (implied + disabled while Original resolution is on). Locks the output aspect ratio to the input: editing one dimension recomputes the other (`proportionalCounterpart`, 8px grid), and the dimension presets become proportional variants (`proportionalPresets` over `PRESET_LONG_EDGES`). ≥4K inputs default to a proportional 1024 long edge (`proportionalSize`).
+- **Keep proportions** (`imggen-keep-proportions`) — offered for any img2img input; default-on whenever an input is present (implied + disabled while Original resolution is on). Locks the output aspect ratio to the input: editing one dimension recomputes the other (`proportionalCounterpart`, 8px grid), and the dimension presets become proportional variants (`proportionalPresets` over `PRESET_LONG_EDGES`, 512–2048). Otherwise the preset chips are `DIMENSION_PRESETS` (squares 512–2048, landscape/portrait up to 2048×1536 / 1920×1080). Generated outputs are stored up to `MAX_GENERATED_EDGE` (4096 px), so every preset is kept at its generated size; uploads and Image Tools resize stay capped at 1920. ≥4K inputs default to a proportional 1024 long edge (`proportionalSize`).
 - `applyInputDefaults(img)` sets both toggles + dims on every input change (upload, library pick, send-to-img2img, mode switch); `applyPipelineParamsToNewForm` re-derives them on Edit prompt / retry.
 
 ---
@@ -360,7 +360,7 @@ Backend: `image_jobs::cancel_job` → `OffloadImageClient::cancel_task` → `upd
 |------|----------------|
 | Upload input | `users/{user_id}/images/input/{image_id}.jpg` |
 | Job output | `users/{user_id}/images/output/{job_id}/{image_id}.jpg` |
-| Processing | `image_processing::process_image` — `vipsthumbnail`/`vipsheader` CLI subprocesses; max edge **1920**, JPEG q=90; EXIF orientation baked in and dropped; uploads keep other EXIF via `process_upload`, Image Tools outputs inherit the input's EXIF + generation parameters (`CarriedExif`) |
+| Processing | `image_processing::process_image` — `vipsthumbnail`/`vipsheader` CLI subprocesses; max edge **1920** for uploads / **4096** (`MAX_GENERATED_EDGE`) for imggen outputs, JPEG q=90; EXIF orientation baked in and dropped; uploads keep other EXIF via `process_upload`, Image Tools outputs inherit the input's EXIF + generation parameters (`CarriedExif`) |
 
 `imageFileUrl(imageId, token)` → `/api/images/files/{id}?token=…` for `<img>` / links.
 
