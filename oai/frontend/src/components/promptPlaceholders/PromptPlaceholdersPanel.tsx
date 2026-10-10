@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, ChevronDown, Eye, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, Copy, Eye, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MorphCollapse } from '@/components/Morph'
@@ -410,6 +410,10 @@ function CustomPlaceholdersSection({ token }: { token: string | null }) {
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-0.5">
+                    <CopyPlaceholderButton
+                      token={`{${item.name}}`}
+                      testId={`prompt-placeholders-copy-${item.id}`}
+                    />
                     <Button
                       type="button"
                       variant="ghost"
@@ -467,17 +471,61 @@ function CustomPlaceholdersSection({ token }: { token: string | null }) {
   )
 }
 
+/** Built-in tokens in display order: the server-side `{?}` first, then the dictionaries. */
+const RESERVED_TOKENS = ['?', ...PLACEHOLDER_CATEGORIES].map(name => `{${name}}`)
+
 function ReservedNamesSection() {
   return (
     <section data-testid="prompt-placeholders-reserved-list">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Built-in (reserved) names
       </p>
+      <ul className="mt-1.5 flex flex-wrap gap-1.5">
+        {RESERVED_TOKENS.map(token => (
+          <li
+            key={token}
+            className="flex items-center gap-0.5 rounded-md bg-muted/50 py-0.5 pl-2 pr-0.5"
+          >
+            <span className="font-mono text-xs text-foreground">{token}</span>
+            <CopyPlaceholderButton token={token} testId={`prompt-placeholders-copy-builtin-${token.slice(1, -1)}`} />
+          </li>
+        ))}
+      </ul>
       <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-        <span className="font-mono">{PLACEHOLDER_CATEGORIES.map(c => `{${c}}`).join(', ')}</span> each resolve
-        to a random word from a built-in dictionary, and <span className="font-mono">{'{?}'}</span> resolves to
-        a random two-word name on the server. Your own placeholder names can't reuse any of these.
+        Each category resolves to a random word from a built-in dictionary, and{' '}
+        <span className="font-mono">{'{?}'}</span> resolves to a random two-word name on the server. Your own
+        placeholder names can't reuse any of these.
       </p>
     </section>
+  )
+}
+
+/** Icon button that copies a `{placeholder}` token, flashing a check for 1.5 s. */
+function CopyPlaceholderButton({ token, testId }: { token: string; testId: string }) {
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const t = window.setTimeout(() => setCopied(false), 1500)
+    return () => window.clearTimeout(t)
+  }, [copied])
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      onClick={() => void navigator.clipboard.writeText(token).then(() => setCopied(true))}
+      title={copied ? 'Copied' : `Copy ${token}`}
+      aria-label={`Copy ${token}`}
+      data-testid={testId}
+      className="text-muted-foreground hover:text-foreground"
+    >
+      {copied ? (
+        <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+      ) : (
+        <Copy className="size-3.5" />
+      )}
+    </Button>
   )
 }

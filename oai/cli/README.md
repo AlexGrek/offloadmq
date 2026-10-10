@@ -48,7 +48,7 @@ job_id=$(./oai image generate "a red bicycle" -capability imggen.flux-schnell --
 ./oai image delete <job-id> [job-id ...]  # also removes the job's images
 
 # Prompt history and starred prompts (the web UI's Saved Prompts drawer)
-./oai image prompts recent                     # last 10 prompts you generated with
+./oai image prompts recent                     # last 50 prompts you generated with
 ./oai image prompts starred -q castle -all     # search every favorite
 ./oai image prompts star "a {color} lighthouse at dusk"
 ./oai image prompts star -id 363426941451112448      # star a recent entry
@@ -140,7 +140,7 @@ For `create`, `set`, `add` and `remove`, a lone `-` reads the variants from stdi
 
 `image prompts` manages the same saved prompts as the web UI's Images page (the Saved Prompts drawer with its **Recent** and **Starred** tabs). Each user has two image libraries: **prompts** (`imggen-prompt`, the default) and **negative prompts** (`imggen-negative`, select with `-negative`). Each library has two lists:
 
-- **Recent** — prompt history, managed by the server: the 10 most recently used unique prompts, newest first. `image generate` records the prompt (and the `-negative` text) here once per invocation, not once per `-n` job, unless you pass `--history=false`. Placeholders are stored unexpanded (`a {color} kite`).
+- **Recent** — prompt history, managed by the server: the 50 most recently used unique prompts, newest first. `image generate` records the prompt (and the `-negative` text) here once per invocation, not once per `-n` job, unless you pass `--history=false`. Placeholders are stored unexpanded (`a {color} kite`).
 - **Starred** — favorites you add explicitly; unlimited, newest-edited first, editable and deletable. Starring text that is already a favorite doesn't duplicate it; it just moves it to the top.
 
 An entry may also have a **preview**: a thumbnail of the latest image generated from that exact text. The web UI shows it on the card; `PREVIEW yes` in the CLI table.

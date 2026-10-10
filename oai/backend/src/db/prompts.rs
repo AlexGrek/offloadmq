@@ -1,6 +1,6 @@
 //! Generic per-user prompt storage, organized into named buckets (e.g.
 //! `llm-system`, `describe-image-user`). Each bucket holds two logical lists:
-//! `recent` (auto-managed history, capped at the last 10 unique prompts) and
+//! `recent` (auto-managed history, capped at the last 50 unique prompts) and
 //! `starred` (user-curated favorites that are editable and deletable).
 //!
 //! Entries may carry an image preview (`preview_updated_at`); the blob lives in
@@ -26,7 +26,7 @@ const MAX_CONTENT_LEN: usize = 32_000;
 const MAX_BUCKET_LEN: usize = 64;
 const MAX_QUERY_LEN: usize = 500;
 /// How many `recent` entries to keep per (user, bucket).
-const RECENT_LIMIT: u64 = 10;
+const RECENT_LIMIT: u64 = 50;
 pub const DEFAULT_PAGE_SIZE: u64 = 40;
 pub const MAX_PAGE_SIZE: u64 = 100;
 

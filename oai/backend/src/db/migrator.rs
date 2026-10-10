@@ -70,7 +70,7 @@ mod m20260604_000022_create_music_generation_jobs;
 
 /// Generic per-user prompt storage with named buckets (e.g. `llm-system`,
 /// `describe-image-user`). Each entry is either a `recent` (auto-managed history,
-/// last 10 unique per bucket) or a `starred` favorite (user-curated, editable).
+/// last 50 unique per bucket) or a `starred` favorite (user-curated, editable).
 /// Replaces the chat-only `user_system_prompts` table — existing rows are migrated
 /// into the `llm-system` bucket before the old table is dropped.
 mod m20260604_000023_create_prompt_entries;

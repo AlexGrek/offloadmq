@@ -3,7 +3,7 @@ import { apiRequest as request } from './http'
 /**
  * Generic prompt storage shared across apps. Prompts live in named buckets
  * (e.g. `llm-system`, `describe-image-user`); each bucket has a `recent` list
- * (auto-managed server-side, last 10 unique) and a `starred` list (favorites the
+ * (auto-managed server-side, last 50 unique) and a `starred` list (favorites the
  * user adds, which are editable and deletable).
  */
 export interface PromptItem {

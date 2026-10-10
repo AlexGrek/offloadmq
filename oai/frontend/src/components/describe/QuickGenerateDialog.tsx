@@ -3,7 +3,7 @@ import { Loader2, RefreshCw } from 'lucide-react'
 import { listImgGenCapabilities, startImageJob, type ImgGenCapability } from '../../api/images'
 import { recordRecentPrompt } from '../../api/prompts'
 import { useProgress } from '../../contexts/ProgressContext'
-import { filterCapabilitiesByWorkflow, MODE_DEFAULTS } from '../../lib/imggen'
+import { DIMENSION_PRESETS, filterCapabilitiesByWorkflow, MODE_DEFAULTS } from '../../lib/imggen'
 import { isListedCapability } from '../../lib/capability-picker'
 import type { CapabilitiesStatus } from '../../lib/capabilitiesStatus'
 import { capabilityBaseLabel, sortCapabilitiesForPicker } from '../../lib/modelAvailability'
@@ -21,14 +21,6 @@ import {
 } from '../ui/dialog'
 import { Label } from '../ui/label'
 import { Input } from '../ui/input'
-
-const SIZE_PRESETS = [
-  [512, 512],
-  [768, 768],
-  [1024, 1024],
-  [1024, 768],
-  [768, 1024],
-] as const
 
 const MAX_GENERATE_MULTIPLE = 10
 const DEFAULT_GENERATE_MULTIPLE = 1
@@ -209,7 +201,7 @@ export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: Quick
             <div className="space-y-1.5">
               <Label>Size</Label>
               <div className="flex flex-wrap gap-2" data-testid="describe-generate-sizes">
-                {SIZE_PRESETS.map(([width, height]) => (
+                {DIMENSION_PRESETS.map(([width, height]) => (
                   <button
                     key={`${width}x${height}`}
                     type="button"

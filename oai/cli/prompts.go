@@ -142,7 +142,7 @@ func fetchAllPrompts(cfg *Config, bucket, kind, query string) ([]promptEntry, er
 
 // findPromptEntry locates an entry by ID across both image libraries (recent
 // first, then starred). The backend has no single-entry GET, so it scans the
-// lists; recents are capped at 10 per bucket, so this is cheap.
+// lists; recents are capped at 50 per bucket, so this is cheap.
 func findPromptEntry(cfg *Config, id string) (promptEntry, string, error) {
 	for _, bucket := range []string{imgPromptBucket, imgNegativeBucket} {
 		for _, kind := range []string{promptKindRecent, promptKindStarred} {
@@ -376,7 +376,7 @@ func cmdPromptsUnstar(args []string) error {
 }
 
 // cmdPromptsRecord pushes text onto the recent list, like a web-UI submission
-// does (the server keeps the 10 most recent unique prompts per library).
+// does (the server keeps the 50 most recent unique prompts per library).
 func cmdPromptsRecord(args []string) error {
 	fs := flag.NewFlagSet("image prompts record", flag.ContinueOnError)
 	negative := negativeFlag(fs)
