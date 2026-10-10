@@ -1,5 +1,14 @@
 import { apiRequest as request } from './http'
 
+/** Prompt and settings of the generation job behind a library image. */
+export interface GenerationInfo {
+  prompt: string
+  negative_prompt: string | null
+  capability: string
+  workflow: string
+  seed: number | null
+}
+
 export interface UserFile {
   id: string
   /** `"image"` (image_files) or `"audio"` (synthesized tts_jobs). */
@@ -20,6 +29,8 @@ export interface UserFile {
   is_video: boolean
   is_audio: boolean
   is_starred: boolean
+  /** Only set by the image library, for outputs of an image-generation job. */
+  generation?: GenerationInfo
 }
 
 export interface StorageSummary {

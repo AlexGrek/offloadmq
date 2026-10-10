@@ -20,6 +20,7 @@ import LlmComparePage from './pages/LlmComparePage'
 import LlmDebatePage from './pages/LlmDebatePage'
 import MoviePage from './pages/MoviePage'
 import FilesPage from './pages/FilesPage'
+import GalleryPage from './pages/GalleryPage'
 import SettingsPage from './pages/SettingsPage'
 import ServerConfigPage from './pages/ServerConfigPage'
 import ImageWorkerLogsPage from './pages/ImageWorkerLogsPage'
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="llm-compare" element={<LlmComparePage />} />
             <Route path="llm-debate" element={<LlmDebatePage />} />
             <Route path="movie" element={<MoviePage />} />
+            <Route path="gallery" element={<GalleryPage />} />
             <Route path="files" element={<FilesPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/server" element={<ServerConfigPage />} />

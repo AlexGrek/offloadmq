@@ -53,6 +53,20 @@ pub struct UserFile {
     pub is_audio: bool,
     /// True when the file is in the user's starred list.
     pub is_starred: bool,
+    /// How the file was generated; only set by the image library, and only for
+    /// outputs of an image-generation job that still exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation: Option<GenerationInfo>,
+}
+
+/// Prompt and settings of the generation job behind a library image.
+#[derive(Serialize)]
+pub struct GenerationInfo {
+    pub prompt: String,
+    pub negative_prompt: Option<String>,
+    pub capability: String,
+    pub workflow: String,
+    pub seed: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -230,10 +244,31 @@ pub async fn list_image_library(
         }
     });
     let starred = futures::future::join_all(starred_checks).await;
+    let jobs = image_generation::jobs_by_ids(
+        &state.db,
+        user_id,
+        page.iter().filter_map(|file| file.job_id).collect(),
+    )
+    .await?;
     let files = page
         .into_iter()
         .zip(starred)
-        .map(|(file, is_starred)| map_user_file(file, is_starred))
+        .map(|(file, is_starred)| {
+            let generation = file
+                .job_id
+                .filter(|_| file.direction == "output")
+                .and_then(|id| jobs.get(&id))
+                .map(|job| GenerationInfo {
+                    prompt: job.prompt.clone(),
+                    negative_prompt: job.negative_prompt.clone(),
+                    capability: job.capability.clone(),
+                    workflow: job.workflow.clone(),
+                    seed: job.seed,
+                });
+            let mut mapped = map_user_file(file, is_starred);
+            mapped.generation = generation;
+            mapped
+        })
         .collect();
 
     Ok(Json(ImageLibraryResponse { files, has_more }))
@@ -280,6 +315,7 @@ fn map_user_file(f: image_generation::ImageFile, is_starred: bool) -> UserFile {
         is_video,
         is_audio: false,
         is_starred,
+        generation: None,
     }
 }
 
@@ -351,5 +387,6 @@ fn map_audio_job(job: &crate::db::entities::tts_jobs::Model) -> Option<UserFile>
         is_video: false,
         is_audio: true,
         is_starred: false,
+        generation: None,
     })
 }

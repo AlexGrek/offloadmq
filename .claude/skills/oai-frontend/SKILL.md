@@ -91,6 +91,7 @@ Public routes are top-level. Authenticated app routes live under `/app` and shar
 | `/app/dashboard` | required | `DashboardPage` |
 | `/app/chat` | required | `ChatPage` |
 | `/app/images` | required | `ImageGenerationPage` |
+| `/app/gallery` | required | `GalleryPage` |
 | `/app/files` | required | `FilesPage` |
 | `/app/settings` | required | `SettingsPage` |
 | `/app/settings/server` | required + admin | `ServerConfigPage` |

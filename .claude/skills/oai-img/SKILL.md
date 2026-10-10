@@ -79,6 +79,7 @@ sequenceDiagram
 |------|-----------|
 | `/app/images` | `ImageGenerationPage` |
 | `/images` | redirect → `/app/images` |
+| `/app/gallery` | `GalleryPage` (phone-style image gallery) |
 | `/app/settings/worker-logs` | `ImageWorkerLogsPage` (admin) |
 
 `AppShell` → `ProgressProvider` + `GlobalProgressDrawer` + `WorkloadProvider` (chat section separate).
@@ -106,6 +107,7 @@ sequenceDiagram
 | `frontend/src/components/GlobalProgressDrawer.tsx` | `cancelImageJob` on image rows |
 | `frontend/src/components/ToolDebugModal.tsx` | Shared; raw OffloadMQ poll JSON |
 | `frontend/src/pages/FilesPage.tsx` | `GET /api/files`; appends `?token=` to URLs |
+| `frontend/src/pages/GalleryPage.tsx` | Gallery: day-grouped thumbnail grid over `GET /api/files/images` (filters Generated/Starred/Uploads/All, infinite scroll). Opens `ImageLightbox` in **gallery mode** (`slides`/`index`/`onIndexChange` = horizontal scroll-snap track + arrow keys; `promptPanel` = prompt sheet that dims the bottom of the image, toggled by the Prompt button or `p`). Library files carry `generation` (prompt, negative, model, seed) — `routes/files.rs::GenerationInfo`, outputs of an existing imggen job only. Mocked e2e: `oai/e2e/tests/gallery.spec.ts` |
 | `frontend/src/pages/ImageWorkerLogsPage.tsx` | Admin worker pass logs |
 
 ### Page constants

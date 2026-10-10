@@ -1,4 +1,4 @@
-import { Activity, Bot, Braces, Clapperboard, Eye, FolderOpen, GitCompareArrows, ImagePlus, MessageCircleMore, Music, ShieldAlert, Volume2, Wand2 } from 'lucide-react'
+import { Activity, Bot, Braces, Clapperboard, Eye, FolderOpen, GalleryVerticalEnd, GitCompareArrows, ImagePlus, MessageCircleMore, Music, ShieldAlert, Volume2, Wand2 } from 'lucide-react'
 
 /** Every app tile on the dashboard; also the source for the TopBar's most-used shortcuts. */
 export const apps = [
@@ -21,6 +21,16 @@ export const apps = [
     gradient: 'from-emerald-500/20 to-cyan-500/20',
     iconBg: 'bg-emerald-500/20',
     iconColor: 'text-emerald-400',
+  },
+  {
+    id: 'gallery',
+    icon: GalleryVerticalEnd,
+    title: 'Gallery',
+    description: 'Swipe through your images, with prompts on demand',
+    href: '/app/gallery',
+    gradient: 'from-pink-500/20 to-rose-500/20',
+    iconBg: 'bg-pink-500/20',
+    iconColor: 'text-pink-400',
   },
   {
     id: 'describe',

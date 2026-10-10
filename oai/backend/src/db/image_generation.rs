@@ -143,6 +143,24 @@ pub async fn get_job(
         .map_err(AppError::Database)
 }
 
+/// Jobs owned by `user_id` among `job_ids`, keyed by id (gallery prompt lookup).
+pub async fn jobs_by_ids(
+    db: &DatabaseConnection,
+    user_id: i64,
+    job_ids: Vec<i64>,
+) -> Result<HashMap<i64, ImageGenerationJob>, AppError> {
+    if job_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let jobs = ImageGenerationJobEntity::find()
+        .filter(image_generation_jobs::Column::UserId.eq(user_id))
+        .filter(image_generation_jobs::Column::Id.is_in(job_ids))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    Ok(jobs.into_iter().map(|job| (job.id, job)).collect())
+}
+
 pub async fn list_jobs(
     db: &DatabaseConnection,
     user_id: i64,
