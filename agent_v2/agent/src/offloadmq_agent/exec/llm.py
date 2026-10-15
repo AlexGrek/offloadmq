@@ -5,6 +5,7 @@ import asyncio
 import base64
 import json
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -73,18 +74,40 @@ def _attach_images(messages: list[dict[str, Any]], images: list[str]) -> list[di
 
 _STREAM_FLUSH_INTERVAL = 2.0  # seconds between progress log flushes, matching v1 behaviour
 
+# Ollama /api/chat request fields taken from the task payload as-is. The
+# server's OpenRouter-compatible API (/api/v1) translates OpenAI parameters
+# into exactly these (sampling → options, response_format → format, ...).
+_FORWARDED_KEYS = ("options", "format", "tools", "think", "keep_alive")
+
+# Final-chunk fields copied into the task output (usage + stop reason).
+_DONE_KEYS = ("done_reason", "prompt_eval_count", "eval_count", "total_duration")
+
+
+@dataclass
+class _StreamExtras:
+    """Everything in the Ollama stream besides the answer text."""
+
+    thinking: list[str] = field(default_factory=list)
+    tool_calls: list[Any] = field(default_factory=list)
+    done: dict[str, Any] = field(default_factory=dict)
+
 
 async def _stream_with_cancel(
     resp: aiohttp.ClientResponse,
     collected: list[str],
     ctx: ExecContext,
+    extras: _StreamExtras | None = None,
 ) -> bool:
     """Stream Ollama tokens, forwarding buffered text as progress logs every 2 s.
 
     Returns True if the cancel event fired before streaming completed,
     False on normal completion.  Mirrors the v1 ``execute_llm_query`` streaming
     path so callers (OAI chat, etc.) receive incremental text via task progress.
+    Only answer text goes to the progress log; reasoning (``thinking``), tool
+    calls and the final chunk's usage fields are collected into ``extras``.
     """
+    if extras is None:
+        extras = _StreamExtras()
     pending: list[str] = []
     last_flush: float = time.monotonic()
 
@@ -104,16 +127,22 @@ async def _stream_with_cancel(
                 continue
             try:
                 data: dict[str, Any] = json.loads(chunk)
-                token: str = (
-                    data.get("message", {}).get("content", "")
-                    or data.get("response", "")
-                )
-                if token:
-                    collected.append(token)
-                    pending.append(token)
-                    await _flush()
             except json.JSONDecodeError:
-                pass
+                continue
+            if data.get("error"):
+                raise RuntimeError(f"Ollama error: {data['error']}")
+            message: dict[str, Any] = data.get("message") or {}
+            token: str = message.get("content", "") or data.get("response", "")
+            if token:
+                collected.append(token)
+                pending.append(token)
+                await _flush()
+            if message.get("thinking"):
+                extras.thinking.append(message["thinking"])
+            if message.get("tool_calls"):
+                extras.tool_calls.extend(message["tool_calls"])
+            if data.get("done"):
+                extras.done = {k: data[k] for k in _DONE_KEYS if k in data}
         # Flush any remaining buffered tokens when the stream ends normally.
         await _flush(force=True)
 
@@ -195,7 +224,11 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
     )
 
     body: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
+    for key in _FORWARDED_KEYS:
+        if key in task.payload:
+            body[key] = task.payload[key]
     collected: list[str] = []
+    extras = _StreamExtras()
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -224,7 +257,7 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
                 # when the model still has to load). Empty message → no log
                 # update, so the streamed reply text stays clean.
                 await ctx.progress("running", "")
-                was_cancelled = await _stream_with_cancel(resp, collected, ctx)
+                was_cancelled = await _stream_with_cancel(resp, collected, ctx, extras)
     except Exception as exc:
         return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
 
@@ -241,12 +274,13 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
     # Local diagnostic only — like v1, the stream itself is the server-side
     # progress, so the final result (resolve) is the only thing that follows it.
     await ctx.info("done", tokens=len(collected))
+    reply: dict[str, Any] = {"role": "assistant", "content": full_text}
+    if extras.thinking:
+        reply["thinking"] = "".join(extras.thinking)
+    if extras.tool_calls:
+        reply["tool_calls"] = extras.tool_calls
     return TaskResult(
         task_id=task.id,
         status=TaskStatus.COMPLETED,
-        output={
-            "model": model,
-            "message": {"role": "assistant", "content": full_text},
-            "done": True,
-        },
+        output={"model": model, "message": reply, "done": True, **extras.done},
     )

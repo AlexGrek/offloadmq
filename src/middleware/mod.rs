@@ -298,3 +298,57 @@ pub async fn apikey_header_auth_middleware_storage(
     req.extensions_mut().insert(StorageApiKey(api_key));
     Ok(next.run(req).await)
 }
+
+/// The client API key that authenticated an `/api/v1` (OpenRouter-compatible)
+/// request. Empty when the management token was used instead — check
+/// [`OptionalMgmtOverride`] before relying on it.
+#[derive(Clone)]
+pub struct ClientKey(pub String);
+
+impl<S: Send + Sync + 'static> FromRequestParts<S> for ClientKey {
+    type Rejection = crate::api::openrouter::error::OrError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<ClientKey>()
+            .cloned()
+            .ok_or_else(|| crate::api::openrouter::error::OrError::unauthorized("Missing API key"))
+    }
+}
+
+/// Auth middleware for the OpenRouter-compatible surface (`/api/v1`).
+/// Reads `Authorization: Bearer <client key>` like OpenRouter does (falling
+/// back to `X-API-Key`). The management token is accepted as the bearer too
+/// and acts like the `X-MGMT-API-KEY` override on `/api/*`. Failures use the
+/// OpenRouter error envelope so SDKs surface the message.
+pub async fn bearer_client_key_auth(
+    State(app_state): State<Arc<AppState>>,
+    mut req: Request<Body>,
+    next: Next,
+) -> Result<Response, crate::api::openrouter::error::OrError> {
+    use crate::api::openrouter::error::OrError;
+
+    let headers = req.headers();
+    let key = headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .or_else(|| headers.get("X-API-Key").and_then(|v| v.to_str().ok()))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            OrError::unauthorized("Missing Authorization: Bearer <client API key> header")
+        })?;
+
+    if key == app_state.config.management_token {
+        req.extensions_mut().insert(MgmtOverride);
+        req.extensions_mut().insert(ClientKey(String::new()));
+        return Ok(next.run(req).await);
+    }
+    if !app_state.storage.client_keys.is_key_real_not_revoked(&key) {
+        return Err(OrError::unauthorized("Invalid API key"));
+    }
+    req.extensions_mut().insert(ClientKey(key));
+    Ok(next.run(req).await)
+}

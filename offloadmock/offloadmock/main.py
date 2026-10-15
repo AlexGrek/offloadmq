@@ -16,7 +16,17 @@ from .config import settings
 from .deps import init_runtime
 from .errors import AppError
 from .responses import OffloadJSONResponse
-from .routers import agent, client, client_storage, client_ws, management, root, testing, ws
+from .routers import (
+    agent,
+    client,
+    client_storage,
+    client_ws,
+    management,
+    openrouter,
+    root,
+    testing,
+    ws,
+)
 from .state import AppStore
 
 
@@ -52,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(agent.private_router, prefix="/private/agent")
     app.include_router(management.router, prefix="/management")
     app.include_router(testing.router, prefix="/testing")
+    app.include_router(openrouter.router, prefix="/api/v1")
     app.include_router(client_storage.router, prefix="/api/storage")
     app.include_router(client_ws.router, prefix="/api")
     app.include_router(client.router, prefix="/api")

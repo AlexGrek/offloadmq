@@ -134,9 +134,28 @@ pub async fn report_urgent_task<'a>(
     } else {
         false
     };
-    store
-        .complete_task(&task_id, success, report.output.clone().unwrap_or_default())
-        .await
+    let output = output_with_failure_message(&report).unwrap_or_default();
+    store.complete_task(&task_id, success, output).await
+}
+
+/// The task output to store for a result report. A failure or not-executed
+/// report with no output of its own keeps its message as `{"error": msg}` —
+/// otherwise the reason only lived in the report status and was dropped.
+fn output_with_failure_message(report: &TaskResultReport) -> Option<serde_json::Value> {
+    let is_empty = match &report.output {
+        None | Some(serde_json::Value::Null) => true,
+        Some(serde_json::Value::Object(m)) => m.is_empty(),
+        _ => false,
+    };
+    let message = match &report.status {
+        TaskResultStatus::Failure(msg, _) | TaskResultStatus::NotExecuted(msg) => msg,
+        TaskResultStatus::Success(_) => return report.output.clone(),
+    };
+    if is_empty && !message.is_empty() {
+        Some(serde_json::json!({ "error": message }))
+    } else {
+        report.output.clone()
+    }
 }
 
 pub async fn update_urgent_task<'a>(
@@ -183,7 +202,7 @@ pub async fn report_non_urgent_task<'a>(
         });
     }
     got.stage = None;
-    got.result = report.output;
+    got.result = output_with_failure_message(&report);
     store.update_assigned(&got)?;
 
     // Log heuristic for non-urgent task completion
@@ -286,6 +305,20 @@ pub async fn submit_urgent_task(
     app_state: &Arc<AppState>,
     task: UnassignedTask,
 ) -> Result<UrgentSubmitOutcome, AppError> {
+    Ok(enqueue_urgent_task(app_state, task)
+        .await?
+        .wait_terminal()
+        .await)
+}
+
+/// Put an urgent task in the in-memory store and push it to a connected agent,
+/// without waiting for the result. The returned [`UrgentHandle`] observes the
+/// task's status; [`UrgentHandle::wait_terminal`] gives the blocking behaviour
+/// of [`submit_urgent_task`].
+pub async fn enqueue_urgent_task(
+    app_state: &Arc<AppState>,
+    task: UnassignedTask,
+) -> Result<UrgentHandle, AppError> {
     let store = &app_state.urgent;
     let agents = &app_state.storage.agents;
     if !has_potential_agents_for(&task.id.cap, agents).await {
@@ -307,32 +340,117 @@ pub async fn submit_urgent_task(
         .await?;
 
     // Subscribe BEFORE dispatching so an instant take+resolve can't be missed.
-    let mut rx = task_state.notify.subscribe();
+    let rx = task_state.notify.subscribe();
 
     // Push the task to a connected eligible agent now instead of waiting for a
-    // poll. The pushed agent takes + resolves, which notifies `rx` below.
+    // poll. The pushed agent takes + resolves, which notifies `rx`.
     crate::mq::dispatch::dispatch_for_capability(app_state, &task.id.cap).await;
 
-    // Wait for status change that is terminal (Completed or Failed)
-    loop {
-        rx.changed().await.unwrap();
-        let status = rx.borrow().clone();
+    Ok(UrgentHandle {
+        state: app_state.clone(),
+        task_id: task.id,
+        _task_state: task_state,
+        rx,
+        finished: false,
+        cancel_on_drop: false,
+    })
+}
 
-        if status == TaskStatus::Completed
-            || status == TaskStatus::Failed
-            || status == TaskStatus::Canceled
-        {
-            if let Some(assigned_task) = store.get_assigned_task(&task.id).await {
-                store.remove_task(&task.id).await;
-                return Ok(UrgentSubmitOutcome::Completed(assigned_task));
-            } else {
-                store.remove_task(&task.id).await;
-                return Ok(UrgentSubmitOutcome::CompletedPartial {
-                    id: task.id,
-                    status,
-                    message: "Task completed but full info unavailable".into(),
-                });
+/// A submitted urgent task that has not been collected yet.
+///
+/// Whoever holds it is responsible for removing the task from the urgent store
+/// once it is terminal ([`Self::finish`]) — `expire_tasks` leaves terminal
+/// entries for the submitter. If the handle is dropped before that (the HTTP
+/// client went away), `Drop` removes a finished task, and with
+/// [`Self::cancel_on_drop`] also cancels one that is still queued or running.
+pub struct UrgentHandle {
+    state: Arc<AppState>,
+    task_id: TaskId,
+    /// Keeps the watch sender alive even after `expire_tasks` drops the entry.
+    _task_state: Arc<crate::mq::urgent::TaskState>,
+    rx: tokio::sync::watch::Receiver<TaskStatus>,
+    finished: bool,
+    cancel_on_drop: bool,
+}
+
+impl UrgentHandle {
+    pub fn task_id(&self) -> &TaskId {
+        &self.task_id
+    }
+
+    /// Cancel the task if the handle is dropped before it finished.
+    pub fn cancel_on_drop(mut self) -> Self {
+        self.cancel_on_drop = true;
+        self
+    }
+
+    /// Wait for the next status change and return the new status.
+    pub async fn changed(&mut self) -> TaskStatus {
+        // The sender lives in `_task_state`, so this can't fail.
+        let _ = self.rx.changed().await;
+        self.rx.borrow_and_update().clone()
+    }
+
+    /// Wait until the task is terminal, then collect it.
+    pub async fn wait_terminal(mut self) -> UrgentSubmitOutcome {
+        loop {
+            let status = self.changed().await;
+            if status.is_terminal() {
+                return self.finish(status).await;
             }
         }
+    }
+
+    /// Collect a terminal task and remove it from the urgent store.
+    pub async fn finish(mut self, status: TaskStatus) -> UrgentSubmitOutcome {
+        let store = &self.state.urgent;
+        let assigned = store.get_assigned_task(&self.task_id).await;
+        store.remove_task(&self.task_id).await;
+        self.finished = true;
+        match assigned {
+            Some(assigned_task) => UrgentSubmitOutcome::Completed(assigned_task),
+            None => UrgentSubmitOutcome::CompletedPartial {
+                id: self.task_id.clone(),
+                status,
+                message: "Task completed but full info unavailable".into(),
+            },
+        }
+    }
+}
+
+impl Drop for UrgentHandle {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        let Ok(rt) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let state = self.state.clone();
+        let task_id = self.task_id.clone();
+        let terminal = self.rx.borrow().is_terminal();
+        let cancel = self.cancel_on_drop && !terminal;
+        rt.spawn(async move {
+            if cancel {
+                debug!(
+                    "Urgent task {} abandoned by its client, cancelling",
+                    task_id
+                );
+                match crate::api::client::service::do_cancel_task(&state, task_id.clone(), "", true)
+                    .await
+                {
+                    // Still queued: nobody will resolve it, drop it now. An
+                    // in-flight task stays until the agent stops and the entry
+                    // goes silent, then `expire_tasks` removes it.
+                    Ok(outcome) if outcome.status == "canceled" => {
+                        state.urgent.remove_task(&task_id).await
+                    }
+                    Ok(_) => {}
+                    Err(e) => debug!("Cancel of abandoned task {} failed: {}", task_id, e),
+                }
+            } else if terminal {
+                state.urgent.remove_task(&task_id).await;
+            }
+        });
     }
 }

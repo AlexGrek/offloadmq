@@ -346,6 +346,17 @@ impl UrgentTaskStore {
             .flatten()
     }
 
+    /// The part of an in-flight task's log past byte offset `from` — without
+    /// cloning the whole task (its payload may carry inline images). `None`
+    /// when the task is unknown, unassigned, or the log hasn't grown.
+    pub async fn log_since(&self, task_id: &TaskId, from: usize) -> Option<String> {
+        let tasks = self.tasks.read().await;
+        let log = tasks.get(task_id)?.assigned_task.as_ref()?.log.as_ref()?;
+        log.get(from..)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    }
+
     pub async fn remove_task(&self, task_id: &TaskId) {
         {
             let mut tasks = self.tasks.write().await;

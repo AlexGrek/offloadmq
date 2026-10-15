@@ -1,5 +1,11 @@
 # OpenAI API Proxy for OffloadMQ
 
+> **Deprecated.** The OffloadMQ server now serves an OpenAI / OpenRouter-compatible API
+> natively at `/api/v1` (`chat/completions` with streaming, `models`, `key`), so this
+> separate proxy is no longer needed for OpenAI clients. See
+> [docs/openrouter-api.md](../docs/openrouter-api.md). The proxy's Ollama-native
+> endpoints (`/api/chat`, `/api/generate`, `/api/tags`) have no native replacement yet.
+
 Translates OpenAI/Ollama API requests into OffloadMQ tasks, distributing LLM inference
 to remote agents that have Ollama installed. Supports both blocking and streaming responses.
 

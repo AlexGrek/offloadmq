@@ -212,6 +212,7 @@ pub struct AppConfig {
     pub db_compact_on_start: bool,
     pub agent_ws: AgentWsConfig,
     pub task_watch: TaskWatchConfig,
+    pub openrouter: OpenRouterConfig,
 }
 
 impl AppConfig {
@@ -259,6 +260,7 @@ impl AppConfig {
         let db_compact_on_start = env_flag("DB_COMPACT_ON_START");
         let agent_ws = AgentWsConfig::from_env();
         let task_watch = TaskWatchConfig::from_env();
+        let openrouter = OpenRouterConfig::from_env();
 
         Ok(Self {
             jwt_secret,
@@ -276,8 +278,62 @@ impl AppConfig {
             db_compact_on_start,
             agent_ws,
             task_watch,
+            openrouter,
         })
     }
+}
+
+/// Settings for the OpenRouter-compatible API surface (`/api/v1`).
+/// See docs/openrouter-api.md.
+#[derive(Clone, Debug)]
+pub struct OpenRouterConfig {
+    /// Extra model ids accepted by `/api/v1`, mapped to a local model name
+    /// (env: OPENROUTER_MODEL_ALIASES, `alias=model,alias2=model2`, default: none).
+    /// Lets clients configured for OpenRouter ids keep working unchanged.
+    pub model_aliases: Vec<(String, String)>,
+    /// How long a chat completion waits for an agent to pick it up
+    /// (env: OPENROUTER_MAX_WAIT_SECS, default: 180). Longer than the 60 s
+    /// urgent default because Ollama may have to cold-load the model first.
+    pub max_wait_secs: u64,
+    /// Total wall-clock limit of a chat completion
+    /// (env: OPENROUTER_TIMEOUT_SECS, default: 900).
+    pub timeout_secs: u64,
+    /// Request body limit for `/api/v1` — inline base64 images make chat
+    /// requests large (env: OPENROUTER_MAX_BODY_BYTES, default: 32 MiB).
+    pub max_body_bytes: usize,
+}
+
+impl OpenRouterConfig {
+    pub fn from_env() -> Self {
+        let model_aliases = env::var("OPENROUTER_MODEL_ALIASES")
+            .map(|v| parse_model_aliases(&v))
+            .unwrap_or_default();
+        Self {
+            model_aliases,
+            max_wait_secs: env_u64("OPENROUTER_MAX_WAIT_SECS", 180),
+            timeout_secs: env_u64("OPENROUTER_TIMEOUT_SECS", 900),
+            max_body_bytes: env_u64("OPENROUTER_MAX_BODY_BYTES", 32 * 1024 * 1024) as usize,
+        }
+    }
+}
+
+/// Parse `alias=model,alias2=model2`; malformed entries are skipped.
+pub fn parse_model_aliases(raw: &str) -> Vec<(String, String)> {
+    raw.split(',')
+        .filter_map(|entry| {
+            let (alias, model) = entry.split_once('=')?;
+            let (alias, model) = (alias.trim(), model.trim());
+            (!alias.is_empty() && !model.is_empty()).then(|| (alias.to_string(), model.to_string()))
+        })
+        .collect()
+}
+
+fn env_u64(var: &str, default: u64) -> u64 {
+    env::var(var)
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(default)
 }
 
 /// How long finished data is kept before being permanently deleted.

@@ -2,4 +2,4 @@ requests
 boto3
 pytest
 websocket-client
-
+openai

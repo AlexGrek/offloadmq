@@ -263,6 +263,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     middleware::apikey_auth_middleware_user,
                 )),
         )
+        // OpenRouter-compatible API — `Authorization: Bearer <client key>`,
+        // OpenAI wire format. See docs/openrouter-api.md.
+        .nest(
+            "/api/v1",
+            Router::new()
+                .route("/chat/completions", post(api::openrouter::chat_completions))
+                .route("/models", get(api::openrouter::list_models))
+                .route("/key", get(api::openrouter::key_info))
+                .layer(from_fn_with_state(
+                    shared_state.clone(),
+                    middleware::bearer_client_key_auth,
+                ))
+                .layer(DefaultBodyLimit::max(
+                    shared_state.config.openrouter.max_body_bytes,
+                )),
+        )
         // Storage API — uses X-API-Key header auth (supports multipart + GET + DELETE)
         .nest(
             "/api/storage",

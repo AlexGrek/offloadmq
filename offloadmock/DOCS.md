@@ -111,13 +111,14 @@ values (see [CLAUDE.md](../CLAUDE.md)) so the mock works out of the box.
 
 ## Authentication model
 
-Four API surfaces, each with the same auth scheme and path prefix as
+Five API surfaces, each with the same auth scheme and path prefix as
 [`src/main.rs`](../src/main.rs):
 
 | Surface | Prefix | Auth |
 |---------|--------|------|
 | **Client API** | `/api/*` | `X-API-Key: <client-key>` header **or** `apiKey` field in the JSON body. `X-MGMT-API-KEY: <mgmt-token>` header overrides client-key + capability checks. |
 | **Storage API** | `/api/storage/*` | `X-API-Key: <client-key>` header only |
+| **OpenRouter-compatible API** | `/api/v1/*` | `Authorization: Bearer <client-key>` (`X-API-Key` fallback; the mgmt token as bearer is an override). Errors use OpenRouter's `{"error": {"code", "message"}}` envelope. |
 | **Agent API** | `/private/agent/*` | `Authorization: Bearer <agent-JWT>` (obtained from `/agent/auth`) |
 | **Management API** | `/management/*` | `Authorization: Bearer <mgmt-token>` |
 
@@ -255,6 +256,18 @@ the original empty mock.
 | GET | `/bucket/{uid}/file/{file_uid}` | raw bytes |
 | DELETE | `/bucket/{uid}/file/{file_uid}` | `{deleted_file_uid}` |
 | DELETE | `/bucket/{uid}` | `{deleted_bucket_uid}` |
+
+### OpenRouter-compatible API — `/api/v1/*` (Bearer client key)
+
+Mirrors [`src/api/openrouter/`](../src/api/openrouter/) — see
+[docs/openrouter-api.md](../docs/openrouter-api.md). No task subsystem, so a
+completion for an online model returns a canned reply.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/chat/completions` | `model` (`qwen3:8b`, `llm.…` or `offloadmq/…`) + `models` fallbacks; `404` "No endpoints found" when offline, `403` when the key lacks the capability; canned reply (one SSE chunk + `[DONE]` with `stream: true`). Aliases are not modelled. |
+| GET | `/models` | `{data: [...]}` — online `llm.*` capabilities the key may use; `[vision]` → image input, `[tools]` → tool params |
+| GET | `/key` | `{data: {label, usage: 0, limit: null, ...}}` |
 
 ### Management API — `/management/*` (Bearer mgmt token)
 

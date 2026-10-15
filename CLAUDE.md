@@ -152,7 +152,7 @@ See [docs/releasing.md](docs/releasing.md) for the release process, including:
 
 ## Architecture
 
-### Four API Surfaces
+### Five API Surfaces
 
 All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nested routes:
 
@@ -169,6 +169,13 @@ All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nes
 4. **Management API** (`/management/*`) — Monitoring & administration
    - Tasks/agents/keys: [docs/management-api.md](docs/management-api.md)
    - Storage: [docs/management-storage-api.md](docs/management-storage-api.md)
+
+5. **OpenRouter-compatible API** (`/api/v1/*`) — drop-in replacement for OpenRouter/OpenAI clients
+   See [docs/openrouter-api.md](docs/openrouter-api.md)
+   `POST /chat/completions` (blocking + SSE), `GET /models`, `GET /key`; `Authorization: Bearer <client key>`.
+   Each completion is an urgent `llm.<model>` task ([src/api/openrouter/](src/api/openrouter/)): the request is
+   translated to an Ollama-native payload, the agent's streamed progress log becomes SSE chunks, and a client
+   disconnect cancels the task (`UrgentHandle::cancel_on_drop` in [src/mq/scheduler.rs](src/mq/scheduler.rs)).
 
 ### LLM Integration
 
@@ -337,6 +344,9 @@ Server reads from `.env` file:
 - `TASK_ARCHIVE_RETENTION_DAYS` - Archived tasks are permanently deleted after this many days (default: `30`; `0` is rejected → default)
 - `SERVICE_MESSAGE_RETENTION_DAYS` - Service messages older than this are deleted, swept at startup + every 6 h (default: `30`)
 - `SLED_CACHE_MB` - Page cache per sled DB in MiB (default: `64`; sled's own default is 1 GiB × 7 DBs)
+- `OPENROUTER_MODEL_ALIASES` - Extra `/api/v1` model ids, `alias=model,...` (default: none)
+- `OPENROUTER_MAX_WAIT_SECS` / `OPENROUTER_TIMEOUT_SECS` - `/api/v1` agent pickup wait and total limit (default: `180` / `900`)
+- `OPENROUTER_MAX_BODY_BYTES` - `/api/v1` request body limit (default: 32 MiB)
 - `DB_COMPACT_ON_START` - `1`/`true` rebuilds every sled DB at startup to reclaim disk (default: off; see [docs/database-maintenance.md](docs/database-maintenance.md))
 
 ### Local Dev API Keys (from `.env`)

@@ -4,6 +4,10 @@ A complete reference for integrating LLM inference (and vision/file analysis) in
 
 ---
 
+> **Using an OpenAI / OpenRouter client?** You don't need this guide. Point the client at
+> `https://<offloadmq-host>/api/v1` and use your client API key as the bearer token. See
+> [openrouter-api.md](openrouter-api.md). This guide covers the native Task API.
+
 ## Table of Contents
 
 1. [Overview](#overview)
