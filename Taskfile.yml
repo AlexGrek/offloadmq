@@ -22,9 +22,9 @@ tasks:
     cmd: cargo run
 
   dev:agent:
-    desc: Register agent and start serving
-    dir: offload-agent
-    cmd: make serve
+    desc: Start the agent headless (agent_v2 `omq serve`; configure with `omq config set`)
+    dir: agent_v2
+    cmd: uv run omq serve
 
   dev:frontend:
     desc: Start management frontend Vite dev server
@@ -326,10 +326,9 @@ tasks:
   # ── Clean ─────────────────────────────────────────────────────────────────────
 
   clean:
-    desc: Clean all build artifacts (Rust, offload-agent, management-frontend dist)
+    desc: Clean all build artifacts (Rust, management-frontend dist)
     cmds:
       - cargo clean
-      - cd offload-agent && make clean
       - rm -rf management-frontend/dist
 
   # ── Shortcut: build → push → deploy ──────────────────────────────────────────

@@ -21,8 +21,9 @@ pub const MAX_ATTACHMENTS_PER_MESSAGE: usize = 10;
 /// Max bytes for a single uploaded document.
 pub const MAX_DOCUMENT_BYTES: usize = 100 * 1024 * 1024;
 
-/// Document extensions the offload agent can extract text from
-/// (`offload-agent/app/data/text_extract.py`).
+/// Document extensions accepted as chat attachments. Note: the agent does not
+/// extract text from documents yet — only image attachments reach the model
+/// (see oai/docs/chat-attachments.md).
 pub const DOCUMENT_EXTENSIONS: &[&str] = &[
     "pdf", "txt", "md", "csv", "json", "xml", "yml", "yaml", "log",
 ];

@@ -5,7 +5,12 @@ PYTEST := $(VENV)/bin/pytest
 
 # Paths relative to itests directory
 ROOT_DIR := $(shell cd .. && pwd)
-AGENT_DIR := $(ROOT_DIR)/offload-agent
+AGENT_DIR := $(ROOT_DIR)/agent_v2
+# The agent keeps its settings in $HOME/.offloadmq-agent.json — run it with a
+# throwaway HOME (also its working directory: shell.bash tasks write files
+# there) so tests never touch the developer's real config or the repo.
+AGENT_HOME := /tmp/offloadmq-itest-agent-home
+OMQ := $(AGENT_DIR)/.venv/bin/omq
 SERVER_PID_FILE := /tmp/offloadmq-server.pid
 AGENT_PID_FILE := /tmp/offloadmq-agent.pid
 AGENT_API_KEY := ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
@@ -59,16 +64,21 @@ stop-server:
 		echo "No server PID file found"; \
 	fi
 
-# Start the agent in background (registers first if needed)
+# Start the agent (agent_v2 `omq`) in background, registering first.
+# shell.bash is a sensitive capability, so it is opted in explicitly.
 start-agent: start-server
 	@echo "Starting OffloadMQ agent..."
 	@if [ -f $(AGENT_PID_FILE) ] && kill -0 $$(cat $(AGENT_PID_FILE)) 2>/dev/null; then \
 		echo "Agent already running (PID $$(cat $(AGENT_PID_FILE)))"; \
 	else \
-		cd $(AGENT_DIR) && . venv/bin/activate && \
-		python offload-agent.py cli register --server http://localhost:3069 --key $(AGENT_API_KEY) > /tmp/offloadmq-agent.log 2>&1 && \
-		python offload-agent.py cli serve >> /tmp/offloadmq-agent.log 2>&1 & echo $$! > $(AGENT_PID_FILE); \
-		sleep 3; \
+		cd $(AGENT_DIR) && uv sync -q && \
+		mkdir -p $(AGENT_HOME) && \
+		printf '{"server": "http://localhost:3069", "api_key": "%s", "sensitive_allowed_caps": ["shell.bash"]}\n' \
+			"$(AGENT_API_KEY)" > $(AGENT_HOME)/.offloadmq-agent.json && \
+		cd $(AGENT_HOME) && \
+		HOME=$(AGENT_HOME) $(OMQ) register > /tmp/offloadmq-agent.log 2>&1 && \
+		{ HOME=$(AGENT_HOME) $(OMQ) serve >> /tmp/offloadmq-agent.log 2>&1 & echo $$! > $(AGENT_PID_FILE); }; \
+		sleep 5; \
 		if kill -0 $$(cat $(AGENT_PID_FILE)) 2>/dev/null; then \
 			echo "Agent is ready (PID $$(cat $(AGENT_PID_FILE)))"; \
 		else \

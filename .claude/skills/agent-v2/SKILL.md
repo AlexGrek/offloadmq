@@ -1,6 +1,6 @@
 ---
 name: agent-v2
-description: Senior Python engineer context for agent_v2 — the uv-workspace rewrite of offload-agent. Use when working on agent_v2/: the offloadmq-agent toolkit, offloadmq-core orchestrator, ui-server FastAPI backend, React (shadcn) SPA, cli-manager (Typer) or gui-manager (pywebview) entry points.
+description: Senior Python engineer context for agent_v2 — the OffloadMQ agent (uv workspace). Use when working on agent_v2/: the offloadmq-agent toolkit, offloadmq-core orchestrator, ui-server FastAPI backend, React (shadcn) SPA, cli-manager (Typer) or gui-manager (pywebview) entry points.
 ---
 
 # Agent V2 — Senior Python Engineering
@@ -19,7 +19,7 @@ agent_v2/
 ├── cli-manager/                ← offloadmq-cli     (TARGET) `omq`
 ├── gui-manager/                ← offloadmq-gui     (TARGET) `omq-gui`
 ├── tests/                      ← unit tests (cap_policy, etc.)
-└── docs/agent-v2-migration.md  ← legacy import + field mapping (repo root)
+└── workflows/                  ← reference ComfyUI workflows (operators copy them)
 ```
 
 ### Dependency graph (acyclic, one-directional)
@@ -48,7 +48,6 @@ uv run omq serve                           # CLI: headless agent
 uv run omq webui --start                   # CLI: web dashboard + agent
 uv run omq-gui                             # GUI: native window
 uv run omq-gui --server                    # GUI: headless server mode
-uv run omq config import-legacy            # import ~/.offload-agent.json → v2
 
 # installers (from agent_v2/ via Taskfile)
 task installer:windows                     # Windows .exe (Inno Setup)
@@ -204,7 +203,6 @@ Single object both entry points drive. Settings, task store, executor pool, WS s
 | File | Purpose |
 |---|---|
 | `settings.py` | `Settings` in `.offloadmq-agent.json` — server, api_key, display_name, tier policy, comfy URL, OS flags, webui_port, credentials |
-| `legacy_migration.py` | Map `~/.offload-agent.json` → v2 settings |
 | `task_store.py` | In-memory tasks + logs; terminal cap 200 |
 | `executor_pool.py` | `ThreadPoolExecutor`; `asyncio.run(executor)` per task |
 | `orchestrator.py` | Lifecycle, WS supervisor + session (receives server-pushed tasks/cancels), progress forward, cap push, background rescan |
@@ -340,7 +338,7 @@ omq capabilities
 omq status
 omq comfy list | export <[ns.]name> [-o FILE|-] | import FILE [--name N --namespace NS --overwrite]
 omq config show | set ...
-omq config import-legacy [--from PATH] [--merge/--replace]
+omq update [--check|--rollback]
 ```
 
 ---
@@ -369,11 +367,6 @@ Use `fetch('/api/*')` only — not `window.pywebview.api`.
 ### Frontend
 - shadcn patterns: `data-slot`, `cn()`, cva.
 - Typed API client; poll for live data.
-
-### Legacy offload-agent
-- v2 is **self-contained** — do not require `offload-agent/` on `PYTHONPATH`.
-- Ported code lives under `offloadmq_agent/exec/` and related agent modules.
-- Field mapping: see `docs/agent-v2-migration.md`.
 
 ---
 

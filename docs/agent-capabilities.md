@@ -10,7 +10,7 @@ Capabilities are automatically detected when an agent starts. The detection proc
 2. Verifies runtime dependencies are accessible
 3. Registers only available capabilities with the server
 
-Run `offload-agent cli sysinfo` to see detected capabilities on your system.
+Run `omq capabilities` to see detected capabilities on your system.
 
 ---
 
@@ -443,10 +443,6 @@ Run LLM inference tasks via Ollama. Capability names are auto-generated from ins
 
 **List installed models:**
 ```bash
-offload-agent cli ollama
-```
-or
-```bash
 ollama list
 ```
 
@@ -600,22 +596,21 @@ custom.weather[city;units;days:int]
 
 This registers a `custom.weather` capability whose payload expects three fields: `city` (string), `units` (string), and `days` (integer).
 
-**In config file** (`.offload-agent.json`):
+**In config file** (`~/.offloadmq-agent.json`):
 ```json
 {
   "server": "http://localhost:3069",
-  "apiKey": "ak_live_...",
+  "api_key": "ak_live_...",
   "custom_caps": ["custom.weather[city;units;days:int]", "data.transform[query:text;format]"]
 }
 ```
 
-**In web UI:**
-- Open the web UI (`offload-agent webui`)
-- On the **Capabilities** card, click **+ Add custom capability**
-- Enter the full capability string including `[field;field:type]` attributes
-- Click **Register** to register with the new capabilities
+**In the dashboard:**
+- Open the dashboard (`omq webui`)
+- On the **Config** page, add the full capability string (including `[field;field:type]` attributes) to `custom_caps` and save
+- Click **Rescan** on the **Capabilities** page to register the new capabilities
 
-Custom capabilities require a matching executor in the agent to handle tasks. Without one, tasks will fail with "Unknown capability". See the full convention — naming, payload schema, response format, and implementation guide — in **[Custom Capabilities Convention](custom-capabilities.md)**.
+Custom capabilities require a matching executor in the agent to handle tasks. Without one, tasks will fail with "No routed executor". See the full convention — naming, payload schema, response format, and implementation guide — in **[Custom Capabilities Convention](custom-capabilities.md)**.
 
 ---
 
@@ -624,15 +619,15 @@ Custom capabilities require a matching executor in the agent to handle tasks. Wi
 ### Via CLI
 
 ```bash
-offload-agent cli sysinfo    # System info + detected capabilities
-offload-agent cli ollama     # List Ollama models (if available)
+omq capabilities    # Detected capabilities
+omq status          # Server, agent id, running state, registered capabilities
 ```
 
 ### Via Web UI
 
-1. Start the web UI: `offload-agent webui`
-2. Open `http://127.0.0.1:8080` in your browser
-3. View the **System Info** card (shows detected capabilities)
+1. Start the dashboard: `omq webui`
+2. Open `http://127.0.0.1:8090` in your browser
+3. Open the **Capabilities** page (shows detected capabilities)
 4. Click **Rescan** to re-detect capabilities
 
 ### Via Server Management API

@@ -18,16 +18,3 @@ mv ~/.offload-agent/skills ~/.offload-agent/custom
 ```
 
 The `OFFLOAD_CUSTOM_CAPS_DIR` environment variable override is unchanged.
-
-### Ansible: native custom skills support
-
-The `offload_agent` Ansible role now has first-class support for deploying custom skills
-to agent nodes:
-
-- `offload_agent_skills` — list of YAML skill file paths on the Ansible controller
-- `offload_agent_skills_dir` — deploy all `*.yaml`/`*.yml` files from a local directory
-- `offload_agent_skills_path` — remote destination (default: `~/.offload-agent/custom/`)
-
-Capability strings (including typed parameter attributes) are derived automatically from
-the YAML files and merged into the registration payload — no need to repeat them in
-`offload_agent_capabilities`. See [ansible/README.md](../ansible/README.md) for usage examples.

@@ -47,7 +47,7 @@ def _model_urls(meta: dict[str, Any]) -> list[str]:
 def _download_headers(url: str) -> dict[str, str]:
     """Headers for model downloads (HF token if set; UA avoids some CDN edge cases)."""
     headers: dict[str, str] = {
-        "User-Agent": "offload-agent (onnx-models; https://github.com/notAI-tech/NudeNet)",
+        "User-Agent": "omq (onnx-models; https://github.com/notAI-tech/NudeNet)",
     }
     if "huggingface.co" in url:
         token = (os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or "").strip()

@@ -72,7 +72,7 @@ def _attach_images(messages: list[dict[str, Any]], images: list[str]) -> list[di
     return messages
 
 
-_STREAM_FLUSH_INTERVAL = 2.0  # seconds between progress log flushes, matching v1 behaviour
+_STREAM_FLUSH_INTERVAL = 2.0  # seconds between progress log flushes
 
 # Ollama /api/chat request fields taken from the task payload as-is. The
 # server's OpenRouter-compatible API (/api/v1) translates OpenAI parameters
@@ -101,8 +101,8 @@ async def _stream_with_cancel(
     """Stream Ollama tokens, forwarding buffered text as progress logs every 2 s.
 
     Returns True if the cancel event fired before streaming completed,
-    False on normal completion.  Mirrors the v1 ``execute_llm_query`` streaming
-    path so callers (OAI chat, etc.) receive incremental text via task progress.
+    False on normal completion.  Callers (OAI chat, /api/v1 streaming, ...)
+    receive the incremental text via task progress.
     Only answer text goes to the progress log; reasoning (``thinking``), tool
     calls and the final chunk's usage fields are collected into ``extras``.
     """
@@ -216,9 +216,8 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
     if image_attachments:
         messages = _attach_images(messages, image_attachments)
 
-    # Local diagnostic only (mirrors v1's logger.info before streaming): not
-    # forwarded to the task's server-side progress, so the streamed logs carry
-    # only the LLM response text — never a "model=" line.
+    # Local diagnostic only: not forwarded to the task's server-side progress,
+    # so the streamed logs carry only the LLM response text — never a "model=" line.
     await ctx.info(
         "generating", model=model, messages=len(messages), images=len(image_attachments)
     )
@@ -271,7 +270,7 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
         )
 
     full_text = "".join(collected)
-    # Local diagnostic only — like v1, the stream itself is the server-side
+    # Local diagnostic only — the stream itself is the server-side
     # progress, so the final result (resolve) is the only thing that follows it.
     await ctx.info("done", tokens=len(collected))
     reply: dict[str, Any] = {"role": "assistant", "content": full_text}

@@ -255,11 +255,11 @@ Not all agents support all task types. The agent's extended capability attribute
 
 ## Agent Configuration
 
-| Config key (`config.json`) | Default | Description |
+| Config key (`~/.offloadmq-agent.json`) | Default | Description |
 |----------------------------|---------|-------------|
 | `comfyui_url` | `http://127.0.0.1:8188` | Base URL of the ComfyUI HTTP API |
 
-Example `.offload-agent.json`:
+Example `~/.offloadmq-agent.json`:
 ```json
 {
   "comfyui_url": "http://192.168.1.50:8188"

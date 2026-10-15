@@ -66,7 +66,7 @@ ComfyUI must also be reachable — the same `check_comfyui` probe gates `imggen`
 The agent resolves its workflows directory in this order: `$OFFLOAD_WORKFLOWS_DIR`,
 `~/.offload-agent/workflows` (the persistent location for packaged agents),
 `$CWD/workflows`, then a development fallback. Reference copies of the bundled workflows
-live in [offload-agent/workflows/](../offload-agent/workflows/) — copy the ones you want
+live in [agent_v2/workflows/](../agent_v2/workflows/) — copy the ones you want
 into the agent's directory; they are not installed automatically.
 
 ---

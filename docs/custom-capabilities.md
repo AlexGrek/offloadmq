@@ -176,7 +176,7 @@ Both patterns are handled by the management UI's `TerminalOutput` component — 
 
 Agents register custom capabilities the same way as built-in ones — via the `capabilities` array in the registration request. Extended attributes are included in the string.
 
-**Via config file** (`.offload-agent.json`):
+**Via config file** (`~/.offloadmq-agent.json`):
 ```json
 {
   "custom_caps": [
@@ -186,50 +186,66 @@ Agents register custom capabilities the same way as built-in ones — via the `c
 }
 ```
 
-**Via web UI:**
-1. Open the web UI (`offload-agent webui`)
-2. On the **Capabilities** card, click **+ Add custom capability**
-3. Enter the full capability string including `[...]` attributes
-4. Click **Register**
+**Via the dashboard:**
+1. Open the dashboard (`omq webui`, http://127.0.0.1:8090)
+2. On the **Config** page, add the full capability string (including `[...]` attributes) to `custom_caps` and save
+3. Click **Rescan** on the **Capabilities** page to register it
 
 ### Routing to an Executor
 
-The agent's `route_executor()` function in `app/core.py` dispatches tasks based on capability prefix. To handle a custom capability, add a route:
+The agent's `route_executor()` in
+[agent_v2/agent/src/offloadmq_agent/exec/route.py](../agent_v2/agent/src/offloadmq_agent/exec/route.py)
+dispatches tasks by capability prefix. To handle a custom capability, add a route:
 
 ```python
-def route_executor(cap: str):
-    # ... existing routes ...
-
+def route_executor(cap: str) -> ExecutorFn | None:
+    # Must come before the generic `custom.` route, which runs YAML skills.
     if cap.startswith("custom.weather"):
+        from offloadmq_agent.exec.weather import execute_weather_query
+
         return execute_weather_query
 
-    # Fall through to None → "Unknown capability" error
+    # ... existing routes ...
+
+    # Fall through to None → "No routed executor" error
     return {
-        "debug.echo": execute_debug_echo,
+        "shellcmd.bash": _shellcmd,
         # ...
     }.get(cap)
 ```
 
 ### Executor Function Signature
 
-All executors follow the same signature:
+Routed executors share one signature. The pipeline has already downloaded the task's
+`file_bucket` / `fetchFiles` inputs into `data` before calling it:
 
 ```python
-def execute_my_custom(http, task_id, capability, payload, data_path):
-    """
-    Args:
-        http:       AuthenticatedHttpClient for server communication
-        task_id:    dict with 'cap' and 'id'
-        capability: str, the base capability name
-        payload:    dict, the task payload (field values from client)
-        data_path:  Path, temporary working directory for this task
-    """
+from pathlib import Path
+from typing import Any
+
+from offloadmq_agent.exec.reporting import (
+    make_success_report,
+    report_progress,
+    report_result,
+)
+from offloadmq_agent.transport_exec import AgentTransport
+from offloadmq_agent.wire import TaskId
+
+
+def execute_weather_query(
+    transport: AgentTransport,
+    task_id: TaskId,
+    capability: str,
+    payload: dict[str, Any],
+    data: Path,
+    job_timeout: int = 600,
+) -> bool:
     # 1. Read fields from payload
     city = payload.get("city", "London")
     units = payload.get("units", "metric")
 
     # 2. Send progress updates
-    http.report_progress(task_id, stage="querying", log="Fetching weather data...")
+    report_progress(transport, "Fetching weather data...", "querying", task_id)
 
     # 3. Do the work
     result = fetch_weather(city, units)
@@ -237,14 +253,14 @@ def execute_my_custom(http, task_id, capability, payload, data_path):
     # 4. Report success
     report = make_success_report(task_id, capability, {
         "stdout": f"{city}: {result['temp']}°{units[0].upper()}, {result['condition']}",
-        "stderr": ""
+        "stderr": "",
     })
-    http.resolve_task(task_id, report)
+    return report_result(transport, report)
 ```
 
 ### Handling Unknown Custom Capabilities
 
-If an agent registers a custom capability but has no executor for it, `route_executor()` returns `None` and the task fails with `"Unknown capability: ..."`. This is the expected behavior — agents should only register capabilities they can execute.
+If an agent registers a custom capability but has no executor for it, `route_executor()` returns `None` and the task fails with `"No routed executor for '...'"`. This is the expected behavior — agents should only register capabilities they can execute.
 
 ---
 

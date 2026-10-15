@@ -107,7 +107,7 @@ params:
 
 ### Web UI (Agent Dashboard)
 
-1. Navigate to **Skills** tab
+1. Navigate to the **Custom** page
 2. **Editor section:**
    - Paste YAML directly, or
    - Click "Shell template" / "LLM template" for quick-start
@@ -119,21 +119,8 @@ params:
    - Shows all discovered skills with metadata
    - Click "Delete" to remove a skill
 
-### CLI
-
-```bash
-# List all skills
-offload-agent skills list
-
-# Validate a YAML file without importing
-offload-agent skills validate /path/to/skill.yaml
-
-# Import a skill from disk
-offload-agent skills import /path/to/skill.yaml
-
-# Export a skill to stdout
-offload-agent skills export skill-name
-```
+There is no `omq` CLI command for skills: use the dashboard, or drop YAML files into the
+skills directory below. Every save or upload triggers a capability rescan.
 
 ### File Storage
 
@@ -318,9 +305,9 @@ timeout: 180
 
 ### Skill Not Detected
 
-1. Check file is valid YAML: `offload-agent skills validate /path/to/skill.yaml`
+1. Check the file parses: `python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' skill.yaml`, then check the agent log — a skill that fails schema validation is skipped with the reason logged
 2. Check filename matches skill name: e.g., `deploy-app.yaml` for skill named `deploy-app`
-3. Rescan in web UI: **Capabilities** tab → **Rescan**
+3. Rescan from the dashboard's **Capabilities** page
 4. Check skills directory:
    ```bash
    echo $OFFLOAD_CUSTOM_CAPS_DIR  # if set
@@ -360,7 +347,7 @@ bash /path/to/script.sh
 
 ## Best Practices
 
-1. **Test before deploying** — validate with `offload-agent skills validate` and run manually
+1. **Test before deploying** — check the skill shows up on the dashboard's **Capabilities** page and run it manually
 2. **Use defaults wisely** — reduce parameter burden for common scenarios
 3. **Document parameters** — include descriptions in YAML for UI clarity
 4. **Set reasonable timeouts** — prevent accidental resource exhaustion

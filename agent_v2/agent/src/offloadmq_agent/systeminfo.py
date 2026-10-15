@@ -290,7 +290,7 @@ def collect_system_info() -> Dict[str, Any]:
         "cpuModel": cpu_model,
         "totalMemoryGb": _bytes_to_total_memory_gb(memory_bytes),
         "gpu": get_gpu_info(),
-        "client": "offload-agent.py",
+        "client": "omq",
         "runtime": "python",
     }
 
@@ -355,7 +355,7 @@ def effective_display_name(
     display_name: str | None,
     system_info: Dict[str, Any],
 ) -> str:
-    """Non-empty custom name from config, else hardware-derived default (same as v1 register)."""
+    """Non-empty custom name from config, else hardware-derived default."""
     if display_name is not None:
         stripped = str(display_name).strip()
         if stripped:

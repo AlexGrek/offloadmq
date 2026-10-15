@@ -4,48 +4,42 @@ A distributed task queue system for offloading computational tasks to remote age
 
 ## ⚡ Quick Install
 
-Download the latest offload-agent binary:
+Download the latest agent build — `omq` (headless CLI) or `omq-gui` (desktop app):
 
 ```bash
 # macOS (Apple Silicon)
-curl -LO "https://dl.alexgr.space/rs/offload-agent/latest/darwin-arm64/offload-agent-darwin-arm64"
-chmod +x offload-agent-darwin-arm64
+curl -LO "https://dl.alexgr.space/rs/offload-agent/latest/darwin-arm64/omq-gui-darwin-arm64"
+chmod +x omq-gui-darwin-arm64
 
 # Linux (x86_64)
-curl -LO "https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/offload-agent-linux-amd64"
-chmod +x offload-agent-linux-amd64
+curl -LO "https://dl.alexgr.space/rs/offload-agent/latest/linux-amd64/omq-linux-amd64"
+chmod +x omq-linux-amd64
 ```
 
-### Self-install
-
-The binary can install itself onto the system:
+Point it at a server and start it:
 
 ```bash
-# Copy binary to system path (destination is optional)
-offload-agent install bin [--dest DIR]
-
-# Linux — install and enable as a systemd service
-offload-agent install systemd [--bin-path PATH] [--user USER] [--host HOST] [--port PORT]
-# Note: auto-detects the real user when run with sudo
-
-# macOS — install as a launchd service
-offload-agent install launchd [--app-path PATH]
+omq config set --server https://<offloadmq-host> --api-key <agent key>
+omq register
+omq serve              # headless; or `omq webui --start` for the dashboard
 ```
 
-> Windows installer is not yet available.
+On Linux, the dashboard's **System** page installs a systemd user service
+(`offloadmq-agent.service`) that keeps the agent running and lets it update
+itself. From a repo checkout, `task agent:update:linux` / `task agent:update:mac`
+installs or upgrades the latest build in place.
 
 ## 🐳 Single-Node Setup
 
-Spin up a complete local stack — backend, agent with web UI, and management frontend — in one command. Zero configuration required.
+Spin up the backend and management frontend in one command. Zero configuration required — then attach agents with `omq` (see above) using the agent key from `docker-compose.yml`.
 
 ```bash
-docker compose up --build
+docker compose up
 ```
 
 | Service | URL | Description |
 |---------|-----|-------------|
 | OffloadMQ backend | `http://localhost:3069` | Task queue server |
-| Agent web UI | `http://localhost:8081` | Agent dashboard (auto-registered) |
 | Management UI | `http://localhost:8080/ui` | Fleet management frontend |
 
 **Client API key:** `client_secret_key_123`
@@ -75,7 +69,7 @@ task test:unit       # unit tests
 
 ### ⚙️ Agent
 ```bash
-task dev:agent       # register and start serving (requires running server)
+task dev:agent       # start agent_v2 headless (configure + register first: see agent_v2/)
 ```
 
 ### 🎨 Frontend

@@ -2,19 +2,20 @@
 
 LLM chat (`/app/chat`) lets a user attach **images** and **text documents** to a
 message, or **reference** files they already have (uploaded or AI-generated
-images, plus previously uploaded documents). The offload agent reads them: it
-extracts text from documents and base64-attaches images to the model request.
+images, plus previously uploaded documents). The agent base64-attaches images to
+the model request. **Documents are staged but not yet read:** the agent has no text
+extraction, so a document's content does not reach the model.
 
 ## How it works
 
 OAI stages all of a turn's attachments into a single one-shot OffloadMQ bucket
 and submits the normal `llm.*` chat task with `file_bucket: [<uid>]`. The agent
-(`offload-agent/app/exec/llm.py`) then, for files in the task data dir:
+(`agent_v2/agent/src/offloadmq_agent/exec/llm.py`) then, for files in the task data dir:
 
-- **Documents** (`.pdf .txt .md .csv .json .xml .yml .yaml .log`) → extracts text
-  and appends it to the **last user message** content.
 - **Images** → base64-encodes and appends to the last user message's `images`
   field (Ollama vision input).
+- **Documents** (`.pdf .txt .md .csv .json .xml .yml .yaml .log`) → downloaded but
+  ignored: text extraction is not implemented in the agent yet.
 
 Streaming stays on, so replies still stream back.
 

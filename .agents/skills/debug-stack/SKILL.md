@@ -88,7 +88,7 @@ mgmt `this-is-for-testing-management-tokens`.
 ## Surface 1 — MQ backend (Rust, src/)
 
 ```bash
-task test:start     # itests server (:3069) + v1 agent, logs → /tmp/offloadmq-{server,agent}.log
+task test:start     # itests server (:3069) + agent_v2 (throwaway HOME), logs → /tmp/offloadmq-{server,agent}.log
 task test:stop      # stop both
 task test:logs      # tail both
 cargo run           # server only (uses .env)
@@ -201,8 +201,8 @@ tasks (scheduler matches on base, but the task's cap key must be the base form).
    `running` before completing will never get it; bar stays indeterminate.
 5. **Agent rewrites `~/.offloadmq-agent.json` on shutdown** — back it up before
    local experiments, restore after.
-6. **v1 itests agent ≠ production agent_v2** — reproduce agent bugs on agent_v2;
-   the v1 HTTP-era code paths (`offload-agent/`) differ exactly where it matters
-   (reporting/transport).
+6. **itests run agent_v2 with a throwaway `HOME`** (`/tmp/offloadmq-itest-agent-home`),
+   so its settings never touch your real `~/.offloadmq-agent.json`; `shell.bash`
+   is opted in there via `sensitive_allowed_caps`.
 7. **Heuristic estimate appears only at pickup** — polls before an agent takes
    the task always show `typicalRuntimeSeconds: null`.

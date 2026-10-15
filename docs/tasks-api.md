@@ -672,7 +672,7 @@ The server **pushes** tasks to connected agents over a persistent WebSocket. An
 agent that holds a live WS connection does **not** need to poll or to claim
 tasks — the server selects it, assigns the task atomically, and delivers the
 already-assigned task. HTTP polling (`GET /private/agent/task/poll*` +
-`POST /private/agent/take/...`) still works for legacy agents but is
+`POST /private/agent/take/...`) still works for HTTP-polling agents but is
 **deprecated**; new agents should use the WebSocket.
 
 > Registration (`/register`), login (`/login`), and the storage/bucket helpers
@@ -697,7 +697,7 @@ All server→agent frames are JSON text with a `type` field:
 | `connected` | `{ agentId, message }` | Sent once on connect. |
 | `heartbeat` | `{ counter, timestamp }` | Liveness only. Sent on a fresh random delay in 60–90 s each beat (tunable via `AGENT_WS_HEARTBEAT_MIN_SECS` / `AGENT_WS_HEARTBEAT_MAX_SECS`). |
 | `task` | `{ task: <AssignedTask> }` | **A task has been assigned and pushed to you.** Start executing immediately — it is already in `assigned` state under your `agentId`. Report progress/resolve as usual. |
-| `cancel` | `{ taskId: { cap, id } }` | The client cancelled a task you hold. Stop work and report partial output. (HTTP/legacy agents instead get **499** on their next progress/resolve call — see [Cancellation](#task-cancellation).) |
+| `cancel` | `{ taskId: { cap, id } }` | The client cancelled a task you hold. Stop work and report partial output. (HTTP-polling agents instead get **499** on their next progress/resolve call — see [Cancellation](#task-cancellation).) |
 
 The pushed `task` payload is identical to the response of `POST /private/agent/take/{cap}/{id}`.
 
@@ -758,7 +758,7 @@ Rules:
 - **An empty `active: []` is a real claim** ("I am running nothing") and is how a
   restarted agent releases the slots of tasks it no longer knows about. Omitting
   the `active` field entirely sends no claim and leaves the server's view
-  untouched — that is what legacy agents do.
+  untouched — that is what HTTP-polling agents do.
 - **Recently pushed tasks are safe.** A task assigned or updated within the last
   120 s (tunable via `AGENT_CLAIM_GRACE_SECS`) is never reclaimed, so a heartbeat
   that raced with a push cannot drop it.
@@ -802,7 +802,7 @@ Register a new agent with the system. Returns agent ID and login credentials.
   "displayName": "Apple M3 Pro 16GB",
   "systemInfo": {
     "os": "Linux",
-    "client": "offload-agent/0.1.0",
+    "client": "omq",
     "runtime": "Python 3.11",
     "cpuArch": "aarch64",
     "totalMemoryGb": 32,
@@ -904,7 +904,7 @@ Update agent capabilities, tier, or system info.
   "displayName": "RTX 4090 Workstation 32GB",
   "systemInfo": {
     "os": "Linux",
-    "client": "offload-agent/0.1.1",
+    "client": "omq",
     "runtime": "Python 3.11",
     "cpuArch": "aarch64",
     "totalMemoryGb": 32,
@@ -955,7 +955,7 @@ Lightweight liveness check that updates `last_contact` without fetching tasks. U
 
 ### Poll Urgent Tasks
 
-> **Deprecated.** Prefer the [WebSocket push channel](#communication-model-websocket-push-primary-vs-http-polling-deprecated). Polling still works for legacy agents.
+> **Deprecated.** Prefer the [WebSocket push channel](#communication-model-websocket-push-primary-vs-http-polling-deprecated). Polling still works for HTTP-polling agents.
 
 ```
 GET /private/agent/task/poll_urgent
@@ -1014,7 +1014,7 @@ null
 
 ### Poll Non-Urgent Tasks
 
-> **Deprecated.** Prefer the [WebSocket push channel](#communication-model-websocket-push-primary-vs-http-polling-deprecated). Polling still works for legacy agents.
+> **Deprecated.** Prefer the [WebSocket push channel](#communication-model-websocket-push-primary-vs-http-polling-deprecated). Polling still works for HTTP-polling agents.
 
 ```
 GET /private/agent/task/poll
@@ -1587,7 +1587,7 @@ register_payload = {
     "capacity": 4,
     "systemInfo": {
         "os": "Linux",
-        "client": "offload-agent/0.1.0",
+        "client": "omq",
         "runtime": "Python 3.11",
         "cpuArch": "x86_64",
         "totalMemoryGb": 16,

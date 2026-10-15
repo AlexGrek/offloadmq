@@ -192,7 +192,7 @@ Note: `eslint .` has a large **pre-existing** project-wide baseline (react-hooks
 ## Recipe: add a new img-utils tool end-to-end
 
 1. **Agent:** install `workflows/img-utils/<pack>/<operation>.json` (ComfyUI API format). Add a
-   reference copy under `offload-agent/workflows/img-utils/<pack>/` too.
+   reference copy under `agent_v2/workflows/img-utils/<pack>/` too.
 2. **params.json:** autowire it — in the agent Comfy page, pick the operation (namespace
    auto-fills to `img-utils`) and Save, or hand-write mapping `input_image` (+ `face_swap` /
    scalar knobs) to node ids. For a new scalar, add its key to `_IMG_UTILS_KEYS` and a resolver

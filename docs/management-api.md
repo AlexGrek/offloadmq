@@ -149,7 +149,7 @@ Returns all registered agents (online and offline).
     "capacity": 4,
     "systemInfo": {
       "os": "Linux",
-      "client": "offload-agent/0.1.0",
+      "client": "omq",
       "runtime": "Python 3.11",
       "cpuArch": "aarch64",
       "totalMemoryGb": 32,

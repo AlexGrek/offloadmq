@@ -116,7 +116,7 @@ Set both to empty JSON arrays **`[]`** on every submit if you are not using HTTP
 
 ### Prefer chat `payload` without a top-level `model` for vision
 
-For Ollama chat-style tasks, the offload agent (`offload-agent/app/exec/llm.py`) builds the REST body as follows: it merges your `payload`, attaches base64 images from files downloaded from **`file_bucket`**, then sets **`model`** from the task **`capability`** string (the part after `llm.`, before any `[` bracket).
+For Ollama chat-style tasks, the agent ([agent_v2/agent/src/offloadmq_agent/exec/llm.py](../agent_v2/agent/src/offloadmq_agent/exec/llm.py)) builds the `/api/chat` body as follows: it takes your `messages` (or a bare `prompt`), attaches base64 images from files downloaded from **`file_bucket`**, sets **`model`** from the task **`capability`** string (the part after `llm.`, before any `[` bracket), and forwards `options`, `format`, `tools`, `think` and `keep_alive` from your `payload`. Other payload keys are ignored; the agent always streams from Ollama.
 
 **Recommended:** put only **`stream`** (usually `false`) and **`messages`** in `payload`, and **omit** a top-level **`model`** key. That matches the Image Analyzer sandbox and avoids duplicating or drifting from the agent's model selection.
 

@@ -2,13 +2,10 @@
 target/
 
 # Other sub-projects not needed to build the server binary
-offload-agent/
 management-frontend/
 itests/
 openai-api-proxy/
-ansible/
 offloadmq-chart/
-demo-playbook/
 sandbox/
 offload-client/
 

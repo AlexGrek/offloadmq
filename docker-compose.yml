@@ -1,3 +1,7 @@
+# Agents run on the machines that do the work (Ollama, ComfyUI, ...), not in this
+# stack: install the `omq` agent there and point it at http://<this-host>:3069 with
+# the agent key below. Latest build:
+# https://dl.alexgr.space/rs/offload-agent/latest/<os>-<arch>/omq
 services:
 
   offloadmq:
@@ -19,20 +23,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-
-  agent:
-    build:
-      context: ./offload-agent
-    restart: unless-stopped
-    ports:
-      - "8081:8081"
-    environment:
-      SERVER: http://offloadmq:3069
-      AGENT_KEY: ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
-      WEBUI_PORT: "8081"
-    depends_on:
-      offloadmq:
-        condition: service_healthy
 
   frontend:
     image: grekodocker/offloadmq-management-frontend:latest

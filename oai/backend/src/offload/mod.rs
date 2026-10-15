@@ -146,9 +146,9 @@ impl OffloadClient {
         file_bucket: Option<&str>,
     ) -> Result<TaskId, AppError> {
         let url = format!("{}/api/task/submit", self.base_url);
-        // When a bucket is attached the agent extracts text from documents and
-        // base64-attaches images onto the last user message (offload-agent
-        // `exec/llm.py`). Streaming stays on so the reply still streams back.
+        // When a bucket is attached the agent base64-attaches its images onto the
+        // last user message (agent_v2 `exec/llm.py`; documents are not read yet).
+        // Streaming stays on so the reply still streams back.
         let buckets: Vec<&str> = file_bucket.into_iter().collect();
         let mut body = serde_json::json!({
             "apiKey": self.api_key,

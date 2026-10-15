@@ -236,7 +236,7 @@ Local `systemPrompt` state synced from `activeChat.system_prompt` on chat switch
 
 Messages: `role` user|assistant|system; `status` complete|failed; snowflake ids as strings in JSON. `messages[]` now include `attachments[]` (`{ id, kind, filename, content_type, size_bytes, image_id }`).
 
-**Attachments:** see [oai/docs/chat-attachments.md](../../../oai/docs/chat-attachments.md). User attaches images/docs (or references existing files); OAI stages them into a one-shot OffloadMQ bucket and submits the chat task with `file_bucket: [uid]`. The agent extracts document text + base64-attaches images onto the last user message. Backend: `services/chat_attachments.rs`, `routes/chat_attachments.rs`, `db/chat_attachments.rs`; `chat_attachments` table (images → `image_files`, docs → `users/{uid}/chat_docs/`).
+**Attachments:** see [oai/docs/chat-attachments.md](../../../oai/docs/chat-attachments.md). User attaches images/docs (or references existing files); OAI stages them into a one-shot OffloadMQ bucket and submits the chat task with `file_bucket: [uid]`. The agent base64-attaches images onto the last user message; it does **not** extract document text yet, so documents never reach the model. Backend: `services/chat_attachments.rs`, `routes/chat_attachments.rs`, `db/chat_attachments.rs`; `chat_attachments` table (images → `image_files`, docs → `users/{uid}/chat_docs/`).
 
 ---
 

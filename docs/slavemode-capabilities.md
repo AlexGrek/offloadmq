@@ -14,10 +14,9 @@ By default, **all slavemode capabilities are disabled**. An agent only executes 
 
 If the key is absent or empty, all slavemode tasks are rejected with a clear error message.
 
-> **Config key name.** agent_v2 (`~/.offloadmq-agent.json`) uses `slavemode_allowed_caps`;
-> the legacy offload-agent uses the hyphenated `slavemode-allowed-caps`. agent_v2 still reads
-> the hyphenated spelling as a fallback so v1 configs survive an import, but it always
-> *writes* the underscored key — prefer it for anything new.
+> **Config key name.** The agent (`~/.offloadmq-agent.json`) writes `slavemode_allowed_caps`.
+> It still reads the hyphenated `slavemode-allowed-caps` as a fallback for older config
+> files — use the underscored key for anything new.
 
 The same allow-list governs both **what the agent advertises** at registration and **what it
 will execute**: a cap that is not allow-listed is never registered, so the scheduler will not
@@ -26,8 +25,7 @@ route that task to this agent in the first place.
 ## Available Capabilities
 
 agent_v2 implements the catalog below (`agent_v2/agent/src/offloadmq_agent/slavemode_policy.py`
-→ `ALL_SLAVEMODE_CAPS`). Each is opt-in via the allow-list. The legacy offload-agent implements
-`slavemode.force-rescan` only.
+→ `ALL_SLAVEMODE_CAPS`). Each is opt-in via the allow-list.
 
 | Capability | Payload | Purpose |
 |---|---|---|
@@ -169,14 +167,14 @@ Slavemode capability 'slavemode.force-rescan' is not enabled. Add it to 'slavemo
 
 ## Managing Permissions
 
-### agent_v2 — Web UI
+### Web UI
 
 The agent's own dashboard has a dedicated **Slavemode** page (`/slavemode`) listing every
 implemented capability with a checkbox, plus **Allow all** / **Deny all**. Changes save
 immediately to `~/.offloadmq-agent.json` and, when the agent is online, trigger a capability
 push so the server's view updates without a restart.
 
-### agent_v2 — Direct Config Edit
+### Direct Config Edit
 
 ```json
 {
@@ -187,57 +185,6 @@ push so the server's view updates without a restart.
 ```
 
 The raw JSON editor at `/config` in the agent dashboard edits the same file.
-
-### Legacy offload-agent — CLI
-
-Manage the allow-list via the `slavemode` CLI sub-command:
-
-```bash
-# Show which slavemode capabilities are allowed
-offload-agent slavemode status
-
-# Enable all slavemode capabilities
-offload-agent slavemode allow-all
-
-# Disable all slavemode capabilities
-offload-agent slavemode deny-all
-
-# Allow a specific capability
-offload-agent slavemode allow slavemode.force-rescan
-
-# Deny a specific capability
-offload-agent slavemode deny slavemode.force-rescan
-```
-
-Example output:
-```
-Config key: slavemode-allowed-caps
-
-  ✅ slavemode.force-rescan
-  ❌ slavemode.config-reload
-
-No slavemode capabilities are allowed. Run 'slavemode allow-all' to enable them.
-```
-
-### Legacy offload-agent — Web UI
-
-The capabilities tab includes a **Slavemode** section (amber styling) where operators can:
-- View all available slavemode capabilities
-- Toggle individual permissions
-- Enable/disable all at once
-- Changes are persisted to the agent config
-
-### Legacy offload-agent — Direct Config Edit
-
-Edit the agent's config file (typically `~/.offload-agent/config.json`):
-
-```json
-{
-  "server": "https://mq.example.com",
-  "apiKey": "...",
-  "slavemode-allowed-caps": ["slavemode.force-rescan"]
-}
-```
 
 ## Server-Side Usage
 
@@ -383,9 +330,6 @@ To add a new slavemode capability to **agent_v2**:
    so the mock's catalog stays in sync, and cover the allow/deny paths in
    `agent_v2/tests/test_slavemode.py`.
 
-For the **legacy offload-agent**, the equivalent edits live in `offload-agent/app/exec/slavemode.py`
-(handler + `ALL_SLAVEMODE_CAPS` + match case) and `offload-agent/app/cli.py`.
-
 ## Design Notes
 
 ### Why an Allow-List?
@@ -403,11 +347,11 @@ The allow-list is stored in the agent's persistent config file and persists acro
 - Re-authentication cycles
 - Server disconnections
 
-Changes via CLI or Web UI are immediately persisted to disk.
+Changes via the Web UI or the raw config editor are immediately persisted to disk.
 
 ### Integration with Regular Capabilities
 
-Slavemode is separate from the regular capability scan and from the `capabilities` config field. Control is only through the slavemode allow-list (Web UI Slavemode tab, CLI `slavemode` commands, or raw JSON).
+Slavemode is separate from the regular capability scan and from the `capabilities` config field. Control is only through the slavemode allow-list (the dashboard's Slavemode page, or raw JSON).
 
 When the agent registers or pushes updates to the server, it reports the union of:
 
@@ -426,15 +370,10 @@ Slavemode payloads are not validated — the executor receives the raw payload d
 
 **Symptom:** Server submits a slavemode task but agent rejects it immediately.
 
-**Check:**
-```bash
-offload-agent slavemode status
-```
+**Check:** `omq config show` — is the capability listed in `slavemode_allowed_caps`?
 
-**Fix:** Enable the capability
-```bash
-offload-agent slavemode allow slavemode.force-rescan
-```
+**Fix:** Enable it on the dashboard's **Slavemode** page, or add it to
+`slavemode_allowed_caps` in `~/.offloadmq-agent.json`.
 
 ### Rescan not discovering new capabilities
 
@@ -442,8 +381,8 @@ offload-agent slavemode allow slavemode.force-rescan
 
 **Check agent logs:**
 ```bash
-offload-agent serve --ws
-# Look for [cap] lines showing pass/fail for each check
+omq serve
+# Or the dashboard's Logs page; `omq capabilities` re-runs detection on its own
 ```
 
 **Common causes:**
@@ -456,15 +395,9 @@ offload-agent serve --ws
 
 **Symptom:** the slavemode allow-list key in config has unexpected values.
 
-**Fix:** Rebuild via CLI
-```bash
-offload-agent slavemode deny-all
-offload-agent slavemode allow slavemode.force-rescan
-offload-agent slavemode status
-```
-
-Or edit the config file directly:
+**Fix:** Use **Deny all**, then re-enable what you need on the dashboard's **Slavemode** page,
+or edit the config file directly:
 ```bash
 # Verify it's valid JSON
-cat ~/.offload-agent/config.json | jq .
+jq .slavemode_allowed_caps ~/.offloadmq-agent.json
 ```

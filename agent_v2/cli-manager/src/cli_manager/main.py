@@ -1,7 +1,7 @@
 """omq — OffloadMQ agent v2 CLI.
 
-Mirrors the old agent's command surface (serve / webui / register / config /
-capabilities / status) but drives the new core Orchestrator internally.
+Commands: serve / webui / register / config / capabilities / status / update,
+all driving the core Orchestrator.
 """
 from __future__ import annotations
 

@@ -8,7 +8,7 @@ OffloadMQ is a distributed task queue system for offloading computational tasks 
 
 ## Development Commands
 
-The repo root uses [Go Task](https://taskfile.dev) — run `task --list` for everything in [Taskfile.yml](Taskfile.yml). There is no root Makefile; `offload-agent/` and `itests/` keep their own Makefiles.
+The repo root uses [Go Task](https://taskfile.dev) — run `task --list` for everything in [Taskfile.yml](Taskfile.yml). There is no root Makefile; `itests/` keeps its own Makefile and `agent_v2/` its own Taskfile.
 
 ### Rust Backend (Message Queue Server)
 ```bash
@@ -17,22 +17,19 @@ cargo build              # Build release
 task test:unit           # Run Rust unit tests (cargo test)
 ```
 
-### Python Agent
+### Python Agent (`agent_v2/`)
 ```bash
-cd offload-agent
-make venv                # Create virtualenv and install dependencies
-python -m mypy app/ --strict  # Type check (MANDATORY before commit)
-make serve               # Register agent and start serving (requires running server)
-make register            # Register agent only
+cd agent_v2
+task install             # uv sync + frontend deps
+task typecheck           # mypy over the Python packages (MANDATORY before commit)
+uv run --with pytest pytest tests   # Unit tests
+uv run omq config set --server http://localhost:3069 --api-key <agent key>
+uv run omq register      # Register this agent with the server
+uv run omq serve         # Start serving headless (or `task dev` for the web UI)
 ```
 
-**Type Safety:** All Python code in `offload-agent/app/` must pass `mypy --strict` type checking. This is mandatory before committing changes.
-
-**Running mypy:** The virtualenv is at `offload-agent/venv/`. Always run mypy from the `offload-agent/` directory:
-```bash
-cd offload-agent
-venv/bin/python -m mypy app/ --strict
-```
+The agent keeps its settings in `~/.offloadmq-agent.json`. Use the `agent-v2` skill for
+agent work.
 
 ### Releasing the Agent Binary
 
@@ -105,7 +102,7 @@ task ship                      # Build + push both images, then deploy
 task template                  # Preview helm manifests
 task diff                      # Diff deployed vs local chart (helm-diff plugin)
 task rollback                  # Roll back to the previous helm revision
-task clean                     # Clean build artifacts (cargo, offload-agent, frontend dist)
+task clean                     # Clean build artifacts (cargo, frontend dist)
 ```
 
 ### Releasing
@@ -298,7 +295,7 @@ These are the hardcoded keys used for local development and testing. Use them di
 ## Tech Stack
 
 - **Backend**: Rust with Axum 0.8, Tokio, Sled, jsonwebtoken
-- **Agent**: Python 3 with requests, supports Ollama LLM integration
+- **Agent**: Python 3 uv workspace (`agent_v2/`) — Ollama, ComfyUI, ONNX, shell/docker executors; WebSocket push
 - **Frontend**: React 19 with Vite, framer-motion, lucide-react
 - **Deployment**: Docker multi-stage build, Kubernetes via Helm
 

@@ -4,7 +4,7 @@ These exercise the server's push-based task distribution (the agent no longer
 polls): the server selects a connected agent, atomically assigns a task, and
 pushes the ``AssignedTask`` over the WebSocket. The tests act as a minimal WS
 agent — register over HTTP, open the socket, and receive/resolve pushed tasks —
-so they need only a running server (no real offload-agent).
+so they need only a running server (no real agent).
 
 Each test uses a unique capability so tasks never bleed across tests, and the
 client API key is a wildcard (``*``) so arbitrary capabilities are accepted.
@@ -348,7 +348,7 @@ def test_claimed_task_is_never_reclaimed():
         assert ack["data"]["reclaimed"] == 0
         assert client_poll(tid)["status"] == "running"
 
-        # A beat with no claim at all (legacy agents) leaves the task alone too.
+        # A beat with no claim at all leaves the task alone too.
         ack, _ = ws_request(ws, "heartbeat", {})
         assert ack["data"]["reclaimed"] == 0
         assert client_poll(tid)["status"] == "running"

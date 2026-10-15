@@ -54,37 +54,22 @@ AGENT_API_KEYS="ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e"
 The agent auto-discovers Ollama models on the machine where it runs and registers
 them as `llm.<model-name>` capabilities (e.g. `llm.mistral`, `llm.llama3`).
 
-**Important:** the agent always connects to its own local Ollama at `127.0.0.1:11434`,
-so it must be run on a machine that has Ollama with models installed. It will not work
-if `ollama list` returns nothing.
+**Important:** the agent talks to the Ollama on its own machine (`ollama_base_url`,
+default `127.0.0.1:11434`), so it must run where Ollama has models installed. It will
+not advertise any `llm.*` capability if `ollama list` returns nothing.
 
 ```bash
-cd offload-agent
-
-# One-time setup
-make venv
-
-# Register with the server, then start polling for tasks.
-# The Makefile default key matches .env — override with KEY=... if needed.
-make serve SERVER=http://localhost:3069
+cd agent_v2
+uv run omq config set --server http://localhost:3069 \
+  --api-key ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e
+uv run omq register   # saves credentials to ~/.offloadmq-agent.json
+uv run omq serve
 ```
 
-`make serve` calls `register` first (which saves credentials to `.offload-agent.json`)
-then starts `serve`. On subsequent runs you can also call them separately:
+Verify the agent is online and advertising your models:
 
 ```bash
-# Register only (re-run after server restarts)
-make register SERVER=http://localhost:3069
-
-# Serve only (if already registered)
-bash -c "source venv/bin/activate && python offload-agent.py cli serve"
-```
-
-Verify the agent is online — you should see its detected models in the output, e.g.:
-
-```
-Capabilities: ['debug.echo', 'llm.mistral', 'llm.llama3', 'shell.bash']
-✅ Ping test successful - agent is ready!
+uv run omq status
 ```
 
 ---

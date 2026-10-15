@@ -20,8 +20,8 @@ ALL_SLAVEMODE_CAPS: list[str] = [
 
 SLAVEMODE_PREFIX = "slavemode."
 
-# v2 settings key. The hyphenated spelling is the legacy offload-agent name and is
-# still honoured on read so imported v1 configs keep working.
+# Settings key. The hyphenated spelling is still honoured on read so older
+# config files keep working.
 CONFIG_KEY = "slavemode_allowed_caps"
 LEGACY_CONFIG_KEY = "slavemode-allowed-caps"
 
