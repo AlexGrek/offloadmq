@@ -375,6 +375,15 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 - React UI built with shadcn/ui components
 - Deployed at `oai.alexgr.space`; Docker image `grekodocker/oai`
 
+### Generator Improver
+
+Generator Improver (`/app/generator-improver`) scores images with vision JSON
+`{quality: 0..100, improve_prompt: string}` and applies img2img until expected
+quality or max steps. It shares the Image Cycles engine with separate app history.
+Read [the feature skill](.agents/skills/oai-generator-improver/SKILL.md) before
+editing the improvement branches or `GeneratorImproverPage.tsx`.
+API and stopping semantics: [docs/oai-generator-improver.md](docs/oai-generator-improver.md).
+
 ### Image Cycles
 
 Image Cycles (`/app/image-cycles`) chains an image or text seed through n
@@ -401,6 +410,7 @@ Skills live in `.Codex/skills/oai-*/SKILL.md`. **Before editing OAI code, read e
 | **oai-img-tools** | `.Codex/skills/oai-img-tools/SKILL.md` | Image Tools (`img-utils.*` / resize) feature files (patterns below) |
 | **oai-movie** | `.Codex/skills/oai-movie/SKILL.md` | Movie Studio feature files (patterns below) |
 | **oai-image-cycles** | `.agents/skills/oai-image-cycles/SKILL.md` | Image Cycles modules and page (`image_cycles*`, `ImageCyclesPage.tsx`, `api/imageCycles.ts`) |
+| **oai-generator-improver** | `.agents/skills/oai-generator-improver/SKILL.md` | Generator Improver page, quality/JSON/img2img branches in the shared image-cycle engine |
 | **oai-backend** | `.Codex/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |
 | **oai-frontend** | `.Codex/skills/oai-frontend/SKILL.md` | Any `oai/frontend/**` file, or cross-cutting SPA work |
 

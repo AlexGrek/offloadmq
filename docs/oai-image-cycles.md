@@ -83,3 +83,8 @@ The response view contains `job_id`, `status`, `params` (the normalized request)
 - Validation: backend state-machine unit tests, live API contract tests in
   `oai/itests/tests/test_image_cycles.py`, browser coverage in
   `oai/e2e/tests/image-cycles.spec.ts`.
+
+Generator Improver shares the persistent engine with an `app` column (migration
+000037), separate endpoints/history and JSON-scored img2img behavior. See
+[Generator Improver](oai-generator-improver.md). Regular cycles keep their
+fixed-length txt2img behavior; their child `response_format` stays null.

@@ -244,7 +244,7 @@ or shell env locally before `task dev:backend`). Most use the generic
 | Feature | Tick env | Batch env | Defaults |
 |---------|----------|-----------|----------|
 | Image pipeline (imggen) | `IMAGE_PIPELINE_WORKER_TICK_SECS` | `IMAGE_PIPELINE_WORKER_BATCH_SIZE` | 20s / 20 |
-| Image Cycles | `IMAGE_CYCLES_WORKER_TICK_SECS` | `IMAGE_CYCLES_WORKER_BATCH_SIZE` | 3s / 20 |
+| Image Cycles / Generator Improver | `IMAGE_CYCLES_WORKER_TICK_SECS` | `IMAGE_CYCLES_WORKER_BATCH_SIZE` | 3s / 20 |
 | Image analysis (describe) | `IMAGE_ANALYSIS_WORKER_TICK_SECS` | `IMAGE_ANALYSIS_WORKER_BATCH_SIZE` | 10s / 20 |
 | Img Utils | `IMG_UTILS_WORKER_TICK_SECS` | `IMG_UTILS_WORKER_BATCH_SIZE` | 10s / 20 |
 | Chat (stateless reconcile) | `CHAT_WORKER_TICK_SECS` | `CHAT_WORKER_BATCH_SIZE` | 10s / 20 |

@@ -37,3 +37,12 @@ changing child image/describe services. API and semantics: `docs/oai-image-cycle
   Timeline must keep all prompts, descriptions and generated images visible.
 - Tests: `oai/e2e/tests/image-cycles.spec.ts`,
   `oai/itests/tests/test_image_cycles.py`, service unit tests.
+
+## Generator Improver shares this engine
+
+Read `oai-generator-improver` for its discriminator branches: vision JSON score /
+`improve_prompt`, img2img, expected quality and max steps. Migration 000037 adds
+`image_cycle_jobs.app` and `image_analysis_jobs.response_format`. The router binds
+the app name; list/detail/mutations enforce separate histories. `ImageCyclesPage`
+is shared with its dedicated wrapper. Regular Image Cycles always clears improver
+options on submit and keeps its txt2img behavior.

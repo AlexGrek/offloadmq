@@ -1,0 +1,84 @@
+# OAI Generator Improver
+
+Open **Generator Improver** from the dashboard (`/app/generator-improver`). Supply
+an image (upload, paste/drop, or My Files) or a text prompt. Choose a vision model,
+an **img2img improvement model**, expected quality (1–100), and maximum improvement
+steps (1–50). A text start also requires a **txt2img starting-image model**.
+
+The app assesses the current image before improving it. Vision requests carry
+an actual JSON schema in `payload.format`, requiring exactly:
+
+```json
+{"quality": 95, "improve_prompt": "Fix the hand anatomy and improve the lighting."}
+```
+
+`quality` is an integer from 0 to 100, not `"95/100"`. The backend validates the
+response before using it. Invalid JSON, missing fields, invalid scores, or blank
+improvement instructions below target fail visibly. Raw responses remain visible
+in the history, including on failure.
+
+If the score meets the expected quality, the run completes immediately. Otherwise,
+**the current image plus `improve_prompt`** go to the selected img2img model. The
+result is stored and assessed again. Maximum steps limits **img2img operations**:
+N improvements have up to N+1 assessments, including a final assessment after the
+last improvement. Text starts first generate a seed with txt2img (cycle 0), which
+does not consume an improvement step.
+
+The timeline retains all images, scores, assessment instructions, raw JSON, and
+actual generation prompts. Completion distinguishes `target_reached` from
+`max_steps_reached` and shows the final quality. The latest image and all previous
+outputs are retained even if the target wasn't reached. Runs continue in the
+background; `?job=<id>` restores detail. Stop cancels active work and prevents
+later steps; Run again starts from the original settings. Delete removes child
+jobs/generated outputs while preserving the original seed image.
+
+## Authenticated API
+
+Use the CRUD/poll/cancel/retry contract from [Image Cycles](oai-image-cycles.md),
+with prefix `/api/generator-improver/jobs`. Each app has separate history, and
+accessing a run through the other app's endpoint returns 404 even for its owner.
+
+```json
+{
+  "input_image_id": "123456789012345678",
+  "initial_prompt": null,
+  "describe_prompt": "Critically assess visual quality and propose specific fixes.",
+  "vision_model": "llm.qwen3-vl:8b",
+  "image_model": "imggen.flux",
+  "expected_quality": 95,
+  "max_steps": 5,
+  "width": 1024,
+  "height": 1024
+}
+```
+
+Text starts set `input_image_id` to null, supply `initial_prompt`, and include
+`bootstrap_model` (a listed txt2img capability). `image_model` must support
+img2img; known legacy models with empty workflow tags are accepted. Actual
+improvement tasks always use `img2img`, and bootstrap tasks always use `txt2img`.
+Dimensions are integers from 128 to 2048. Model discovery reuses
+`/api/describe/capabilities` and `/api/images/capabilities`.
+
+Responses extend the Image Cycles view with `app: "generator-improver"` and
+`stop_reason` (`target_reached`, `max_steps_reached`, or null). Normalized
+`params.cycles` equals `max_steps`. Assessment steps add `quality` and
+`improve_prompt`; unused steps have status `skipped` on early success.
+
+## Engineering notes
+
+Shared engine/router: `services/image_cycles.rs`, `routes/image_cycles.rs`.
+Shared table/worker: `image_cycle_jobs`, `image_cycles_worker`. The router injects
+the app discriminator; callers cannot choose it in the request body. Migration
+`m20261020_000037_image_cycle_apps` adds the discriminator and child
+`image_analysis_jobs.response_format`, which survives retries/resize promotion.
+The JSON schema goes through `OffloadClient::submit_vision_task_with_format`.
+
+Shared UI: `ImageCyclesPage.tsx` with `improver`; app wrapper:
+`GeneratorImproverPage.tsx`. Child img2img jobs borrow inputs with
+`preserve_input=true`, so deletion doesn't consume the seed upload.
+
+Worker configuration is shared: `IMAGE_CYCLES_WORKER_TICK_SECS` (3 seconds),
+`IMAGE_CYCLES_WORKER_BATCH_SIZE` (20). Child polling/storage/bucket cleanup remain
+with the existing describe/image workers. Concurrency/restart behavior follows
+Image Cycles. Tests: `image-cycles.spec.ts` (both apps),
+`test_generator_improver.py`, and service JSON validation/chaining unit tests.

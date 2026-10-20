@@ -390,6 +390,15 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 - Remote MCP server at `/mcp` with OAuth sign-in, so Claude (web, desktop, mobile, Claude Code) can generate images and manage jobs/prompts/placeholders — see [oai/docs/mcp.md](oai/docs/mcp.md)
 - Also has a Go command-line client, [oai/cli/](oai/cli/) (`oai login`, `oai image generate|describe|prompts`, `oai nude`), that talks to the same HTTP API as the SPA
 
+### Generator Improver
+
+Generator Improver (`/app/generator-improver`) scores images with vision JSON
+`{quality: 0..100, improve_prompt: string}` and applies img2img until expected
+quality or max steps. It shares the Image Cycles engine with separate app history.
+Read [the feature skill](.agents/skills/oai-generator-improver/SKILL.md) before
+editing the improvement branches or `GeneratorImproverPage.tsx`.
+API and stopping semantics: [docs/oai-generator-improver.md](docs/oai-generator-improver.md).
+
 ### Image Cycles
 
 Image Cycles (`/app/image-cycles`) chains an image or text seed through n
@@ -416,6 +425,7 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 | **oai-img-tools** | `.claude/skills/oai-img-tools/SKILL.md` | Image Tools (`img-utils.*` / resize) feature files (patterns below) |
 | **oai-movie** | `.claude/skills/oai-movie/SKILL.md` | Movie Studio feature files (patterns below) |
 | **oai-image-cycles** | `.agents/skills/oai-image-cycles/SKILL.md` | Image Cycles modules and page (`image_cycles*`, `ImageCyclesPage.tsx`, `api/imageCycles.ts`) |
+| **oai-generator-improver** | `.agents/skills/oai-generator-improver/SKILL.md` | Generator Improver page, quality/JSON/img2img branches in the shared image-cycle engine |
 | **oai-cli** | `.claude/skills/oai-cli/SKILL.md` | `oai/cli/**` (Go CLI client) |
 | **oai-mcp** | `.claude/skills/oai-mcp/SKILL.md` | `oai/backend/src/mcp/**`, `routes/oauth.rs`, `services/oauth.rs`, `db/oauth.rs`, `services/prompt_expansion.rs`, `jobs/oauth_cleanup_worker.rs` (MCP server + OAuth) |
 | **oai-backend** | `.claude/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |
