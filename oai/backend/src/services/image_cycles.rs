@@ -277,6 +277,28 @@ fn assessment_prompt(p: &Params) -> String {
             .unwrap_or_default()
     )
 }
+fn vision_prompt(p: &Params) -> String {
+    if p.expected_quality.is_some() {
+        assessment_prompt(p)
+    } else {
+        p.describe_prompt.clone()
+    }
+}
+
+fn change_vision_prompt(p: &mut Params, steps: &mut [Step], prompt: &str) -> Result<(), AppError> {
+    let prompt = prompt.trim();
+    if prompt.is_empty() {
+        return Err(AppError::BadRequest("vision prompt is required".into()));
+    }
+    p.describe_prompt = prompt.to_owned();
+    let prompt = vision_prompt(p);
+    for step in steps {
+        if step.kind == Kind::Describe && step.status == "queued" && step.child_job_id.is_none() {
+            step.prompt.clone_from(&prompt);
+        }
+    }
+    Ok(())
+}
 fn stop_reason(status: &str, p: &Params, steps: &[Step]) -> Option<String> {
     if status != "completed" {
         return None;
@@ -411,6 +433,7 @@ async fn save(state: &AppState, job: &mut db::Job, steps: &[Step]) -> Result<(),
 fn prepare(p: &Params, steps: &mut [Step], i: usize) -> Result<(), AppError> {
     match steps[i].kind {
         Kind::Describe => {
+            steps[i].prompt = vision_prompt(p);
             steps[i].input_image_id = if i == 0 {
                 p.input_image_id.clone()
             } else {
@@ -831,6 +854,32 @@ pub struct ModelChanges {
     pub bootstrap_model: Option<String>,
 }
 
+/// Editing instructions never depends on model availability or resubmits work.
+pub async fn update_vision_prompt(
+    state: &AppState,
+    user: i64,
+    id: i64,
+    prompt: &str,
+) -> Result<View, AppError> {
+    db::get(&state.db, id, user).await?;
+    let _slot = ADVANCE_SLOTS
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let lock = db::lock(&state.db, id, true)
+        .await?
+        .ok_or_else(|| AppError::Internal("missing cycle lock".into()))?;
+    let mut job = db::get(&state.db, id, user).await?;
+    let mut p: Params = decode(&job.params_json)?;
+    let mut steps: Vec<Step> = decode(&job.steps_json)?;
+    change_vision_prompt(&mut p, &mut steps, prompt)?;
+    job.params_json = encode(&p)?;
+    save(state, &mut job, &steps).await?;
+    lock.commit().await?;
+    prompt_usage::note_use(state, user, "describe-image-user", &p.describe_prompt).await;
+    view(job)
+}
+
 pub async fn update_models(
     state: &AppState,
     user: i64,
@@ -1065,6 +1114,53 @@ mod tests {
             }
         }
         steps
+    }
+
+    #[test]
+    fn vision_prompt_edits_preserve_history_and_update_only_unsubmitted_assessments() {
+        for improver in [false, true] {
+            let mut p = params();
+            p.expected_quality = improver.then_some(95);
+            let mut steps = plan(&p);
+            steps[0].status = "submitted".into();
+            steps[0].child_job_id = Some("100".into());
+            let original = steps[0].prompt.clone();
+            let generation = encode(&steps[1]).unwrap();
+            change_vision_prompt(&mut p, &mut steps, "  Prioritize texture and lighting.  ")
+                .unwrap();
+            assert_eq!(p.describe_prompt, "Prioritize texture and lighting.");
+            assert_eq!(steps[0].prompt, original);
+            assert_eq!(encode(&steps[1]).unwrap(), generation);
+            assert!(steps[2].prompt.starts_with(&p.describe_prompt));
+            if improver {
+                assert!(
+                    steps
+                        .last()
+                        .unwrap()
+                        .prompt
+                        .contains("Return only a JSON object")
+                );
+                assert!(steps[2].prompt.contains("improve_prompt"));
+                assert!(steps[2].prompt.contains("quality"));
+            } else {
+                assert_eq!(steps[2].prompt, p.describe_prompt);
+            }
+            let restarted = restart_plan(&p, &steps, 0).unwrap();
+            assert!(restarted[0].prompt.starts_with(&p.describe_prompt));
+            assert_eq!(steps[0].prompt, original);
+            // Reserved submissions and reused history must also remain immutable.
+            steps[2].child_job_id = Some("101".into());
+            steps[0].status = "completed".into();
+            steps[0].reused = true;
+            steps[0].child_job_id = None;
+            let reserved = steps[2].prompt.clone();
+            change_vision_prompt(&mut p, &mut steps, "Another instruction").unwrap();
+            assert_eq!(steps[0].prompt, original);
+            assert_eq!(steps[2].prompt, reserved);
+            let before = (encode(&p).unwrap(), encode(&steps).unwrap());
+            assert!(change_vision_prompt(&mut p, &mut steps, " \n ").is_err());
+            assert_eq!((encode(&p).unwrap(), encode(&steps).unwrap()), before);
+        }
     }
 
     #[test]

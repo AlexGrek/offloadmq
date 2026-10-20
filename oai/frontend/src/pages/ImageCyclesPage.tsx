@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import {
   Columns2,
@@ -29,6 +29,7 @@ import { ImageLightbox } from '../components/ImageLightbox'
 import { LoadingImage } from '../components/LoadingImage'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { RunModelsEditor } from '../components/imagecycles/RunModelsEditor'
+import { RunVisionPromptEditor } from '../components/imagecycles/RunVisionPromptEditor'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { ToolSidebar } from '../components/ToolSidebar'
@@ -78,6 +79,7 @@ export default function ImageCyclesPage({
     pauseImageCycle,
     resumeImageCycle,
     updateImageCycleModels,
+    updateImageCycleVisionPrompt,
     startImageCycle,
   } = imageCycleApi(improver)
   const { token } = useAuth()
@@ -302,7 +304,7 @@ export default function ImageCyclesPage({
       (validNumber(expectedQuality, 1, 100) &&
         (mode !== 'text' || isListedCapability(bootstrap, bootstrapModels))))
 
-  const viewerImages = useMemo(() => {
+  const viewerImages = (() => {
     const images: {
       id: string
       src: string
@@ -348,7 +350,7 @@ export default function ImageCyclesPage({
       }
     }
     return images
-  }, [token, panel, input, job, improver, deletedImages])
+  })()
   const viewerIndex =
     viewer?.panel === panel
       ? viewerImages.findIndex((image) => image.id === viewer.imageId)
@@ -363,6 +365,8 @@ export default function ImageCyclesPage({
     comparisonStart &&
     comparisonLatest &&
     comparisonStart.id !== comparisonLatest.id
+  const firstIncompleteStep =
+    job?.steps.findIndex((step) => step.status !== 'completed') ?? -1
 
   function preview(id: string, alt: string, testId?: string) {
     if (deletedImages.has(id))
@@ -945,36 +949,63 @@ export default function ImageCyclesPage({
                       until you resume.
                     </p>
                   )}
-                  <RunModelsEditor
-                    key={job.job_id}
-                    job={job}
-                    visionModels={visionModels}
-                    imageModels={imageModels}
-                    bootstrapModels={bootstrapModels}
-                    status={capsStatus}
-                    error={capsError}
-                    busy={busy}
-                    onRefresh={refreshModels}
-                    onSave={async (models) => {
-                      setBusy(true)
-                      setError(null)
-                      try {
-                        put(
-                          await updateImageCycleModels(
-                            token!,
-                            job.job_id,
-                            models,
-                          ),
-                        )
-                        return true
-                      } catch (e) {
-                        setError(message(e))
-                        return false
-                      } finally {
-                        setBusy(false)
-                      }
-                    }}
-                  />
+                  <div className="flex flex-wrap items-start gap-3 [&>section]:w-full">
+                    <RunModelsEditor
+                      key={job.job_id}
+                      job={job}
+                      visionModels={visionModels}
+                      imageModels={imageModels}
+                      bootstrapModels={bootstrapModels}
+                      status={capsStatus}
+                      error={capsError}
+                      busy={busy}
+                      onRefresh={refreshModels}
+                      onSave={async (models) => {
+                        setBusy(true)
+                        setError(null)
+                        try {
+                          put(
+                            await updateImageCycleModels(
+                              token!,
+                              job.job_id,
+                              models,
+                            ),
+                          )
+                          return true
+                        } catch (e) {
+                          setError(message(e))
+                          return false
+                        } finally {
+                          setBusy(false)
+                        }
+                      }}
+                    />
+                    <RunVisionPromptEditor
+                      key={`vision-prompt-${job.job_id}`}
+                      job={job}
+                      token={token}
+                      busy={busy}
+                      onSave={async (prompt) => {
+                        setBusy(true)
+                        setError(null)
+                        try {
+                          put(
+                            await updateImageCycleVisionPrompt(
+                              token!,
+                              job.job_id,
+                              prompt,
+                            ),
+                          )
+                          return true
+                        } catch (e) {
+                          setError(message(e))
+                          return false
+                        } finally {
+                          setBusy(false)
+                        }
+                      }}
+                    />
+                  </div>
                   {job.error && (
                     <JobErrorBanner
                       message={job.error}
@@ -1079,18 +1110,11 @@ export default function ImageCyclesPage({
                           className="min-h-11 sm:ml-auto"
                           disabled={
                             busy ||
-                            job.steps
-                              .slice(0, i)
-                              .some(
-                                (previous) => previous.status !== 'completed',
-                              )
+                            (firstIncompleteStep >= 0 &&
+                              i > firstIncompleteStep)
                           }
                           title={
-                            job.steps
-                              .slice(0, i)
-                              .some(
-                                (previous) => previous.status !== 'completed',
-                              )
+                            firstIncompleteStep >= 0 && i > firstIncompleteStep
                               ? 'Earlier steps must finish first'
                               : 'Create a new run from this step using the current models'
                           }

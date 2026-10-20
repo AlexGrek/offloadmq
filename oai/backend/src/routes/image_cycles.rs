@@ -28,6 +28,10 @@ pub fn router(app: &'static str) -> Router<Arc<AppState>> {
         .route("/jobs/{id}/pause", post(pause))
         .route("/jobs/{id}/resume", post(resume))
         .route("/jobs/{id}/models", axum::routing::patch(update_models))
+        .route(
+            "/jobs/{id}/vision-prompt",
+            axum::routing::patch(update_vision_prompt),
+        )
         .layer(Extension(AppKind(app)))
 }
 
@@ -160,5 +164,23 @@ async fn update_models(
             changes,
         )
         .await?,
+    ))
+}
+
+#[derive(serde::Deserialize)]
+struct VisionPromptChange {
+    describe_prompt: String,
+}
+
+async fn update_vision_prompt(
+    Extension(AppKind(app)): Extension<AppKind>,
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<String>,
+    Json(changes): Json<VisionPromptChange>,
+) -> Result<Json<View>, AppError> {
+    let id = owned_id(&state, user, &id, app).await?;
+    Ok(Json(
+        service::update_vision_prompt(&state, user, id, &changes.describe_prompt).await?,
     ))
 }

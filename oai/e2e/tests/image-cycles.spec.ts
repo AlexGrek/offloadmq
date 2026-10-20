@@ -59,11 +59,18 @@ async function setup(page: Page, initial: ImageCycleJob | null = null, improver 
       job = { ...completed, status: 'running', params, steps: [step(1, 'describe', { status: 'submitted' })] }
       return json({ job_id: '123', status: 'submitted' })
     }
-    if (job && ['/pause', '/resume', '/restart', '/models'].some(suffix => pathname.endsWith(suffix))) {
+    if (job && ['/pause', '/resume', '/restart', '/models', '/vision-prompt'].some(suffix => pathname.endsWith(suffix))) {
       controls.push({ path: pathname, body: route.request().postData() ? route.request().postDataJSON() : null })
       if (pathname.endsWith('/pause')) job = { ...job, status: 'paused' }
       if (pathname.endsWith('/resume')) job = { ...job, status: 'running', error: null }
       if (pathname.endsWith('/models')) job = { ...job, params: { ...job.params, ...route.request().postDataJSON() } }
+      if (pathname.endsWith('/vision-prompt')) {
+        const prompt = route.request().postDataJSON().describe_prompt
+        job = { ...job, params: { ...job.params, describe_prompt: prompt }, steps: job.steps.map(item =>
+          item.kind === 'describe' && item.status === 'queued' && !item.child_job_id
+            ? { ...item, prompt: prompt + (improver ? '\nReturn only a JSON object with quality and improve_prompt.' : '') }
+            : item) }
+      }
       if (pathname.endsWith('/restart')) {
         const checkpoint = pathname.match(/\/steps\/(\d+)\/restart$/)
         job = { ...job, job_id: '456', status: 'running', error: null, ...(checkpoint ? {
@@ -255,6 +262,46 @@ test('a failed fenced assessment exposes its raw source and can retry parsing', 
 })
 
 for (const improver of [false, true]) {
+  test(`${improver ? 'Generator Improver' : 'Image Cycles'} edits the live vision prompt without overwriting history or drafts during polling`, async ({ page }) => {
+    if (improver) await page.setViewportSize({ width: 390, height: 844 })
+    const running: ImageCycleJob = {
+      ...completed, app: improver ? 'generator-improver' : 'image-cycles', status: 'running',
+      steps: [
+        step(1, 'describe', { status: 'submitted', prompt: 'Original active vision prompt' }),
+        step(1, 'generate', { status: 'queued', child_job_id: null }),
+        step(2, 'describe', { status: 'queued', child_job_id: null }),
+        step(2, 'generate', { status: 'queued', child_job_id: null }),
+      ],
+    }
+    const state = await setup(page, running, improver)
+    await page.goto(`/app/${improver ? 'generator-improver' : 'image-cycles'}?job=123`)
+    await page.getByTestId('cycles-edit-vision-prompt').click()
+    const draft = page.getByTestId('cycles-run-vision-prompt')
+    await expect(draft).toHaveValue(defaults.describe_prompt)
+    await draft.fill('  ')
+    await expect(page.getByTestId('cycles-save-vision-prompt')).toBeDisabled()
+    await draft.fill('Draft that survives polling')
+    await page.getByTestId('cycles-poll').click()
+    await expect.poll(() => state.polls()).toBeGreaterThan(0)
+    await expect(draft).toHaveValue('Draft that survives polling')
+    await draft.locator('..').getByTestId('prompt-list-open').click()
+    await page.getByText('Write a cinematic image prompt.', { exact: true }).first().click()
+    await expect(draft).toHaveValue('Write a cinematic image prompt.')
+    await page.getByTestId('cycles-save-vision-prompt').click()
+    await expect(page.getByTestId('cycles-vision-prompt-editor')).not.toBeVisible()
+    expect(state.controls.at(-1)).toMatchObject({ path: expect.stringContaining('/123/vision-prompt'), body: { describe_prompt: 'Write a cinematic image prompt.' } })
+    await expect(page.getByTestId('cycles-step-prompt-0')).toHaveText('Original active vision prompt')
+    await expect(page.getByTestId('cycles-step-prompt-2')).toContainText('Write a cinematic image prompt.')
+    await page.reload()
+    await page.getByTestId('cycles-edit-vision-prompt').click()
+    await expect(draft).toHaveValue('Write a cinematic image prompt.')
+    await draft.fill('Discard this edit')
+    await page.getByRole('button', { name: 'Discard prompt changes' }).click()
+    await page.getByTestId('cycles-edit-vision-prompt').click()
+    await expect(draft).toHaveValue('Write a cinematic image prompt.')
+    expect(state.submissions).toHaveLength(0)
+  })
+
   test(`${improver ? 'Generator Improver' : 'Image Cycles'} restarts from a selected step and reuses its completed predecessors`, async ({ page }) => {
     const active: ImageCycleJob = {
       ...completed, status: 'running', steps: completed.steps.map((item, index) => ({
@@ -421,6 +468,7 @@ for (const improver of [false, true]) {
     await expect(page.getByTestId('image-lightbox-image')).toHaveAttribute('src', /\/44\?token=/)
     await expect(page.getByTestId('image-lightbox-prompt')).toContainText('A fox in golden morning mist.')
     await page.keyboard.press('ArrowLeft')
+    await expect(page.getByTestId('image-lightbox-counter')).toHaveText('2 / 3')
     await page.keyboard.press('ArrowLeft')
     await expect(page.getByTestId('image-lightbox-counter')).toHaveText('1 / 3')
     await expect(page.getByTestId('image-lightbox-image')).toHaveAttribute('src', /\/42\?token=/)

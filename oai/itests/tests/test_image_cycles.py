@@ -14,6 +14,7 @@ OPERATIONS = [("GET", ROOT), ("POST", ROOT), ("GET", f"{ROOT}/{MISSING}"),
               *[("POST", f"{ROOT}/{MISSING}/{action}") for action in ("poll", "cancel", "retry", "restart", "pause", "resume")]]
 OPERATIONS.append(("PATCH", ROOT + "/999999999999999999/models"))
 OPERATIONS.append(("POST", f"{ROOT}/{MISSING}/steps/0/restart"))
+OPERATIONS.append(("PATCH", f"{ROOT}/{MISSING}/vision-prompt"))
 
 
 class TestImageCycles:
@@ -30,7 +31,7 @@ class TestImageCycles:
 
     @pytest.mark.parametrize("method,path", OPERATIONS[2:])
     def test_missing_run(self, client: httpx.Client, new_user: dict, method: str, path: str):
-        response = client.request(method, path, headers=new_user["headers"], **({"json": {}} if method == "PATCH" else {}))
+        response = client.request(method, path, headers=new_user["headers"], **({"json": {"describe_prompt": "Describe"}} if method == "PATCH" else {}))
         assert response.status_code == 404
         assert isinstance(response.json()["error"], str)
 

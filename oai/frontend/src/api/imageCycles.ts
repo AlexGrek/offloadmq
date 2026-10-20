@@ -81,6 +81,15 @@ function createApi(app: string) {
         method: 'PATCH',
         body: JSON.stringify(models),
       }),
+    updateImageCycleVisionPrompt: (
+      token: string,
+      id: string,
+      describePrompt: string,
+    ) =>
+      request<ImageCycleJob>(`${path(id)}/vision-prompt`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ describe_prompt: describePrompt }),
+      }),
     deleteImageCycle: (token: string, id: string) =>
       request<void>(path(id), token, { method: 'DELETE' }),
     retryImageCycle: (token: string, id: string) =>

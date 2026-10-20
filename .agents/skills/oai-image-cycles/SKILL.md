@@ -68,9 +68,21 @@ options on submit and keeps its txt2img behavior.
 - `/pause`, `/resume`, `/restart`, and `PATCH /models` share the advisory lock with
   poll/cancel. Restart cancels remaining work and creates a NEW run from the seed
   using the latest models, preserving the old run and outputs.
+- `POST /jobs/{id}/steps/{index}/restart` creates a new run at the zero-based step
+  index under the same advisory lock. Completed predecessors become `reused`
+  snapshots with no `child_job_id`; never copy child ownership into the new run.
+  Their images are borrowed references, just like input seeds. Rebuild the suffix
+  with current settings/models and validate prerequisites before canceling the
+  source. The UI disables steps past the first unfinished predecessor.
 - Model updates validate workflow-compatible listed models and affect subsequent
   submissions. Step `model` snapshots preserve actual historical models; backfill
   legacy snapshots from child records before changing parameter defaults.
 - DB `save` persists params/status/steps; `fail_stale` deliberately excludes paused.
 - Detail editor: `components/imagecycles/RunModelsEditor.tsx`; drafts remain separate
   from new-run form state and background polling.
+- `PATCH /jobs/{id}/vision-prompt` takes `{describe_prompt}` under the same lock.
+  Trim and reject empty text; update only queued, unreserved vision steps. Never
+  rewrite submitted/completed/reused prompts. `prepare` derives the current vision
+  instruction at submission; Improver still appends its required JSON contract.
+  No model/MQ availability check is needed to edit a prompt. The shared library
+  and independent draft live in `RunVisionPromptEditor.tsx`.

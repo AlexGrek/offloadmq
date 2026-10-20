@@ -12,6 +12,7 @@ OPERATIONS = [("GET", ROOT), ("POST", ROOT), ("GET", ROOT + "/999999999999999999
               *[("POST", ROOT + "/999999999999999999/" + a) for a in ("poll", "cancel", "retry", "restart", "pause", "resume")]]
 OPERATIONS.append(("PATCH", ROOT + "/999999999999999999/models"))
 OPERATIONS.append(("POST", ROOT + "/999999999999999999/steps/0/restart"))
+OPERATIONS.append(("PATCH", ROOT + "/999999999999999999/vision-prompt"))
 
 
 class TestGeneratorImprover:
@@ -27,6 +28,11 @@ class TestGeneratorImprover:
 
     def test_restart_step_requires_owned_run(self, client: httpx.Client, new_user: dict):
         response = client.post(ROOT + "/999999999999999999/steps/0/restart", headers=new_user["headers"])
+        assert response.status_code == 404
+        assert isinstance(response.json()["error"], str)
+
+    def test_vision_prompt_requires_owned_run(self, client: httpx.Client, new_user: dict):
+        response = client.patch(ROOT + "/999999999999999999/vision-prompt", headers=new_user["headers"], json={"describe_prompt": "Assess quality"})
         assert response.status_code == 404
         assert isinstance(response.json()["error"], str)
 

@@ -110,12 +110,19 @@ Both apps expose the following owner-scoped routes on `/api/<app>/jobs/{id}`:
 | POST | `/pause` | Persist `paused`; hold future submissions |
 | POST | `/resume` | Continue a paused run or retry parsing a failed assessment |
 | POST | `/restart` | Cancel remaining work and create a new run from the seed using the latest models; 201 `{job_id,status}` |
+| POST | `/steps/{index}/restart` | New run from this zero-based step, keeping completed predecessors as reused results; 201 `{job_id,status}` |
 | PATCH | `/models` | Update any of `vision_model`, `image_model`, `bootstrap_model`; return the updated run |
+| PATCH | `/vision-prompt` | Update `describe_prompt` for future vision tasks and restarts; return the updated run |
 
 An active inference may finish while paused. Viewing the paused run reconciles
 its result but never starts the next task. Background pickup and stale-job expiry
 exclude deliberately paused runs. Cancel works on paused runs. Restart preserves
 the original job's history and outputs instead of overwriting them.
+Every step offers **Restart from this step** once its predecessors are complete.
+The new run reuses earlier prompts, images, scores and model history, then reruns
+the selected step and its successors using the current models and existing step
+budget. Remaining work in the source run is canceled. Reused images remain shared
+references; the new run owns only its newly created child jobs and outputs.
 
 Model edits affect subsequent submissions. Submitted tasks keep their original
 model; each step's `model` records the actual child capability. Legacy history
@@ -125,3 +132,9 @@ validates vision/txt2img/img2img compatibility, including the improver bootstrap
 A failed assessment with a completed vision child can resume by reparsing its
 saved response without another inference. Other failures require restart.
 All control mutations share the worker's per-run advisory lock.
+
+**Edit vision prompt** is available while a run is active or paused, and before
+restarting a finished run. It uses the same saved-prompt library as Describe Image.
+Edits update upcoming vision tasks; already submitted tasks and historical prompts
+keep their original instructions. Drafts survive polling until saved or discarded.
+Generator Improver automatically appends its required JSON assessment instructions.
