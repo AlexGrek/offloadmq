@@ -1,0 +1,877 @@
+import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import {
+  FolderOpen,
+  Loader2,
+  PanelLeft,
+  Plus,
+  RefreshCw,
+  Repeat2,
+  RotateCcw,
+  Square,
+  Trash2,
+} from 'lucide-react'
+import { imageCycleApi, type ImageCycleJob } from '../api/imageCycles'
+import { listDescribeCapabilities } from '../api/describe'
+import {
+  imageFileUrl,
+  listImgGenCapabilities,
+  uploadImage,
+  type UploadedImage,
+} from '../api/images'
+import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
+import { JobErrorBanner } from '../components/JobErrorBanner'
+import { MarkdownContent } from '../components/MarkdownContent'
+import { PromptTextarea } from '../components/PromptTextarea'
+import { ToolSidebar } from '../components/ToolSidebar'
+import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+import { useAuth } from '../contexts/AuthContext'
+import { useIsMobile } from '../hooks/useIsMobile'
+import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
+import { isListedCapability } from '../lib/capability-picker'
+import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
+import {
+  DEFAULT_IMPROVER_PROMPT,
+  DEFAULT_DESCRIBE_PROMPT,
+  DESCRIBE_PROMPT_BUCKET,
+} from '../lib/describe'
+import { pastedImageFiles } from '../lib/clipboardImages'
+import { cn } from '../lib/utils'
+import type { LlmCapabilityInfo } from '../types/ws'
+
+const terminal = (status: string) =>
+  ['completed', 'failed', 'canceled'].includes(status)
+const message = (e: unknown) =>
+  e instanceof Error ? e.message : 'Request failed'
+
+/** Shared persistent image-run UI; each app has separate endpoints and history. */
+export default function ImageCyclesPage({
+  improver = false,
+}: {
+  improver?: boolean
+}) {
+  const title = improver ? 'Generator Improver' : 'Image Cycles'
+  const defaultPrompt = improver
+    ? DEFAULT_IMPROVER_PROMPT
+    : DEFAULT_DESCRIBE_PROMPT
+  const {
+    listImageCycles,
+    getImageCycle,
+    pollImageCycle,
+    cancelImageCycle,
+    deleteImageCycle,
+    retryImageCycle,
+    startImageCycle,
+  } = imageCycleApi(improver)
+  const { token } = useAuth()
+  const [search, setSearch] = useSearchParams()
+  const panel = search.get('job') ?? 'new'
+  const [jobs, setJobs] = useState<ImageCycleJob[]>([])
+  const job = jobs.find((j) => j.job_id === panel)
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [mode, setMode] = useState<'image' | 'text'>('image')
+  const [input, setInput] = useState<UploadedImage | null>(null)
+  const [prompt, setPrompt] = useState('')
+  const [describePrompt, setDescribePrompt] = useState(defaultPrompt)
+  const [cycles, setCycles] = useState('3')
+  const [expectedQuality, setExpectedQuality] = useState('95')
+  const [bootstrapModels, setBootstrapModels] = useState<LlmCapabilityInfo[]>(
+    [],
+  )
+  const [bootstrap, setBootstrap] = useState('')
+  const [width, setWidth] = useState('1024')
+  const [height, setHeight] = useState('1024')
+  const [visionModels, setVisionModels] = useState<LlmCapabilityInfo[]>([])
+  const [imageModels, setImageModels] = useState<LlmCapabilityInfo[]>([])
+  const [vision, setVision] = useState('')
+  const [image, setImage] = useState('')
+  const [capsStatus, setCapsStatus] = useState<CapabilitiesStatus>('loading')
+  const [capsError, setCapsError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const isMobile = useIsMobile()
+  const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
+
+  const put = useCallback((next: ImageCycleJob) => {
+    setJobs((prev) =>
+      [next, ...prev.filter((j) => j.job_id !== next.job_id)].sort((a, b) =>
+        b.created_at.localeCompare(a.created_at),
+      ),
+    )
+  }, [])
+  const select = (id: string) => {
+    setSearch(id === 'new' ? {} : { job: id })
+    setError(null)
+    if (isMobile) setSidebarOpen(false)
+  }
+  const loadModels = useCallback(
+    () =>
+      Promise.all([
+        listDescribeCapabilities(token!),
+        listImgGenCapabilities(token!),
+      ]),
+    [token],
+  )
+  const applyModels = useCallback(
+    ([v, imgs]: Awaited<ReturnType<typeof loadModels>>) => {
+      const eligible = imgs.filter(
+        (c) =>
+          c.tags.length === 0 ||
+          c.tags.includes(improver ? 'img2img' : 'txt2img'),
+      )
+      const seeds = imgs.filter(
+        (c) => c.tags.length === 0 || c.tags.includes('txt2img'),
+      )
+      setBootstrapModels(seeds)
+      setBootstrap((prev) =>
+        isListedCapability(prev, seeds) ? prev : (seeds[0]?.base ?? ''),
+      )
+      setVisionModels(v.capabilities)
+      setImageModels(eligible)
+      setVision((prev) =>
+        isListedCapability(prev, v.capabilities)
+          ? prev
+          : (v.capabilities[0]?.base ?? ''),
+      )
+      setImage((prev) =>
+        isListedCapability(prev, eligible) ? prev : (eligible[0]?.base ?? ''),
+      )
+      setCapsStatus('ready')
+      setCapsError(null)
+    },
+    [improver],
+  )
+  function refreshModels() {
+    setCapsStatus('loading')
+    setCapsError(null)
+    void loadModels()
+      .then(applyModels)
+      .catch((e) => {
+        setCapsError(message(e))
+        setCapsStatus('error')
+      })
+  }
+  useEffect(() => {
+    if (!token) return
+    let live = true
+    loadModels()
+      .then((data) => {
+        if (live) applyModels(data)
+      })
+      .catch((e) => {
+        if (live) {
+          setCapsError(message(e))
+          setCapsStatus('error')
+        }
+      })
+    return () => {
+      live = false
+    }
+  }, [token, loadModels, applyModels])
+  useEffect(() => {
+    if (!token) return
+    let live = true
+    listImageCycles(token)
+      .then((data) => {
+        if (live) setJobs(data)
+      })
+      .catch((e) => {
+        if (live) setError(message(e))
+      })
+      .finally(() => {
+        if (live) setHistoryLoading(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [token, listImageCycles])
+
+  // Chained timeouts never overlap. Leaving a job stops foreground requests;
+  // its persisted backend worker continues running independently.
+  useEffect(() => {
+    if (!token || panel === 'new') return
+    let live = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    async function tick(first: boolean) {
+      try {
+        const next = await (first
+          ? getImageCycle(token!, panel)
+          : pollImageCycle(token!, panel))
+        if (!live) return
+        put(next)
+        if (!terminal(next.status))
+          timer = setTimeout(() => {
+            void tick(false)
+          }, 3000)
+      } catch (e) {
+        if (live) {
+          setError(message(e))
+          timer = setTimeout(() => {
+            void tick(false)
+          }, 5000)
+        }
+      }
+    }
+    void tick(true)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [panel, token, put, getImageCycle, pollImageCycle])
+
+  async function upload(file: File) {
+    if (!token) return
+    setUploading(true)
+    setError(null)
+    try {
+      setInput(await uploadImage(token, file))
+    } catch (e) {
+      setError(message(e))
+    } finally {
+      setUploading(false)
+    }
+  }
+  async function action(work: () => Promise<void>) {
+    setBusy(true)
+    setError(null)
+    try {
+      await work()
+    } catch (e) {
+      setError(message(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const validNumber = (v: string, min: number, max: number) =>
+    Number.isInteger(Number(v)) && Number(v) >= min && Number(v) <= max
+  const canStart =
+    !!token &&
+    !busy &&
+    !uploading &&
+    capsStatus === 'ready' &&
+    (mode === 'image' ? !!input : !!prompt.trim()) &&
+    !!describePrompt.trim() &&
+    isListedCapability(vision, visionModels) &&
+    isListedCapability(image, imageModels) &&
+    validNumber(cycles, 1, 50) &&
+    validNumber(width, 128, 2048) &&
+    validNumber(height, 128, 2048) &&
+    (!improver ||
+      (validNumber(expectedQuality, 1, 100) &&
+        (mode !== 'text' || isListedCapability(bootstrap, bootstrapModels))))
+
+  function preview(id: string, alt: string, testId?: string) {
+    return (
+      <a
+        href={imageFileUrl(id, token!)}
+        target="_blank"
+        rel="noreferrer"
+        className="block"
+        title="Open full image"
+      >
+        <img
+          src={imageFileUrl(id, token!)}
+          alt={alt}
+          loading="lazy"
+          data-testid={testId}
+          className="max-h-[32rem] w-auto max-w-full rounded-lg bg-muted/30 object-contain"
+        />
+      </a>
+    )
+  }
+
+  return (
+    <div
+      className="relative flex min-h-0 flex-1 overflow-hidden"
+      data-testid={improver ? 'generator-improver-page' : 'image-cycles-page'}
+    >
+      <ToolSidebar
+        title={title}
+        open={sidebarOpen}
+        isMobile={isMobile}
+        onClose={() => setSidebarOpen(false)}
+        testId="cycles-history"
+      >
+        <div className="shrink-0 p-3">
+          <Button
+            className="min-h-11 w-full"
+            onClick={() => select('new')}
+            data-testid="cycles-new"
+          >
+            <Plus /> New run
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+          {historyLoading && (
+            <p className="p-2 text-sm text-muted-foreground">
+              Loading history…
+            </p>
+          )}
+          {!historyLoading && jobs.length === 0 && (
+            <p className="p-2 text-sm text-muted-foreground">
+              Your runs will appear here.
+            </p>
+          )}
+          {jobs.map((j) => (
+            <button
+              key={j.job_id}
+              onClick={() => select(j.job_id)}
+              data-testid={`cycles-item-${j.job_id}`}
+              className={cn(
+                'mb-2 min-h-16 w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-muted/70',
+                panel === j.job_id
+                  ? 'bg-muted ring-1 ring-primary/30'
+                  : 'bg-muted/30',
+              )}
+            >
+              <span className="block truncate font-medium">
+                {j.params.initial_prompt || 'Image seed'} · {j.params.cycles}{' '}
+                {improver ? 'max steps' : 'cycles'}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {j.status} · {new Date(j.created_at).toLocaleString()}
+              </span>
+            </button>
+          ))}
+        </div>
+      </ToolSidebar>
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex shrink-0 items-center gap-3 border-b px-3 py-2 sm:px-6">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Toggle run history"
+            onClick={() => setSidebarOpen((v) => !v)}
+          >
+            <PanelLeft />
+          </Button>
+          <Repeat2 className="size-5 text-primary" />
+          <h1 className="font-display text-lg font-semibold">{title}</h1>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-6 sm:py-5">
+          <div className="mx-auto max-w-4xl space-y-6">
+            {error && <JobErrorBanner message={error} testId="cycles-error" />}
+            {panel === 'new' ? (
+              <form
+                className="space-y-6"
+                data-testid="cycles-form"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (!canStart) return
+                  void action(async () => {
+                    const started = await startImageCycle(token!, {
+                      initial_prompt: mode === 'text' ? prompt : null,
+                      input_image_id: mode === 'image' ? input!.image_id : null,
+                      describe_prompt: describePrompt,
+                      vision_model: vision,
+                      image_model: image,
+                      cycles: Number(cycles),
+                      ...(improver
+                        ? {
+                            expected_quality: Number(expectedQuality),
+                            max_steps: Number(cycles),
+                            bootstrap_model: mode === 'text' ? bootstrap : null,
+                          }
+                        : {}),
+                      width: Number(width),
+                      height: Number(height),
+                    })
+                    select(started.job_id)
+                  })
+                }}
+                onPaste={(e) => {
+                  if (mode !== 'image' || uploading) return
+                  const files = pastedImageFiles(e.clipboardData)
+                  if (files[0]) {
+                    e.preventDefault()
+                    void upload(files[0])
+                  }
+                }}
+              >
+                <p className="text-sm text-muted-foreground">
+                  {improver
+                    ? 'Score an image with vision AI, improve it with img2img, and repeat until the expected quality or maximum steps is reached. Every score, prompt, and image is saved.'
+                    : 'Describe an image, generate a new one from the description, and repeat. Every image and intermediate prompt is saved.'}
+                </p>
+                <div
+                  className="flex gap-2"
+                  role="group"
+                  aria-label="Starting input"
+                >
+                  {(['image', 'text'] as const).map((m) => (
+                    <Button
+                      key={m}
+                      type="button"
+                      variant={mode === m ? 'default' : 'outline'}
+                      aria-pressed={mode === m}
+                      className="min-h-11 flex-1 sm:flex-none"
+                      onClick={() => setMode(m)}
+                      data-testid={`cycles-mode-${m}`}
+                    >
+                      {m === 'image' ? 'Start from image' : 'Start from text'}
+                    </Button>
+                  ))}
+                </div>
+                {mode === 'image' ? (
+                  <section
+                    className="space-y-3 rounded-lg bg-muted/30 p-4"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      if (!uploading && e.dataTransfer.files[0])
+                        void upload(e.dataTransfer.files[0])
+                    }}
+                  >
+                    <Label htmlFor="cycles-upload">Starting image</Label>
+                    <Input
+                      id="cycles-upload"
+                      type="file"
+                      accept="image/*"
+                      disabled={uploading}
+                      data-testid="cycles-upload"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) void upload(e.target.files[0])
+                        e.target.value = ''
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setPickerOpen(true)}
+                        disabled={uploading}
+                      >
+                        <FolderOpen /> Choose from files
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        Upload, paste, or drop an image.
+                      </span>
+                    </div>
+                    {uploading && (
+                      <p role="status" className="text-sm">
+                        Uploading image…
+                      </p>
+                    )}
+                    {input && (
+                      <div className="space-y-2">
+                        {preview(
+                          input.image_id,
+                          'Starting image',
+                          'cycles-input-preview',
+                        )}
+                        <p className="break-all text-xs text-muted-foreground">
+                          {input.filename}
+                        </p>
+                      </div>
+                    )}
+                  </section>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="cycles-initial-prompt">
+                      Starting text prompt
+                    </Label>
+                    <PromptTextarea
+                      id="cycles-initial-prompt"
+                      value={prompt}
+                      onChange={setPrompt}
+                      token={token}
+                      bucket="imggen-prompt"
+                      previews
+                      data-testid="cycles-initial-prompt"
+                      placeholder="Describe the image to generate first…"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {improver
+                        ? 'Generates a starting image with txt2img, then improves it with img2img.'
+                        : 'Generates a starting image before the describe → generate cycles.'}
+                    </p>
+                  </div>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Vision model</Label>
+                    <CapabilityModelPicker
+                      capabilities={visionModels}
+                      selected={vision}
+                      onSelect={setVision}
+                      onRefresh={refreshModels}
+                      capabilitiesStatus={capsStatus}
+                      capabilitiesError={capsError}
+                      testIdPrefix="cycles-vision-model"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>
+                      {improver
+                        ? 'Improvement model · img2img'
+                        : 'Image generation model'}
+                    </Label>
+                    <CapabilityModelPicker
+                      capabilities={imageModels}
+                      selected={image}
+                      onSelect={setImage}
+                      onRefresh={refreshModels}
+                      capabilitiesStatus={capsStatus}
+                      capabilitiesError={capsError}
+                      testIdPrefix="cycles-image-model"
+                    />
+                  </div>
+                </div>
+                {improver && mode === 'text' && (
+                  <div className="space-y-2">
+                    <Label>Starting image model · txt2img</Label>
+                    <CapabilityModelPicker
+                      capabilities={bootstrapModels}
+                      selected={bootstrap}
+                      onSelect={setBootstrap}
+                      onRefresh={refreshModels}
+                      capabilitiesStatus={capsStatus}
+                      capabilitiesError={capsError}
+                      testIdPrefix="improver-bootstrap-model"
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Label htmlFor="cycles-describe-prompt">
+                      {improver
+                        ? 'Quality assessment instructions'
+                        : 'Describe prompt · used for every cycle'}
+                    </Label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDescribePrompt(defaultPrompt)}
+                    >
+                      Reset to default
+                    </Button>
+                  </div>
+                  <PromptTextarea
+                    id="cycles-describe-prompt"
+                    value={describePrompt}
+                    onChange={setDescribePrompt}
+                    token={token}
+                    bucket={DESCRIBE_PROMPT_BUCKET}
+                    rows={7}
+                    data-testid="cycles-describe-prompt"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {improver
+                      ? 'Vision output is forced to JSON: {"quality": 95, "improve_prompt": "…"}. Quality is an integer out of 100.'
+                      : 'Uses the same saved prompt library as Describe Image.'}
+                  </p>
+                </div>
+                {improver && (
+                  <div className="space-y-2">
+                    <Label htmlFor="improver-quality">
+                      Expected quality (1–100)
+                    </Label>
+                    <Input
+                      id="improver-quality"
+                      data-testid="improver-quality"
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={expectedQuality}
+                      onChange={(e) => setExpectedQuality(e.target.value)}
+                    />
+                  </div>
+                )}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="cycles-count">
+                      {improver ? 'Max steps (1–50)' : 'Cycles (1–50)'}
+                    </Label>
+                    <Input
+                      id="cycles-count"
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={cycles}
+                      onChange={(e) => setCycles(e.target.value)}
+                      data-testid="cycles-count"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cycles-width">Width</Label>
+                    <Input
+                      id="cycles-width"
+                      type="number"
+                      min={128}
+                      max={2048}
+                      value={width}
+                      onChange={(e) => setWidth(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cycles-height">Height</Label>
+                    <Input
+                      id="cycles-height"
+                      type="number"
+                      min={128}
+                      max={2048}
+                      value={height}
+                      onChange={(e) => setHeight(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {improver
+                    ? `Up to ${cycles || '…'} img2img improvements; the starting and final images are also assessed.`
+                    : validNumber(cycles, 1, 50)
+                      ? `${cycles} descriptions + ${Number(cycles) + (mode === 'text' ? 1 : 0)} generated images`
+                      : 'Choose between 1 and 50 cycles'}
+                </p>
+                <Button
+                  type="submit"
+                  disabled={!canStart}
+                  className="min-h-11 w-full sm:w-auto"
+                  data-testid="cycles-start"
+                >
+                  {busy ? <Loader2 className="animate-spin" /> : <Repeat2 />}{' '}
+                  {improver ? 'Start improving' : 'Start cycles'}
+                </Button>
+              </form>
+            ) : job ? (
+              <section className="space-y-6" data-testid="cycles-detail">
+                <div className="space-y-3">
+                  <h2 className="font-display text-xl font-semibold">
+                    {improver
+                      ? `Target quality: ${job.params.expected_quality}/100 · max ${job.params.max_steps} improvements`
+                      : `${job.params.cycles} describe → generate cycles`}
+                  </h2>
+                  <p
+                    className="text-sm"
+                    role="status"
+                    data-testid="cycles-status"
+                  >
+                    {job.status} ·{' '}
+                    {
+                      job.steps.filter(
+                        (s) =>
+                          s.kind === 'generate' &&
+                          s.cycle > 0 &&
+                          s.status === 'completed',
+                      ).length
+                    }
+                    /{job.params.cycles} {improver ? 'improvements' : 'cycles'}{' '}
+                    complete
+                  </p>
+                  {improver && job.stop_reason && (
+                    <p
+                      className="text-sm font-medium"
+                      data-testid="improver-stop-reason"
+                    >
+                      {job.stop_reason === 'target_reached'
+                        ? 'Expected quality reached'
+                        : 'Maximum improvements reached'}
+                      {' · Final quality: '}
+                      {
+                        job.steps.filter((s) => s.quality != null).at(-1)
+                          ?.quality
+                      }
+                      /100
+                    </p>
+                  )}
+                  <p className="break-all text-xs text-muted-foreground">
+                    Vision: {job.params.vision_model} · Images:{' '}
+                    {job.params.image_model} · {job.params.width} ×{' '}
+                    {job.params.height}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => {
+                        void action(async () =>
+                          put(await pollImageCycle(token!, job.job_id)),
+                        )
+                      }}
+                      data-testid="cycles-poll"
+                    >
+                      <RefreshCw /> Refresh
+                    </Button>
+                    {!terminal(job.status) ? (
+                      <Button
+                        variant="outline"
+                        disabled={busy || job.status === 'cancelRequested'}
+                        onClick={() => {
+                          void action(async () =>
+                            put(await cancelImageCycle(token!, job.job_id)),
+                          )
+                        }}
+                        data-testid="cycles-cancel"
+                      >
+                        <Square /> Stop run
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => {
+                            void action(async () => {
+                              const next = await retryImageCycle(
+                                token!,
+                                job.job_id,
+                              )
+                              select(next.job_id)
+                            })
+                          }}
+                          data-testid="cycles-retry"
+                        >
+                          <RotateCcw /> Run again
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() => {
+                            void action(async () => {
+                              await deleteImageCycle(token!, job.job_id)
+                              setJobs((prev) =>
+                                prev.filter((j) => j.job_id !== job.job_id),
+                              )
+                              select('new')
+                            })
+                          }}
+                          data-testid="cycles-delete"
+                        >
+                          <Trash2 /> Delete run and outputs
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {job.error && (
+                    <JobErrorBanner
+                      message={job.error}
+                      testId="cycles-job-error"
+                    />
+                  )}
+                </div>
+                <section className="space-y-3">
+                  <h3 className="font-semibold">Starting point</h3>
+                  {job.params.input_image_id ? (
+                    preview(
+                      job.params.input_image_id,
+                      'Original starting image',
+                    )
+                  ) : (
+                    <p className="whitespace-pre-wrap break-words text-sm">
+                      {job.params.initial_prompt}
+                    </p>
+                  )}
+                </section>
+                <ol className="space-y-8" data-testid="cycles-timeline">
+                  {job.steps.map((step, i) => (
+                    <li
+                      key={i}
+                      className="space-y-3 border-t pt-5"
+                      data-testid={`cycles-step-${i}`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold">
+                          {step.cycle === 0
+                            ? 'Starting image'
+                            : improver
+                              ? step.kind === 'describe'
+                                ? `Quality check ${step.cycle}`
+                                : `Improvement ${step.cycle} · img2img`
+                              : `Cycle ${step.cycle} · ${step.kind === 'describe' ? 'Describe' : 'Generate'}`}
+                        </h3>
+                        <span className="rounded bg-muted px-2 py-0.5 text-xs">
+                          {step.status}
+                        </span>
+                      </div>
+                      {step.quality != null && (
+                        <p
+                          className="text-lg font-semibold"
+                          data-testid={`improver-quality-${i}`}
+                        >
+                          Quality: {step.quality}/100
+                        </p>
+                      )}
+                      {step.improve_prompt && (
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-medium text-muted-foreground">
+                            Improvement prompt
+                          </h4>
+                          <p
+                            className="whitespace-pre-wrap break-words text-sm"
+                            data-testid={`improver-prompt-${i}`}
+                          >
+                            {step.improve_prompt}
+                          </p>
+                        </div>
+                      )}
+                      {step.stage && (
+                        <p className="text-xs text-muted-foreground">
+                          {step.stage}
+                        </p>
+                      )}
+                      {step.prompt && (
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-medium text-muted-foreground">
+                            {step.kind === 'describe'
+                              ? improver
+                                ? 'Quality assessment prompt'
+                                : 'Describe prompt'
+                              : 'Generation prompt'}
+                          </h4>
+                          <p
+                            className="whitespace-pre-wrap break-words text-sm"
+                            data-testid={`cycles-step-prompt-${i}`}
+                          >
+                            {step.prompt}
+                          </p>
+                        </div>
+                      )}
+                      {step.result && (
+                        <div
+                          className="space-y-2"
+                          data-testid={`cycles-step-result-${i}`}
+                        >
+                          <h4 className="text-xs font-medium text-muted-foreground">
+                            {improver
+                              ? 'Vision JSON assessment'
+                              : 'Description → next generation prompt'}
+                          </h4>
+                          <MarkdownContent>{step.result}</MarkdownContent>
+                        </div>
+                      )}
+                      {step.output_image_id &&
+                        preview(
+                          step.output_image_id,
+                          `Generated image ${step.cycle}`,
+                          `cycles-step-image-${i}`,
+                        )}
+                      {step.error && <JobErrorBanner message={step.error} />}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : (
+              <p role="status">Loading run…</p>
+            )}
+          </div>
+        </div>
+      </main>
+      {token && (
+        <ImagePickerModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          token={token}
+          onSelect={(picked) => {
+            setInput(picked)
+            setPickerOpen(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}

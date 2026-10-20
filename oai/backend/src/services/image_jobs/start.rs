@@ -111,6 +111,17 @@ pub async fn start_job(
     user_id: i64,
     req: StartJobParams,
 ) -> Result<i64, AppError> {
+    start_job_with_id(state, user_id, state.next_id(), req, false).await
+}
+
+/// Start a child job with an ID already reserved by a persistent orchestrator.
+pub async fn start_job_with_id(
+    state: &AppState,
+    user_id: i64,
+    job_id: i64,
+    req: StartJobParams,
+    preserve_input: bool,
+) -> Result<i64, AppError> {
     storage::operator(state)?;
 
     let input_image_id = parse_input_image_id(&req)?;
@@ -124,7 +135,6 @@ pub async fn start_job(
     let mut req = req;
     req.prompt = image_job_names::expand_prompt_placeholders(req.prompt.trim());
 
-    let job_id = state.next_id();
     let display_name = image_job_names::generate_display_name();
     let pipeline_params = build_pipeline_params(&req, &workflow, input_image_id);
     let pipeline_params_json = pipeline_params
@@ -185,7 +195,7 @@ pub async fn start_job(
             )),
         )
         .await?;
-        link_fresh_input(state, user_id, job_id, input).await?;
+        if !preserve_input { link_fresh_input(state, user_id, job_id, input).await?; }
         return Ok(job_id);
     }
 
@@ -237,7 +247,7 @@ pub async fn start_job(
     .await?;
 
     if let Some(input) = &input {
-        link_fresh_input(state, user_id, job_id, input).await?;
+        if !preserve_input { link_fresh_input(state, user_id, job_id, input).await?; }
     }
 
     Ok(job_id)

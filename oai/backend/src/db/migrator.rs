@@ -41,6 +41,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260903_000033_create_prompt_placeholders::Migration),
             Box::new(m20260926_000034_prompt_entry_previews::Migration),
             Box::new(m20261009_000035_create_oauth_tables::Migration),
+            Box::new(m20261020_000036_create_image_cycle_jobs::Migration),
+            Box::new(m20261020_000037_image_cycle_apps::Migration),
         ]
     }
 }
@@ -132,3 +134,7 @@ mod movie_migration_idens {
         assert_eq!(m30::MovieJobs::VideoCapability.to_string(), "video_capability");
     }
 }
+
+mod m20261020_000036_create_image_cycle_jobs;
+
+mod m20261020_000037_image_cycle_apps;

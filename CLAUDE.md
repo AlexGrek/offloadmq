@@ -390,6 +390,17 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 - Remote MCP server at `/mcp` with OAuth sign-in, so Claude (web, desktop, mobile, Claude Code) can generate images and manage jobs/prompts/placeholders — see [oai/docs/mcp.md](oai/docs/mcp.md)
 - Also has a Go command-line client, [oai/cli/](oai/cli/) (`oai login`, `oai image generate|describe|prompts`, `oai nude`), that talks to the same HTTP API as the SPA
 
+### Image Cycles
+
+Image Cycles (`/app/image-cycles`) chains an image or text seed through n
+vision-description → txt2img cycles. It shares Describe Image's prompt library
+and default and persists every intermediate prompt and image. Parent jobs wrap
+the existing describe/image workers. API and lifecycle: [docs/oai-image-cycles.md](docs/oai-image-cycles.md).
+Before editing `image_cycles.rs`, `image_cycle_jobs.rs`, `image_cycles_worker.rs`,
+`ImageCyclesPage.tsx`, or `api/imageCycles.ts`, read
+[the feature skill](.agents/skills/oai-image-cycles/SKILL.md) plus the matching
+backend/frontend skills.
+
 ### Skills
 
 Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read every matching skill below** — load the most specific skill(s) first, then parent skills. Do not implement until relevant skill(s) are loaded.
@@ -404,6 +415,7 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 | **oai-img** | `.claude/skills/oai-img/SKILL.md` | Image generation feature files (patterns below) |
 | **oai-img-tools** | `.claude/skills/oai-img-tools/SKILL.md` | Image Tools (`img-utils.*` / resize) feature files (patterns below) |
 | **oai-movie** | `.claude/skills/oai-movie/SKILL.md` | Movie Studio feature files (patterns below) |
+| **oai-image-cycles** | `.agents/skills/oai-image-cycles/SKILL.md` | Image Cycles modules and page (`image_cycles*`, `ImageCyclesPage.tsx`, `api/imageCycles.ts`) |
 | **oai-cli** | `.claude/skills/oai-cli/SKILL.md` | `oai/cli/**` (Go CLI client) |
 | **oai-mcp** | `.claude/skills/oai-mcp/SKILL.md` | `oai/backend/src/mcp/**`, `routes/oauth.rs`, `services/oauth.rs`, `db/oauth.rs`, `services/prompt_expansion.rs`, `jobs/oauth_cleanup_worker.rs` (MCP server + OAuth) |
 | **oai-backend** | `.claude/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |

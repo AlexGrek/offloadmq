@@ -31,3 +31,5 @@ pub async fn connect(database_url: &str) -> Result<DatabaseConnection> {
     migrator::Migrator::up(&db, None).await?;
     Ok(db)
 }
+
+pub mod image_cycles;

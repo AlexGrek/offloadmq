@@ -23,3 +23,5 @@ pub mod llm_debate;
 pub mod movie;
 pub mod names;
 pub mod oauth;
+
+pub mod image_cycles;

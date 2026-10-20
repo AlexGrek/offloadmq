@@ -193,6 +193,8 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/describe/capabilities",
             get(routes::describe::list_capabilities),
         )
+        .nest("/api/image-cycles", routes::image_cycles::router("image-cycles"))
+        .nest("/api/generator-improver", routes::image_cycles::router("generator-improver"))
         .route("/api/describe/jobs", post(routes::describe::start_job))
         .route("/api/describe/jobs", get(routes::describe::list_jobs))
         .route(

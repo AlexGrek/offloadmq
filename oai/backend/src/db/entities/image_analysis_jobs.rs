@@ -11,6 +11,7 @@ pub struct Model {
     pub updated_at: DateTimeWithTimeZone,
     pub status: String,
     pub prompt: String,
+    pub response_format: Option<String>,
     pub capability: String,
     pub input_image_id: Option<i64>,
     pub offload_cap: Option<String>,

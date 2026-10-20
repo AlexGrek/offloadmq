@@ -1,4 +1,4 @@
-import { Activity, Bot, Braces, Clapperboard, Eye, FolderOpen, GalleryVerticalEnd, GitCompareArrows, ImagePlus, MessageCircleMore, Music, ShieldAlert, Volume2, Wand2 } from 'lucide-react'
+import { Activity, Bot, Braces, Clapperboard, Eye, FolderOpen, GalleryVerticalEnd, GitCompareArrows, ImagePlus, MessageCircleMore, Music, Repeat2, ShieldAlert, Volume2, Wand2 } from 'lucide-react'
 
 /** Every app tile on the dashboard; also the source for the TopBar's most-used shortcuts. */
 export const apps = [
@@ -41,6 +41,26 @@ export const apps = [
     gradient: 'from-sky-500/20 to-cyan-500/20',
     iconBg: 'bg-sky-500/20',
     iconColor: 'text-sky-400',
+  },
+  {
+    id: 'image-cycles',
+    icon: Repeat2,
+    title: 'Image Cycles',
+    description: 'Repeat describe → generate cycles and explore every image and prompt',
+    href: '/app/image-cycles',
+    gradient: 'from-violet-500/20 to-sky-500/20',
+    iconBg: 'bg-violet-500/20',
+    iconColor: 'text-violet-400',
+  },
+  {
+    id: 'generator-improver',
+    icon: Wand2,
+    title: 'Generator Improver',
+    description: 'Improve images with img2img until vision AI reaches your quality target',
+    href: '/app/generator-improver',
+    gradient: 'from-amber-500/20 to-rose-500/20',
+    iconBg: 'bg-amber-500/20',
+    iconColor: 'text-amber-400',
   },
   {
     id: 'img-utils',

@@ -11,6 +11,8 @@ import ChatPage from './pages/ChatPage'
 import ImageGenerationPage from './pages/ImageGenerationPage'
 import PromptPlaceholdersPage from './pages/PromptPlaceholdersPage'
 import DescribeImagePage from './pages/DescribeImagePage'
+import ImageCyclesPage from './pages/ImageCyclesPage'
+import GeneratorImproverPage from './pages/GeneratorImproverPage'
 import NudeDetectorPage from './pages/NudeDetectorPage'
 import ImgUtilsPage from './pages/ImgUtilsPage'
 import RunnersPage from './pages/RunnersPage'
@@ -51,6 +53,8 @@ export default function App() {
             <Route path="images" element={<ImageGenerationPage />} />
             <Route path="prompt-placeholders" element={<PromptPlaceholdersPage />} />
             <Route path="describe" element={<DescribeImagePage />} />
+            <Route path="image-cycles" element={<ImageCyclesPage key="image-cycles" />} />
+            <Route path="generator-improver" element={<GeneratorImproverPage />} />
             <Route path="nude-detect" element={<NudeDetectorPage />} />
             <Route path="img-utils" element={<ImgUtilsPage />} />
             <Route path="runners" element={<RunnersPage />} />

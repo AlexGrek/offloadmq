@@ -1,3 +1,4 @@
+import { DEFAULT_DESCRIBE_PROMPT, DESCRIBE_PROMPT_BUCKET } from '../lib/describe'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
@@ -71,14 +72,6 @@ import {
 import { cn } from '../lib/utils'
 import { pastedImageFiles } from '../lib/clipboardImages'
 
-const DEFAULT_PROMPT = [
-  'Describe this image in detail. Use the following rules:',
-  '1. Describe main subject or person visually, do not use general words like "person", mention gender, age, body shape, skin color, race, hair, what person is wearing, pose, significant visual details.',
-  '2. Describe what the subject is doing, what is going on around, what is on background.',
-  '3. Describe atmosphere, dominant colors, lighting, weather, style.',
-  '',
-  'Write one paragraph, no numeration, 6 sentences max.',
-].join('\n')
 const POLL_INTERVAL_MS = 3000
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 
@@ -129,7 +122,7 @@ export default function DescribeImagePage() {
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
 
   const [selectedCap, setSelectedCap] = useState('')
-  const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
+  const [prompt, setPrompt] = useState(DEFAULT_DESCRIBE_PROMPT)
   const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
 
   // Each input image becomes its own analysis job on submit.
@@ -383,7 +376,7 @@ export default function DescribeImagePage() {
       for (const img of inputs) {
         const res = await startDescribeJob(token, {
           capability: selectedCap,
-          prompt: prompt.trim() || DEFAULT_PROMPT,
+          prompt: prompt.trim() || DEFAULT_DESCRIBE_PROMPT,
           image_id: img.image_id,
           // null -> send the OAI-normalized upload without extra agent-side rescale.
           data_preparation: rescaleDataPrep(rescale.enabled, rescale),
@@ -816,10 +809,10 @@ export default function DescribeImagePage() {
                       id="describe-prompt-input"
                       value={prompt}
                       onChange={setPrompt}
-                      bucket="describe-image-user"
+                      bucket={DESCRIBE_PROMPT_BUCKET}
                       token={token}
                       rows={8}
-                      placeholder={DEFAULT_PROMPT}
+                      placeholder={DEFAULT_DESCRIBE_PROMPT}
                       data-testid="describe-prompt-input"
                     />
                   </div>

@@ -67,6 +67,7 @@ pub async fn start_job(
         analysis::StartJobParams {
             capability: req.capability,
             prompt: req.prompt,
+            response_format: None,
             image_id,
             data_preparation: req.data_preparation,
             external_resize: req.external_resize,

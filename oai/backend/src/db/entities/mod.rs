@@ -25,3 +25,5 @@ pub mod oauth_clients;
 pub mod oauth_grants;
 pub mod oauth_tokens;
 pub mod users;
+
+pub mod image_cycle_jobs;

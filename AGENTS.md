@@ -375,6 +375,17 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 - React UI built with shadcn/ui components
 - Deployed at `oai.alexgr.space`; Docker image `grekodocker/oai`
 
+### Image Cycles
+
+Image Cycles (`/app/image-cycles`) chains an image or text seed through n
+vision-description → txt2img cycles. It shares Describe Image's prompt library
+and default and persists every intermediate prompt and image. Parent jobs wrap
+the existing describe/image workers. API and lifecycle: [docs/oai-image-cycles.md](docs/oai-image-cycles.md).
+Before editing `image_cycles.rs`, `image_cycle_jobs.rs`, `image_cycles_worker.rs`,
+`ImageCyclesPage.tsx`, or `api/imageCycles.ts`, read
+[the feature skill](.agents/skills/oai-image-cycles/SKILL.md) plus the matching
+backend/frontend skills.
+
 ### Skills
 
 Skills live in `.Codex/skills/oai-*/SKILL.md`. **Before editing OAI code, read every matching skill below** — load the most specific skill(s) first, then parent skills. Do not implement until relevant skill(s) are loaded.
@@ -389,6 +400,7 @@ Skills live in `.Codex/skills/oai-*/SKILL.md`. **Before editing OAI code, read e
 | **oai-img** | `.Codex/skills/oai-img/SKILL.md` | Image generation feature files (patterns below) |
 | **oai-img-tools** | `.Codex/skills/oai-img-tools/SKILL.md` | Image Tools (`img-utils.*` / resize) feature files (patterns below) |
 | **oai-movie** | `.Codex/skills/oai-movie/SKILL.md` | Movie Studio feature files (patterns below) |
+| **oai-image-cycles** | `.agents/skills/oai-image-cycles/SKILL.md` | Image Cycles modules and page (`image_cycles*`, `ImageCyclesPage.tsx`, `api/imageCycles.ts`) |
 | **oai-backend** | `.Codex/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |
 | **oai-frontend** | `.Codex/skills/oai-frontend/SKILL.md` | Any `oai/frontend/**` file, or cross-cutting SPA work |
 

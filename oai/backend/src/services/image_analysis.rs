@@ -29,6 +29,7 @@ use crate::{
 pub struct StartJobParams {
     pub capability: String,
     pub prompt: String,
+    pub response_format: Option<serde_json::Value>,
     pub image_id: i64,
     /// OffloadMQ `dataPreparation` map (glob → action) applied to the input image
     /// before the vision task runs. Empty / `None` = send the image as-is.
@@ -142,6 +143,16 @@ pub async fn start_job(
     user_id: i64,
     req: StartJobParams,
 ) -> Result<i64, AppError> {
+    start_job_with_id(state, user_id, state.next_id(), req).await
+}
+
+/// Start a child job with an ID already reserved by a persistent orchestrator.
+pub async fn start_job_with_id(
+    state: &AppState,
+    user_id: i64,
+    job_id: i64,
+    req: StartJobParams,
+) -> Result<i64, AppError> {
     storage::operator(state)?;
 
     let prompt = req.prompt.trim();
@@ -169,13 +180,13 @@ pub async fn start_job(
         .transpose()
         .map_err(|e| AppError::Internal(format!("serialize dataPreparation: {e}")))?;
 
-    let job_id = state.next_id();
     image_analysis::create_job(
         &state.db,
         image_analysis::NewJobInput {
             id: job_id,
             user_id,
             prompt,
+            response_format: req.response_format.as_ref().map(serde_json::to_string).transpose().map_err(|e| AppError::Internal(e.to_string()))?.as_deref(),
             capability: &capability,
             input_image_id: Some(input.id),
             data_preparation: data_prep_json.as_deref(),
@@ -217,7 +228,7 @@ pub async fn start_job(
         .upload_bucket_file(&bucket.bucket_uid, bytes, &input.filename, &content_type)
         .await?;
 
-    submit_vision_task(state, job_id, &capability, prompt, &bucket.bucket_uid, data_prep.as_ref())
+    submit_vision_task(state, job_id, &capability, prompt, &bucket.bucket_uid, data_prep.as_ref(), req.response_format.as_ref())
         .await?;
 
     Ok(job_id)
@@ -232,11 +243,12 @@ async fn submit_vision_task(
     prompt: &str,
     bucket_uid: &str,
     data_prep: Option<&serde_json::Map<String, serde_json::Value>>,
+    response_format: Option<&serde_json::Value>,
 ) -> Result<(), AppError> {
     let chat_client = offload_factory::chat_client(state).await?;
     let messages = vec![serde_json::json!({ "role": "user", "content": prompt })];
     let task_id = chat_client
-        .submit_vision_task(capability, messages, bucket_uid, data_prep)
+        .submit_vision_task_with_format(capability, messages, bucket_uid, data_prep, response_format)
         .await?;
 
     offload_jobs::set_offload_task::<ImageAnalysisJobEntity>(
@@ -286,6 +298,7 @@ async fn promote_after_resize(
         &job.prompt,
         &resized.bucket_uid,
         data_prep.as_ref(),
+        job.response_format.as_deref().and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()).as_ref(),
     )
     .await
 }
@@ -313,6 +326,7 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
         StartJobParams {
             capability: job.capability.clone(),
             prompt: job.prompt.clone(),
+            response_format: job.response_format.as_deref().and_then(|s| serde_json::from_str(s).ok()),
             image_id,
             data_preparation,
             external_resize: job.external_resize,

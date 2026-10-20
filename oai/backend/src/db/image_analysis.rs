@@ -72,6 +72,7 @@ pub struct NewJobInput<'a> {
     pub id: i64,
     pub user_id: i64,
     pub prompt: &'a str,
+    pub response_format: Option<&'a str>,
     pub capability: &'a str,
     pub input_image_id: Option<i64>,
     /// JSON-serialized OffloadMQ `dataPreparation` map, or `None` for no preprocessing.
@@ -92,6 +93,7 @@ pub async fn create_job(
         updated_at: ActiveValue::Set(now),
         status: ActiveValue::Set("created".to_string()),
         prompt: ActiveValue::Set(input.prompt.to_string()),
+        response_format: ActiveValue::Set(input.response_format.map(str::to_owned)),
         capability: ActiveValue::Set(input.capability.to_string()),
         input_image_id: ActiveValue::Set(input.input_image_id),
         offload_cap: ActiveValue::Set(None),

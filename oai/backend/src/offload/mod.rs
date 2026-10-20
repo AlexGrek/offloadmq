@@ -266,6 +266,17 @@ impl OffloadClient {
         bucket_uid: &str,
         data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
     ) -> Result<TaskId, AppError> {
+        self.submit_vision_task_with_format(capability, messages, bucket_uid, data_preparation, None).await
+    }
+
+    pub async fn submit_vision_task_with_format(
+        &self,
+        capability: &str,
+        messages: Vec<serde_json::Value>,
+        bucket_uid: &str,
+        data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
+        response_format: Option<&serde_json::Value>,
+    ) -> Result<TaskId, AppError> {
         let url = format!("{}/api/task/submit", self.base_url);
         let mut body = serde_json::json!({
             "apiKey": self.api_key,
@@ -283,6 +294,9 @@ impl OffloadClient {
             "maxWaitSecs": 24 * 3600u64,
             "runtimeSecs": 15 * 60u64
         });
+        if let Some(format) = response_format {
+            body["payload"]["format"] = format.clone();
+        }
         if let Some(prep) = data_preparation.filter(|m| !m.is_empty()) {
             body["dataPreparation"] = serde_json::Value::Object(prep.clone());
         }
