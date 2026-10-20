@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { DropdownMenu } from 'radix-ui'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import {
   ChevronLeft,
@@ -14,6 +15,7 @@ import {
   Download,
   Eye,
   MessageSquareText,
+  MoreHorizontal,
   Pencil,
   ShieldAlert,
   Star,
@@ -42,6 +44,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import type { ImageCycleRouteState } from '@/lib/imageCycles'
 
 export type ImageLightboxActions = {
   imageId: string
@@ -127,6 +130,7 @@ export function ImageLightbox({
   const [actionError, setActionError] = useState<string | null>(null)
   const [chromeVisible, setChromeVisible] = useState(true)
   const [imgUtilsOpen, setImgUtilsOpen] = useState(false)
+  const [etcOpen, setEtcOpen] = useState(false)
   // Stays open while swiping, so prompts can be read image after image.
   const [promptOpen, setPromptOpen] = useState(false)
   const hideTimer = useRef<number | null>(null)
@@ -165,6 +169,7 @@ export function ImageLightbox({
   // (controlled mode, e.g. slideshow auto-advance), so the action bar resurfaces
   // for each new image.
   useResetOnChange(open ? (actions?.imageId ?? '') : null, shown => {
+    setEtcOpen(false)
     if (shown !== null) setChromeVisible(true)
   })
   useEffect(() => {
@@ -223,6 +228,25 @@ export function ImageLightbox({
       },
     })
   }, [actions, navigate, setOpen])
+
+  const onSendToRun = (app: 'generator-improver' | 'image-cycles') => {
+    if (!actions) return
+    setOpen(false)
+    navigate(`/app/${app}`, {
+      state: {
+        cycleImage: {
+          image_id: actions.imageId,
+          filename: actions.filename,
+          content_type: 'image/jpeg',
+          width: 0,
+          height: 0,
+          size_bytes: 0,
+          rescaled: false,
+          reencoded: false,
+        },
+      } satisfies ImageCycleRouteState,
+    })
+  }
 
   const onToggleStar = useCallback(async () => {
     if (!actions?.token) return
@@ -310,7 +334,7 @@ export function ImageLightbox({
       if (el) el.scrollLeft = indexRef.current * el.clientWidth
     }
     const onKey = (e: KeyboardEvent) => {
-      if (imgUtilsOpen || e.metaKey || e.ctrlKey || e.altKey) return
+      if (imgUtilsOpen || etcOpen || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.key === 'ArrowLeft') goTo(indexRef.current - 1)
       else if (e.key === 'ArrowRight') goTo(indexRef.current + 1)
       else if ((e.key === 'p' || e.key === 'i') && promptPanel != null) setPromptOpen(v => !v)
@@ -321,7 +345,7 @@ export function ImageLightbox({
       window.removeEventListener('resize', onResize)
       window.removeEventListener('keydown', onKey)
     }
-  }, [open, slideCount, goTo, imgUtilsOpen, promptPanel])
+  }, [open, slideCount, goTo, imgUtilsOpen, etcOpen, promptPanel])
 
   const stop = useCallback((e: { stopPropagation: () => void }) => e.stopPropagation(), [])
 
@@ -521,7 +545,7 @@ export function ImageLightbox({
               className={cn(
                 'pointer-events-auto flex flex-wrap items-center justify-center gap-0.5 rounded-xl border border-white/15 bg-black/70 p-1 shadow-[0_8px_40px_rgba(0,0,0,0.6)] transition-opacity duration-300',
                 // The prompt sheet keeps the toolbar on screen while it is open.
-                chromeVisible || showPrompt ? 'opacity-100' : 'opacity-0',
+                chromeVisible || showPrompt || etcOpen ? 'opacity-100' : 'opacity-0',
               )}
               data-testid={testId ? `${testId}-lightbox-actions` : 'image-lightbox-actions'}
             >
@@ -636,6 +660,46 @@ export function ImageLightbox({
                   Delete
                 </button>
               ) : null}
+              <DropdownMenu.Root
+                open={etcOpen}
+                onOpenChange={next => {
+                  setEtcOpen(next)
+                  revealChrome()
+                }}
+              >
+                <DropdownMenu.Trigger asChild>
+                  <button
+                    type="button"
+                    className={glassButton}
+                    data-testid="image-lightbox-etc"
+                  >
+                    <MoreHorizontal className="size-3" />
+                    Etc
+                  </button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    side="top"
+                    align="end"
+                    sideOffset={8}
+                    onClick={stop}
+                    className="z-[60] min-w-44 rounded-lg border border-white/15 bg-black/95 p-1 text-sm text-white shadow-xl"
+                  >
+                    <DropdownMenu.Item
+                      onSelect={() => onSendToRun('generator-improver')}
+                      className="cursor-pointer rounded-md px-3 py-2 outline-none focus:bg-white/15"
+                    >
+                      Send to improver
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      onSelect={() => onSendToRun('image-cycles')}
+                      className="cursor-pointer rounded-md px-3 py-2 outline-none focus:bg-white/15"
+                    >
+                      Send to cycles
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             </div>
           ) : null}
         </div>

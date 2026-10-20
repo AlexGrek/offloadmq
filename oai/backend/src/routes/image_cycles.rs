@@ -24,6 +24,7 @@ pub fn router(app: &'static str) -> Router<Arc<AppState>> {
         .route("/jobs/{id}/cancel", post(cancel))
         .route("/jobs/{id}/retry", post(retry))
         .route("/jobs/{id}/restart", post(restart))
+        .route("/jobs/{id}/steps/{index}/restart", post(restart_from_step))
         .route("/jobs/{id}/pause", post(pause))
         .route("/jobs/{id}/resume", post(resume))
         .route("/jobs/{id}/models", axum::routing::patch(update_models))
@@ -132,6 +133,18 @@ async fn restart(
     let id = service::restart(&state, user, owned_id(&state, user, &id, app).await?).await?;
     Ok((StatusCode::CREATED, Json(StartJobResponse::submitted(id))))
 }
+async fn restart_from_step(
+    Extension(AppKind(app)): Extension<AppKind>,
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path((id, index)): Path<(String, usize)>,
+) -> Result<(StatusCode, Json<StartJobResponse>), AppError> {
+    let id =
+        service::restart_from_step(&state, user, owned_id(&state, user, &id, app).await?, index)
+            .await?;
+    Ok((StatusCode::CREATED, Json(StartJobResponse::submitted(id))))
+}
+
 async fn update_models(
     Extension(AppKind(app)): Extension<AppKind>,
     State(state): State<Arc<AppState>>,

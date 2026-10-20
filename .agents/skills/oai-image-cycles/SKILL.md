@@ -35,6 +35,19 @@ changing child image/describe services. API and semantics: `docs/oai-image-cycle
 - Page: `pages/ImageCyclesPage.tsx`; API: `api/imageCycles.ts`; authenticated
   `/api/image-cycles/jobs` CRUD + poll/cancel/retry. Detail URL uses `?job=<id>`.
   Timeline must keep all prompts, descriptions and generated images visible.
+- Both apps use the shared `ImageLightbox` for seed previews and step outputs.
+  Run slides include the seed and generated images in order; the prompt and
+  standard actions follow the selected image. Do not replace previews with
+  new-tab links.
+- History rows show the input image thumbnail, falling back to the first
+  generated output (including text bootstrap); never pick the latest output.
+- Compare uses the img2img two-pane layout: input (or first generated image for
+  text seeds) versus the latest available output. Show the toggle only for two
+  distinct images, keep it live during polling, reset on run switches, and keep
+  the timeline visible. Both panes open the shared run lightbox.
+- The shared lightbox's Etc menu sends the current image to either new-run form
+  through `ImageCycleRouteState.cycleImage`. Handle same-app navigation as well
+  as cross-app navigation; sending an image must not submit a run automatically.
 - Tests: `oai/e2e/tests/image-cycles.spec.ts`,
   `oai/itests/tests/test_image_cycles.py`, service unit tests.
 

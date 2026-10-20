@@ -44,6 +44,8 @@ async function setup(page: Page, initial: ImageCycleJob | null = null, improver 
       { base: 'imggen.refine-new', tags: ['img2img'], raw: 'imggen.refine-new[img2img]', online: true },
       { base: 'imggen.video', tags: ['txt2video'], raw: 'imggen.video[txt2video]', online: true },
     ])
+    if (pathname.endsWith('/starred')) return json({ starred: method === 'PATCH' ? route.request().postDataJSON().starred : false })
+    if (pathname.startsWith('/api/images/files/') && method === 'DELETE') return route.fulfill({ status: 204 })
     if (pathname.startsWith('/api/images/files/')) return route.fulfill({ body: png, contentType: 'image/png' })
     if (pathname === '/api/images/upload') return json({ image_id: '42', filename: 'seed.png', content_type: 'image/png', width: 1, height: 1, size_bytes: png.length, rescaled: false, reencoded: false })
     if (pathname.startsWith('/api/prompts/')) {
@@ -63,7 +65,12 @@ async function setup(page: Page, initial: ImageCycleJob | null = null, improver 
       if (pathname.endsWith('/resume')) job = { ...job, status: 'running', error: null }
       if (pathname.endsWith('/models')) job = { ...job, params: { ...job.params, ...route.request().postDataJSON() } }
       if (pathname.endsWith('/restart')) {
-        job = { ...job, job_id: '456', status: 'running', error: null }
+        const checkpoint = pathname.match(/\/steps\/(\d+)\/restart$/)
+        job = { ...job, job_id: '456', status: 'running', error: null, ...(checkpoint ? {
+          steps: job.steps.map((item, index) => index < Number(checkpoint[1])
+            ? { ...item, reused: true, child_job_id: null }
+            : { ...item, reused: false, child_job_id: null, output_image_id: null, result: null, quality: null, improve_prompt: null, model: null, status: 'queued', stage: null, error: null }),
+        } : {}) }
         return json({ job_id: '456', status: 'submitted' })
       }
       return json(job)
@@ -246,3 +253,181 @@ test('a failed fenced assessment exposes its raw source and can retry parsing', 
   expect(state.controls.some(c => c.path.endsWith('/resume'))).toBe(true)
   expect(state.submissions).toHaveLength(0)
 })
+
+for (const improver of [false, true]) {
+  test(`${improver ? 'Generator Improver' : 'Image Cycles'} restarts from a selected step and reuses its completed predecessors`, async ({ page }) => {
+    const active: ImageCycleJob = {
+      ...completed, status: 'running', steps: completed.steps.map((item, index) => ({
+        ...item, status: index === 0 ? 'submitted' : 'queued', output_image_id: null, result: null,
+      })),
+    }
+    const state = await setup(page, active, improver)
+    await page.goto(`/app/${improver ? 'generator-improver' : 'image-cycles'}?job=123`)
+    await expect(page.getByTestId('cycles-restart-step-0')).toBeEnabled()
+    for (let index = 1; index < active.steps.length; index++) {
+      await expect(page.getByTestId(`cycles-restart-step-${index}`)).toBeDisabled()
+    }
+    state.finish(completed)
+    await page.getByTestId('cycles-poll').click()
+    for (let index = 0; index < completed.steps.length; index++) {
+      await expect(page.getByTestId(`cycles-restart-step-${index}`)).toBeEnabled()
+    }
+    await page.getByTestId('cycles-restart-step-1').click()
+    await expect(page).toHaveURL(/job=456/)
+    expect(state.controls.at(-1)?.path).toMatch(/\/123\/steps\/1\/restart$/)
+    await expect(page.getByTestId('cycles-step-0')).toContainText('Reused result')
+    await expect(page.getByTestId('cycles-step-result-0')).toContainText('A red fox at dawn.')
+    await expect(page.getByTestId('cycles-step-1')).toContainText('queued')
+    await expect(page.getByTestId('cycles-step-image-1')).toHaveCount(0)
+    await expect(page.getByTestId('cycles-step-prompt-1')).toHaveText('A red fox at dawn.')
+    expect(state.submissions).toHaveLength(0)
+  })
+
+  for (const textStart of [false, true]) {
+    test(`${improver ? 'Generator Improver' : 'Image Cycles'} compares the ${textStart ? 'first generated' : 'input'} image with the latest live result`, async ({ page }) => {
+      if (improver) await page.setViewportSize({ width: 390, height: 844 })
+      const firstId = textStart ? '41' : '42'
+      const run: ImageCycleJob = textStart ? {
+        ...completed,
+        params: { ...defaults, input_image_id: null, initial_prompt: 'A fox' },
+        steps: [step(0, 'generate', { output_image_id: firstId }), ...completed.steps],
+      } : completed
+      const state = await setup(page, {
+        ...run, status: 'running', steps: textStart ? run.steps.slice(0, 1) : [],
+      }, improver)
+      await page.goto(`/app/${improver ? 'generator-improver' : 'image-cycles'}?job=123`)
+      await expect(page.getByTestId('cycles-detail')).toBeVisible()
+      await expect(page.getByTestId('cycles-compare-toggle')).toHaveCount(0)
+
+      state.finish({ ...run, status: 'running', steps: run.steps.slice(0, textStart ? 3 : 2) })
+      const toggle = page.getByTestId('cycles-compare-toggle')
+      await expect(toggle).toBeVisible({ timeout: 8000 })
+      await toggle.click()
+      const before = page.getByTestId('cycles-compare-before')
+      const latest = page.getByTestId('cycles-compare-latest')
+      await expect(before.locator('img')).toHaveAttribute('src', new RegExp(`/${firstId}\\?token=`))
+      await expect(latest.locator('img')).toHaveAttribute('src', /\/43\?token=/)
+
+      state.finish(run)
+      await expect(latest.locator('img')).toHaveAttribute('src', /\/44\?token=/, { timeout: 8000 })
+      await expect(before.locator('img')).toHaveAttribute('src', new RegExp(`/${firstId}\\?token=`))
+      await latest.click()
+      await expect(page.getByTestId('image-lightbox-image')).toHaveAttribute('src', /\/44\?token=/)
+      await page.keyboard.press('Escape')
+      await before.click()
+      await expect(page.getByTestId('image-lightbox-image')).toHaveAttribute('src', new RegExp(`/${firstId}\\?token=`))
+      await page.keyboard.press('Escape')
+      await expect(page.getByTestId('cycles-timeline')).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+      await toggle.click()
+      await expect(page.getByTestId('cycles-compare-view')).not.toBeVisible()
+      await toggle.click()
+      if (improver) await page.getByRole('button', { name: 'Toggle run history' }).click()
+      await page.getByTestId('cycles-new').click()
+      await expect(page.getByTestId('cycles-form')).toBeVisible()
+      if (improver) await page.getByRole('button', { name: 'Toggle run history' }).click()
+      await page.getByTestId('cycles-item-123').click()
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    })
+  }
+
+  for (const sourceImprover of [false, true]) {
+    test(`lightbox sends the selected image from ${sourceImprover ? 'improver' : 'cycles'} to a new ${improver ? 'improver' : 'cycles'} run`, async ({ page }) => {
+      if (sourceImprover) await page.setViewportSize({ width: 390, height: 844 })
+      const state = await setup(page, completed, improver)
+      const sourceApp = sourceImprover ? 'generator-improver' : 'image-cycles'
+      const targetApp = improver ? 'generator-improver' : 'image-cycles'
+      if (sourceImprover !== improver) {
+        await page.route(`**/api/${sourceApp}/jobs**`, route => route.fulfill({
+          json: new URL(route.request().url()).pathname.endsWith('/jobs') ? [completed] : completed,
+        }))
+      }
+      await page.goto(`/app/${sourceApp}?job=123`)
+      await page.getByTestId('cycles-step-image-3').click()
+      await page.getByTestId('image-lightbox-etc').click()
+      await expect(page.getByRole('menuitem', { name: 'Send to improver', exact: true })).toBeVisible()
+      await expect(page.getByRole('menuitem', { name: 'Send to cycles', exact: true })).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('menu')).not.toBeVisible()
+      await expect(page.getByTestId('image-lightbox')).toBeVisible()
+      await page.getByTestId('image-lightbox-etc').click()
+      await page.getByRole('menuitem', { name: improver ? 'Send to improver' : 'Send to cycles', exact: true }).click()
+      await expect(page).toHaveURL(`/app/${targetApp}`)
+      await expect(page.getByTestId('image-lightbox')).not.toBeVisible()
+      await expect(page.getByTestId('cycles-form')).toBeVisible()
+      await expect(page.getByTestId('cycles-input-preview')).toHaveAttribute('src', /\/44\?token=/)
+      await expect(page.getByTestId('cycles-mode-image')).toHaveAttribute('aria-pressed', 'true')
+      expect(state.submissions).toHaveLength(0)
+      await page.getByTestId('cycles-start').click()
+      await expect.poll(() => state.submissions.length).toBe(1)
+      expect(state.submissions[0]).toMatchObject({ input_image_id: '44', initial_prompt: null })
+    })
+  }
+
+  test(`${improver ? 'Generator Improver' : 'Image Cycles'} history previews the input or first generated image as results arrive`, async ({ page }) => {
+    if (improver) {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.addInitScript(() => localStorage.setItem('oai_theme', 'dark'))
+    }
+    const state = await setup(page, completed, improver)
+    const url = `/app/${improver ? 'generator-improver' : 'image-cycles'}?job=123`
+    const preview = page.getByTestId('cycles-item-preview-123')
+    const showHistory = async () => {
+      if (improver) await page.getByRole('button', { name: 'Toggle run history' }).click()
+    }
+    await page.goto(url)
+    await showHistory()
+    await expect(preview).toBeVisible()
+    await expect(preview).toHaveAttribute('src', /\/42\/thumbnail\?token=/)
+    await expect.poll(() => preview.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
+
+    const textRun: ImageCycleJob = {
+      ...completed,
+      params: { ...defaults, input_image_id: null, initial_prompt: 'A fox' },
+      steps: [step(0, 'generate', { output_image_id: '43' }), ...completed.steps],
+    }
+    state.finish(textRun)
+    await page.reload()
+    await showHistory()
+    await expect(preview).toHaveAttribute('src', /\/43\/thumbnail\?token=/)
+
+    state.finish({ ...textRun, status: 'running', steps: [step(0, 'generate', { status: 'submitted' })] })
+    await page.reload()
+    await showHistory()
+    await expect(page.getByTestId('cycles-item-123')).toContainText('running')
+    await expect(preview).toHaveCount(0)
+    state.finish(textRun)
+    await expect(preview).toBeVisible({ timeout: 8000 })
+    await expect(preview).toHaveAttribute('src', /\/43\/thumbnail\?token=/)
+    await page.getByTestId('cycles-item-123').click()
+    await expect(page.getByTestId('cycles-detail')).toBeVisible()
+  })
+
+  test(`${improver ? 'Generator Improver' : 'Image Cycles'} opens step images in the standard lightbox and browses the run`, async ({ page }) => {
+    await setup(page, { ...completed, app: improver ? 'generator-improver' : 'image-cycles' }, improver)
+    await page.goto(`/app/${improver ? 'generator-improver' : 'image-cycles'}?job=123`)
+    await page.getByTestId('cycles-step-image-1').click()
+    await expect(page.getByTestId('image-lightbox')).toBeVisible()
+    await expect(page.getByTestId('image-lightbox-image')).toHaveAttribute('src', /\/43\?token=/)
+    await expect(page.getByTestId('image-lightbox-counter')).toHaveText('2 / 3')
+    await expect(page.getByTestId('image-lightbox-download')).toBeVisible()
+    await expect(page.getByTestId('image-lightbox-describe')).toBeVisible()
+    await page.getByTestId('image-lightbox-star').click()
+    await expect(page.getByTestId('image-lightbox-star')).toHaveAttribute('aria-pressed', 'true')
+    await page.getByTestId('image-lightbox-prompt-toggle').click()
+    await expect(page.getByTestId('image-lightbox-prompt')).toContainText('A red fox at dawn.')
+    await page.keyboard.press('ArrowRight')
+    await expect(page.getByTestId('image-lightbox-counter')).toHaveText('3 / 3')
+    await expect(page.getByTestId('image-lightbox-image')).toHaveAttribute('src', /\/44\?token=/)
+    await expect(page.getByTestId('image-lightbox-prompt')).toContainText('A fox in golden morning mist.')
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.press('ArrowLeft')
+    await expect(page.getByTestId('image-lightbox-counter')).toHaveText('1 / 3')
+    await expect(page.getByTestId('image-lightbox-image')).toHaveAttribute('src', /\/42\?token=/)
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('image-lightbox')).not.toBeVisible()
+    await expect(page.getByTestId('cycles-detail')).toBeVisible()
+    await page.getByTestId('cycles-step-image-3').click()
+    await expect(page.getByTestId('image-lightbox-counter')).toHaveText('3 / 3')
+  })
+}

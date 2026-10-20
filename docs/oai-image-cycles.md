@@ -20,6 +20,17 @@ vision result, and workflow negative prompts/seeds use their defaults.
 The timeline shows every describe instruction, vision result, actual generation
 prompt, generated image, status, stage and error. Runs and steps are persisted;
 leaving the page does not stop the run. A `?job=<id>` URL restores its detail.
+Click any image to open the standard full-screen lightbox. Swipe or use arrow
+keys to browse the starting image and step outputs, with each output's prompt
+and standard image actions. Generator Improver uses the same viewer.
+The lightbox's **Etc** menu offers **Send to improver** and **Send to cycles**;
+either opens a new-run form with the selected image ready as its input.
+History rows preview the input image, or the first generated image for text starts.
+Once two images are available, **Compare** shows the starting image and latest
+result side by side, using the img2img comparison layout. Text starts use their
+first generated image as the starting image. The latest pane updates as the run
+progresses, and both panes open the standard lightbox. The full timeline stays
+visible below the comparison.
 Stopping a run cancels its active child and prevents further submissions. Run
 again creates a new run with the original settings. Deleting a terminal run
 also deletes its child jobs/generated files, preserving the original seed image.

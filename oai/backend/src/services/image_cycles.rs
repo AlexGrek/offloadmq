@@ -42,6 +42,9 @@ pub struct Step {
     /// Snapshot of the model used for this step, independent of future edits.
     #[serde(default)]
     pub model: Option<String>,
+    /// A checkpoint snapshot borrowed from an earlier run, without child ownership.
+    #[serde(default)]
+    pub reused: bool,
     pub kind: Kind,
     pub status: String,
     pub prompt: String,
@@ -138,6 +141,7 @@ fn new_step(cycle: u32, kind: Kind, prompt: String) -> Step {
     Step {
         cycle,
         model: None,
+        reused: false,
         kind,
         status: "queued".into(),
         prompt,
@@ -897,6 +901,87 @@ pub async fn restart(state: &AppState, user: i64, id: i64) -> Result<i64, AppErr
     start_for_app(state, user, source.params, &source.app).await
 }
 
+/// Retain completed checkpoints without sharing ownership of their child jobs.
+/// The selected step and all successors are fresh work with the current models.
+fn restart_plan(p: &Params, source: &[Step], index: usize) -> Result<Vec<Step>, AppError> {
+    if index >= source.len() {
+        return Err(AppError::BadRequest("step index is out of range".into()));
+    }
+    if source[..index]
+        .iter()
+        .any(|step| step.status != "completed")
+    {
+        return Err(AppError::BadRequest(
+            "earlier steps must finish before restarting from this step".into(),
+        ));
+    }
+    let mut steps = plan(p);
+    if steps.len() != source.len() {
+        return Err(AppError::BadRequest(
+            "step plan does not match run settings".into(),
+        ));
+    }
+    for (step, original) in steps[..index].iter_mut().zip(source) {
+        *step = original.clone();
+        step.child_job_id = None;
+        step.reused = true;
+    }
+    prepare(p, &mut steps, index)?;
+    Ok(steps)
+}
+
+pub async fn restart_from_step(
+    state: &AppState,
+    user: i64,
+    id: i64,
+    index: usize,
+) -> Result<i64, AppError> {
+    db::get(&state.db, id, user).await?;
+    let _slot = ADVANCE_SLOTS
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let lock = db::lock(&state.db, id, true)
+        .await?
+        .ok_or_else(|| AppError::Internal("missing cycle lock".into()))?;
+    let mut source = db::get(&state.db, id, user).await?;
+    let mut p: Params = decode(&source.params_json)?;
+    let mut original: Vec<Step> = decode(&source.steps_json)?;
+    let steps = restart_plan(&p, &original, index)?;
+    let op = storage::operator(state)?;
+    if let Some(input) = &steps[index].input_image_id {
+        let input = crate::routes::job_common::parse_id(input, "input_image_id")?;
+        let file = image_generation::get_image_file(&state.db, input, user)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("the step's input image was deleted".into()))?;
+        if !storage::exists(op, &file.storage_path).await? {
+            return Err(AppError::BadRequest(
+                "the step's input image was deleted".into(),
+            ));
+        }
+    }
+    validate_models(state, user, &mut p).await?;
+    if !is_terminal(&source.status) {
+        source.status = "cancelRequested".into();
+        save(state, &mut source, &original).await?;
+        if let Err(e) = cancel_steps(state, &mut source, &mut original).await {
+            tracing::warn!("image cycles restart from step {id}/{index}: {e}");
+        }
+    }
+    let next = state.next_id();
+    db::create(
+        &state.db,
+        next,
+        user,
+        &source.app,
+        encode(&p)?,
+        encode(&steps)?,
+    )
+    .await?;
+    lock.commit().await?;
+    Ok(next)
+}
+
 pub async fn retry(state: &AppState, user: i64, id: i64) -> Result<i64, AppError> {
     let job = db::get(&state.db, id, user).await?;
     if !is_terminal(&job.status) {
@@ -964,6 +1049,98 @@ mod tests {
             height: 1024,
         }
     }
+    fn completed_plan(p: &Params) -> Vec<Step> {
+        let mut steps = plan(p);
+        for i in 0..steps.len() {
+            prepare(p, &mut steps, i).unwrap();
+            steps[i].status = "completed".into();
+            steps[i].model = Some(model_for_step(p, &steps[i]));
+            steps[i].child_job_id = Some((100 + i).to_string());
+            if steps[i].kind == Kind::Generate {
+                steps[i].output_image_id = Some((200 + i).to_string());
+            } else {
+                steps[i].result = Some("A vivid fox".into());
+                steps[i].quality = p.expected_quality.map(|_| 60);
+                steps[i].improve_prompt = p.expected_quality.map(|_| "Improve lighting".into());
+            }
+        }
+        steps
+    }
+
+    #[test]
+    fn step_restart_reuses_checkpoints_without_owning_their_children() {
+        for text in [false, true] {
+            for improver in [false, true] {
+                let mut p = params();
+                if text {
+                    p.input_image_id = None;
+                    p.initial_prompt = Some("A fox".into());
+                    p.bootstrap_model = Some("imggen.bootstrap".into());
+                }
+                if improver {
+                    p.expected_quality = Some(95);
+                    p.max_steps = Some(2);
+                }
+                let source = completed_plan(&p);
+                let before = encode(&source).unwrap();
+                p.vision_model = "llm.new".into();
+                p.image_model = "imggen.new".into();
+                for index in 0..source.len() {
+                    let restarted = restart_plan(&p, &source, index).unwrap();
+                    assert_eq!(restarted.len(), source.len());
+                    for (i, step) in restarted.iter().enumerate() {
+                        assert!(step.child_job_id.is_none());
+                        if i < index {
+                            assert!(step.reused);
+                            assert_eq!(step.status, "completed");
+                            assert_eq!(step.output_image_id, source[i].output_image_id);
+                            assert_eq!(step.result, source[i].result);
+                            assert_eq!(step.model, source[i].model);
+                        } else {
+                            assert!(!step.reused);
+                            assert_eq!(step.status, "queued");
+                            assert!(step.model.is_none());
+                            assert!(step.output_image_id.is_none());
+                            assert!(step.result.is_none());
+                            assert!(step.quality.is_none());
+                            assert!(step.error.is_none());
+                        }
+                    }
+                    assert_eq!(
+                        restarted[index].input_image_id,
+                        source[index].input_image_id
+                    );
+                    assert_eq!(restarted[index].prompt, source[index].prompt);
+                    assert_eq!(
+                        model_for_step(&p, &restarted[index]),
+                        match restarted[index].kind {
+                            Kind::Describe => "llm.new",
+                            Kind::Generate if improver && restarted[index].cycle == 0 =>
+                                "imggen.bootstrap",
+                            Kind::Generate => "imggen.new",
+                        }
+                    );
+                }
+                assert_eq!(encode(&source).unwrap(), before);
+            }
+        }
+    }
+
+    #[test]
+    fn step_restart_rejects_invalid_or_unavailable_checkpoints() {
+        let p = params();
+        let mut source = completed_plan(&p);
+        assert!(restart_plan(&p, &source, source.len()).is_err());
+        source[0].status = "failed".into();
+        assert!(restart_plan(&p, &source, 1).is_err());
+        assert!(restart_plan(&p, &source, 0).is_ok());
+        source[0].status = "completed".into();
+        source[0].result = None;
+        assert!(restart_plan(&p, &source, 1).is_err());
+        source[1].output_image_id = None;
+        assert!(restart_plan(&p, &source, 2).is_err());
+    }
+
     #[test]
     fn image_runs_exactly_n_cycles_and_chains_real_results() {
         let p = params();

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import {
+  Columns2,
   FolderOpen,
+  ImageIcon,
   Loader2,
   PanelLeft,
   Pause,
@@ -17,11 +19,14 @@ import { imageCycleApi, type ImageCycleJob } from '../api/imageCycles'
 import { listDescribeCapabilities } from '../api/describe'
 import {
   imageFileUrl,
+  imageThumbnailUrl,
   listImgGenCapabilities,
   uploadImage,
   type UploadedImage,
 } from '../api/images'
 import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
+import { ImageLightbox } from '../components/ImageLightbox'
+import { LoadingImage } from '../components/LoadingImage'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { RunModelsEditor } from '../components/imagecycles/RunModelsEditor'
 import { MarkdownContent } from '../components/MarkdownContent'
@@ -33,6 +38,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { useAuth } from '../contexts/AuthContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useResetOnChange } from '../hooks/useResetOnChange'
 import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { isListedCapability } from '../lib/capability-picker'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
@@ -43,6 +49,7 @@ import {
 } from '../lib/describe'
 import { pastedImageFiles } from '../lib/clipboardImages'
 import { cn } from '../lib/utils'
+import type { ImageCycleRouteState } from '../lib/imageCycles'
 import type { LlmCapabilityInfo } from '../types/ws'
 
 const terminal = (status: string) =>
@@ -67,12 +74,15 @@ export default function ImageCyclesPage({
     cancelImageCycle,
     deleteImageCycle,
     restartImageCycle,
+    restartImageCycleFromStep,
     pauseImageCycle,
     resumeImageCycle,
     updateImageCycleModels,
     startImageCycle,
   } = imageCycleApi(improver)
   const { token } = useAuth()
+  const location = useLocation()
+  const routeImage = (location.state as ImageCycleRouteState | null)?.cycleImage
   const [search, setSearch] = useSearchParams()
   const panel = search.get('job') ?? 'new'
   const [jobs, setJobs] = useState<ImageCycleJob[]>([])
@@ -100,8 +110,28 @@ export default function ImageCyclesPage({
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [compareMode, setCompareMode] = useState(false)
+  const [viewer, setViewer] = useState<{
+    panel: string
+    imageId: string
+  } | null>(null)
+  const [deletedImages, setDeletedImages] = useState<Set<string>>(
+    () => new Set(),
+  )
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
+
+  useResetOnChange(panel, () => setCompareMode(false))
+
+  useResetOnChange(routeImage ? location.key : null, (key) => {
+    if (!key || !routeImage) return
+    setInput(routeImage)
+    setMode('image')
+    setCompareMode(false)
+    setViewer(null)
+    setError(null)
+    if (isMobile) setSidebarOpen(false)
+  })
 
   const put = useCallback((next: ImageCycleJob) => {
     setJobs((prev) =>
@@ -111,6 +141,7 @@ export default function ImageCyclesPage({
     )
   }, [])
   const select = (id: string) => {
+    setViewer(null)
     setSearch(id === 'new' ? {} : { job: id })
     setError(null)
     if (isMobile) setSidebarOpen(false)
@@ -271,14 +302,77 @@ export default function ImageCyclesPage({
       (validNumber(expectedQuality, 1, 100) &&
         (mode !== 'text' || isListedCapability(bootstrap, bootstrapModels))))
 
+  const viewerImages = useMemo(() => {
+    const images: {
+      id: string
+      src: string
+      alt: string
+      filename: string
+      direction: string
+      prompt: string | null
+    }[] = []
+    if (!token) return images
+    const add = (
+      id: string,
+      alt: string,
+      direction: string,
+      prompt: string | null,
+      filename = `image-${id}.jpg`,
+    ) => {
+      if (!deletedImages.has(id) && !images.some((image) => image.id === id))
+        images.push({
+          id,
+          src: imageFileUrl(id, token),
+          alt,
+          filename,
+          direction,
+          prompt,
+        })
+    }
+    if (panel === 'new') {
+      if (input)
+        add(input.image_id, 'Starting image', 'input', null, input.filename)
+    } else if (job) {
+      if (job.params.input_image_id)
+        add(job.params.input_image_id, 'Original starting image', 'input', null)
+      for (const step of job.steps) {
+        if (step.output_image_id)
+          add(
+            step.output_image_id,
+            step.cycle === 0
+              ? 'Starting image'
+              : `${improver ? 'Improvement' : 'Cycle'} ${step.cycle}`,
+            'output',
+            step.prompt,
+          )
+      }
+    }
+    return images
+  }, [token, panel, input, job, improver, deletedImages])
+  const viewerIndex =
+    viewer?.panel === panel
+      ? viewerImages.findIndex((image) => image.id === viewer.imageId)
+      : -1
+  const viewedImage = viewerImages[viewerIndex]
+  const comparisonStart = viewerImages[0]
+  const comparisonLatest = viewerImages
+    .filter((image) => image.direction === 'output')
+    .at(-1)
+  const canCompare =
+    panel !== 'new' &&
+    comparisonStart &&
+    comparisonLatest &&
+    comparisonStart.id !== comparisonLatest.id
+
   function preview(id: string, alt: string, testId?: string) {
+    if (deletedImages.has(id))
+      return <p className="text-sm text-muted-foreground">Image deleted.</p>
     return (
-      <a
-        href={imageFileUrl(id, token!)}
-        target="_blank"
-        rel="noreferrer"
-        className="block"
-        title="Open full image"
+      <button
+        type="button"
+        onClick={() => setViewer({ panel, imageId: id })}
+        className="block cursor-zoom-in rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        aria-label={`View full size: ${alt}`}
       >
         <img
           src={imageFileUrl(id, token!)}
@@ -287,7 +381,7 @@ export default function ImageCyclesPage({
           data-testid={testId}
           className="max-h-[32rem] w-auto max-w-full rounded-lg bg-muted/30 object-contain"
         />
-      </a>
+      </button>
     )
   }
 
@@ -323,27 +417,55 @@ export default function ImageCyclesPage({
               Your runs will appear here.
             </p>
           )}
-          {jobs.map((j) => (
-            <button
-              key={j.job_id}
-              onClick={() => select(j.job_id)}
-              data-testid={`cycles-item-${j.job_id}`}
-              className={cn(
-                'mb-2 min-h-16 w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-muted/70',
-                panel === j.job_id
-                  ? 'bg-muted ring-1 ring-primary/30'
-                  : 'bg-muted/30',
-              )}
-            >
-              <span className="block truncate font-medium">
-                {j.params.initial_prompt || 'Image seed'} · {j.params.cycles}{' '}
-                {improver ? 'max steps' : 'cycles'}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {j.status} · {new Date(j.created_at).toLocaleString()}
-              </span>
-            </button>
-          ))}
+          {jobs.map((j) => {
+            const previewId = [
+              j.params.input_image_id,
+              ...j.steps.map((step) => step.output_image_id),
+            ].find((id) => id && !deletedImages.has(id))
+            return (
+              <button
+                key={j.job_id}
+                onClick={() => select(j.job_id)}
+                data-testid={`cycles-item-${j.job_id}`}
+                className={cn(
+                  'mb-2 flex min-h-16 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted/70',
+                  panel === j.job_id
+                    ? 'bg-muted ring-1 ring-primary/30'
+                    : 'bg-muted/30',
+                )}
+              >
+                {previewId && token ? (
+                  <LoadingImage
+                    key={previewId}
+                    src={imageThumbnailUrl(previewId, token)}
+                    alt=""
+                    width={48}
+                    height={48}
+                    loading="lazy"
+                    decoding="async"
+                    data-testid={`cycles-item-preview-${j.job_id}`}
+                    className="size-12 shrink-0 rounded-md bg-muted object-cover"
+                  />
+                ) : (
+                  <span
+                    className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+                    aria-hidden
+                  >
+                    <ImageIcon className="size-5" />
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">
+                    {j.params.initial_prompt || 'Image seed'} ·{' '}
+                    {j.params.cycles} {improver ? 'max steps' : 'cycles'}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {j.status} · {new Date(j.created_at).toLocaleString()}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
         </div>
       </ToolSidebar>
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -767,6 +889,19 @@ export default function ImageCyclesPage({
                     >
                       <RefreshCw /> Refresh
                     </Button>
+                    {canCompare && (
+                      <Button
+                        type="button"
+                        variant={compareMode ? 'default' : 'outline'}
+                        onClick={() => setCompareMode((value) => !value)}
+                        aria-pressed={compareMode}
+                        aria-controls="cycles-compare-view"
+                        data-testid="cycles-compare-toggle"
+                      >
+                        <Columns2 />
+                        {compareMode ? 'Hide comparison' : 'Compare'}
+                      </Button>
+                    )}
                     {!terminal(job.status) ? (
                       <Button
                         variant="outline"
@@ -847,6 +982,58 @@ export default function ImageCyclesPage({
                     />
                   )}
                 </div>
+                {compareMode && canCompare && (
+                  <section
+                    className="space-y-3"
+                    aria-label="Starting image and latest result"
+                  >
+                    <h3 className="font-semibold">
+                      Starting image and latest result
+                    </h3>
+                    <div
+                      id="cycles-compare-view"
+                      data-testid="cycles-compare-view"
+                      className="grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-border"
+                    >
+                      {[
+                        {
+                          image: comparisonStart,
+                          label: 'Before',
+                          side: 'before',
+                        },
+                        {
+                          image: comparisonLatest,
+                          label: 'Latest',
+                          side: 'latest',
+                        },
+                      ].map(({ image, label, side }) => (
+                        <div
+                          key={side}
+                          className="relative min-w-0 overflow-hidden bg-background"
+                        >
+                          <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
+                            {label}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setViewer({ panel, imageId: image.id })
+                            }
+                            aria-label={`View full size: ${image.alt}`}
+                            data-testid={`cycles-compare-${side}`}
+                            className="group block w-full cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                          >
+                            <LoadingImage
+                              src={image.src}
+                              alt={image.alt}
+                              className="max-h-[40dvh] w-full object-contain transition-opacity group-hover:opacity-95 sm:max-h-[65vh]"
+                            />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 <section className="space-y-3">
                   <h3 className="font-semibold">Starting point</h3>
                   {job.params.input_image_id ? (
@@ -880,6 +1067,47 @@ export default function ImageCyclesPage({
                         <span className="rounded bg-muted px-2 py-0.5 text-xs">
                           {step.status}
                         </span>
+                        {step.reused && (
+                          <span className="text-xs text-muted-foreground">
+                            Reused result
+                          </span>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="min-h-11 sm:ml-auto"
+                          disabled={
+                            busy ||
+                            job.steps
+                              .slice(0, i)
+                              .some(
+                                (previous) => previous.status !== 'completed',
+                              )
+                          }
+                          title={
+                            job.steps
+                              .slice(0, i)
+                              .some(
+                                (previous) => previous.status !== 'completed',
+                              )
+                              ? 'Earlier steps must finish first'
+                              : 'Create a new run from this step using the current models'
+                          }
+                          data-testid={`cycles-restart-step-${i}`}
+                          onClick={() => {
+                            void action(async () => {
+                              const next = await restartImageCycleFromStep(
+                                token!,
+                                job.job_id,
+                                i,
+                              )
+                              select(next.job_id)
+                            })
+                          }}
+                        >
+                          <RotateCcw /> Restart from this step
+                        </Button>
                       </div>
                       {step.model && (
                         <p
@@ -975,6 +1203,43 @@ export default function ImageCyclesPage({
           </div>
         </div>
       </main>
+      {token && viewedImage && (
+        <ImageLightbox
+          open
+          onOpenChange={(open) => {
+            if (!open) setViewer(null)
+          }}
+          src={viewedImage.src}
+          alt={viewedImage.alt}
+          caption={viewedImage.alt}
+          slides={viewerImages}
+          index={viewerIndex}
+          onIndexChange={(index) => {
+            const image = viewerImages[index]
+            if (image) setViewer({ panel, imageId: image.id })
+          }}
+          promptPanel={
+            viewedImage.prompt ? (
+              <p className="whitespace-pre-wrap break-words text-sm">
+                {viewedImage.prompt}
+              </p>
+            ) : undefined
+          }
+          actions={{
+            imageId: viewedImage.id,
+            filename: viewedImage.filename,
+            direction: viewedImage.direction,
+            token,
+            imgUtils: {},
+            onDeleted: () => {
+              setDeletedImages((previous) =>
+                new Set(previous).add(viewedImage.id),
+              )
+              setViewer(null)
+            },
+          }}
+        />
+      )}
       {token && (
         <ImagePickerModal
           open={pickerOpen}

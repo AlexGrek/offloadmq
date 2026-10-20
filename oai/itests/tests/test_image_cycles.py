@@ -13,6 +13,7 @@ OPERATIONS = [("GET", ROOT), ("POST", ROOT), ("GET", f"{ROOT}/{MISSING}"),
               ("DELETE", f"{ROOT}/{MISSING}"),
               *[("POST", f"{ROOT}/{MISSING}/{action}") for action in ("poll", "cancel", "retry", "restart", "pause", "resume")]]
 OPERATIONS.append(("PATCH", ROOT + "/999999999999999999/models"))
+OPERATIONS.append(("POST", f"{ROOT}/{MISSING}/steps/0/restart"))
 
 
 class TestImageCycles:

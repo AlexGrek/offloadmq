@@ -21,6 +21,7 @@ export interface ImageCycleModelChanges {
 export interface ImageCycleStep {
   cycle: number
   model?: string | null
+  reused?: boolean
   kind: 'describe' | 'generate'
   status: string
   prompt: string
@@ -62,6 +63,12 @@ function createApi(app: string) {
     restartImageCycle: (token: string, id: string) =>
       request<{ job_id: string; status: string }>(
         `${path(id)}/restart`,
+        token,
+        { method: 'POST' },
+      ),
+    restartImageCycleFromStep: (token: string, id: string, index: number) =>
+      request<{ job_id: string; status: string }>(
+        `${path(id)}/steps/${index}/restart`,
         token,
         { method: 'POST' },
       ),

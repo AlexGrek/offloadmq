@@ -11,6 +11,7 @@ OPERATIONS = [("GET", ROOT), ("POST", ROOT), ("GET", ROOT + "/999999999999999999
               ("DELETE", ROOT + "/999999999999999999"),
               *[("POST", ROOT + "/999999999999999999/" + a) for a in ("poll", "cancel", "retry", "restart", "pause", "resume")]]
 OPERATIONS.append(("PATCH", ROOT + "/999999999999999999/models"))
+OPERATIONS.append(("POST", ROOT + "/999999999999999999/steps/0/restart"))
 
 
 class TestGeneratorImprover:
@@ -23,6 +24,11 @@ class TestGeneratorImprover:
         response = client.get(ROOT, headers=new_user["headers"])
         assert response.status_code == 200
         assert response.json() == []
+
+    def test_restart_step_requires_owned_run(self, client: httpx.Client, new_user: dict):
+        response = client.post(ROOT + "/999999999999999999/steps/0/restart", headers=new_user["headers"])
+        assert response.status_code == 404
+        assert isinstance(response.json()["error"], str)
 
     @pytest.mark.parametrize("change", [{"expected_quality": 0}, {"expected_quality": 101},
                                          {"expected_quality": None}, {"max_steps": 0},
