@@ -46,3 +46,18 @@ Read `oai-generator-improver` for its discriminator branches: vision JSON score 
 the app name; list/detail/mutations enforce separate histories. `ImageCyclesPage`
 is shared with its dedicated wrapper. Regular Image Cycles always clears improver
 options on submit and keeps its txt2img behavior.
+
+
+## Run controls
+
+- Persisted `paused` parents are excluded from background pickup and stale expiry.
+  Foreground poll may reconcile an existing child but must not submit while paused.
+- `/pause`, `/resume`, `/restart`, and `PATCH /models` share the advisory lock with
+  poll/cancel. Restart cancels remaining work and creates a NEW run from the seed
+  using the latest models, preserving the old run and outputs.
+- Model updates validate workflow-compatible listed models and affect subsequent
+  submissions. Step `model` snapshots preserve actual historical models; backfill
+  legacy snapshots from child records before changing parameter defaults.
+- DB `save` persists params/status/steps; `fail_stale` deliberately excludes paused.
+- Detail editor: `components/imagecycles/RunModelsEditor.tsx`; drafts remain separate
+  from new-run form state and background polling.

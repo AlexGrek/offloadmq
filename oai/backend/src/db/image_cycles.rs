@@ -68,6 +68,7 @@ pub async fn save(db: &DatabaseConnection, job: &mut Job, steps: String) -> Resu
     image_cycle_jobs::ActiveModel {
         id: Set(job.id),
         status: Set(job.status.clone()),
+        params_json: Set(job.params_json.clone()),
         updated_at: Set(job.updated_at),
         steps_json: Set(job.steps_json.clone()),
         error: Set(job.error.clone()),
@@ -117,4 +118,21 @@ pub async fn lock(
         }
     }
     Ok(Some(tx))
+}
+
+/// Deliberately paused runs never expire through the stale-job backstop.
+pub async fn fail_stale(
+    db: &DatabaseConnection,
+    cutoff: chrono::DateTime<chrono::FixedOffset>,
+    reason: &str,
+) -> Result<u64, AppError> {
+    use sea_orm::sea_query::Expr;
+    Ok(Entity::update_many()
+        .col_expr(Column::Status, Expr::value("failed"))
+        .col_expr(Column::Error, Expr::value(reason))
+        .filter(Column::Status.is_in(["running", "cancelRequested"]))
+        .filter(Column::UpdatedAt.lt(cutoff))
+        .exec(db)
+        .await?
+        .rows_affected)
 }

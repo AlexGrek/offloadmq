@@ -39,6 +39,9 @@ pub enum Kind {
 pub struct Step {
     /// Zero denotes the optional text-to-image bootstrap, not a cycle.
     pub cycle: u32,
+    /// Snapshot of the model used for this step, independent of future edits.
+    #[serde(default)]
+    pub model: Option<String>,
     pub kind: Kind,
     pub status: String,
     pub prompt: String,
@@ -134,6 +137,7 @@ fn validate(p: &mut Params) -> Result<(), AppError> {
 fn new_step(cycle: u32, kind: Kind, prompt: String) -> Step {
     Step {
         cycle,
+        model: None,
         kind,
         status: "queued".into(),
         prompt,
@@ -175,18 +179,84 @@ struct Assessment {
     quality: u32,
     improve_prompt: String,
 }
-fn parse_assessment(text: &str) -> Result<Assessment, AppError> {
-    let a: Assessment = serde_json::from_str(text).map_err(|e| {
+fn validate_assessment(value: serde_json::Value) -> Result<Assessment, AppError> {
+    let assessment: Assessment = serde_json::from_value(value).map_err(|e| {
         AppError::BadRequest(format!(
             "vision must return JSON with quality (0–100) and improve_prompt: {e}"
         ))
     })?;
-    if a.quality > 100 {
+    if assessment.quality > 100 {
         return Err(AppError::BadRequest(
             "vision quality must be between 0 and 100".into(),
         ));
     }
-    Ok(a)
+    Ok(assessment)
+}
+
+fn parse_assessment(text: &str) -> Result<Assessment, AppError> {
+    let text = text.trim().trim_start_matches('\u{feff}').trim();
+    // Some serving layers return a JSON-encoded string instead of the object.
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
+        return match value {
+            serde_json::Value::String(inner) => parse_assessment_object(&inner),
+            object => validate_assessment(object),
+        };
+    }
+    parse_assessment_object(text)
+}
+
+/// Markdown rendering hides ```json fences, so a response can look like a bare
+/// object in the UI while failing at column 1. Extract one complete JSON object
+/// from fences/preamble; serde still enforces the schema and numeric bounds.
+fn parse_assessment_object(text: &str) -> Result<Assessment, AppError> {
+    let mut cleaned = text.to_owned();
+    for (open, close) in [("<think>", "</think>"), ("<analysis>", "</analysis>")] {
+        while let Some(start) = cleaned
+            .find(open)
+            .filter(|i| *i < cleaned.find('{').unwrap_or(cleaned.len()))
+        {
+            let Some(end) = cleaned[start + open.len()..].find(close) else {
+                break;
+            };
+            cleaned.replace_range(start..start + open.len() + end + close.len(), "");
+        }
+    }
+    let text = cleaned.as_str();
+    let mut cursor = 0;
+    let mut found = None;
+    let mut error = None;
+    // Bound failed parses of pathological output containing many unmatched braces.
+    for _ in 0..128 {
+        let Some(offset) = text[cursor..].find('{') else {
+            break;
+        };
+        let start = cursor + offset;
+        let mut stream =
+            serde_json::Deserializer::from_str(&text[start..]).into_iter::<serde_json::Value>();
+        match stream.next() {
+            Some(Ok(value)) => {
+                cursor = start + stream.byte_offset();
+                match validate_assessment(value) {
+                    Ok(value) => {
+                        if found.is_some() {
+                            return Err(AppError::BadRequest("vision returned multiple assessment objects; expected one quality/improve_prompt object".into()));
+                        }
+                        found = Some(value);
+                    }
+                    Err(e) => error = Some(e),
+                }
+            }
+            Some(Err(e)) => {
+                error = Some(AppError::BadRequest(format!("invalid vision JSON: {e}")));
+                cursor = start + 1;
+            }
+            None => break,
+        }
+    }
+    found.ok_or_else(|| error.unwrap_or_else(|| AppError::BadRequest(format!(
+        "vision must return JSON with quality (0–100) and improve_prompt; no JSON object found (response starts with {:?})",
+        text.chars().take(80).collect::<String>()
+    ))))
 }
 fn assessment_schema() -> serde_json::Value {
     serde_json::json!({"type":"object", "properties": {
@@ -260,6 +330,17 @@ pub async fn start_for_app(
             return Err(AppError::BadRequest("input must be an image".into()));
         }
     }
+    validate_models(state, user, &mut p).await?;
+    let id = state.next_id();
+    db::create(&state.db, id, user, app, encode(&p)?, encode(&plan(&p))?).await?;
+    prompt_usage::note_use(state, user, "describe-image-user", &p.describe_prompt).await;
+    if let Some(prompt) = &p.initial_prompt {
+        prompt_usage::note_use(state, user, "imggen-prompt", prompt).await;
+    }
+    Ok(id)
+}
+
+async fn validate_models(state: &AppState, user: i64, p: &mut Params) -> Result<(), AppError> {
     let (vision, images) = tokio::try_join!(
         image_analysis::list_vision_capabilities(state, user),
         image_jobs::list_imggen_capabilities(state, user)
@@ -293,13 +374,17 @@ pub async fn start_for_app(
             })?;
         p.bootstrap_model = Some(bootstrap.to_owned());
     }
-    let id = state.next_id();
-    db::create(&state.db, id, user, app, encode(&p)?, encode(&plan(&p))?).await?;
-    prompt_usage::note_use(state, user, "describe-image-user", &p.describe_prompt).await;
-    if let Some(prompt) = &p.initial_prompt {
-        prompt_usage::note_use(state, user, "imggen-prompt", prompt).await;
+    Ok(())
+}
+
+fn model_for_step(p: &Params, step: &Step) -> String {
+    match step.kind {
+        Kind::Describe => p.vision_model.clone(),
+        Kind::Generate if p.expected_quality.is_some() && step.cycle == 0 => {
+            p.bootstrap_model.clone().unwrap_or_default()
+        }
+        Kind::Generate => p.image_model.clone(),
     }
-    Ok(id)
 }
 
 pub async fn get(state: &AppState, user: i64, id: i64) -> Result<View, AppError> {
@@ -364,7 +449,10 @@ async fn submit(
                 user,
                 child,
                 image_analysis::StartJobParams {
-                    capability: p.vision_model.clone(),
+                    capability: step
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| model_for_step(p, step)),
                     prompt: step.prompt.clone(),
                     response_format: p.expected_quality.map(|_| assessment_schema()),
                     image_id: crate::routes::job_common::parse_id(
@@ -386,13 +474,10 @@ async fn submit(
                 user,
                 child,
                 image_jobs::StartJobParams {
-                    capability: if p.expected_quality.is_some() && step.cycle == 0 {
-                        p.bootstrap_model
-                            .clone()
-                            .ok_or_else(|| AppError::Internal("missing bootstrap model".into()))?
-                    } else {
-                        p.image_model.clone()
-                    },
+                    capability: step
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| model_for_step(p, step)),
                     prompt: step.prompt.clone(),
                     negative_prompt: None,
                     override_negative: false,
@@ -437,6 +522,7 @@ async fn refresh_step(
                 Err(AppError::NotFound) => return Ok(false),
                 Err(e) => return Err(e),
             };
+            step.model = Some(job.capability);
             step.status = job.status;
             step.result = job.result;
             step.stage = job.stage;
@@ -451,6 +537,7 @@ async fn refresh_step(
                 Some(job) => job,
                 None => return Ok(false),
             };
+            step.model = Some(job.capability);
             step.status = job.status;
             step.prompt = job.prompt;
             step.error = job.error;
@@ -494,7 +581,8 @@ pub async fn poll(state: &AppState, user: i64, id: i64) -> Result<View, AppError
         if job.status == "cancelRequested" {
             cancel_steps(state, &mut job, &mut steps).await?;
         } else if let Some(i) = steps.iter().position(|s| s.status != "completed") {
-            let result = advance(state, &mut job, &p, &mut steps, i).await;
+            let allow_submit = job.status == "running";
+            let result = advance(state, &mut job, &p, &mut steps, i, allow_submit).await;
             if let Err(e @ AppError::BadRequest(_)) = result {
                 steps[i].status = "failed".into();
                 steps[i].error = Some(e.to_string());
@@ -518,10 +606,15 @@ async fn advance(
     p: &Params,
     steps: &mut [Step],
     i: usize,
+    allow_submit: bool,
 ) -> Result<(), AppError> {
+    if !allow_submit && steps[i].child_job_id.is_none() {
+        return Ok(());
+    }
     let fresh = steps[i].child_job_id.is_none();
     if fresh {
         prepare(p, steps, i)?;
+        steps[i].model = Some(model_for_step(p, &steps[i]));
         steps[i].child_job_id = Some(state.next_id().to_string());
         steps[i].status = "submitting".into();
         // Durable link BEFORE side effects, so a restart cannot submit a second
@@ -538,6 +631,9 @@ async fn advance(
         refresh_step(state, job.user_id, &mut steps[i], child).await?
     };
     if !exists {
+        if !allow_submit {
+            return Ok(());
+        }
         // A missing row is safe to create only during submission; deletion of
         // an already-submitted child must fail the chain instead of restarting it.
         if !fresh && steps[i].status != "submitting" {
@@ -649,6 +745,156 @@ pub async fn cancel(state: &AppState, user: i64, id: i64) -> Result<View, AppErr
     }
     lock.commit().await?;
     get(state, user, id).await
+}
+
+/// Pausing holds future submissions; an already-running child can finish and
+/// its result is reconciled when viewed or resumed.
+pub async fn pause(state: &AppState, user: i64, id: i64) -> Result<View, AppError> {
+    db::get(&state.db, id, user).await?;
+    let _slot = ADVANCE_SLOTS
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let lock = db::lock(&state.db, id, true)
+        .await?
+        .ok_or_else(|| AppError::Internal("missing cycle lock".into()))?;
+    let mut job = db::get(&state.db, id, user).await?;
+    if !matches!(job.status.as_str(), "running" | "paused") {
+        return Err(AppError::BadRequest(
+            "only an active run can be paused".into(),
+        ));
+    }
+    job.status = "paused".into();
+    let steps: Vec<Step> = decode(&job.steps_json)?;
+    save(state, &mut job, &steps).await?;
+    lock.commit().await?;
+    view(job)
+}
+
+pub async fn resume(state: &AppState, user: i64, id: i64) -> Result<View, AppError> {
+    db::get(&state.db, id, user).await?;
+    let _slot = ADVANCE_SLOTS
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let lock = db::lock(&state.db, id, true)
+        .await?
+        .ok_or_else(|| AppError::Internal("missing cycle lock".into()))?;
+    let mut job = db::get(&state.db, id, user).await?;
+    let mut steps: Vec<Step> = decode(&job.steps_json)?;
+    if job.status == "failed" {
+        // Reuse a completed vision result after a parser fix. Never rerun an
+        // already-paid inference just to remove its Markdown fences.
+        let step = steps
+            .iter_mut()
+            .find(|s| s.status == "failed")
+            .filter(|s| s.kind == Kind::Describe && s.result.is_some())
+            .ok_or_else(|| {
+                AppError::BadRequest("this failure requires restarting the run".into())
+            })?;
+        let child = crate::routes::job_common::parse_id(
+            step.child_job_id.as_deref().unwrap_or(""),
+            "child_job_id",
+        )?;
+        if image_analysis::user_job_detail(state, child, user)
+            .await?
+            .job
+            .status
+            != "completed"
+        {
+            return Err(AppError::BadRequest(
+                "this failure requires restarting the run".into(),
+            ));
+        }
+        step.status = "submitted".into();
+        step.error = None;
+    } else if job.status != "paused" {
+        return Err(AppError::BadRequest(
+            "only a paused run or failed assessment can be resumed".into(),
+        ));
+    }
+    job.status = "running".into();
+    job.error = None;
+    save(state, &mut job, &steps).await?;
+    lock.commit().await?;
+    view(job)
+}
+
+#[derive(Deserialize)]
+pub struct ModelChanges {
+    pub vision_model: Option<String>,
+    pub image_model: Option<String>,
+    pub bootstrap_model: Option<String>,
+}
+
+pub async fn update_models(
+    state: &AppState,
+    user: i64,
+    id: i64,
+    changes: ModelChanges,
+) -> Result<View, AppError> {
+    db::get(&state.db, id, user).await?;
+    let _slot = ADVANCE_SLOTS
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let lock = db::lock(&state.db, id, true)
+        .await?
+        .ok_or_else(|| AppError::Internal("missing cycle lock".into()))?;
+    let mut job = db::get(&state.db, id, user).await?;
+    let old: Params = decode(&job.params_json)?;
+    let mut p = old.clone();
+    if let Some(model) = changes.vision_model {
+        p.vision_model = base_capability(model.trim()).to_owned();
+    }
+    if let Some(model) = changes.image_model {
+        p.image_model = base_capability(model.trim()).to_owned();
+    }
+    if let Some(model) = changes.bootstrap_model {
+        if job.app != "generator-improver" {
+            return Err(AppError::BadRequest(
+                "bootstrap_model is only used by Generator Improver".into(),
+            ));
+        }
+        p.bootstrap_model = Some(base_capability(model.trim()).to_owned());
+    }
+    validate_models(state, user, &mut p).await?;
+    let mut steps: Vec<Step> = decode(&job.steps_json)?;
+    // Backfill old steps from their child records before changing defaults, so
+    // existing history never appears to have used the newly selected model.
+    for step in &mut steps {
+        if step.model.is_some() {
+            continue;
+        }
+        if let Some(child) = &step.child_job_id {
+            let id = crate::routes::job_common::parse_id(child, "child_job_id")?;
+            step.model = match step.kind {
+                Kind::Describe => match image_analysis::user_job_detail(state, id, user).await {
+                    Ok(detail) => Some(detail.job.capability),
+                    Err(AppError::NotFound) => None,
+                    Err(e) => return Err(e),
+                },
+                Kind::Generate => image_generation::get_job(&state.db, id, user)
+                    .await?
+                    .map(|j| j.capability),
+            }
+            .or_else(|| Some(model_for_step(&old, step)));
+        }
+    }
+    job.params_json = encode(&p)?;
+    save(state, &mut job, &steps).await?;
+    lock.commit().await?;
+    view(job)
+}
+
+/// Keep the old history and cancel its remaining work, then start from the seed
+/// using the latest selected models. Works for active, paused and terminal runs.
+pub async fn restart(state: &AppState, user: i64, id: i64) -> Result<i64, AppError> {
+    let source = db::get(&state.db, id, user).await?;
+    let mut params: Params = decode(&source.params_json)?;
+    validate_models(state, user, &mut params).await?;
+    let source = cancel(state, user, id).await?;
+    start_for_app(state, user, source.params, &source.app).await
 }
 
 pub async fn retry(state: &AppState, user: i64, id: i64) -> Result<i64, AppError> {
@@ -771,6 +1017,40 @@ mod tests {
         assert_eq!(
             stop_reason("completed", &p, &steps).as_deref(),
             Some("max_steps_reached")
+        );
+    }
+    #[test]
+    fn reported_quality_85_parses_raw_fenced_prefixed_and_encoded() {
+        let raw = r#"{
+  "quality": 85,
+  "improve_prompt": "Improve sharpness and reduce noise in the background walls, enhance the vividness and consistency of the orange beam, ensure anatomical accuracy of the figure, remove any visible artifacts or distortions, maintain the monochrome brutalist aesthetic with the single vivid color beam, preserve the symmetrical composition and high-end cinematic editorial quality."
+}"#;
+        let fenced = format!("```json\n{raw}\n```");
+        // Reproduce the old error: MarkdownContent hides these fences on screen.
+        let old = serde_json::from_str::<Assessment>(&fenced).unwrap_err();
+        assert_eq!((old.line(), old.column()), (1, 1));
+        for output in [
+            raw.to_owned(),
+            fenced,
+            format!("\u{feff}{raw}"),
+            format!("Here is the assessment:\n{raw}\nDone."),
+            format!(
+                "<think>Example: {{\"quality\":10,\"improve_prompt\":\"example\"}}</think>\n{raw}"
+            ),
+            serde_json::to_string(raw).unwrap(),
+        ] {
+            let a = parse_assessment(&output).unwrap();
+            assert_eq!(a.quality, 85);
+            assert!(a.improve_prompt.ends_with("editorial quality."));
+        }
+    }
+    #[test]
+    fn json_extraction_keeps_escaped_braces_and_rejects_ambiguous_assessments() {
+        let raw = r#"{"quality":85,"improve_prompt":"Keep {detail} and \"quoted\" text"}"#;
+        assert!(parse_assessment(&format!("```json\n{raw}\n```")).is_ok());
+        assert!(parse_assessment(&format!("{raw}\n{raw}")).is_err());
+        assert!(
+            parse_assessment("```json\n{\"quality\":85,\"improve_prompt\":\"unfinished").is_err()
         );
     }
     #[test]

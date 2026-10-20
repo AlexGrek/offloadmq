@@ -27,6 +27,7 @@ async function setup(page: Page, initial: ImageCycleJob | null = null, improver 
   const submissions: Record<string, unknown>[] = []
   const promptBuckets: string[] = []
   let polls = 0
+  const controls: { path: string; body: unknown }[] = []
   await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
   await page.route('**/api/**', async route => {
     const { pathname } = new URL(route.request().url())
@@ -35,10 +36,12 @@ async function setup(page: Page, initial: ImageCycleJob | null = null, improver 
     const json = (body: unknown) => route.fulfill({ json: body })
     if (pathname === '/api/me') return json({ id: 1, login: 'tester', created_at: now, used_storage_bytes: 0 })
     if (pathname === '/api/progress/running') return json({ jobs: [] })
-    if (pathname === '/api/describe/capabilities') return json({ capabilities: [{ base: 'llm.vision', tags: ['vision'], raw: 'llm.vision[vision]', online: true }] })
+    if (pathname === '/api/describe/capabilities') return json({ capabilities: ['llm.vision', 'llm.vision-new'].map(base => ({ base, tags: ['vision'], raw: base+'[vision]', online: true })) })
     if (pathname === '/api/images/capabilities') return json([
       { base: 'imggen.paint', tags: ['txt2img'], raw: 'imggen.paint[txt2img]', online: true },
       { base: 'imggen.refine', tags: ['img2img'], raw: 'imggen.refine[img2img]', online: true },
+      { base: 'imggen.paint-new', tags: ['txt2img'], raw: 'imggen.paint-new[txt2img]', online: true },
+      { base: 'imggen.refine-new', tags: ['img2img'], raw: 'imggen.refine-new[img2img]', online: true },
       { base: 'imggen.video', tags: ['txt2video'], raw: 'imggen.video[txt2video]', online: true },
     ])
     if (pathname.startsWith('/api/images/files/')) return route.fulfill({ body: png, contentType: 'image/png' })
@@ -54,12 +57,23 @@ async function setup(page: Page, initial: ImageCycleJob | null = null, improver 
       job = { ...completed, status: 'running', params, steps: [step(1, 'describe', { status: 'submitted' })] }
       return json({ job_id: '123', status: 'submitted' })
     }
+    if (job && ['/pause', '/resume', '/restart', '/models'].some(suffix => pathname.endsWith(suffix))) {
+      controls.push({ path: pathname, body: route.request().postData() ? route.request().postDataJSON() : null })
+      if (pathname.endsWith('/pause')) job = { ...job, status: 'paused' }
+      if (pathname.endsWith('/resume')) job = { ...job, status: 'running', error: null }
+      if (pathname.endsWith('/models')) job = { ...job, params: { ...job.params, ...route.request().postDataJSON() } }
+      if (pathname.endsWith('/restart')) {
+        job = { ...job, job_id: '456', status: 'running', error: null }
+        return json({ job_id: '456', status: 'submitted' })
+      }
+      return json(job)
+    }
     if (pathname.endsWith('/cancel') && job) { job = { ...job, status: 'canceled' }; return json(job) }
     if (pathname.endsWith('/poll') && job) { polls++; return json(job) }
-    if (pathname === `${root}/123` && job) return json(job)
+    if (job && pathname === `${root}/${job.job_id}`) return json(job)
     return route.fulfill({ status: 404, json: { error: 'Not mocked' } })
   })
-  return { submissions, promptBuckets, polls: () => polls, finish: (next: ImageCycleJob = completed) => { job = next } }
+  return { submissions, promptBuckets, controls, polls: () => polls, finish: (next: ImageCycleJob = completed) => { job = next } }
 }
 
 test('text start sends chosen models, prompt, size and cycle count; shares Describe prompt library', async ({ page }) => {
@@ -184,3 +198,51 @@ for (const reason of ['target_reached', 'max_steps_reached'] as const) {
     await page.screenshot({ path: `/tmp/generator-improver-${reason}.png` })
   })
 }
+
+
+for (const improver of [false, true]) {
+  test(`${improver ? 'Generator Improver' : 'Image Cycles'} can pause, edit models, resume, cancel and restart`, async ({ page }) => {
+    const app = improver ? 'generator-improver' : 'image-cycles'
+    const params = { ...defaults, ...(improver ? { initial_prompt: 'A fox', input_image_id: null, expected_quality: 95, max_steps: 2, image_model: 'imggen.refine', bootstrap_model: 'imggen.paint' } : {}) }
+    const state = await setup(page, { ...completed, app, params, status: 'running', steps: [step(1, 'describe', { status: 'submitted', model: 'llm.vision' })] }, improver)
+    await page.goto(`/app/${app}?job=123`)
+    await page.getByTestId('cycles-pause').click()
+    await expect(page.getByTestId('cycles-status')).toContainText('paused')
+    await page.reload()
+    await expect(page.getByTestId('cycles-pause-note')).toBeVisible()
+    await page.getByTestId('cycles-change-models').click()
+    await page.getByTestId('cycles-edit-vision-model-trigger').click()
+    await page.getByTestId('cycles-edit-vision-model-option-llm.vision-new').click()
+    await page.getByTestId('cycles-edit-image-model-trigger').click()
+    await page.getByTestId(`cycles-edit-image-model-option-imggen.${improver ? 'refine-new' : 'paint-new'}`).click()
+    if (improver) {
+      await page.getByTestId('cycles-edit-bootstrap-model-trigger').click()
+      await page.getByTestId('cycles-edit-bootstrap-model-option-imggen.paint-new').click()
+    }
+    await page.getByTestId('cycles-save-models').click()
+    await expect(page.getByTestId('cycles-model-editor')).not.toBeVisible()
+    const change = state.controls.find(c => c.path.endsWith('/models'))
+    expect(change?.body).toMatchObject({ vision_model: 'llm.vision-new', image_model: `imggen.${improver ? 'refine-new' : 'paint-new'}`, ...(improver ? { bootstrap_model: 'imggen.paint-new' } : {}) })
+    await expect(page.getByTestId('cycles-step-model-0')).toHaveText('Model: llm.vision')
+    await expect(page.getByTestId('cycles-status')).toContainText('paused')
+    await page.getByTestId('cycles-resume').click()
+    await expect(page.getByTestId('cycles-status')).toContainText('running')
+    await page.getByTestId('cycles-cancel').click()
+    await expect(page.getByTestId('cycles-status')).toContainText('canceled')
+    await page.getByTestId('cycles-restart').click()
+    await expect(page).toHaveURL(/job=456/)
+    await expect(page.getByTestId('cycles-status')).toContainText('running')
+  })
+}
+
+test('a failed fenced assessment exposes its raw source and can retry parsing', async ({ page }) => {
+  const raw = '```json\n{"quality":85,"improve_prompt":"Fix lighting"}\n```'
+  const state = await setup(page, { ...completed, app: 'generator-improver', status: 'failed', error: 'expected value at line 1 column 1', steps: [step(1, 'describe', { status: 'failed', result: raw, error: 'parse failed' })] }, true)
+  await page.goto('/app/generator-improver?job=123')
+  await page.getByText('Raw vision response', { exact: true }).click()
+  await expect(page.getByTestId('improver-raw-0')).toHaveText(raw)
+  await page.getByTestId('cycles-retry-parsing').click()
+  await expect(page.getByTestId('cycles-status')).toContainText('running')
+  expect(state.controls.some(c => c.path.endsWith('/resume'))).toBe(true)
+  expect(state.submissions).toHaveLength(0)
+})

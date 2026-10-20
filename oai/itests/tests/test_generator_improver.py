@@ -9,7 +9,8 @@ PARAMS = {"initial_prompt": "A fox", "input_image_id": None,
           "expected_quality": 95, "max_steps": 3, "width": 1024, "height": 1024}
 OPERATIONS = [("GET", ROOT), ("POST", ROOT), ("GET", ROOT + "/999999999999999999"),
               ("DELETE", ROOT + "/999999999999999999"),
-              *[("POST", ROOT + "/999999999999999999/" + a) for a in ("poll", "cancel", "retry")]]
+              *[("POST", ROOT + "/999999999999999999/" + a) for a in ("poll", "cancel", "retry", "restart", "pause", "resume")]]
+OPERATIONS.append(("PATCH", ROOT + "/999999999999999999/models"))
 
 
 class TestGeneratorImprover:

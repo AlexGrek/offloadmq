@@ -4,6 +4,8 @@ import {
   FolderOpen,
   Loader2,
   PanelLeft,
+  Pause,
+  Play,
   Plus,
   RefreshCw,
   Repeat2,
@@ -21,6 +23,7 @@ import {
 } from '../api/images'
 import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
 import { JobErrorBanner } from '../components/JobErrorBanner'
+import { RunModelsEditor } from '../components/imagecycles/RunModelsEditor'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { ToolSidebar } from '../components/ToolSidebar'
@@ -63,7 +66,10 @@ export default function ImageCyclesPage({
     pollImageCycle,
     cancelImageCycle,
     deleteImageCycle,
-    retryImageCycle,
+    restartImageCycle,
+    pauseImageCycle,
+    resumeImageCycle,
+    updateImageCycleModels,
     startImageCycle,
   } = imageCycleApi(improver)
   const { token } = useAuth()
@@ -222,7 +228,7 @@ export default function ImageCyclesPage({
       live = false
       clearTimeout(timer)
     }
-  }, [panel, token, put, getImageCycle, pollImageCycle])
+  }, [panel, token, put, getImageCycle, pollImageCycle, job?.status])
 
   async function upload(file: File) {
     if (!token) return
@@ -685,6 +691,70 @@ export default function ImageCyclesPage({
                     {job.params.height}
                   </p>
                   <div className="flex flex-wrap gap-2">
+                    {job.status === 'running' && (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        data-testid="cycles-pause"
+                        onClick={() => {
+                          void action(async () =>
+                            put(await pauseImageCycle(token!, job.job_id)),
+                          )
+                        }}
+                      >
+                        <Pause /> Pause
+                      </Button>
+                    )}
+                    {job.status === 'paused' && (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        data-testid="cycles-resume"
+                        onClick={() => {
+                          void action(async () =>
+                            put(await resumeImageCycle(token!, job.job_id)),
+                          )
+                        }}
+                      >
+                        <Play /> Resume
+                      </Button>
+                    )}
+                    {job.status === 'failed' &&
+                      job.steps.some(
+                        (s) =>
+                          s.status === 'failed' &&
+                          s.kind === 'describe' &&
+                          s.result,
+                      ) && (
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          data-testid="cycles-retry-parsing"
+                          onClick={() => {
+                            void action(async () =>
+                              put(await resumeImageCycle(token!, job.job_id)),
+                            )
+                          }}
+                        >
+                          <RefreshCw /> Retry assessment parsing
+                        </Button>
+                      )}
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      data-testid="cycles-restart"
+                      onClick={() => {
+                        void action(async () => {
+                          const next = await restartImageCycle(
+                            token!,
+                            job.job_id,
+                          )
+                          select(next.job_id)
+                        })
+                      }}
+                    >
+                      <RotateCcw /> Restart from beginning
+                    </Button>
                     <Button
                       variant="outline"
                       disabled={busy}
@@ -708,26 +778,10 @@ export default function ImageCyclesPage({
                         }}
                         data-testid="cycles-cancel"
                       >
-                        <Square /> Stop run
+                        <Square /> Cancel run
                       </Button>
                     ) : (
                       <>
-                        <Button
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => {
-                            void action(async () => {
-                              const next = await retryImageCycle(
-                                token!,
-                                job.job_id,
-                              )
-                              select(next.job_id)
-                            })
-                          }}
-                          data-testid="cycles-retry"
-                        >
-                          <RotateCcw /> Run again
-                        </Button>
                         <Button
                           variant="ghost"
                           disabled={busy}
@@ -747,6 +801,45 @@ export default function ImageCyclesPage({
                       </>
                     )}
                   </div>
+                  {job.status === 'paused' && (
+                    <p
+                      className="text-sm text-muted-foreground"
+                      data-testid="cycles-pause-note"
+                    >
+                      Paused. The current task may finish; no next step starts
+                      until you resume.
+                    </p>
+                  )}
+                  <RunModelsEditor
+                    key={job.job_id}
+                    job={job}
+                    visionModels={visionModels}
+                    imageModels={imageModels}
+                    bootstrapModels={bootstrapModels}
+                    status={capsStatus}
+                    error={capsError}
+                    busy={busy}
+                    onRefresh={refreshModels}
+                    onSave={async (models) => {
+                      setBusy(true)
+                      setError(null)
+                      try {
+                        put(
+                          await updateImageCycleModels(
+                            token!,
+                            job.job_id,
+                            models,
+                          ),
+                        )
+                        return true
+                      } catch (e) {
+                        setError(message(e))
+                        return false
+                      } finally {
+                        setBusy(false)
+                      }
+                    }}
+                  />
                   {job.error && (
                     <JobErrorBanner
                       message={job.error}
@@ -788,6 +881,14 @@ export default function ImageCyclesPage({
                           {step.status}
                         </span>
                       </div>
+                      {step.model && (
+                        <p
+                          className="break-all text-xs text-muted-foreground"
+                          data-testid={`cycles-step-model-${i}`}
+                        >
+                          Model: {step.model}
+                        </p>
+                      )}
                       {step.quality != null && (
                         <p
                           className="text-lg font-semibold"
@@ -842,6 +943,19 @@ export default function ImageCyclesPage({
                               : 'Description → next generation prompt'}
                           </h4>
                           <MarkdownContent>{step.result}</MarkdownContent>
+                          {improver && (
+                            <details className="text-xs text-muted-foreground">
+                              <summary className="cursor-pointer">
+                                Raw vision response
+                              </summary>
+                              <pre
+                                className="mt-2 whitespace-pre-wrap break-words"
+                                data-testid={`improver-raw-${i}`}
+                              >
+                                {step.result}
+                              </pre>
+                            </details>
+                          )}
                         </div>
                       )}
                       {step.output_image_id &&

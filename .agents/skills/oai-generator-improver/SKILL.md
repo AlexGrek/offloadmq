@@ -35,3 +35,19 @@ Read `oai-image-cycles` (shared engine), then `oai-img` and matching
 - Shared worker/environment: `IMAGE_CYCLES_WORKER_*`; no additional worker.
 - Tests: `image-cycles.spec.ts` covers both apps; live API contract in
   `test_generator_improver.py`; JSON validation/chaining unit tests in the service.
+
+
+## JSON recovery and controls
+
+- Both apps have pause/resume, cancel, restart, and live model selection. Pause
+  holds future submissions while an active child may finish. Submitted steps
+  retain their actual model snapshots.
+- Extract one assessment from raw/fenced/prefixed JSON, BOM, JSON-encoded strings,
+  and closed reasoning blocks before the answer. Markdown rendering hid fences
+  that made the old parser fail at column 1. Keep strict schema/bounds checks and
+  reject ambiguous multiple assessments. Regression includes the reported score
+  85 and full improvement prompt.
+- `/resume` on a failed parse reuses the completed vision child's stored response
+  (UI: Retry assessment parsing). Do not pay for another vision inference merely
+  to remove wrappers. Other failed/canceled children require restart.
+- Raw vision response disclosure exposes the original text for diagnosis.

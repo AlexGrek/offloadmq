@@ -82,3 +82,23 @@ Worker configuration is shared: `IMAGE_CYCLES_WORKER_TICK_SECS` (3 seconds),
 with the existing describe/image workers. Concurrency/restart behavior follows
 Image Cycles. Tests: `image-cycles.spec.ts` (both apps),
 `test_generator_improver.py`, and service JSON validation/chaining unit tests.
+
+
+## Controls and parser recovery
+
+Pause/resume, cancel, restart from the seed, and live model selection are shared
+with [Image Cycles run controls](oai-image-cycles.md#run-controls-and-model-changes).
+Model changes apply to subsequent submissions; current tasks and past steps
+retain their original model names.
+
+Markdown rendering hides code fences. A response beginning with a code fence
+can therefore look like valid JSON on screen while the old bare-object parser
+fails at line 1 column 1. Parsing now accepts one valid object from Markdown
+fences/preamble, a leading BOM, a JSON-encoded string, and closed reasoning blocks
+before the answer. Schema/types/score bounds remain strict; multiple valid
+assessment objects are rejected as ambiguous. Raw vision response exposes the
+exact source, including wrappers.
+
+Retry assessment parsing reuses a completed vision child's saved response,
+preserving completed work without another inference. Restart creates a separate
+run from the original seed with the latest models.

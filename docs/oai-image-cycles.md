@@ -88,3 +88,29 @@ Generator Improver shares the persistent engine with an `app` column (migration
 000037), separate endpoints/history and JSON-scored img2img behavior. See
 [Generator Improver](oai-generator-improver.md). Regular cycles keep their
 fixed-length txt2img behavior; their child `response_format` stays null.
+
+
+## Run controls and model changes
+
+Both apps expose the following owner-scoped routes on `/api/<app>/jobs/{id}`:
+
+| Method | Suffix | Behavior |
+|---|---|---|
+| POST | `/pause` | Persist `paused`; hold future submissions |
+| POST | `/resume` | Continue a paused run or retry parsing a failed assessment |
+| POST | `/restart` | Cancel remaining work and create a new run from the seed using the latest models; 201 `{job_id,status}` |
+| PATCH | `/models` | Update any of `vision_model`, `image_model`, `bootstrap_model`; return the updated run |
+
+An active inference may finish while paused. Viewing the paused run reconciles
+its result but never starts the next task. Background pickup and stale-job expiry
+exclude deliberately paused runs. Cancel works on paused runs. Restart preserves
+the original job's history and outputs instead of overwriting them.
+
+Model edits affect subsequent submissions. Submitted tasks keep their original
+model; each step's `model` records the actual child capability. Legacy history
+is backfilled from child records before defaults change. The detail model editor
+validates vision/txt2img/img2img compatibility, including the improver bootstrap.
+
+A failed assessment with a completed vision child can resume by reparsing its
+saved response without another inference. Other failures require restart.
+All control mutations share the worker's per-run advisory lock.

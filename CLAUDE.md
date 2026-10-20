@@ -398,6 +398,9 @@ quality or max steps. It shares the Image Cycles engine with separate app histor
 Read [the feature skill](.agents/skills/oai-generator-improver/SKILL.md) before
 editing the improvement branches or `GeneratorImproverPage.tsx`.
 API and stopping semantics: [docs/oai-generator-improver.md](docs/oai-generator-improver.md).
+Both apps support pause/resume, cancel, restart, and live model selection.
+Historical steps retain their model snapshots; failed JSON assessments can retry
+parsing their saved responses without another inference.
 
 ### Image Cycles
 

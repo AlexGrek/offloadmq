@@ -64,15 +64,7 @@ async fn reap(state: &AppState, max_age_hours: u64) -> Result<(), AppError> {
     .await?;
 
     // Bespoke tables — same lifecycle columns, no framework trait impl.
-    total += offload_jobs::fail_stale_rows::<entities::image_cycle_jobs::Entity>(
-        db,
-        entities::image_cycle_jobs::Column::Status,
-        entities::image_cycle_jobs::Column::UpdatedAt,
-        entities::image_cycle_jobs::Column::Error,
-        cutoff,
-        REASON,
-    )
-    .await?;
+    total += crate::db::image_cycles::fail_stale(db, cutoff, REASON).await?;
     total += offload_jobs::fail_stale_rows::<entities::image_generation_jobs::Entity>(
         db,
         entities::image_generation_jobs::Column::Status,

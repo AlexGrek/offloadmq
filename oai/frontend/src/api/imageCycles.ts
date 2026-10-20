@@ -13,8 +13,14 @@ export interface ImageCycleParams {
   width: number
   height: number
 }
+export interface ImageCycleModelChanges {
+  vision_model?: string
+  image_model?: string
+  bootstrap_model?: string
+}
 export interface ImageCycleStep {
   cycle: number
+  model?: string | null
   kind: 'describe' | 'generate'
   status: string
   prompt: string
@@ -49,6 +55,25 @@ function createApi(app: string) {
       request<ImageCycleJob>(`${path(id)}/poll`, token, { method: 'POST' }),
     cancelImageCycle: (token: string, id: string) =>
       request<ImageCycleJob>(`${path(id)}/cancel`, token, { method: 'POST' }),
+    pauseImageCycle: (token: string, id: string) =>
+      request<ImageCycleJob>(`${path(id)}/pause`, token, { method: 'POST' }),
+    resumeImageCycle: (token: string, id: string) =>
+      request<ImageCycleJob>(`${path(id)}/resume`, token, { method: 'POST' }),
+    restartImageCycle: (token: string, id: string) =>
+      request<{ job_id: string; status: string }>(
+        `${path(id)}/restart`,
+        token,
+        { method: 'POST' },
+      ),
+    updateImageCycleModels: (
+      token: string,
+      id: string,
+      models: ImageCycleModelChanges,
+    ) =>
+      request<ImageCycleJob>(`${path(id)}/models`, token, {
+        method: 'PATCH',
+        body: JSON.stringify(models),
+      }),
     deleteImageCycle: (token: string, id: string) =>
       request<void>(path(id), token, { method: 'DELETE' }),
     retryImageCycle: (token: string, id: string) =>
