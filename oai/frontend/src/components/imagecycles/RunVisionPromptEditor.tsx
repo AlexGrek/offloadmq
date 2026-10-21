@@ -46,6 +46,7 @@ export function RunVisionPromptEditor({
         Pause first to hold the next step while editing.
         {job.app === 'generator-improver' &&
           ' Required JSON assessment instructions are added automatically.'}
+        {' Placeholders resolve when each step starts.'}
       </p>
       <PromptTextarea
         id="cycles-run-vision-prompt"

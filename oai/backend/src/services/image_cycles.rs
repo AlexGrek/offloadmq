@@ -4,7 +4,10 @@ use crate::{
     db::{image_cycles as db, image_generation},
     error::AppError,
     offload::{base_capability, task_status::is_terminal},
-    services::{image_analysis, image_jobs, prompt_usage, storage},
+    services::{
+        image_analysis, image_job_names, image_jobs, prompt_expansion::PromptExpander,
+        prompt_usage, storage,
+    },
     state::AppState,
 };
 use serde::{Deserialize, Serialize};
@@ -433,7 +436,13 @@ async fn save(state: &AppState, job: &mut db::Job, steps: &[Step]) -> Result<(),
 fn prepare(p: &Params, steps: &mut [Step], i: usize) -> Result<(), AppError> {
     match steps[i].kind {
         Kind::Describe => {
-            steps[i].prompt = vision_prompt(p);
+            // Judge the concrete bootstrap image's intent, rather than drawing new
+            // random values from its template on every assessment.
+            let mut instructions = p.clone();
+            if p.initial_prompt.is_some() && i > 0 {
+                instructions.initial_prompt = Some(steps[0].prompt.clone());
+            }
+            steps[i].prompt = vision_prompt(&instructions);
             steps[i].input_image_id = if i == 0 {
                 p.input_image_id.clone()
             } else {
@@ -459,6 +468,21 @@ fn prepare(p: &Params, steps: &mut [Step], i: usize) -> Result<(), AppError> {
         }
         _ => {}
     }
+    Ok(())
+}
+
+/// Resolve only fresh work, before its durable child reservation. Parameters and
+/// vision results remain templates/raw output; the step records exactly what is
+/// sent. Recovery of a reserved submission must reuse this persisted expansion.
+fn expand_step_prompt(step: &mut Step, expander: &mut PromptExpander) -> Result<(), AppError> {
+    let expanded = expander.expand(&step.prompt)?;
+    let expanded = image_job_names::expand_prompt_placeholders(expanded.trim());
+    if expanded.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "prompt is empty after placeholder substitution".into(),
+        ));
+    }
+    step.prompt = expanded.trim().to_owned();
     Ok(())
 }
 
@@ -550,6 +574,7 @@ async fn refresh_step(
                 Err(e) => return Err(e),
             };
             step.model = Some(job.capability);
+            step.prompt = job.prompt;
             step.status = job.status;
             step.result = job.result;
             step.stage = job.stage;
@@ -641,6 +666,12 @@ async fn advance(
     let fresh = steps[i].child_job_id.is_none();
     if fresh {
         prepare(p, steps, i)?;
+        let mut expander = if steps[i].prompt.contains('{') {
+            PromptExpander::for_user(&state.db, job.user_id).await?
+        } else {
+            PromptExpander::new([])
+        };
+        expand_step_prompt(&mut steps[i], &mut expander)?;
         steps[i].model = Some(model_for_step(p, &steps[i]));
         steps[i].child_job_id = Some(state.next_id().to_string());
         steps[i].status = "submitting".into();
@@ -1114,6 +1145,109 @@ mod tests {
             }
         }
         steps
+    }
+
+    fn placeholder_expander() -> PromptExpander {
+        PromptExpander::new([
+            (".subject".into(), vec!["{color} {animal}".into()]),
+            ("style".into(), vec!["cinematic".into()]),
+        ])
+    }
+
+    #[test]
+    fn substitutions_cover_every_prompt_in_both_apps_with_image_or_text_seeds() {
+        for improver in [false, true] {
+            for text_seed in [false, true] {
+                let mut p = params();
+                p.expected_quality = improver.then_some(95);
+                p.describe_prompt = "Use {STYLE} lighting for {?}; keep {unknown}.".into();
+                if text_seed {
+                    p.input_image_id = None;
+                    p.initial_prompt = Some("A {.subject} named {?}".into());
+                }
+                let original = encode(&p).unwrap();
+                let mut steps = plan(&p);
+                let mut bootstrap = None;
+                for i in 0..steps.len() {
+                    prepare(&p, &mut steps, i).unwrap();
+                    expand_step_prompt(&mut steps[i], &mut placeholder_expander()).unwrap();
+                    let prompt = &steps[i].prompt;
+                    assert!(!prompt.contains("{?}"), "{prompt}");
+                    assert!(!prompt.contains("{.subject}"), "{prompt}");
+                    assert!(!prompt.contains("{color}"), "{prompt}");
+                    assert!(!prompt.contains("{animal}"), "{prompt}");
+                    assert!(!prompt.contains("{STYLE}"), "{prompt}");
+                    if steps[i].kind == Kind::Describe {
+                        assert!(prompt.starts_with("Use cinematic lighting for "));
+                        assert!(prompt.contains("{unknown}"));
+                        if improver {
+                            assert!(prompt.contains("Return only a JSON object"));
+                            if let Some(seed) = &bootstrap {
+                                assert!(prompt.contains(&format!("Desired image: {seed}\n")));
+                            }
+                        }
+                        steps[i].result = Some("A {.subject} in {style} light, called {?}".into());
+                        steps[i].improve_prompt =
+                            improver.then(|| "Add {color} {style} light to {?}".into());
+                    } else {
+                        steps[i].output_image_id = Some((200 + i).to_string());
+                        if steps[i].cycle == 0 {
+                            bootstrap = Some(steps[i].prompt.clone());
+                        } else {
+                            assert!(steps[i].prompt.contains("cinematic"));
+                            // The model's raw result is kept independently of expansion.
+                            assert!(steps[i - 1].result.as_ref().unwrap().contains("{.subject}"));
+                        }
+                    }
+                    steps[i].status = "completed".into();
+                }
+                assert_eq!(encode(&p).unwrap(), original, "templates must survive");
+            }
+        }
+    }
+
+    #[test]
+    fn edited_prompts_and_step_restarts_expand_fresh_work_preserving_checkpoints() {
+        for improver in [false, true] {
+            let mut p = params();
+            p.expected_quality = improver.then_some(95);
+            let source = completed_plan(&p);
+            let original = encode(&source).unwrap();
+            let mut steps = restart_plan(&p, &source, 2).unwrap();
+            change_vision_prompt(
+                &mut p,
+                &mut steps,
+                "Use {style}; example: {\"quality\":95,\"improve_prompt\":\"sharpen\"}",
+            )
+            .unwrap();
+            prepare(&p, &mut steps, 2).unwrap();
+            expand_step_prompt(&mut steps[2], &mut placeholder_expander()).unwrap();
+            assert!(steps[2].prompt.starts_with("Use cinematic; example:"));
+            assert!(
+                steps[2]
+                    .prompt
+                    .contains(r#"{"quality":95,"improve_prompt":"sharpen"}"#)
+            );
+            for i in 0..2 {
+                assert_eq!(steps[i].prompt, source[i].prompt);
+                assert_eq!(steps[i].result, source[i].result);
+            }
+            assert_eq!(encode(&source).unwrap(), original);
+            assert!(p.describe_prompt.contains("{style}"));
+        }
+    }
+
+    #[test]
+    fn invalid_expansions_fail_before_replacing_the_step_prompt() {
+        let mut step = new_step(1, Kind::Describe, "{blank}".into());
+        let mut expander = PromptExpander::new([("blank".into(), vec!["  ".into()])]);
+        assert!(expand_step_prompt(&mut step, &mut expander).is_err());
+        assert_eq!(step.prompt, "{blank}");
+        assert!(step.child_job_id.is_none());
+        step.prompt = "{large}".into();
+        let mut expander = PromptExpander::new([("large".into(), vec!["x".repeat(32_001)])]);
+        assert!(expand_step_prompt(&mut step, &mut expander).is_err());
+        assert_eq!(step.prompt, "{large}");
     }
 
     #[test]

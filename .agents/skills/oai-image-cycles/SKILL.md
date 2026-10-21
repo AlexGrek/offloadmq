@@ -35,6 +35,12 @@ changing child image/describe services. API and semantics: `docs/oai-image-cycle
 - Page: `pages/ImageCyclesPage.tsx`; API: `api/imageCycles.ts`; authenticated
   `/api/image-cycles/jobs` CRUD + poll/cancel/retry. Detail URL uses `?job=<id>`.
   Timeline must keep all prompts, descriptions and generated images visible.
+- Expand every fresh step's prompt server-side with `PromptExpander::for_user`
+  plus `image_job_names` before the durable child reservation. This covers seeds,
+  vision instructions and vision-produced generation/improvement prompts. Keep
+  params/raw results as templates and persist the expanded `step.prompt`; never
+  re-expand a reserved child or reused checkpoint. Improver's desired-image
+  context uses the actual bootstrap prompt, preserving its substituted intent.
 - Both apps use the shared `ImageLightbox` for seed previews and step outputs.
   Run slides include the seed and generated images in order; the prompt and
   standard actions follow the selected image. Do not replace previews with

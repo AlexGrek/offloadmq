@@ -17,6 +17,18 @@ inputs are downscaled on the agent with `scale/max[px=1024]`, matching Describe
 Image's default. Generation is text-to-image: its prompt is the preceding
 vision result, and workflow negative prompts/seeds use their defaults.
 
+Both apps support built-in placeholders (`{color}`, `{animal}`, `{adjective}`,
+`{country}`, `{language}`, `{name}`, `{starwars}`), recursive custom placeholders,
+and `{?}` random names in every prompt. The server expands each fresh step just
+before reserving its child job, including vision instructions, text seeds and
+vision-generated descriptions / improvement prompts. Unknown tokens and JSON
+examples remain literal. Parameters retain the original templates; each step's
+`prompt` records the expanded text actually sent, while vision `result` and
+`improve_prompt` retain the model's raw text. Resuming or recovering a reserved
+step keeps its substitutions; a restart draws fresh values for new work and
+preserves reused checkpoints. Improver's desired-image context uses the concrete
+bootstrap prompt so its assessment matches the generated starting image.
+
 The timeline shows every describe instruction, vision result, actual generation
 prompt, generated image, status, stage and error. Runs and steps are persisted;
 leaving the page does not stop the run. A `?job=<id>` URL restores its detail.

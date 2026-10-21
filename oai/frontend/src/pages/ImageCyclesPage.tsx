@@ -698,6 +698,11 @@ export default function ImageCyclesPage({
                       ? 'Vision output is forced to JSON: {"quality": 95, "improve_prompt": "…"}. Quality is an integer out of 100.'
                       : 'Uses the same saved prompt library as Describe Image.'}
                   </p>
+                  <p className="text-xs text-muted-foreground">
+                    All prompts support {'{color}'}, {'{animal}'}, custom placeholders,
+                    and {'{?}'}. Substitutions resolve when each step starts; the
+                    timeline shows the prompt sent.
+                  </p>
                 </div>
                 {improver && (
                   <div className="space-y-2">
