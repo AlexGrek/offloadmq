@@ -11,7 +11,7 @@ from typing import Any
 
 import aiohttp
 
-from offloadmq_agent.context import ExecContext
+from offloadmq_agent.context import ExecContext, TaskCancelled
 from offloadmq_agent.data.task_inputs import stage_task_inputs
 from offloadmq_agent.executor import register
 from offloadmq_agent.models import Task, TaskResult, TaskStatus
@@ -19,6 +19,8 @@ from offloadmq_agent.ollama import get_ollama_base_url
 
 # Image extensions Ollama vision models accept via the per-message ``images`` field.
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+_TEXT_DOCUMENT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".yml", ".yaml", ".log"}
+_DOCUMENT_EXTENSIONS = {".pdf", ".epub"} | _TEXT_DOCUMENT_EXTENSIONS
 
 
 def _collect_image_attachments(data_path: Path) -> list[str]:
@@ -32,6 +34,60 @@ def _collect_image_attachments(data_path: Path) -> list[str]:
     return attachments
 
 
+def _collect_document_attachments(data_path: Path, ctx: ExecContext) -> list[str]:
+    """Read text documents or extract PDF/EPUB text, keeping file boundaries."""
+    attachments: list[str] = []
+    for path in sorted(data_path.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in _DOCUMENT_EXTENSIONS:
+            continue
+        ctx.raise_if_cancelled()
+        name = path.relative_to(data_path).as_posix()
+        try:
+            if path.suffix.lower() in _TEXT_DOCUMENT_EXTENSIONS:
+                # Accept UTF-8 with or without a BOM, preserving Markdown markup.
+                text = path.read_text(encoding="utf-8-sig")
+            else:
+                # Already a runtime dependency; load it only for PDF/EPUB files.
+                import pymupdf
+
+                with pymupdf.open(path, filetype=path.suffix.lower()[1:]) as document:
+                    if document.needs_pass:
+                        raise ValueError("Document is password-protected")
+                    pages: list[str] = []
+                    for page in document:
+                        ctx.raise_if_cancelled()
+                        text = page.get_text("text", sort=True).strip()
+                        if text:
+                            pages.append(text)
+                text = "\n\n".join(pages)
+            if not text.strip():
+                raise ValueError("No extractable text; scanned documents require OCR")
+        except TaskCancelled:
+            raise
+        except Exception as exc:
+            raise ValueError(f"Failed to extract text from attachment {name!r}: {exc}") from exc
+        attachments.append(
+            f"--- Attached file: {name} ---\n{text}\n--- End attached file: {name} ---"
+        )
+    return attachments
+
+
+def _attach_documents(
+    messages: list[dict[str, Any]], documents: list[str]
+) -> list[dict[str, Any]]:
+    """Append extracted documents to the last user message, creating one if needed."""
+    if not documents:
+        return messages
+    text = "\n\n".join(documents)
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            content = msg.get("content") or ""
+            msg["content"] = f"{content}\n\n{text}" if content else text
+            return messages
+    messages.append({"role": "user", "content": text})
+    return messages
+
+
 def _convert_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Flatten OpenAI-style multimodal ``content`` parts into Ollama's shape.
 
@@ -43,7 +99,7 @@ def _convert_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
     for msg in messages:
         content = msg.get("content")
         if not isinstance(content, list):
-            converted.append(msg)
+            converted.append(dict(msg))
             continue
         text_parts: list[str] = []
         images: list[str] = []
@@ -197,8 +253,8 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
     if not messages:
         messages = [{"role": "user", "content": prompt}]
 
-    # Normalize OpenAI multimodal parts, then attach any images staged from the
-    # task's input buckets (vision requests upload the image to a file_bucket).
+    # Normalize OpenAI multimodal parts, then attach images and document text
+    # staged from the task's input buckets.
     messages = _convert_openai_messages(messages)
     try:
         data_path = (
@@ -212,14 +268,28 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
             status=TaskStatus.FAILED,
             error=f"Failed to stage input files: {exc}",
         )
-    image_attachments = _collect_image_attachments(data_path) if data_path else []
-    if image_attachments:
-        messages = _attach_images(messages, image_attachments)
+    try:
+        ctx.raise_if_cancelled()
+        document_attachments = (
+            await asyncio.to_thread(_collect_document_attachments, data_path, ctx)
+            if data_path else []
+        )
+        image_attachments = _collect_image_attachments(data_path) if data_path else []
+        ctx.raise_if_cancelled()
+    except TaskCancelled:
+        return TaskResult(
+            task_id=task.id, status=TaskStatus.CANCELLED, error="Cancelled by user"
+        )
+    except Exception as exc:
+        return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
+    messages = _attach_documents(messages, document_attachments)
+    messages = _attach_images(messages, image_attachments)
 
     # Local diagnostic only: not forwarded to the task's server-side progress,
     # so the streamed logs carry only the LLM response text — never a "model=" line.
     await ctx.info(
-        "generating", model=model, messages=len(messages), images=len(image_attachments)
+        "generating", model=model, messages=len(messages), images=len(image_attachments),
+        documents=len(document_attachments),
     )
 
     body: dict[str, Any] = {"model": model, "messages": messages, "stream": True}

@@ -6,7 +6,7 @@ export const MAX_DOCUMENT_BYTES = 100 * 1024 * 1024
 
 /** Document extensions the offload agent extracts text from. */
 export const DOCUMENT_EXTENSIONS = [
-  'pdf', 'txt', 'md', 'csv', 'json', 'xml', 'yml', 'yaml', 'log',
+  'pdf', 'epub', 'txt', 'md', 'csv', 'json', 'xml', 'yml', 'yaml', 'log',
 ] as const
 
 export const DOCUMENT_ACCEPT = DOCUMENT_EXTENSIONS.map(e => `.${e}`).join(',')

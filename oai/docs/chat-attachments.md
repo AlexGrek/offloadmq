@@ -3,8 +3,8 @@
 LLM chat (`/app/chat`) lets a user attach **images** and **text documents** to a
 message, or **reference** files they already have (uploaded or AI-generated
 images, plus previously uploaded documents). The agent base64-attaches images to
-the model request. **Documents are staged but not yet read:** the agent has no text
-extraction, so a document's content does not reach the model.
+the model request and appends document text to the last user message, with each
+file labeled by its original filename.
 
 ## How it works
 
@@ -14,8 +14,14 @@ and submits the normal `llm.*` chat task with `file_bucket: [<uid>]`. The agent
 
 - **Images** → base64-encodes and appends to the last user message's `images`
   field (Ollama vision input).
-- **Documents** (`.pdf .txt .md .csv .json .xml .yml .yaml .log`) → downloaded but
-  ignored: text extraction is not implemented in the agent yet.
+- **PDF and EPUB** (`.pdf .epub`) → embedded text extracted locally with PyMuPDF,
+  preserving PDF page and EPUB chapter order. No vision model is required.
+- **Text documents** (`.txt .md .csv .json .xml .yml .yaml .log`) → read as UTF-8
+  (with or without a BOM), preserving Markdown and other text markup.
+
+Extensions are case-insensitive. Unreadable, password-protected, or text-empty
+documents fail the task with the filename in the error. Image-only scans need OCR
+before upload. Document text is sent in full and must fit the model's context.
 
 Streaming stays on, so replies still stream back.
 

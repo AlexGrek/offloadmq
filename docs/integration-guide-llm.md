@@ -116,7 +116,9 @@ Set both to empty JSON arrays **`[]`** on every submit if you are not using HTTP
 
 ### Prefer chat `payload` without a top-level `model` for vision
 
-For Ollama chat-style tasks, the agent ([agent_v2/agent/src/offloadmq_agent/exec/llm.py](../agent_v2/agent/src/offloadmq_agent/exec/llm.py)) builds the `/api/chat` body as follows: it takes your `messages` (or a bare `prompt`), attaches base64 images from files downloaded from **`file_bucket`**, sets **`model`** from the task **`capability`** string (the part after `llm.`, before any `[` bracket), and forwards `options`, `format`, `tools`, `think` and `keep_alive` from your `payload`. Other payload keys are ignored; the agent always streams from Ollama.
+For Ollama chat-style tasks, the agent ([agent_v2/agent/src/offloadmq_agent/exec/llm.py](../agent_v2/agent/src/offloadmq_agent/exec/llm.py)) builds the `/api/chat` body as follows: it takes your `messages` (or a bare `prompt`), attaches base64 images and document text from files downloaded from **`file_bucket`**, sets **`model`** from the task **`capability`** string (the part after `llm.`, before any `[` bracket), and forwards `options`, `format`, `tools`, `think` and `keep_alive` from your `payload`. Other payload keys are ignored; the agent always streams from Ollama.
+
+PDF and EPUB attachments are extracted locally and appended to the last user message as named file sections. Text files (`.txt`, `.md`, `.csv`, `.json`, `.xml`, `.yml`, `.yaml`, `.log`) are read as UTF-8 with or without a BOM and appended in the same way, preserving markup. If there is no user message, the agent adds one. Upload them through the same bucket flow as images; no vision model is required for document text. PDF pages and EPUB chapters retain their reading order, and document filename extensions are case-insensitive. Extraction reads embedded text only: image-only scans require OCR elsewhere. Password-protected, unreadable, or text-empty documents fail the task with the attachment name in the error. Extracted text is sent in full and must fit the selected model's context window.
 
 **Recommended:** put only **`stream`** (usually `false`) and **`messages`** in `payload`, and **omit** a top-level **`model`** key. That matches the Image Analyzer sandbox and avoids duplicating or drifting from the agent's model selection.
 
@@ -124,7 +126,7 @@ For Ollama chat-style tasks, the agent ([agent_v2/agent/src/offloadmq_agent/exec
 
 ### Name the file in user text when it helps
 
-After upload, the server stores `original_name` (from multipart filename). The agent saves downloads under that path and scans for image extensions. Referencing that name in the user `content` string (for example `diagram.png`) keeps logs and model instructions aligned with the bucket listing.
+After upload, the server stores `original_name` (from multipart filename). The agent saves downloads under that path and identifies images and PDF/EPUB documents by extension. Referencing that name in the user `content` string (for example `diagram.png` or `report.pdf`) keeps logs and model instructions aligned with the bucket listing.
 
 ---
 
