@@ -1,10 +1,12 @@
+import { useDefaultPrompts } from '../../hooks/useDefaultPrompts'
+import { BUILTIN_PROMPT_DEFAULTS } from '../../lib/promptDefaults'
 import { useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { PromptTextarea } from '@/components/PromptTextarea'
 
-const DEFAULT_PROMPT = 'You are a helpful AI assistant.'
+const DEFAULT_PROMPT = BUILTIN_PROMPT_DEFAULTS.chat
 
 type SystemPromptStudioProps = {
   token: string
@@ -26,11 +28,12 @@ export function SystemPromptStudio({
   onApply,
   compact,
 }: SystemPromptStudioProps) {
+  const defaultPrompt = useDefaultPrompts().chat
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleApply() {
-    const text = value.trim() || DEFAULT_PROMPT
+    const text = value.trim() || defaultPrompt
     setSaving(true)
     setError(null)
     try {
@@ -68,7 +71,7 @@ export function SystemPromptStudio({
         value={value}
         onChange={onChange}
         bucket="llm-system"
-        placeholder={DEFAULT_PROMPT}
+        placeholder={defaultPrompt}
         rows={compact ? 4 : 6}
         data-testid="system-prompt-editor"
         textareaClassName="font-mono"
@@ -89,7 +92,7 @@ export function SystemPromptStudio({
           type="button"
           size="sm"
           variant="outline"
-          onClick={() => onChange(DEFAULT_PROMPT)}
+          onClick={() => onChange(defaultPrompt)}
           disabled={saving}
         >
           Reset default

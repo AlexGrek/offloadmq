@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { VersionInfo } from '../components/VersionInfo'
+import { PromptDefaultsSettings } from '../components/PromptDefaultsSettings'
 
 export default function SettingsPage() {
   const { user, token } = useAuth()
@@ -67,6 +68,7 @@ export default function SettingsPage() {
         <h1 className="font-display mb-6 text-2xl font-bold">Settings</h1>
 
         <div className="flex flex-col gap-5">
+          <PromptDefaultsSettings />
           {/* Profile */}
           <Card>
             <CardHeader>

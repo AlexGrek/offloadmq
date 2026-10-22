@@ -1,3 +1,4 @@
+import { useDefaultPrompts } from '../hooks/useDefaultPrompts'
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import {
@@ -30,6 +31,7 @@ import { LoadingImage } from '../components/LoadingImage'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { RunModelsEditor } from '../components/imagecycles/RunModelsEditor'
 import { RunVisionPromptEditor } from '../components/imagecycles/RunVisionPromptEditor'
+import { QualityAssessmentGraph } from '../components/imagecycles/QualityAssessmentGraph'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { ToolSidebar } from '../components/ToolSidebar'
@@ -44,8 +46,6 @@ import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { isListedCapability } from '../lib/capability-picker'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import {
-  DEFAULT_IMPROVER_PROMPT,
-  DEFAULT_DESCRIBE_PROMPT,
   DESCRIBE_PROMPT_BUCKET,
 } from '../lib/describe'
 import { pastedImageFiles } from '../lib/clipboardImages'
@@ -65,9 +65,10 @@ export default function ImageCyclesPage({
   improver?: boolean
 }) {
   const title = improver ? 'Generator Improver' : 'Image Cycles'
+  const defaultPrompts = useDefaultPrompts()
   const defaultPrompt = improver
-    ? DEFAULT_IMPROVER_PROMPT
-    : DEFAULT_DESCRIBE_PROMPT
+    ? defaultPrompts.generator_improver
+    : defaultPrompts.image_cycles
   const {
     listImageCycles,
     getImageCycle,
@@ -91,6 +92,9 @@ export default function ImageCyclesPage({
   const job = jobs.find((j) => j.job_id === panel)
   const [historyLoading, setHistoryLoading] = useState(true)
   const [mode, setMode] = useState<'image' | 'text'>('image')
+  const [improvementWorkflow, setImprovementWorkflow] = useState<
+    'img2img' | 'txt2img'
+  >('img2img')
   const [input, setInput] = useState<UploadedImage | null>(null)
   const [prompt, setPrompt] = useState('')
   const [describePrompt, setDescribePrompt] = useState(defaultPrompt)
@@ -104,6 +108,7 @@ export default function ImageCyclesPage({
   const [height, setHeight] = useState('1024')
   const [visionModels, setVisionModels] = useState<LlmCapabilityInfo[]>([])
   const [imageModels, setImageModels] = useState<LlmCapabilityInfo[]>([])
+  const [allImageModels, setAllImageModels] = useState<LlmCapabilityInfo[]>([])
   const [vision, setVision] = useState('')
   const [image, setImage] = useState('')
   const [capsStatus, setCapsStatus] = useState<CapabilitiesStatus>('loading')
@@ -161,7 +166,7 @@ export default function ImageCyclesPage({
       const eligible = imgs.filter(
         (c) =>
           c.tags.length === 0 ||
-          c.tags.includes(improver ? 'img2img' : 'txt2img'),
+          c.tags.includes(improver ? improvementWorkflow : 'txt2img'),
       )
       const seeds = imgs.filter(
         (c) => c.tags.length === 0 || c.tags.includes('txt2img'),
@@ -171,6 +176,7 @@ export default function ImageCyclesPage({
         isListedCapability(prev, seeds) ? prev : (seeds[0]?.base ?? ''),
       )
       setVisionModels(v.capabilities)
+      setAllImageModels(imgs)
       setImageModels(eligible)
       setVision((prev) =>
         isListedCapability(prev, v.capabilities)
@@ -183,7 +189,7 @@ export default function ImageCyclesPage({
       setCapsStatus('ready')
       setCapsError(null)
     },
-    [improver],
+    [improver, improvementWorkflow],
   )
   function refreshModels() {
     setCapsStatus('loading')
@@ -294,7 +300,6 @@ export default function ImageCyclesPage({
     !uploading &&
     capsStatus === 'ready' &&
     (mode === 'image' ? !!input : !!prompt.trim()) &&
-    !!describePrompt.trim() &&
     isListedCapability(vision, visionModels) &&
     isListedCapability(image, imageModels) &&
     validNumber(cycles, 1, 50) &&
@@ -499,7 +504,7 @@ export default function ImageCyclesPage({
                     const started = await startImageCycle(token!, {
                       initial_prompt: mode === 'text' ? prompt : null,
                       input_image_id: mode === 'image' ? input!.image_id : null,
-                      describe_prompt: describePrompt,
+                      describe_prompt: describePrompt.trim() || defaultPrompt,
                       vision_model: vision,
                       image_model: image,
                       cycles: Number(cycles),
@@ -508,6 +513,7 @@ export default function ImageCyclesPage({
                             expected_quality: Number(expectedQuality),
                             max_steps: Number(cycles),
                             bootstrap_model: mode === 'text' ? bootstrap : null,
+                            improvement_workflow: improvementWorkflow,
                           }
                         : {}),
                       width: Number(width),
@@ -527,7 +533,7 @@ export default function ImageCyclesPage({
               >
                 <p className="text-sm text-muted-foreground">
                   {improver
-                    ? 'Score an image with vision AI, improve it with img2img, and repeat until the expected quality or maximum steps is reached. Every score, prompt, and image is saved.'
+                    ? 'Start with an image or just a text prompt. Score each result with vision AI and repeat until the expected quality or maximum steps is reached. Every score, prompt, and image is saved.'
                     : 'Describe an image, generate a new one from the description, and repeat. Every image and intermediate prompt is saved.'}
                 </p>
                 <div
@@ -624,6 +630,45 @@ export default function ImageCyclesPage({
                     </p>
                   </div>
                 )}
+                {improver && (
+                  <section className="space-y-2">
+                    <Label>Generation workflow</Label>
+                    <div
+                      className="flex gap-2"
+                      role="group"
+                      aria-label="Generation workflow"
+                    >
+                      {(['img2img', 'txt2img'] as const).map((workflow) => (
+                        <Button
+                          key={workflow}
+                          type="button"
+                          variant={
+                            improvementWorkflow === workflow
+                              ? 'default'
+                              : 'outline'
+                          }
+                          aria-pressed={improvementWorkflow === workflow}
+                          className="min-h-11 flex-1 sm:flex-none"
+                          data-testid={`improver-workflow-${workflow}`}
+                          onClick={() => {
+                            if (workflow === improvementWorkflow) return
+                            setCapsStatus('loading')
+                            setImprovementWorkflow(workflow)
+                          }}
+                        >
+                          {workflow === 'img2img'
+                            ? 'Edit image · img2img'
+                            : 'Regenerate · txt2img'}
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {improvementWorkflow === 'txt2img'
+                        ? 'Generate each image from a complete text prompt. The generator receives no input image.'
+                        : 'Improve each image by passing it and the assessment instructions to the generator.'}
+                    </p>
+                  </section>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Vision model</Label>
@@ -640,7 +685,7 @@ export default function ImageCyclesPage({
                   <div className="space-y-2">
                     <Label>
                       {improver
-                        ? 'Improvement model · img2img'
+                        ? `Improvement model · ${improvementWorkflow}`
                         : 'Image generation model'}
                     </Label>
                     <CapabilityModelPicker
@@ -760,7 +805,7 @@ export default function ImageCyclesPage({
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {improver
-                    ? `Up to ${cycles || '…'} img2img improvements; the starting and final images are also assessed.`
+                    ? `Up to ${cycles || '…'} ${improvementWorkflow} improvements; the starting and final images are also assessed.`
                     : validNumber(cycles, 1, 50)
                       ? `${cycles} descriptions + ${Number(cycles) + (mode === 'text' ? 1 : 0)} generated images`
                       : 'Choose between 1 and 50 cycles'}
@@ -959,7 +1004,15 @@ export default function ImageCyclesPage({
                       key={job.job_id}
                       job={job}
                       visionModels={visionModels}
-                      imageModels={imageModels}
+                      imageModels={allImageModels.filter(
+                        (model) =>
+                          model.tags.length === 0 ||
+                          model.tags.includes(
+                            improver
+                              ? (job.params.improvement_workflow ?? 'img2img')
+                              : 'txt2img',
+                          ),
+                      )}
                       bootstrapModels={bootstrapModels}
                       status={capsStatus}
                       error={capsError}
@@ -1018,6 +1071,7 @@ export default function ImageCyclesPage({
                     />
                   )}
                 </div>
+                {improver && <QualityAssessmentGraph job={job} />}
                 {compareMode && canCompare && (
                   <section
                     className="space-y-3"
@@ -1097,7 +1151,7 @@ export default function ImageCyclesPage({
                             : improver
                               ? step.kind === 'describe'
                                 ? `Quality check ${step.cycle}`
-                                : `Improvement ${step.cycle} · img2img`
+                                : `Improvement ${step.cycle} · ${job.params.improvement_workflow ?? 'img2img'}`
                               : `Cycle ${step.cycle} · ${step.kind === 'describe' ? 'Describe' : 'Generate'}`}
                         </h3>
                         <span className="rounded bg-muted px-2 py-0.5 text-xs">

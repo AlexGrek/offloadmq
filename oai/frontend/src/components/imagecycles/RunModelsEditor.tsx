@@ -84,7 +84,7 @@ export function RunModelsEditor({
         <div className="space-y-2">
           <Label>
             {job.app === 'generator-improver'
-              ? 'Improvement model · img2img'
+              ? `Improvement model · ${job.params.improvement_workflow ?? 'img2img'}`
               : 'Image generation model'}
           </Label>
           <CapabilityModelPicker

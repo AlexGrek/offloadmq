@@ -189,6 +189,33 @@ test('Generator Improver text starts use a separate txt2img model', async ({ pag
   expect(state.submissions[0]).toMatchObject({ image_model: 'imggen.refine', bootstrap_model: 'imggen.paint', initial_prompt: 'A fox in a forest', input_image_id: null })
 })
 
+test('Generator Improver can use txt2img throughout a text-only run and keeps its model editor workflow', async ({ page }) => {
+  const state = await setup(page, null, true)
+  await page.goto('/app/generator-improver')
+  await page.getByTestId('cycles-mode-text').click()
+  await page.getByTestId('cycles-initial-prompt').fill('A fox in a forest')
+  await page.getByTestId('improver-workflow-txt2img').click()
+  await expect(page.getByTestId('cycles-image-model-trigger')).toContainText('paint')
+  await page.getByTestId('cycles-image-model-trigger').click()
+  await expect(page.getByTestId('cycles-image-model-option-imggen.paint')).toBeVisible()
+  await expect(page.getByTestId('cycles-image-model-option-imggen.refine')).toHaveCount(0)
+  await page.getByTestId('cycles-image-model-trigger').click()
+  await page.getByTestId('improver-workflow-txt2img').click() // Clicking the selected mode keeps the form usable.
+  await expect(page.getByTestId('cycles-start')).toBeEnabled()
+  await page.getByTestId('cycles-start').click()
+  await expect.poll(() => state.submissions.length).toBe(1)
+  expect(state.submissions[0]).toMatchObject({ improvement_workflow: 'txt2img', image_model: 'imggen.paint', initial_prompt: 'A fox in a forest', input_image_id: null })
+  await expect(page).toHaveURL(/job=123/)
+  await expect(page.getByTestId('cycles-detail')).toBeVisible()
+  await page.reload() // The form defaults to img2img; this run's editor must still list txt2img models.
+  await page.getByTestId('cycles-change-models').click()
+  await page.getByTestId('cycles-edit-image-model-trigger').click()
+  await expect(page.getByTestId('cycles-edit-image-model-option-imggen.refine')).toHaveCount(0)
+  await page.getByTestId('cycles-edit-image-model-option-imggen.paint-new').click()
+  await page.getByTestId('cycles-save-models').click()
+  expect(state.controls.find(c => c.path.endsWith('/models'))?.body).toMatchObject({ image_model: 'imggen.paint-new' })
+})
+
 for (const reason of ['target_reached', 'max_steps_reached'] as const) {
   test(`Generator Improver shows quality history, JSON, prompts and ${reason}`, async ({ page }) => {
     const lastQuality = reason === 'target_reached' ? 96 : 90
@@ -202,6 +229,11 @@ for (const reason of ['target_reached', 'max_steps_reached'] as const) {
     await setup(page, run, true)
     await page.setViewportSize({ width: 375, height: 800 })
     await page.goto('/app/generator-improver?job=123')
+    await expect(page.getByTestId('improver-quality-chart')).toHaveAccessibleName('Quality by assessment, out of 100')
+    await expect(page.getByTestId('improver-quality-point-1')).toContainText('60')
+    await expect(page.getByTestId('improver-quality-point-2')).toContainText(String(lastQuality))
+    await expect(page.getByTestId('improver-quality-summary')).toContainText(`Latest: ${lastQuality}/100 · +${lastQuality - 60} points from start`)
+    await expect(page.getByTestId('improver-quality-target')).toHaveAttribute('stroke-dasharray', '6 4')
     await expect(page.getByTestId('improver-quality-0')).toHaveText('Quality: 60/100')
     await expect(page.getByTestId('improver-prompt-0')).toHaveText('Fix the lighting.')
     await expect(page.getByTestId('cycles-step-prompt-1')).toHaveText('Fix the lighting.')
@@ -212,6 +244,46 @@ for (const reason of ['target_reached', 'max_steps_reached'] as const) {
     await page.screenshot({ path: `/tmp/generator-improver-${reason}.png` })
   })
 }
+
+test('Generator Improver graph updates from no score through zero and declining scores', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 })
+  const run: ImageCycleJob = { ...completed, app: 'generator-improver', status: 'running',
+    params: { ...defaults, expected_quality: 95, max_steps: 2 },
+    steps: [step(1, 'describe', { status: 'submitted' })] }
+  const state = await setup(page, run, true)
+  await page.goto('/app/generator-improver?job=123')
+  await expect(page.getByTestId('improver-quality-graph')).toContainText('Waiting for the first assessment')
+  await expect(page.getByTestId('improver-quality-chart')).toHaveCount(0)
+  state.finish({ ...run, steps: [step(1, 'describe', { quality: 60 })] })
+  await expect(page.getByTestId('improver-quality-point-1')).toBeVisible({ timeout: 8000 })
+  await expect(page.getByTestId('improver-quality-summary')).toHaveText('Latest: 60/100')
+  state.finish({ ...run, status: 'completed', steps: [
+    step(1, 'describe', { quality: 60 }),
+    step(1, 'generate', { quality: 99 }), // Only vision assessments belong in the graph.
+    step(2, 'describe', { quality: 0 }),
+    step(3, 'describe', { status: 'skipped' }),
+  ] })
+  await expect(page.getByTestId('improver-quality-summary')).toHaveText('Latest: 0/100 · -60 points from start', { timeout: 8000 })
+  await expect(page.getByTestId('improver-quality-chart').locator('circle')).toHaveCount(2)
+  await page.evaluate(() => localStorage.setItem('oai_theme', 'dark'))
+  await page.reload()
+  await expect(page.getByTestId('improver-quality-point-2')).toContainText('0')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.getByTestId('improver-quality-graph').screenshot({ path: '/tmp/generator-improver-quality-dark.png' })
+  state.finish({ ...run, status: 'completed', steps: Array.from({ length: 51 }, (_, index) =>
+    step(index + 1, 'describe', { quality: index * 2 })) })
+  await page.reload()
+  await expect(page.getByTestId('improver-quality-chart').locator('circle')).toHaveCount(51)
+  const graphViewport = page.getByTestId('improver-quality-chart').locator('..')
+  expect(await graphViewport.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.evaluate(() => localStorage.setItem('oai_theme', 'light'))
+  await page.setViewportSize({ width: 1280, height: 900 })
+  state.finish({ ...run, status: 'completed', steps: [step(1, 'describe', { quality: 60 }), step(2, 'describe', { quality: 95 })] })
+  await page.reload()
+  await expect(page.getByTestId('improver-quality-summary')).toContainText('Latest: 95/100')
+  await page.getByTestId('improver-quality-graph').screenshot({ path: '/tmp/generator-improver-quality-light.png' })
+})
 
 
 for (const improver of [false, true]) {

@@ -33,3 +33,5 @@ pub async fn connect(database_url: &str) -> Result<DatabaseConnection> {
 }
 
 pub mod image_cycles;
+
+pub mod prompt_defaults;

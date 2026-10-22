@@ -35,6 +35,7 @@ pub async fn list_capabilities(
 #[derive(Deserialize)]
 pub struct StartJobRequest {
     pub capability: String,
+    #[serde(default)]
     pub prompt: String,
     pub image_id: String,
     /// Optional OffloadMQ `dataPreparation` map (glob → action), e.g.
@@ -51,9 +52,14 @@ pub struct StartJobRequest {
 pub async fn start_job(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
-    Json(req): Json<StartJobRequest>,
+    Json(mut req): Json<StartJobRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let image_id = parse_id(&req.image_id, "image_id")?;
+    if req.prompt.trim().is_empty() {
+        req.prompt = crate::db::prompt_defaults::get(&state.db, user_id)
+            .await?
+            .resolve(crate::db::prompt_defaults::App::DescribeImage);
+    }
 
     // Record the user prompt as a recent (best-effort) for cross-job reuse, so the
     // frontend doesn't need a second request to maintain the recents list.

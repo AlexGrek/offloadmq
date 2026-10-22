@@ -27,3 +27,5 @@ pub mod oauth_tokens;
 pub mod users;
 
 pub mod image_cycle_jobs;
+
+pub mod user_prompt_defaults;

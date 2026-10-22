@@ -4,6 +4,7 @@ export interface ImageCycleParams {
   expected_quality?: number | null
   max_steps?: number | null
   bootstrap_model?: string | null
+  improvement_workflow?: 'img2img' | 'txt2img'
   initial_prompt: string | null
   input_image_id: string | null
   describe_prompt: string

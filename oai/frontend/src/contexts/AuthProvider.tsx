@@ -1,3 +1,4 @@
+import type { PromptDefaults } from '../lib/promptDefaults'
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import * as authApi from '../api/auth'
@@ -44,8 +45,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await applyToken(res.token)
   }, [applyToken])
 
+  const setPromptDefaults = useCallback((defaults: PromptDefaults) => {
+    setUser(current => current ? { ...current, prompt_defaults: defaults } : current)
+  }, [])
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, setPromptDefaults }}>
       {children}
     </AuthContext.Provider>
   )

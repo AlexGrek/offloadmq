@@ -18,7 +18,8 @@ import {
   updateChatLastModel,
   type ChatSummary,
 } from '../api/chats'
-import { DEFAULT_PROMPT } from '../components/chat/SystemPromptStudio'
+import { useDefaultPrompts } from '../hooks/useDefaultPrompts'
+import { readChatPrompt, rememberChatPrompt } from '../lib/chat/promptCache'
 import {
   ChatTimeoutDrawer,
 } from '../components/chat/ChatTimeoutDrawer'
@@ -53,7 +54,8 @@ import {
 type ChatTimeoutEntry = ChatTimeoutSettings & { timeoutUserSet: boolean }
 
 export default function ChatPage() {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
+  const userId = user?.id
   const {
     chatTasks,
     upsertChatTask,
@@ -87,7 +89,10 @@ export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [loadingChats, setLoadingChats] = useState(true)
   const [loadingMessages, setLoadingMessages] = useState(false)
-  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT)
+  const defaultPrompt = useDefaultPrompts().chat
+  const [systemPrompt, setSystemPrompt] = useState(() =>
+    (user ? readChatPrompt(user.id) : null) ?? defaultPrompt,
+  )
   const [debugOpen, setDebugOpen] = useState(false)
   const [timeoutDrawerOpen, setTimeoutDrawerOpen] = useState(false)
   const [chatTimeoutMap, setChatTimeoutMap] = useState<Map<string, ChatTimeoutEntry>>(new Map())
@@ -261,6 +266,7 @@ export default function ChatPage() {
   }, [chatTasks, activeChatId, loadingMessages, chatTasksForChat])
 
   const activeChat = chats.find(c => c.id === activeChatId)
+  const activeSystemPrompt = activeChat?.system_prompt
 
   // Stall watchdog: whenever an assistant reply is in flight, fall back to polling
   // the DB if the live stream isn't delivering — covers a dropped socket, a half-open
@@ -289,15 +295,17 @@ export default function ChatPage() {
   }, [ws.status, activeChatId, token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (activeChat) {
-      setSystemPrompt(activeChat.system_prompt?.trim() || DEFAULT_PROMPT)
+    if (activeChatId && activeSystemPrompt !== undefined) {
+      const prompt = activeSystemPrompt.trim() || defaultPrompt
+      setSystemPrompt(prompt)
+      if (userId !== undefined) rememberChatPrompt(userId, prompt)
     }
-  }, [activeChatId, activeChat?.system_prompt])
+  }, [activeChatId, activeSystemPrompt, defaultPrompt, userId])
 
   const applySystemPrompt = useCallback(
     async (content: string) => {
       if (!token) return
-      const text = content.trim() || DEFAULT_PROMPT
+      const text = content.trim() || defaultPrompt
       if (!activeChatId) {
         const chat = await createChat(token, {
           systemPrompt: text,
@@ -313,7 +321,7 @@ export default function ChatPage() {
       setSystemPrompt(chat.system_prompt)
       setChats(prev => prev.map(c => (c.id === chat.id ? chat : c)))
     },
-    [token, activeChatId, selectedModel],
+    [token, activeChatId, selectedModel, defaultPrompt],
   )
 
   const handleModelSelect = useCallback(
@@ -499,7 +507,7 @@ export default function ChatPage() {
     if (!token) return
     try {
       const chat = await createChat(token, {
-        systemPrompt,
+        systemPrompt: systemPrompt.trim() || defaultPrompt,
         lastModel: selectedModel,
       })
       setChats(prev => [chat, ...prev])

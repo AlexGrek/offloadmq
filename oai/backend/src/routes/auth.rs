@@ -62,14 +62,20 @@ pub async fn login(
     Ok(Json(AuthResponse { token, user_id: user.id }))
 }
 
+#[derive(Serialize)]
+pub struct MeResponse {
+    #[serde(flatten)]
+    pub user: users::User,
+    pub prompt_defaults: crate::db::prompt_defaults::PromptDefaults,
+}
+
 pub async fn me(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
-) -> Result<Json<users::User>, AppError> {
-    users::find_by_id(&state.db, user_id)
-        .await?
-        .map(Json)
-        .ok_or(AppError::NotFound)
+) -> Result<Json<MeResponse>, AppError> {
+    let user = users::find_by_id(&state.db, user_id).await?.ok_or(AppError::NotFound)?;
+    let prompt_defaults = crate::db::prompt_defaults::get(&state.db, user_id).await?;
+    Ok(Json(MeResponse { user, prompt_defaults }))
 }
 
 #[derive(Deserialize)]

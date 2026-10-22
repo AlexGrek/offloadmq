@@ -77,6 +77,11 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
 
     let authenticated = Router::new()
         .route("/api/me", get(routes::auth::me))
+        .route(
+            "/api/me/prompt-defaults",
+            get(routes::user_settings::get_prompt_defaults)
+                .put(routes::user_settings::save_prompt_defaults),
+        )
         .merge(change_password_route)
         .route("/api/admin/am_i_admin", get(routes::admin::am_i_admin))
         .route("/api/ws/chat", get(crate::ws::chat::ws_chat))

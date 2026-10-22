@@ -1,3 +1,4 @@
+import type { PromptDefaults } from '../lib/promptDefaults'
 import { createContext, useContext } from 'react'
 import type { User } from '../api/auth'
 
@@ -8,6 +9,7 @@ export interface AuthContextValue {
   login: (login: string, password: string) => Promise<void>
   register: (login: string, password: string) => Promise<void>
   logout: () => void
+  setPromptDefaults: (defaults: PromptDefaults) => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

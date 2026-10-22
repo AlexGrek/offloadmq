@@ -105,7 +105,9 @@ pub async fn create_chat(
         .and_then(|b| b.system_prompt.as_deref())
         .unwrap_or("");
     let system_prompt = if content.trim().is_empty() {
-        "You are a helpful AI assistant.".to_string()
+        crate::db::prompt_defaults::get(&state.db, user_id)
+            .await?
+            .resolve(crate::db::prompt_defaults::App::Chat)
     } else {
         prompts::normalize_content(content)?
     };

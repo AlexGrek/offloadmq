@@ -12,6 +12,14 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ImprovementWorkflow {
+    #[default]
+    Img2img,
+    Txt2img,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Params {
     pub initial_prompt: Option<String>,
@@ -21,7 +29,10 @@ pub struct Params {
     pub max_steps: Option<u32>,
     #[serde(default)]
     pub bootstrap_model: Option<String>,
+    #[serde(default)]
+    pub improvement_workflow: ImprovementWorkflow,
     pub input_image_id: Option<String>,
+    #[serde(default)]
     pub describe_prompt: String,
     pub vision_model: String,
     pub image_model: String,
@@ -271,8 +282,13 @@ fn assessment_schema() -> serde_json::Value {
         "improve_prompt":{"type":"string"}}, "required":["quality","improve_prompt"], "additionalProperties":false})
 }
 fn assessment_prompt(p: &Params) -> String {
+    let instruction = if p.improvement_workflow == ImprovementWorkflow::Txt2img {
+        "a complete, standalone txt2img prompt describing the entire desired image, including subject, composition, style and specific quality improvements; the generator receives only this text and cannot see the current image"
+    } else {
+        "a concrete img2img instruction to improve this image while preserving its identity and composition"
+    };
     format!(
-        "{}{}\n\nEvaluate the current image. Return only a JSON object with exactly two keys: quality (an integer from 0 to 100, e.g. 95, never 95/100) and improve_prompt (a concrete img2img instruction to improve this image while preserving its identity and composition). Be critical about defects and artifacts. No Markdown or other text.",
+        "{}{}\n\nEvaluate the current image. Return only a JSON object with exactly two keys: quality (an integer from 0 to 100, e.g. 95, never 95/100) and improve_prompt ({instruction}). Be critical about defects and artifacts. No Markdown or other text.",
         p.describe_prompt,
         p.initial_prompt
             .as_deref()
@@ -326,6 +342,15 @@ pub async fn start_for_app(
     mut p: Params,
     app: &str,
 ) -> Result<i64, AppError> {
+    if p.describe_prompt.trim().is_empty() {
+        use crate::db::prompt_defaults::{self, App};
+        let prompt_app = if app == "generator-improver" {
+            App::GeneratorImprover
+        } else {
+            App::ImageCycles
+        };
+        p.describe_prompt = prompt_defaults::get(&state.db, user).await?.resolve(prompt_app);
+    }
     if app == "generator-improver" {
         let target = p
             .expected_quality
@@ -347,6 +372,7 @@ pub async fn start_for_app(
         p.expected_quality = None;
         p.max_steps = None;
         p.bootstrap_model = None;
+        p.improvement_workflow = ImprovementWorkflow::default();
     }
     validate(&mut p)?;
     storage::operator(state)?;
@@ -377,11 +403,7 @@ async fn validate_models(state: &AppState, user: i64, p: &mut Params) -> Result<
     if !vision.iter().any(|c| c.base == p.vision_model) {
         return Err(AppError::BadRequest("choose a listed vision model".into()));
     }
-    let workflow = if p.expected_quality.is_some() {
-        "img2img"
-    } else {
-        "txt2img"
-    };
+    let workflow = generation_workflow(p);
     let listed = |model: &str, workflow: &str| {
         images
             .iter()
@@ -396,6 +418,7 @@ async fn validate_models(state: &AppState, user: i64, p: &mut Params) -> Result<
         let bootstrap = p
             .bootstrap_model
             .as_deref()
+            .or_else(|| (workflow == "txt2img").then_some(p.image_model.as_str()))
             .map(base_capability)
             .filter(|m| listed(m, "txt2img"))
             .ok_or_else(|| {
@@ -406,11 +429,25 @@ async fn validate_models(state: &AppState, user: i64, p: &mut Params) -> Result<
     Ok(())
 }
 
+fn generation_workflow(p: &Params) -> &'static str {
+    if p.expected_quality.is_some() && p.improvement_workflow == ImprovementWorkflow::Img2img {
+        "img2img"
+    } else {
+        "txt2img"
+    }
+}
+
 fn model_for_step(p: &Params, step: &Step) -> String {
     match step.kind {
         Kind::Describe => p.vision_model.clone(),
         Kind::Generate if p.expected_quality.is_some() && step.cycle == 0 => {
-            p.bootstrap_model.clone().unwrap_or_default()
+            p.bootstrap_model.clone().unwrap_or_else(|| {
+                if generation_workflow(p) == "txt2img" {
+                    p.image_model.clone()
+                } else {
+                    String::new()
+                }
+            })
         }
         Kind::Generate => p.image_model.clone(),
     }
@@ -454,7 +491,11 @@ fn prepare(p: &Params, steps: &mut [Step], i: usize) -> Result<(), AppError> {
         }
         Kind::Generate if steps[i].cycle > 0 => {
             steps[i].prompt = if p.expected_quality.is_some() {
-                steps[i].input_image_id = steps[i - 1].input_image_id.clone();
+                steps[i].input_image_id = if generation_workflow(p) == "img2img" {
+                    steps[i - 1].input_image_id.clone()
+                } else {
+                    None
+                };
                 steps[i - 1].improve_prompt.clone()
             } else {
                 steps[i - 1].result.clone()
@@ -536,8 +577,8 @@ async fn submit(
                     height: p.height,
                     seed: None,
                     workflow: Some(
-                        if p.expected_quality.is_some() && step.cycle > 0 {
-                            "img2img"
+                        if step.cycle > 0 {
+                            generation_workflow(p)
                         } else {
                             "txt2img"
                         }
@@ -1119,6 +1160,7 @@ mod tests {
             expected_quality: None,
             max_steps: None,
             bootstrap_model: None,
+            improvement_workflow: ImprovementWorkflow::default(),
             initial_prompt: None,
             input_image_id: Some("42".into()),
             describe_prompt: "Describe".into(),
@@ -1425,6 +1467,53 @@ mod tests {
             stop_reason("completed", &p, &steps).as_deref(),
             Some("max_steps_reached")
         );
+    }
+    #[test]
+    fn txt2img_improver_bootstraps_and_regenerates_without_passing_images() {
+        let mut p = params();
+        p.expected_quality = Some(95);
+        p.max_steps = Some(2);
+        p.improvement_workflow = ImprovementWorkflow::Txt2img;
+        p.initial_prompt = Some("A fox in a forest".into());
+        p.input_image_id = None;
+        validate(&mut p).unwrap();
+        let mut steps = plan(&p);
+        assert_eq!(steps.len(), 6); // Bootstrap, two generations and three checks.
+        prepare(&p, &mut steps, 0).unwrap();
+        assert_eq!(steps[0].prompt, "A fox in a forest");
+        assert!(steps[0].input_image_id.is_none());
+        assert_eq!(model_for_step(&p, &steps[0]), p.image_model);
+        steps[0].output_image_id = Some("80".into());
+        prepare(&p, &mut steps, 1).unwrap();
+        assert_eq!(steps[1].input_image_id.as_deref(), Some("80"));
+        assert!(steps[1].prompt.contains("complete, standalone txt2img prompt"));
+        assert!(steps[1].prompt.contains("Desired image: A fox in a forest"));
+        steps[1].improve_prompt = Some("A sharp, anatomically accurate fox in a misty forest".into());
+        prepare(&p, &mut steps, 2).unwrap();
+        assert!(steps[2].input_image_id.is_none());
+        assert_eq!(generation_workflow(&p), "txt2img");
+        assert_eq!(steps[2].prompt, "A sharp, anatomically accurate fox in a misty forest");
+        steps[2].output_image_id = Some("81".into());
+        prepare(&p, &mut steps, 3).unwrap();
+        assert_eq!(steps[3].input_image_id.as_deref(), Some("81"));
+        steps[0].status = "completed".into();
+        steps[1].status = "completed".into();
+        let restarted = restart_plan(&p, &steps, 2).unwrap();
+        assert!(restarted[2].input_image_id.is_none());
+    }
+
+    #[test]
+    fn old_improver_params_keep_img2img_workflow() {
+        let mut value = serde_json::to_value(params()).unwrap();
+        value.as_object_mut().unwrap().remove("improvement_workflow");
+        value["expected_quality"] = serde_json::json!(95);
+        let legacy: Params = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(generation_workflow(&legacy), "img2img");
+        value["improvement_workflow"] = serde_json::json!("txt2img");
+        let txt: Params = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(generation_workflow(&txt), "txt2img");
+        value["improvement_workflow"] = serde_json::json!("invalid");
+        assert!(serde_json::from_value::<Params>(value).is_err());
     }
     #[test]
     fn reported_quality_85_parses_raw_fenced_prefixed_and_encoded() {

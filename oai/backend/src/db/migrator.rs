@@ -43,6 +43,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261009_000035_create_oauth_tables::Migration),
             Box::new(m20261020_000036_create_image_cycle_jobs::Migration),
             Box::new(m20261020_000037_image_cycle_apps::Migration),
+            Box::new(m20261022_000038_user_prompt_defaults::Migration),
         ]
     }
 }
@@ -138,3 +139,5 @@ mod movie_migration_idens {
 mod m20261020_000036_create_image_cycle_jobs;
 
 mod m20261020_000037_image_cycle_apps;
+
+mod m20261022_000038_user_prompt_defaults;

@@ -1,3 +1,5 @@
+import type { PromptDefaults } from '../lib/promptDefaults'
+
 const BASE = '/api'
 
 export interface AuthResponse {
@@ -10,6 +12,7 @@ export interface User {
   login: string
   google_id: string | null
   created_at: string
+  prompt_defaults?: PromptDefaults
   used_storage_bytes: number
 }
 

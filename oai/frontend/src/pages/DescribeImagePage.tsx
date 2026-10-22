@@ -1,4 +1,5 @@
-import { DEFAULT_DESCRIBE_PROMPT, DESCRIBE_PROMPT_BUCKET } from '../lib/describe'
+import { useDefaultPrompts } from '../hooks/useDefaultPrompts'
+import { DESCRIBE_PROMPT_BUCKET } from '../lib/describe'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
@@ -122,7 +123,8 @@ export default function DescribeImagePage() {
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
 
   const [selectedCap, setSelectedCap] = useState('')
-  const [prompt, setPrompt] = useState(DEFAULT_DESCRIBE_PROMPT)
+  const defaultPrompt = useDefaultPrompts().describe_image
+  const [prompt, setPrompt] = useState(defaultPrompt)
   const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
 
   // Each input image becomes its own analysis job on submit.
@@ -376,7 +378,7 @@ export default function DescribeImagePage() {
       for (const img of inputs) {
         const res = await startDescribeJob(token, {
           capability: selectedCap,
-          prompt: prompt.trim() || DEFAULT_DESCRIBE_PROMPT,
+          prompt: prompt.trim() || defaultPrompt,
           image_id: img.image_id,
           // null -> send the OAI-normalized upload without extra agent-side rescale.
           data_preparation: rescaleDataPrep(rescale.enabled, rescale),
@@ -812,7 +814,7 @@ export default function DescribeImagePage() {
                       bucket={DESCRIBE_PROMPT_BUCKET}
                       token={token}
                       rows={8}
-                      placeholder={DEFAULT_DESCRIBE_PROMPT}
+                      placeholder={defaultPrompt}
                       data-testid="describe-prompt-input"
                     />
                   </div>

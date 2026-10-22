@@ -1,0 +1,5 @@
+{
+  "chat": "You are a helpful AI assistant.",
+  "describe_image": "Describe this image in detail. Use the following rules:\n1. Describe main subject or person visually, do not use general words like \"person\", mention gender, age, body shape, skin color, race, hair, what person is wearing, pose, significant visual details.\n2. Describe what the subject is doing, what is going on around, what is on background.\n3. Describe atmosphere, dominant colors, lighting, weather, style.\n\nWrite one paragraph, no numeration, 6 sentences max.",
+  "generator_improver": "Evaluate the visual quality of this image: composition, lighting, sharpness, anatomy, coherence, and visible artifacts. Give an honest quality score from 0 to 100 and a precise img2img prompt that fixes the most important defects while preserving the subject and composition."
+}
