@@ -9,6 +9,7 @@ import LandingPage from './pages/LandingPage'
 import DashboardPage from './pages/DashboardPage'
 import ChatPage from './pages/ChatPage'
 import ImageGenerationPage from './pages/ImageGenerationPage'
+import HallucinatePage from './pages/HallucinatePage'
 import PromptPlaceholdersPage from './pages/PromptPlaceholdersPage'
 import DescribeImagePage from './pages/DescribeImagePage'
 import ImageCyclesPage from './pages/ImageCyclesPage'
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="chat" element={<ChatPage />} />
             <Route path="images" element={<ImageGenerationPage />} />
+            <Route path="hallucinate" element={<HallucinatePage />} />
             <Route path="prompt-placeholders" element={<PromptPlaceholdersPage />} />
             <Route path="describe" element={<DescribeImagePage />} />
             <Route path="image-cycles" element={<ImageCyclesPage key="image-cycles" />} />

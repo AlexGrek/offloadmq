@@ -377,6 +377,9 @@ These are the hardcoded keys used for local development and testing. Use them di
 
 ## OAI — Own AI Frontend (`oai/`)
 
+**Hallucinate** (`/app/hallucinate`) is a frontend-driven live wallpaper using txt2img and optional Image Tools upscale. It has no history UI, cleans temporary jobs after loading each frame, and saves prompt templates in a separate `hallucinate-prompt` bucket. See [docs/oai-hallucinate.md](docs/oai-hallucinate.md).
+
+
 OAI is a standalone web application that gives end users access to AI capabilities (LLM chat, image generation/analysis, text-to-speech) routed through OffloadMQ. It lives in [oai/](oai/) and has its own backend, frontend, Helm chart, and Docker image.
 
 ### What it is

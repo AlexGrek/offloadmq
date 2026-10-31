@@ -1,0 +1,12 @@
+
+@keyframes hallucinate-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.hallucinate-frame { animation: hallucinate-arrive 6s ease-in-out both; }
+.hallucinate-controls { transition: opacity 0.8s ease; }
+.hallucinate-controls-hidden { opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .hallucinate-frame { animation-duration: 0.01ms !important; }
+  .hallucinate-controls { transition: none; }
+}

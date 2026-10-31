@@ -148,10 +148,12 @@ export function listImgUtilsCapabilities(
 export function startImgUtilsJob(
   token: string,
   payload: StartImgUtilsJobRequest,
+  signal?: AbortSignal,
 ): Promise<StartImgUtilsJobResponse> {
   return request('/api/img-utils/jobs', token, {
     method: 'POST',
     body: JSON.stringify(payload),
+    signal,
   })
 }
 
@@ -163,18 +165,21 @@ export function getImgUtilsJob(token: string, jobId: string): Promise<ImgUtilsJo
   return request(`/api/img-utils/jobs/${encodeURIComponent(jobId)}`, token)
 }
 
-export function pollImgUtilsJob(token: string, jobId: string): Promise<ImgUtilsJob> {
+export function pollImgUtilsJob(token: string, jobId: string, signal?: AbortSignal): Promise<ImgUtilsJob> {
   return request(`/api/img-utils/jobs/${encodeURIComponent(jobId)}/poll`, token, {
     method: 'POST',
+    signal,
   })
 }
 
 export function cancelImgUtilsJob(
   token: string,
   jobId: string,
+  signal?: AbortSignal,
 ): Promise<CancelImgUtilsJobResponse> {
   return request(`/api/img-utils/jobs/${encodeURIComponent(jobId)}/cancel`, token, {
     method: 'POST',
+    signal,
   })
 }
 
@@ -187,9 +192,10 @@ export function retryImgUtilsJob(
   })
 }
 
-export function deleteImgUtilsJob(token: string, jobId: string): Promise<void> {
+export function deleteImgUtilsJob(token: string, jobId: string, signal?: AbortSignal): Promise<void> {
   return request(`/api/img-utils/jobs/${encodeURIComponent(jobId)}`, token, {
     method: 'DELETE',
+    signal,
   })
 }
 

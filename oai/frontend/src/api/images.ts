@@ -181,12 +181,12 @@ export function uploadImage(token: string, file: File): Promise<UploadedImage> {
   return request('/api/images/upload', token, { method: 'POST', body: form })
 }
 
-export function startImageJob(token: string, payload: StartImageJobRequest): Promise<StartImageJobResponse> {
-  return request('/api/images/jobs', token, { method: 'POST', body: JSON.stringify(payload) })
+export function startImageJob(token: string, payload: StartImageJobRequest, signal?: AbortSignal): Promise<StartImageJobResponse> {
+  return request('/api/images/jobs', token, { method: 'POST', body: JSON.stringify(payload), signal })
 }
 
-export function pollImageJob(token: string, jobId: string): Promise<PollImageJobResponse> {
-  return request(`/api/images/jobs/${jobId}/poll`, token, { method: 'POST' })
+export function pollImageJob(token: string, jobId: string, signal?: AbortSignal): Promise<PollImageJobResponse> {
+  return request(`/api/images/jobs/${jobId}/poll`, token, { method: 'POST', signal })
 }
 
 export interface CancelImageJobResponse {
@@ -197,8 +197,8 @@ export interface CancelImageJobResponse {
   offload_task_id: string
 }
 
-export function cancelImageJob(token: string, jobId: string): Promise<CancelImageJobResponse> {
-  return request(`/api/images/jobs/${jobId}/cancel`, token, { method: 'POST' })
+export function cancelImageJob(token: string, jobId: string, signal?: AbortSignal): Promise<CancelImageJobResponse> {
+  return request(`/api/images/jobs/${jobId}/cancel`, token, { method: 'POST', signal })
 }
 
 export function retryImageJob(token: string, jobId: string): Promise<StartImageJobResponse> {
@@ -213,9 +213,10 @@ export function getImageJob(token: string, jobId: string): Promise<ImageJobDetai
   return request(`/api/images/jobs/${jobId}`, token)
 }
 
-export async function deleteImageJob(token: string, jobId: string): Promise<void> {
+export async function deleteImageJob(token: string, jobId: string, signal?: AbortSignal): Promise<void> {
   const res = await fetch(`/api/images/jobs/${encodeURIComponent(jobId)}`, {
     method: 'DELETE',
+    signal,
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) {

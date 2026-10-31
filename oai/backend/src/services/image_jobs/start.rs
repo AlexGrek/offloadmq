@@ -404,8 +404,9 @@ pub(super) fn build_submit_payload(
         "prompt": req.prompt.trim(),
         "resolution": { "width": req.width, "height": req.height },
     });
+    // An explicit empty string clears the workflow default; null leaves it alone.
     if req.override_negative {
-        if let Some(neg) = req.negative_prompt.as_deref().filter(|s| !s.trim().is_empty()) {
+        if let Some(neg) = req.negative_prompt.as_deref() {
             payload["secondary_prompts"] = serde_json::json!({ "negative": neg });
         }
     }
@@ -419,4 +420,36 @@ pub(super) fn build_submit_payload(
         payload["length"] = serde_json::json!(length);
     }
     payload
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_empty_negative_clears_workflow_default() {
+        let mut req: StartJobParams = serde_json::from_value(serde_json::json!({
+            "capability": "imggen.test", "prompt": "landscape", "width": 1024, "height": 1024,
+            "override_negative": true, "negative_prompt": ""
+        }))
+        .unwrap();
+        assert_eq!(
+            build_submit_payload(&req, "txt2img", None)["secondary_prompts"]["negative"],
+            ""
+        );
+        req.override_negative = false;
+        assert!(build_submit_payload(&req, "txt2img", None)
+            .get("secondary_prompts")
+            .is_none());
+        req.override_negative = true;
+        req.negative_prompt = None;
+        assert!(build_submit_payload(&req, "txt2img", None)
+            .get("secondary_prompts")
+            .is_none());
+        req.negative_prompt = Some("blurry".into());
+        assert_eq!(
+            build_submit_payload(&req, "txt2img", None)["secondary_prompts"]["negative"],
+            "blurry"
+        );
+    }
 }

@@ -3,6 +3,16 @@ import { Activity, Bot, Braces, Clapperboard, Eye, FolderOpen, GalleryVerticalEn
 /** Every app tile on the dashboard; also the source for the TopBar's most-used shortcuts. */
 export const apps = [
   {
+    id: 'hallucinate',
+    icon: Wand2,
+    title: 'Hallucinate',
+    description: 'An endless, fading AI wallpaper from one evolving prompt',
+    href: '/app/hallucinate',
+    gradient: 'from-violet-500/20 to-cyan-500/20',
+    iconBg: 'bg-violet-500/20',
+    iconColor: 'text-violet-400',
+  },
+  {
     id: 'chat',
     icon: Bot,
     title: 'LLM Chat',

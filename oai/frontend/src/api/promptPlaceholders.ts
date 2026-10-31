@@ -11,8 +11,8 @@ export interface PromptPlaceholder {
   variants: string[]
 }
 
-export function listPromptPlaceholders(token: string): Promise<PromptPlaceholder[]> {
-  return request('/api/prompt-placeholders', token)
+export function listPromptPlaceholders(token: string, signal?: AbortSignal): Promise<PromptPlaceholder[]> {
+  return request('/api/prompt-placeholders', token, { signal })
 }
 
 export function createPromptPlaceholder(

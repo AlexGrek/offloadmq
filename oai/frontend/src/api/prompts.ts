@@ -71,9 +71,10 @@ export function promptPreviewUrl(id: string, token: string, version: string): st
  * when a use counts — e.g. once per user submission, not once per generated
  * job — so batches of jobs sharing one prompt template don't flood recents.
  */
-export function recordRecentPrompt(token: string, bucket: string, content: string): Promise<PromptItem> {
+export function recordRecentPrompt(token: string, bucket: string, content: string, signal?: AbortSignal): Promise<PromptItem> {
   return request(`/api/prompts/${encodeURIComponent(bucket)}/recent`, token, {
     method: 'POST',
+    signal,
     body: JSON.stringify({ content }),
   })
 }
