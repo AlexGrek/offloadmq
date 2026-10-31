@@ -26,8 +26,9 @@ const (
 	imgUtilsKindResize = "resize"
 	// resizeWorkflow is the synthetic operation the backend reports for resize.
 	resizeWorkflow = "basic_resize"
-	// Upscale scale_multiplier bounds/default, as in imgUtils.ts.
-	defaultScaleMultiplier = 4
+	// Upscale scale_multiplier bounds, as in imgUtils.ts. The default is 2 here (and in the
+	// MCP tools), deliberately lower than the web UI's 4.
+	defaultScaleMultiplier = 2
 	minScaleMultiplier     = 1
 	maxScaleMultiplier     = 8
 )
@@ -324,7 +325,7 @@ func cmdImgUtilsRun(cmdName, toolName string, args []string) error {
 	out := fs.String("o", "", "output file (default <input>_<tool>.<ext>; _2, _3, ... for several inputs)")
 	capability := fs.String("capability", "", "use this capability (default: first online one offering the tool)")
 	source := fs.String("source", "", "second image for tools that need one (face_swap: the face to use)")
-	scale := fs.Float64("scale", 0, "upscale: multiplier 1-8 (default 4); resize: scale factor (max 4)")
+	scale := fs.Float64("scale", 0, "upscale: multiplier 1-8 (default 2); resize: scale factor (max 4)")
 	width := fs.Int("width", 0, "resize: target width")
 	height := fs.Int("height", 0, "resize: target height")
 	mode := fs.String("mode", "", "resize: fit (default), exact or cover")

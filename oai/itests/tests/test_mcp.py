@@ -355,6 +355,9 @@ class TestProtocol:
         r = rpc(client, token, "tools/list", headers={"MCP-Protocol-Version": "2025-06-18"})
         names = {t["name"] for t in r.json()["result"]["tools"]}
         assert {"generate_images", "get_image_job", "list_image_models", "list_saved_prompts", "expand_prompt"} <= names
+        assert {"list_image_tools", "run_image_tool", "upscale_image", "get_image_tool_job"} <= names
+        upscale = next(t for t in r.json()["result"]["tools"] if t["name"] == "upscale_image")
+        assert upscale["inputSchema"]["properties"]["scale"]["default"] == 2
 
     def test_modern_revision(self, client: httpx.Client, tokens: dict):
         token = tokens["access_token"]

@@ -154,9 +154,9 @@ func TestUpscaleShortcutDefaultsAndSaves(t *testing.T) {
 	if req.Capability != "img-utils.seedvr2" || req.Workflow != "upscale" || req.InputImageID != "up-1" {
 		t.Errorf("request = %+v", req)
 	}
-	// JSON numbers decode as float64; the CLI must send the web UI's default, 4.
-	if req.Options["scale_multiplier"] != float64(4) {
-		t.Errorf("options = %v, want scale_multiplier 4", req.Options)
+	// JSON numbers decode as float64; the CLI must send the CLI default, 2.
+	if req.Options["scale_multiplier"] != float64(2) {
+		t.Errorf("options = %v, want scale_multiplier 2", req.Options)
 	}
 	if out != "Saved photo_upscale.png (64x64)\n" {
 		t.Errorf("stdout = %q, want only the saved line", out)

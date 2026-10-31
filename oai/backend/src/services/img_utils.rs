@@ -632,6 +632,16 @@ pub async fn poll_job(
     offload_job::poll_job(&ImgUtilsReconciler, state, user_id, job_id).await
 }
 
+pub async fn get_user_job(
+    state: &AppState,
+    user_id: i64,
+    job_id: i64,
+) -> Result<img_utils::ImgUtilsJob, AppError> {
+    offload_jobs::get_job::<ImgUtilsJobEntity>(&state.db, job_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)
+}
+
 pub async fn list_user_jobs(
     state: &AppState,
     user_id: i64,

@@ -81,7 +81,7 @@ job_id=$(./oai image generate "a red bicycle" -capability imggen.flux-schnell --
 
 # Image Tools: one image in, one image out (the web UI's /app/img-utils)
 ./oai img-utils tools                   # what is online, and which flags each tool takes
-./oai upscale photo.jpg                 # SeedVR2, x4 -> photo_upscale.jpg
+./oai upscale photo.jpg                 # SeedVR2, x2 -> photo_upscale.jpg
 ./oai upscale a.jpg b.jpg -scale 2 -o big.png
 ./oai img-utils run depth photo.jpg     # depth map -> photo_depth.<ext>
 ./oai img-utils run face_swap target.jpg -source face.jpg
@@ -188,7 +188,7 @@ Per-tool flags (a flag that doesn't apply to the chosen tool is an error):
 
 | Tool | Flags |
 |------|-------|
-| `upscale` | `-scale 1..8` — SeedVR2 multiplier, default `4` (as in the web UI). Upscale outputs are not capped at 1920 px |
+| `upscale` | `-scale 1..8` — SeedVR2 multiplier, default `2` (the web UI defaults to 4). Upscale outputs are not capped at 1920 px |
 | `face_swap` | `-source FACE_IMAGE` (required) — the face to put into each input |
 | `resize` | `-scale F` (max 4) or `-width` / `-height`; `-mode fit\|exact\|cover` (default `fit`; `exact` / `cover` need both sides), `-method` (a filter from `img-utils tools`), `-format png\|jpeg\|webp\|bmp\|tiff`, `-quality 1..100`, `-allow-upscale`. Validated by the server; dimensions cap at 1920 |
 | ComfyUI tools | `-opt key=value` (repeatable) — extra workflow knobs, forwarded verbatim as `secondary_prompts`; numbers and `true` / `false` stay typed |

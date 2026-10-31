@@ -1,6 +1,7 @@
 //! MCP tool registry. Each tool mirrors an `oai image …` CLI command (see the table in
 //! `docs/mcp.md`); keep the two in step when either changes.
 
+mod image_tools;
 mod images;
 mod placeholders;
 mod prompts;
@@ -15,6 +16,7 @@ use super::{ToolContext, content::ToolOutput};
 /// Every tool definition, in a fixed order (deterministic `tools/list`).
 pub fn definitions() -> Vec<Value> {
     let mut defs = images::definitions();
+    defs.extend(image_tools::definitions());
     defs.extend(prompts::definitions());
     defs.extend(placeholders::definitions());
     defs
@@ -24,6 +26,7 @@ pub fn definitions() -> Vec<Value> {
 pub async fn call(ctx: &ToolContext, name: &str, args: Value) -> Option<ToolOutput> {
     let result = match name {
         n if images::handles(n) => images::call(ctx, n, args).await,
+        n if image_tools::handles(n) => image_tools::call(ctx, n, args).await,
         n if prompts::handles(n) => prompts::call(ctx, n, args).await,
         n if placeholders::handles(n) => placeholders::call(ctx, n, args).await,
         _ => return None,
@@ -153,7 +156,10 @@ mod tests {
             assert_eq!(d["inputSchema"]["type"], "object", "{name}");
             assert!(!d["description"].as_str().unwrap().is_empty(), "{name}");
             assert!(
-                images::handles(name) || prompts::handles(name) || placeholders::handles(name),
+                images::handles(name)
+                    || image_tools::handles(name)
+                    || prompts::handles(name)
+                    || placeholders::handles(name),
                 "{name}"
             );
         }

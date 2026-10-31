@@ -31,15 +31,15 @@ pub const NEGATIVE_BUCKET: &str = "imggen-negative";
 /// Same cap as the CLI's `-n` (`maxGenerateCount`).
 const MAX_COUNT: u32 = 10;
 /// Claude's hosted apps give a tool call 240 s; stay well inside it.
-const MAX_WAIT_SECS: u64 = 200;
-const DEFAULT_WAIT_SECS: u64 = 150;
+pub(super) const MAX_WAIT_SECS: u64 = 200;
+pub(super) const DEFAULT_WAIT_SECS: u64 = 150;
 /// Same cadence as the web UI and the CLI.
-const POLL_INTERVAL: Duration = Duration::from_secs(5);
+pub(super) const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_SIZE: i32 = 1024;
 const MIN_SIZE: i32 = 64;
 const MAX_SIZE: i32 = 4096;
-const LIST_DEFAULT_LIMIT: usize = 20;
-const LIST_MAX_LIMIT: usize = 50;
+pub(super) const LIST_DEFAULT_LIMIT: usize = 20;
+pub(super) const LIST_MAX_LIMIT: usize = 50;
 
 const TOOLS: &[&str] = &[
     "list_image_models",
@@ -56,7 +56,7 @@ pub fn handles(name: &str) -> bool {
     TOOLS.contains(&name)
 }
 
-fn wait_schema(default: u64) -> Value {
+pub(super) fn wait_schema(default: u64) -> Value {
     json!({
         "type": "integer", "minimum": 0, "maximum": MAX_WAIT_SECS, "default": default,
         "description": format!(
@@ -300,7 +300,7 @@ struct GenerateArgs {
     wait_seconds: Option<u64>,
 }
 
-fn wait_duration(wait_seconds: Option<u64>, default: u64) -> Result<Duration, AppError> {
+pub(super) fn wait_duration(wait_seconds: Option<u64>, default: u64) -> Result<Duration, AppError> {
     let secs = wait_seconds.unwrap_or(default);
     if secs > MAX_WAIT_SECS {
         return Err(AppError::BadRequest(format!(
@@ -488,7 +488,7 @@ async fn wait_for_jobs(ctx: &ToolContext, job_ids: &[i64], wait: Duration) {
     .await;
 }
 
-async fn wait_for_jobs_with<F, Fut>(job_ids: &[i64], wait: Duration, mut poll: F)
+pub(super) async fn wait_for_jobs_with<F, Fut>(job_ids: &[i64], wait: Duration, mut poll: F)
 where
     F: FnMut(i64) -> Fut,
     Fut: Future<Output = Result<bool, AppError>>,
@@ -523,7 +523,7 @@ where
     }
 }
 
-fn fmt_secs(s: f64) -> String {
+pub(super) fn fmt_secs(s: f64) -> String {
     let s = s.round() as i64;
     if s >= 60 {
         format!("{}m{:02}s", s / 60, s % 60)

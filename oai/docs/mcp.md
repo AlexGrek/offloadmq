@@ -49,6 +49,14 @@ and URL `…/mcp`. CORS on `/mcp` and the OAuth endpoints allows any origin.
 | `cancel_image_jobs` | `oai image cancel` | Several IDs; continues past failures |
 | `retry_image_job` | `oai image retry` | New job with identical settings, waits like generate |
 | `delete_image_jobs` | `oai image delete` | Also deletes the stored images |
+| `list_image_tools` | `oai img-utils tools` | Online Image Tools (upscale, depth, face_swap, resize) and the options each takes |
+| `upscale_image` | `oai upscale` | `image_id`/`image_ids` (≤10, one job each), `scale` 1–8 (**default 2**; the web UI page defaults to 4), `capability`, `wait_seconds` |
+| `run_image_tool` | `oai img-utils run` | `tool` (upscale\|depth\|face_swap\|resize), `image_id`/`image_ids`, `source_image_id` (face_swap), `scale`, resize `width`/`height`/`mode`/`method`/`format`/`quality`/`allow_upscale`, `options` (ComfyUI, as-is) |
+| `get_image_tool_job` | `oai img-utils job` / `poll` / `download` | Forces a reconcile; optional `wait_seconds`; returns a preview and link of the result |
+| `list_image_tool_jobs` | `oai img-utils jobs` | `status` (comma list), `active_only`, `limit` ≤50 |
+| `cancel_image_tool_jobs` | `oai img-utils cancel` | Several IDs; continues past failures |
+| `retry_image_tool_job` | `oai img-utils retry` | **Failed or canceled** jobs only; new job, waits like `run_image_tool` |
+| `delete_image_tool_jobs` | `oai img-utils delete` | Removes the result image; the input stays |
 | `view_image` | — | One image at up to 1024 px, so Claude can actually look at it |
 | `list_saved_prompts` | `oai image prompts recent\|starred` | `kind`, `negative`, `query`, `limit`, `cursor` |
 | `get_saved_prompt` | `oai image prompts show` + `preview` | Full text plus the preview image |
@@ -60,6 +68,8 @@ and URL `…/mcp`. CORS on `/mcp` and the OAuth endpoints allows any origin.
 | `expand_prompt` | `oai image placeholders expand` | Same expander as `generate_images`; resolves `{?}` (unless `resolve_names:false`); reports unknown tokens |
 
 The CLI and this table should stay in step: a new `oai image` feature gets a tool here too.
+
+Image Tools take an `image_id` that already exists in the account (a `generate_images` result, a web upload, an earlier tool's result) — MCP has no file upload. A tool that isn't online fails before anything is submitted.
 
 ### Waiting and results
 
