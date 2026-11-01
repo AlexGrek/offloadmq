@@ -281,6 +281,16 @@ pub(super) async fn poll_and_persist(
         })
         .await?;
 
+    // Never write a delayed generation response into a row already replaced by
+    // the upscale stage. Hold the promotion lock only for these DB writes.
+    let _lock = image_generation::try_lock_output_download(&state.db, task.job_id)
+        .await?.ok_or_else(|| AppError::BadRequest("job is being reconciled; retry poll".into()))?;
+    let current = image_generation::get_offload_task_by_job(&state.db, task.job_id).await?;
+    if current.as_ref().is_some_and(|c| c.offload_task_id != task.offload_task_id
+        || c.offload_cap != task.offload_cap) {
+        return Ok(poll);
+    }
+
     image_generation::update_offload_task_poll(
         &state.db,
         task.id,
