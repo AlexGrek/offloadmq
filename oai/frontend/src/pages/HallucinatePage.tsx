@@ -7,8 +7,9 @@ import { recordRecentPrompt, starPrompt } from '@/api/prompts'
 import { PromptTextarea } from '@/components/PromptTextarea'
 import { SavedPromptsDrawer } from '@/components/prompts/SavedPromptsDrawer'
 import { Button } from '@/components/ui/button'
+import { WallpaperJobStatus } from '@/components/hallucinate/WallpaperJobStatus'
 import { filterCapabilitiesByWorkflow } from '@/lib/imggen'
-import { FADE_MS, HALLUCINATE_BUCKET, runWallpaper, wallpaperRequestSignal, WallpaperCleanupError, WALLPAPER_SIZES } from '@/lib/hallucinate'
+import { FADE_MS, HALLUCINATE_BUCKET, runWallpaper, wallpaperRequestSignal, WallpaperCleanupError, WALLPAPER_SIZES, isWallpaperJobTerminal, type WallpaperJobProgress } from '@/lib/hallucinate'
 
 export default function HallucinatePage() {
   const { token } = useAuth()
@@ -23,6 +24,7 @@ export default function HallucinatePage() {
   const [running, setRunning] = useState(false)
   const [display, setDisplay] = useState(false)
   const [stage, setStage] = useState('Ready to dream')
+  const [currentJob, setCurrentJob] = useState<WallpaperJobProgress | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [frames, setFrames] = useState<string[]>([])
@@ -99,6 +101,7 @@ export default function HallucinatePage() {
     setDisplay(true)
     setControlsVisible(true)
     setError(null)
+    setCurrentJob(null)
     try {
       await recordRecentPrompt(token, HALLUCINATE_BUCKET, prompt.trim(), wallpaperRequestSignal(abort.signal))
       await runWallpaper(token, {
@@ -110,6 +113,9 @@ export default function HallucinatePage() {
         urls.current = [...previous.slice(-1), url]
         previous.slice(0, -1).forEach(old => URL.revokeObjectURL(old))
         setFrames(urls.current)
+      }, job => {
+        if (mounted.current) setCurrentJob(job && abort.signal.aborted && !isWallpaperJobTerminal(job.status)
+          ? { ...job, status: 'cancelRequested' } : job)
       })
     } catch (e) {
       if (mounted.current && (!abort.signal.aborted || e instanceof WallpaperCleanupError)) setError(e instanceof Error ? e.message : String(e))
@@ -123,6 +129,7 @@ export default function HallucinatePage() {
     if (!controller.current) return
     controller.current.abort()
     setStage('Stopping…')
+    setCurrentJob(job => job && !isWallpaperJobTerminal(job.status) ? { ...job, status: 'cancelRequested' } : job)
   }
 
   async function toggleFullscreen() {
@@ -183,11 +190,15 @@ export default function HallucinatePage() {
         </section>
       </div>
       {display && <div ref={surface} className="hallucinate-display fixed inset-0 z-50 overflow-hidden bg-black text-white" data-testid="hallucinate-display">
-        {frames.map((url, i) => <img key={url} src={url} alt="Live generated wallpaper" className={`absolute inset-0 h-full w-full object-fill ${i === frames.length - 1 ? 'hallucinate-frame' : ''}`} style={{ animationDuration: `${FADE_MS}ms` }} />)}
+        {frames.map((url, i) => <img key={url} src={url} alt="Live generated wallpaper" className={`absolute inset-0 h-full w-full bg-black object-contain ${i === frames.length - 1 ? 'hallucinate-frame' : ''}`} style={{ animationDuration: `${FADE_MS}ms` }} />)}
         {!frames.length && <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-violet-950 via-black to-cyan-950"><Sparkles className="size-16 animate-pulse text-violet-300" /></div>}
-        <div data-testid="hallucinate-controls" className={`hallucinate-controls absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-t from-black/80 to-transparent p-4 pt-16 sm:p-8 sm:pt-20 ${running && !error && !controlsVisible ? 'hallucinate-controls-hidden' : ''}`}>
-          <div className="min-w-0"><p className="font-display text-xl">Hallucinate</p><p role="status" className="text-xs text-white/70">{stage}</p>{error && <p role="alert" className="max-w-xl text-sm text-rose-300">{error}</p>}</div>
-          <div className="flex gap-2">
+        <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-4 bg-gradient-to-t from-black/85 to-transparent p-4 pt-16 sm:p-8 sm:pt-20">
+          <div className="min-w-0 w-full space-y-3 sm:max-w-lg sm:flex-1">
+            <div><p className="font-display text-xl">Hallucinate</p><p role="status" className="text-xs text-white/70">{stage}</p></div>
+            {currentJob && <WallpaperJobStatus key={`${currentJob.kind}:${currentJob.submittedAt}`} job={currentJob} active={running} />}
+            {error && <p role="alert" className="max-w-xl break-words text-sm text-rose-300">{error}</p>}
+          </div>
+          <div data-testid="hallucinate-controls" className={`hallucinate-controls flex gap-2 ${running && !error && !controlsVisible ? 'hallucinate-controls-hidden' : ''}`}>
             <Button variant="secondary" onClick={running ? stop : () => void start()} disabled={stage === 'Stopping…'} aria-label={running ? 'Pause wallpaper' : 'Resume wallpaper'} data-testid="hallucinate-pause">{running ? <Pause /> : <Play />}</Button>
             <Button variant="secondary" aria-label="Wallpaper settings" onClick={() => { stop(); setDisplay(false); if (document.fullscreenElement) void document.exitFullscreen().catch(() => {}) }}><Settings2 /></Button>
             <Button variant="secondary" onClick={() => void toggleFullscreen()} aria-label={fullscreen ? 'Exit browser fullscreen' : 'Enter browser fullscreen'}>{fullscreen ? <Minimize /> : <Expand />}</Button>

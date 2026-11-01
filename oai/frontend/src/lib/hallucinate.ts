@@ -31,7 +31,32 @@ export interface WallpaperSettings {
   scale: number
 }
 
-const terminal = (status: string) => ['completed', 'failed', 'canceled', 'cancelled'].includes(status.toLowerCase())
+export interface WallpaperJobProgress {
+  kind: 'generation' | 'upscale'
+  jobId: string | null
+  capability: string
+  status: string
+  stage: string | null
+  submittedAt: string
+  startedAt: string | null
+  finishedAt: string | null
+  typicalRuntimeSeconds: number | null
+  queuedSeconds: number | null
+  executionSeconds: number | null
+}
+
+type WallpaperPoll = {
+  status: string
+  stage?: string | null
+  submitted_at?: string | null
+  created_at?: string
+  started_at?: string | null
+  typical_runtime_seconds?: number | null
+  queued_seconds?: number | null
+  execution_seconds?: number | null
+}
+
+export const isWallpaperJobTerminal = (status: string) => ['completed', 'failed', 'canceled', 'cancelled'].includes(status.toLowerCase())
 const check = (signal: AbortSignal) => signal.throwIfAborted()
 function delay(ms: number, signal: AbortSignal): Promise<void> {
   check(signal)
@@ -49,6 +74,7 @@ export async function runWallpaper(
   signal: AbortSignal,
   onStage: (stage: string) => void,
   onFrame: (url: string) => void,
+  onJob?: (job: WallpaperJobProgress | null) => void,
 ): Promise<void> {
   const definitions = await listPromptPlaceholders(token, wallpaperRequestSignal(signal))
   const custom = Object.fromEntries(definitions.map(d => [d.name.toLowerCase(), d.variants]))
@@ -59,16 +85,42 @@ export async function runWallpaper(
   let upscaleDone = false
   let lastFrameAt = 0
   let failure: unknown
+  let currentJob: WallpaperJobProgress | null = null
+  const beginJob = (kind: WallpaperJobProgress['kind'], capability: string) => {
+    currentJob = {
+      kind, capability, jobId: null, status: 'submitting', stage: null,
+      submittedAt: new Date().toISOString(), startedAt: null, finishedAt: null,
+      typicalRuntimeSeconds: null, queuedSeconds: null, executionSeconds: null,
+    }
+    onJob?.(currentJob)
+  }
+  const updateJob = (patch: Partial<WallpaperJobProgress>) => {
+    if (!currentJob) return
+    currentJob = { ...currentJob, ...patch }
+    onJob?.(currentJob)
+  }
+  const reportPoll = (result: WallpaperPoll) => updateJob({
+    status: result.status,
+    stage: result.stage ?? null,
+    submittedAt: result.submitted_at ?? result.created_at ?? currentJob?.submittedAt,
+    startedAt: result.started_at ?? currentJob?.startedAt ?? null,
+    finishedAt: isWallpaperJobTerminal(result.status) ? currentJob?.finishedAt ?? new Date().toISOString() : null,
+    typicalRuntimeSeconds: result.typical_runtime_seconds ?? null,
+    queuedSeconds: result.queued_seconds ?? null,
+    executionSeconds: result.execution_seconds ?? null,
+  })
   try {
     while (!signal.aborted) {
       // A background tab keeps its current picture but does not request more work.
       while (document.visibilityState === 'hidden') {
         onStage('Paused while tab is hidden')
+        onJob?.(null)
         await delay(1000, signal)
       }
       check(signal)
       onStage('Rendering next image')
       generationDone = false
+      beginJob('generation', settings.capability)
       const job = await startImageJob(token, {
         capability: settings.capability,
         prompt: expandPromptPlaceholders(settings.prompt, usage, custom),
@@ -77,11 +129,13 @@ export async function runWallpaper(
         override_negative: true, negative_prompt: '',
       }, wallpaperRequestSignal())
       generation = job.job_id
+      updateJob({ jobId: job.job_id, status: job.status || 'submitted' })
       check(signal)
       let imageId: string | undefined
       while (!generationDone) {
         const result = await pollImageJob(token, generation, wallpaperRequestSignal(signal))
-        generationDone = terminal(result.status)
+        generationDone = isWallpaperJobTerminal(result.status)
+        reportPoll(result)
         check(signal)
         if (generationDone) {
           if (result.status !== 'completed') throw new Error(result.error || `Generation ${result.status}`)
@@ -96,15 +150,18 @@ export async function runWallpaper(
         check(signal)
         onStage(`Upscaling ×${settings.scale}`)
         upscaleDone = false
+        beginJob('upscale', settings.upscaler.capability)
         const tool = await startImgUtilsJob(token, {
           capability: settings.upscaler.capability, workflow: settings.upscaler.workflow,
           input_image_id: imageId, options: { scale_multiplier: settings.scale },
         }, wallpaperRequestSignal())
         upscale = tool.job_id
+        updateJob({ jobId: tool.job_id, status: tool.status || 'submitted' })
         check(signal)
         while (!upscaleDone) {
           const result = await pollImgUtilsJob(token, upscale, wallpaperRequestSignal(signal))
-          upscaleDone = terminal(result.status)
+          upscaleDone = isWallpaperJobTerminal(result.status)
+          reportPoll(result)
           check(signal)
           if (upscaleDone) {
             if (result.status !== 'completed' || !result.output_image_id) throw new Error(result.error || 'Upscale produced no image.')
@@ -152,7 +209,8 @@ export async function runWallpaper(
         const result = kind === 'generation'
           ? await pollImageJob(token, id, requestSignal())
           : await pollImgUtilsJob(token, id, requestSignal())
-        done = terminal(result.status)
+        done = isWallpaperJobTerminal(result.status)
+        if (currentJob?.jobId === id && currentJob.kind === kind) reportPoll(result)
         if (!done) await delay(1500, deadline)
       }
     }

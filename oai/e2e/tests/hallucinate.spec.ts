@@ -21,6 +21,7 @@ async function mock(page: Page, options: { pending?: boolean; upscaleFail?: bool
     if (path === '/api/prompts/imggen-prompt/entries') return json({ items: [{ id: '1', content: 'Imported dream', kind: 'recent' }], next_cursor: null })
     if (path.startsWith('/api/prompts/')) { events.push(path); return json({ id: 'p' }) }
     if (path === '/api/images/jobs' && method === 'POST') {
+      canceled = false
       submissions.push(route.request().postDataJSON())
       events.push('generate')
       if (options.hangSubmit) return new Promise<void>(() => {})
@@ -37,7 +38,7 @@ async function mock(page: Page, options: { pending?: boolean; upscaleFail?: bool
       if (options.hangPoll && polls === 1) { events.push('poll-hung'); return new Promise<void>(() => {}) }
       return json({ status: canceled ? options.cancelTerminal ? 'completed' : 'canceled' : options.pending ? 'running' : 'completed', output_images: [{ image_id: '10' }] })
     }
-    if (path === '/api/img-utils/jobs' && method === 'POST') { events.push('upscale'); submissions.push(route.request().postDataJSON()); return json({ job_id: 'u' }) }
+    if (path === '/api/img-utils/jobs' && method === 'POST') { events.push('upscale'); submissions.push(route.request().postDataJSON()); return json({ job_id: 'u', status: 'submitted' }) }
     if (path === '/api/img-utils/jobs/u/poll') return json({ status: options.upscaleFail ? 'failed' : 'completed', output_image_id: '20', error: options.upscaleFail ? 'Upscaler offline' : null })
     if (path.startsWith('/api/images/files/')) { events.push(`load:${path.split('/').pop()}`); return route.fulfill({ body: PNG, contentType: 'image/png' }) }
     if (method === 'DELETE') {
@@ -57,6 +58,7 @@ test('renders sequentially, substitutes every frame, and removes temporary jobs'
   await page.getByTestId('hallucinate-prompt').fill('A {scene} under a {color} sky')
   await page.getByTestId('hallucinate-start').click()
   await expect(page.getByTestId('hallucinate-display').getByRole('img')).toHaveCount(1)
+  await expect(page.getByTestId('hallucinate-display').getByRole('img').first()).toHaveCSS('object-fit', 'contain')
   await expect.poll(() => submissions.length, { timeout: 12000 }).toBe(2)
   expect(submissions[0].prompt).not.toContain('{')
   expect(submissions[0].prompt).not.toBe(submissions[1].prompt)
@@ -183,4 +185,75 @@ test('a stalled submission reaches its deadline instead of locking the page', as
   await page.getByTestId('hallucinate-start').click()
   await expect(page.getByRole('alert')).toContainText(/timeout|timed out/i, { timeout: 19000 })
   await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
+})
+
+
+test('runtime status distinguishes queue time from execution and advances between polls', async ({ page }) => {
+  const { events } = await mock(page)
+  let status = 'queued'
+  const estimated = 60
+  const submittedAt = new Date(Date.now() - 30000).toISOString()
+  const startedAt = new Date(Date.now() - 20000).toISOString()
+  await page.route('**/api/images/jobs/*/poll', route => route.fulfill({ json: {
+    status: events.includes('cancel') ? 'canceled' : status,
+    stage: status === 'queued' ? 'Waiting for an agent' : 'Sampling',
+    submitted_at: submittedAt,
+    started_at: status === 'queued' ? null : startedAt,
+    typical_runtime_seconds: estimated,
+    output_images: [],
+  } }))
+  await page.getByTestId('hallucinate-start').click()
+  const job = page.getByTestId('hallucinate-job-status')
+  const progress = job.getByRole('progressbar')
+  await expect(job).toContainText('Generation · Queued')
+  await expect(job).toContainText('#1')
+  await expect(progress).toHaveAttribute('data-progress-phase', 'indeterminate')
+  await expect(page.getByTestId('hallucinate-job-timings')).toContainText('Render —')
+  status = 'running'
+  await expect(progress).toHaveAttribute('data-progress-phase', 'determinate')
+  await expect(job).toContainText('Generation · Running')
+  await expect(job).toContainText('Sampling')
+  await expect(page.getByTestId('hallucinate-job-timings')).toContainText('Queue 10s')
+  const before = Number(await progress.getAttribute('aria-valuenow'))
+  expect(before).toBeGreaterThan(0)
+  await expect.poll(async () => Number(await progress.getAttribute('aria-valuenow'))).toBeGreaterThan(before)
+  await page.mouse.move(10, 10)
+  await page.getByTestId('hallucinate-pause').click()
+  await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
+  await expect(job).toContainText('Canceled')
+  const frozen = await page.getByTestId('hallucinate-job-timings').textContent()
+  await page.waitForTimeout(1100)
+  expect(await page.getByTestId('hallucinate-job-timings').textContent()).toBe(frozen)
+})
+
+test('runtime upscale status uses its own timings and stays visible while buttons hide on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 })
+  await mock(page)
+  const createdAt = new Date(Date.now() - 20000).toISOString()
+  const startedAt = new Date(Date.now() - 10000).toISOString()
+  let canceled = false
+  await page.route('**/api/img-utils/jobs/u/cancel', route => {
+    canceled = true
+    return route.fulfill({ json: { status: 'canceled' } })
+  })
+  await page.route('**/api/img-utils/jobs/u/poll', route => route.fulfill({ json: {
+    job_id: 'u', status: canceled ? 'canceled' : 'running', stage: 'Enhancing detail',
+    created_at: createdAt, started_at: startedAt, typical_runtime_seconds: null,
+  } }))
+  await page.getByLabel('Upscale before displaying').check()
+  await page.getByTestId('hallucinate-start').click()
+  const job = page.getByTestId('hallucinate-job-status')
+  await expect(job).toContainText('Upscale · Running')
+  await expect(job).toContainText('seedvr · #u')
+  await expect(job).toContainText('Enhancing detail')
+  await expect(job.getByRole('progressbar')).toHaveAttribute('data-progress-phase', 'indeterminate')
+  await expect(job).toContainText('Queue 10s')
+  await expect(job).not.toContainText('Render')
+  await expect(page.getByTestId('hallucinate-controls')).toHaveCSS('opacity', '0', { timeout: 6500 })
+  await expect(job).toBeVisible()
+  await expect(job).toHaveCSS('opacity', '1')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+  await page.mouse.move(10, 10)
+  await page.getByTestId('hallucinate-pause').click()
+  await expect(job).toContainText('Canceled')
 })

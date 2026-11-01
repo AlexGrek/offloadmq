@@ -4,8 +4,14 @@
 model, a prompt template, and a canvas preset. Start opens a window-filling image
 surface with a six-second fade between images. Display controls pause/resume,
 return to settings, and toggle browser fullscreen. Reduced-motion preferences
-disable the fade. Small images stretch to fill the screen. Display controls fade
+disable the fade. Images always keep their proportions and fit completely within
+the screen, with black bars when the screen and image aspect ratios differ. Display controls fade
 away after four seconds of inactivity and return on pointer or keyboard activity.
+The runtime status stays visible: current generation/upscale step, job ID, status,
+queue time, execution time, and total elapsed time. Its progress bar uses the
+backend's typical-runtime estimate once execution starts; queued jobs and jobs
+without estimates use an indeterminate bar. Timings update between polls and
+stop when the job finishes or monitoring stops. Each new job resets the readout.
 
 Each iteration expands built-in and custom prompt placeholders again, chooses a
 new random seed, and submits one txt2img task through the existing Image Generation
