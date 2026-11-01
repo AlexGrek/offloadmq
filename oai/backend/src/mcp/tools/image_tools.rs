@@ -296,6 +296,32 @@ async fn online_tools(ctx: &ToolContext) -> Result<Vec<ImgTool>, AppError> {
     Ok(tools_from_capabilities(&caps))
 }
 
+/// Resolve generation's optional upscale before submitting any base images.
+pub(super) async fn generation_upscaler(
+    ctx: &ToolContext,
+    scale: Option<f64>,
+    model: Option<&str>,
+) -> Result<Option<crate::services::image_pipeline_params::UpscaleParams>, AppError> {
+    let Some(scale) = scale else {
+        if model.is_some() {
+            return Err(AppError::BadRequest("upscale_model requires upscale_factor".into()));
+        }
+        return Ok(None);
+    };
+    if !scale.is_finite() || !(MIN_SCALE_MULTIPLIER..=MAX_SCALE_MULTIPLIER).contains(&scale) {
+        return Err(AppError::BadRequest("upscale_factor must be between 1 and 8".into()));
+    }
+    let tools = online_tools(ctx).await?;
+    let selected = pick_tool(&tools, "upscale", model)?;
+    let params = crate::services::image_pipeline_params::UpscaleParams {
+        capability: selected.capability.clone(),
+        workflow: selected.workflow.clone(),
+        scale,
+    };
+    params.validate()?;
+    Ok(Some(params))
+}
+
 fn tool_notes(t: &ImgTool) -> Vec<String> {
     let mut notes = Vec::new();
     if t.needs_source {

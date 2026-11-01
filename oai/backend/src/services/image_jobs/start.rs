@@ -81,7 +81,7 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
     }
     let params = image_pipeline_params::parse_stored_pipeline_params(&job);
     let start = start_params_from_pipeline(&params);
-    let new_id = start_job(state, user_id, start).await?;
+    let new_id = start_job_with_upscale(state, user_id, start, params.upscale).await?;
     let (source_event, target_event) = if job.status == "completed" {
         ("job.regenerate", "job.regenerated_from")
     } else {
@@ -122,7 +122,34 @@ pub async fn start_job_with_id(
     req: StartJobParams,
     preserve_input: bool,
 ) -> Result<i64, AppError> {
+    start_job_internal(state, user_id, job_id, req, preserve_input, None).await
+}
+
+/// Generate and upscale under one durable job; the worker drives both stages.
+pub async fn start_job_with_upscale(
+    state: &AppState,
+    user_id: i64,
+    req: StartJobParams,
+    upscale: Option<image_pipeline_params::UpscaleParams>,
+) -> Result<i64, AppError> {
+    start_job_internal(state, user_id, state.next_id(), req, false, upscale).await
+}
+
+async fn start_job_internal(
+    state: &AppState,
+    user_id: i64,
+    job_id: i64,
+    req: StartJobParams,
+    preserve_input: bool,
+    upscale: Option<image_pipeline_params::UpscaleParams>,
+) -> Result<i64, AppError> {
     storage::operator(state)?;
+    if let Some(upscale) = &upscale {
+        upscale.validate()?;
+        if !matches!(resolve_workflow(&req).as_str(), "txt2img" | "img2img") {
+            return Err(AppError::BadRequest("upscale supports txt2img and img2img only".into()));
+        }
+    }
 
     let input_image_id = parse_input_image_id(&req)?;
     let input = match input_image_id {
@@ -136,7 +163,8 @@ pub async fn start_job_with_id(
     req.prompt = image_job_names::expand_prompt_placeholders(req.prompt.trim());
 
     let display_name = image_job_names::generate_display_name();
-    let pipeline_params = build_pipeline_params(&req, &workflow, input_image_id);
+    let mut pipeline_params = build_pipeline_params(&req, &workflow, input_image_id);
+    pipeline_params.upscale = upscale;
     let pipeline_params_json = pipeline_params
         .to_json()
         .map_err(|e| AppError::Internal(format!("pipeline params json: {e}")))?;
@@ -324,6 +352,7 @@ pub(super) fn build_pipeline_params(
     input_image_id: Option<i64>,
 ) -> ImagePipelineParams {
     ImagePipelineParams {
+        upscale: None,
         capability: req.capability.clone(),
         prompt: req.prompt.trim().to_string(),
         negative_prompt: req.negative_prompt.clone(),
@@ -425,6 +454,25 @@ pub(super) fn build_submit_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upscale_snapshot_survives_restart_and_retry_without_changing_base_size() {
+        let req: StartJobParams = serde_json::from_value(serde_json::json!({
+            "capability": "imggen.test", "prompt": "landscape", "width": 1024, "height": 768,
+            "seed": 17
+        })).unwrap();
+        let mut pipeline = build_pipeline_params(&req, "txt2img", None);
+        let legacy = pipeline.to_json().unwrap();
+        assert!(ImagePipelineParams::from_json(&legacy).unwrap().upscale.is_none());
+        pipeline.upscale = Some(image_pipeline_params::UpscaleParams {
+            capability: "img-utils.seedvr2".into(), workflow: "upscale".into(), scale: 2.0,
+        });
+        let restored = ImagePipelineParams::from_json(&pipeline.to_json().unwrap()).unwrap();
+        let retry = start_params_from_pipeline(&restored);
+        assert_eq!((retry.width, retry.height), (1024, 768));
+        assert_eq!(retry.seed, Some(17));
+        assert_eq!(restored.upscale.unwrap().scale, 2.0);
+    }
 
     #[test]
     fn explicit_empty_negative_clears_workflow_default() {

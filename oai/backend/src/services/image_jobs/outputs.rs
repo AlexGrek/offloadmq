@@ -398,7 +398,11 @@ pub(super) async fn store_output_image(
         image,
         file_uid,
         job.prompt.trim(),
-        image_processing::MAX_GENERATED_EDGE,
+        if pipeline_params_for_job(job).upscale.is_some() {
+            image_processing::NO_MAX_EDGE
+        } else {
+            image_processing::MAX_GENERATED_EDGE
+        },
         None,
     )
     .await?;

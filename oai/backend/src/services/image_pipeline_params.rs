@@ -18,8 +18,32 @@ pub struct RescaleParams {
     pub mp: Option<f64>,
 }
 
+/// A persisted post-generation upscale, replayed on retry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpscaleParams {
+    pub capability: String,
+    pub workflow: String,
+    pub scale: f64,
+}
+
+impl UpscaleParams {
+    pub fn validate(&self) -> Result<(), crate::error::AppError> {
+        if !self.scale.is_finite() || !(1.0..=8.0).contains(&self.scale)
+            || !self.capability.starts_with("img-utils.")
+            || !self.workflow.starts_with("upscale")
+        {
+            return Err(crate::error::AppError::BadRequest(
+                "upscale requires an img-utils upscaler and a scale between 1 and 8".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImagePipelineParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upscale: Option<UpscaleParams>,
     pub capability: String,
     pub prompt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -64,6 +88,7 @@ impl ImagePipelineParams {
     /// Reconstruct params for jobs created before `pipeline_params_json` existed.
     pub fn from_job_columns(job: &ImageGenerationJob) -> Self {
         Self {
+            upscale: None,
             capability: job.capability.clone(),
             prompt: job.prompt.clone(),
             negative_prompt: job.negative_prompt.clone(),
@@ -100,4 +125,29 @@ pub fn parse_stored_pipeline_params(job: &ImageGenerationJob) -> ImagePipelinePa
         return ImagePipelineParams::from_job_columns(job);
     }
     ImagePipelineParams::from_json(raw).unwrap_or_else(|_| ImagePipelineParams::from_job_columns(job))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_invalid_upscale_configuration() {
+        let mut p = UpscaleParams {
+            capability: "img-utils.seedvr2".into(), workflow: "upscale".into(), scale: 2.0,
+        };
+        for scale in [f64::NAN, f64::INFINITY, 0.0, 0.99, 8.01] {
+            p.scale = scale;
+            assert!(p.validate().is_err());
+        }
+        for scale in [1.0, 2.5, 8.0] {
+            p.scale = scale;
+            assert!(p.validate().is_ok());
+        }
+        p.workflow = "depth".into();
+        assert!(p.validate().is_err());
+        p.workflow = "upscale".into();
+        p.capability = "imggen.test".into();
+        assert!(p.validate().is_err());
+    }
 }

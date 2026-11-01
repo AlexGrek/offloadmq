@@ -43,7 +43,7 @@ and URL `…/mcp`. CORS on `/mcp` and the OAuth endpoints allows any origin.
 | Tool | CLI equivalent | Notes |
 |------|----------------|-------|
 | `list_image_models` | `oai image capabilities` | Online/offline status, tags (txt2img, img2img…), recent usage |
-| `generate_images` | `oai image generate` | `prompt`, `negative_prompt`, `model`, `workflow`, `input_image_id` (img2img), `width`/`height`, `seed` (job N uses seed+N), `count` ≤10, `save_to_history`, `star_prompt`, `wait_seconds` |
+| `generate_images` | `oai image generate` | `prompt`, `negative_prompt`, `model`, `workflow`, `input_image_id` (img2img), `width`/`height` (original resolution), `upscale_factor` (optional 1–8), `upscale_model` (optional img-utils capability), `seed` (job N uses seed+N), `count` ≤10, `save_to_history`, `star_prompt`, `wait_seconds` |
 | `get_image_job` | `oai image job` / `poll` / `download` | Forces a reconcile; optional `wait_seconds`; returns previews and links |
 | `list_image_jobs` | `oai image jobs` | `status` (comma list), `active_only`, `limit` ≤50 |
 | `cancel_image_jobs` | `oai image cancel` | Several IDs; continues past failures |
@@ -68,6 +68,27 @@ and URL `…/mcp`. CORS on `/mcp` and the OAuth endpoints allows any origin.
 | `expand_prompt` | `oai image placeholders expand` | Same expander as `generate_images`; resolves `{?}` (unless `resolve_names:false`); reports unknown tokens |
 
 The CLI and this table should stay in step: a new `oai image` feature gets a tool here too.
+
+`generate_images` can generate and upscale in one call, like Hallucinate. For example:
+
+```json
+{"prompt":"A moonlit forest", "width":1024, "height":768, "upscale_factor":2}
+```
+
+This generates at 1024×768, then sends that original output directly to an online
+upscaler for a 2048×1536 result. `model` optionally selects the generation model;
+`upscale_model` optionally pins an `img-utils.*` capability from `list_image_tools`.
+Without a pin, the first online upscaler is selected before generation is submitted.
+An unavailable upscaler or invalid factor fails before submitting any images.
+Only `txt2img` and `img2img` support this option.
+
+Both stages share one persistent image job ID: `get_image_job`, cancellation, deletion,
+and retry work as usual, and the background worker continues after MCP's wait expires.
+The job stays unfinished until the upscaled image is stored; previews and signed links
+refer to that final image at its full enlarged resolution. Structured results include
+`upscale` (resolved capability, workflow, scale) and `stage` (current task capability),
+while `width`/`height` remain the original requested generation resolution.
+Omit `upscale_factor` for normal single-stage generation. `upscale_model` requires a factor.
 
 Image Tools take an `image_id` that already exists in the account (a `generate_images` result, a web upload, an earlier tool's result) — MCP has no file upload. A tool that isn't online fails before anything is submitted.
 

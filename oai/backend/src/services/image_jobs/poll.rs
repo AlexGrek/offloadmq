@@ -25,6 +25,11 @@ pub async fn cancel_job(state: &AppState, user_id: i64, job_id: i64) -> Result<C
     let job = image_generation::get_job(&state.db, job_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
+    // Promotion and cancellation must agree on which stage owns the job.
+    let _promotion_lock = if pipeline_params_for_job(&job).upscale.is_some() {
+        Some(image_generation::try_lock_output_download(&state.db, job.id).await?
+            .ok_or_else(|| AppError::BadRequest("job is advancing stages; retry cancellation".into()))?)
+    } else { None };
     if is_terminal(&job.status) {
         return Err(AppError::BadRequest(format!(
             "job is already in terminal state: {}",
@@ -327,11 +332,20 @@ pub(super) async fn apply_poll_outcome_to_job(
     task: &image_generation::ImageOffloadTask,
     poll: &OffloadPollResponse,
 ) -> Result<(), AppError> {
+    // A slow poll may belong to generation after another poll promoted it.
+    let current = image_generation::get_offload_task_by_job(&state.db, job.id).await?;
+    if current.as_ref().is_some_and(|c| c.offload_task_id != task.offload_task_id
+        || c.offload_cap != task.offload_cap) {
+        return Ok(());
+    }
     match poll.status.as_str() {
         // A completed pre-step is not a finished job: it hands its output bucket
         // to the real task, which is submitted now and polled from here on.
         "completed" if external_resize::is_pre_step(&task.offload_cap) => {
             promote_after_resize(state, job, task, poll).await?
+        }
+        "completed" if needs_upscale(job, task) => {
+            promote_to_upscale(state, job, task, poll).await?
         }
         "completed" => fetch_and_store_outputs(state, job.user_id, job, poll.output.clone()).await?,
         "failed" | "canceled" => mark_failed(state, job.id, poll).await?,
@@ -339,6 +353,87 @@ pub(super) async fn apply_poll_outcome_to_job(
             image_generation::update_job_status(&state.db, job.id, status, None).await?;
         }
     }
+    Ok(())
+}
+
+fn needs_upscale(
+    job: &image_generation::ImageGenerationJob,
+    task: &image_generation::ImageOffloadTask,
+) -> bool {
+    pipeline_params_for_job(job).upscale.is_some()
+        && !task.offload_cap.starts_with("img-utils.")
+}
+
+fn upscale_payload(
+    params: &image_pipeline_params::UpscaleParams,
+    filename: &str,
+) -> Value {
+    serde_json::json!({
+        "workflow": params.workflow,
+        "input_image": filename,
+        "secondary_prompts": { "scale_multiplier": params.scale },
+    })
+}
+
+/// The generation bucket becomes the upscaler input without a local resize or
+/// download. Serialize promotion across foreground polls, workers and replicas.
+async fn promote_to_upscale(
+    state: &AppState,
+    job: &image_generation::ImageGenerationJob,
+    task: &image_generation::ImageOffloadTask,
+    poll: &OffloadPollResponse,
+) -> Result<(), AppError> {
+    let Some(lock) = image_generation::try_lock_output_download(&state.db, job.id).await? else {
+        return Ok(());
+    };
+    let current = image_generation::get_offload_task_by_job(&state.db, job.id)
+        .await?.ok_or(AppError::NotFound)?;
+    let fresh = image_generation::get_job_global(&state.db, job.id)
+        .await?.ok_or(AppError::NotFound)?;
+    if current.offload_task_id != task.offload_task_id
+        || current.offload_cap != task.offload_cap
+        || is_terminal(&fresh.status) || fresh.status == "cancelRequested"
+    {
+        return Ok(());
+    }
+    let params = pipeline_params_for_job(&fresh);
+    let upscale = params.upscale.ok_or_else(|| AppError::Internal("missing upscale params".into()))?;
+    let bucket = output_bucket_of(&current)?;
+    let output = poll.output.clone().or_else(|| current.last_poll_output.as_deref()
+        .and_then(|raw| serde_json::from_str(raw).ok()));
+    let Some(input) = external_resize::completed_output(output.as_ref(), Some(&bucket)) else {
+        image_generation::update_job_status(&state.db, job.id, "failed",
+            Some("generation finished without an output image to upscale")).await?;
+        release_job_buckets(state, job.id).await;
+        return Ok(());
+    };
+    let client = offload_factory::image_client(state).await?;
+    let out = client.create_bucket(false).await?;
+    let payload = upscale_payload(&upscale, &input.filename);
+    let submitted = client.submit_img_task(&upscale.capability, payload,
+        Some(&input.bucket_uid), &out.bucket_uid, None).await;
+    let (id, body) = match submitted {
+        Ok(submitted) => submitted,
+        Err(e) => {
+            client.delete_bucket(&out.bucket_uid).await.log_warn("cleanup failed upscale submission");
+            return Err(e);
+        }
+    };
+    image_generation::replace_offload_task(&state.db, current.id, &id.cap, &id.id,
+        &body.to_string()).await?;
+    state.watch.untrack(&current.offload_cap, &current.offload_task_id).await;
+    state.watch.track(&id.cap, &id.id).await;
+    // Generation's old input is no longer needed. Its output is now the
+    // upscaler's input and is released by the normal terminal bucket cleanup.
+    if let Ok(old) = serde_json::from_str::<Value>(&current.submit_payload) {
+        if let Some(input) = old.get("file_bucket").and_then(Value::as_str) {
+            client.delete_bucket(input).await.log_warn("cleanup generation input");
+        }
+    }
+    image_generation::update_job_status(&state.db, job.id, "submitted", None).await?;
+    record_event(state, job.id, "offload.upscale.submit", "ok",
+        Some(&format!("cap={} id={} scale={}", id.cap, id.id, upscale.scale))).await?;
+    lock.rollback().await?;
     Ok(())
 }
 
@@ -502,7 +597,23 @@ pub(super) async fn background_poll_once(
 
 #[cfg(test)]
 mod tests {
-    use super::is_poll_transition;
+    use super::{is_poll_transition, upscale_payload};
+    use crate::services::image_pipeline_params::UpscaleParams;
+
+    #[test]
+    fn upscale_uses_original_bucket_image_and_scalar_knob() {
+        let params = UpscaleParams {
+            capability: "img-utils.seedvr2".into(), workflow: "upscale".into(), scale: 2.5,
+        };
+        let payload = upscale_payload(&params, "original.png");
+        assert_eq!(payload, serde_json::json!({
+            "workflow": "upscale", "input_image": "original.png",
+            "secondary_prompts": {"scale_multiplier": 2.5},
+        }));
+        // No rescale/width/prompt fields: the upscaler consumes original pixels.
+        assert!(payload.get("resolution").is_none());
+    }
+
 
     #[test]
     fn poll_event_only_on_status_change() {

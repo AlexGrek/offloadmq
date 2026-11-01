@@ -87,7 +87,11 @@ pub fn definitions() -> Vec<Value> {
              expanded per job, never repeating a value within a batch; pass them through as \
              the user wrote them (don't pre-fill them yourself). Unknown {tokens} are reported. \
              Results show each job's final prompt and keep the raw text as prompt_template. \
-             Same as `oai image generate`.",
+             Width/height specify the original generation resolution. Set upscale_factor to \
+             generate then upscale automatically in a second stage, like Hallucinate; optional \
+             upscale_model pins an online img-utils upscaler from list_image_tools. The same \
+             job ID tracks both stages and returns only the final upscaled image. \
+             Same as `oai image generate` followed by `oai upscale`.",
             json!({
                 "type": "object",
                 "properties": {
@@ -98,6 +102,8 @@ pub fn definitions() -> Vec<Value> {
                     "input_image_id": { "type": "string", "description": "img2img source: an image_id from an earlier result in this account." },
                     "width": { "type": "integer", "minimum": MIN_SIZE, "maximum": MAX_SIZE, "description": "Default 1024 (img2img: the input's size)." },
                     "height": { "type": "integer", "minimum": MIN_SIZE, "maximum": MAX_SIZE, "description": "Default 1024 (img2img: the input's size)." },
+                    "upscale_factor": { "type": "number", "minimum": 1, "maximum": 8, "description": "Optional second-stage multiplier (e.g. width=1024, height=768, upscale_factor=2 produces 2048x1536). Omit to generate only." },
+                    "upscale_model": { "type": "string", "description": "Optional img-utils.* upscaler capability from list_image_tools; requires upscale_factor. Default: first online upscaler." },
                     "seed": { "type": "integer", "description": "Fixed seed for reproducible results; job N of a batch uses seed+N. Default random." },
                     "count": { "type": "integer", "minimum": 1, "maximum": MAX_COUNT, "default": 1, "description": "Number of images (separate jobs)." },
                     "save_to_history": { "type": "boolean", "default": true, "description": "Record the prompt in the user's recent prompts." },
@@ -275,6 +281,10 @@ fn pick_model(caps: &[LlmCapabilityInfo], workflow: &str) -> Result<String, AppE
 
 #[derive(Deserialize)]
 struct GenerateArgs {
+    #[serde(default)]
+    upscale_factor: Option<f64>,
+    #[serde(default)]
+    upscale_model: Option<String>,
     prompt: String,
     #[serde(default)]
     negative_prompt: Option<String>,
@@ -379,6 +389,16 @@ async fn generate(ctx: &ToolContext, a: GenerateArgs) -> Result<ToolOutput, AppE
         }
     };
 
+    if a.upscale_factor.is_some() && !matches!(workflow.as_str(), "txt2img" | "img2img") {
+        return Err(AppError::BadRequest("upscale supports txt2img and img2img only".into()));
+    }
+    let upscale = super::image_tools::generation_upscaler(
+        ctx, a.upscale_factor, a.upscale_model.as_deref(),
+    ).await?;
+    if let Some(u) = &upscale {
+        notes.push(format!("Two stages: generate {width}×{height}, then upscale {}× with {}", u.scale, u.capability));
+    }
+
     // Custom placeholders are additive, as in the web UI and CLI: if they can't be
     // loaded the builtin categories still expand and custom tokens stay literal.
     let mut expander = match PromptExpander::for_user(&ctx.state.db, ctx.user_id).await {
@@ -419,7 +439,7 @@ async fn generate(ctx: &ToolContext, a: GenerateArgs) -> Result<ToolOutput, AppE
             external_resize: false,
             prompt_template: Some(template.clone()),
         };
-        match image_jobs::start_job(&ctx.state, ctx.user_id, params).await {
+        match image_jobs::start_job_with_upscale(&ctx.state, ctx.user_id, params, upscale.clone()).await {
             Ok(id) => job_ids.push(id),
             Err(e) => {
                 submit_error = Some(format!(
@@ -605,6 +625,8 @@ fn job_json(ctx: &ToolContext, detail: &JobDetail, outputs: &[ImageView]) -> Val
         "width": job.width,
         "height": job.height,
         "seed": job.seed,
+        "upscale": image_jobs::pipeline_params_for_job(job).upscale,
+        "stage": detail.offload_cap,
         "input_image_id": job.input_image_id.map(|i| i.to_string()),
         "created_at": job.created_at.to_rfc3339(),
         "started_at": detail.started_at.map(|t| t.to_rfc3339()),
