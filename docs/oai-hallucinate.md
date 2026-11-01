@@ -36,20 +36,22 @@ to cancel in-flight work. Errors stop the loop visibly; resume retries explicitl
 A browser or machine crash can leave the last submitted job to finish normally,
 but cannot start another. Existing backend workers reconcile individual tasks.
 
-Completed images are fetched into browser object URLs before temporary generation
-and upscale jobs/files are deleted. At most two frames are retained, with older
-URLs revoked on replacement or unmount. Temporary jobs may briefly appear in the
-shared generation/task views while running. Requests have a 15-second deadline;
-polling also aborts immediately on Pause.
+Generated images and generation jobs remain in **Image Generation (txt2img)**
+history. When upscale is enabled, the upscale job and its output remain in
+**Image Tools** history as well; its original generated input stays available.
+Hallucinate has no history panel of its own and never deletes jobs or files,
+including when pausing, navigating away, or encountering errors. Saved outputs
+follow the same storage quotas and manual deletion controls as other jobs.
+Browser memory holds at most two displayed frames, with older object URLs
+revoked on replacement or unmount; revoking a URL does not delete a saved image.
+
+Requests have a 15-second deadline; polling also aborts immediately on Pause.
 Submissions retain their bounded response wait so a returned job ID can be
 canceled even when Pause races the submission. If a submission times out after
-the server has accepted it, its unknown job ID cannot be cleaned by this page.
-Cancellation cleanup waits up to 30 seconds per job for a terminal status;
-if an agent remains unresponsive, its record stays
-available to the existing backend reconciler rather than deleting an active job.
-Network failure or abrupt tab shutdown can also leave the final temporary record
-for normal file/history cleanup. Cleanup failure stops further generation to
-avoid unlimited storage growth.
+the server has accepted it, its job can still finish and appear in history.
+Cancellation waits up to 30 seconds per in-flight job for a terminal status.
+If an agent remains unresponsive, its record stays available to the existing
+backend reconciler. Cancellation failures are surfaced without erasing history.
 
 Prompt favorites and recent templates use the separate `hallucinate-prompt`
 bucket in the shared Prompt API. The textarea's saved-prompts picker manages that

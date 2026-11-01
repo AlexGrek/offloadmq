@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
-async function mock(page: Page, options: { pending?: boolean; upscaleFail?: boolean; slowSubmit?: boolean; cancelTerminal?: boolean; cleanupFail?: boolean; hangPoll?: boolean; hangSubmit?: boolean } = {}) {
+async function mock(page: Page, options: { pending?: boolean; upscaleFail?: boolean; slowSubmit?: boolean; cancelTerminal?: boolean; hangPoll?: boolean; hangSubmit?: boolean } = {}) {
   const submissions: Record<string, unknown>[] = []
   const events: string[] = []
   let canceled = false
@@ -43,7 +43,6 @@ async function mock(page: Page, options: { pending?: boolean; upscaleFail?: bool
     if (path.startsWith('/api/images/files/')) { events.push(`load:${path.split('/').pop()}`); return route.fulfill({ body: PNG, contentType: 'image/png' }) }
     if (method === 'DELETE') {
       events.push(`delete:${path}`)
-      if (options.cleanupFail && path === '/api/img-utils/jobs/u') return route.fulfill({ status: 500, json: { error: 'Storage unavailable' } })
       return route.fulfill({ status: 204 })
     }
     return json({})
@@ -53,7 +52,7 @@ async function mock(page: Page, options: { pending?: boolean; upscaleFail?: bool
   return { submissions, events }
 }
 
-test('renders sequentially, substitutes every frame, and removes temporary jobs', async ({ page }) => {
+test('renders sequentially, substitutes every frame, and preserves generated history', async ({ page }) => {
   const { submissions, events } = await mock(page)
   await page.getByTestId('hallucinate-prompt').fill('A {scene} under a {color} sky')
   await page.getByTestId('hallucinate-start').click()
@@ -62,15 +61,16 @@ test('renders sequentially, substitutes every frame, and removes temporary jobs'
   await expect.poll(() => submissions.length, { timeout: 12000 }).toBe(2)
   expect(submissions[0].prompt).not.toContain('{')
   expect(submissions[0].prompt).not.toBe(submissions[1].prompt)
-  expect(events.indexOf('delete:/api/images/jobs/1')).toBeLessThan(events.lastIndexOf('generate'))
+  expect(events.some(event => event.startsWith('delete:'))).toBe(false)
   await page.getByTestId('hallucinate-pause').click()
   await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
   const count = submissions.length
   await page.waitForTimeout(6500)
   expect(submissions).toHaveLength(count)
+  expect(events.some(event => event.startsWith('delete:'))).toBe(false)
 })
 
-test('upscales ×2 before display and cleans both jobs', async ({ page }) => {
+test('upscales ×2 before display and preserves both histories', async ({ page }) => {
   const { submissions, events } = await mock(page)
   await page.getByLabel('Upscale before displaying').check()
   await page.getByTestId('hallucinate-start').click()
@@ -78,8 +78,9 @@ test('upscales ×2 before display and cleans both jobs', async ({ page }) => {
   expect(submissions[1]).toMatchObject({ input_image_id: '10', workflow: 'upscale', options: { scale_multiplier: 2 } })
   expect(events).toContain('load:20')
   expect(events).not.toContain('load:10')
-  await expect.poll(() => events.includes('delete:/api/img-utils/jobs/u')).toBe(true)
   await page.getByTestId('hallucinate-pause').click()
+  await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
+  expect(events.some(event => event.startsWith('delete:'))).toBe(false)
 })
 
 test('stopping during submission cancels the eventual task without scheduling another', async ({ page }) => {
@@ -88,9 +89,9 @@ test('stopping during submission cancels the eventual task without scheduling an
   await expect.poll(() => submissions.length).toBe(1)
   await page.getByTestId('hallucinate-pause').click()
   await expect.poll(() => events.includes('cancel')).toBe(true)
-  await expect.poll(() => events.includes('delete:/api/images/jobs/1')).toBe(true)
   await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
   expect(submissions).toHaveLength(1)
+  expect(events.some(event => event.startsWith('delete:'))).toBe(false)
 })
 
 test('navigation cancels work', async ({ page }) => {
@@ -139,32 +140,44 @@ test('paused → settings → wallpaper remains resumable', async ({ page }) => 
   await expect(page.getByRole('status')).toHaveText('Paused')
 })
 
-test('Pause aborts a stalled poll and still cleans the task', async ({ page }) => {
+test('Pause aborts a stalled poll and cancels without deleting history', async ({ page }) => {
   const { events } = await mock(page, { hangPoll: true, pending: true })
   await page.getByTestId('hallucinate-start').click()
   await expect.poll(() => events.includes('poll-hung')).toBe(true)
   await page.getByTestId('hallucinate-pause').click()
   await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
-  await expect.poll(() => events.includes('delete:/api/images/jobs/1')).toBe(true)
+  expect(events).toContain('cancel')
+  expect(events.some(event => event.startsWith('delete:'))).toBe(false)
 })
 
-test('cancellation racing completion still deletes the terminal job', async ({ page }) => {
+test('cancellation racing completion preserves the completed job', async ({ page }) => {
   const { events } = await mock(page, { pending: true, cancelTerminal: true })
   await page.getByTestId('hallucinate-start').click()
   await expect.poll(() => events.includes('generate')).toBe(true)
   await page.getByTestId('hallucinate-pause').click()
-  await expect.poll(() => events.includes('delete:/api/images/jobs/1')).toBe(true)
   await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
   await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(events.some(event => event.startsWith('delete:'))).toBe(false)
 })
 
-test('upscale cleanup failure does not skip generation cleanup or hide the error', async ({ page }) => {
-  const { events } = await mock(page, { cleanupFail: true })
+test('upscale cancellation failure is visible and preserves the generated input', async ({ page }) => {
+  const { events, submissions } = await mock(page)
+  let cancelAttempted = false
+  await page.route('**/api/img-utils/jobs/u/cancel', route => {
+    cancelAttempted = true
+    return route.fulfill({ status: 500, json: { error: 'Agent unreachable' } })
+  })
+  await page.route('**/api/img-utils/jobs/u/poll', route => cancelAttempted
+    ? route.fulfill({ status: 500, json: { error: 'Agent unreachable' } })
+    : route.fulfill({ json: { job_id: 'u', status: 'running', stage: 'Upscaling' } }))
   await page.getByLabel('Upscale before displaying').check()
   await page.getByTestId('hallucinate-start').click()
-  await expect(page.getByRole('alert')).toContainText('Temporary wallpaper cleanup failed')
-  await expect.poll(() => events.includes('delete:/api/images/jobs/1')).toBe(true)
+  await expect(page.getByTestId('hallucinate-job-status')).toContainText('Upscale · Running')
+  await page.getByTestId('hallucinate-pause').click()
+  await expect(page.getByRole('alert')).toContainText('Wallpaper cancellation failed')
   await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
+  expect(events.some(event => event.startsWith('delete:'))).toBe(false)
+  expect(submissions).toHaveLength(2)
 })
 
 test('controls fade after Resume even while its button retains focus', async ({ page }) => {

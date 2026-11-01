@@ -1,12 +1,12 @@
-import { cancelImageJob, deleteImageJob, imageFileUrl, pollImageJob, startImageJob } from '@/api/images'
-import { cancelImgUtilsJob, deleteImgUtilsJob, pollImgUtilsJob, startImgUtilsJob, type ImgUtilTool } from '@/api/imgUtils'
+import { cancelImageJob, imageFileUrl, pollImageJob, startImageJob } from '@/api/images'
+import { cancelImgUtilsJob, pollImgUtilsJob, startImgUtilsJob, type ImgUtilTool } from '@/api/imgUtils'
 import { listPromptPlaceholders } from '@/api/promptPlaceholders'
 import { createPlaceholderUsage, expandPromptPlaceholders } from './promptPlaceholders'
 
 export const HALLUCINATE_BUCKET = 'hallucinate-prompt'
 export const FADE_MS = 6000
 const REQUEST_TIMEOUT_MS = 15000
-const CLEANUP_TIMEOUT_MS = 30000
+const CANCELLATION_TIMEOUT_MS = 30000
 
 /** Submit has a deadline but must still return its ID after Pause so we can cancel it. */
 export function wallpaperRequestSignal(signal?: AbortSignal): AbortSignal {
@@ -14,7 +14,7 @@ export function wallpaperRequestSignal(signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
-export class WallpaperCleanupError extends Error {}
+export class WallpaperCancellationError extends Error {}
 export const WALLPAPER_SIZES = [
   { ratio: '16:9', color: 'border-cyan-500', sizes: [[768, 432], [1024, 576], [1280, 720], [1536, 864], [1920, 1080]] },
   { ratio: '3:2', color: 'border-violet-500', sizes: [[768, 512], [1152, 768], [1536, 1024]] },
@@ -169,7 +169,7 @@ export async function runWallpaper(
           } else await delay(3000, signal)
         }
       }
-      // Own the bytes before removing temporary storage; only two blobs live in the UI.
+      // Browser memory holds only the fading pair; originals remain in the shared histories.
       const response = await fetch(imageFileUrl(imageId, token), { signal: wallpaperRequestSignal(signal) })
       if (!response.ok) throw new Error(`Cannot load wallpaper (HTTP ${response.status}).`)
       const url = URL.createObjectURL(await response.blob())
@@ -184,8 +184,8 @@ export async function runWallpaper(
         onFrame(url)
         lastFrameAt = performance.now()
       } catch (error) { URL.revokeObjectURL(url); throw error }
-      if (upscale) { await deleteImgUtilsJob(token, upscale, wallpaperRequestSignal()); upscale = undefined }
-      await deleteImageJob(token, generation, wallpaperRequestSignal())
+      // Retire local tracking only. Both jobs and their images stay in history.
+      upscale = undefined
       generation = undefined
       onStage('Dreaming')
     }
@@ -193,43 +193,39 @@ export async function runWallpaper(
     failure = error
   }
   // Cancellation can race completion: a 400 from Cancel must not skip the final poll.
-  // Each resource has its own deadline, so a broken upscale never skips generation cleanup.
-  const clean = async (id: string, kind: 'generation' | 'upscale', done: boolean) => {
-    const deadline = AbortSignal.timeout(CLEANUP_TIMEOUT_MS)
+  // Each job has its own deadline. Cancellation never deletes history or output files.
+  const cancelPendingJob = async (id: string, kind: 'generation' | 'upscale', done: boolean) => {
+    if (done) return
+    const deadline = AbortSignal.timeout(CANCELLATION_TIMEOUT_MS)
     const requestSignal = () => AbortSignal.any([deadline, AbortSignal.timeout(5000)])
-    if (!done) {
-      try {
-        if (kind === 'generation') await cancelImageJob(token, id, requestSignal())
-        else await cancelImgUtilsJob(token, id, requestSignal())
-      } catch {
-        // A terminal job rejects cancellation; polling below distinguishes this
-        // benign race from a task still executing or an unavailable backend.
-      }
-      while (!done) {
-        const result = kind === 'generation'
-          ? await pollImageJob(token, id, requestSignal())
-          : await pollImgUtilsJob(token, id, requestSignal())
-        done = isWallpaperJobTerminal(result.status)
-        if (currentJob?.jobId === id && currentJob.kind === kind) reportPoll(result)
-        if (!done) await delay(1500, deadline)
-      }
+    try {
+      if (kind === 'generation') await cancelImageJob(token, id, requestSignal())
+      else await cancelImgUtilsJob(token, id, requestSignal())
+    } catch {
+      // A terminal job rejects cancellation; polling below distinguishes this
+      // benign race from a task still executing or an unavailable backend.
     }
-    // Executing rows stay available to the backend reconciler.
-    if (kind === 'generation') await deleteImageJob(token, id, requestSignal())
-    else await deleteImgUtilsJob(token, id, requestSignal())
+    while (!done) {
+      const result = kind === 'generation'
+        ? await pollImageJob(token, id, requestSignal())
+        : await pollImgUtilsJob(token, id, requestSignal())
+      done = isWallpaperJobTerminal(result.status)
+      if (currentJob?.jobId === id && currentJob.kind === kind) reportPoll(result)
+      if (!done) await delay(1500, deadline)
+    }
   }
   const errors: string[] = []
   if (upscale) {
-    try { await clean(upscale, 'upscale', upscaleDone) }
+    try { await cancelPendingJob(upscale, 'upscale', upscaleDone) }
     catch (error) { errors.push(`upscale ${upscale}: ${String(error)}`) }
   }
   if (generation) {
-    try { await clean(generation, 'generation', generationDone) }
+    try { await cancelPendingJob(generation, 'generation', generationDone) }
     catch (error) { errors.push(`generation ${generation}: ${String(error)}`) }
   }
   if (errors.length) {
     const original = failure && !signal.aborted ? `${String(failure)}. ` : ''
-    throw new WallpaperCleanupError(`${original}Temporary wallpaper cleanup failed: ${errors.join('; ')}`)
+    throw new WallpaperCancellationError(`${original}Wallpaper cancellation failed: ${errors.join('; ')}`)
   }
   if (failure) throw failure
 }

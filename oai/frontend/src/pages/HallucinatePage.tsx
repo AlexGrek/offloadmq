@@ -9,7 +9,7 @@ import { SavedPromptsDrawer } from '@/components/prompts/SavedPromptsDrawer'
 import { Button } from '@/components/ui/button'
 import { WallpaperJobStatus } from '@/components/hallucinate/WallpaperJobStatus'
 import { filterCapabilitiesByWorkflow } from '@/lib/imggen'
-import { FADE_MS, HALLUCINATE_BUCKET, runWallpaper, wallpaperRequestSignal, WallpaperCleanupError, WALLPAPER_SIZES, isWallpaperJobTerminal, type WallpaperJobProgress } from '@/lib/hallucinate'
+import { FADE_MS, HALLUCINATE_BUCKET, runWallpaper, wallpaperRequestSignal, WallpaperCancellationError, WALLPAPER_SIZES, isWallpaperJobTerminal, type WallpaperJobProgress } from '@/lib/hallucinate'
 
 export default function HallucinatePage() {
   const { token } = useAuth()
@@ -118,7 +118,7 @@ export default function HallucinatePage() {
           ? { ...job, status: 'cancelRequested' } : job)
       })
     } catch (e) {
-      if (mounted.current && (!abort.signal.aborted || e instanceof WallpaperCleanupError)) setError(e instanceof Error ? e.message : String(e))
+      if (mounted.current && (!abort.signal.aborted || e instanceof WallpaperCancellationError)) setError(e instanceof Error ? e.message : String(e))
     } finally {
       controller.current = null
       if (mounted.current) { setRunning(false); setStage('Paused') }
@@ -184,7 +184,7 @@ export default function HallucinatePage() {
             {running && <Button variant="outline" onClick={stop}>Stop</Button>}
             {!!frames.length && <Button variant="outline" onClick={() => setDisplay(true)}>Return to wallpaper</Button>}
           </div>
-          <p className="text-xs text-muted-foreground">Runs while this page is open. Hidden tabs pause new renders. Images are temporary; your prompt library is saved separately.</p>
+          <p className="text-xs text-muted-foreground">Runs while this page is open. Hidden tabs pause new renders. Images are saved in Image Generation and Image Tools history.</p>
           {!display && <p role="status" className="text-sm text-muted-foreground">{stage}</p>}
           {!display && error && <p role="alert" className="text-destructive">{error}</p>}
         </section>
