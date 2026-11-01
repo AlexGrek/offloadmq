@@ -192,13 +192,13 @@ export default function HallucinatePage() {
       {display && <div ref={surface} className="hallucinate-display fixed inset-0 z-50 overflow-hidden bg-black text-white" data-testid="hallucinate-display">
         {frames.map((url, i) => <img key={url} src={url} alt="Live generated wallpaper" className={`absolute inset-0 h-full w-full bg-black object-contain ${i === frames.length - 1 ? 'hallucinate-frame' : ''}`} style={{ animationDuration: `${FADE_MS}ms` }} />)}
         {!frames.length && <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-violet-950 via-black to-cyan-950"><Sparkles className="size-16 animate-pulse text-violet-300" /></div>}
-        <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-4 bg-gradient-to-t from-black/85 to-transparent p-4 pt-16 sm:p-8 sm:pt-20">
+        <div data-testid="hallucinate-controls" className={`hallucinate-controls absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-4 bg-gradient-to-t from-black/85 to-transparent p-4 pt-16 sm:p-8 sm:pt-20 ${running && !error && !controlsVisible ? 'hallucinate-controls-hidden' : ''}`}>
           <div className="min-w-0 w-full space-y-3 sm:max-w-lg sm:flex-1">
             <div><p className="font-display text-xl">Hallucinate</p><p role="status" className="text-xs text-white/70">{stage}</p></div>
             {currentJob && <WallpaperJobStatus key={`${currentJob.kind}:${currentJob.submittedAt}`} job={currentJob} active={running} />}
             {error && <p role="alert" className="max-w-xl break-words text-sm text-rose-300">{error}</p>}
           </div>
-          <div data-testid="hallucinate-controls" className={`hallucinate-controls flex gap-2 ${running && !error && !controlsVisible ? 'hallucinate-controls-hidden' : ''}`}>
+          <div className="flex gap-2">
             <Button variant="secondary" onClick={running ? stop : () => void start()} disabled={stage === 'Stopping…'} aria-label={running ? 'Pause wallpaper' : 'Resume wallpaper'} data-testid="hallucinate-pause">{running ? <Pause /> : <Play />}</Button>
             <Button variant="secondary" aria-label="Wallpaper settings" onClick={() => { stop(); setDisplay(false); if (document.fullscreenElement) void document.exitFullscreen().catch(() => {}) }}><Settings2 /></Button>
             <Button variant="secondary" onClick={() => void toggleFullscreen()} aria-label={fullscreen ? 'Exit browser fullscreen' : 'Enter browser fullscreen'}>{fullscreen ? <Minimize /> : <Expand />}</Button>

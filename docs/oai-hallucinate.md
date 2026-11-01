@@ -5,9 +5,11 @@ model, a prompt template, and a canvas preset. Start opens a window-filling imag
 surface with a six-second fade between images. Display controls pause/resume,
 return to settings, and toggle browser fullscreen. Reduced-motion preferences
 disable the fade. Images always keep their proportions and fit completely within
-the screen, with black bars when the screen and image aspect ratios differ. Display controls fade
-away after four seconds of inactivity and return on pointer or keyboard activity.
-The runtime status stays visible: current generation/upscale step, job ID, status,
+the screen, with black bars when the screen and image aspect ratios differ.
+The entire runtime overlay (status, timings, progress, buttons, and background)
+fades away after four seconds of inactivity and returns on pointer or keyboard
+activity. Pausing or encountering an error keeps the overlay visible.
+The runtime status shows: current generation/upscale step, job ID, status,
 queue time, execution time, and total elapsed time. Its progress bar uses the
 backend's typical-runtime estimate once execution starts; queued jobs and jobs
 without estimates use an indeterminate bar. Timings update between polls and

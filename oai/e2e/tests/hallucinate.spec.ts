@@ -226,7 +226,7 @@ test('runtime status distinguishes queue time from execution and advances betwee
   expect(await page.getByTestId('hallucinate-job-timings').textContent()).toBe(frozen)
 })
 
-test('runtime upscale status uses its own timings and stays visible while buttons hide on mobile', async ({ page }) => {
+test('runtime upscale status and buttons hide together and return on mouse movement on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 })
   await mock(page)
   const createdAt = new Date(Date.now() - 20000).toISOString()
@@ -250,10 +250,13 @@ test('runtime upscale status uses its own timings and stays visible while button
   await expect(job).toContainText('Queue 10s')
   await expect(job).not.toContainText('Render')
   await expect(page.getByTestId('hallucinate-controls')).toHaveCSS('opacity', '0', { timeout: 6500 })
-  await expect(job).toBeVisible()
-  await expect(job).toHaveCSS('opacity', '1')
+  await expect(page.getByTestId('hallucinate-controls').getByTestId('hallucinate-job-status')).toHaveCount(1)
+  await expect(page.getByTestId('hallucinate-controls')).toHaveCSS('pointer-events', 'none')
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
   await page.mouse.move(10, 10)
+  await expect(page.getByTestId('hallucinate-controls')).toHaveCSS('opacity', '1')
+  await expect(job.getByRole('progressbar')).toBeVisible()
   await page.getByTestId('hallucinate-pause').click()
   await expect(job).toContainText('Canceled')
+  await expect(page.getByTestId('hallucinate-controls')).toHaveCSS('opacity', '1')
 })
