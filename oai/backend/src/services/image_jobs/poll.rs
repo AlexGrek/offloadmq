@@ -283,8 +283,13 @@ pub(super) async fn poll_and_persist(
 
     // Never write a delayed generation response into a row already replaced by
     // the upscale stage. Hold the promotion lock only for these DB writes.
-    let _lock = image_generation::try_lock_output_download(&state.db, task.job_id)
-        .await?.ok_or_else(|| AppError::BadRequest("job is being reconciled; retry poll".into()))?;
+    // The page, the SPA shell and the worker all poll the same job, so a busy
+    // lock is routine, not an error: whoever holds it is already persisting a
+    // fresh snapshot, and the next poll picks up the rest. Failing here would
+    // surface as a hard poll error and kill clients that stop on the first one.
+    let Some(_lock) = image_generation::try_lock_output_download(&state.db, task.job_id).await? else {
+        return Ok(poll);
+    };
     let current = image_generation::get_offload_task_by_job(&state.db, task.job_id).await?;
     if current.as_ref().is_some_and(|c| c.offload_task_id != task.offload_task_id
         || c.offload_cap != task.offload_cap) {
