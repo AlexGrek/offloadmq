@@ -103,6 +103,7 @@ Submits a task to the queue. Returns immediately with task ID. Can be urgent or 
 | `capability` | string | Yes | Base capability required (e.g., `"llm.mistral"`, `"vision"`) — extended attributes are stripped on matching |
 | `payload` | object | Yes | Task-specific data (any valid JSON) — passed to agent as-is |
 | `urgent` | boolean | No (default: false) | If true, stored in-memory with 60s TTL; if false, persisted to DB |
+| `priority` | integer | No (default: 1) | Scheduling priority for **non-urgent** tasks: `0` low, `1` regular, `2` high, `3` critical. Higher-priority tasks are handed out first; FIFO by creation time within one priority. Missing or `null` means `1`; any other value is rejected. Ignored for urgent tasks (their queue is strictly FIFO). See [Task priority](#task-priority). |
 | `restartable` | boolean | No (default: false) | If true, task can be retried on another agent if it fails |
 | `timeoutSecs` | integer | No | Total wall-clock timeout in seconds, measured from task **creation** (not from when the agent picks it up). Covers both the wait-for-agent phase and the execution phase. When this deadline is reached the server sends a stop signal (HTTP 499) to any executing agent and marks the task failed. No server-side deadline if omitted; agents fall back to `runtimeSecs` or their own defaults (~600 s). |
 | `maxWaitSecs` | integer | No | Maximum seconds to wait for an agent to pick up the task. If no agent claims the task within this window the task fails immediately with no execution. For urgent tasks the default is 60 s; for persistent tasks the default is no wait limit. If `timeoutSecs` is also set the effective wait limit is `min(maxWaitSecs, timeoutSecs)`. |
@@ -1032,8 +1033,28 @@ Same structure as urgent polling, but tasks come from persistent DB.
 When multiple agents can handle a task:
 1. Find the **highest tier** among all online agents with the required capability
 2. If your tier < max tier, **skip this task** (reserved for higher-tier agents)
-3. If your tier >= max tier, you're eligible; you receive the **oldest** eligible task (strict FIFO by `createdAt`, task id as tie-break)
+3. If your tier >= max tier, you're eligible; you receive the eligible task with the **highest `priority`**, and among those the **oldest** (FIFO by `createdAt`, task id as tie-break)
 4. This ensures premium agents get priority while fallback agents still get work
+
+<a id="task-priority"></a>
+**Task priority**
+
+Non-urgent tasks carry an integer `priority`, set by the client on submit:
+
+| Value | Meaning |
+|-------|---------|
+| `0` | low |
+| `1` | regular — the default when `priority` is omitted or `null` |
+| `2` | high |
+| `3` | critical |
+
+Priority orders tasks *after* eligibility: the capability, `runner`, and tier
+filters above decide which tasks an agent may take, and priority only picks
+among those. It is strict — a lower-priority task is handed out only when no
+higher-priority task is eligible for that agent, so a steady stream of high
+priority work can hold low priority tasks back indefinitely (use `maxWaitSecs`
+if a low priority task must not wait forever). Tasks stored before the field
+existed are treated as `1`. The urgent queue ignores `priority`.
 
 **Notes**
 

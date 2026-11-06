@@ -73,6 +73,7 @@ def _build_task(
     api_key: str,
     target_agent_id: Optional[str],
     source: str,
+    priority: Optional[int] = None,
     timeout_secs: Optional[int] = None,
     max_wait_secs: Optional[int] = None,
     runtime_secs: Optional[int] = None,
@@ -84,6 +85,7 @@ def _build_task(
         {
             "capability": capability,
             "urgent": urgent,
+            "priority": priority,
             "restartable": restartable,
             "payload": payload,
             "fetch_files": [],
@@ -129,6 +131,7 @@ async def generate_for_capability(req: GenerateTasksRequest) -> dict:
             api_key=api_key,
             target_agent_id=req.target_agent_id,
             source="generate_for_capability",
+            priority=req.priority,
             timeout_secs=req.timeout_secs,
             max_wait_secs=req.max_wait_secs,
             runtime_secs=req.runtime_secs,

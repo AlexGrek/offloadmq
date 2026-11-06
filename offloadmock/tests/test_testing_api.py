@@ -338,3 +338,39 @@ def test_templates_endpoint_lists_known_caps_and_slavemode():
     body = client.get("/testing/templates", headers=MGMT_HEADERS).json()
     assert "debug.echo" in body["capabilities"]
     assert "slavemode.force-rescan" in body["slavemodeCommands"]
+
+
+def test_non_urgent_poll_returns_highest_priority_first():
+    _reset()
+    agent_id, key = _register(["debug.echo"])
+    headers = _auth(agent_id, key)
+
+    # Submitted low → critical so FIFO alone would give the wrong order.
+    for priority in [0, None, 1, 2, 3]:
+        body = {"capability": "debug.echo", "count": 1}
+        if priority is not None:
+            body["priority"] = priority
+        resp = client.post(
+            "/testing/tasks/generate_for_capability", headers=MGMT_HEADERS, json=body
+        )
+        assert resp.status_code == 200, resp.text
+
+    order = []
+    while True:
+        task = client.get("/private/agent/task/poll", headers=headers).json()
+        if task is None:
+            break
+        order.append(task["data"]["priority"])
+        cap, tid = task["id"]["cap"], task["id"]["id"]
+        assert client.post(f"/private/agent/take/{cap}/{tid}", headers=headers).status_code == 200
+    # The two regular tasks (missing priority, explicit 1) keep FIFO order.
+    assert order == [3, 2, 1, 1, 0]
+
+
+def test_generate_rejects_unknown_priority():
+    resp = client.post(
+        "/testing/tasks/generate_for_capability",
+        headers=MGMT_HEADERS,
+        json={"capability": "debug.echo", "priority": 4},
+    )
+    assert resp.status_code in (400, 422), resp.text

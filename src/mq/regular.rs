@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::Reverse, sync::Arc};
 
 use anyhow::Result;
 use chrono::Utc;
@@ -89,15 +89,19 @@ impl RegularTaskStore {
             .map(|task| task.assign_to(agent_id))
     }
 
-    /// Pick the next assignable non-urgent task for an agent, **oldest first**.
+    /// Pick the next assignable non-urgent task for an agent: **highest
+    /// priority first, then oldest first**.
     ///
-    /// Selection is strict FIFO by `created_at` (task id as a deterministic
-    /// tie-break, since ids are incremental): the longest-waiting eligible task
-    /// always wins, so a queue that is drained slower than it fills can never
-    /// starve its earliest entries. Insertion order of the underlying `IndexMap`
-    /// is deliberately *not* used as the ordering key — tasks reloaded from Sled
-    /// on startup or re-added by the reconcile sweep arrive in key order, not
-    /// creation order.
+    /// Among eligible tasks the highest
+    /// [`TaskPriority`](crate::schema::TaskPriority) wins; lower priorities
+    /// only run when nothing higher is eligible for this agent. Within one
+    /// priority, selection is strict FIFO by `created_at` (task id as a
+    /// deterministic tie-break, since ids are incremental): the longest-waiting
+    /// task always wins, so a priority level that is drained slower than it
+    /// fills can never starve its earliest entries. Insertion order of the
+    /// underlying `IndexMap` is deliberately *not* used as the ordering key —
+    /// tasks reloaded from Sled on startup or re-added by the reconcile sweep
+    /// arrive in key order, not creation order.
     pub async fn find_with_capabilities_for_tier(
         &self,
         caps: &Vec<String>,
@@ -106,7 +110,7 @@ impl RegularTaskStore {
         agent_uid: &str,
     ) -> Option<UnassignedTask> {
         let tasks = self.tasks.read().await;
-        let mut oldest: Option<&UnassignedTask> = None;
+        let mut best: Option<&UnassignedTask> = None;
 
         for task in tasks.values() {
             // Match on base capability for BOTH sides. Clients are supposed to
@@ -147,19 +151,27 @@ impl RegularTaskStore {
                 continue;
             }
 
-            let is_older = match oldest {
+            let is_better = match best {
                 None => true,
                 Some(best) => {
-                    (task.created_at, task.id.id.as_str())
-                        < (best.created_at, best.id.id.as_str())
+                    // Higher priority first (hence `Reverse`), then FIFO.
+                    (
+                        Reverse(task.data.priority),
+                        task.created_at,
+                        task.id.id.as_str(),
+                    ) < (
+                        Reverse(best.data.priority),
+                        best.created_at,
+                        best.id.id.as_str(),
+                    )
                 }
             };
-            if is_older {
-                oldest = Some(task);
+            if is_better {
+                best = Some(task);
             }
         }
 
-        oldest.cloned()
+        best.cloned()
     }
 
     /// Fail queued non-urgent tasks that exceeded max wait or total timeout.
@@ -220,7 +232,7 @@ impl RegularTaskStore {
 mod tests {
     use super::*;
     use crate::models::{Agent, CommunicationMethod};
-    use crate::schema::{SystemInfo, TaskSubmissionRequest};
+    use crate::schema::{SystemInfo, TaskPriority, TaskSubmissionRequest};
     use chrono::TimeDelta;
 
     /// A sled-backed `AgentStorage` in a throwaway temp dir holding one online
@@ -261,6 +273,15 @@ mod tests {
     }
 
     fn task(cap: &str, id: &str, created_at: chrono::DateTime<Utc>) -> UnassignedTask {
+        prio_task(cap, id, created_at, TaskPriority::Regular)
+    }
+
+    fn prio_task(
+        cap: &str,
+        id: &str,
+        created_at: chrono::DateTime<Utc>,
+        priority: TaskPriority,
+    ) -> UnassignedTask {
         UnassignedTask {
             id: TaskId {
                 cap: cap.to_string(),
@@ -269,6 +290,7 @@ mod tests {
             data: TaskSubmissionRequest {
                 capability: cap.to_string(),
                 payload: serde_json::Value::Null,
+                priority,
                 ..Default::default()
             },
             created_at,
@@ -360,5 +382,81 @@ mod tests {
             .await
             .expect("a task is eligible");
         assert_eq!(picked.id.id, "t-1");
+    }
+    #[tokio::test]
+    async fn higher_priority_wins_over_older_tasks() {
+        let cap = "test.cap";
+        let (agents, _guard) = agent_storage_with_online_agent(cap);
+        let store = RegularTaskStore::new();
+
+        let now = Utc::now();
+        let low = prio_task(
+            cap,
+            "t-low",
+            now - TimeDelta::seconds(500),
+            TaskPriority::Low,
+        );
+        let regular_old = task(cap, "t-reg-old", now - TimeDelta::seconds(400));
+        let regular_new = task(cap, "t-reg-new", now - TimeDelta::seconds(300));
+        let high = prio_task(
+            cap,
+            "t-high",
+            now - TimeDelta::seconds(200),
+            TaskPriority::High,
+        );
+        let critical = prio_task(
+            cap,
+            "t-critical",
+            now - TimeDelta::seconds(100),
+            TaskPriority::Critical,
+        );
+        for t in [&low, &regular_old, &regular_new, &high, &critical] {
+            store.add_task(t.clone()).await;
+        }
+
+        let caps = vec![cap.to_string()];
+        let mut order = Vec::new();
+        while let Some(picked) = store
+            .find_with_capabilities_for_tier(&caps, 0, &agents, "agent-1")
+            .await
+        {
+            store.remove_task(&picked.id).await;
+            order.push(picked.id.id);
+        }
+        assert_eq!(
+            order,
+            ["t-critical", "t-high", "t-reg-old", "t-reg-new", "t-low"]
+        );
+    }
+
+    #[tokio::test]
+    async fn priority_does_not_bypass_capability_match() {
+        let cap = "test.cap";
+        let (agents, _guard) = agent_storage_with_online_agent(cap);
+        let store = RegularTaskStore::new();
+
+        let now = Utc::now();
+        store
+            .add_task(prio_task(
+                "other.cap",
+                "t-critical-other",
+                now - TimeDelta::seconds(10),
+                TaskPriority::Critical,
+            ))
+            .await;
+        store
+            .add_task(prio_task(
+                cap,
+                "t-low",
+                now - TimeDelta::seconds(5),
+                TaskPriority::Low,
+            ))
+            .await;
+
+        let picked = store
+            .find_with_capabilities_for_tier(&vec![cap.to_string()], 0, &agents, "agent-1")
+            .await
+            .expect("a task is eligible");
+        assert_eq!(picked.id.id, "t-low");
     }
 }

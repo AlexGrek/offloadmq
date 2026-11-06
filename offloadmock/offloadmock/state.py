@@ -389,10 +389,18 @@ class AppStore:
             return n
 
     def poll_for(self, agent: Agent, urgent: bool) -> Optional[MockTask]:
-        """First unassigned task whose base capability matches the agent."""
+        """Next unassigned task whose base capability matches the agent.
+
+        Urgent: oldest first. Non-urgent: highest ``priority`` first, oldest
+        first within one priority — mirrors ``RegularTaskStore``.
+        """
         agent_bases = {base_capability(c) for c in agent.capabilities}
         with self._lock:
-            for task in self.tasks.values():
+            candidates = list(self.tasks.values())
+            if not urgent:
+                # Stable sort keeps insertion (= creation) order within a level.
+                candidates.sort(key=lambda t: -t.data.priority)
+            for task in candidates:
                 if not task.is_assignable():
                     continue
                 if task.urgent != urgent:

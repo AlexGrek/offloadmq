@@ -83,7 +83,7 @@ The same client API key is used for both the Task API and the Storage API.
 
 ### Task API — mostly camelCase
 
-Request fields: `apiKey`, `capability`, `urgent`, `restartable`, `timeoutSecs`, `maxWaitSecs`, `runtimeSecs`, `payload`, `fetchFiles`, `file_bucket`, `output_bucket`
+Request fields: `apiKey`, `capability`, `urgent`, `priority` (non-urgent only: 0 low, 1 regular, 2 high, 3 critical), `restartable`, `timeoutSecs`, `maxWaitSecs`, `runtimeSecs`, `payload`, `fetchFiles`, `file_bucket`, `output_bucket`
 
 Response fields: `id`, `status`, `createdAt`, `stage`, `output`, `log`, `typicalRuntimeSeconds`, `agentId`, `assignedAt`, `createdAt`
 

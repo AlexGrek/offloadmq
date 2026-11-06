@@ -24,6 +24,7 @@ from pydantic import (
     Field,
     RootModel,
     field_serializer,
+    field_validator,
     model_validator,
 )
 from pydantic.alias_generators import to_camel
@@ -211,9 +212,28 @@ class FileReference(CamelModel):
     custom_auth: Optional[str] = None
 
 
+# Mirrors `TaskPriority`: only these integers are accepted; missing/null = 1.
+TASK_PRIORITIES = (0, 1, 2, 3)  # low, regular, high, critical
+DEFAULT_TASK_PRIORITY = 1
+
+
+def _validate_priority(v: Any) -> int:
+    if v is None:
+        return DEFAULT_TASK_PRIORITY
+    # bool is an int subclass; serde would reject `true` for a u8.
+    if isinstance(v, bool) or not isinstance(v, int) or v not in TASK_PRIORITIES:
+        raise ValueError(
+            f"invalid priority {v!r}: expected 0 (low), 1 (regular), "
+            "2 (high) or 3 (critical)"
+        )
+    return v
+
+
 class TaskSubmissionRequest(CamelModel):
     capability: str
     urgent: bool = False
+    # Honoured by the non-urgent queue only (highest first, FIFO within one).
+    priority: int = DEFAULT_TASK_PRIORITY
     restartable: bool = False
     payload: Any
     fetch_files: List[FileReference] = Field(default_factory=list)
@@ -226,6 +246,11 @@ class TaskSubmissionRequest(CamelModel):
     artifacts: List[FileReference] = Field(default_factory=list)
     data_preparation: Dict[str, str] = Field(default_factory=dict)
     api_key: str
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _priority(cls, v: Any) -> int:
+        return _validate_priority(v)
 
 
 class ApiKeyRequest(CamelModel):
@@ -320,11 +345,17 @@ class GenerateTasksRequest(CamelModel):
     # Restrict polling to a single agent (useful for slavemode targeting).
     target_agent_id: Optional[str] = None
     # Pass-through submission knobs.
+    priority: int = DEFAULT_TASK_PRIORITY
     timeout_secs: Optional[int] = Field(default=None, alias="timeoutSecs")
     max_wait_secs: Optional[int] = Field(default=None, alias="maxWaitSecs")
     runtime_secs: Optional[int] = Field(default=None, alias="runtimeSecs")
     file_bucket: List[str] = Field(default_factory=list, alias="file_bucket")
     output_bucket: Optional[str] = Field(default=None, alias="output_bucket")
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _priority(cls, v: Any) -> int:
+        return _validate_priority(v)
 
 
 class IssueSlavemodeCommandRequest(CamelModel):

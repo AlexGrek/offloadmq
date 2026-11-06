@@ -265,9 +265,10 @@ For each non-urgent task matching capability:
      - Skip task (reserve for higher-tier agents)
   4. Else:
      - Include task in available pool
-  5. Select the OLDEST eligible task (FIFO by createdAt, task id as tie-break)
+  5. Select the HIGHEST-PRIORITY eligible task, then the OLDEST
+     (priority desc, createdAt asc, task id as tie-break)
 ```
-This ensures high-performance agents get priority while lower-tier agents still receive tasks when no higher-tier agents are online. Within the eligible pool the order is strict FIFO — the longest-waiting task is always handed out first, so a queue that fills faster than it drains never starves its earliest entries.
+This ensures high-performance agents get priority while lower-tier agents still receive tasks when no higher-tier agents are online. `priority` is a client-supplied integer on the submit request (`0` low, `1` regular — the default when omitted, `2` high, `3` critical; other values are rejected) — `TaskPriority` in [src/schema.rs](src/schema.rs). It is honoured by the non-urgent queue only; the urgent queue stays FIFO. Within one priority the order is strict FIFO — the longest-waiting task is always handed out first, so a queue that fills faster than it drains never starves its earliest entries (across priorities it is strict, so low-priority work waits while higher work is eligible).
 
 **Task Pickup** ([src/api/agent/mod.rs](src/api/agent/mod.rs) lines 130-145):
 1. Agent calls `POST /private/agent/take/{cap}/{id}`

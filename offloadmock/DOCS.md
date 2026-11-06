@@ -508,6 +508,7 @@ Request body (`GenerateTasksRequest`):
 | `payload` | any | `null` | Override; replaces the template payload verbatim |
 | `apiKey` | string | first `CLIENT_API_KEYS` | Stamped onto the synthetic submission |
 | `targetAgentId` | string | `null` | Restrict polling to this agent (404 if unknown) |
+| `priority` | int | `1` | `0`–`3`; non-urgent polls return the highest priority first (FIFO within one). Other values → 422 |
 | `timeoutSecs` / `maxWaitSecs` / `runtimeSecs` | int | `null` | Pass-through |
 | `file_bucket` / `output_bucket` | list[str] / str | `[]` / `null` | Pass-through (no validation) |
 

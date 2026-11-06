@@ -18,6 +18,52 @@ use crate::{
 //  Enums & Common Types
 //=============================================================================
 
+/// Scheduling priority of a task, sent on the wire as an integer.
+///
+/// Only the non-urgent (persistent) queue honours it: among the tasks an agent
+/// is eligible for, the highest priority wins, and FIFO by `createdAt` breaks
+/// ties within the same priority. The urgent queue stays strictly FIFO.
+///
+/// The variants are declared in ascending order so the derived `Ord` matches
+/// the numeric value. A missing or `null` priority means [`Regular`]
+/// (backwards compatible with clients and stored tasks that predate the field);
+/// any other number is rejected.
+///
+/// [`Regular`]: TaskPriority::Regular
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(try_from = "Option<u8>", into = "u8")]
+pub enum TaskPriority {
+    Low = 0,
+    #[default]
+    Regular = 1,
+    High = 2,
+    Critical = 3,
+}
+
+impl TryFrom<Option<u8>> for TaskPriority {
+    type Error = String;
+
+    fn try_from(value: Option<u8>) -> Result<Self, Self::Error> {
+        match value {
+            None | Some(1) => Ok(TaskPriority::Regular),
+            Some(0) => Ok(TaskPriority::Low),
+            Some(2) => Ok(TaskPriority::High),
+            Some(3) => Ok(TaskPriority::Critical),
+            Some(n) => Err(format!(
+                "invalid priority {n}: expected 0 (low), 1 (regular), 2 (high) or 3 (critical)"
+            )),
+        }
+    }
+}
+
+impl From<TaskPriority> for u8 {
+    fn from(value: TaskPriority) -> Self {
+        value as u8
+    }
+}
+
 /// Represents the overall status of a task in the system.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -303,6 +349,10 @@ pub struct TaskSubmissionRequest {
     /// If false, it will be queued persistently.
     #[serde(default)]
     pub urgent: bool,
+    /// Scheduling priority: 0 low, 1 regular (default), 2 high, 3 critical.
+    /// Only the non-urgent queue honours it — see [`TaskPriority`].
+    #[serde(default)]
+    pub priority: TaskPriority,
     /// If true, the task can be re-assigned to another agent upon failure.
     #[serde(default)]
     pub restartable: bool,
@@ -512,4 +562,87 @@ pub struct BucketStatResponse {
 pub struct DownloadedFile {
     pub data: Vec<u8>,
     pub original_name: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn submission(extra: Value) -> Result<TaskSubmissionRequest, serde_json::Error> {
+        let mut body = serde_json::json!({
+            "capability": "test.cap",
+            "payload": {},
+            "apiKey": "k",
+        });
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::from_value(body)
+    }
+
+    #[test]
+    fn priority_defaults_to_regular_when_missing_or_null() {
+        let req = submission(serde_json::json!({})).unwrap();
+        assert_eq!(req.priority, TaskPriority::Regular);
+        let req = submission(serde_json::json!({ "priority": null })).unwrap();
+        assert_eq!(req.priority, TaskPriority::Regular);
+    }
+
+    #[test]
+    fn priority_accepts_only_the_fixed_variants() {
+        for (n, expected) in [
+            (0, TaskPriority::Low),
+            (1, TaskPriority::Regular),
+            (2, TaskPriority::High),
+            (3, TaskPriority::Critical),
+        ] {
+            let req = submission(serde_json::json!({ "priority": n })).unwrap();
+            assert_eq!(req.priority, expected);
+            assert_eq!(serde_json::to_value(req.priority).unwrap(), n);
+        }
+        for bad in [
+            serde_json::json!(4),
+            serde_json::json!(-1),
+            serde_json::json!("high"),
+        ] {
+            assert!(submission(serde_json::json!({ "priority": bad })).is_err());
+        }
+    }
+
+    #[test]
+    fn priority_orders_by_numeric_value() {
+        assert!(TaskPriority::Low < TaskPriority::Regular);
+        assert!(TaskPriority::Regular < TaskPriority::High);
+        assert!(TaskPriority::High < TaskPriority::Critical);
+    }
+
+    /// Records written to Sled before the field existed must still decode.
+    #[test]
+    fn stored_request_without_priority_decodes_as_regular() {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct LegacyRequest {
+            capability: String,
+            urgent: bool,
+            payload: Value,
+            api_key: String,
+        }
+        let bytes = rmp_serde::to_vec_named(&LegacyRequest {
+            capability: "test.cap".into(),
+            urgent: false,
+            payload: serde_json::json!({}),
+            api_key: "k".into(),
+        })
+        .unwrap();
+        let req: TaskSubmissionRequest = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(req.priority, TaskPriority::Regular);
+
+        let high = TaskSubmissionRequest {
+            priority: TaskPriority::High,
+            ..req
+        };
+        let bytes = rmp_serde::to_vec_named(&high).unwrap();
+        let back: TaskSubmissionRequest = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(back.priority, TaskPriority::High);
+    }
 }
