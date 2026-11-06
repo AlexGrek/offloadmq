@@ -1,4 +1,4 @@
-import { Activity, Bot, Braces, Clapperboard, Eye, FolderOpen, GalleryVerticalEnd, GitCompareArrows, ImagePlus, MessageCircleMore, Music, Repeat2, ShieldAlert, Volume2, Wand2 } from 'lucide-react'
+import { Activity, Bot, Braces, Clapperboard, Eye, FolderOpen, GalleryVerticalEnd, GitCompareArrows, ImagePlus, MessageCircleMore, Music, Repeat2, ShieldAlert, Swords, Volume2, Wand2 } from 'lucide-react'
 
 /** Every app tile on the dashboard; also the source for the TopBar's most-used shortcuts. */
 export const apps = [
@@ -61,6 +61,16 @@ export const apps = [
     gradient: 'from-amber-500/20 to-rose-500/20',
     iconBg: 'bg-amber-500/20',
     iconColor: 'text-amber-400',
+  },
+  {
+    id: 'img-model-wars',
+    icon: Swords,
+    title: 'Img Model Wars',
+    description: 'Render one prompt with several image models side by side',
+    href: '/app/img-model-wars',
+    gradient: 'from-orange-500/20 to-red-500/20',
+    iconBg: 'bg-orange-500/20',
+    iconColor: 'text-orange-400',
   },
   {
     id: 'img-utils',

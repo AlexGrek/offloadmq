@@ -44,6 +44,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261020_000036_create_image_cycle_jobs::Migration),
             Box::new(m20261020_000037_image_cycle_apps::Migration),
             Box::new(m20261022_000038_user_prompt_defaults::Migration),
+            Box::new(m20261106_000039_create_img_model_war_jobs::Migration),
         ]
     }
 }
@@ -141,3 +142,7 @@ mod m20261020_000036_create_image_cycle_jobs;
 mod m20261020_000037_image_cycle_apps;
 
 mod m20261022_000038_user_prompt_defaults;
+
+/// Img Model Wars parent runs (one prompt, several imggen models; children are
+/// ordinary image-generation jobs).
+mod m20261106_000039_create_img_model_war_jobs;

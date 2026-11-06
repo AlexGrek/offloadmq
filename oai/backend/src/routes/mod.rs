@@ -25,5 +25,6 @@ pub mod names;
 pub mod oauth;
 
 pub mod image_cycles;
+pub mod img_model_wars;
 
 pub mod user_settings;

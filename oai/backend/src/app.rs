@@ -200,6 +200,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         )
         .nest("/api/image-cycles", routes::image_cycles::router("image-cycles"))
         .nest("/api/generator-improver", routes::image_cycles::router("generator-improver"))
+        .nest("/api/img-model-wars", routes::img_model_wars::router())
         .route("/api/describe/jobs", post(routes::describe::start_job))
         .route("/api/describe/jobs", get(routes::describe::list_jobs))
         .route(

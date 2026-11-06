@@ -29,3 +29,5 @@ pub mod users;
 pub mod image_cycle_jobs;
 
 pub mod user_prompt_defaults;
+
+pub mod img_model_war_jobs;

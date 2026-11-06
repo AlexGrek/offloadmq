@@ -14,6 +14,7 @@ import PromptPlaceholdersPage from './pages/PromptPlaceholdersPage'
 import DescribeImagePage from './pages/DescribeImagePage'
 import ImageCyclesPage from './pages/ImageCyclesPage'
 import GeneratorImproverPage from './pages/GeneratorImproverPage'
+import ImgModelWarsPage from './pages/ImgModelWarsPage'
 import NudeDetectorPage from './pages/NudeDetectorPage'
 import ImgUtilsPage from './pages/ImgUtilsPage'
 import RunnersPage from './pages/RunnersPage'
@@ -57,6 +58,7 @@ export default function App() {
             <Route path="describe" element={<DescribeImagePage />} />
             <Route path="image-cycles" element={<ImageCyclesPage key="image-cycles" />} />
             <Route path="generator-improver" element={<GeneratorImproverPage />} />
+            <Route path="img-model-wars" element={<ImgModelWarsPage />} />
             <Route path="nude-detect" element={<NudeDetectorPage />} />
             <Route path="img-utils" element={<ImgUtilsPage />} />
             <Route path="runners" element={<RunnersPage />} />
