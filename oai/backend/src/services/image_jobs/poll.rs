@@ -425,8 +425,8 @@ async fn promote_to_upscale(
     let client = offload_factory::image_client(state).await?;
     let out = client.create_bucket(false).await?;
     let payload = upscale_payload(&upscale, &input.filename);
-    let submitted = client.submit_img_task(&upscale.capability, payload,
-        Some(&input.bucket_uid), &out.bucket_uid, None).await;
+    let submitted = client.submit_img_task_with_priority(&upscale.capability, payload,
+        Some(&input.bucket_uid), &out.bucket_uid, None, params.high_priority).await;
     let (id, body) = match submitted {
         Ok(submitted) => submitted,
         Err(e) => {
@@ -491,12 +491,13 @@ pub(super) async fn promote_after_resize(
     let payload = build_promoted_payload(&params, &resized.filename);
     let data_prep = data_preparation_map(&params.data_preparation);
     let (task_id, submit_payload) = client
-        .submit_img_task(
+        .submit_img_task_with_priority(
             &crate::offload::base_capability(&params.capability).to_string(),
             payload,
             Some(&resized.bucket_uid),
             &output_bucket.bucket_uid,
             data_prep.as_ref(),
+            params.high_priority,
         )
         .await?;
 

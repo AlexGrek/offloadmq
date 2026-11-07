@@ -70,6 +70,11 @@ pub struct ImagePipelineParams {
     /// before the option existed deserialize as `false`.
     #[serde(default)]
     pub external_resize: bool,
+    /// Submit this job's OffloadMQ tasks at high priority (2) instead of
+    /// regular, so they jump the non-urgent queue. Replayed on retry / "Edit
+    /// prompt"; jobs created before the option deserialize as `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub high_priority: bool,
     /// Raw prompt before placeholder expansion (see `StartJobParams::prompt_template`);
     /// replayed on retry so the retried result also refreshes the saved-prompt preview.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -102,6 +107,7 @@ impl ImagePipelineParams {
             video_length: None,
             // Predates the option, so it can never have been used.
             external_resize: false,
+            high_priority: false,
             prompt_template: None,
             rescale: if job.workflow == "img2img" {
                 Some(RescaleParams {

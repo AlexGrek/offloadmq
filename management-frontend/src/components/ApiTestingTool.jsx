@@ -19,10 +19,10 @@ const ENDPOINTS = [
     pathParams: [],
     queryParams: [],
     bodyExample: JSON.stringify(
-      { capability: 'llm.mistral', payload: { prompt: 'What is 2+2?' }, urgent: false },
+      { capability: 'llm.mistral', payload: { prompt: 'What is 2+2?' }, urgent: false, priority: 1 },
       null, 2,
     ),
-    description: 'Submit a task to the queue. Returns immediately with task ID.',
+    description: 'Submit a task to the queue. Returns immediately with task ID. priority (non-urgent only): 0 low, 1 regular (default), 2 high, 3 critical — higher is picked up first.',
   },
   {
     group: 'Client — Tasks',

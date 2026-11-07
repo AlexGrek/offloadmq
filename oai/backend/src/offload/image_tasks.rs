@@ -156,28 +156,38 @@ impl OffloadImageClient {
         output_bucket_uid: &str,
         data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
     ) -> Result<(OffloadTaskId, serde_json::Value), AppError> {
-        // The agent uses runtimeSecs as its ComfyUI completion-wait budget.
-        // Video generation is far slower than still images, so give video
-        // workflows a 3-hour budget by default; images keep a 2-hour budget.
-        let workflow = payload.get("workflow").and_then(|w| w.as_str()).unwrap_or("");
-        let is_video = matches!(workflow, "txt2video" | "img2video");
-        let runtime_secs: u64 = if is_video { 3 * 3600 } else { 2 * 3600 };
-        let mut body = serde_json::json!({
-            "apiKey": self.api_key,
-            "capability": capability,
-            "urgent": false,
-            "payload": payload,
-            "output_bucket": output_bucket_uid,
-            "timeoutSecs": 24 * 3600u64,
-            "maxWaitSecs": 24 * 3600u64,
-            "runtimeSecs": runtime_secs
-        });
-        if let Some(input_bucket) = input_bucket_uid {
-            body["file_bucket"] = serde_json::json!([input_bucket]);
-        }
-        if let Some(prep) = data_preparation.filter(|m| !m.is_empty()) {
-            body["dataPreparation"] = serde_json::Value::Object(prep.clone());
-        }
+        self.submit_img_task_with_priority(
+            capability,
+            payload,
+            input_bucket_uid,
+            output_bucket_uid,
+            data_preparation,
+            false,
+        )
+        .await
+    }
+
+    /// [`Self::submit_img_task`] with an explicit queue priority. `high_priority`
+    /// submits at OffloadMQ priority 2 (high) — the non-urgent queue hands those
+    /// out before regular (1) tasks.
+    pub async fn submit_img_task_with_priority(
+        &self,
+        capability: &str,
+        payload: serde_json::Value,
+        input_bucket_uid: Option<&str>,
+        output_bucket_uid: &str,
+        data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
+        high_priority: bool,
+    ) -> Result<(OffloadTaskId, serde_json::Value), AppError> {
+        let body = img_task_body(
+            &self.api_key,
+            capability,
+            payload,
+            input_bucket_uid,
+            output_bucket_uid,
+            data_preparation,
+            high_priority,
+        );
         let url = format!("{}/api/task/submit", self.base_url);
         let resp = self
             .http
@@ -228,5 +238,79 @@ impl OffloadImageClient {
 
     pub async fn cancel_task(&self, task_id: &OffloadTaskId) -> Result<CancelTaskResponse, AppError> {
         post_cancel(&self.http, &self.base_url, &self.api_key, &task_id.cap, &task_id.id).await
+    }
+}
+
+/// OffloadMQ task priority used for "high priority" jobs. The server accepts
+/// 0 low, 1 regular (its default when the field is absent), 2 high, 3 critical;
+/// OAI only ever asks for high.
+pub const OFFLOAD_PRIORITY_HIGH: u8 = 2;
+
+/// The `/api/task/submit` body for a non-urgent image-family task.
+fn img_task_body(
+    api_key: &str,
+    capability: &str,
+    payload: serde_json::Value,
+    input_bucket_uid: Option<&str>,
+    output_bucket_uid: &str,
+    data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
+    high_priority: bool,
+) -> serde_json::Value {
+    // The agent uses runtimeSecs as its ComfyUI completion-wait budget.
+    // Video generation is far slower than still images, so give video
+    // workflows a 3-hour budget by default; images keep a 2-hour budget.
+    let workflow = payload.get("workflow").and_then(|w| w.as_str()).unwrap_or("");
+    let is_video = matches!(workflow, "txt2video" | "img2video");
+    let runtime_secs: u64 = if is_video { 3 * 3600 } else { 2 * 3600 };
+    let mut body = serde_json::json!({
+        "apiKey": api_key,
+        "capability": capability,
+        "urgent": false,
+        "payload": payload,
+        "output_bucket": output_bucket_uid,
+        "timeoutSecs": 24 * 3600u64,
+        "maxWaitSecs": 24 * 3600u64,
+        "runtimeSecs": runtime_secs
+    });
+    if let Some(input_bucket) = input_bucket_uid {
+        body["file_bucket"] = serde_json::json!([input_bucket]);
+    }
+    if let Some(prep) = data_preparation.filter(|m| !m.is_empty()) {
+        body["dataPreparation"] = serde_json::Value::Object(prep.clone());
+    }
+    // Regular priority is OffloadMQ's default, so the field is only sent when
+    // raised — regular submissions stay byte-identical to before.
+    if high_priority {
+        body["priority"] = serde_json::json!(OFFLOAD_PRIORITY_HIGH);
+    }
+    body
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn body(high_priority: bool) -> serde_json::Value {
+        img_task_body(
+            "key",
+            "imggen.flux",
+            serde_json::json!({ "workflow": "txt2img" }),
+            None,
+            "out",
+            None,
+            high_priority,
+        )
+    }
+
+    #[test]
+    fn regular_priority_omits_the_field() {
+        let b = body(false);
+        assert!(b.get("priority").is_none());
+        assert_eq!(b["urgent"], false);
+    }
+
+    #[test]
+    fn high_priority_sends_offloadmq_priority_two() {
+        assert_eq!(body(true)["priority"], 2);
     }
 }

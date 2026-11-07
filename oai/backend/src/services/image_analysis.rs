@@ -201,7 +201,7 @@ pub async fn start_job_with_id(
     // first and `promote_after_resize` submits the vision task once it lands. The
     // stored bytes go up untouched — not decoding them here is the whole point.
     if req.external_resize {
-        let pre = external_resize::submit(state, &img_client, &input).await?;
+        let pre = external_resize::submit(state, &img_client, &input, false).await?;
         offload_jobs::set_offload_task::<ImageAnalysisJobEntity>(
             &state.db,
             job_id,

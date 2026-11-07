@@ -30,6 +30,12 @@ pub struct StartJobParams {
     /// with no input image ignores it. See [`external_resize`].
     #[serde(default)]
     pub external_resize: bool,
+    /// Submit at OffloadMQ priority "high" (2) instead of regular, for every task
+    /// this job runs (resize pre-step, generation, upscale). OAI deliberately
+    /// exposes only regular vs high, and only to admins: `start_job` rejects it
+    /// with 403 for anyone else, and `retry_job` downgrades it to regular.
+    #[serde(default)]
+    pub high_priority: bool,
     /// The prompt as the user typed it, before placeholder expansion. Saved prompts
     /// store this raw text, so it is the key a finished job's thumbnail is attached
     /// to as the saved prompt's preview. Absent for API/CLI callers — the stored
@@ -80,7 +86,12 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
         )));
     }
     let params = image_pipeline_params::parse_stored_pipeline_params(&job);
-    let start = start_params_from_pipeline(&params);
+    let mut start = start_params_from_pipeline(&params);
+    // Replaying a stored choice must not fail the retry: a user who has since
+    // lost admin just gets a regular-priority job.
+    if start.high_priority && !is_admin(state, user_id).await? {
+        start.high_priority = false;
+    }
     let new_id = start_job_with_upscale(state, user_id, start, params.upscale).await?;
     let (source_event, target_event) = if job.status == "completed" {
         ("job.regenerate", "job.regenerated_from")
@@ -111,7 +122,18 @@ pub async fn start_job(
     user_id: i64,
     req: StartJobParams,
 ) -> Result<i64, AppError> {
+    if req.high_priority && !is_admin(state, user_id).await? {
+        return Err(AppError::Forbidden);
+    }
     start_job_with_id(state, user_id, state.next_id(), req, false).await
+}
+
+/// High priority jumps every regular task on the shared OffloadMQ queue — other
+/// users' and other clients' — so only admins may ask for it.
+async fn is_admin(state: &AppState, user_id: i64) -> Result<bool, AppError> {
+    Ok(crate::db::users::find_by_id(&state.db, user_id)
+        .await?
+        .is_some_and(|u| u.is_admin == Some(true)))
 }
 
 /// Start a child job with an ID already reserved by a persistent orchestrator.
@@ -200,7 +222,7 @@ async fn start_job_internal(
         let input = input.as_ref().ok_or_else(|| {
             AppError::Internal("external_resize is set but the job has no input image".into())
         })?;
-        let pre = external_resize::submit(state, &client, input).await?;
+        let pre = external_resize::submit(state, &client, input, req.high_priority).await?;
         image_generation::create_offload_task(
             &state.db,
             state.next_id(),
@@ -245,12 +267,13 @@ async fn start_job_internal(
     let payload = build_submit_payload(&req, &workflow, input.as_ref());
     let data_prep = data_preparation_map(&req.data_preparation);
     let (task_id, submit_payload) = client
-        .submit_img_task(
+        .submit_img_task_with_priority(
             &req.capability,
             payload,
             input_bucket_uid.as_deref(),
             &output_bucket.bucket_uid,
             data_prep.as_ref(),
+            req.high_priority,
         )
         .await?;
 
@@ -342,6 +365,7 @@ pub(super) fn start_params_from_pipeline(p: &ImagePipelineParams) -> StartJobPar
         rescale: p.rescale.clone(),
         video_length: p.video_length,
         external_resize: p.external_resize,
+        high_priority: p.high_priority,
         prompt_template: p.prompt_template.clone(),
     }
 }
@@ -366,6 +390,7 @@ pub(super) fn build_pipeline_params(
         rescale: req.rescale.clone(),
         video_length: req.video_length,
         external_resize: req.external_resize && input_image_id.is_some(),
+        high_priority: req.high_priority,
         prompt_template: req
             .prompt_template
             .as_deref()
@@ -499,5 +524,29 @@ mod tests {
             build_submit_payload(&req, "txt2img", None)["secondary_prompts"]["negative"],
             "blurry"
         );
+    }
+
+    #[test]
+    fn high_priority_is_stored_and_replayed_on_retry() {
+        let base = serde_json::json!({
+            "capability": "imggen.test", "prompt": "landscape", "width": 512, "height": 512
+        });
+        // Omitted by API/CLI/MCP callers → regular, and not written to the snapshot.
+        let req: StartJobParams = serde_json::from_value(base.clone()).unwrap();
+        assert!(!req.high_priority);
+        let regular = build_pipeline_params(&req, "txt2img", None).to_json().unwrap();
+        assert!(!regular.contains("high_priority"));
+
+        let mut high = base;
+        high["high_priority"] = serde_json::json!(true);
+        let req: StartJobParams = serde_json::from_value(high).unwrap();
+        let stored = build_pipeline_params(&req, "txt2img", None).to_json().unwrap();
+        let retry = start_params_from_pipeline(&ImagePipelineParams::from_json(&stored).unwrap());
+        assert!(retry.high_priority);
+
+        // A snapshot without the field (regular, or written before the option
+        // existed) replays as regular.
+        assert!(!start_params_from_pipeline(&ImagePipelineParams::from_json(&regular).unwrap())
+            .high_priority);
     }
 }

@@ -184,6 +184,7 @@ pub async fn start(state: &AppState, user: i64, params: Params) -> Result<i64, A
                 rescale: None,
                 video_length: None,
                 external_resize: false,
+                high_priority: false,
                 prompt_template: params.prompt_template.clone(),
             },
             false,

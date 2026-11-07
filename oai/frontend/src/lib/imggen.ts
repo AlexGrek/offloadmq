@@ -304,9 +304,14 @@ export function pipelineStatusLine(
 
 /** Build pipeline params from legacy job columns when `pipeline_params` is missing. */
 export function pipelineParamsFromJob(job: ImageJobDetails): ImagePipelineParams {
-  if (job.pipeline_params) return job.pipeline_params
+  // A job's own snapshot is complete: the backend omits `high_priority` when
+  // false, so absent means regular here — never "unknown".
+  if (job.pipeline_params) {
+    return { ...job.pipeline_params, high_priority: !!job.pipeline_params.high_priority }
+  }
   const workflow = job.workflow as ImgGenMode
   return {
+    high_priority: false,
     capability: job.capability,
     prompt: job.prompt,
     negative_prompt: job.negative_prompt,
@@ -389,6 +394,7 @@ export interface ApplyPipelineToNewFormHandlers {
   setUploadedInput: (v: UploadedImage | null) => void
   setInputPreviewUrl: (v: string | null) => void
   setExternalResize: (v: boolean) => void
+  setHighPriority: (v: boolean) => void
   rescaleUserEditedRef: { current: boolean }
 }
 
@@ -433,6 +439,9 @@ export function pipelineParamsFromStored(stored: Record<string, unknown>): Image
     rescale: (nested?.rescale ?? null) as ImagePipelineParams['rescale'],
     video_length:
       nested?.video_length != null ? Number(nested.video_length) : null,
+    // Only a full pipeline snapshot says whether the job was high priority;
+    // without one leave it unknown so the form keeps the user's choice.
+    high_priority: nested ? Boolean(nested.high_priority) : undefined,
   }
 }
 
@@ -524,6 +533,7 @@ function applyPipelineParamsCore(
   // Replay the original choice rather than re-deriving it from the file size:
   // the job ran that way, so "Edit prompt" and retry should too.
   handlers.setExternalResize(!!inputFile && !!p.external_resize)
+  if (p.high_priority !== undefined) handlers.setHighPriority(p.high_priority)
 }
 
 /** Copy a job's stored pipeline parameters into the New job form. */

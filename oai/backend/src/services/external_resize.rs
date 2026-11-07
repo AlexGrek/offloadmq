@@ -92,6 +92,7 @@ pub async fn submit(
     state: &AppState,
     client: &OffloadImageClient,
     input: &ImageFile,
+    high_priority: bool,
 ) -> Result<PreStep, AppError> {
     let bytes = storage::read(storage::operator(state)?, &input.storage_path).await?;
 
@@ -104,12 +105,13 @@ pub async fn submit(
 
     let out_bucket = client.create_bucket(false).await?;
     let (task_id, submit_payload) = client
-        .submit_img_task(
+        .submit_img_task_with_priority(
             RESIZE_CAPABILITY,
             payload(&filename),
             Some(&in_bucket.bucket_uid),
             &out_bucket.bucket_uid,
             None,
+            high_priority,
         )
         .await?;
     Ok(PreStep { task_id, output_bucket: out_bucket.bucket_uid, submit_payload })

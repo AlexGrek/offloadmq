@@ -173,7 +173,7 @@ image** with the same settings. Frontend-only — the backend still takes one
 
 **Task payload** (`build_submit_payload` in `image_jobs/start.rs`): `workflow`, `prompt`, `resolution`, optional `secondary_prompts.negative` (if `override_negative`), `seed`, `input_image` filename for img2img.
 
-**Offload submit** (`offload/image_tasks.rs` `submit_img_task`): `urgent: false`, `file_bucket`, `output_bucket`, `dataPreparation`, `fetchFiles` for outputs.
+**Offload submit** (`offload/image_tasks.rs` `submit_img_task` / `submit_img_task_with_priority`): `urgent: false`, `file_bucket`, `output_bucket`, `dataPreparation`, `fetchFiles` for outputs, `priority: 2` only for high-priority jobs.
 
 ### External resize (img2img / img2video / Describe image)
 
@@ -265,6 +265,21 @@ Two independent substitution mechanisms can appear in the Prompt textarea, both 
 ### `StartJobParams` (JSON)
 
 `capability`, `prompt`, `negative_prompt?`, `override_negative`, `width`, `height`, `seed?`, `workflow?`, `input_image_id?`, `data_preparation?` (map string→string), `prompt_template?` (raw textarea text before placeholder expansion — stored in `pipeline_params_json`, replayed on retry).
+
+`high_priority` (bool, default false) — the form's **High priority** checkbox
+(`imggen-high-priority-checkbox`, above Generate). Sends OffloadMQ `priority: 2` on
+**every** task the job submits: the main task, the external-resize pre-step, the
+promoted task, and the upscale stage (`submit_img_task_with_priority`; regular submits
+omit the field). Stored in `ImagePipelineParams.high_priority` (JSON, no migration;
+only written when true), so retry / "Edit prompt" replay it. Job detail meta shows
+`· High priority` (`imggen-job-high-priority`). OAI deliberately exposes only regular
+vs high, not low/critical. **Admin-only**: `image_jobs::start_job` answers 403 when a
+non-admin sends `high_priority: true`; `retry_job` silently downgrades a stored high job
+to regular for a non-admin; the checkbox renders only for admins (`useAdminStatus`) and
+the request sends `isAdmin && highPriority`. Restoring from a job keeps its stored value
+(absent = regular); restoring from library-file metadata without a full
+`pipeline_params` snapshot leaves the checkbox as it was. The Go CLI exposes it as `oai image generate --high-priority` (same admin gate; `image retry` replays the stored value). MCP, Image Cycles, Model Wars and Movie child jobs
+submit regular. Tests: mocked e2e `oai/e2e/tests/high-priority.spec.ts` (admin + non-admin), itest `TestStartImageJob::test_high_priority_is_admin_only`.
 
 ### Saved-prompt previews
 

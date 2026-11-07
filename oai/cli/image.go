@@ -59,6 +59,9 @@ type startJobRequest struct {
 	// PromptTemplate is the raw prompt before placeholder expansion; the server
 	// stores it so Retry / saved-prompt previews see the template, like the web UI.
 	PromptTemplate string `json:"prompt_template,omitempty"`
+	// HighPriority asks OffloadMQ to schedule the job's tasks ahead of regular
+	// ones (priority 2). Admin-only on the server (403 otherwise); omitted when false.
+	HighPriority bool `json:"high_priority,omitempty"`
 }
 
 type startJobResponse struct {
@@ -423,6 +426,7 @@ func cmdImageGenerate(args []string) error {
 	promptFlag := fs.String("prompt", "", "prompt text (or pass it as the first argument)")
 	history := fs.Bool("history", true, "save prompt to history (OAI prompt library)")
 	star := fs.Bool("star", false, "also add the prompt to your starred prompts")
+	highPriority := fs.Bool("high-priority", false, "queue the job(s) ahead of regular ones (admin only)")
 	rest, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
@@ -476,6 +480,7 @@ func cmdImageGenerate(args []string) error {
 		Width:          *width,
 		Height:         *height,
 		Workflow:       *workflow,
+		HighPriority:   *highPriority,
 	}
 	if *negative != "" {
 		req.NegativePrompt = *negative
@@ -504,6 +509,9 @@ func cmdImageGenerate(args []string) error {
 		}
 		var started startJobResponse
 		if err := doJSON("POST", base+"/api/images/jobs", cfg.Token, jobReq, &started); err != nil {
+			if *highPriority && strings.Contains(strings.ToLower(err.Error()), "forbidden") {
+				err = fmt.Errorf("%w (--high-priority is admin-only)", err)
+			}
 			batchErrors = append(batchErrors, fmt.Errorf("submit job %d of %d: %w", i+1, count, err))
 			break
 		}

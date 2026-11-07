@@ -589,6 +589,7 @@ async fn submit(
                     rescale: None,
                     video_length: None,
                     external_resize: false,
+                    high_priority: false,
                     prompt_template: None,
                 },
                 true,

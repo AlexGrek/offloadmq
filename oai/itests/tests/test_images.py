@@ -172,3 +172,21 @@ class TestStartImageJob:
         # proceeds past auth/parsing toward storage/MQ (env-dependent), never 401/422.
         r = client.post("/api/images/jobs", headers=session_headers, json=self._BODY)
         assert r.status_code not in (401, 422)
+
+    def test_high_priority_is_admin_only(self, client: httpx.Client, new_user: dict):
+        # Rejected before any storage/MQ work, so this holds in every environment.
+        r = client.post(
+            "/api/images/jobs",
+            headers=new_user["headers"],
+            json={**self._BODY, "high_priority": True},
+        )
+        assert r.status_code == 403
+        _assert_error_shape(r)
+
+    def test_regular_priority_is_not_admin_gated(self, client: httpx.Client, new_user: dict):
+        r = client.post(
+            "/api/images/jobs",
+            headers=new_user["headers"],
+            json={**self._BODY, "high_priority": False},
+        )
+        assert r.status_code not in (401, 403, 422)

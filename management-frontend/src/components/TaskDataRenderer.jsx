@@ -68,6 +68,42 @@ function StatusBadge({ status }) {
   );
 }
 
+// Mirrors `TaskPriority` in src/schema.rs. A missing value is regular (1), the
+// server default for tasks submitted without one.
+const PRIORITY_CONFIG = {
+  0: { label: 'low',      color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
+  1: { label: 'regular',  color: '#64748b', bg: 'rgba(100,116,139,0.10)' },
+  2: { label: 'high',     color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  3: { label: 'critical', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+};
+
+function taskPriority(data) {
+  return data?.priority ?? 1;
+}
+
+function priorityLabel(priority) {
+  return PRIORITY_CONFIG[priority]?.label ?? String(priority);
+}
+
+function PriorityBadge({ priority }) {
+  const cfg = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG[1];
+  return (
+    <span
+      title={`Priority ${priority}: non-urgent tasks are handed out highest priority first`}
+      data-testid="task-priority-badge"
+      style={{
+        fontSize: '0.70rem', fontWeight: 700, letterSpacing: '.4px', textTransform: 'uppercase',
+        padding: '2px 7px', borderRadius: '999px',
+        color: cfg.color, background: cfg.bg,
+        border: `1px solid ${cfg.color}55`,
+        flexShrink: 0,
+      }}
+    >
+      {cfg.label}
+    </span>
+  );
+}
+
 function PayloadPreview({ payload }) {
   const [open, setOpen] = useState(false);
   const [showJson, setShowJson] = useState(false);
@@ -240,6 +276,7 @@ function TaskCard({ task, isAssigned, onCancel }) {
   const [canceling, setCanceling] = useState(false);
   const { id, agentId, assignedAt, createdAt, data, status, stage, log, result, history } = task;
   const cap = data?.capability || id?.cap;
+  const priority = taskPriority(data);
   const cancelable = onCancel && id?.id && cap && canCancelTask(status);
 
   const handleCancel = async (e) => {
@@ -268,6 +305,9 @@ function TaskCard({ task, isAssigned, onCancel }) {
               <span className="mono" style={{ fontSize: '0.84rem' }}>{shortId(id?.id)}</span>
             </span>
             <StatusBadge status={status} />
+            {/* Regular is the default and urgent tasks ignore priority — only flag
+                the cases that change the pickup order. */}
+            {!data?.urgent && priority !== 1 && <PriorityBadge priority={priority} />}
             {stage && <span className="chip" style={{ fontSize: '0.70rem' }}>{stage}</span>}
           </span>
           <span className="row-sub">
@@ -302,6 +342,12 @@ function TaskCard({ task, isAssigned, onCancel }) {
               { label: 'Task ID',    value: id?.id,         mono: true  },
               { label: 'Capability', value: data?.capability || id?.cap, mono: true },
               { label: 'Created',    value: fmtTs(createdAt)             },
+              {
+                label: 'Priority',
+                value: data?.urgent
+                  ? `${priorityLabel(priority)} (${priority}) · ignored for urgent`
+                  : `${priorityLabel(priority)} (${priority})`,
+              },
               ...(isAssigned && assignedAt ? [{ label: 'Assigned At', value: fmtTs(assignedAt) }] : []),
               ...(agentId ? [{ label: 'Agent', value: agentId, mono: true }] : []),
             ].map(({ label, value, mono }) => (

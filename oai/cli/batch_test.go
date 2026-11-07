@@ -336,3 +336,60 @@ func TestImageGenerateSingleRunKeepsPlainSuffixes(t *testing.T) {
 		}
 	}
 }
+
+func TestImageGenerateHighPriorityFlag(t *testing.T) {
+	var requests []startJobRequest
+	var bodies []string
+	inner := newImageMux(&requests, func(id string, _ int) pollResponse {
+		return completedWith(id, "img-"+id)
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/images/jobs" {
+			raw, _ := io.ReadAll(r.Body)
+			bodies = append(bodies, string(raw))
+			r.Body = io.NopCloser(strings.NewReader(string(raw)))
+		}
+		inner.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	configureTestServer(t, server.URL)
+
+	out := filepath.Join(t.TempDir(), "hp.jpg")
+	if err := cmdImageGenerate([]string{"x", "-capability", "imggen.t", "-n", "2", "--high-priority", "-o", out, "--progress=false"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("requests = %d, want 2", len(requests))
+	}
+	for i, req := range requests {
+		if !req.HighPriority {
+			t.Errorf("request %d: high_priority not set", i+1)
+		}
+	}
+
+	// Default stays regular and the field is not sent at all.
+	requests, bodies = nil, nil
+	if err := cmdImageGenerate([]string{"x", "-capability", "imggen.t", "-o", out, "--progress=false"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 1 || strings.Contains(bodies[0], "high_priority") {
+		t.Errorf("default request must omit high_priority, got %v", bodies)
+	}
+}
+
+func TestImageGenerateHighPriorityForbiddenHint(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/images/jobs", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Forbidden"})
+	})
+	mux.HandleFunc("/api/prompts/", func(w http.ResponseWriter, r *http.Request) {})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	configureTestServer(t, server.URL)
+
+	err := cmdImageGenerate([]string{"x", "-capability", "imggen.t", "--high-priority", "--no-wait"})
+	if err == nil || !strings.Contains(err.Error(), "admin-only") {
+		t.Fatalf("err = %v, want admin-only hint", err)
+	}
+}

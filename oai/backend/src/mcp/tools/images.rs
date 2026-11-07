@@ -437,6 +437,7 @@ async fn generate(ctx: &ToolContext, a: GenerateArgs) -> Result<ToolOutput, AppE
             rescale: None,
             video_length: None,
             external_resize: false,
+            high_priority: false,
             prompt_template: Some(template.clone()),
         };
         match image_jobs::start_job_with_upscale(&ctx.state, ctx.user_id, params, upscale.clone()).await {

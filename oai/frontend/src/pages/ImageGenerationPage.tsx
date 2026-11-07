@@ -25,6 +25,7 @@ import {
   Video,
   Wand2,
   X,
+  Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -53,6 +54,7 @@ import { Label } from '@/components/ui/label'
 import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useAdminStatus } from '../hooks/useAdminStatus'
 import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import { getSettings } from '../api/admin'
 import {
@@ -264,6 +266,11 @@ export default function ImageGenerationPage() {
   // than decoding it in the backend. Offered only while such an agent is online.
   const [externalResizeInfo, setExternalResizeInfo] = useState<ExternalResizeInfo | null>(null)
   const [externalResize, setExternalResize] = useState(false)
+  // Queue the job at OffloadMQ priority "high" instead of regular. Admin-only
+  // (the backend rejects it otherwise), so it is never sent for anyone else —
+  // even if "Edit prompt" restored it from an admin-era job.
+  const { isAdmin } = useAdminStatus()
+  const [highPriority, setHighPriority] = useState(false)
 
   const [uploadedInputs, setUploadedInputs] = useState<UploadedImage[]>([])
   // The first input drives the form (dims, presets, preview). With several,
@@ -883,6 +890,7 @@ export default function ImageGenerationPage() {
       setUploadedInput: (img: UploadedImage | null) => setUploadedInputs(img ? [img] : []),
       setInputPreviewUrl,
       setExternalResize,
+      setHighPriority,
       rescaleUserEditedRef,
     }),
     [],
@@ -1282,6 +1290,7 @@ export default function ImageGenerationPage() {
       rescale: rescaleForSubmit(jobRescale, jobWidth, jobHeight),
       video_length: isVideoMode(mode) ? parseVideoLength(videoLength) : null,
       external_resize: isInputImageMode(mode) && externalResize,
+      high_priority: isAdmin && highPriority,
       prompt_template: prompt.trim() || null,
     }
   }
@@ -2136,6 +2145,24 @@ export default function ImageGenerationPage() {
               </MorphCollapse>
             </MorphCollapse>
 
+            {isAdmin && (
+              <label
+                className="flex cursor-pointer select-none items-center gap-2 self-center text-sm"
+                title="Picked up before regular jobs waiting for the same model (admin only)"
+                data-testid="imggen-high-priority"
+              >
+                <input
+                  type="checkbox"
+                  checked={highPriority}
+                  onChange={e => setHighPriority(e.target.checked)}
+                  className="rounded border-border"
+                  data-testid="imggen-high-priority-checkbox"
+                />
+                <Zap className={cn('size-3.5', highPriority ? 'text-amber-500' : 'text-muted-foreground')} />
+                High priority
+              </label>
+            )}
+
             <div className="relative flex flex-col items-center gap-1 sm:w-auto">
               <motion.div
                 className="flex justify-center sm:w-auto"
@@ -2440,6 +2467,9 @@ export default function ImageGenerationPage() {
               </h2>
               <p className="font-mono text-xs text-muted-foreground" data-testid="imggen-job-tech-meta">
                 {jobTechMeta(selectedJob)} · {imageJobStatusLabel(displayStatus ?? selectedJob.status)}
+                {selectedJob.pipeline_params?.high_priority && (
+                  <span data-testid="imggen-job-high-priority"> · High priority</span>
+                )}
               </p>
               {(selectedJob.queued_seconds != null || selectedJob.execution_seconds != null) && (
                 <p className="font-mono text-xs text-muted-foreground" data-testid="imggen-job-timing">

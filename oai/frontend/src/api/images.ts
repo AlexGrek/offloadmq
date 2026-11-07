@@ -36,6 +36,10 @@ export interface ImagePipelineParams {
   video_length?: number | null
   /** Whether the input was shrunk by an `image_resize` agent pre-step. */
   external_resize?: boolean
+  /** Whether the job's OffloadMQ tasks were queued at high priority. On a job's
+   *  own snapshot absent = regular; `undefined` after `pipelineParamsFromStored`
+   *  with no snapshot = unknown (the form keeps its current choice). */
+  high_priority?: boolean
 }
 
 export interface StartImageJobRequest {
@@ -59,6 +63,10 @@ export interface StartImageJobRequest {
    *  generation task runs, instead of decoding it in the backend. img2img /
    *  img2video only — ignored when there is no input image. */
   external_resize?: boolean
+  /** Queue the job's OffloadMQ tasks at high priority instead of regular, so
+   *  they are picked up before regular jobs waiting for the same model.
+   *  Admin-only: the backend answers 403 for anyone else. */
+  high_priority?: boolean
   /** Prompt as typed, before placeholder expansion. The finished job's thumbnail
    *  becomes the preview of the saved prompt with exactly this text. */
   prompt_template?: string | null
