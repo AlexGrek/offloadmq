@@ -170,9 +170,12 @@ test.describe('image generation stash', () => {
       await expect.poll(() => state.stash.length).toBe(['first', 'second', 'third'].indexOf(p) + 1)
     }
 
-    await page.getByTestId('imggen-stash-open').click()
+    // The Pipelines toolbar opens the same drawer and shows the count.
+    await expect(page.getByTestId('imggen-pipelines-stash-count')).toHaveText('3')
+    await page.getByTestId('imggen-pipelines-stash-open').click()
     await page.getByTestId('imggen-stash-start-all').click()
     await expect(page.getByTestId('imggen-stash-empty')).toBeVisible()
     expect(state.started).toEqual(['s1', 's2', 's3'])
+    await expect(page.getByTestId('imggen-pipelines-stash-count')).toHaveCount(0)
   })
 })

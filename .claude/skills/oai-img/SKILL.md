@@ -287,7 +287,7 @@ submit regular. Tests: mocked e2e `oai/e2e/tests/high-priority.spec.ts` (admin +
 submit — one entry per input image — **without** creating a job. It is **never disabled**
 (unlike Generate, and not even while a Generate is in flight): a missing prompt, input image
 or model is reported in `imggen-error` instead. **Stashed (N)**
-(`imggen-stash-open`) opens `components/imggen/ImageStashDrawer.tsx`, a right `Sheet`
+(`imggen-stash-open`) — and the inbox icon in the Pipelines toolbar (`imggen-pipelines-stash-open`, count badge `imggen-pipelines-stash-count`) — open `components/imggen/ImageStashDrawer.tsx`, a right `Sheet`
 (`imggen-stash-drawer`) listing entries newest first; **Start now**
 (`imggen-stash-start-{id}`) removes the entry and submits it (the page then shows the
 job like a normal Generate), trash (`imggen-stash-delete-{id}`) discards it, **Start

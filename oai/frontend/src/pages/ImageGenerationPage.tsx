@@ -1193,6 +1193,12 @@ export default function ImageGenerationPage() {
     }
   }
 
+  function openStash() {
+    if (isMobile) setSidebarOpen(false)
+    setStashOpen(true)
+    void imageStash.refresh()
+  }
+
   /** A stashed entry became a real job: show it and start polling, like Generate. */
   async function showStartedStashJob(jobId: string) {
     setActivePanel(jobId)
@@ -1549,6 +1555,25 @@ export default function ImageGenerationPage() {
               aria-label="Search pipelines"
             >
               <Search className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={openStash}
+              title="Stashed generations"
+              aria-label={`Stashed generations${imageStash.entries.length > 0 ? ` (${imageStash.entries.length})` : ''}`}
+              data-testid="imggen-pipelines-stash-open"
+              className="relative"
+            >
+              <Inbox className="size-4" />
+              {imageStash.entries.length > 0 && (
+                <span
+                  className="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-semibold leading-none text-primary-foreground"
+                  data-testid="imggen-pipelines-stash-count"
+                >
+                  {imageStash.entries.length > 99 ? '99+' : imageStash.entries.length}
+                </span>
+              )}
             </Button>
             <Button
               variant="ghost"
@@ -2329,10 +2354,7 @@ export default function ImageGenerationPage() {
                   type="button"
                   variant="outline"
                   className="min-h-10 px-4"
-                  onClick={() => {
-                    setStashOpen(true)
-                    void imageStash.refresh()
-                  }}
+                  onClick={openStash}
                   data-testid="imggen-stash-open"
                 >
                   <Inbox />
