@@ -171,9 +171,16 @@ Name-based flags mirror the backend, keyed on the operation:
 - `prettyLabel(slug)` renders the operation label (`RESIZE_WORKFLOW` `basic_resize` → "Basic resize").
 - `OPERATION_HINTS` in `ImgUtilsPage.tsx` holds the one-line blurbs (keyed on operation).
 
-**Progress:** no Progress-drawer entry and no ToolDebug (no `image_offload_tasks` row). The page
-**3 s auto-polls the viewed job** (foreground poll → MQ) and **5 s re-lists** while any row is
-non-terminal (plain DB read; the `img_utils` worker is what advances those rows). Jobs finish
+**Progress:** in-flight jobs are in the global **Progress drawer** ("Image tools" panel) —
+`services/progress.rs` adds `source: "img-utils"` rows (`key` `img-utils:{id}`, label
+`Upscale · <pack>` via `img_utils_label`, pack dropped for resize) from
+`db::img_utils::list_user_active`. They count toward the TopBar badge, the shell's background
+loop (`ProgressProvider`) polls them via `pollImgUtilsJob`, and the drawer cancels via
+`cancelImgUtilsJob` (never disabled — cancel works before the MQ task exists). The page registers
+its viewed job with `setForegroundJob('img-utils', id)` so it isn't polled twice. Still no
+ToolDebug (no `image_offload_tasks` row). The page **3 s auto-polls the viewed job** (foreground
+poll → MQ) and **5 s re-lists** while any row is non-terminal (plain DB read; the `img_utils`
+worker is what advances those rows). Mocked e2e: `oai/e2e/tests/progress-img-utils.spec.ts`. Jobs finish
 whether or not the page is open — the page is a view, not the driver.
 `img_utils_jobs.started_at` / `typical_runtime_seconds` (set in `ImgUtilsReconciler::on_poll`)
 feed the same `JobProgressBar` image generation uses.
@@ -215,8 +222,8 @@ Note: `eslint .` has a large **pre-existing** project-wide baseline (react-hooks
    Add-workflow dropdown auto-fills it; the param editor threads `selectedWf.namespace`.
 3. **Knobs are forwarded verbatim** as `secondary_prompts` for comfy tools; the backend does not
    validate them (resize is the exception — `ResizeOptions` is validated + normalized).
-4. **No Progress drawer / no ToolDebug** for img-utils jobs — the page's polls plus the
-   background worker are the whole story.
+4. **No ToolDebug** for img-utils jobs. They *are* in the Progress drawer (see Progress above) —
+   a new in-flight status must still satisfy `list_user_active`'s non-terminal filter.
    **Worker pickup statuses:** a poll mirrors the upstream status into the row verbatim, so
    in-flight rows sit at `queued`/`assigned`/`starting` as often as `running`. Any query that
    selects jobs for a worker must use `task_status::WORKER_PICKUP_STATUSES` — a hand-written

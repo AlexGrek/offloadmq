@@ -52,17 +52,21 @@ export function imageProgressRows(
   return rows
 }
 
-export function describeProgressRows(
+/** Describe and Image Tools rows. Both are offload-job features whose cancel also
+ *  works before the OffloadMQ task exists (the backend just marks the row
+ *  canceled), so unlike image jobs the stop control is never disabled. */
+export function offloadJobProgressRows(
   jobs: RunningJobItem[],
-  onCancelDescribe?: (job: RunningJobItem) => void,
+  onCancel?: (job: RunningJobItem) => void,
 ): ProgressRow[] {
-  // Unlike image jobs, describe cancel also works before the OffloadMQ task exists
-  // (the backend just marks the row canceled), so it is never disabled.
   return jobs.map(j => ({
     key: j.key,
     label: j.label,
     status: j.status,
     stage: j.stage,
-    onCancel: onCancelDescribe ? () => onCancelDescribe(j) : undefined,
+    onCancel: onCancel ? () => onCancel(j) : undefined,
   }))
 }
+
+export const describeProgressRows = offloadJobProgressRows
+export const imgUtilsProgressRows = offloadJobProgressRows

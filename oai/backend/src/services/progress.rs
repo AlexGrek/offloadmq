@@ -1,13 +1,14 @@
 //! Lightweight running-job list for the global Progress drawer (DB only, no OffloadMQ poll).
-//! Covers image generation (`source: "image"`) and describe (`source: "describe"`).
+//! Covers image generation (`source: "image"`), describe (`source: "describe"`) and
+//! Image Tools (`source: "img-utils"`).
 
 use serde::Serialize;
 
 use crate::{
-    db::{image_analysis, image_generation},
+    db::{image_analysis, image_generation, img_utils},
     error::AppError,
     offload::base_capability,
-    services::image_job_names,
+    services::{image_job_names, img_utils::RESIZE_CAPABILITY},
     state::AppState,
 };
 
@@ -71,5 +72,56 @@ pub async fn list_running_jobs(
         submitted_at: Some(job.created_at.to_rfc3339()),
     }));
 
+    let tools = img_utils::list_user_active(&state.db, user_id).await?;
+    jobs.extend(tools.into_iter().map(|job| RunningJobItem {
+        key: format!("img-utils:{}", job.id),
+        source: "img-utils".to_string(),
+        label: img_utils_label(&job.workflow, &job.utility),
+        status: job.status,
+        stage: job.stage,
+        job_id: job.id.to_string(),
+        offload_cap: job.offload_cap.unwrap_or_default(),
+        offload_task_id: job.offload_task_id.unwrap_or_default(),
+        started_at: job.started_at.map(|d| d.to_rfc3339()),
+        typical_runtime_seconds: job.typical_runtime_seconds.filter(|s| *s > 0.0),
+        submitted_at: Some(job.created_at.to_rfc3339()),
+    }));
+
     Ok(RunningJobsResponse { jobs })
+}
+
+/// `upscale` + `seedvr2_upscale_image` → `Upscale · seedvr2_upscale_image`. The pack
+/// (model) is dropped when it adds nothing, e.g. `basic_resize` / `image_resize`.
+fn img_utils_label(workflow: &str, utility: &str) -> String {
+    let words = workflow.replace(['_', '-'], " ");
+    let words = words.trim();
+    let mut chars = words.chars();
+    let op = match chars.next() {
+        Some(c) => c.to_uppercase().chain(chars).collect::<String>(),
+        None => "Image tool".to_string(),
+    };
+    if utility.is_empty() || utility == workflow || utility == RESIZE_CAPABILITY {
+        op
+    } else {
+        format!("{op} · {utility}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::img_utils_label;
+
+    #[test]
+    fn img_utils_labels() {
+        assert_eq!(
+            img_utils_label("upscale", "seedvr2_upscale_image"),
+            "Upscale · seedvr2_upscale_image"
+        );
+        assert_eq!(img_utils_label("face_swap", "face_swap"), "Face swap");
+        assert_eq!(
+            img_utils_label("basic_resize", "image_resize"),
+            "Basic resize"
+        );
+        assert_eq!(img_utils_label("", "depth"), "Image tool · depth");
+    }
 }

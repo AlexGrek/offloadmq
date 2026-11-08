@@ -7,11 +7,12 @@ export type ProgressContextValue = {
   toggleDrawer: () => void
   runningImageJobs: RunningJobItem[]
   runningDescribeJobs: RunningJobItem[]
+  runningImgUtilsJobs: RunningJobItem[]
   runningImageJobsLoading: boolean
   refreshRunningImageJobs: () => Promise<void>
   /**
    * Marks the job the open page is polling itself (`source` as in the progress
-   * feed: `image`, `describe`); the background loop skips it. `null` clears.
+   * feed: `image`, `describe`, `img-utils`); the background loop skips it. `null` clears.
    */
   setForegroundJob: (source: string, jobId: string | null) => void
 }

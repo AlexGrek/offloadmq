@@ -4,7 +4,7 @@
 
 use sea_orm::{
     sea_query::Expr, ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 
 use crate::{
@@ -79,6 +79,21 @@ pub struct NewJobInput<'a> {
     pub options_json: Option<&'a str>,
 }
 
+/// The user's in-flight jobs, newest first — the Progress drawer's feed.
+pub async fn list_user_active(
+    db: &DatabaseConnection,
+    user_id: i64,
+) -> Result<Vec<ImgUtilsJob>, AppError> {
+    ImgUtilsJobEntity::find()
+        .filter(img_utils_jobs::Column::UserId.eq(user_id))
+        .filter(img_utils_jobs::Column::Status.is_not_in(["completed", "failed", "canceled"]))
+        .order_by_desc(img_utils_jobs::Column::CreatedAt)
+        .limit(64)
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
 pub async fn create_job(
     db: &DatabaseConnection,
     input: NewJobInput<'_>,
@@ -131,7 +146,10 @@ pub async fn record_progress(
     }
     if let Some(secs) = typical_runtime_seconds.filter(|s| *s > 0.0) {
         ImgUtilsJobEntity::update_many()
-            .col_expr(img_utils_jobs::Column::TypicalRuntimeSeconds, Expr::value(secs))
+            .col_expr(
+                img_utils_jobs::Column::TypicalRuntimeSeconds,
+                Expr::value(secs),
+            )
             .filter(img_utils_jobs::Column::Id.eq(job_id))
             .exec(db)
             .await

@@ -10,6 +10,7 @@ import { useAuth } from './AuthContext'
 import { useRunningImageJobs } from '../hooks/useRunningImageJobs'
 import { cancelImageJob, pollImageJob } from '../api/images'
 import { pollDescribeJob } from '../api/describe'
+import { pollImgUtilsJob } from '../api/imgUtils'
 import type { RunningJobItem } from '../api/progress'
 import { ProgressContext } from './ProgressContext'
 
@@ -44,13 +45,17 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     () => runningJobs.filter(j => j.source === 'describe'),
     [runningJobs],
   )
+  const runningImgUtilsJobs = useMemo(
+    () => runningJobs.filter(j => j.source === 'img-utils'),
+    [runningJobs],
+  )
 
   // Keep a ref so the polling loop always sees the latest job list without
   // recreating the timer on every refresh.
   const runningJobsRef = useRef(runningJobs)
   useEffect(() => { runningJobsRef.current = runningJobs }, [runningJobs])
 
-  // The job the open page (image generation, describe) is showing — that page
+  // The job the open page (image generation, describe, image tools) is showing — that page
   // already auto-polls it, so the background loop skips it instead of polling
   // it twice. Keyed `source:job_id`.
   const foregroundJobRef = useRef<string | null>(null)
@@ -72,6 +77,10 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       try {
         if (job.source === 'describe') {
           await pollDescribeJob(token, job.job_id)
+          return
+        }
+        if (job.source === 'img-utils') {
+          await pollImgUtilsJob(token, job.job_id)
           return
         }
         if (job.status === 'cancelRequested') {
@@ -118,6 +127,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       toggleDrawer,
       runningImageJobs,
       runningDescribeJobs,
+      runningImgUtilsJobs,
       runningImageJobsLoading,
       refreshRunningImageJobs: refresh,
       setForegroundJob,
@@ -127,6 +137,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       toggleDrawer,
       runningImageJobs,
       runningDescribeJobs,
+      runningImgUtilsJobs,
       runningImageJobsLoading,
       refresh,
       setForegroundJob,

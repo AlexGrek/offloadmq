@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProgress } from '../contexts/ProgressContext'
 import {
   Columns2,
   Download,
@@ -60,6 +61,7 @@ const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 export default function ImgUtilsPage() {
   const { token } = useAuth()
   const navigate = useNavigate()
+  const { refreshRunningImageJobs, setForegroundJob } = useProgress()
 
   // Online tools + their knobs; shared with the quick-transform popup.
   const tools = useImgUtilsTools(token)
@@ -222,6 +224,7 @@ export default function ImgUtilsPage() {
       input.clear()
       source.clear()
       setActivePanel(res.job_id)
+      void refreshRunningImageJobs()
       await refreshJob(res.job_id)
       await loadJobs()
     } catch (err) {
@@ -256,6 +259,7 @@ export default function ImgUtilsPage() {
     setError(null)
     try {
       await cancelImgUtilsJob(token, jobId)
+      void refreshRunningImageJobs()
       await refreshJob(jobId)
     } catch (e) {
       setError((e as Error).message)
@@ -271,6 +275,7 @@ export default function ImgUtilsPage() {
     try {
       const res = await retryImgUtilsJob(token, jobId)
       setActivePanel(res.job_id)
+      void refreshRunningImageJobs()
       await refreshJob(res.job_id)
       await loadJobs()
     } catch (e) {
@@ -301,15 +306,21 @@ export default function ImgUtilsPage() {
     }
   }
 
+  // Auto-poll while viewing a non-terminal job. The shell's background loop
+  // (Progress drawer) skips this job meanwhile, so it isn't polled twice.
   useEffect(() => {
     if (!token || !viewedJobId) return
     const status = selectedJob?.status
     if (status && TERMINAL.has(status)) return
+    setForegroundJob('img-utils', viewedJobId)
     const id = window.setInterval(() => {
       void onPollNow(viewedJobId)
     }, POLL_INTERVAL_MS)
-    return () => window.clearInterval(id)
-  }, [token, viewedJobId, selectedJob?.status, onPollNow])
+    return () => {
+      window.clearInterval(id)
+      setForegroundJob('img-utils', null)
+    }
+  }, [token, viewedJobId, selectedJob?.status, onPollNow, setForegroundJob])
 
   // The poll above only advances the job being *viewed*. Other in-flight jobs are
   // driven to completion by the backend worker, so the sidebar just needs to
