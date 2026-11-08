@@ -267,7 +267,7 @@ Two independent substitution mechanisms can appear in the Prompt textarea, both 
 `capability`, `prompt`, `negative_prompt?`, `override_negative`, `width`, `height`, `seed?`, `workflow?`, `input_image_id?`, `data_preparation?` (map string→string), `prompt_template?` (raw textarea text before placeholder expansion — stored in `pipeline_params_json`, replayed on retry).
 
 `high_priority` (bool, default false) — the form's **High priority** checkbox
-(`imggen-high-priority-checkbox`, above Generate). Sends OffloadMQ `priority: 2` on
+(`imggen-high-priority-checkbox`, below the Generate multiple / Stash / Stashed row). Sends OffloadMQ `priority: 2` on
 **every** task the job submits: the main task, the external-resize pre-step, the
 promoted task, and the upscale stage (`submit_img_task_with_priority`; regular submits
 omit the field). Stored in `ImagePipelineParams.high_priority` (JSON, no migration;
@@ -283,7 +283,7 @@ submit regular. Tests: mocked e2e `oai/e2e/tests/high-priority.spec.ts` (admin +
 
 ### Stash (deferred generations)
 
-**Stash** (`imggen-stash-add`, under "Generate multiple") saves what Generate would
+**Stash** (`imggen-stash-add`, outline button beside "Generate multiple" in `imggen-secondary-actions`, under Generate) saves what Generate would
 submit — one entry per input image — **without** creating a job. It is **never disabled**
 (unlike Generate, and not even while a Generate is in flight): a missing prompt, input image
 or model is reported in `imggen-error` instead. **Stashed (N)**

@@ -4,6 +4,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Archive,
   ArrowLeftRight,
+  Inbox,
+  Layers,
   ChevronDown,
   Columns2,
   Download,
@@ -2214,27 +2216,9 @@ export default function ImageGenerationPage() {
               </MorphCollapse>
             </MorphCollapse>
 
-            {isAdmin && (
-              <label
-                className="flex cursor-pointer select-none items-center gap-2 self-center text-sm"
-                title="Picked up before regular jobs waiting for the same model (admin only)"
-                data-testid="imggen-high-priority"
-              >
-                <input
-                  type="checkbox"
-                  checked={highPriority}
-                  onChange={e => setHighPriority(e.target.checked)}
-                  className="rounded border-border"
-                  data-testid="imggen-high-priority-checkbox"
-                />
-                <Zap className={cn('size-3.5', highPriority ? 'text-amber-500' : 'text-muted-foreground')} />
-                High priority
-              </label>
-            )}
-
-            <div className="relative flex flex-col items-center gap-1 sm:w-auto">
+            <div className="flex flex-col items-center gap-4 sm:w-auto">
               <motion.div
-                className="flex justify-center sm:w-auto"
+                className="relative flex w-full justify-center sm:w-auto"
                 animate={submitBurst ? { scale: [1, 1.06, 0.97, 1] } : {}}
                 transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
               >
@@ -2292,73 +2276,88 @@ export default function ImageGenerationPage() {
                   </AnimatePresence>
                   </motion.button>
                 </Button>
+                <AnimatePresence>
+                  {submitBurst &&
+                    BURST_SPARKS.map((p, i) => (
+                      <motion.span
+                        key={i}
+                        aria-hidden
+                        className="pointer-events-none absolute left-1/2 top-1/2 text-primary"
+                        style={{ fontSize: '11px', fontWeight: 700, lineHeight: 1, filter: 'drop-shadow(0 0 3px currentColor)' }}
+                        initial={{ x: 0, y: 0, opacity: 1, scale: 0 }}
+                        animate={{ x: p.x, y: p.y, opacity: 0, scale: 1.6 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.55, delay: p.delay, ease: [0.22, 1, 0.36, 1] }}
+                      >
+                        ✦
+                      </motion.span>
+                    ))}
+                </AnimatePresence>
               </motion.div>
 
-              {/* N input images already mean N jobs. The title sits on a wrapper
-                  because a disabled button gets no pointer events. */}
-              <span title={multiInput ? 'One job per input image — remove extra images to generate multiple' : undefined}>
+              {/* Secondary actions. N input images already mean N jobs, so Generate
+                  multiple is off then; its title sits on a wrapper because a
+                  disabled button gets no pointer events. Stash saves this request
+                  to run later; Stashed opens the stash drawer. */}
+              <div className="flex flex-wrap items-center justify-center gap-3" data-testid="imggen-secondary-actions">
+                <span title={multiInput ? 'One job per input image — remove extra images to generate multiple' : undefined}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-10 px-4"
+                    onClick={() => setGenerateMultipleOpen(true)}
+                    disabled={!canSubmit || submitting || multiInput}
+                    data-testid="imggen-generate-multiple-open"
+                  >
+                    <Layers />
+                    Generate multiple
+                  </Button>
+                </span>
                 <Button
                   type="button"
-                  variant="link"
-                  size="sm"
-                  className="h-auto px-0 text-xs"
-                  onClick={() => setGenerateMultipleOpen(true)}
-                  disabled={!canSubmit || submitting || multiInput}
-                  data-testid="imggen-generate-multiple-open"
-                >
-                  Generate multiple
-                </Button>
-              </span>
-
-              {/* Stash: save this request to run later; the count opens the drawer. */}
-              <div className="flex items-center gap-2 text-xs">
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  className="h-auto gap-1 px-0 text-xs"
+                  variant="outline"
+                  className="min-h-10 px-4"
                   onClick={() => void onStash()}
                   aria-busy={stashing}
                   title="Save this request without running it"
                   data-testid="imggen-stash-add"
                 >
-                  {stashing ? <Loader2 className="size-3 animate-spin" /> : <Archive className="size-3" />}
+                  {stashing ? <Loader2 className="animate-spin" /> : <Archive />}
                   Stash
                 </Button>
-                <span aria-hidden className="text-muted-foreground">·</span>
                 <Button
                   type="button"
-                  variant="link"
-                  size="sm"
-                  className="h-auto px-0 text-xs text-muted-foreground"
+                  variant="outline"
+                  className="min-h-10 px-4"
                   onClick={() => {
                     setStashOpen(true)
                     void imageStash.refresh()
                   }}
                   data-testid="imggen-stash-open"
                 >
+                  <Inbox />
                   Stashed{imageStash.entries.length > 0 ? ` (${imageStash.entries.length})` : ''}
                 </Button>
               </div>
-
-              <AnimatePresence>
-                {submitBurst &&
-                  BURST_SPARKS.map((p, i) => (
-                    <motion.span
-                      key={i}
-                      aria-hidden
-                      className="pointer-events-none absolute left-1/2 top-1/2 text-primary"
-                      style={{ fontSize: '11px', fontWeight: 700, lineHeight: 1, filter: 'drop-shadow(0 0 3px currentColor)' }}
-                      initial={{ x: 0, y: 0, opacity: 1, scale: 0 }}
-                      animate={{ x: p.x, y: p.y, opacity: 0, scale: 1.6 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.55, delay: p.delay, ease: [0.22, 1, 0.36, 1] }}
-                    >
-                      ✦
-                    </motion.span>
-                  ))}
-              </AnimatePresence>
             </div>
+
+            {isAdmin && (
+              <label
+                className="flex cursor-pointer select-none items-center gap-2 self-center text-sm"
+                title="Picked up before regular jobs waiting for the same model (admin only)"
+                data-testid="imggen-high-priority"
+              >
+                <input
+                  type="checkbox"
+                  checked={highPriority}
+                  onChange={e => setHighPriority(e.target.checked)}
+                  className="rounded border-border"
+                  data-testid="imggen-high-priority-checkbox"
+                />
+                <Zap className={cn('size-3.5', highPriority ? 'text-amber-500' : 'text-muted-foreground')} />
+                High priority
+              </label>
+            )}
 
             <MorphCollapse show={Boolean(info) && activePanel === IMGGEN_NEW_PANEL}>
               <p className="text-xs text-muted-foreground">{info}</p>
