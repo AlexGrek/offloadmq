@@ -175,6 +175,12 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/images/jobs/{id}/cancel", post(routes::images::cancel_job))
         .route("/api/images/jobs/{id}/retry", post(routes::images::retry_job))
         .route(
+            "/api/images/stash",
+            get(routes::image_stash::list).post(routes::image_stash::create),
+        )
+        .route("/api/images/stash/{id}", axum::routing::delete(routes::image_stash::delete))
+        .route("/api/images/stash/{id}/start", post(routes::image_stash::start))
+        .route(
             "/api/images/files/{id}",
             get(routes::images::get_image).delete(routes::images::delete_image),
         )

@@ -13,6 +13,7 @@ pub mod promptgen;
 pub mod prompt_rewrite;
 pub mod prompt_previews;
 pub mod image_jobs;
+pub mod image_stash;
 pub mod image_job_names;
 pub mod image_paths;
 pub mod image_pipeline_params;

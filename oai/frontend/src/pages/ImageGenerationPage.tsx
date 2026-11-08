@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
+  Archive,
   ArrowLeftRight,
   ChevronDown,
   Columns2,
@@ -89,6 +90,8 @@ import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImgGenModelPicker } from '../components/imggen/ImgGenModelPicker'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { InputImageGrid } from '../components/imggen/InputImageGrid'
+import { ImageStashDrawer } from '../components/imggen/ImageStashDrawer'
+import { useImageStash } from '../hooks/useImageStash'
 import { VideoPromptGenerator } from '../components/imggen/VideoPromptGenerator'
 import { ToolDebugHeaderButton, ToolDebugModal } from '../components/ToolDebugModal'
 import { toolDebugReady } from '../lib/toolDebug'
@@ -329,6 +332,9 @@ export default function ImageGenerationPage() {
     String(DEFAULT_GENERATE_MULTIPLE),
   )
   const generateMultipleCountRef = useRef<HTMLInputElement>(null)
+  const imageStash = useImageStash(token)
+  const [stashOpen, setStashOpen] = useState(false)
+  const [stashing, setStashing] = useState(false)
 
   const viewingJob = activePanel !== IMGGEN_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
@@ -1143,6 +1149,69 @@ export default function ImageGenerationPage() {
       setSubmitting(false)
       setJobDetailLoading(false)
     }
+  }
+
+  /**
+   * Saves what Generate would submit — one entry per input image — without
+   * running it. The prompt is stored unexpanded: placeholders are resolved
+   * server-side when the entry is started from the stash drawer.
+   */
+  async function onStash() {
+    if (!token || stashing) return
+    // Never disabled (unlike Generate): say what's missing instead.
+    const missing = !prompt.trim()
+      ? 'Enter a prompt to stash.'
+      : isInputImageMode(mode) && !uploadedInput
+        ? 'Add an input image to stash.'
+        : !capability
+          ? 'Pick a model to stash.'
+          : null
+    if (missing) {
+      setInfo(null)
+      setError(missing)
+      return
+    }
+    setStashing(true)
+    setError(null)
+    recordPromptRecents()
+    const requests = multiInput
+      ? uploadedInputs.map(input => buildSubmitRequest(undefined, input))
+      : [buildSubmitRequest()]
+    try {
+      const saved = await imageStash.stash(requests)
+      setInfo(
+        saved === 1
+          ? 'Stashed for later — start it from the stash.'
+          : `Stashed ${saved} requests for later — start them from the stash.`,
+      )
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setStashing(false)
+    }
+  }
+
+  /** A stashed entry became a real job: show it and start polling, like Generate. */
+  async function showStartedStashJob(jobId: string) {
+    setActivePanel(jobId)
+    setActivePoll({ job_id: jobId, status: 'submitted', stage: null, error: null, output_images: [] })
+    await refreshJob(jobId)
+    void refreshRunningImageJobs()
+    void runPoll(jobId)
+  }
+
+  async function onStartStashed(id: string) {
+    const res = await imageStash.start(id)
+    if (res) await showStartedStashJob(res.job_id)
+  }
+
+  async function onStartAllStashed() {
+    let lastId: string | null = null
+    await imageStash.startAll(res => {
+      lastId = res.job_id
+      void refreshJob(res.job_id)
+    })
+    if (lastId) await showStartedStashJob(lastId)
   }
 
   function parseGenerateMultipleCount(raw: string): number {
@@ -2241,6 +2310,37 @@ export default function ImageGenerationPage() {
                 </Button>
               </span>
 
+              {/* Stash: save this request to run later; the count opens the drawer. */}
+              <div className="flex items-center gap-2 text-xs">
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto gap-1 px-0 text-xs"
+                  onClick={() => void onStash()}
+                  aria-busy={stashing}
+                  title="Save this request without running it"
+                  data-testid="imggen-stash-add"
+                >
+                  {stashing ? <Loader2 className="size-3 animate-spin" /> : <Archive className="size-3" />}
+                  Stash
+                </Button>
+                <span aria-hidden className="text-muted-foreground">·</span>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-0 text-xs text-muted-foreground"
+                  onClick={() => {
+                    setStashOpen(true)
+                    void imageStash.refresh()
+                  }}
+                  data-testid="imggen-stash-open"
+                >
+                  Stashed{imageStash.entries.length > 0 ? ` (${imageStash.entries.length})` : ''}
+                </Button>
+              </div>
+
               <AnimatePresence>
                 {submitBurst &&
                   BURST_SPARKS.map((p, i) => (
@@ -2838,6 +2938,19 @@ export default function ImageGenerationPage() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <ImageStashDrawer
+      open={stashOpen}
+      onOpenChange={setStashOpen}
+      token={token}
+      entries={imageStash.entries}
+      loading={imageStash.loading}
+      error={imageStash.error}
+      busyIds={imageStash.busyIds}
+      startingAll={imageStash.startingAll}
+      onStart={id => void onStartStashed(id)}
+      onDelete={id => void imageStash.remove(id)}
+      onStartAll={() => void onStartAllStashed()}
+    />
     </>
   )
 }

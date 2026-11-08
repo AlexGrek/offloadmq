@@ -281,6 +281,34 @@ the request sends `isAdmin && highPriority`. Restoring from a job keeps its stor
 `pipeline_params` snapshot leaves the checkbox as it was. The Go CLI exposes it as `oai image generate --high-priority` (same admin gate; `image retry` replays the stored value). MCP, Image Cycles, Model Wars and Movie child jobs
 submit regular. Tests: mocked e2e `oai/e2e/tests/high-priority.spec.ts` (admin + non-admin), itest `TestStartImageJob::test_high_priority_is_admin_only`.
 
+### Stash (deferred generations)
+
+**Stash** (`imggen-stash-add`, under "Generate multiple") saves what Generate would
+submit — one entry per input image — **without** creating a job. It is **never disabled**
+(unlike Generate, and not even while a Generate is in flight): a missing prompt, input image
+or model is reported in `imggen-error` instead. **Stashed (N)**
+(`imggen-stash-open`) opens `components/imggen/ImageStashDrawer.tsx`, a right `Sheet`
+(`imggen-stash-drawer`) listing entries newest first; **Start now**
+(`imggen-stash-start-{id}`) removes the entry and submits it (the page then shows the
+job like a normal Generate), trash (`imggen-stash-delete-{id}`) discards it, **Start
+all** (`imggen-stash-start-all`) runs them oldest first. State: `hooks/useImageStash.ts`.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/images/stash` | `[{ id, created_at, request }]`, newest first |
+| POST | `/api/images/stash` | body = `StartJobParams`; validated like `start_job` (`image_jobs::validate_request`: capability, prompt, owned input, admin-only `high_priority`) → 201 entry. Cap 200 per user |
+| DELETE | `/api/images/stash/{id}` | 204 |
+| POST | `/api/images/stash/{id}/start` | → 201 `{ job_id, status }` |
+
+- Table `image_stash_entries` (`request_json` text, migration `…_000040`);
+  `db/image_stash.rs`, `services/image_stash.rs`, `routes/image_stash.rs`.
+- The stored prompt is the **raw template**: placeholders (`{color}`, custom, `{?}`)
+  are expanded **server-side at start** (`PromptExpander`), so each start draws fresh
+  values. Recents are recorded when stashing.
+- Start "takes" the row (find + delete, only one concurrent caller wins) and
+  **restores** it (same id/`created_at`) if the submit fails.
+- Tests: itest `oai/itests/tests/test_image_stash.py`, mocked e2e `oai/e2e/tests/stash.spec.ts`.
+
 ### Saved-prompt previews
 
 On completion `fetch_and_store_outputs` hands the output thumbnail (384px; video → frame) to `prompt_previews::attach_preview("imggen-prompt", prompt_template ?? job.prompt)`. It copies the JPEG to `users/{u}/prompt_previews/imggen-prompt/{sha256(content)}.jpg` (latest generation wins) and sets `preview_updated_at` on every entry with that exact text. Best-effort — never fails the job. The Prompt textarea passes `previews` to `PromptTextarea`, enabling the drawer's Gallery / Mixed / Text view modes.
@@ -405,7 +433,7 @@ Backend: `image_jobs::cancel_job` → `OffloadImageClient::cancel_task` → `upd
 
 ### DB tables
 
-`image_generation_jobs`, `image_files`, `image_offload_tasks`, `image_pipeline_events`, `image_worker_logs`.
+`image_generation_jobs`, `image_files`, `image_offload_tasks`, `image_pipeline_events`, `image_worker_logs`, `image_stash_entries`.
 
 ---
 
@@ -452,7 +480,8 @@ imggen-input-grid, imggen-input-thumb-{id}, imggen-input-remove-{id}, imggen-inp
 imggen-multi-input-dims-hint, imggen-generate-multiple-open, imggen-picker-selected-count,
 describe-upload-input, describe-input-grid, describe-input-thumb-{id},
 describe-input-remove-{id}, describe-input-clear,
-imggen-submit-job,
+imggen-submit-job, imggen-stash-add, imggen-stash-open, imggen-stash-drawer,
+imggen-stash-item-{id}, imggen-stash-start-{id}, imggen-stash-delete-{id}, imggen-stash-start-all,
 imggen-job-detail, imggen-poll-job, imggen-cancel-job,
 imggen-pipeline, imggen-pipeline-toggle, imggen-pipeline-status,
 tool-debug-open, tool-debug-modal, tool-debug-fetch-poll, tool-debug-poll,

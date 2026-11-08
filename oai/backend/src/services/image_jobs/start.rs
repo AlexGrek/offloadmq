@@ -128,6 +128,24 @@ pub async fn start_job(
     start_job_with_id(state, user_id, state.next_id(), req, false).await
 }
 
+/// The checks `start_job` makes before creating anything — for callers that keep
+/// a request to submit later (the stash), so a broken request is rejected when it
+/// is saved, not when it is finally started.
+pub async fn validate_request(
+    state: &AppState,
+    user_id: i64,
+    req: &StartJobParams,
+) -> Result<(), AppError> {
+    if req.high_priority && !is_admin(state, user_id).await? {
+        return Err(AppError::Forbidden);
+    }
+    validate_start_job(req, &resolve_workflow(req))?;
+    if let Some(id) = parse_input_image_id(req)? {
+        get_owned_input_file(state, id, user_id).await?;
+    }
+    Ok(())
+}
+
 /// High priority jumps every regular task on the shared OffloadMQ queue — other
 /// users' and other clients' — so only admins may ask for it.
 async fn is_admin(state: &AppState, user_id: i64) -> Result<bool, AppError> {

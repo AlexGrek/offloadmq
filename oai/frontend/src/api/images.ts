@@ -193,6 +193,32 @@ export function startImageJob(token: string, payload: StartImageJobRequest, sign
   return request('/api/images/jobs', token, { method: 'POST', body: JSON.stringify(payload), signal })
 }
 
+/** A generation request saved to run later (`/api/images/stash`). `request` is
+ *  the stored job body with the prompt still unexpanded — placeholders are
+ *  resolved server-side when the entry is started. */
+export interface ImageStashEntry {
+  id: string
+  created_at: string
+  request: StartImageJobRequest
+}
+
+export function listImageStash(token: string): Promise<ImageStashEntry[]> {
+  return request('/api/images/stash', token)
+}
+
+export function stashImageJob(token: string, payload: StartImageJobRequest): Promise<ImageStashEntry> {
+  return request('/api/images/stash', token, { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function deleteImageStashEntry(token: string, id: string): Promise<void> {
+  return request(`/api/images/stash/${encodeURIComponent(id)}`, token, { method: 'DELETE' })
+}
+
+/** Removes the entry from the stash and submits it as an image job. */
+export function startImageStashEntry(token: string, id: string): Promise<StartImageJobResponse> {
+  return request(`/api/images/stash/${encodeURIComponent(id)}/start`, token, { method: 'POST' })
+}
+
 export function pollImageJob(token: string, jobId: string, signal?: AbortSignal): Promise<PollImageJobResponse> {
   return request(`/api/images/jobs/${jobId}/poll`, token, { method: 'POST', signal })
 }
