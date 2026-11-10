@@ -121,6 +121,7 @@ export interface ImgUtilsJob {
 }
 
 export interface StartImgUtilsJobRequest {
+  priority?: 'low' | 'normal' | 'high'
   capability: string
   workflow?: string
   input_image_id: string

@@ -22,6 +22,7 @@ export interface ImagePipelineRescaleParams {
 
 /** Full pipeline snapshot stored on each job and returned in job details. */
 export interface ImagePipelineParams {
+  priority?: 'low' | 'normal' | 'high'
   capability: string
   prompt: string
   negative_prompt?: string | null
@@ -43,6 +44,7 @@ export interface ImagePipelineParams {
 }
 
 export interface StartImageJobRequest {
+  priority?: 'low' | 'normal' | 'high'
   capability: string
   prompt: string
   negative_prompt?: string | null

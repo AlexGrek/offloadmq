@@ -23,6 +23,7 @@ export const WALLPAPER_SIZES = [
 ] as const
 
 export interface WallpaperSettings {
+  priority: 'low' | 'normal' | 'high'
   prompt: string
   capability: string
   width: number
@@ -123,6 +124,7 @@ export async function runWallpaper(
       beginJob('generation', settings.capability)
       const job = await startImageJob(token, {
         capability: settings.capability,
+        priority: settings.priority,
         prompt: expandPromptPlaceholders(settings.prompt, usage, custom),
         workflow: 'txt2img', width: settings.width, height: settings.height,
         seed: Math.floor(Math.random() * 2147483647),
@@ -153,6 +155,7 @@ export async function runWallpaper(
         beginJob('upscale', settings.upscaler.capability)
         const tool = await startImgUtilsJob(token, {
           capability: settings.upscaler.capability, workflow: settings.upscaler.workflow,
+          priority: settings.priority,
           input_image_id: imageId, options: { scale_multiplier: settings.scale },
         }, wallpaperRequestSignal())
         upscale = tool.job_id

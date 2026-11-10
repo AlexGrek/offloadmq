@@ -94,6 +94,21 @@ pub async fn submit(
     input: &ImageFile,
     high_priority: bool,
 ) -> Result<PreStep, AppError> {
+    submit_at_priority(
+        state,
+        client,
+        input,
+        crate::offload::image_tasks::ImageTaskPriority::Normal.with_legacy_high(high_priority),
+    )
+    .await
+}
+
+pub async fn submit_at_priority(
+    state: &AppState,
+    client: &OffloadImageClient,
+    input: &ImageFile,
+    priority: crate::offload::image_tasks::ImageTaskPriority,
+) -> Result<PreStep, AppError> {
     let bytes = storage::read(storage::operator(state)?, &input.storage_path).await?;
 
     let in_bucket = client.create_bucket(true).await?;
@@ -105,16 +120,20 @@ pub async fn submit(
 
     let out_bucket = client.create_bucket(false).await?;
     let (task_id, submit_payload) = client
-        .submit_img_task_with_priority(
+        .submit_img_task_at_priority(
             RESIZE_CAPABILITY,
             payload(&filename),
             Some(&in_bucket.bucket_uid),
             &out_bucket.bucket_uid,
             None,
-            high_priority,
+            priority,
         )
         .await?;
-    Ok(PreStep { task_id, output_bucket: out_bucket.bucket_uid, submit_payload })
+    Ok(PreStep {
+        task_id,
+        output_bucket: out_bucket.bucket_uid,
+        submit_payload,
+    })
 }
 
 /// The output bucket recorded when the pre-step was submitted, recovered from
@@ -144,7 +163,13 @@ fn staged_filename(input: &ImageFile) -> String {
 fn sanitize(stem: &str) -> String {
     let cleaned: String = stem
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     // Keep it short: the name only has to be unique inside a single-file bucket.
     cleaned.chars().take(48).collect()
@@ -184,7 +209,10 @@ pub fn completed_output(
         .or_else(|| output.get("output_bucket").and_then(|v| v.as_str()))
         .or(fallback_bucket)?
         .to_string();
-    Some(ResizedInput { bucket_uid: bucket, filename })
+    Some(ResizedInput {
+        bucket_uid: bucket,
+        filename,
+    })
 }
 
 #[cfg(test)]

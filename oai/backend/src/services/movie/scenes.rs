@@ -221,6 +221,7 @@ pub(super) async fn reconcile_video(state: &AppState, job: &mut movie::MovieJob)
                 // small, so there is nothing for an agent to shrink.
                 external_resize: false,
                 high_priority: false,
+                priority: Default::default(),
                 prompt_template: None,
             },
         )

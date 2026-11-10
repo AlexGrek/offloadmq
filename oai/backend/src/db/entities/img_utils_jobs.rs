@@ -23,6 +23,7 @@ pub struct Model {
     pub source_image_id: Option<i64>,
     /// Extra workflow knobs, forwarded verbatim as `payload.secondary_prompts`.
     pub options_json: Option<String>,
+    pub priority: String,
     pub offload_cap: Option<String>,
     pub offload_task_id: Option<String>,
     pub output_bucket_uid: Option<String>,

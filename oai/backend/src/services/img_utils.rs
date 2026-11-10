@@ -81,6 +81,7 @@ pub struct ImgUtilCapability {
 }
 
 pub struct StartJobParams {
+    pub priority: crate::offload::image_tasks::ImageTaskPriority,
     pub capability: String,
     /// Operation to run. When omitted it is resolved from the capability's
     /// advertised operations — unambiguous for the usual single-operation pack.
@@ -188,9 +189,15 @@ impl JobReconciler for ImgUtilsReconciler {
         // upscale result back down to MAX_IMAGE_EDGE would throw away the resolution the
         // tool was asked to produce.
         let (source, max_edge) = if is_resize_capability(&job.capability) {
-            (RESIZE_CAPABILITY.to_string(), image_processing::MAX_IMAGE_EDGE)
+            (
+                RESIZE_CAPABILITY.to_string(),
+                image_processing::MAX_IMAGE_EDGE,
+            )
         } else {
-            (format!("img-utils/{}", job.utility), image_processing::NO_MAX_EDGE)
+            (
+                format!("img-utils/{}", job.utility),
+                image_processing::NO_MAX_EDGE,
+            )
         };
         // The input this output was derived from: its EXIF and generation parameters
         // are handed on, so a tool run doesn't launder away where the picture came from.
@@ -372,6 +379,13 @@ pub async fn start_job(
     user_id: i64,
     params: StartJobParams,
 ) -> Result<i64, AppError> {
+    if params.priority == crate::offload::image_tasks::ImageTaskPriority::High
+        && !crate::db::users::find_by_id(&state.db, user_id)
+            .await?
+            .is_some_and(|u| u.is_admin == Some(true))
+    {
+        return Err(AppError::Forbidden);
+    }
     storage::operator(state)?;
 
     let capability = crate::offload::base_capability(&params.capability).to_string();
@@ -387,7 +401,9 @@ pub async fn start_job(
         capability[CAPABILITY_PREFIX.len()..].to_string()
     };
     if utility.is_empty() {
-        return Err(AppError::BadRequest("capability is missing a utility name".into()));
+        return Err(AppError::BadRequest(
+            "capability is missing a utility name".into(),
+        ));
     }
     let workflow = if resize {
         // Resize has exactly one operation and sends no `workflow` to the agent.
@@ -454,6 +470,7 @@ pub async fn start_job(
             input_image_id: Some(input.id),
             source_image_id: source.as_ref().map(|f| f.id),
             options_json: options_json.as_deref(),
+            priority: params.priority,
         },
     )
     .await?;
@@ -483,12 +500,13 @@ pub async fn start_job(
         ),
     };
     let (task_id, _) = client
-        .submit_img_task(
+        .submit_img_task_at_priority(
             &capability,
             payload,
             Some(&in_bucket.bucket_uid),
             &out_bucket.bucket_uid,
             None,
+            params.priority,
         )
         .await?;
 
@@ -591,14 +609,21 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
             input_image_id,
             source_image_id: job.source_image_id,
             options: parse_options(job.options_json.as_deref()),
+            priority: if job.priority == "high"
+                && !crate::db::users::find_by_id(&state.db, user_id)
+                    .await?
+                    .is_some_and(|u| u.is_admin == Some(true))
+            {
+                Default::default()
+            } else {
+                serde_json::from_value(serde_json::json!(job.priority)).unwrap_or_default()
+            },
         },
     )
     .await
 }
 
-pub fn parse_options(
-    json: Option<&str>,
-) -> Option<serde_json::Map<String, serde_json::Value>> {
+pub fn parse_options(json: Option<&str>) -> Option<serde_json::Map<String, serde_json::Value>> {
     json.and_then(|s| serde_json::from_str(s).ok())
 }
 

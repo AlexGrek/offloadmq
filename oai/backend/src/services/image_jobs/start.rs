@@ -31,17 +31,25 @@ pub struct StartJobParams {
     #[serde(default)]
     pub external_resize: bool,
     /// Submit at OffloadMQ priority "high" (2) instead of regular, for every task
-    /// this job runs (resize pre-step, generation, upscale). OAI deliberately
-    /// exposes only regular vs high, and only to admins: `start_job` rejects it
+    /// this job runs (resize pre-step, generation, upscale). Legacy alias for
+    /// `priority: "high"`, restricted to admins: `start_job` rejects it
     /// with 403 for anyone else, and `retry_job` downgrades it to regular.
     #[serde(default)]
     pub high_priority: bool,
+    #[serde(default)]
+    pub priority: crate::offload::image_tasks::ImageTaskPriority,
     /// The prompt as the user typed it, before placeholder expansion. Saved prompts
     /// store this raw text, so it is the key a finished job's thumbnail is attached
     /// to as the saved prompt's preview. Absent for API/CLI callers — the stored
     /// prompt is used then.
     #[serde(default)]
     pub prompt_template: Option<String>,
+}
+
+impl StartJobParams {
+    pub fn queue_priority(&self) -> crate::offload::image_tasks::ImageTaskPriority {
+        self.priority.with_legacy_high(self.high_priority)
+    }
 }
 
 pub async fn upload_input_image(
@@ -89,8 +97,11 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
     let mut start = start_params_from_pipeline(&params);
     // Replaying a stored choice must not fail the retry: a user who has since
     // lost admin just gets a regular-priority job.
-    if start.high_priority && !is_admin(state, user_id).await? {
+    if start.queue_priority() == crate::offload::image_tasks::ImageTaskPriority::High
+        && !is_admin(state, user_id).await?
+    {
         start.high_priority = false;
+        start.priority = Default::default();
     }
     let new_id = start_job_with_upscale(state, user_id, start, params.upscale).await?;
     let (source_event, target_event) = if job.status == "completed" {
@@ -122,9 +133,6 @@ pub async fn start_job(
     user_id: i64,
     req: StartJobParams,
 ) -> Result<i64, AppError> {
-    if req.high_priority && !is_admin(state, user_id).await? {
-        return Err(AppError::Forbidden);
-    }
     start_job_with_id(state, user_id, state.next_id(), req, false).await
 }
 
@@ -136,7 +144,9 @@ pub async fn validate_request(
     user_id: i64,
     req: &StartJobParams,
 ) -> Result<(), AppError> {
-    if req.high_priority && !is_admin(state, user_id).await? {
+    if req.queue_priority() == crate::offload::image_tasks::ImageTaskPriority::High
+        && !is_admin(state, user_id).await?
+    {
         return Err(AppError::Forbidden);
     }
     validate_start_job(req, &resolve_workflow(req))?;
@@ -183,11 +193,18 @@ async fn start_job_internal(
     preserve_input: bool,
     upscale: Option<image_pipeline_params::UpscaleParams>,
 ) -> Result<i64, AppError> {
+    if req.queue_priority() == crate::offload::image_tasks::ImageTaskPriority::High
+        && !is_admin(state, user_id).await?
+    {
+        return Err(AppError::Forbidden);
+    }
     storage::operator(state)?;
     if let Some(upscale) = &upscale {
         upscale.validate()?;
         if !matches!(resolve_workflow(&req).as_str(), "txt2img" | "img2img") {
-            return Err(AppError::BadRequest("upscale supports txt2img and img2img only".into()));
+            return Err(AppError::BadRequest(
+                "upscale supports txt2img and img2img only".into(),
+            ));
         }
     }
 
@@ -240,7 +257,8 @@ async fn start_job_internal(
         let input = input.as_ref().ok_or_else(|| {
             AppError::Internal("external_resize is set but the job has no input image".into())
         })?;
-        let pre = external_resize::submit(state, &client, input, req.high_priority).await?;
+        let pre = external_resize::submit_at_priority(state, &client, input, req.queue_priority())
+            .await?;
         image_generation::create_offload_task(
             &state.db,
             state.next_id(),
@@ -285,13 +303,13 @@ async fn start_job_internal(
     let payload = build_submit_payload(&req, &workflow, input.as_ref());
     let data_prep = data_preparation_map(&req.data_preparation);
     let (task_id, submit_payload) = client
-        .submit_img_task_with_priority(
+        .submit_img_task_at_priority(
             &req.capability,
             payload,
             input_bucket_uid.as_deref(),
             &output_bucket.bucket_uid,
             data_prep.as_ref(),
-            req.high_priority,
+            req.queue_priority(),
         )
         .await?;
 
@@ -349,7 +367,9 @@ pub(super) fn validate_start_job(req: &StartJobParams, workflow: &str) -> Result
         return Err(AppError::BadRequest("prompt is required".into()));
     }
     if !req.capability.starts_with("imggen.") {
-        return Err(AppError::BadRequest("capability must start with imggen.".into()));
+        return Err(AppError::BadRequest(
+            "capability must start with imggen.".into(),
+        ));
     }
     if matches!(workflow, "img2img" | "img2video") && req.input_image_id.is_none() {
         return Err(AppError::BadRequest(format!("{workflow} requires input_image_id")));
@@ -364,7 +384,10 @@ pub(super) fn is_video_workflow(workflow: &str) -> bool {
 pub(super) fn parse_input_image_id(req: &StartJobParams) -> Result<Option<i64>, AppError> {
     req.input_image_id
         .as_deref()
-        .map(|s| s.parse::<i64>().map_err(|_| AppError::BadRequest("invalid input_image_id".into())))
+        .map(|s| {
+            s.parse::<i64>()
+                .map_err(|_| AppError::BadRequest("invalid input_image_id".into()))
+        })
         .transpose()
 }
 
@@ -384,6 +407,7 @@ pub(super) fn start_params_from_pipeline(p: &ImagePipelineParams) -> StartJobPar
         video_length: p.video_length,
         external_resize: p.external_resize,
         high_priority: p.high_priority,
+        priority: p.priority,
         prompt_template: p.prompt_template.clone(),
     }
 }
@@ -408,7 +432,8 @@ pub(super) fn build_pipeline_params(
         rescale: req.rescale.clone(),
         video_length: req.video_length,
         external_resize: req.external_resize && input_image_id.is_some(),
-        high_priority: req.high_priority,
+        high_priority: req.queue_priority() == crate::offload::image_tasks::ImageTaskPriority::High,
+        priority: req.priority,
         prompt_template: req
             .prompt_template
             .as_deref()
@@ -442,7 +467,12 @@ pub(super) async fn stage_input_image(
     let bytes = storage::read(storage::operator(state)?, &input.storage_path).await?;
     let bucket = client.create_bucket(true).await?;
     let upload = client
-        .upload_bucket_file(&bucket.bucket_uid, bytes, &input.filename, &input.content_type)
+        .upload_bucket_file(
+            &bucket.bucket_uid,
+            bytes,
+            &input.filename,
+            &input.content_type,
+        )
         .await?;
     record_event(
         state,
@@ -541,6 +571,22 @@ mod tests {
         assert_eq!(
             build_submit_payload(&req, "txt2img", None)["secondary_prompts"]["negative"],
             "blurry"
+        );
+    }
+
+    #[test]
+    fn low_priority_survives_snapshot_and_retry() {
+        let req: StartJobParams = serde_json::from_value(serde_json::json!({
+            "capability": "imggen.test", "prompt": "dream", "width": 512,
+            "height": 512, "priority": "low"
+        }))
+        .unwrap();
+        let params = build_pipeline_params(&req, "txt2img", None);
+        let stored = params.to_json().unwrap();
+        let restored = ImagePipelineParams::from_json(&stored).unwrap();
+        assert_eq!(
+            start_params_from_pipeline(&restored).queue_priority(),
+            crate::offload::image_tasks::ImageTaskPriority::Low
         );
     }
 

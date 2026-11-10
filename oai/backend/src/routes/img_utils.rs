@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +15,7 @@ use crate::{
     },
     error::AppError,
     middleware::AuthenticatedUser,
-    routes::job_common::{parse_id, CancelJobResponse, StartJobResponse},
+    routes::job_common::{CancelJobResponse, StartJobResponse, parse_id},
     services::img_utils as service,
     state::AppState,
 };
@@ -35,6 +35,8 @@ pub async fn list_capabilities(
 
 #[derive(Deserialize)]
 pub struct StartJobRequest {
+    #[serde(default)]
+    pub priority: crate::offload::image_tasks::ImageTaskPriority,
     pub capability: String,
     pub workflow: Option<String>,
     /// `image_files` id from `POST /api/images/upload`.
@@ -64,10 +66,14 @@ pub async fn start_job(
             input_image_id: parse_id(&req.input_image_id, "input_image_id")?,
             source_image_id,
             options: req.options,
+            priority: req.priority,
         },
     )
     .await?;
-    Ok((StatusCode::CREATED, Json(StartJobResponse::submitted(job_id))))
+    Ok((
+        StatusCode::CREATED,
+        Json(StartJobResponse::submitted(job_id)),
+    ))
 }
 
 /// Enough metadata about a stored image for the client to render it in the
@@ -163,7 +169,10 @@ pub async fn retry_job(
 ) -> Result<impl IntoResponse, AppError> {
     let job_id = parse_id(&job_id_str, "job_id")?;
     let new_id = service::retry_job(&state, user_id, job_id).await?;
-    Ok((StatusCode::CREATED, Json(StartJobResponse::submitted(new_id))))
+    Ok((
+        StatusCode::CREATED,
+        Json(StartJobResponse::submitted(new_id)),
+    ))
 }
 
 pub async fn delete_job(

@@ -565,6 +565,7 @@ async fn run(ctx: &ToolContext, tool_name: &str, a: RunArgs) -> Result<ToolOutpu
             input_image_id: input,
             source_image_id: a.source_image_id.map(|s| s.0),
             options: options.clone(),
+            priority: Default::default(),
         };
         match img_utils::start_job(&ctx.state, ctx.user_id, params).await {
             Ok(id) => job_ids.push(id),

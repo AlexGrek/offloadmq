@@ -3,8 +3,8 @@
 //! `set_output_image`) and the framework trait impls live here.
 
 use sea_orm::{
-    sea_query::Expr, ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 use crate::{
@@ -77,6 +77,7 @@ pub struct NewJobInput<'a> {
     pub input_image_id: Option<i64>,
     pub source_image_id: Option<i64>,
     pub options_json: Option<&'a str>,
+    pub priority: crate::offload::image_tasks::ImageTaskPriority,
 }
 
 /// The user's in-flight jobs, newest first — the Progress drawer's feed.
@@ -111,6 +112,14 @@ pub async fn create_job(
         input_image_id: ActiveValue::Set(input.input_image_id),
         source_image_id: ActiveValue::Set(input.source_image_id),
         options_json: ActiveValue::Set(input.options_json.map(str::to_string)),
+        priority: ActiveValue::Set(
+            match input.priority {
+                crate::offload::image_tasks::ImageTaskPriority::Low => "low",
+                crate::offload::image_tasks::ImageTaskPriority::Normal => "normal",
+                crate::offload::image_tasks::ImageTaskPriority::High => "high",
+            }
+            .to_string(),
+        ),
         offload_cap: ActiveValue::Set(None),
         offload_task_id: ActiveValue::Set(None),
         output_bucket_uid: ActiveValue::Set(None),

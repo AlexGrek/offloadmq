@@ -590,6 +590,7 @@ async fn submit(
                     video_length: None,
                     external_resize: false,
                     high_priority: false,
+                    priority: Default::default(),
                     prompt_template: None,
                 },
                 true,

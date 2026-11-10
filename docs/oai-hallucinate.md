@@ -21,6 +21,11 @@ API. `{?}` uses the generator's existing server-side substitution. There is no
 negative-prompt control. An explicit empty override clears the workflow negative
 prompt. Custom substitution pools are fetched once at start; restart after editing placeholder definitions.
 
+Priority defaults to **Normal**. **Low** queues behind normal work; admins can
+select **High** to queue ahead of normal work. The choice applies to every
+generation and optional upscale job, including after pause/resume. Individual
+job retries preserve it; High falls back to Normal if admin access was removed.
+
 Optional upscale discovers Image Tools operations advertising `upscale*`; the
 first available tool is selected by default, with a default multiplier of ×2.
 After generation completes, an Image Tools job processes its output. Only the

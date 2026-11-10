@@ -412,7 +412,7 @@ async fn promote_to_upscale(
         return Ok(());
     }
     let params = pipeline_params_for_job(&fresh);
-    let upscale = params.upscale.ok_or_else(|| AppError::Internal("missing upscale params".into()))?;
+    let upscale = params.upscale.as_ref().ok_or_else(|| AppError::Internal("missing upscale params".into()))?;
     let bucket = output_bucket_of(&current)?;
     let output = poll.output.clone().or_else(|| current.last_poll_output.as_deref()
         .and_then(|raw| serde_json::from_str(raw).ok()));
@@ -424,9 +424,9 @@ async fn promote_to_upscale(
     };
     let client = offload_factory::image_client(state).await?;
     let out = client.create_bucket(false).await?;
-    let payload = upscale_payload(&upscale, &input.filename);
-    let submitted = client.submit_img_task_with_priority(&upscale.capability, payload,
-        Some(&input.bucket_uid), &out.bucket_uid, None, params.high_priority).await;
+    let payload = upscale_payload(upscale, &input.filename);
+    let submitted = client.submit_img_task_at_priority(&upscale.capability, payload,
+        Some(&input.bucket_uid), &out.bucket_uid, None, params.queue_priority()).await;
     let (id, body) = match submitted {
         Ok(submitted) => submitted,
         Err(e) => {
@@ -491,13 +491,13 @@ pub(super) async fn promote_after_resize(
     let payload = build_promoted_payload(&params, &resized.filename);
     let data_prep = data_preparation_map(&params.data_preparation);
     let (task_id, submit_payload) = client
-        .submit_img_task_with_priority(
+        .submit_img_task_at_priority(
             &crate::offload::base_capability(&params.capability).to_string(),
             payload,
             Some(&resized.bucket_uid),
             &output_bucket.bucket_uid,
             data_prep.as_ref(),
-            params.high_priority,
+            params.queue_priority(),
         )
         .await?;
 

@@ -46,6 +46,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261022_000038_user_prompt_defaults::Migration),
             Box::new(m20261106_000039_create_img_model_war_jobs::Migration),
             Box::new(m20261108_000040_create_image_stash::Migration),
+            Box::new(m20261110_000041_img_utils_priority::Migration),
         ]
     }
 }
@@ -150,3 +151,5 @@ mod m20261106_000039_create_img_model_war_jobs;
 
 /// Stashed (deferred) image-generation requests — `services::image_stash`.
 mod m20261108_000040_create_image_stash;
+
+mod m20261110_000041_img_utils_priority;

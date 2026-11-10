@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Expand, Minimize, Pause, Play, Settings2, Sparkles, Star } from 'lucide-react'
+import { useAdminStatus } from '@/hooks/useAdminStatus'
 import { useAuth } from '@/contexts/AuthContext'
 import { listImgGenCapabilities, type ImgGenCapability } from '@/api/images'
 import { listImgUtilsCapabilities, toolKey, toolsFromCapabilities, type ImgUtilTool } from '@/api/imgUtils'
@@ -13,6 +14,8 @@ import { FADE_MS, HALLUCINATE_BUCKET, runWallpaper, wallpaperRequestSignal, Wall
 
 export default function HallucinatePage() {
   const { token } = useAuth()
+  const { isAdmin } = useAdminStatus()
+  const [priority, setPriority] = useState<'low' | 'normal' | 'high'>('normal')
   const [models, setModels] = useState<ImgGenCapability[]>([])
   const [tools, setTools] = useState<ImgUtilTool[]>([])
   const [model, setModel] = useState('')
@@ -107,6 +110,7 @@ export default function HallucinatePage() {
       await runWallpaper(token, {
         prompt: prompt.trim(), capability: model, width: size[0], height: size[1], scale,
         upscaler: upscale ? upscaler : undefined,
+        priority: priority === 'high' && !isAdmin ? 'normal' : priority,
       }, abort.signal, next => { if (mounted.current) setStage(next) }, url => {
         if (!mounted.current || abort.signal.aborted) { URL.revokeObjectURL(url); return }
         const previous = urls.current
@@ -154,6 +158,14 @@ export default function HallucinatePage() {
               {!models.length && <option value="">No txt2img models online</option>}
               {models.map(m => <option key={m.base} value={m.base}>{m.base.replace('imggen.', '')}</option>)}
             </select>
+          </label>
+          <label className="block space-y-2 text-sm">Priority
+            <select aria-label="Priority" data-testid="hallucinate-priority" value={priority} disabled={running} onChange={e => setPriority(e.target.value as typeof priority)} className="block min-h-11 w-full rounded-md border border-input bg-background px-3">
+              <option value="low">Low</option>
+              <option value="normal">Normal (default)</option>
+              {isAdmin && <option value="high">High</option>}
+            </select>
+            <span className="block text-xs text-muted-foreground">Applies to generation and upscaling. High priority is available to admins.</span>
           </label>
           <div className="space-y-2">
             <label htmlFor="hallucinate-prompt" className="text-sm">Your recurring dream</label>

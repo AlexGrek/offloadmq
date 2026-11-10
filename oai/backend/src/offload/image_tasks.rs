@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::AppError,
-    offload::{post_cancel, watch::TaskWatch, CancelTaskResponse},
+    offload::{CancelTaskResponse, post_cancel, watch::TaskWatch},
 };
 
 #[derive(Debug, Clone)]
@@ -48,7 +48,12 @@ pub struct UploadFileResponse {
 
 impl OffloadImageClient {
     pub fn new(http: Client, base_url: String, api_key: String, watch: Arc<TaskWatch>) -> Self {
-        Self { http, base_url: base_url.trim_end_matches('/').to_string(), api_key, watch }
+        Self {
+            http,
+            base_url: base_url.trim_end_matches('/').to_string(),
+            api_key,
+            watch,
+        }
     }
 
     pub async fn create_bucket(
@@ -179,6 +184,26 @@ impl OffloadImageClient {
         data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
         high_priority: bool,
     ) -> Result<(OffloadTaskId, serde_json::Value), AppError> {
+        self.submit_img_task_at_priority(
+            capability,
+            payload,
+            input_bucket_uid,
+            output_bucket_uid,
+            data_preparation,
+            ImageTaskPriority::Normal.with_legacy_high(high_priority),
+        )
+        .await
+    }
+
+    pub async fn submit_img_task_at_priority(
+        &self,
+        capability: &str,
+        payload: serde_json::Value,
+        input_bucket_uid: Option<&str>,
+        output_bucket_uid: &str,
+        data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
+        priority: ImageTaskPriority,
+    ) -> Result<(OffloadTaskId, serde_json::Value), AppError> {
         let body = img_task_body(
             &self.api_key,
             capability,
@@ -186,7 +211,7 @@ impl OffloadImageClient {
             input_bucket_uid,
             output_bucket_uid,
             data_preparation,
-            high_priority,
+            priority,
         );
         let url = format!("{}/api/task/submit", self.base_url);
         let resp = self
@@ -217,7 +242,10 @@ impl OffloadImageClient {
     /// `POST /api/task/poll/{cap}/{id}` — see `offload::watch` for why. The
     /// error convention (`POLL_HTTP_404:` prefix, `offload_task_missing_message`)
     /// is preserved so every existing caller keeps working unmodified.
-    pub async fn poll_task(&self, task_id: &OffloadTaskId) -> Result<OffloadPollResponse, AppError> {
+    pub async fn poll_task(
+        &self,
+        task_id: &OffloadTaskId,
+    ) -> Result<OffloadPollResponse, AppError> {
         let f = crate::offload::watch::poll_via_watch(
             &self.watch,
             &self.http,
@@ -236,15 +264,43 @@ impl OffloadImageClient {
         })
     }
 
-    pub async fn cancel_task(&self, task_id: &OffloadTaskId) -> Result<CancelTaskResponse, AppError> {
-        post_cancel(&self.http, &self.base_url, &self.api_key, &task_id.cap, &task_id.id).await
+    pub async fn cancel_task(
+        &self,
+        task_id: &OffloadTaskId,
+    ) -> Result<CancelTaskResponse, AppError> {
+        post_cancel(
+            &self.http,
+            &self.base_url,
+            &self.api_key,
+            &task_id.cap,
+            &task_id.id,
+        )
+        .await
     }
 }
 
-/// OffloadMQ task priority used for "high priority" jobs. The server accepts
-/// 0 low, 1 regular (its default when the field is absent), 2 high, 3 critical;
-/// OAI only ever asks for high.
-pub const OFFLOAD_PRIORITY_HIGH: u8 = 2;
+/// User-selectable image queue priority. High remains admin-only in services.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageTaskPriority {
+    Low,
+    #[default]
+    Normal,
+    High,
+}
+
+impl ImageTaskPriority {
+    pub fn wire_value(self) -> u8 {
+        match self {
+            Self::Low => 0,
+            Self::Normal => 1,
+            Self::High => 2,
+        }
+    }
+    pub fn with_legacy_high(self, high: bool) -> Self {
+        if high { Self::High } else { self }
+    }
+}
 
 /// The `/api/task/submit` body for a non-urgent image-family task.
 fn img_task_body(
@@ -254,7 +310,7 @@ fn img_task_body(
     input_bucket_uid: Option<&str>,
     output_bucket_uid: &str,
     data_preparation: Option<&serde_json::Map<String, serde_json::Value>>,
-    high_priority: bool,
+    priority: ImageTaskPriority,
 ) -> serde_json::Value {
     // The agent uses runtimeSecs as its ComfyUI completion-wait budget.
     // Video generation is far slower than still images, so give video
@@ -278,10 +334,9 @@ fn img_task_body(
     if let Some(prep) = data_preparation.filter(|m| !m.is_empty()) {
         body["dataPreparation"] = serde_json::Value::Object(prep.clone());
     }
-    // Regular priority is OffloadMQ's default, so the field is only sent when
-    // raised — regular submissions stay byte-identical to before.
-    if high_priority {
-        body["priority"] = serde_json::json!(OFFLOAD_PRIORITY_HIGH);
+    // Normal is OffloadMQ's default; preserve the existing default request body.
+    if priority != ImageTaskPriority::Normal {
+        body["priority"] = serde_json::json!(priority.wire_value());
     }
     body
 }
@@ -298,7 +353,7 @@ mod tests {
             None,
             "out",
             None,
-            high_priority,
+            ImageTaskPriority::Normal.with_legacy_high(high_priority),
         )
     }
 
@@ -307,6 +362,31 @@ mod tests {
         let b = body(false);
         assert!(b.get("priority").is_none());
         assert_eq!(b["urgent"], false);
+    }
+
+    #[test]
+    fn low_priority_sends_zero() {
+        let body = img_task_body(
+            "key",
+            "imggen.flux",
+            serde_json::json!({}),
+            None,
+            "out",
+            None,
+            ImageTaskPriority::Low,
+        );
+        assert_eq!(body["priority"], 0);
+    }
+
+    #[test]
+    fn priority_rejects_unknown_values() {
+        for value in [
+            serde_json::json!("critical"),
+            serde_json::json!(3),
+            serde_json::json!("urgent"),
+        ] {
+            assert!(serde_json::from_value::<ImageTaskPriority>(value).is_err());
+        }
     }
 
     #[test]

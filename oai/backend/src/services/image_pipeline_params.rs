@@ -75,6 +75,8 @@ pub struct ImagePipelineParams {
     /// prompt"; jobs created before the option deserialize as `false`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub high_priority: bool,
+    #[serde(default)]
+    pub priority: crate::offload::image_tasks::ImageTaskPriority,
     /// Raw prompt before placeholder expansion (see `StartJobParams::prompt_template`);
     /// replayed on retry so the retried result also refreshes the saved-prompt preview.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,6 +84,10 @@ pub struct ImagePipelineParams {
 }
 
 impl ImagePipelineParams {
+    pub fn queue_priority(&self) -> crate::offload::image_tasks::ImageTaskPriority {
+        self.priority.with_legacy_high(self.high_priority)
+    }
+
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
     }
@@ -108,6 +114,7 @@ impl ImagePipelineParams {
             // Predates the option, so it can never have been used.
             external_resize: false,
             high_priority: false,
+            priority: Default::default(),
             prompt_template: None,
             rescale: if job.workflow == "img2img" {
                 Some(RescaleParams {

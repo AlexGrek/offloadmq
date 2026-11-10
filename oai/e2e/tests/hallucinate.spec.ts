@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
-async function mock(page: Page, options: { pending?: boolean; upscaleFail?: boolean; slowSubmit?: boolean; cancelTerminal?: boolean; hangPoll?: boolean; hangSubmit?: boolean } = {}) {
+async function mock(page: Page, options: { isAdmin?: boolean; pending?: boolean; upscaleFail?: boolean; slowSubmit?: boolean; cancelTerminal?: boolean; hangPoll?: boolean; hangSubmit?: boolean } = {}) {
   const submissions: Record<string, unknown>[] = []
   const events: string[] = []
   let canceled = false
@@ -13,7 +13,7 @@ async function mock(page: Page, options: { pending?: boolean; upscaleFail?: bool
     if (!path.startsWith('/api/')) return route.continue()
     const json = (body: unknown) => route.fulfill({ json: body })
     if (path === '/api/me') return json({ id: 1, login: 'tester', used_storage_bytes: 0 })
-    if (path === '/api/admin/am_i_admin') return json({ is_admin: false })
+    if (path === '/api/admin/am_i_admin') return json({ is_admin: options.isAdmin ?? false })
     if (path === '/api/progress/running') return json({ jobs: [] })
     if (path === '/api/images/capabilities') return json([{ base: 'imggen.test', tags: ['txt2img'], online: true }])
     if (path === '/api/img-utils/capabilities') return json({ capabilities: [{ base: 'img-utils.seedvr', utility: 'seedvr', workflows: ['upscale'], kind: 'comfy' }] })
@@ -272,4 +272,29 @@ test('runtime upscale status and buttons hide together and return on mouse movem
   await page.getByTestId('hallucinate-pause').click()
   await expect(job).toContainText('Canceled')
   await expect(page.getByTestId('hallucinate-controls')).toHaveCSS('opacity', '1')
+})
+
+for (const priority of ['normal', 'low', 'high'] as const) {
+  test(`priority ${priority} applies to generation and upscale`, async ({ page }) => {
+    const { submissions } = await mock(page, { isAdmin: true })
+    const select = page.getByLabel('Priority', { exact: true })
+    await expect(select).toHaveValue('normal')
+    if (priority !== 'normal') await select.selectOption(priority)
+    await page.getByLabel('Upscale before displaying').check()
+    await page.getByTestId('hallucinate-start').click()
+    await expect(page.getByTestId('hallucinate-display').getByRole('img').first()).toBeVisible()
+    expect(submissions[0]).toMatchObject({ priority })
+    expect(submissions[1]).toMatchObject({ priority })
+    await page.getByTestId('hallucinate-pause').click()
+    await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
+  })
+}
+
+test('non-admins can choose low or normal priority', async ({ page }) => {
+  await mock(page)
+  const select = page.getByLabel('Priority', { exact: true })
+  await expect(select).toHaveValue('normal')
+  await expect(select.getByRole('option')).toHaveCount(2)
+  await select.selectOption('low')
+  await expect(select).toHaveValue('low')
 })
