@@ -7,6 +7,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { RandomNamesWidget } from './RandomNamesWidget'
 import { TopApps } from './TopApps'
 import { Button } from './ui/button'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
 import { cn } from '@/lib/utils'
 
 export function TopBar() {
@@ -72,10 +73,28 @@ export function TopBar() {
             <span className="ml-1.5 hidden sm:inline">My Account</span>
           </Link>
         </Button>
-        <Button variant="ghost" size="sm" onClick={handleLogout} aria-label="Sign out" title="Sign out">
-          <LogOut className="h-4 w-4" />
-          <span className="ml-1.5 hidden sm:inline">Sign out</span>
-        </Button>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="sm" aria-label="Sign out" title="Sign out" data-testid="sign-out-button">
+              <LogOut className="h-4 w-4" />
+              <span className="ml-1.5 hidden sm:inline">Sign out</span>
+            </Button>
+          </DialogTrigger>
+          <DialogContent data-testid="sign-out-dialog">
+            <DialogHeader>
+              <DialogTitle>Sign out?</DialogTitle>
+              <DialogDescription>Are you sure you want to sign out of OAI?</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline" className="min-h-11">Cancel</Button>
+              </DialogClose>
+              <Button className="min-h-11" onClick={handleLogout} data-testid="sign-out-confirm">
+                Sign out
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </header>
   )

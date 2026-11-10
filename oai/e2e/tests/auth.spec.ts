@@ -21,11 +21,25 @@ test.describe('Authentication', () => {
     // Should redirect to dashboard on successful registration
     await expect(page).toHaveURL(/\/app\/dashboard/);
 
-    // Logout
+    // Opening and dismissing the confirmation must keep the session active.
     await page.getByRole('button', { name: /sign out/i }).click();
+    const signOutDialog = page.getByRole('dialog', { name: 'Sign out?' });
+    await expect(signOutDialog).toBeVisible();
+    await signOutDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(signOutDialog).not.toBeVisible();
+    await expect(page).toHaveURL(/\/app\/dashboard/);
+
+    await page.getByRole('button', { name: /sign out/i }).click();
+    await page.keyboard.press('Escape');
+    await expect(signOutDialog).not.toBeVisible();
+    await expect(page).toHaveURL(/\/app\/dashboard/);
+
+    // Only confirmation signs the user out.
+    await page.getByRole('button', { name: /sign out/i }).click();
+    await signOutDialog.getByRole('button', { name: 'Sign out', exact: true }).click();
 
     // Should redirect to login or landing page
-    await expect(page).toHaveURL(/login|\//);
+    await expect(page).toHaveURL(/\/login$/);
 
     // Login
     await page.goto('/login');
