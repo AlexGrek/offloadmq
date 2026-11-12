@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -26,6 +26,8 @@ pub struct ChatResponse {
     pub title: String,
     pub system_prompt: String,
     pub last_model: Option<String>,
+    /// `chat` or `prompt_studio`.
+    pub kind: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -36,6 +38,23 @@ pub struct CreateChatRequest {
     pub system_prompt: Option<String>,
     #[serde(default)]
     pub last_model: Option<String>,
+    /// `chat` (default) or `prompt_studio`.
+    #[serde(default)]
+    pub kind: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ListChatsQuery {
+    /// `chat` (default) or `prompt_studio`.
+    #[serde(default)]
+    pub kind: Option<String>,
+}
+
+fn parse_kind(kind: Option<&str>) -> Result<chats::ChatKind, AppError> {
+    match kind.map(str::trim).filter(|k| !k.is_empty()) {
+        Some(k) => chats::ChatKind::parse(k),
+        None => Ok(chats::ChatKind::Chat),
+    }
 }
 
 #[derive(Deserialize)]
@@ -65,6 +84,7 @@ fn chat_to_response(c: chats::Chat) -> ChatResponse {
         title: c.title,
         system_prompt: c.system_prompt,
         last_model: c.last_model,
+        kind: c.kind,
         created_at: c.created_at.to_rfc3339(),
         updated_at: c.updated_at.to_rfc3339(),
     }
@@ -90,8 +110,10 @@ fn message_to_response(
 pub async fn list_chats(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
+    Query(query): Query<ListChatsQuery>,
 ) -> Result<Json<Vec<ChatResponse>>, AppError> {
-    let chats = chats::list_chats(&state.db, user_id).await?;
+    let kind = parse_kind(query.kind.as_deref())?;
+    let chats = chats::list_chats(&state.db, user_id, kind).await?;
     Ok(Json(chats.into_iter().map(chat_to_response).collect()))
 }
 
@@ -100,6 +122,7 @@ pub async fn create_chat(
     AuthenticatedUser(user_id): AuthenticatedUser,
     body: Option<Json<CreateChatRequest>>,
 ) -> Result<impl IntoResponse, AppError> {
+    let kind = parse_kind(body.as_ref().and_then(|b| b.kind.as_deref()))?;
     let content = body
         .as_ref()
         .and_then(|b| b.system_prompt.as_deref())
@@ -107,13 +130,19 @@ pub async fn create_chat(
     let system_prompt = if content.trim().is_empty() {
         crate::db::prompt_defaults::get(&state.db, user_id)
             .await?
-            .resolve(crate::db::prompt_defaults::App::Chat)
+            .resolve(kind.default_prompt_app())
     } else {
         prompts::normalize_content(content)?
     };
-    crate::services::prompt_usage::note_use(&state, user_id, "llm-system", &system_prompt).await;
+    crate::services::prompt_usage::note_use(
+        &state,
+        user_id,
+        kind.system_prompt_bucket(),
+        &system_prompt,
+    )
+    .await;
     let id = state.next_id();
-    let chat = chats::create_chat(&state.db, id, user_id, &system_prompt).await?;
+    let chat = chats::create_chat(&state.db, id, user_id, &system_prompt, kind).await?;
     let chat = if let Some(ref model) = body.as_ref().and_then(|b| b.last_model.as_ref()) {
         let cap = model.trim();
         if cap.is_empty() {
@@ -150,8 +179,9 @@ pub async fn update_system_prompt(
 ) -> Result<Json<ChatResponse>, AppError> {
     let id: i64 = chat_id.parse().map_err(|_| AppError::BadRequest("invalid chat id".into()))?;
     let system_prompt = prompts::normalize_content(&req.content)?;
-    crate::services::prompt_usage::note_use(&state, user_id, "llm-system", &system_prompt).await;
     let chat = chats::set_system_prompt(&state.db, id, user_id, &system_prompt).await?;
+    let bucket = chats::ChatKind::from_stored(&chat.kind).system_prompt_bucket();
+    crate::services::prompt_usage::note_use(&state, user_id, bucket, &system_prompt).await;
     Ok(Json(chat_to_response(chat)))
 }
 

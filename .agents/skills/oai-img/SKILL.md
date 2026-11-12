@@ -533,3 +533,13 @@ Where image generation is a bespoke multi-file pipeline, Image Tools is a plain
 7. **Compare mode** (`imgutils-compare-toggle`, shown once a job has both an input and an
    output) toggles a two-pane before/after grid — the same pattern as img2img compare on
    `ImageGenerationPage`, reset to off on every job switch.
+
+### Inline prompt choices
+
+`{a|b|c}` picks one literal option independently per occurrence/job (repeats allowed).
+Options preserve case, trim surrounding whitespace, and may be empty (`{hat|}`).
+Alternatives contain no nested braces. Choices also expand inside custom variants.
+Keep the three expanders aligned: `frontend/src/lib/promptPlaceholders.ts`,
+`backend/src/services/prompt_expansion.rs` (MCP generate/preview), and
+`cli/placeholders.go` (CLI generate/preview). Store the raw `prompt_template` as before;
+retry replays the resolved prompt. The REST job creator still only resolves `{?}`.

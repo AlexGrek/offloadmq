@@ -8,6 +8,7 @@ import RegisterPage from './pages/RegisterPage'
 import LandingPage from './pages/LandingPage'
 import DashboardPage from './pages/DashboardPage'
 import ChatPage from './pages/ChatPage'
+import PromptStudioPage from './pages/PromptStudioPage'
 import ImageGenerationPage from './pages/ImageGenerationPage'
 import HallucinatePage from './pages/HallucinatePage'
 import PromptPlaceholdersPage from './pages/PromptPlaceholdersPage'
@@ -52,6 +53,7 @@ export default function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="chat" element={<ChatPage />} />
+            <Route path="prompt-studio" element={<PromptStudioPage />} />
             <Route path="images" element={<ImageGenerationPage />} />
             <Route path="hallucinate" element={<HallucinatePage />} />
             <Route path="prompt-placeholders" element={<PromptPlaceholdersPage />} />

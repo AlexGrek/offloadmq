@@ -1,11 +1,15 @@
 import type { ChatAttachment } from './chatAttachments'
 import { apiRequest as request } from './http'
 
+/** `chat` = LLM Chat, `prompt_studio` = Prompt Studio session. Same API, separate lists. */
+export type ChatKind = 'chat' | 'prompt_studio'
+
 export interface ChatSummary {
   id: string
   title: string
   system_prompt: string
   last_model: string | null
+  kind?: ChatKind
   created_at: string
   updated_at: string
 }
@@ -20,15 +24,16 @@ export interface ChatMessageRecord {
   attachments?: ChatAttachment[]
 }
 
-export function listChats(token: string): Promise<ChatSummary[]> {
-  return request('/api/chats', token)
+export function listChats(token: string, kind: ChatKind = 'chat'): Promise<ChatSummary[]> {
+  return request(`/api/chats?kind=${kind}`, token)
 }
 
 export function createChat(
   token: string,
-  options?: { systemPrompt?: string; lastModel?: string | null },
+  options?: { systemPrompt?: string; lastModel?: string | null; kind?: ChatKind },
 ): Promise<ChatSummary> {
-  const body: { system_prompt?: string; last_model?: string } = {}
+  const body: { system_prompt?: string; last_model?: string; kind?: ChatKind } = {}
+  if (options?.kind) body.kind = options.kind
   const sp = options?.systemPrompt?.trim()
   if (sp) body.system_prompt = sp
   const lm = options?.lastModel?.trim()

@@ -14,11 +14,62 @@ use crate::{
 pub type Chat = chats::Model;
 pub type ChatMessage = chat_messages::Model;
 
+/// What a `chats` row is used for. Both kinds share messages, attachments, the WS
+/// `chat` command and the reconcile worker; they differ only in which page lists
+/// them, their default system prompt and which prompt-library bucket records it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChatKind {
+    /// LLM Chat (`/app/chat`).
+    Chat,
+    /// Prompt Studio (`/app/prompt-studio`).
+    PromptStudio,
+}
+
+impl ChatKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ChatKind::Chat => "chat",
+            ChatKind::PromptStudio => "prompt_studio",
+        }
+    }
+
+    /// Parses the API/DB value. Unknown values are rejected (400 at the API).
+    pub fn parse(value: &str) -> Result<Self, AppError> {
+        match value.trim() {
+            "chat" => Ok(ChatKind::Chat),
+            "prompt_studio" => Ok(ChatKind::PromptStudio),
+            other => Err(AppError::BadRequest(format!("unknown chat kind: {other:?}"))),
+        }
+    }
+
+    /// Lenient parse for stored rows — anything unexpected behaves as a plain chat.
+    pub fn from_stored(value: &str) -> Self {
+        Self::parse(value).unwrap_or(ChatKind::Chat)
+    }
+
+    /// Prompt-library bucket that records this kind's system prompts as recents.
+    pub fn system_prompt_bucket(self) -> &'static str {
+        match self {
+            ChatKind::Chat => "llm-system",
+            ChatKind::PromptStudio => "prompt-studio-system",
+        }
+    }
+
+    /// Default system prompt source when a new chat is created without one.
+    pub fn default_prompt_app(self) -> crate::db::prompt_defaults::App {
+        match self {
+            ChatKind::Chat => crate::db::prompt_defaults::App::Chat,
+            ChatKind::PromptStudio => crate::db::prompt_defaults::App::PromptStudioSystem,
+        }
+    }
+}
+
 pub async fn create_chat(
     db: &DatabaseConnection,
     id: i64,
     user_id: i64,
     system_prompt: &str,
+    kind: ChatKind,
 ) -> Result<Chat, AppError> {
     let now = chrono::Utc::now().fixed_offset();
     let model = chats::ActiveModel {
@@ -27,6 +78,7 @@ pub async fn create_chat(
         title: ActiveValue::Set(String::new()),
         system_prompt: ActiveValue::Set(system_prompt.to_string()),
         last_model: ActiveValue::Set(None),
+        kind: ActiveValue::Set(kind.as_str().to_string()),
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
     };
@@ -65,9 +117,14 @@ pub async fn set_system_prompt(
     am.update(db).await.map_err(AppError::Database)
 }
 
-pub async fn list_chats(db: &DatabaseConnection, user_id: i64) -> Result<Vec<Chat>, AppError> {
+pub async fn list_chats(
+    db: &DatabaseConnection,
+    user_id: i64,
+    kind: ChatKind,
+) -> Result<Vec<Chat>, AppError> {
     ChatEntity::find()
         .filter(chats::Column::UserId.eq(user_id))
+        .filter(chats::Column::Kind.eq(kind.as_str()))
         .order_by_desc(chats::Column::UpdatedAt)
         .all(db)
         .await
@@ -218,4 +275,23 @@ pub async fn list_pending_assistant_messages(
         .all(db)
         .await
         .map_err(AppError::Database)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ChatKind;
+
+    #[test]
+    fn chat_kind_round_trips_and_picks_buckets() {
+        for kind in [ChatKind::Chat, ChatKind::PromptStudio] {
+            assert_eq!(ChatKind::parse(kind.as_str()).unwrap(), kind);
+        }
+        assert!(ChatKind::parse("movie").is_err());
+        assert_eq!(ChatKind::from_stored("garbage"), ChatKind::Chat);
+        assert_eq!(ChatKind::Chat.system_prompt_bucket(), "llm-system");
+        assert_eq!(
+            ChatKind::PromptStudio.system_prompt_bucket(),
+            "prompt-studio-system"
+        );
+    }
 }

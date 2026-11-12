@@ -60,8 +60,10 @@ export function PromptPlaceholdersPanel({ onClose, className }: PromptPlaceholde
           <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
             Use these in any image/video prompt. Quick names fill <span className="font-mono">{'{?}'}</span>,
             built-in categories like <span className="font-mono">{'{color}'}</span> and your own templates
-            below all resolve right here in your browser — every job in a "Generate multiple" batch gets a
-            different value.
+            below pick values for each job. Inline choices such as{' '}
+            <span className="font-mono">{'{red|blue|green}'}</span> pick one option independently each time,
+            including inside custom variants. Options are literal text; surrounding spaces are trimmed,
+            and an empty option such as <span className="font-mono">{'{hat|}'}</span> is allowed.
           </p>
           {onClose ? (
             <Link

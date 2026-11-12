@@ -45,6 +45,23 @@ Full reference: `oai/docs/mcp.md`. This skill is the working map.
   `oai/backend/scripts/gen-placeholder-dicts.mjs` from the frontend's
   `unique-names-generator`.
 
+### Inline prompt choices
+
+`{a|b|c}` picks one literal option independently per occurrence and per job; repeats
+are allowed, unlike the used-value tracking for named placeholders. Options preserve
+case and internal spacing, trim surrounding whitespace, and may be empty (`{hat|}`).
+Alternatives contain no nested braces. Choices also expand inside custom variants,
+subject to the existing recursion limit. Unknown tokens and `{?}` keep their existing
+behavior.
+
+Keep all three expanders aligned: `frontend/src/lib/promptPlaceholders.ts`,
+`backend/src/services/prompt_expansion.rs`, and `cli/placeholders.go`. The web UI
+expands before submission; MCP `generate_images` and `expand_prompt` use the Rust
+expander; CLI `image generate` and `image placeholders expand` use the Go expander.
+The REST job creator still only resolves `{?}`. Store the raw `prompt_template`;
+retry replays the resolved prompt, while a fresh generation from the template picks
+again. Pass templates unchanged to MCP rather than selecting their options yourself.
+
 ## Rules
 
 1. **Codex limits:** tool call 240 s → `MAX_WAIT_SECS` = 200; OAuth endpoints must answer

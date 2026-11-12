@@ -69,6 +69,7 @@ Usage:
 
 Prompts may use {color} {animal} {adjective} {country} {language} {name}, your custom
 {placeholders} (manage with oai image placeholders), and {?} (expanded by the server).
+Inline {a|b|c} choices pick one literal option independently per occurrence (repeats allowed).
 
 Config is stored in ~/.oai-cli.json. Set OAI_PASSWORD for non-interactive login.
 `

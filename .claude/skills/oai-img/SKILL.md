@@ -236,10 +236,29 @@ Two independent substitution mechanisms can appear in the Prompt textarea, both 
 | `{color}`, `{animal}`, `{adjective}`, `{country}`, `{language}`, `{name}`, `{starwars}` | **Frontend**, before submit | `expandPromptCategoryPlaceholders` (`frontend/src/lib/promptPlaceholders.ts`) — [unique-names-generator](https://www.npmjs.com/package/unique-names-generator) dictionaries |
 
 - Category tokens are matched case-insensitively (`{Color}` works); unknown `{...}` tokens — including `{?}` — are left untouched by the frontend expander so the server still substitutes them.
-- **Uniqueness:** each placeholder occurrence gets a distinct value from its dictionary within the same expansion pass. `ImageGenerationPage` creates one `PlaceholderUsage` map (`createPlaceholderUsage()`) per submit call for a single job (`onSubmit`), but shares **one** map across the whole loop in `onSubmitMultiple` — so a "Generate multiple" batch never repeats a `{color}`/`{animal}`/etc. value across jobs, mirroring how `{?}` already guarantees distinct names within one prompt server-side. The dictionary resets (clears used-set) if a batch is larger than the dictionary size, rather than looping forever.
+- **Uniqueness (named placeholders):** each placeholder occurrence gets a distinct value from its dictionary within the same expansion pass. `ImageGenerationPage` creates one `PlaceholderUsage` map (`createPlaceholderUsage()`) per submit call for a single job (`onSubmit`), but shares **one** map across the whole loop in `onSubmitMultiple` — so a "Generate multiple" batch never repeats a `{color}`/`{animal}`/etc. value across jobs, mirroring how `{?}` already guarantees distinct names within one prompt server-side. The dictionary resets (clears used-set) if a batch is larger than the dictionary size, rather than looping forever.
 - `buildSubmitRequest(promptOverride?)` takes the already-expanded prompt string instead of reading `prompt` state directly, so the textarea itself still shows the raw `{color}`/`{?}` template — only the submitted payload is resolved.
 - Retry / "Generate again" (`onResubmitJob` → `retryImageJob`) replays the **stored, already-expanded** prompt from the original job — no re-expansion, so a retried job keeps the exact values it was first generated with.
 - Adding a category: extend `CATEGORY_DICTIONARIES` in `promptPlaceholders.ts` with another `unique-names-generator` dictionary (or a custom `string[]`).
+
+---
+
+### Inline prompt choices
+
+`{a|b|c}` picks one literal option independently per occurrence and per job; repeats
+are allowed, unlike the used-value tracking for named placeholders. Options preserve
+case and internal spacing, trim surrounding whitespace, and may be empty (`{hat|}`).
+Alternatives contain no nested braces. Choices also expand inside custom variants,
+subject to the existing recursion limit. Unknown tokens and `{?}` keep their existing
+behavior.
+
+Keep all three expanders aligned: `frontend/src/lib/promptPlaceholders.ts`,
+`backend/src/services/prompt_expansion.rs`, and `cli/placeholders.go`. The web UI
+expands before submission; MCP `generate_images` and `expand_prompt` use the Rust
+expander; CLI `image generate` and `image placeholders expand` use the Go expander.
+The REST job creator still only resolves `{?}`. Store the raw `prompt_template`;
+retry replays the resolved prompt, while a fresh generation from the template picks
+again. Pass templates unchanged to MCP rather than selecting their options yourself.
 
 ---
 

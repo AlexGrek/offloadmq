@@ -128,3 +128,61 @@ class TestGetMessages:
         chat_id = client.post("/api/chats", headers=new_user["headers"]).json()["id"]
         r = client.get(f"/api/chats/{chat_id}/messages", headers=other_headers)
         assert r.status_code == 404
+
+
+class TestPromptStudioChats:
+    """`kind=prompt_studio` sessions share the chat API but are listed separately."""
+
+    def test_default_kind_is_chat(self, client: httpx.Client, new_user: dict):
+        r = client.post("/api/chats", headers=new_user["headers"])
+        assert r.status_code == 201
+        assert r.json()["kind"] == "chat"
+
+    def test_studio_session_listed_only_by_kind(self, client: httpx.Client, new_user: dict):
+        h = new_user["headers"]
+        studio = client.post("/api/chats", headers=h, json={"kind": "prompt_studio"})
+        assert studio.status_code == 201
+        assert studio.json()["kind"] == "prompt_studio"
+        studio_id = studio.json()["id"]
+        chat_id = client.post("/api/chats", headers=h).json()["id"]
+
+        default_ids = [c["id"] for c in client.get("/api/chats", headers=h).json()]
+        assert chat_id in default_ids
+        assert studio_id not in default_ids
+
+        studio_ids = [
+            c["id"]
+            for c in client.get("/api/chats", headers=h, params={"kind": "prompt_studio"}).json()
+        ]
+        assert studio_id in studio_ids
+        assert chat_id not in studio_ids
+
+    def test_studio_default_system_prompt(self, client: httpx.Client, new_user: dict):
+        body = client.post(
+            "/api/chats", headers=new_user["headers"], json={"kind": "prompt_studio"}
+        ).json()
+        assert "prompt engineer" in body["system_prompt"]
+
+    def test_custom_system_prompt_recorded_in_studio_bucket(
+        self, client: httpx.Client, new_user: dict
+    ):
+        h = new_user["headers"]
+        prompt = "You write tiny haiku-like image prompts."
+        client.post("/api/chats", headers=h, json={"kind": "prompt_studio", "system_prompt": prompt})
+
+        studio = client.get("/api/prompts/prompt-studio-system", headers=h).json()
+        assert prompt in [p["content"] for p in studio["recent"]]
+        chat = client.get("/api/prompts/llm-system", headers=h).json()
+        assert prompt not in [p["content"] for p in chat["recent"]]
+
+    def test_unknown_kind_returns_400(self, client: httpx.Client, new_user: dict):
+        h = new_user["headers"]
+        assert client.post("/api/chats", headers=h, json={"kind": "movie"}).status_code == 400
+        assert client.get("/api/chats", headers=h, params={"kind": "movie"}).status_code == 400
+
+    def test_messages_endpoint_works_for_studio(self, client: httpx.Client, new_user: dict):
+        h = new_user["headers"]
+        chat_id = client.post("/api/chats", headers=h, json={"kind": "prompt_studio"}).json()["id"]
+        r = client.get(f"/api/chats/{chat_id}/messages", headers=h)
+        assert r.status_code == 200
+        assert r.json() == []

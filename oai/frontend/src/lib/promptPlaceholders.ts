@@ -52,7 +52,8 @@ export function isValidPlaceholderName(name: string): boolean {
  * empty `{}` both fail to match and pass through untouched — no special casing
  * needed.
  */
-const PLACEHOLDER_RE = /\{([A-Za-z0-9._-]+)\}/g
+// Choices contain literal text (no nested braces); empty alternatives are allowed.
+const PLACEHOLDER_RE = /\{([A-Za-z0-9._-]+|[^{}|]*\|[^{}]*)\}/g
 
 /** Tracks values already handed out per placeholder name so a batch never repeats one. */
 export type PlaceholderUsage = Map<string, Set<string>>
@@ -102,6 +103,10 @@ function expandLevel(
   if (!text.includes('{')) return text
   if (depth >= MAX_PLACEHOLDER_DEPTH) return text
   return text.replace(PLACEHOLDER_RE, (match, rawToken: string) => {
+    if (rawToken.includes('|')) {
+      const choices = rawToken.split('|').map(choice => choice.trim())
+      return choices[Math.floor(Math.random() * choices.length)]
+    }
     const token = rawToken.toLowerCase()
 
     const builtin = CATEGORY_DICTIONARIES[token]
@@ -124,7 +129,8 @@ function expandLevel(
 }
 
 /**
- * Expand `{category}` and user-defined `{name}` placeholders in a prompt.
+ * Expand `{category}`, user-defined `{name}`, and inline `{a|b|c}` choices.
+ * Each choice occurrence is an independent random draw, including across a batch.
  * `customDefs` maps a lowercased custom placeholder name to its variant list
  * (fetched from `GET /api/prompt-placeholders`); omit it if unavailable — custom
  * placeholders are additive, never required for a submission to succeed. `usage`

@@ -130,7 +130,7 @@ func TestImageGenerateExpandsPlaceholders(t *testing.T) {
 	t.Cleanup(server.Close)
 	configureTestServer(t, server.URL)
 
-	const template = "a {item} at {?}"
+	const template = "a {Small|Large} {item} at {?}"
 	err := cmdImageGenerate([]string{
 		template, "-capability", "imggen.test", "-n", "3",
 		"-o", filepath.Join(t.TempDir(), "r.jpg"), "--progress=false",
@@ -146,7 +146,7 @@ func TestImageGenerateExpandsPlaceholders(t *testing.T) {
 		if req.PromptTemplate != template {
 			t.Errorf("request %d template = %q, want %q", i+1, req.PromptTemplate, template)
 		}
-		if strings.Contains(req.Prompt, "{item}") || !strings.HasSuffix(req.Prompt, " at {?}") {
+		if strings.ContainsAny(req.Prompt, "|") || strings.Contains(req.Prompt, "{item}") || !strings.HasSuffix(req.Prompt, " at {?}") {
 			t.Errorf("request %d prompt = %q ({item} must expand, {?} must stay for the server)", i+1, req.Prompt)
 		}
 		if seen[req.Prompt] {
@@ -187,5 +187,27 @@ func TestImageGenerateSurvivesPlaceholderFetchFailure(t *testing.T) {
 	}
 	if !strings.HasPrefix(got.Prompt, "a {item} and a ") || strings.Contains(got.Prompt, "{color}") {
 		t.Errorf("prompt = %q: custom token should stay literal, builtin should expand", got.Prompt)
+	}
+}
+
+func TestInlineChoices(t *testing.T) {
+	e := newPlaceholderExpander([]promptPlaceholder{{Name: "scene", Variants: []string{"a {Red fox|Blue whale|Green bird}"}}})
+	for range 100 {
+		for input, allowed := range map[string][]string{
+			"{a|b|c}":                   {"a", "b", "c"},
+			"{scene}":                   {"a Red fox", "a Blue whale", "a Green bird"},
+			"{ Hat | }":                 {"Hat", ""},
+			"{é|é} / {same|same} / {|}": {"é / same / "},
+			"{a|b {?} {unknown} {}":     {"{a|b {?} {unknown} {}"},
+		} {
+			got := e.Expand(input)
+			found := false
+			for _, want := range allowed {
+				found = found || got == want
+			}
+			if !found {
+				t.Fatalf("Expand(%q) = %q, want one of %q", input, got, allowed)
+			}
+		}
 	}
 }

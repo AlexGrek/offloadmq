@@ -47,6 +47,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261106_000039_create_img_model_war_jobs::Migration),
             Box::new(m20261108_000040_create_image_stash::Migration),
             Box::new(m20261110_000041_img_utils_priority::Migration),
+            Box::new(m20261113_000042_prompt_studio::Migration),
         ]
     }
 }
@@ -153,3 +154,6 @@ mod m20261106_000039_create_img_model_war_jobs;
 mod m20261108_000040_create_image_stash;
 
 mod m20261110_000041_img_utils_priority;
+
+/// Prompt Studio: `chats.kind` + studio prompt defaults.
+mod m20261113_000042_prompt_studio;

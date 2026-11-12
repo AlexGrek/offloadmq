@@ -9,6 +9,8 @@ pub struct Model {
     pub chat: Option<String>,
     pub image_cycles: Option<String>,
     pub generator_improver: Option<String>,
+    pub prompt_studio_system: Option<String>,
+    pub prompt_studio_template: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

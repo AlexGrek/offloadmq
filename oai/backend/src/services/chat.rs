@@ -162,7 +162,8 @@ async fn run_chat(
     // Record the system prompt actually used for this turn as a recent (best-effort),
     // so it's reusable across chats without the frontend issuing a second request.
     if !chat.system_prompt.trim().is_empty() {
-        crate::services::prompt_usage::note_use(state, user_id, "llm-system", &chat.system_prompt).await;
+        let bucket = db_chats::ChatKind::from_stored(&chat.kind).system_prompt_bucket();
+        crate::services::prompt_usage::note_use(state, user_id, bucket, &chat.system_prompt).await;
     }
 
     // A turn with only attachments still needs non-empty user content so it

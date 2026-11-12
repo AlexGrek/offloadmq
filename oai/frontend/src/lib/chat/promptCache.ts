@@ -1,9 +1,11 @@
 const MAX_AGE_MS = 24 * 60 * 60 * 1000
-const cacheKey = (userId: number) => `oai_chat_system_prompt:${userId}`
+/** `chat` keeps its historical key; other scopes (Prompt Studio) remember their own prompt. */
+const cacheKey = (userId: number, scope = 'chat') =>
+  scope === 'chat' ? `oai_chat_system_prompt:${userId}` : `oai_${scope}_system_prompt:${userId}`
 
-export function readChatPrompt(userId: number): string | null {
+export function readChatPrompt(userId: number, scope = 'chat'): string | null {
   try {
-    const raw = localStorage.getItem(cacheKey(userId))
+    const raw = localStorage.getItem(cacheKey(userId, scope))
     if (!raw) return null
     const cached = JSON.parse(raw)
     if (
@@ -11,17 +13,17 @@ export function readChatPrompt(userId: number): string | null {
       typeof cached.savedAt === 'number' &&
       cached.savedAt <= Date.now() && Date.now() - cached.savedAt < MAX_AGE_MS
     ) return cached.prompt
-    localStorage.removeItem(cacheKey(userId))
+    localStorage.removeItem(cacheKey(userId, scope))
   } catch {
     // Storage may be unavailable or contain a malformed entry.
   }
   return null
 }
 
-export function rememberChatPrompt(userId: number, prompt: string) {
+export function rememberChatPrompt(userId: number, prompt: string, scope = 'chat') {
   if (!prompt.trim()) return
   try {
-    localStorage.setItem(cacheKey(userId), JSON.stringify({ prompt, savedAt: Date.now() }))
+    localStorage.setItem(cacheKey(userId, scope), JSON.stringify({ prompt, savedAt: Date.now() }))
   } catch {
     // A storage failure must not prevent creating or editing a chat.
   }

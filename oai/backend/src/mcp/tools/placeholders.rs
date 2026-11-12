@@ -75,7 +75,9 @@ pub fn definitions() -> Vec<Value> {
             "expand_prompt",
             "Preview prompt expansion",
             "Show what a prompt with placeholders expands to, exactly as generate_images would \
-             expand it (no repeats within the batch), including {?} random names unless \
+             expand it. Named placeholders avoid repeats within a batch; inline {a|b|c} choices \
+             pick one literal option independently (repeats allowed, spaces trimmed, empty options \
+             allowed). Includes {?} random names unless \
              resolve_names is false. Flags unknown {tokens}, which would otherwise reach the \
              image model literally. Same as `oai image placeholders expand`.",
             json!({
@@ -133,7 +135,7 @@ fn find<'a>(all: &'a [Placeholder], key: &str) -> Option<&'a Placeholder> {
 async fn list(ctx: &ToolContext) -> Result<ToolOutput, AppError> {
     let all = prompt_placeholders::list_for_user(&ctx.state.db, ctx.user_id).await?;
     let mut lines = vec![format!(
-        "Built-in: {} (random words), {{?}} (random two-word name).",
+        "Built-in: {} (random words), {{?}} (random two-word name). Inline {{a|b|c}} picks one literal option independently per occurrence.",
         BUILTIN_CATEGORIES
             .iter()
             .map(|c| format!("{{{c}}}"))

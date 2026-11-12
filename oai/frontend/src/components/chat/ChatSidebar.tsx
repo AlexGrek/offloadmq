@@ -4,6 +4,22 @@ import { cn } from '@/lib/utils'
 import { ToolSidebar } from '@/components/ToolSidebar'
 import type { ChatSummary } from '@/api/chats'
 
+export type ChatSidebarLabels = {
+  title: string
+  newItem: string
+  empty: string
+  untitled: string
+  delete: string
+}
+
+const DEFAULT_LABELS: ChatSidebarLabels = {
+  title: 'Chats',
+  newItem: 'New chat',
+  empty: 'No chats yet',
+  untitled: 'New chat',
+  delete: 'Delete chat',
+}
+
 /**
  * Chat list: fixed header + independently scrollable list.
  * Desktop: inline collapsible column (w-64 / w-0).
@@ -20,6 +36,7 @@ export function ChatSidebar({
   onNewChat,
   onDeleteChat,
   onClose,
+  labels = DEFAULT_LABELS,
 }: {
   open: boolean
   isMobile: boolean
@@ -31,10 +48,12 @@ export function ChatSidebar({
   onNewChat: () => void
   onDeleteChat: (e: React.MouseEvent, id: string) => void
   onClose: () => void
+  /** Wording for the list (Prompt Studio says "session"). */
+  labels?: ChatSidebarLabels
 }) {
   return (
     <ToolSidebar
-      title="Chats"
+      title={labels.title}
       open={open}
       isMobile={isMobile}
       onClose={onClose}
@@ -44,7 +63,8 @@ export function ChatSidebar({
           variant="ghost"
           size="icon-sm"
           onClick={onNewChat}
-          title="New chat"
+          title={labels.newItem}
+          aria-label={labels.newItem}
           data-testid="new-chat-btn"
         >
           <Pencil />
@@ -61,7 +81,7 @@ export function ChatSidebar({
           </div>
         ) : chats.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-4 px-3">
-            No chats yet
+            {labels.empty}
           </p>
         ) : (
           chats.map(chat => {
@@ -92,14 +112,14 @@ export function ChatSidebar({
                     />
                   ) : null}
                   <span className="truncate text-sm leading-tight min-w-0 flex-1">
-                    {chat.title || 'New chat'}
+                    {chat.title || labels.untitled}
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={(e) => onDeleteChat(e, chat.id)}
-                  title="Delete chat"
-                  aria-label={`Delete chat ${chat.title || 'New chat'}`}
+                  title={labels.delete}
+                  aria-label={`${labels.delete} ${chat.title || labels.untitled}`}
                   data-testid={`delete-chat-${chat.id}`}
                   className={cn(
                     'shrink-0 mr-1 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-all',

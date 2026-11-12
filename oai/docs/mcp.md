@@ -121,11 +121,12 @@ under Node.
 - **Built-ins:** `{color} {animal} {adjective} {country} {language} {name} {starwars}`, using
   the web UI's word lists with their original casing. `backend/scripts/gen-placeholder-dicts.mjs`
   copies `unique-names-generator` into `backend/src/services/placeholder_dicts/`.
+- `{a|b|c}` — inline choices: pick one literal option independently per occurrence and per job (repeats allowed). Options preserve case and internal spacing; surrounding whitespace is trimmed. Empty options are allowed (`{hat|}`). Choices also work inside custom placeholder variants; alternatives do not contain nested braces.
 - **Custom placeholders.** Names are matched case-insensitively. A variant may contain more
   placeholders, which are expanded up to 5 levels deep; that limit also stops cycles.
 - **`{?}`** becomes a random two-word name at job creation (`image_job_names`), as everywhere
   else.
-- **No repeats.** One expander per call means a batch (`count`) never repeats a value until a
+- **Named placeholders avoid repeats.** One expander per call means a batch (`count`) avoids repeats until a
   word list or variant list runs out.
 - **Unknown `{tokens}`.** A typo or deleted placeholder is left in the prompt, like the web
   UI does, but `generate_images` and `expand_prompt` warn about it and list it in

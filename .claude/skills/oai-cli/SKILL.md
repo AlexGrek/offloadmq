@@ -53,7 +53,7 @@ Commands today: `login`, `whoami`, `image capabilities|generate|jobs|job|poll|do
 - **Capabilities**: OAI lists base capabilities (`imggen.x`, `llm.x`); tags describe kind (`txt2img`, `img2video`, `vision`). `pickCapability(caps, preferTag, kind)` picks the first online one with the tag, else any online one — never blindly the first online entry, because imggen also contains img2img/video capabilities.
 - **High priority (`generate --high-priority`)**: sends `high_priority: true` on every job of the batch (field omitted otherwise). Admin-only on the server (403 → the CLI appends an `--high-priority is admin-only` hint). `image retry` sends nothing — the backend replays the stored value (and silently downgrades it for non-admins).
 - **Batch generate (`-n`)**: one job per image, all submitted first, then awaited in order. A non-zero `-seed` is offset by the job index (a shared seed would yield identical images); `outputImagePath` names results (`out.jpg`, `out_2.jpg`; extra images within a batch job get `out_<job>_<image>.jpg`) so jobs never overwrite each other.
-- **Prompt placeholders**: `generate` expands them per job through one shared `placeholderExpander` (no repeats across a batch) and sends the raw text as `prompt_template`. JS-only libraries are replaced by Go analogs (gofakeit); anything with no analog (`{starwars}`) is left literal with a warning. Keep the builtin category list in step with the frontend/backend `RESERVED_PLACEHOLDER_NAMES`.
+- **Prompt placeholders**: `generate` expands them per job through one shared `placeholderExpander` (named placeholders avoid repeats until their pool is exhausted) and sends the raw text as `prompt_template`. JS-only libraries are replaced by Go analogs (gofakeit); anything with no analog (`{starwars}`) is left literal with a warning. Keep the builtin category list in step with the frontend/backend `RESERVED_PLACEHOLDER_NAMES`.
 - Every job-style feature follows **submit → poll → terminal** (`completed|failed|canceled`); poll every 5s (`pollInterval`, same as the web UI) via `waitForJob`.
 - **Detached mode (`image generate --no-wait`)** splits that flow across invocations. Contract (pinned by `image_detached_test.go`, keep it): stdout is *exactly* the bare job ID(s), one per line, and nothing else — every informational line (auto-selected capability, expanded prompt) must go to stderr when `--no-wait` is set, so `id=$(oai image generate … --no-wait)` works. `-o` is rejected (detected with `fs.Visit`, since its default is non-empty); submit errors in a batch are joined and returned after the IDs already printed. No poll happens. The follow-ups:
   - `image job <id>` → `GET /api/images/jobs/{id}`: last *persisted* state, no OffloadMQ call (the backend's `image_pipeline_worker` reconciles in the background, so this does advance on its own).
@@ -72,6 +72,26 @@ Commands today: `login`, `whoami`, `image capabilities|generate|jobs|job|poll|do
 - **Image job history** (`image jobs|cancel|retry|delete`): the backend's image `retry` accepts `completed|failed|canceled` and returns a *new* job ID (201); the CLI then reuses `waitForImageJob` + `finishJob` exactly like `generate` (progress on stdout), and `--no-wait` follows the detached stdout contract. `cancel` is asynchronous (`cancelRequested` → `canceled`); a second cancel on a `cancelRequested` job can come back `failed` (upstream task already gone) — that's backend behaviour. Image `delete` purges the job's stored files too. Multi-ID commands continue past failures and `errors.Join` them.
 - **Image Tools** (`img-utils`, see the `oai-img-tools` skill for the feature): the capabilities endpoint lists **only online** tools, so "available" = present in the list; `pickImgTool` never falls back to another operation and fails *before uploading* when nothing matches (`oai upscale` relies on this). Per-tool flags: upscale → `options.scale_multiplier` (default 4, 1–8, sent as int when whole); face_swap → `-source` uploaded separately as `source_image_id`; resize → flat `width/height/scale/mode/method/format/quality/allow_upscale` (server validates — only the "nothing to resize to" case is checked locally); `-opt k=v` → verbatim `options` for ComfyUI tools. A flag that doesn't apply to the chosen tool is an error. Output default name `<input>_<tool><ext>` with the ext from the stored output's filename. Unlike `generate`, `run` renders progress and `Job:` lines on **stderr** and prints only `Saved <path> (WxH)` on stdout. img-utils `retry` accepts only `failed|canceled` (not `completed`, unlike image retry); `delete` removes the output only.
 - Job commands enable the live progress renderer by default. Pass API timing metadata through `jobProgressState`; keep stdout pipe-safe for result-producing commands by rendering their progress on stderr.
+
+### Inline prompt choices
+
+`{a|b|c}` picks one literal option independently per occurrence and per job; repeats
+are allowed, unlike the used-value tracking for named placeholders. Options preserve
+case and internal spacing, trim surrounding whitespace, and may be empty (`{hat|}`).
+Alternatives contain no nested braces. Choices also expand inside custom variants,
+subject to the existing recursion limit. Unknown tokens and `{?}` keep their existing
+behavior.
+
+Keep all three expanders aligned: `frontend/src/lib/promptPlaceholders.ts`,
+`backend/src/services/prompt_expansion.rs`, and `cli/placeholders.go`. The web UI
+expands before submission; MCP `generate_images` and `expand_prompt` use the Rust
+expander; CLI `image generate` and `image placeholders expand` use the Go expander.
+The REST job creator still only resolves `{?}`. Store the raw `prompt_template`;
+retry replays the resolved prompt, while a fresh generation from the template picks
+again. Pass templates unchanged to MCP rather than selecting their options yourself.
+
+Example: `oai image placeholders expand "a {red|blue|green} bird" -n 4` previews
+choices without generating images; `oai image generate` accepts the same syntax.
 
 ## Adding a new command
 

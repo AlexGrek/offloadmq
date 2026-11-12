@@ -26,7 +26,7 @@ const maxPlaceholderDepth = 5
 // maxPickAttempts bounds the search for an unused value before the used set is reset.
 const maxPickAttempts = 64
 
-var placeholderRE = regexp.MustCompile(`\{([A-Za-z0-9._-]+)\}`)
+var placeholderRE = regexp.MustCompile(`\{([A-Za-z0-9._-]+|[^{}|]*\|[^{}]*)\}`)
 
 var builtinPlaceholders = map[string]func() string{
 	"color":     func() string { return splitCamelCase(gofakeit.Color()) },
@@ -105,7 +105,8 @@ func pick(next func() string, used map[string]bool) string {
 	return v
 }
 
-// Expand resolves {category} and custom {name} placeholders in prompt.
+// Expand resolves {category}, custom {name}, and literal {a|b|c} choices.
+// Each choice occurrence is picked independently, preserving case; empty options are allowed.
 func (e *placeholderExpander) Expand(prompt string) string {
 	return e.expandLevel(prompt, 0)
 }
@@ -115,7 +116,12 @@ func (e *placeholderExpander) expandLevel(text string, depth int) string {
 		return text
 	}
 	return placeholderRE.ReplaceAllStringFunc(text, func(match string) string {
-		token := strings.ToLower(match[1 : len(match)-1])
+		raw := match[1 : len(match)-1]
+		if strings.Contains(raw, "|") {
+			choices := strings.Split(raw, "|")
+			return strings.TrimSpace(choices[rand.IntN(len(choices))])
+		}
+		token := strings.ToLower(raw)
 
 		if gen, ok := builtinPlaceholders[token]; ok {
 			return strings.ToLower(pick(gen, e.usedSet(token)))

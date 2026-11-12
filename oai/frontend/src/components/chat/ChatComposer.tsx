@@ -39,6 +39,9 @@ export function ChatComposer({
   onOpenImageLibrary,
   onOpenDocumentPicker,
   visionWarning,
+  enterSends = true,
+  allowDocuments = true,
+  topSlot,
 }: {
   value: string
   onChange: (value: string) => void
@@ -65,6 +68,13 @@ export function ChatComposer({
   onOpenImageLibrary: () => void
   onOpenDocumentPicker: () => void
   visionWarning: string | null
+  /** true (Chat): Enter sends, Shift+Enter = newline. false (Prompt Studio): Enter =
+   *  newline, Ctrl/⌘+Enter or the send button sends. */
+  enterSends?: boolean
+  /** Show the document attach menu (Prompt Studio attaches images only). */
+  allowDocuments?: boolean
+  /** Rendered above the input box (e.g. Prompt Studio's quick-reply chip). */
+  topSlot?: React.ReactNode
 }) {
   const { token } = useAuth()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -81,7 +91,9 @@ export function ChatComposer({
   }, [value])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+    const sendCombo = enterSends ? !e.shiftKey : e.ctrlKey || e.metaKey
+    if (sendCombo) {
       e.preventDefault()
       onSend()
     }
@@ -108,6 +120,7 @@ export function ChatComposer({
   return (
     <div className="shrink-0 border-t border-border bg-background px-4 pb-4 pt-2">
       <div className="max-w-2xl mx-auto">
+        {topSlot}
         <input
           ref={imageInputRef}
           type="file"
@@ -190,6 +203,7 @@ export function ChatComposer({
               <MenuItem icon={<FolderOpen className="size-4" />} label="From library" onClick={() => { closeMenus(); onOpenImageLibrary() }} testId="attach-from-library" />
             </AttachMenu>
 
+            {allowDocuments && (
             <AttachMenu
               open={docMenuOpen}
               onToggle={() => {
@@ -205,6 +219,7 @@ export function ChatComposer({
               <MenuItem icon={<FileText className="size-4" />} label="Upload document" onClick={() => pickFiles(docInputRef, closeMenus)} testId="attach-upload-doc" />
               <MenuItem icon={<FolderOpen className="size-4" />} label="From your documents" onClick={() => { closeMenus(); onOpenDocumentPicker() }} testId="attach-from-documents" />
             </AttachMenu>
+            )}
 
             <ModelPicker
               capabilities={capabilities}
@@ -267,7 +282,9 @@ export function ChatComposer({
           </p>
         )}
         <p className="text-center text-xs text-muted-foreground mt-2 select-none">
-          Shift+Enter for new line · Enter to send · Paste images to attach
+          {enterSends
+            ? 'Shift+Enter for new line · Enter to send · Paste images to attach'
+            : 'Enter for new line · Ctrl/⌘+Enter to send · Paste images to attach'}
         </p>
       </div>
     </div>

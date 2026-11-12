@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Columns2,
   Download,
+  Feather,
   FolderOpen,
   ImagePlus,
   Loader2,
@@ -37,6 +38,7 @@ import { useMorph } from '@/lib/motion'
 import { ImageLightbox, type ImageLightboxActions } from '@/components/ImageLightbox'
 import { LoadingImage } from '@/components/LoadingImage'
 import { PromptTextarea } from '../components/PromptTextarea'
+import { PROMPT_STUDIO_PATH, type PromptStudioRouteState } from '../lib/promptStudio'
 import { SavedPromptsDrawer } from '../components/prompts/SavedPromptsDrawer'
 import { RewritePromptDialog } from '../components/imggen/RewritePromptDialog'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
@@ -1961,6 +1963,21 @@ export default function ImageGenerationPage() {
                     >
                       <Star className="mr-1 size-3.5" />
                       Starred prompts
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                      onClick={() => {
+                        const state: PromptStudioRouteState = { examplePrompt: prompt }
+                        navigate(PROMPT_STUDIO_PATH, { state })
+                      }}
+                      title="Open Prompt Studio with this prompt as the example"
+                      data-testid="imggen-prompt-studio-open"
+                    >
+                      <Feather className="mr-1 size-3.5" />
+                      Prompt studio
                     </Button>
                   </div>
                 </div>

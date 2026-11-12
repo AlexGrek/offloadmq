@@ -25,6 +25,8 @@ export function ChatTranscript({
   messages,
   canRetry,
   onRetry,
+  emptyState,
+  onUseAsPrompt,
 }: {
   scrollRef: React.RefObject<HTMLDivElement | null>
   contentRef: (el: HTMLDivElement | null) => void
@@ -44,6 +46,9 @@ export function ChatTranscript({
   messages: Message[]
   canRetry: boolean
   onRetry: () => void
+  /** Replaces the default `SystemPromptStudio` empty state (Prompt Studio setup). */
+  emptyState?: React.ReactNode
+  onUseAsPrompt?: (content: string) => void
 }) {
   return (
     <div
@@ -53,7 +58,12 @@ export function ChatTranscript({
       className="relative min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
       data-testid="messages-area"
     >
-      {!token ? null : showSystemStudio ? (
+      {!token ? null : showSystemStudio && emptyState ? (
+        <div className="flex flex-col items-center px-4 py-6 sm:py-8">
+          {emptyState}
+          <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />
+        </div>
+      ) : showSystemStudio ? (
         <div className="flex flex-col items-center px-4 py-8">
           <SystemPromptStudio
             token={token}
@@ -88,6 +98,7 @@ export function ChatTranscript({
               showRetry={idx === messages.length - 1 && canRetry}
               onRetry={onRetry}
               token={token}
+              onUseAsPrompt={onUseAsPrompt}
             />
           ))}
           <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />

@@ -11,6 +11,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub system_prompt: String,
     pub last_model: Option<String>,
+    /// `chat` (LLM Chat) or `prompt_studio` — see `db::chats::ChatKind`.
+    pub kind: String,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

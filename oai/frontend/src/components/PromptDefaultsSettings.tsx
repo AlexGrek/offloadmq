@@ -11,6 +11,8 @@ const apps: { key: PromptApp; label: string }[] = [
   { key: 'chat', label: 'Chat system prompt' },
   { key: 'image_cycles', label: 'Image Cycles vision prompt' },
   { key: 'generator_improver', label: 'Generator Improver assessment prompt' },
+  { key: 'prompt_studio_system', label: 'Prompt Studio system prompt' },
+  { key: 'prompt_studio_template', label: 'Prompt Studio message template ({prompt} = example prompt)' },
 ]
 
 export function PromptDefaultsSettings() {
@@ -20,6 +22,8 @@ export function PromptDefaultsSettings() {
     chat: user?.prompt_defaults?.chat ?? null,
     image_cycles: user?.prompt_defaults?.image_cycles ?? null,
     generator_improver: user?.prompt_defaults?.generator_improver ?? null,
+    prompt_studio_system: user?.prompt_defaults?.prompt_studio_system ?? null,
+    prompt_studio_template: user?.prompt_defaults?.prompt_studio_template ?? null,
   }))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -63,7 +67,7 @@ export function PromptDefaultsSettings() {
               data-testid={`default-prompt-${key}`}
               value={drafts[key] ?? ''}
               placeholder={BUILTIN_PROMPT_DEFAULTS[key]}
-              rows={key === 'chat' ? 3 : 6}
+              rows={key === 'chat' || key === 'prompt_studio_template' ? 3 : 6}
               maxLength={32000}
               disabled={saving}
               onChange={event => {

@@ -84,7 +84,8 @@ pub fn definitions() -> Vec<Value> {
              workflow img2img + input_image_id). Submits one job per image, waits for them, and \
              returns preview thumbnails plus signed links to the full-resolution files. Prompt \
              placeholders like {color}, {animal}, the user's custom {placeholders} and {?} are \
-             expanded per job, never repeating a value within a batch; pass them through as \
+             expanded per job, avoiding repeats within a batch. Inline {a|b|c} choices pick one literal \
+             option independently each time (repeats allowed); pass templates through as \
              the user wrote them (don't pre-fill them yourself). Unknown {tokens} are reported. \
              Results show each job's final prompt and keep the raw text as prompt_template. \
              Width/height specify the original generation resolution. Set upscale_factor to \
@@ -95,7 +96,7 @@ pub fn definitions() -> Vec<Value> {
             json!({
                 "type": "object",
                 "properties": {
-                    "prompt": { "type": "string", "description": "What to draw. May contain {placeholders}." },
+                    "prompt": { "type": "string", "description": "What to draw. May contain {placeholders} and inline {a|b|c} choices." },
                     "negative_prompt": { "type": "string", "description": "Things to avoid; overrides the workflow's default negative prompt." },
                     "model": { "type": "string", "description": "imggen.* capability from list_image_models. Default: an online model supporting the workflow." },
                     "workflow": { "type": "string", "description": "txt2img (default) or img2img (default when input_image_id is given). Must be a tag of the model." },

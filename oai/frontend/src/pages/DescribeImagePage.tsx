@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Copy,
   Eye,
+  Feather,
   FolderOpen,
   ImagePlus,
   ImageUp,
@@ -44,6 +45,7 @@ import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { InputImageGrid } from '../components/imggen/InputImageGrid'
 import { PromptTextarea } from '../components/PromptTextarea'
+import { PROMPT_STUDIO_PATH, type PromptStudioRouteState } from '../lib/promptStudio'
 import { Button } from '../components/ui/button'
 import { Label } from '../components/ui/label'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
@@ -514,6 +516,13 @@ export default function DescribeImagePage() {
     const result = selectedJob?.result?.trim()
     if (!result) return
     navigate('/app/images', { state: { usePrompt: result } })
+  }
+
+  function openInPromptStudio() {
+    const result = selectedJob?.result?.trim()
+    if (!result) return
+    const state: PromptStudioRouteState = { examplePrompt: result }
+    navigate(PROMPT_STUDIO_PATH, { state })
   }
 
   function editPromptFromJob() {
@@ -998,6 +1007,18 @@ export default function DescribeImagePage() {
                             >
                               <Wand2 className="size-3.5" />
                               Use as prompt
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-1.5 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                              onClick={openInPromptStudio}
+                              title="Open Prompt Studio with this description as the example prompt"
+                              data-testid="describe-prompt-studio-open"
+                            >
+                              <Feather className="size-3.5" />
+                              Prompt studio
                             </Button>
                             <Button
                               type="button"

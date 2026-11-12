@@ -14,6 +14,9 @@ pub struct PromptDefaults {
     pub chat: Option<String>,
     pub image_cycles: Option<String>,
     pub generator_improver: Option<String>,
+    pub prompt_studio_system: Option<String>,
+    /// Prompt Studio first-message template; `{prompt}` is the example prompt.
+    pub prompt_studio_template: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -22,6 +25,8 @@ pub enum App {
     Chat,
     ImageCycles,
     GeneratorImprover,
+    PromptStudioSystem,
+    PromptStudioTemplate,
 }
 
 impl PromptDefaults {
@@ -31,6 +36,8 @@ impl PromptDefaults {
             &mut self.chat,
             &mut self.image_cycles,
             &mut self.generator_improver,
+            &mut self.prompt_studio_system,
+            &mut self.prompt_studio_template,
         ] {
             *prompt = match prompt.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
                 Some(text) => Some(super::prompts::normalize_content(text)?),
@@ -46,6 +53,8 @@ impl PromptDefaults {
             App::Chat => (&self.chat, "chat"),
             App::ImageCycles => (&self.image_cycles, "describe_image"),
             App::GeneratorImprover => (&self.generator_improver, "generator_improver"),
+            App::PromptStudioSystem => (&self.prompt_studio_system, "prompt_studio_system"),
+            App::PromptStudioTemplate => (&self.prompt_studio_template, "prompt_studio_template"),
         };
         if let Some(text) = custom.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
             return text.to_owned();
@@ -69,6 +78,8 @@ pub async fn get(db: &DatabaseConnection, user_id: i64) -> Result<PromptDefaults
             chat: m.chat,
             image_cycles: m.image_cycles,
             generator_improver: m.generator_improver,
+            prompt_studio_system: m.prompt_studio_system,
+            prompt_studio_template: m.prompt_studio_template,
         })
         .unwrap_or_default())
 }
@@ -85,6 +96,8 @@ pub async fn save(
         chat: Set(prompts.chat.clone()),
         image_cycles: Set(prompts.image_cycles.clone()),
         generator_improver: Set(prompts.generator_improver.clone()),
+        prompt_studio_system: Set(prompts.prompt_studio_system.clone()),
+        prompt_studio_template: Set(prompts.prompt_studio_template.clone()),
     })
     .on_conflict(
         OnConflict::column(Column::UserId)
@@ -93,6 +106,8 @@ pub async fn save(
                 Column::Chat,
                 Column::ImageCycles,
                 Column::GeneratorImprover,
+                Column::PromptStudioSystem,
+                Column::PromptStudioTemplate,
             ])
             .to_owned(),
     )
@@ -112,6 +127,8 @@ mod tests {
             chat: Some(" \n ".into()),
             image_cycles: Some("Cycles custom".into()),
             generator_improver: Some("Improver custom".into()),
+            prompt_studio_system: Some("  Studio custom ".into()),
+            prompt_studio_template: None,
         }
         .normalize()
         .unwrap();
@@ -122,6 +139,8 @@ mod tests {
         );
         assert_eq!(settings.resolve(App::ImageCycles), "Cycles custom");
         assert_eq!(settings.resolve(App::GeneratorImprover), "Improver custom");
+        assert_eq!(settings.resolve(App::PromptStudioSystem), "Studio custom");
+        assert!(settings.resolve(App::PromptStudioTemplate).contains("{prompt}"));
         let default = PromptDefaults::default();
         assert_eq!(
             default.resolve(App::ImageCycles),

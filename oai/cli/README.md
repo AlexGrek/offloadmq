@@ -108,15 +108,19 @@ Pass `--no-wait` to submit detached work and return immediately. For one job, st
 
 ### Prompt placeholders
 
-`image generate` expands `{token}` placeholders in the prompt the same way the web UI does, once per job, so `-n 4` never repeats a value:
+`image generate` expands `{token}` placeholders in the prompt the same way the web UI does, once per job. Named placeholders avoid repeats across a batch until their pool is exhausted:
 
 - `{color}` `{animal}` `{adjective}` `{country}` `{language}` `{name}` — random words. The web UI draws them from unique-names-generator; the CLI uses [gofakeit](https://github.com/brianvoe/gofakeit), so the word pools differ. `{starwars}` has no Go equivalent: it is sent literally (with a warning).
 - `{item}`, `{.cinematic}`, … — your **custom placeholders**, loaded from the same server-side definitions as the web UI (`GET /api/prompt-placeholders`; manage them with [`image placeholders`](#managing-custom-placeholders) or in the web app). A random variant is picked per job, and variants may contain further placeholders (depth-capped). If they cannot be loaded, the CLI warns and sends those tokens literally.
+- `{a|b|c}` — inline choices: pick one literal option independently per occurrence and per job (repeats allowed). Options preserve case and internal spacing; surrounding whitespace is trimmed. Empty options are allowed (`{hat|}`). Choices also work inside custom placeholder variants; alternatives do not contain nested braces.
 - `{?}` — random two-word name, expanded by the server; the CLI leaves it alone.
 
 Tokens are case-insensitive and unknown ones are left untouched. The expanded prompt is printed before each job, and the raw template is sent as `prompt_template` so Retry and saved-prompt previews in the web UI see it.
 
 Each job is polled every 5s, like the web UI. A failed poll caused by a network error or a gateway/overload response (502, 503, 504, 408, 429) is retried on the next tick, with a notice on stderr; the CLI gives up only after 3 such failures in a row. Any other error (auth, unknown job, a backend 500) fails immediately. `-timeout` also bounds an in-flight poll request. If `-timeout` expires for a job, it keeps running on the server; only the CLI stops waiting for it.
+
+For example: `oai image generate "a {red|blue|green} bird" -n 4` or preview with
+`oai image placeholders expand "a {red|blue|green} bird" -n 4`.
 
 ### Managing custom placeholders
 
