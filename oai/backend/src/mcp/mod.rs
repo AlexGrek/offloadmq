@@ -71,7 +71,10 @@ two-word name. Keep placeholders in the prompt as written — the server substit
 job, exactly like the web UI; preview with expand_prompt. Saved prompts \
 (list_saved_prompts) often contain placeholders and can be passed to generate_images as-is. \
 To regenerate a job with new random values, use its prompt_template; retry_image_job \
-repeats the exact same prompt.";
+repeats the exact same prompt. Personas (list_personas) are characters with face images, a \
+look description and a system prompt: generate_persona_photos makes photos of one (txt2img → \
+face swap → upscale ×2 by default; prompts may use {p_name}, {p_look} and {p_system}), and \
+persona_chat talks to one using its system prompt.";
 
 fn server_info() -> Value {
     json!({ "name": "oai-images", "title": "OAI image generation", "version": version::build_version() })

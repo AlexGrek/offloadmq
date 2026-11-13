@@ -52,6 +52,7 @@ async fn main() -> Result<()> {
     jobs::image_pipeline_worker::spawn(state.clone());
     jobs::image_analysis_worker::spawn(state.clone());
     jobs::image_cycles_worker::spawn(state.clone());
+    jobs::persona_photos_worker::spawn(state.clone());
     jobs::nude_detect_worker::spawn(state.clone());
     jobs::llm_capability_cleanup_worker::spawn(state.clone());
     jobs::chat_worker::spawn(state.clone());

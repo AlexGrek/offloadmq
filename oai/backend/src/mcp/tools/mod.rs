@@ -4,6 +4,7 @@
 mod image_tools;
 mod images;
 mod model_wars;
+mod personas;
 mod placeholders;
 mod prompts;
 
@@ -21,6 +22,7 @@ pub fn definitions() -> Vec<Value> {
     defs.extend(model_wars::definitions());
     defs.extend(prompts::definitions());
     defs.extend(placeholders::definitions());
+    defs.extend(personas::definitions());
     defs
 }
 
@@ -32,6 +34,7 @@ pub async fn call(ctx: &ToolContext, name: &str, args: Value) -> Option<ToolOutp
         n if model_wars::handles(n) => model_wars::call(ctx, n, args).await,
         n if prompts::handles(n) => prompts::call(ctx, n, args).await,
         n if placeholders::handles(n) => placeholders::call(ctx, n, args).await,
+        n if personas::handles(n) => personas::call(ctx, n, args).await,
         _ => return None,
     };
     Some(result.unwrap_or_else(ToolOutput::from))
@@ -163,7 +166,8 @@ mod tests {
                     || image_tools::handles(name)
                     || model_wars::handles(name)
                     || prompts::handles(name)
-                    || placeholders::handles(name),
+                    || placeholders::handles(name)
+                    || personas::handles(name),
                 "{name}"
             );
         }

@@ -36,3 +36,5 @@ pub mod llm_text_capabilities;
 
 pub mod image_cycles;
 pub mod img_model_wars;
+pub mod personas;
+pub mod persona_photos;

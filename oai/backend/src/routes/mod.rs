@@ -29,3 +29,5 @@ pub mod image_cycles;
 pub mod img_model_wars;
 
 pub mod user_settings;
+
+pub mod personas;

@@ -33,3 +33,7 @@ pub mod user_prompt_defaults;
 pub mod img_model_war_jobs;
 
 pub mod image_stash_entries;
+
+pub mod personas;
+
+pub mod persona_photo_jobs;

@@ -15,3 +15,4 @@ pub mod pipeline_events_cleanup_worker;
 pub mod stale_job_reaper;
 
 pub mod image_cycles_worker;
+pub mod persona_photos_worker;

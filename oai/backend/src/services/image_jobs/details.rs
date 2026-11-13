@@ -72,6 +72,32 @@ pub async fn list_imggen_capabilities(
     imggen_capabilities::list_for_display(&state.db, &online_bases, &usage).await
 }
 
+/// The CLI's `pickCapability`: the first online model (the list is already
+/// sorted online-first, then by the user's recent usage) tagged with the workflow, else the
+/// first online model; with nothing online, an error naming the known models.
+pub fn pick_imggen_model(caps: &[LlmCapabilityInfo], workflow: &str) -> Result<String, AppError> {
+    let online: Vec<&LlmCapabilityInfo> = caps.iter().filter(|c| c.online).collect();
+    if let Some(c) = online.iter().find(|c| c.tags.iter().any(|t| t == workflow)) {
+        return Ok(c.base.clone());
+    }
+    if let Some(c) = online.first() {
+        return Ok(c.base.clone());
+    }
+    if caps.is_empty() {
+        return Err(AppError::BadRequest(
+            "no image models are known to the server".into(),
+        ));
+    }
+    let names: Vec<String> = caps
+        .iter()
+        .map(|c| format!("{} (offline)", c.base))
+        .collect();
+    Err(AppError::BadRequest(format!(
+        "no image model is online right now; known: {}",
+        names.join(", ")
+    )))
+}
+
 pub async fn user_job_detail(
     state: &AppState,
     job_id: i64,

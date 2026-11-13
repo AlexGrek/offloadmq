@@ -186,3 +186,30 @@ pub async fn set_output_image(
     model.update(db).await.map_err(AppError::Database)?;
     Ok(())
 }
+
+/// How often each Image Tools capability ran an operation starting with
+/// `workflow_prefix` (e.g. `face_swap`) in the user's last `limit` such jobs —
+/// the "most used" ranking for picking a default tool (Personas).
+pub async fn capability_usage(
+    db: &DatabaseConnection,
+    user_id: i64,
+    workflow_prefix: &str,
+    limit: u64,
+) -> Result<std::collections::HashMap<String, u32>, AppError> {
+    let caps: Vec<String> = ImgUtilsJobEntity::find()
+        .filter(img_utils_jobs::Column::UserId.eq(user_id))
+        .filter(img_utils_jobs::Column::Workflow.starts_with(workflow_prefix))
+        .order_by_desc(img_utils_jobs::Column::CreatedAt)
+        .limit(limit)
+        .select_only()
+        .column(img_utils_jobs::Column::Capability)
+        .into_tuple()
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    let mut usage = std::collections::HashMap::new();
+    for cap in caps {
+        *usage.entry(cap).or_insert(0) += 1;
+    }
+    Ok(usage)
+}

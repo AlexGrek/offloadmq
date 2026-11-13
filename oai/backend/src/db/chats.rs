@@ -23,6 +23,9 @@ pub enum ChatKind {
     Chat,
     /// Prompt Studio (`/app/prompt-studio`).
     PromptStudio,
+    /// A persona's chat (`/app/personas`): `chats.persona_id` is set and the
+    /// persona's rendered system prompt is used at send time.
+    Persona,
 }
 
 impl ChatKind {
@@ -30,6 +33,7 @@ impl ChatKind {
         match self {
             ChatKind::Chat => "chat",
             ChatKind::PromptStudio => "prompt_studio",
+            ChatKind::Persona => "persona",
         }
     }
 
@@ -38,6 +42,7 @@ impl ChatKind {
         match value.trim() {
             "chat" => Ok(ChatKind::Chat),
             "prompt_studio" => Ok(ChatKind::PromptStudio),
+            "persona" => Ok(ChatKind::Persona),
             other => Err(AppError::BadRequest(format!(
                 "unknown chat kind: {other:?}"
             ))),
@@ -54,6 +59,7 @@ impl ChatKind {
         match self {
             ChatKind::Chat => "llm-system",
             ChatKind::PromptStudio => "prompt-studio-system",
+            ChatKind::Persona => "persona-system",
         }
     }
 
@@ -62,6 +68,7 @@ impl ChatKind {
         match self {
             ChatKind::Chat => crate::db::prompt_defaults::App::Chat,
             ChatKind::PromptStudio => crate::db::prompt_defaults::App::PromptStudioSystem,
+            ChatKind::Persona => crate::db::prompt_defaults::App::Chat,
         }
     }
 }
@@ -72,6 +79,7 @@ pub async fn create_chat(
     user_id: i64,
     system_prompt: &str,
     kind: ChatKind,
+    persona_id: Option<i64>,
 ) -> Result<Chat, AppError> {
     let now = chrono::Utc::now().fixed_offset();
     let model = chats::ActiveModel {
@@ -81,6 +89,7 @@ pub async fn create_chat(
         system_prompt: ActiveValue::Set(system_prompt.to_string()),
         last_model: ActiveValue::Set(None),
         kind: ActiveValue::Set(kind.as_str().to_string()),
+        persona_id: ActiveValue::Set(persona_id),
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
     };
@@ -123,10 +132,15 @@ pub async fn list_chats(
     db: &DatabaseConnection,
     user_id: i64,
     kind: ChatKind,
+    persona_id: Option<i64>,
 ) -> Result<Vec<Chat>, AppError> {
-    ChatEntity::find()
+    let mut query = ChatEntity::find()
         .filter(chats::Column::UserId.eq(user_id))
-        .filter(chats::Column::Kind.eq(kind.as_str()))
+        .filter(chats::Column::Kind.eq(kind.as_str()));
+    if let Some(persona_id) = persona_id {
+        query = query.filter(chats::Column::PersonaId.eq(persona_id));
+    }
+    query
         .order_by_desc(chats::Column::UpdatedAt)
         .all(db)
         .await
@@ -217,6 +231,55 @@ pub async fn add_message(
     msg.insert(db).await.map_err(AppError::Database)
 }
 
+/// One message of a chat (the chat's ownership is checked by the caller).
+pub async fn get_message(
+    db: &DatabaseConnection,
+    chat_id: i64,
+    message_id: i64,
+) -> Result<Option<ChatMessage>, AppError> {
+    ChatMessageEntity::find_by_id(message_id)
+        .filter(chat_messages::Column::ChatId.eq(chat_id))
+        .one(db)
+        .await
+        .map_err(AppError::Database)
+}
+
+/// How often each model answered in the user's last `limit` assistant replies —
+/// the "most used" ranking for picking a default LLM.
+pub async fn recent_model_usage(
+    db: &DatabaseConnection,
+    user_id: i64,
+    limit: u64,
+) -> Result<std::collections::HashMap<String, u32>, AppError> {
+    let chat_ids: Vec<i64> = ChatEntity::find()
+        .filter(chats::Column::UserId.eq(user_id))
+        .select_only()
+        .column(chats::Column::Id)
+        .into_tuple()
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    let mut usage = std::collections::HashMap::new();
+    if chat_ids.is_empty() {
+        return Ok(usage);
+    }
+    let models: Vec<Option<String>> = ChatMessageEntity::find()
+        .filter(chat_messages::Column::ChatId.is_in(chat_ids))
+        .filter(chat_messages::Column::Role.eq("assistant"))
+        .order_by_desc(chat_messages::Column::CreatedAt)
+        .limit(limit)
+        .select_only()
+        .column(chat_messages::Column::Model)
+        .into_tuple()
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    for model in models.into_iter().flatten() {
+        *usage.entry(crate::offload::base_capability(&model).to_string()).or_insert(0) += 1;
+    }
+    Ok(usage)
+}
+
 /// Inserts the assistant reply as `status="pending"` with the offload task it is
 /// waiting on. The poll loop (live) or the background worker (after a disconnect
 /// or pod restart) finalizes it via [`finalize_message`].
@@ -285,7 +348,7 @@ mod tests {
 
     #[test]
     fn chat_kind_round_trips_and_picks_buckets() {
-        for kind in [ChatKind::Chat, ChatKind::PromptStudio] {
+        for kind in [ChatKind::Chat, ChatKind::PromptStudio, ChatKind::Persona] {
             assert_eq!(ChatKind::parse(kind.as_str()).unwrap(), kind);
         }
         assert!(ChatKind::parse("movie").is_err());

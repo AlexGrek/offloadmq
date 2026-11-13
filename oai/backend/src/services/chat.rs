@@ -81,7 +81,7 @@ pub async fn list_capabilities(
     }
 }
 
-async fn load_capabilities(state: &AppState) -> Result<Vec<LlmCapabilityInfo>, AppError> {
+pub(crate) async fn load_capabilities(state: &AppState) -> Result<Vec<LlmCapabilityInfo>, AppError> {
     let client = offload_factory::chat_client(state).await?;
     let online = client.list_llm_capabilities().await?;
     llm_capabilities::sync_online(&state.db, &online).await?;
@@ -116,54 +116,181 @@ pub async fn chat(
     }
 }
 
-/// Persists the user message, submits the chat task, and spawns the poll loop.
-/// Returns a user-facing error string; the caller relays it as a `ServerEvent`.
+/// User-facing text for a failed turn on the WebSocket (kept as plain as the
+/// pre-REST messages were).
+fn turn_error_message(e: AppError) -> String {
+    match e {
+        AppError::BadRequest(m) => m,
+        AppError::NotFound => "chat not found".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// WebSocket turn: submit, announce `task:queued`, and stream via the poll loop.
 async fn run_chat(
     req: ChatRequest,
     tx: &UnboundedSender<ServerEvent>,
     state: &Arc<AppState>,
     user_id: i64,
 ) -> Result<(), String> {
-    let ChatRequest {
+    let chat_id: i64 = req.chat_id.parse().map_err(|_| "invalid chat_id".to_string())?;
+    let turn = submit_turn(
+        state,
+        user_id,
+        TurnRequest {
+            capability: Some(req.capability),
+            chat_id,
+            content: req.content,
+            attachment_ids: req
+                .attachment_ids
+                .iter()
+                .filter_map(|s| s.parse::<i64>().ok())
+                .collect(),
+            model_online: req.model_online,
+            timeout_secs: req.timeout_secs,
+            max_wait_secs: req.max_wait_secs,
+            runtime_secs: req.runtime_secs,
+        },
+    )
+    .await
+    .map_err(turn_error_message)?;
+
+    let _ = tx.send(ServerEvent::TaskQueued {
+        req_id: req.req_id.clone(),
+        cap: turn.task_id.cap.clone(),
+        id: turn.task_id.id.clone(),
+    });
+    spawn_poll_loop(state, turn, req.req_id, tx.clone());
+    Ok(())
+}
+
+/// One chat turn to submit, independent of transport (WebSocket or REST).
+pub struct TurnRequest {
+    /// `None` = the chat's last model, else (persona chats) the persona's LLM.
+    pub capability: Option<String>,
+    pub chat_id: i64,
+    pub content: String,
+    pub attachment_ids: Vec<i64>,
+    /// Picks the queue-wait default: short when the model is up, a day when it is offline.
+    pub model_online: bool,
+    pub timeout_secs: Option<u32>,
+    pub max_wait_secs: Option<u32>,
+    pub runtime_secs: Option<u32>,
+}
+
+/// A submitted turn: the pending assistant row and the task it waits on.
+pub struct SubmittedTurn {
+    pub chat_id: i64,
+    pub user_message_id: i64,
+    pub assistant_message_id: i64,
+    pub capability: String,
+    pub task_id: TaskId,
+    client: OffloadClient,
+    deadline_secs: u64,
+}
+
+/// Starts the live poll loop for a submitted turn. It finalizes the assistant row
+/// itself; `tx` events are best-effort (a dropped receiver is fine — REST callers
+/// pass one and read the row instead).
+pub fn spawn_poll_loop(
+    state: &Arc<AppState>,
+    turn: SubmittedTurn,
+    req_id: String,
+    tx: UnboundedSender<ServerEvent>,
+) {
+    let ctx = PollContext {
         req_id,
+        cap: turn.task_id.cap.clone(),
+        id: turn.task_id.id.clone(),
+        chat_id: turn.chat_id,
+        assistant_msg_id: turn.assistant_message_id,
+    };
+    tokio::spawn(poll_loop(
+        ctx,
+        turn.task_id,
+        turn.client,
+        tx,
+        state.clone(),
+        Some(turn.deadline_secs),
+    ));
+}
+
+/// The system prompt a chat sends: a persona chat renders its persona's current
+/// prompt (so persona edits apply to existing chats), other chats use their own.
+pub async fn effective_system_prompt(
+    state: &AppState,
+    chat: &db_chats::Chat,
+) -> Result<String, AppError> {
+    match chat.persona_id {
+        Some(pid) => {
+            let persona = crate::db::personas::get(&state.db, pid, chat.user_id).await?;
+            Ok(crate::services::personas::rendered_system_prompt(&persona))
+        }
+        None => Ok(chat.system_prompt.clone()),
+    }
+}
+
+/// Persists the user message, submits the chat task, and records the pending
+/// assistant reply (finalized by the poll loop or the background worker).
+pub async fn submit_turn(
+    state: &AppState,
+    user_id: i64,
+    req: TurnRequest,
+) -> Result<SubmittedTurn, AppError> {
+    let TurnRequest {
         capability,
-        chat_id: chat_id_str,
+        chat_id,
         content,
-        attachment_ids,
+        attachment_ids: parsed_attachment_ids,
         model_online,
         timeout_secs,
         max_wait_secs,
         runtime_secs,
     } = req;
-    let req_id = req_id.as_str();
+    if parsed_attachment_ids.len() > chat_attachments::MAX_ATTACHMENTS_PER_MESSAGE {
+        return Err(AppError::BadRequest(format!(
+            "too many attachments (max {})",
+            chat_attachments::MAX_ATTACHMENTS_PER_MESSAGE
+        )));
+    }
+
+    let chat = db_chats::get_chat(&state.db, chat_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let kind = db_chats::ChatKind::from_stored(&chat.kind);
+
     // OffloadMQ matches agents by BASE capability and requires tasks to be
     // submitted without extended attributes. The model picker may hand us the
     // raw cap (e.g. `llm.gemma4[vision;tools]`); strip it to base here so the
     // task is actually schedulable and stored consistently everywhere below.
+    let requested = capability
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty())
+        .or_else(|| chat.last_model.clone());
+    let capability = match requested {
+        Some(c) => c,
+        None => match chat.persona_id {
+            Some(pid) => {
+                let persona = crate::db::personas::get(&state.db, pid, user_id).await?;
+                crate::services::personas::resolve_llm(state, &persona)
+                    .await?
+                    .map(|c| c.capability)
+                    .ok_or_else(|| AppError::BadRequest("no LLM is online".into()))?
+            }
+            None => return Err(AppError::BadRequest("capability is required".into())),
+        },
+    };
     let capability = crate::offload::base_capability(&capability).to_string();
-    let chat_id: i64 = chat_id_str.parse().map_err(|_| "invalid chat_id".to_string())?;
-
-    let parsed_attachment_ids: Vec<i64> = attachment_ids
-        .iter()
-        .filter_map(|s| s.parse::<i64>().ok())
-        .collect();
-    if parsed_attachment_ids.len() > chat_attachments::MAX_ATTACHMENTS_PER_MESSAGE {
-        return Err(format!(
-            "too many attachments (max {})",
-            chat_attachments::MAX_ATTACHMENTS_PER_MESSAGE
-        ));
+    if !capability.starts_with("llm.") {
+        return Err(AppError::BadRequest("capability must be an llm.* model".into()));
     }
 
-    let chat = db_chats::get_chat(&state.db, chat_id, user_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "chat not found".to_string())?;
-
+    let system_prompt = effective_system_prompt(state, &chat).await?;
     // Record the system prompt actually used for this turn as a recent (best-effort),
     // so it's reusable across chats without the frontend issuing a second request.
-    if !chat.system_prompt.trim().is_empty() {
-        let bucket = db_chats::ChatKind::from_stored(&chat.kind).system_prompt_bucket();
-        crate::services::prompt_usage::note_use(state, user_id, bucket, &chat.system_prompt).await;
+    // Persona prompts belong to the persona, not the shared library.
+    if kind != db_chats::ChatKind::Persona && !system_prompt.trim().is_empty() {
+        crate::services::prompt_usage::note_use(state, user_id, kind.system_prompt_bucket(), &system_prompt).await;
     }
 
     // A turn with only attachments still needs non-empty user content so it
@@ -172,6 +299,8 @@ async fn run_chat(
     let trimmed = content.trim();
     let stored_content = if trimmed.is_empty() && !parsed_attachment_ids.is_empty() {
         "Please review the attached file(s).".to_string()
+    } else if trimmed.is_empty() {
+        return Err(AppError::BadRequest("message cannot be empty".into()));
     } else {
         content.clone()
     };
@@ -186,8 +315,7 @@ async fn run_chat(
         "complete",
         Some(&capability),
     )
-    .await
-    .map_err(|e| e.to_string())?;
+    .await?;
 
     // Link pre-uploaded attachments to this message and stage them into a
     // one-shot bucket for the agent (document text extraction + image attach).
@@ -198,15 +326,10 @@ async fn run_chat(
         user_msg_id,
         chat_id,
     )
-    .await
-    .map_err(|e| e.to_string())?;
-    let file_bucket = chat_attachments::stage_into_bucket(state, &attachments)
-        .await
-        .map_err(|e| e.to_string())?;
+    .await?;
+    let file_bucket = chat_attachments::stage_into_bucket(state, &attachments).await?;
 
-    db_chats::set_last_model(&state.db, chat_id, user_id, &capability)
-        .await
-        .map_err(|e| e.to_string())?;
+    db_chats::set_last_model(&state.db, chat_id, user_id, &capability).await?;
 
     if chat.title.is_empty() {
         let title = stored_content.chars().take(50).collect::<String>();
@@ -216,10 +339,10 @@ async fn run_chat(
     }
 
     // Full persisted thread (including the message we just saved), chronological.
-    let stored = db_chats::get_messages(&state.db, chat_id).await.map_err(|e| e.to_string())?;
-    let messages = build_offload_chat_messages(&chat.system_prompt, &stored);
+    let stored = db_chats::get_messages(&state.db, chat_id).await?;
+    let messages = build_offload_chat_messages(&system_prompt, &stored);
     if messages.is_empty() {
-        return Err("no messages to send".to_string());
+        return Err(AppError::BadRequest("no messages to send".into()));
     }
     tracing::debug!(
         chat_id,
@@ -229,13 +352,22 @@ async fn run_chat(
     );
 
     let limits = resolve_timeouts(model_online, timeout_secs, max_wait_secs, runtime_secs);
-    let client = offload_factory::chat_client(state).await.map_err(|e| e.to_string())?;
-    let task_id = client.submit_chat(&capability, messages, limits.timeout_secs, Some(limits.max_wait_secs), Some(limits.runtime_secs), file_bucket.as_deref()).await.map_err(|e| e.to_string())?;
+    let client = offload_factory::chat_client(state).await?;
+    let task_id = client
+        .submit_chat(
+            &capability,
+            messages,
+            limits.timeout_secs,
+            Some(limits.max_wait_secs),
+            Some(limits.runtime_secs),
+            file_bucket.as_deref(),
+        )
+        .await?;
 
     // Persist the assistant reply as `pending` up front, carrying the offload
-    // task id. This is the authoritative record: the live poll loop below
-    // finalizes it for connected clients, and the background chat worker
-    // reconciles it if the WS drops or the pod restarts.
+    // task id. This is the authoritative record: the live poll loop finalizes it
+    // for connected clients, and the background chat worker reconciles it if the
+    // WS drops or the pod restarts.
     let assistant_msg_id = state.next_id();
     db_chats::add_pending_assistant_message(
         &state.db,
@@ -245,24 +377,18 @@ async fn run_chat(
         &task_id.cap,
         &task_id.id,
     )
-    .await
-    .map_err(|e| e.to_string())?;
+    .await?;
     state.watch.track(&task_id.cap, &task_id.id).await;
 
-    let _ = tx.send(ServerEvent::TaskQueued {
-        req_id: req_id.to_string(),
-        cap: task_id.cap.clone(),
-        id: task_id.id.clone(),
-    });
-    let ctx = PollContext {
-        req_id: req_id.to_string(),
-        cap: task_id.cap.clone(),
-        id: task_id.id.clone(),
+    Ok(SubmittedTurn {
         chat_id,
-        assistant_msg_id,
-    };
-    tokio::spawn(poll_loop(ctx, task_id, client, tx.clone(), state.clone(), Some(limits.deadline_secs)));
-    Ok(())
+        user_message_id: user_msg_id,
+        assistant_message_id: assistant_msg_id,
+        capability,
+        task_id,
+        client,
+        deadline_secs: limits.deadline_secs,
+    })
 }
 
 async fn poll_loop(
@@ -422,6 +548,32 @@ pub async fn run_background_reconcile_pass(
         }
     }
     Ok(())
+}
+
+/// Reads one message of the user's chat; a still-pending assistant reply is
+/// reconciled against its offload task first (REST/CLI/MCP polling path).
+pub async fn get_message_reconciled(
+    state: &AppState,
+    user_id: i64,
+    chat_id: i64,
+    message_id: i64,
+) -> Result<db_chats::ChatMessage, AppError> {
+    db_chats::get_chat(&state.db, chat_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let msg = db_chats::get_message(&state.db, chat_id, message_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if msg.status != "pending" {
+        return Ok(msg);
+    }
+    let client = offload_factory::chat_client(state).await?;
+    if let Err(e) = reconcile_pending_message(state, &client, &msg).await {
+        tracing::debug!(message_id, "chat message poll: {e}");
+    }
+    db_chats::get_message(&state.db, chat_id, message_id)
+        .await?
+        .ok_or(AppError::NotFound)
 }
 
 async fn reconcile_pending_message(

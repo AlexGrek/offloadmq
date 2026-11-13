@@ -27,9 +27,12 @@ const MAX_VARIANT_LEN: usize = 2_000;
 pub const RESERVED_PLACEHOLDER_NAMES: &[&str] =
     &["color", "animal", "adjective", "country", "language", "name", "starwars", "?"];
 
+/// Also reserved: the persona tokens (`{p_name}`, `{p_look}`, `{p_system}`) that
+/// `services::personas::render_tokens` substitutes before placeholder expansion.
 pub fn is_reserved_name(name: &str) -> bool {
     let lower = name.trim().to_lowercase();
     RESERVED_PLACEHOLDER_NAMES.contains(&lower.as_str())
+        || crate::services::personas::PERSONA_TOKENS.contains(&lower.as_str())
 }
 
 /// Charset: letters, digits, `.`, `-`, `_`. Deliberately allows leading/trailing

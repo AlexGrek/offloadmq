@@ -11,8 +11,10 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub system_prompt: String,
     pub last_model: Option<String>,
-    /// `chat` (LLM Chat) or `prompt_studio` — see `db::chats::ChatKind`.
+    /// `chat` (LLM Chat), `prompt_studio` or `persona` — see `db::chats::ChatKind`.
     pub kind: String,
+    /// Set for `persona` chats; the persona's system prompt is used at send time.
+    pub persona_id: Option<i64>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

@@ -253,31 +253,6 @@ async fn list_models(ctx: &ToolContext) -> Result<ToolOutput, AppError> {
     Ok(out)
 }
 
-/// The CLI's `pickCapability`: the first online model tagged with the workflow, else the
-/// first online model; with nothing online, an error naming the known models.
-fn pick_model(caps: &[LlmCapabilityInfo], workflow: &str) -> Result<String, AppError> {
-    let online: Vec<&LlmCapabilityInfo> = caps.iter().filter(|c| c.online).collect();
-    if let Some(c) = online.iter().find(|c| c.tags.iter().any(|t| t == workflow)) {
-        return Ok(c.base.clone());
-    }
-    if let Some(c) = online.first() {
-        return Ok(c.base.clone());
-    }
-    if caps.is_empty() {
-        return Err(AppError::BadRequest(
-            "no image models are known to the server".into(),
-        ));
-    }
-    let names: Vec<String> = caps
-        .iter()
-        .map(|c| format!("{} (offline)", c.base))
-        .collect();
-    Err(AppError::BadRequest(format!(
-        "no image model is online right now; known: {}",
-        names.join(", ")
-    )))
-}
-
 // ── Generate ─────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -384,7 +359,7 @@ async fn generate(ctx: &ToolContext, a: GenerateArgs) -> Result<ToolOutput, AppE
         Some(m) => m,
         None => {
             let caps = image_jobs::list_imggen_capabilities(&ctx.state, ctx.user_id).await?;
-            let m = pick_model(&caps, &workflow)?;
+            let m = image_jobs::pick_imggen_model(&caps, &workflow)?;
             notes.push(format!("Model: {m} (auto-selected, online)"));
             m
         }
@@ -938,14 +913,14 @@ mod tests {
             cap("imggen.off", false, &["txt2img"]),
             cap("imggen.flux", true, &["txt2img", "img2img"]),
         ];
-        assert_eq!(pick_model(&caps, "txt2img").unwrap(), "imggen.flux");
-        assert_eq!(pick_model(&caps, "img2video").unwrap(), "imggen.video");
+        assert_eq!(image_jobs::pick_imggen_model(&caps, "txt2img").unwrap(), "imggen.flux");
+        assert_eq!(image_jobs::pick_imggen_model(&caps, "img2video").unwrap(), "imggen.video");
         // No online model with the tag: first online one.
-        assert_eq!(pick_model(&caps, "inpaint").unwrap(), "imggen.video");
+        assert_eq!(image_jobs::pick_imggen_model(&caps, "inpaint").unwrap(), "imggen.video");
         let offline = vec![cap("imggen.off", false, &["txt2img"])];
-        let err = pick_model(&offline, "txt2img").unwrap_err();
+        let err = image_jobs::pick_imggen_model(&offline, "txt2img").unwrap_err();
         assert!(matches!(err, AppError::BadRequest(m) if m.contains("imggen.off (offline)")));
-        assert!(pick_model(&[], "txt2img").is_err());
+        assert!(image_jobs::pick_imggen_model(&[], "txt2img").is_err());
     }
 
     #[test]

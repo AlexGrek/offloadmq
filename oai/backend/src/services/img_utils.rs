@@ -379,6 +379,17 @@ pub async fn start_job(
     user_id: i64,
     params: StartJobParams,
 ) -> Result<i64, AppError> {
+    start_job_with_id(state, user_id, state.next_id(), params).await
+}
+
+/// [`start_job`] with a caller-reserved id, for orchestrators (Personas) that
+/// persist the child link before any side effect so a restart never submits twice.
+pub async fn start_job_with_id(
+    state: &AppState,
+    user_id: i64,
+    job_id: i64,
+    params: StartJobParams,
+) -> Result<i64, AppError> {
     if params.priority == crate::offload::image_tasks::ImageTaskPriority::High
         && !crate::db::users::find_by_id(&state.db, user_id)
             .await?
@@ -458,7 +469,6 @@ pub async fn start_job(
         .transpose()
         .map_err(|e| AppError::Internal(format!("serialize options: {e}")))?;
 
-    let job_id = state.next_id();
     img_utils::create_job(
         &state.db,
         img_utils::NewJobInput {

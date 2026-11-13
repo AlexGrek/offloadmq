@@ -99,7 +99,14 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/chats/{id}/last-model",
             axum::routing::patch(routes::chats::update_last_model),
         )
-        .route("/api/chats/{id}/messages", get(routes::chats::get_messages))
+        .route(
+            "/api/chats/{id}/messages",
+            get(routes::chats::get_messages).post(routes::chats::send_message),
+        )
+        .route(
+            "/api/chats/{id}/messages/{message_id}",
+            get(routes::chats::get_message),
+        )
         .route(
             "/api/chat/attachments/upload",
             post(routes::chat_attachments::upload_document)
@@ -207,6 +214,8 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         .nest("/api/image-cycles", routes::image_cycles::router("image-cycles"))
         .nest("/api/generator-improver", routes::image_cycles::router("generator-improver"))
         .nest("/api/img-model-wars", routes::img_model_wars::router())
+        .nest("/api/personas", routes::personas::router())
+        .nest("/api/persona-photos", routes::personas::photos_router())
         .route("/api/describe/jobs", post(routes::describe::start_job))
         .route("/api/describe/jobs", get(routes::describe::list_jobs))
         .route(
