@@ -1,7 +1,8 @@
 import { apiRequest } from '@/api/http'
+import { recordRecentPrompt } from '@/api/prompts'
 import type { ChatSummary } from '@/api/chats'
 import type { ServerEvent } from '@/types/ws'
-import { extractPrompt } from './promptStudio'
+import { extractPrompt, PROMPT_STUDIO_TEMPLATE_BUCKET } from './promptStudio'
 import type { WallpaperJobProgress } from './hallucinate'
 
 export class WallpaperCancellationError extends Error {}
@@ -18,6 +19,8 @@ export function wallpaperPromptGenerator(token: string, settings: WallpaperPromp
   return async (content: string, signal: AbortSignal, report: (patch: Partial<WallpaperJobProgress>) => void) => {
     signal.throwIfAborted()
     if (!chatId) {
+      await recordRecentPrompt(token, PROMPT_STUDIO_TEMPLATE_BUCKET, settings.template, AbortSignal.any([signal, AbortSignal.timeout(15000)]))
+      signal.throwIfAborted()
       const chat = await apiRequest<ChatSummary>('/api/chats', token, {
         method: 'POST', signal: AbortSignal.timeout(15000),
         body: JSON.stringify({ kind: 'prompt_studio', system_prompt: settings.systemPrompt, last_model: settings.capability }),
@@ -32,6 +35,7 @@ export function wallpaperPromptGenerator(token: string, settings: WallpaperPromp
       const socket = new WebSocket(url)
       const reqId = `wallpaper-${crypto.randomUUID()}`
       let task: { cap: string; id: string } | undefined
+      let startedAt: string | null = null
       let sent = false
       let settled = false
       let canceling = false
@@ -89,7 +93,8 @@ export function wallpaperPromptGenerator(token: string, settings: WallpaperPromp
         if (!('req_id' in message) || message.req_id !== reqId) return
         if (message.type === 'task:queued' || message.type === 'task:progress') {
           task = { cap: message.cap, id: message.id }
-          report({ jobId: message.id, status: signal.aborted ? 'cancelRequested' : message.type === 'task:queued' ? 'queued' : message.status,
+          if (message.type === 'task:progress' && message.status === 'running' && !startedAt) startedAt = new Date().toISOString()
+          report({ startedAt, jobId: message.id, status: signal.aborted ? 'cancelRequested' : message.type === 'task:queued' ? 'queued' : message.status,
             ...(message.type === 'task:progress' ? { stage: message.stage ?? null } : {}) })
           if (signal.aborted) void cancel()
         } else if (message.type === 'task:result') {

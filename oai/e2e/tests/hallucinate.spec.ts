@@ -378,3 +378,25 @@ test('studio needs an online LLM; direct mode remains available', async ({ page 
   await page.getByTestId('hallucinate-mode').selectOption('direct')
   await expect(page.getByTestId('hallucinate-start')).toBeEnabled()
 })
+
+test('studio prompt settings fit a phone and still upscale before display', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 })
+  const { submissions, events } = await mockStudio(page)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+  await page.getByLabel('Upscale before displaying').check()
+  await page.getByTestId('hallucinate-start').click()
+  await expect(page.getByTestId('hallucinate-display').getByRole('img').first()).toBeVisible()
+  expect(submissions[0].prompt).toBe('A luminous glass forest')
+  expect(events).toContain('load:20')
+  expect(events).not.toContain('load:10')
+  await page.getByTestId('hallucinate-pause').click()
+})
+
+test('navigation cancels an in-flight studio prompt', async ({ page }) => {
+  const { turns, cancellations, submissions } = await mockStudio(page, { pending: true })
+  await page.getByTestId('hallucinate-start').click()
+  await expect.poll(() => turns.length).toBe(1)
+  await page.evaluate(() => { window.history.pushState({}, '', '/app/dashboard'); window.dispatchEvent(new PopStateEvent('popstate')) })
+  await expect.poll(() => cancellations.length).toBe(1)
+  expect(submissions).toHaveLength(0)
+})

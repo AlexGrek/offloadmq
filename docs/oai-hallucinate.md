@@ -15,6 +15,26 @@ backend's typical-runtime estimate once execution starts; queued jobs and jobs
 without estimates use an indeterminate bar. Timings update between polls and
 stop when the job finishes or monitoring stops. Each new job resets the readout.
 
+Two modes are available:
+
+- **Prompt variations** renders the recurring dream directly, as before.
+- **Prompt Studio → image** first asks an online LLM to create an image prompt,
+  then immediately renders the reply. Choose a prompt model, system prompt, and
+  message template (`{prompt}` is replaced with the expanded recurring dream).
+  Defaults and saved libraries are shared with Prompt Studio. Every iteration
+  sends the template again in the same conversation, preserving earlier replies
+  as context. A single fenced code block or wrapping quotes are stripped using
+  Prompt Studio's extraction rules. Empty replies stop the loop visibly.
+
+A new Prompt Studio conversation is saved for each Start/Resume run in studio
+mode. It remains in Prompt Studio history; image and upscale outputs keep their
+usual histories. Pause/navigation also cancels prompt inference, including when
+its queued task ID arrives after Pause. A lost connection stops the loop and
+asks the user to check Prompt Studio history before retrying. Prompt inference
+has a 330-second deadline; cancellation and late submission tracking have
+15-second deadlines. The display identifies the prompt step separately from
+rendering and upscaling.
+
 Each iteration expands built-in and custom prompt placeholders again, chooses a
 new random seed, and submits one txt2img task through the existing Image Generation
 API. `{?}` uses the generator's existing server-side substitution. There is no
@@ -66,5 +86,5 @@ original entry. Starting records the original template once, rather than floodin
 recents with each expanded variation.
 
 Implementation: `frontend/src/pages/HallucinatePage.tsx`,
-`frontend/src/lib/hallucinate.ts`. No new endpoints, database tables, workers, or
+`frontend/src/lib/hallucinate.ts`, `frontend/src/lib/hallucinatePrompt.ts`. No new endpoints, database tables, workers, or
 deployment settings. Regression coverage: `e2e/tests/hallucinate.spec.ts`.
