@@ -49,12 +49,12 @@ pub fn url_decode(input: &str) -> Result<String, AppError> {
         match ch {
             '%' => {
                 // Get the next two characters for hex decoding
-                let hex1 = chars.next().ok_or(AppError::BadRequest(format!(
-                    "Invalid percent encoding: missing first hex digit"
-                )))?;
-                let hex2 = chars.next().ok_or(AppError::BadRequest(format!(
-                    "Invalid percent encoding: missing second hex digit"
-                )))?;
+                let hex1 = chars.next().ok_or(AppError::BadRequest(
+                    "Invalid percent encoding: missing first hex digit".to_string(),
+                ))?;
+                let hex2 = chars.next().ok_or(AppError::BadRequest(
+                    "Invalid percent encoding: missing second hex digit".to_string(),
+                ))?;
 
                 let hex_str = format!("{}{}", hex1, hex2);
                 let byte = u8::from_str_radix(&hex_str, 16)
@@ -130,17 +130,16 @@ pub fn val_to_u64(val: &serde_json::Value) -> Option<u64> {
 
 /// Extract image generation/video generation resolution (width, height) from task payload
 pub fn extract_image_resolution(payload: &serde_json::Value) -> Option<(u64, u64)> {
-    if let Some(res) = payload.get("resolution") {
-        if let (Some(w), Some(h)) = (res.get("width"), res.get("height")) {
-            if let (Some(w_val), Some(h_val)) = (val_to_u64(w), val_to_u64(h)) {
-                return Some((w_val, h_val));
-            }
-        }
+    if let Some(res) = payload.get("resolution")
+        && let (Some(w), Some(h)) = (res.get("width"), res.get("height"))
+        && let (Some(w_val), Some(h_val)) = (val_to_u64(w), val_to_u64(h))
+    {
+        return Some((w_val, h_val));
     }
-    if let (Some(w), Some(h)) = (payload.get("width"), payload.get("height")) {
-        if let (Some(w_val), Some(h_val)) = (val_to_u64(w), val_to_u64(h)) {
-            return Some((w_val, h_val));
-        }
+    if let (Some(w), Some(h)) = (payload.get("width"), payload.get("height"))
+        && let (Some(w_val), Some(h_val)) = (val_to_u64(w), val_to_u64(h))
+    {
+        return Some((w_val, h_val));
     }
     None
 }

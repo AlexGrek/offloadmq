@@ -106,11 +106,9 @@ impl AgentStorage {
     pub fn list_all_agents(&self) -> Vec<Agent> {
         let mut agents = Vec::new();
 
-        for item in self.db.iter() {
-            if let Ok((_, v)) = item {
-                if let Ok(agent) = from_slice::<Agent>(&v) {
-                    agents.push(agent);
-                }
+        for (_, v) in self.db.iter().flatten() {
+            if let Ok(agent) = from_slice::<Agent>(&v) {
+                agents.push(agent);
             }
         }
 

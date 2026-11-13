@@ -100,11 +100,11 @@ impl BucketStorage {
 
     /// Append `task_id` to the bucket's task list (idempotent; no-op if already present).
     pub async fn add_task(&self, bucket_uid: &str, task_id: &str) -> anyhow::Result<()> {
-        if let Some(mut meta) = self.get_bucket(bucket_uid)? {
-            if !meta.tasks.iter().any(|t| t == task_id) {
-                meta.tasks.push(task_id.to_string());
-                self.save_bucket(&meta).await?;
-            }
+        if let Some(mut meta) = self.get_bucket(bucket_uid)?
+            && !meta.tasks.iter().any(|t| t == task_id)
+        {
+            meta.tasks.push(task_id.to_string());
+            self.save_bucket(&meta).await?;
         }
         Ok(())
     }

@@ -60,7 +60,7 @@ impl UrgentTaskStore {
 
     pub async fn find_with_capabilities(
         &self,
-        caps: &Vec<String>,
+        caps: &[String],
         agent_uid: &str,
     ) -> Option<UnassignedTask> {
         self.tasks
@@ -228,18 +228,18 @@ impl UrgentTaskStore {
             if let Some(stage_text) = stage {
                 task.change_stage(&stage_text);
             }
-            if !is_cancel_requested {
-                if let Some(new_status) = status {
-                    match new_status {
-                        TaskStatus::Starting | TaskStatus::Running => {
-                            task.change_status(new_status)
-                        }
-                        _ => {
-                            return Err(AppError::BadRequest(format!(
-                                "Status {:?} cannot be set via progress update",
-                                new_status
-                            )));
-                        }
+            if !is_cancel_requested
+                && let Some(new_status) = status
+            {
+                match new_status {
+                    TaskStatus::Starting | TaskStatus::Running => {
+                        task.change_status(new_status)
+                    }
+                    _ => {
+                        return Err(AppError::BadRequest(format!(
+                            "Status {:?} cannot be set via progress update",
+                            new_status
+                        )));
                     }
                 }
             }
@@ -262,7 +262,7 @@ impl UrgentTaskStore {
         let mut to_remove: Vec<(TaskId, bool)> = vec![];
         for (id, entry) in tasks.iter() {
             let status = entry.state.status.read().await.clone();
-            let global_expired = entry.global_deadline.map_or(false, |d| now >= d);
+            let global_expired = entry.global_deadline.is_some_and(|d| now >= d);
             let expired = match status {
                 // Already terminal — the waiting submitter will remove it.
                 TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Canceled => false,
@@ -282,20 +282,18 @@ impl UrgentTaskStore {
             // When the global deadline fires on an in-flight task, mark the
             // assigned record as CancelRequested so the agent gets HTTP 499 on
             // its next progress or resolve call.
-            if global_expired {
-                if let Some(entry) = tasks.get_mut(&id) {
-                    if let Some(ref mut assigned) = entry.assigned_task {
-                        if !matches!(
-                            assigned.status,
-                            TaskStatus::Completed
-                                | TaskStatus::Failed
-                                | TaskStatus::CancelRequested
-                                | TaskStatus::Canceled
-                        ) {
-                            assigned.change_status(TaskStatus::CancelRequested);
-                        }
-                    }
-                }
+            if global_expired
+                && let Some(entry) = tasks.get_mut(&id)
+                && let Some(ref mut assigned) = entry.assigned_task
+                && !matches!(
+                    assigned.status,
+                    TaskStatus::Completed
+                        | TaskStatus::Failed
+                        | TaskStatus::CancelRequested
+                        | TaskStatus::Canceled
+                )
+            {
+                assigned.change_status(TaskStatus::CancelRequested);
             }
             if let Some(entry) = tasks.get(&id) {
                 let mut status = entry.state.status.write().await;
@@ -310,10 +308,10 @@ impl UrgentTaskStore {
 
     pub async fn set_runtime_estimate(&self, task_id: &TaskId, duration: std::time::Duration) {
         let mut tasks = self.tasks.write().await;
-        if let Some(entry) = tasks.get_mut(task_id) {
-            if let Some(assigned) = entry.assigned_task.as_mut() {
-                assigned.typical_runtime_seconds = Some(duration);
-            }
+        if let Some(entry) = tasks.get_mut(task_id)
+            && let Some(assigned) = entry.assigned_task.as_mut()
+        {
+            assigned.typical_runtime_seconds = Some(duration);
         }
     }
 
@@ -342,8 +340,7 @@ impl UrgentTaskStore {
         assigned
             .get(task_id)
             .cloned()
-            .map(|item| item.assigned_task)
-            .flatten()
+            .and_then(|item| item.assigned_task)
     }
 
     /// The part of an in-flight task's log past byte offset `from` — without

@@ -169,12 +169,12 @@ pub async fn poll_non_urgent(
 }
 
 fn validate_display_name(name: &Option<String>) -> Result<(), AppError> {
-    if let Some(n) = name {
-        if n.chars().count() > 50 {
-            return Err(AppError::BadRequest(
-                "display_name must be 50 characters or fewer".to_string(),
-            ));
-        }
+    if let Some(n) = name
+        && n.chars().count() > 50
+    {
+        return Err(AppError::BadRequest(
+            "display_name must be 50 characters or fewer".to_string(),
+        ));
     }
     Ok(())
 }
@@ -442,7 +442,7 @@ pub async fn resolve_task(
         .update_agent_last_contact(agent, comm_method)
         .await?;
     info!("Agent {} reporting task {task_id}", agent.uid_short);
-    debug!("Report: {:?}", &report);
+    debug!("Report: {:?}", report);
 
     let file_buckets: Vec<String> = state
         .urgent
@@ -567,7 +567,7 @@ pub async fn update_task_progress(
         agent.uid_short,
         update.log_update.as_ref().map(|s| s.len()).unwrap_or(0)
     );
-    debug!("Update: {:?}", &update);
+    debug!("Update: {:?}", update);
 
     let event_status = update.status.clone();
     let event_stage = update.stage.clone();

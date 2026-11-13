@@ -271,7 +271,7 @@ impl TaskStorage {
         let bytes = rmp_serde::to_vec_named(assigned)?;
         let key = Self::make_key(&assigned.id);
         self.assigned.insert(key.as_bytes(), bytes)?;
-        return Ok(());
+        Ok(())
     }
 
     pub fn hard_clear(&self) -> Result<()> {
@@ -296,7 +296,7 @@ impl TaskStorage {
         Ok(result)
     }
 
-    pub fn list_unassigned_with_caps(&self, caps: &Vec<String>) -> Result<Vec<UnassignedTask>> {
+    pub fn list_unassigned_with_caps(&self, caps: &[String]) -> Result<Vec<UnassignedTask>> {
         Ok(caps
             .iter()
             .filter_map(|x| self.list_unassigned_for_capability(base_capability(x)).ok())
@@ -329,8 +329,8 @@ impl TaskStorage {
             let task: UnassignedTask = rmp_serde::from_slice(&v)?;
 
             let elapsed = (now - task.created_at).num_seconds().max(0) as u64;
-            let wait_expired = task.data.max_wait_secs.map_or(false, |mw| elapsed >= mw);
-            let total_expired = task.data.timeout_secs.map_or(false, |ts| elapsed >= ts);
+            let wait_expired = task.data.max_wait_secs.is_some_and(|mw| elapsed >= mw);
+            let total_expired = task.data.timeout_secs.is_some_and(|ts| elapsed >= ts);
 
             if wait_expired || total_expired {
                 to_expire.push(task);

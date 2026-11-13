@@ -245,7 +245,7 @@ fn effort_normalized(
 
     rates.sort_by(f64::total_cmp);
     let mid = rates.len() / 2;
-    let median_rate = if rates.len() % 2 == 0 {
+    let median_rate = if rates.len().is_multiple_of(2) {
         (rates[mid - 1] + rates[mid]) / 2.0
     } else {
         rates[mid]
@@ -282,20 +282,20 @@ pub fn estimate_duration(
         (has_params && effort > 0).then(|| (ParamShape::of(p.total_size, p.length), effort))
     });
 
-    if let Some((shape, effort)) = current {
-        if let Some(d) = effort_normalized(machine_records, shape, effort) {
-            return Some(d);
-        }
+    if let Some((shape, effort)) = current
+        && let Some(d) = effort_normalized(machine_records, shape, effort)
+    {
+        return Some(d);
     }
 
     if let Some(d) = plain_average(machine_records) {
         return Some(d);
     }
 
-    if let Some((shape, effort)) = current {
-        if let Some(d) = effort_normalized(all_records, shape, effort) {
-            return Some(d);
-        }
+    if let Some((shape, effort)) = current
+        && let Some(d) = effort_normalized(all_records, shape, effort)
+    {
+        return Some(d);
     }
 
     plain_average(all_records)

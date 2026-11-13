@@ -471,7 +471,7 @@ async fn read_task_state(
             if !skip_owner && task.data.api_key != api_key {
                 None
             } else {
-                Some(from_assigned(task))
+                Some(from_assigned(*task))
             }
         }
         Err(_) => None,

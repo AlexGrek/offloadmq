@@ -26,7 +26,7 @@ pub enum SubmitOutcome {
 
 pub enum PollOutcome {
     Found(TaskStatusResponse),
-    FoundUrgent(AssignedTask),
+    FoundUrgent(Box<AssignedTask>),
 }
 
 #[derive(Debug, Serialize)]
@@ -199,44 +199,41 @@ pub async fn do_poll_task_status(
         .storage
         .tasks
         .get_assigned(&task_id)?
-        .map(|ass| {
+        .and_then(|ass| {
             if !skip_owner && ass.data.api_key != api_key {
                 None
             } else {
                 Some(ass.into_status_report())
             }
         })
-        .flatten()
         .or(state
             .regular
             .get_task(&task_id)
             .await
-            .map(|unass| {
+            .and_then(|unass| {
                 if !skip_owner && unass.data.api_key != api_key {
                     None
                 } else {
                     Some(unass.into_status_report())
                 }
-            })
-            .flatten())
+            }))
         .or(state
             .storage
             .tasks
             .get_unassigned(&task_id)?
-            .map(|unass| {
+            .and_then(|unass| {
                 if !skip_owner && unass.data.api_key != api_key {
                     None
                 } else {
                     Some(unass.into_status_report())
                 }
-            })
-            .flatten());
+            }));
 
     if let Some(response) = task {
         return Ok(PollOutcome::Found(response));
     }
     if let Some(urgent) = state.urgent.get_assigned_task(&task_id).await {
-        return Ok(PollOutcome::FoundUrgent(urgent));
+        return Ok(PollOutcome::FoundUrgent(Box::new(urgent)));
     }
     Err(AppError::NotFound(task_id.to_string()))
 }
@@ -453,20 +450,20 @@ fn cancel_status_from_str(status: &str) -> Option<TaskStatus> {
 }
 
 fn emit_urgent_expired_if_needed(state: &Arc<AppState>, outcome: &UrgentSubmitOutcome) {
-    if let UrgentSubmitOutcome::CompletedPartial { id, status, .. } = outcome {
-        if *status == TaskStatus::Failed {
-            emit_task_lifecycle(
-                state,
-                TaskLifecycleEvent {
-                    task_id: id.clone(),
-                    queue: TaskQueueKind::Urgent,
-                    action: "expired".to_string(),
-                    agent_id: None,
-                    status: Some(TaskStatus::Failed),
-                    result_status: None,
-                    stage: None,
-                },
-            );
-        }
+    if let UrgentSubmitOutcome::CompletedPartial { id, status, .. } = outcome
+        && *status == TaskStatus::Failed
+    {
+        emit_task_lifecycle(
+            state,
+            TaskLifecycleEvent {
+                task_id: id.clone(),
+                queue: TaskQueueKind::Urgent,
+                action: "expired".to_string(),
+                agent_id: None,
+                status: Some(TaskStatus::Failed),
+                result_status: None,
+                stage: None,
+            },
+        );
     }
 }

@@ -264,10 +264,8 @@ impl HeuristicStorage {
         }
 
         // Delete by limit (runner): for each (runner, capability), keep only the newest max_records
-        let mut runner_cap_records: HashMap<
-            (String, String),
-            Vec<(String, String, Option<String>, HeuristicRecord)>,
-        > = HashMap::new();
+        type RunnerCapEntry = (String, String, Option<String>, HeuristicRecord);
+        let mut runner_cap_records: HashMap<(String, String), Vec<RunnerCapEntry>> = HashMap::new();
 
         for item in self.heuristics_by_cap.iter() {
             let (key, bytes) = item?;
@@ -282,7 +280,7 @@ impl HeuristicStorage {
 
             runner_cap_records
                 .entry(key_tuple)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push((cap_key, runner_key, machine_key, record));
         }
 
@@ -309,7 +307,7 @@ impl HeuristicStorage {
             if let Some(mid) = &record.machine_id {
                 machine_cap_records
                     .entry((mid.clone(), record.capability.clone()))
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push((machine_key, record));
             }
         }

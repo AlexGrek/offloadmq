@@ -154,11 +154,9 @@ impl AgentLogStorage {
         let mut collected: Vec<AgentLogRecord> = Vec::new();
         for severity in LogSeverity::all() {
             let prefix = format!("{}|{}|", severity.key_prefix(), agent_id);
-            for item in self.tree.scan_prefix(prefix.as_bytes()).rev() {
-                if let Ok((_, v)) = item {
-                    if let Some(rec) = Self::decode(&v) {
-                        collected.push(rec);
-                    }
+            for (_, v) in self.tree.scan_prefix(prefix.as_bytes()).rev().flatten() {
+                if let Some(rec) = Self::decode(&v) {
+                    collected.push(rec);
                 }
             }
         }
@@ -183,16 +181,15 @@ impl AgentLogStorage {
         let mut collected: Vec<AgentLogRecord> = Vec::new();
         for severity in LogSeverity::all() {
             let prefix = format!("{}|", severity.key_prefix());
-            for item in self
+            for (_, v) in self
                 .tree
                 .scan_prefix(prefix.as_bytes())
                 .rev()
                 .take(take_per_severity)
+                .flatten()
             {
-                if let Ok((_, v)) = item {
-                    if let Some(rec) = Self::decode(&v) {
-                        collected.push(rec);
-                    }
+                if let Some(rec) = Self::decode(&v) {
+                    collected.push(rec);
                 }
             }
         }
@@ -209,13 +206,11 @@ impl AgentLogStorage {
     pub fn cleanup_older_than(&self, max_age_days: i64) -> Result<usize> {
         let cutoff = Utc::now() - chrono::Duration::days(max_age_days);
         let mut to_delete: Vec<Vec<u8>> = Vec::new();
-        for item in self.tree.iter() {
-            if let Ok((k, v)) = item {
-                if let Some(rec) = Self::decode(&v) {
-                    if rec.timestamp < cutoff {
-                        to_delete.push(k.to_vec());
-                    }
-                }
+        for (k, v) in self.tree.iter().flatten() {
+            if let Some(rec) = Self::decode(&v)
+                && rec.timestamp < cutoff
+            {
+                to_delete.push(k.to_vec());
             }
         }
         let n = to_delete.len();

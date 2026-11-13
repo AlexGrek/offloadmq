@@ -5,7 +5,7 @@ use crate::schema::{TaskId, TaskStatus};
 /// No framework types — usable from any transport adapter.
 pub enum UrgentSubmitOutcome {
     /// Task was picked up, executed, and the full assigned task record is available.
-    Completed(AssignedTask),
+    Completed(Box<AssignedTask>),
     /// Task reached a terminal status but the full assignment record was unavailable.
     CompletedPartial {
         id: TaskId,

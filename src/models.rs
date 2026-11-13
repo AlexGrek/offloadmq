@@ -26,7 +26,7 @@ impl UnassignedTask {
             id: self.id.clone(),
             data: self.data.clone(),
             agent_id: agent_id.to_string(),
-            created_at: self.created_at.clone(),
+            created_at: self.created_at,
             assigned_at: now,
             status: TaskStatus::Assigned,
             last_update_at: Some(now),
@@ -223,7 +223,7 @@ impl From<AgentRegistrationRequest> for Agent {
         let short = get_last_six_chars(&uid);
 
         Agent {
-            uid: uid,
+            uid,
             uid_short: short,   // Default to empty string
             registered_at: now, // Current timestamp
             personal_login_token: Uuid::new_v4().into(),

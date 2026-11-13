@@ -170,7 +170,7 @@ pub async fn upload_file(
             .file_store
             .put(&bucket_uid, &file_uid, data.to_vec())
             .await
-            .map_err(|e| AppError::Internal(e))?;
+            .map_err(AppError::Internal)?;
 
         let file_meta = FileMeta {
             uid: file_uid.clone(),
@@ -322,7 +322,7 @@ pub async fn delete_file(
         .file_store
         .delete_file(&bucket_uid, &file_uid)
         .await
-        .map_err(|e| AppError::Internal(e))?;
+        .map_err(AppError::Internal)?;
 
     state.storage.buckets.save_bucket(&bucket).await?;
 
@@ -344,7 +344,7 @@ pub async fn delete_bucket(
         .file_store
         .delete_bucket(&bucket_uid)
         .await
-        .map_err(|e| AppError::Internal(e))?;
+        .map_err(AppError::Internal)?;
 
     state
         .storage

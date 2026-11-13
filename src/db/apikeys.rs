@@ -35,32 +35,31 @@ impl ApiKeysStorage {
     }
 
     pub fn verify_key(&self, key: &str, cap: &str) -> Result<(), AppError> {
-        if let Some(key_descr) = self.find_active(key)? {
-            if !key_descr.is_revoked && Self::has_capability(&key_descr.capabilities, cap) {
-                return Ok(());
-            }
+        if let Some(key_descr) = self.find_active(key)?
+            && !key_descr.is_revoked
+            && Self::has_capability(&key_descr.capabilities, cap)
+        {
+            return Ok(());
         }
-        return Err(AppError::Authorization("API key invalid".to_string()));
+        Err(AppError::Authorization("API key invalid".to_string()))
     }
 
     pub fn is_key_real_not_revoked(&self, key: &str) -> bool {
-        if let Some(key_descr) = self.find_active(key).unwrap_or(None) {
-            if !key_descr.is_revoked {
-                return true;
-            }
+        if let Some(key_descr) = self.find_active(key).unwrap_or(None)
+            && !key_descr.is_revoked
+        {
+            return true;
         }
-        return false;
+        false
     }
 
     pub fn list_all(&self) -> Vec<ClientApiKey> {
         let mut keys = Vec::new();
 
         // Get all agents from database (cache might not have all due to TTL)
-        for item in self.active.iter() {
-            if let Ok((_, v)) = item {
-                if let Ok(k) = rmp_serde::from_slice::<ClientApiKey>(&v) {
-                    keys.push(k);
-                }
+        for (_, v) in self.active.iter().flatten() {
+            if let Ok(k) = rmp_serde::from_slice::<ClientApiKey>(&v) {
+                keys.push(k);
             }
         }
 
@@ -114,7 +113,7 @@ impl ApiKeysStorage {
         Ok(())
     }
 
-    pub fn initialize_from_list(&self, keys: &Vec<String>) -> Result<()> {
+    pub fn initialize_from_list(&self, keys: &[String]) -> Result<()> {
         for key in keys.iter() {
             self.upsert_key(
                 key,

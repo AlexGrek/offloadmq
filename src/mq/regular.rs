@@ -104,7 +104,7 @@ impl RegularTaskStore {
     /// arrive in key order, not creation order.
     pub async fn find_with_capabilities_for_tier(
         &self,
-        caps: &Vec<String>,
+        caps: &[String],
         tier: u8,
         agents: &AgentStorage,
         agent_uid: &str,
@@ -127,10 +127,9 @@ impl RegularTaskStore {
                 .get("runner")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
+                && runner != agent_uid
             {
-                if runner != agent_uid {
-                    continue;
-                }
+                continue;
             }
 
             let top_online_tier = agents
@@ -188,8 +187,8 @@ impl RegularTaskStore {
         let mut to_expire: Vec<TaskId> = Vec::new();
         for (task_id, task) in snapshot {
             let elapsed = (now - task.created_at).num_seconds().max(0) as u64;
-            let wait_expired = task.data.max_wait_secs.map_or(false, |mw| elapsed >= mw);
-            let total_expired = task.data.timeout_secs.map_or(false, |ts| elapsed >= ts);
+            let wait_expired = task.data.max_wait_secs.is_some_and(|mw| elapsed >= mw);
+            let total_expired = task.data.timeout_secs.is_some_and(|ts| elapsed >= ts);
             if wait_expired || total_expired {
                 to_expire.push(task_id);
             }
@@ -206,7 +205,7 @@ impl RegularTaskStore {
             }
             let Some(task) = self.remove_task(&task_id).await else {
                 // In-memory race after persistent remove. Restore persistence.
-                let _ = task_storage.add_unassigned(&task_snapshot)?;
+                task_storage.add_unassigned(&task_snapshot)?;
                 continue;
             };
             let mut assigned = task.into_assigned("(timeout)");
@@ -214,7 +213,7 @@ impl RegularTaskStore {
             assigned.stage = None;
             if let Err(e) = task_storage.update_assigned(&assigned) {
                 // Best-effort rollback to avoid orphaning the queue entry.
-                let _ = task_storage.add_unassigned(&task_snapshot)?;
+                task_storage.add_unassigned(&task_snapshot)?;
                 self.add_task(task_snapshot).await;
                 return Err(e);
             }
@@ -378,7 +377,7 @@ mod tests {
         store.add_task(task(cap, "t-2", created)).await;
 
         let picked = store
-            .find_with_capabilities_for_tier(&vec![cap.to_string()], 0, &agents, "agent-1")
+            .find_with_capabilities_for_tier(&[cap.to_string()], 0, &agents, "agent-1")
             .await
             .expect("a task is eligible");
         assert_eq!(picked.id.id, "t-1");
@@ -454,7 +453,7 @@ mod tests {
             .await;
 
         let picked = store
-            .find_with_capabilities_for_tier(&vec![cap.to_string()], 0, &agents, "agent-1")
+            .find_with_capabilities_for_tier(&[cap.to_string()], 0, &agents, "agent-1")
             .await
             .expect("a task is eligible");
         assert_eq!(picked.id.id, "t-low");

@@ -65,10 +65,11 @@ impl From<TaskPriority> for u8 {
 }
 
 /// Represents the overall status of a task in the system.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum TaskStatus {
     /// The task has been accepted but not yet queued.
+    #[default]
     Pending,
     /// The task is in the queue, waiting for an available agent.
     Queued,
@@ -86,12 +87,6 @@ pub enum TaskStatus {
     CancelRequested,
     /// The task was cancelled by a client.
     Canceled,
-}
-
-impl Default for TaskStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 impl TaskStatus {

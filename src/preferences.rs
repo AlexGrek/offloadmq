@@ -1,18 +1,9 @@
 use std::sync::RwLock;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Config {
     pub shuffle_queue: bool,
     pub allow_assigning_to_same_top_tier: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            shuffle_queue: false,
-            allow_assigning_to_same_top_tier: false,
-        }
-    }
 }
 
 // Global configuration using RwLock

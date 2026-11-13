@@ -140,7 +140,6 @@ pub async fn jwt_auth_middleware_agent(
             match user {
                 Some(u) => {
                     parts.extensions.insert(u);
-                    ()
                 }
                 _ => {
                     log::warn!(

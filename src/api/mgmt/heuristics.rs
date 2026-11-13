@@ -100,12 +100,12 @@ pub async fn estimate_duration(
     State(state): State<Arc<AppState>>,
     Query(params): Query<EstimateDurationQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let current_params = (params.total_size.is_some() || params.length.is_some()).then(|| {
+    let current_params = (params.total_size.is_some() || params.length.is_some()).then_some(
         TypicalRuntimeParameters {
             total_size: params.total_size,
             length: params.length,
-        }
-    });
+        },
+    );
     let duration = state
         .storage
         .heuristics

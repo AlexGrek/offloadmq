@@ -21,7 +21,7 @@ use crate::{
 
 pub async fn find_urgent_tasks_with_capabilities(
     store: &UrgentTaskStore,
-    caps: &Vec<String>,
+    caps: &[String],
     agent_uid: &str,
 ) -> Option<UnassignedTask> {
     store.find_with_capabilities(caps, agent_uid).await
@@ -29,7 +29,7 @@ pub async fn find_urgent_tasks_with_capabilities(
 
 pub async fn find_assignable_non_urgent_tasks_with_capabilities_for_tier(
     store: &RegularTaskStore,
-    caps: &Vec<String>,
+    caps: &[String],
     tier: u8,
     agents: &AgentStorage,
     agent_uid: &str,
@@ -124,16 +124,12 @@ pub async fn try_unassign_non_urgent_task(
     }
 }
 
-pub async fn report_urgent_task<'a>(
-    store: &'a UrgentTaskStore,
+pub async fn report_urgent_task(
+    store: &UrgentTaskStore,
     report: TaskResultReport,
     task_id: TaskId,
 ) -> Result<bool, AppError> {
-    let success = if let TaskResultStatus::Success(_duration) = report.status {
-        true
-    } else {
-        false
-    };
+    let success = matches!(report.status, TaskResultStatus::Success(_duration));
     let output = output_with_failure_message(&report).unwrap_or_default();
     store.complete_task(&task_id, success, output).await
 }
@@ -158,8 +154,8 @@ fn output_with_failure_message(report: &TaskResultReport) -> Option<serde_json::
     }
 }
 
-pub async fn update_urgent_task<'a>(
-    store: &'a UrgentTaskStore,
+pub async fn update_urgent_task(
+    store: &UrgentTaskStore,
     report: TaskUpdate,
     task_id: TaskId,
 ) -> Result<bool, AppError> {
@@ -168,7 +164,7 @@ pub async fn update_urgent_task<'a>(
         .await
 }
 
-pub async fn report_non_urgent_task<'a>(
+pub async fn report_non_urgent_task(
     store: &TaskStorage,
     report: TaskResultReport,
     agent: &Agent,
@@ -233,7 +229,7 @@ pub async fn report_non_urgent_task<'a>(
     Ok(())
 }
 
-pub async fn update_non_urgent_task<'a>(
+pub async fn update_non_urgent_task(
     store: &TaskStorage,
     report: TaskUpdate,
 ) -> Result<(), AppError> {
@@ -246,16 +242,16 @@ pub async fn update_non_urgent_task<'a>(
     if report.stage.is_some() {
         got.stage = report.stage
     }
-    if !is_cancel_requested {
-        if let Some(new_status) = report.status {
-            match new_status {
-                TaskStatus::Starting | TaskStatus::Running => got.change_status(new_status),
-                _ => {
-                    return Err(AppError::BadRequest(format!(
-                        "Status {:?} cannot be set via progress update",
-                        new_status
-                    )));
-                }
+    if !is_cancel_requested
+        && let Some(new_status) = report.status
+    {
+        match new_status {
+            TaskStatus::Starting | TaskStatus::Running => got.change_status(new_status),
+            _ => {
+                return Err(AppError::BadRequest(format!(
+                    "Status {:?} cannot be set via progress update",
+                    new_status
+                )));
             }
         }
     }
@@ -269,7 +265,7 @@ pub async fn update_non_urgent_task<'a>(
     Ok(())
 }
 
-pub async fn has_potential_agents_for(cap: &std::string::String, agents: &AgentStorage) -> bool {
+pub async fn has_potential_agents_for(cap: &str, agents: &AgentStorage) -> bool {
     let base = base_capability(cap);
     for agent in agents.list_all_agents() {
         if agent
@@ -281,10 +277,10 @@ pub async fn has_potential_agents_for(cap: &std::string::String, agents: &AgentS
             return true;
         }
     }
-    return false;
+    false
 }
 
-pub async fn all_online_agents_for(cap: &std::string::String, agents: &AgentStorage) -> Vec<Agent> {
+pub async fn all_online_agents_for(cap: &str, agents: &AgentStorage) -> Vec<Agent> {
     let base = base_capability(cap);
     let mut collection = vec![];
     for agent in agents.list_all_agents() {
@@ -297,7 +293,7 @@ pub async fn all_online_agents_for(cap: &std::string::String, agents: &AgentStor
             collection.push(agent);
         }
     }
-    collection.sort_by(|a, b| b.tier.cmp(&a.tier));
+    collection.sort_by_key(|a| std::cmp::Reverse(a.tier));
     collection
 }
 
@@ -408,7 +404,7 @@ impl UrgentHandle {
         store.remove_task(&self.task_id).await;
         self.finished = true;
         match assigned {
-            Some(assigned_task) => UrgentSubmitOutcome::Completed(assigned_task),
+            Some(assigned_task) => UrgentSubmitOutcome::Completed(Box::new(assigned_task)),
             None => UrgentSubmitOutcome::CompletedPartial {
                 id: self.task_id.clone(),
                 status,

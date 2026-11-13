@@ -359,10 +359,10 @@ async fn handle_service_messages_ws(socket: WebSocket, state: Arc<AppState>) {
             event = events.recv() => {
                 match event {
                     Ok(StreamEvent::ServiceMessage(msg)) => {
-                        if let Ok(payload) = serde_json::to_string(&msg) {
-                            if sender.send(Message::Text(payload.into())).await.is_err() {
-                                break;
-                            }
+                        if let Ok(payload) = serde_json::to_string(&msg)
+                            && sender.send(Message::Text(payload.into())).await.is_err()
+                        {
+                            break;
                         }
                     }
                     Ok(StreamEvent::TaskLifecycle(_)) => {}
@@ -396,10 +396,10 @@ async fn handle_task_lifecycle_ws(socket: WebSocket, state: Arc<AppState>) {
             event = events.recv() => {
                 match event {
                     Ok(StreamEvent::TaskLifecycle(event)) => {
-                        if let Ok(payload) = serde_json::to_string(&event) {
-                            if sender.send(Message::Text(payload.into())).await.is_err() {
-                                break;
-                            }
+                        if let Ok(payload) = serde_json::to_string(&event)
+                            && sender.send(Message::Text(payload.into())).await.is_err()
+                        {
+                            break;
                         }
                     }
                     Ok(StreamEvent::ServiceMessage(_)) => {}
