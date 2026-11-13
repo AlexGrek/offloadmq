@@ -38,6 +38,8 @@ class TaskResultStatus(BaseModel):
             ):
                 return {"failure": [self.data[0], self.data[1].total_seconds()]}
             raise ValueError("failure status expects (message, timedelta)")
+        if self.status == "cancelled":
+            return {"canceled": self.data}
         return {"notExecuted": self.data}
 
 

@@ -280,6 +280,16 @@ def make_failure_report(
     )
 
 
+def make_cancelled_report(
+    task_id: TaskId, capability: str, output: Optional[dict[str, Any]] = None,
+) -> TaskResultReport:
+    return TaskResultReport(
+        id=task_id, capability=capability,
+        status=TaskResultStatus(status="cancelled", data="Task cancelled by client"),
+        output=output or {},
+    )
+
+
 def report_cancelled(
     transport: ReportClient,
     task_id: TaskId,
@@ -298,7 +308,5 @@ def report_cancelled(
             report_progress(transport, log=remaining_log, stage="cancelled", task_id=task_id)
         except TaskCancelled:
             pass  # Expected — server already knows it's cancelled
-    report = make_failure_report(
-        task_id, capability, "Task cancelled by client", extra_output=output,
-    )
+    report = make_cancelled_report(task_id, capability, output)
     report_result(transport, report)

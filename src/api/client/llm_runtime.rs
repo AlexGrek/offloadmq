@@ -49,6 +49,8 @@ pub(super) fn validate(req: &TaskSubmissionRequest) -> Result<(), AppError> {
             "capability requires an Ollama model without attributes",
         ));
     }
+    crate::mq::runtime_models::selected_models(&req.capability, &req.payload)
+        .map_err(|message| invalid(&message))?;
     let payload: RuntimePayload =
         serde_json::from_value(req.payload.clone()).map_err(|err| invalid(&err.to_string()))?;
     for path in std::iter::once(&payload.entrypoint)

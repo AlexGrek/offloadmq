@@ -107,6 +107,8 @@ pub enum TaskResultStatus {
     Success(f64),
     Failure(String, f64),
     NotExecuted(String),
+    /// The runner stopped execution after a local or server cancellation.
+    Canceled(String),
 }
 
 //=============================================================================

@@ -15,7 +15,7 @@ server. In `~/.offloadmq-agent.json` (or the runner UI's Config JSON editor), se
 {
   "llm_runtime_enabled": true,
   "llm_runtime_cache_limit": 8,
-  "sensitive_allowed_caps": ["llm-runtime.qwen3:8b"]
+  "sensitive_allowed_caps": ["llm-runtime.qwen3:8b", "llm-runtime.gemma3:12b"]
 }
 ```
 
@@ -40,6 +40,8 @@ exceed the urgent queue's 60-second lifetime. A minimal payload:
   "restartable": false,
   "runtimeSecs": 600,
   "payload": {
+    "model": "qwen3:8b",
+    "models": {"critic": "gemma3:12b"},
     "dependencies": [],
     "entrypoint": "main.py",
     "files": {
@@ -63,6 +65,17 @@ The minimal inline script above only prints text; remove `output`, `resources`,
 all declared outputs. Missing files, invalid JSON data, or upload failures fail
 the task while retaining captured streams.
 
+- `model`: primary Ollama model selected by the client. It must match the model
+  in `capability` so scheduling and execution agree. For older tasks that omit
+  it, the model in the capability remains the default.
+- `models`: optional map of named app roles to additional Ollama models, e.g.
+  `{"planner":"qwen3:8b", "critic":"gemma3:12b"}`. Defaults to `{}`. Every
+  selected model must be installed and explicitly enabled as a sensitive
+  `llm-runtime.<model>` capability on the **same runner**. Both queue types and
+  tier reservations respect the complete selection. The runner rechecks local
+  approval before preparing resources and executing the app. It does not pull
+  missing models automatically. Role names are defined by the application;
+  unused roles still participate in scheduling.
 - `dependencies`: list of PEP 508 Python requirements, e.g. `langgraph`,
   `langchain-ollama`. Pin versions when reproducibility matters.
 - `entrypoint`: relative Python script path; executed directly with Python 3.11.
@@ -94,12 +107,14 @@ source files. Its stdin contains one JSON object:
 {
   "system_prompt": "...", "user_prompt": "...", "allowed_tools": null,
   "resources": {}, "output": {}, "data_dir": "/absolute/task/directory",
-  "ollama_base_url": "http://127.0.0.1:11434", "model": "qwen3:8b"
+  "ollama_base_url": "http://127.0.0.1:11434",
+  "model": "qwen3:8b", "models": {"critic":"gemma3:12b"}
 }
 ```
 
 `OLLAMA_HOST`, `OLLAMA_MODEL`, and `OFFLOAD_DATA_DIR` expose the same connection
-and directory information in the environment. The app owns graph construction,
+and directory information in the environment. `OFFLOAD_LLM_MODELS` contains the
+named role map as JSON. All selected models use the runner's `ollama_base_url`. The app owns graph construction,
 LLM calls, tool filtering and final printing. The runner does not append a
 second inference. See [the LangGraph example](../examples/llm-runtime/main.py).
 
@@ -132,19 +147,42 @@ cache directory. Other task families remain concurrent.
 to `timeoutSecs`, then 600 seconds. Attachment preparation uses the existing
 pipeline's download timeouts. Uploads use the existing transport timeout. Cancel
 and timeout terminate the process group on POSIX or process tree on Windows.
+Windows apps and uv start suspended, are assigned to a Job Object with kill-on-close, then resumed; job membership retains descendants
+after their parent exits. Cleanup terminates the job and waits for all members
+to exit before removing the task directory.
 Each captured stream is capped at 8 MiB; exceeding it fails the task and retains
-its prefix. JSON data is also capped at 8 MiB. Task working directories are
-removed after completion; dependency environments persist. Python code that
+its prefix. JSON data is also capped at 8 MiB. The complete JSON-serialized
+result has a separate 8 MiB budget, including escaped characters, duplicated
+`text`/`stdout`, setup diagnostics, data and artifact metadata. Oversized results
+fail explicitly with `result_truncated`, `original_result_bytes`, diagnostic
+prefixes of at most 128 Ki characters, and `truncated_fields`. JSON data is
+omitted with `data_omitted=true`; artifact references are retained where they
+fit, otherwise `omitted_file_count` records how many were dropped. Store large
+application output in declared files to avoid this inline result limit.
+Cancellation remains cancellation even if partial output requires truncation.
+Task working directories are removed after completion; dependency environments persist. Python code that
 intentionally detaches processes or evades cleanup is outside this trust model.
 
 ## Implementation plan and validation
 
 1. Reuse generic task scheduling, authorization, buckets and result polling;
    validate runtime payloads on both submission endpoints.
-2. Detect model-specific runtime capabilities and apply both runner enablement
+2. Validate primary and named input models; schedule only to runners with every
+   selected model. Detect model-specific runtime capabilities and apply both runner enablement
    and sensitive-capability policy before accepting execution.
 3. Reuse attachment preparation; execute source with a bounded uv environment
    cache and a documented stdin/output contract.
 4. Preserve diagnostics on failures and cancellation; upload declared artifacts.
 5. Test policy bypass attempts, path escapes, cache reuse/eviction, process output,
    cancellation/timeout, real uv sync, JSON results and file transport.
+
+## Cancellation protocol compatibility
+
+Deploy the updated OffloadMQ server before the updated agent. Agent cancellation
+now resolves with `{"canceled":"Task cancelled by client"}` rather than a failure
+or `notExecuted` report. This preserves runner-local cancellation in both urgent
+and persistent queues, as well as in the runner UI, and retains partial stdout
+and stderr. `notExecuted` keeps its existing server meaning for unsupported or
+otherwise unexecuted tasks.
+
+The Job Object lifecycle follows [Microsoft's job object semantics](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects).

@@ -145,12 +145,17 @@ def test_capture_limit(tmp_path, monkeypatch):
 def test_app_contract_with_real_uv(enabled, tmp_path, monkeypatch):
     if not shutil.which("uv"):
         pytest.skip("uv required")
+    enabled["sensitive_allowed_caps"].append("llm-runtime.critic:latest")
     transport = Transport()
     app = """import json, sys
 from pathlib import Path
 request = json.load(sys.stdin)
 assert request['allowed_tools'] == []
 assert request['model'] == 'test:latest'
+assert request['models'] == {'critic': 'critic:latest'}
+import os
+assert os.environ['OLLAMA_MODEL'] == 'test:latest'
+assert json.loads(os.environ['OFFLOAD_LLM_MODELS']) == request['models']
 assert request['system_prompt'] == 'system'
 assert Path('resource.txt').read_text() == 'attachment'
 Path('data.json').write_text(json.dumps({'answer': 42}))
@@ -161,6 +166,8 @@ print('diagnostic', file=sys.stderr)
     (tmp_path / "resource.txt").write_text("attachment")
     payload = {
         "entrypoint": "app.py",
+        "model": "test:latest",
+        "models": {"critic": "critic:latest"},
         "files": {"app.py": app},
         "dependencies": [],
         "allowed_tools": [],
@@ -237,3 +244,40 @@ def test_bad_outputs_fail_before_dependency_install(enabled, tmp_path, monkeypat
         tmp_path,
     )
     assert "requires output_bucket" in transport.result.output["error"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"model": "other"},
+        {"model": None},
+        {"model": ""},
+        {"models": []},
+        {"models": {"critic": None}},
+        {"models": {"critic": "gemma[tools]"}},
+        {"models": {"": "gemma:latest"}},
+    ],
+)
+def test_invalid_input_models_are_rejected(payload):
+    with pytest.raises(ValueError):
+        rt.select_models(CAP, payload)
+
+
+def test_selected_role_models_require_local_approval_before_spawn(
+    enabled, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(rt.subprocess, "Popen", lambda *a, **kw: pytest.fail("spawned"))
+    transport = Transport()
+    rt.execute_llm_runtime(
+        transport,
+        TaskId(id="1", cap=CAP),
+        CAP,
+        {
+            "entrypoint": "app.py",
+            "model": "test:latest",
+            "models": {"critic": "gemma:latest"},
+        },
+        tmp_path,
+    )
+    assert "llm-runtime.gemma:latest" in transport.result.output["error"]
+    assert not rt.CACHE_ROOT.exists()

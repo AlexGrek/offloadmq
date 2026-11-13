@@ -121,6 +121,9 @@ impl RegularTaskStore {
             if !caps.iter().any(|cap| base_capability(cap) == task_base) {
                 continue;
             }
+            if !super::runtime_models::matches(&task.id.cap, &task.data.payload, caps) {
+                continue;
+            }
             if let Some(runner) = task
                 .data
                 .payload
@@ -137,6 +140,11 @@ impl RegularTaskStore {
                 .into_iter()
                 .filter(|agent| {
                     agent.is_online()
+                        && super::runtime_models::matches(
+                            &task.id.cap,
+                            &task.data.payload,
+                            &agent.capabilities,
+                        )
                         && agent
                             .capabilities
                             .iter()
@@ -269,6 +277,43 @@ mod tests {
             .insert(agent.uid.as_bytes(), bytes)
             .expect("insert agent");
         (storage, guard)
+    }
+
+    #[tokio::test]
+    async fn runtime_roles_filter_candidates_and_higher_tier_reservations() {
+        let cap = "llm-runtime.qwen3:8b";
+        let (agents, _guard) = agent_storage_with_online_agent(cap);
+        let mut low = agents.list_all_agents().pop().unwrap();
+        let mut high = low.clone();
+        high.uid = "higher-tier".into();
+        high.tier = 10;
+        low.capabilities.push("llm-runtime.gemma3:12b".into());
+        for agent in [&low, &high] {
+            agents
+                .db
+                .insert(
+                    agent.uid.as_bytes(),
+                    rmp_serde::to_vec_named(agent).unwrap(),
+                )
+                .unwrap();
+        }
+        let queue = RegularTaskStore::new();
+        let mut task = task(cap, "role-task", Utc::now());
+        task.data.payload =
+            serde_json::json!({"model":"qwen3:8b", "models":{"critic":"gemma3:12b"}});
+        queue.add_task(task).await;
+        assert!(
+            queue
+                .find_with_capabilities_for_tier(&high.capabilities, high.tier, &agents, &high.uid)
+                .await
+                .is_none()
+        );
+        assert!(
+            queue
+                .find_with_capabilities_for_tier(&low.capabilities, low.tier, &agents, &low.uid)
+                .await
+                .is_some()
+        );
     }
 
     fn task(cap: &str, id: &str, created_at: chrono::DateTime<Utc>) -> UnassignedTask {

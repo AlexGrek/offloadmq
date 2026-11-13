@@ -48,6 +48,20 @@ pub async fn try_pick_up_urgent_task(
     agent: &Agent,
     uid: &TaskId,
 ) -> Result<Option<AssignedTask>, AppError> {
+    {
+        let tasks = store.tasks.read().await;
+        if let Some(entry) = tasks.get(uid)
+            && !super::runtime_models::matches(
+                &entry.task.id.cap,
+                &entry.task.data.payload,
+                &agent.capabilities,
+            )
+        {
+            return Err(AppError::Authorization(
+                "Runner lacks selected runtime models".into(),
+            ));
+        }
+    }
     let success = store.assign_task(uid, &agent.uid).await;
     if !success {
         return Ok(None);
@@ -71,6 +85,11 @@ pub async fn try_pick_up_non_urgent_task(
         .await
         .ok_or_else(|| AppError::Conflict(format!("Task already taken: {}", uid)))?;
 
+    if !super::runtime_models::matches(&task.id.cap, &task.data.payload, &agent.capabilities) {
+        return Err(AppError::Authorization(
+            "Runner lacks selected runtime models".into(),
+        ));
+    }
     let removed_persistent = persistent_store.remove_unassigned(&uid)?;
     if !removed_persistent {
         return Err(AppError::Conflict(format!(
@@ -129,9 +148,19 @@ pub async fn report_urgent_task(
     report: TaskResultReport,
     task_id: TaskId,
 ) -> Result<bool, AppError> {
-    let success = matches!(report.status, TaskResultStatus::Success(_duration));
+    let status = result_terminal_status(&report.status, false);
     let output = output_with_failure_message(&report).unwrap_or_default();
-    store.complete_task(&task_id, success, output).await
+    store.complete_task(&task_id, status, output).await
+}
+
+fn result_terminal_status(status: &TaskResultStatus, cancel_requested: bool) -> TaskStatus {
+    if cancel_requested || matches!(status, TaskResultStatus::Canceled(_)) {
+        TaskStatus::Canceled
+    } else if matches!(status, TaskResultStatus::Success(_)) {
+        TaskStatus::Completed
+    } else {
+        TaskStatus::Failed
+    }
 }
 
 /// The task output to store for a result report. A failure or not-executed
@@ -144,7 +173,9 @@ fn output_with_failure_message(report: &TaskResultReport) -> Option<serde_json::
         _ => false,
     };
     let message = match &report.status {
-        TaskResultStatus::Failure(msg, _) | TaskResultStatus::NotExecuted(msg) => msg,
+        TaskResultStatus::Failure(msg, _)
+        | TaskResultStatus::NotExecuted(msg)
+        | TaskResultStatus::Canceled(msg) => msg,
         TaskResultStatus::Success(_) => return report.output.clone(),
     };
     if is_empty && !message.is_empty() {
@@ -186,17 +217,7 @@ pub async fn report_non_urgent_task(
     };
 
     let is_cancel_requested = got.status == TaskStatus::CancelRequested;
-    if is_cancel_requested {
-        // Agent acknowledged the cancel signal — move to the terminal Canceled
-        // state (keeping whatever partial output the agent reported).
-        got.change_status(TaskStatus::Canceled);
-    } else {
-        got.change_status(if success {
-            TaskStatus::Completed
-        } else {
-            TaskStatus::Failed
-        });
-    }
+    got.change_status(result_terminal_status(&report.status, is_cancel_requested));
     got.stage = None;
     got.result = output_with_failure_message(&report);
     store.update_assigned(&got)?;
@@ -242,9 +263,7 @@ pub async fn update_non_urgent_task(
     if report.stage.is_some() {
         got.stage = report.stage
     }
-    if !is_cancel_requested
-        && let Some(new_status) = report.status
-    {
+    if !is_cancel_requested && let Some(new_status) = report.status {
         match new_status {
             TaskStatus::Starting | TaskStatus::Running => got.change_status(new_status),
             _ => {
@@ -317,7 +336,18 @@ pub async fn enqueue_urgent_task(
 ) -> Result<UrgentHandle, AppError> {
     let store = &app_state.urgent;
     let agents = &app_state.storage.agents;
-    if !has_potential_agents_for(&task.id.cap, agents).await {
+    if !has_potential_agents_for(&task.id.cap, agents).await
+        || !all_online_agents_for(&task.id.cap, agents)
+            .await
+            .iter()
+            .any(|agent| {
+                super::runtime_models::matches(
+                    &task.id.cap,
+                    &task.data.payload,
+                    &agent.capabilities,
+                )
+            })
+    {
         return Err(AppError::SchedulingImpossible(format!(
             "no online runners for capability {}",
             task.id.cap
@@ -448,5 +478,133 @@ impl Drop for UrgentHandle {
                 state.urgent.remove_task(&task_id).await;
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod runtime_result_tests {
+    use super::*;
+    use crate::schema::{AgentRegistrationRequest, TaskSubmissionRequest};
+    use serde_json::json;
+
+    fn report(id: TaskId, status: TaskResultStatus) -> TaskResultReport {
+        TaskResultReport {
+            capability: id.cap.clone(),
+            id,
+            status,
+            output: Some(json!({"text":"partial", "stdout":"partial", "stderr":"diagnostic"})),
+        }
+    }
+
+    fn task() -> UnassignedTask {
+        UnassignedTask {
+            id: TaskId::new_with_cap("llm-runtime.test".into()),
+            data: TaskSubmissionRequest::default(),
+            created_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn urgent_local_and_client_cancellation_are_terminal_and_keep_output() {
+        for client_cancel in [false, true] {
+            let store = UrgentTaskStore::new();
+            let task = task();
+            let state = store.add_task(task.clone(), 60, None).await.unwrap();
+            let mut notifications = state.notify.subscribe();
+            assert!(store.assign_task(&task.id, "runner").await);
+            if client_cancel {
+                assert_eq!(
+                    store.cancel_task(&task.id).await.unwrap(),
+                    TaskStatus::CancelRequested
+                );
+            }
+            // Old agents may acknowledge client cancellation with failure.
+            let status = if client_cancel {
+                TaskResultStatus::Failure("stopped".into(), 1.0)
+            } else {
+                TaskResultStatus::Canceled("local cancel".into())
+            };
+            let outcome =
+                report_urgent_task(&store, report(task.id.clone(), status), task.id.clone()).await;
+            assert_eq!(outcome.is_err(), client_cancel);
+            assert_eq!(*notifications.borrow_and_update(), TaskStatus::Canceled);
+            assert_eq!(*state.status.read().await, TaskStatus::Canceled);
+            let saved = store.get_assigned_task(&task.id).await.unwrap();
+            assert_eq!(saved.status, TaskStatus::Canceled);
+            assert_eq!(saved.result.unwrap()["stdout"], "partial");
+            store.hard_clear().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn persistent_local_cancellation_survives_storage_and_not_executed_stays_failed() {
+        let root =
+            std::env::temp_dir().join(format!("offload-runtime-cancel-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        {
+            let store = TaskStorage::open(root.join("tasks").to_str().unwrap()).unwrap();
+            let heuristics =
+                HeuristicStorage::open(root.join("heuristics").to_str().unwrap()).unwrap();
+            let agent = Agent::from(AgentRegistrationRequest {
+                capabilities: vec!["llm-runtime.test".into()],
+                tier: 1,
+                capacity: 1,
+                system_info: crate::schema::SystemInfo {
+                    os: "test".into(),
+                    client: "test".into(),
+                    runtime: "test".into(),
+                    cpu_arch: "test".into(),
+                    cpu_model: None,
+                    total_memory_gb: 1,
+                    gpu: None,
+                    machine_id: None,
+                },
+                api_key: String::new(),
+                app_version: None,
+                display_name: None,
+            });
+            for (status, expected) in [
+                (
+                    TaskResultStatus::Canceled("local cancel".into()),
+                    TaskStatus::Canceled,
+                ),
+                (
+                    TaskResultStatus::NotExecuted("unsupported".into()),
+                    TaskStatus::Failed,
+                ),
+            ] {
+                let task = task();
+                store.update_assigned(&task.assign_to(&agent.uid)).unwrap();
+                report_non_urgent_task(
+                    &store,
+                    report(task.id.clone(), status),
+                    &agent,
+                    &heuristics,
+                )
+                .await
+                .unwrap();
+                let saved = store.get_assigned(&task.id).unwrap().unwrap();
+                assert_eq!(saved.status, expected);
+                assert_eq!(saved.result.unwrap()["stderr"], "diagnostic");
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn canceled_wire_variant_is_explicit_and_preserves_reason() {
+        let status: TaskResultStatus =
+            serde_json::from_value(json!({"canceled":"local cancel"})).unwrap();
+        assert_eq!(result_terminal_status(&status, false), TaskStatus::Canceled);
+        let mut report = report(TaskId::default(), status);
+        report.output = None;
+        assert_eq!(
+            output_with_failure_message(&report).unwrap(),
+            json!({"error":"local cancel"})
+        );
+        assert_eq!(
+            result_terminal_status(&TaskResultStatus::Success(1.0), true),
+            TaskStatus::Canceled
+        );
     }
 }

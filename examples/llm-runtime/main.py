@@ -34,7 +34,15 @@ if allowed is not None and set(allowed) - registry.keys():
 tools = (
     list(registry.values()) if allowed is None else [registry[name] for name in allowed]
 )
-llm = ChatOllama(model=request["model"], base_url=request["ollama_base_url"])
+
+
+def local_llm(role: str | None = None) -> ChatOllama:
+    """Use the primary input model, or an explicitly selected named role."""
+    selected = request["model"] if role is None else request["models"][role]
+    return ChatOllama(model=selected, base_url=request["ollama_base_url"])
+
+
+llm = local_llm()  # Use local_llm("critic") for the input's critic role.
 model = llm.bind_tools(tools) if tools else llm
 
 

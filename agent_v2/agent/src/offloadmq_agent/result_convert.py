@@ -47,7 +47,7 @@ def task_result_to_wire(task_id: str, capability: str, result: TaskResult) -> di
         report = TaskResultReport(
             id=tid,
             capability=capability,
-            status=TaskResultStatus(status="notExecuted", data=result.error or "cancelled"),
+            status=TaskResultStatus(status="cancelled", data=result.error or "cancelled"),
             output=result.output or {},
         )
     else:
@@ -60,4 +60,9 @@ def task_result_to_wire(task_id: str, capability: str, result: TaskResult) -> di
             ),
             output=result.output or {},
         )
+    if capability.startswith("llm-runtime."):
+        # Cover early pipeline failures as well as executor-generated reports.
+        from offloadmq_agent.exec.runtime_results import fit_runtime_report
+
+        report = fit_runtime_report(report)
     return report.to_wire()

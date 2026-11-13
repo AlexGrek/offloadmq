@@ -77,6 +77,13 @@ impl UrgentTaskStore {
                 {
                     return false;
                 }
+                if !super::runtime_models::matches(
+                    &item.1.task.id.cap,
+                    &item.1.task.data.payload,
+                    caps,
+                ) {
+                    return false;
+                }
                 if let Some(runner) = item
                     .1
                     .task
@@ -173,7 +180,7 @@ impl UrgentTaskStore {
     pub async fn complete_task(
         &self,
         task_id: &TaskId,
-        success: bool,
+        terminal_status: TaskStatus,
         payload: serde_json::Value,
     ) -> Result<bool, AppError> {
         let mut tasks = self.tasks.write().await;
@@ -184,21 +191,15 @@ impl UrgentTaskStore {
             let is_cancel_requested = task.status == TaskStatus::CancelRequested;
             task.result = Some(payload);
             task.stage = None;
-            if !is_cancel_requested {
-                task.change_status(if success {
-                    TaskStatus::Completed
-                } else {
-                    TaskStatus::Failed
-                });
-
-                let mut status = entry.state.status.write().await;
-                *status = if success {
-                    TaskStatus::Completed
-                } else {
-                    TaskStatus::Failed
-                };
-                let _ = entry.state.notify.send(status.clone());
-            }
+            let terminal_status = if is_cancel_requested {
+                TaskStatus::Canceled
+            } else {
+                terminal_status
+            };
+            task.change_status(terminal_status.clone());
+            let mut status = entry.state.status.write().await;
+            *status = terminal_status;
+            let _ = entry.state.notify.send(status.clone());
             if is_cancel_requested {
                 return Err(AppError::ClientClosedRequest(format!(
                     "Task {} has been cancelled by the client",
@@ -228,13 +229,9 @@ impl UrgentTaskStore {
             if let Some(stage_text) = stage {
                 task.change_stage(&stage_text);
             }
-            if !is_cancel_requested
-                && let Some(new_status) = status
-            {
+            if !is_cancel_requested && let Some(new_status) = status {
                 match new_status {
-                    TaskStatus::Starting | TaskStatus::Running => {
-                        task.change_status(new_status)
-                    }
+                    TaskStatus::Starting | TaskStatus::Running => task.change_status(new_status),
                     _ => {
                         return Err(AppError::BadRequest(format!(
                             "Status {:?} cannot be set via progress update",

@@ -1,4 +1,5 @@
 """Full task pipeline: downloads, data prep, routed executor, captured result."""
+
 from __future__ import annotations
 
 import asyncio
@@ -119,7 +120,9 @@ def _run_sync_pipeline(
         from offloadmq_agent.exec.llm_runtime import require_enabled
 
         try:
-            require_enabled(task.capability)
+            require_enabled(
+                task.capability, _task_data(task).get("payload") or task.payload or {}
+            )
         except ValueError as exc:
             return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
 
@@ -132,9 +135,7 @@ def _run_sync_pipeline(
     # precedence over timeoutSecs (which is the global wall-clock deadline
     # enforced by the server and may include wait time).  Fall back to
     # timeoutSecs for backwards compatibility with old clients, then to 600 s.
-    job_timeout = int(
-        data.get("runtimeSecs") or data.get("timeoutSecs") or 600
-    )
+    job_timeout = int(data.get("runtimeSecs") or data.get("timeoutSecs") or 600)
     data_preparation: dict[str, str] = dict(data.get("dataPreparation") or {})
 
     task_id = TaskId(id=task.id, cap=task.capability)
@@ -252,6 +253,4 @@ async def run_routed_task(
                 _run_sync_pipeline, task, ctx, inner, progress_hook, Path(work)
             )
 
-    return await asyncio.to_thread(
-        _run_sync_pipeline, task, ctx, inner, progress_hook
-    )
+    return await asyncio.to_thread(_run_sync_pipeline, task, ctx, inner, progress_hook)

@@ -19,11 +19,13 @@ from offloadmq_agent.settings_util import load_agent_settings
 from offloadmq_agent.ollama import get_ollama_base_url
 from offloadmq_agent.transport_exec import AgentTransport
 from offloadmq_agent.wire import TaskId
+from .runtime_results import fit_runtime_report
+from .windows_job import WindowsJob
 from .reporting import (
     TaskCancelled,
     make_failure_report,
     make_success_report,
-    report_cancelled,
+    make_cancelled_report,
     report_progress,
     report_result,
 )
@@ -34,15 +36,64 @@ CACHE_ROOT = Path.home() / ".cache" / "offloadmq" / "llm-runtime"
 _CACHE_LOCK = threading.Lock()
 MAX_CAPTURE = 8 * 1024 * 1024
 MAX_FILE = 64 * 1024 * 1024
+_WINDOWS = os.name == "nt"
 
 
-def require_enabled(capability: str) -> dict[str, Any]:
+def select_models(
+    capability: str, payload: dict[str, Any]
+) -> tuple[str, dict[str, str]]:
+    if not isinstance(payload, dict):
+        raise ValueError("LLM runtime payload must be an object")
+    routing_model = capability.removeprefix("llm-runtime.")
+    primary = payload.get("model", routing_model)
+    roles = payload.get("models", {})
+    if not isinstance(roles, dict):
+        raise ValueError("models must map role names to Ollama model names")
+    for name in [primary, *roles.values()]:
+        if (
+            not isinstance(name, str)
+            or not name
+            or any(
+                c.isspace() or ord(c) < 32 or ord(c) == 127 or c in "[]" for c in name
+            )
+        ):
+            raise ValueError(
+                "model names must be non-empty strings without whitespace or capability attributes"
+            )
+    for role in roles:
+        if (
+            not isinstance(role, str)
+            or not role
+            or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in role)
+        ):
+            raise ValueError(
+                "model role names must be non-empty and contain no whitespace"
+            )
+    if primary != routing_model:
+        raise ValueError("payload.model must match the model in capability")
+    return primary, dict(roles)
+
+
+def require_enabled(
+    capability: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any]:
     cfg = load_agent_settings()
     allowed = cfg.get("sensitive_allowed_caps", cfg.get("sensitive-allowed-caps", []))
     if cfg.get("llm_runtime_enabled") is not True or capability not in allowed:
         raise ValueError(
             "LLM runtime requires llm_runtime_enabled=true and explicit sensitive capability approval"
         )
+    if payload is not None:
+        primary, roles = select_models(capability, payload)
+        missing = sorted(
+            {f"llm-runtime.{name}" for name in [primary, *roles.values()]}
+            - set(allowed)
+        )
+        if missing:
+            raise ValueError(
+                "Selected runtime models require sensitive capability approval: "
+                + ", ".join(missing)
+            )
     return cfg
 
 
@@ -93,19 +144,23 @@ def validate_payload(payload: dict[str, Any], data: Path) -> None:
         local_path(data, output["data_file"])
 
 
-def _kill(process: subprocess.Popen[bytes]) -> None:
-    if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            capture_output=True,
-            check=False,
-        )
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    process.wait()
+def _kill(process: subprocess.Popen[bytes], job: WindowsJob | None) -> None:
+    try:
+        if job is not None:
+            job.terminate()
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    finally:
+        # Also reap the root when job termination fails. Closing the job is a
+        # second tree-wide kill mechanism, independent of parent PID lookup.
+        if job is not None:
+            job.close()
+        if process.poll() is None:
+            process.kill()
+        process.wait()
 
 
 def run_process(
@@ -126,16 +181,25 @@ def run_process(
         inp.write(stdin)
         inp.seek(0)
         tick()
-        process = subprocess.Popen(
-            command,
-            cwd=cwd,
-            env=env,
-            stdin=inp,
-            stdout=out,
-            stderr=err,
-            start_new_session=os.name != "nt",
-        )
+        job = WindowsJob() if _WINDOWS else None
         try:
+            process = subprocess.Popen(
+                command,
+                cwd=cwd,
+                env=env,
+                stdin=inp,
+                stdout=out,
+                stderr=err,
+                start_new_session=job is None,
+                creationflags=0x00000004 if job is not None else 0,  # CREATE_SUSPENDED
+            )
+        except BaseException:
+            if job is not None:
+                job.close()
+            raise
+        try:
+            if job is not None:
+                job.assign_and_resume(process.pid)
             while process.poll() is None:
                 tick()
                 if (
@@ -153,18 +217,26 @@ def run_process(
             return process.returncode
         finally:
             # Also reap background children left behind by a successful parent.
-            _kill(process)
-            out.seek(0)
-            err.seek(0)
-            output[prefix + "stdout"] = out.read(MAX_CAPTURE).decode(
-                "utf-8", errors="replace"
-            )
-            output[prefix + "stderr"] = err.read(MAX_CAPTURE).decode(
-                "utf-8", errors="replace"
-            )
-            output[prefix + "return_code"] = process.returncode
-            if not prefix:
-                output["text"] = output["stdout"]
+            try:
+                _kill(process, job)
+            finally:
+                _capture_output(process, out, err, output, prefix)
+
+
+def _capture_output(
+    process: subprocess.Popen[bytes],
+    out: Any,
+    err: Any,
+    output: dict[str, Any],
+    prefix: str,
+) -> None:
+    out.seek(0)
+    err.seek(0)
+    output[prefix + "stdout"] = out.read(MAX_CAPTURE).decode("utf-8", errors="replace")
+    output[prefix + "stderr"] = err.read(MAX_CAPTURE).decode("utf-8", errors="replace")
+    output[prefix + "return_code"] = process.returncode
+    if not prefix:
+        output["text"] = output["stdout"]
 
 
 def cache_project(dependencies: list[str], limit: int) -> Path:
@@ -208,7 +280,7 @@ def execute_llm_runtime(
 
     acquired = False
     try:
-        cfg = require_enabled(capability)
+        cfg = require_enabled(capability, payload)
         validate_payload(payload, data)
         output_spec = payload.get("output", {})
         if output_spec.get("files") and not output_bucket:
@@ -219,7 +291,7 @@ def execute_llm_runtime(
         while not acquired:
             tick()
             acquired = _CACHE_LOCK.acquire(timeout=0.1)
-        require_enabled(capability)
+        require_enabled(capability, payload)
         project = cache_project(
             payload.get("dependencies", []),
             max(1, int(cfg.get("llm_runtime_cache_limit", 8))),
@@ -249,6 +321,7 @@ def execute_llm_runtime(
         entrypoint = local_path(data, payload["entrypoint"])
         if not entrypoint.is_file():
             raise ValueError("entrypoint was not supplied in files or attachments")
+        model, models = select_models(capability, payload)
         request = {
             "system_prompt": payload.get("system_prompt", ""),
             "user_prompt": payload.get("user_prompt", ""),
@@ -257,12 +330,15 @@ def execute_llm_runtime(
             "output": output_spec,
             "data_dir": str(data.resolve()),
             "ollama_base_url": get_ollama_base_url(),
-            "model": capability.removeprefix("llm-runtime."),
+            "model": model,
+            "models": models,
         }
         env.update(
             OLLAMA_HOST=request["ollama_base_url"],
             OLLAMA_MODEL=request["model"],
+            OFFLOAD_LLM_MODELS=json.dumps(models),
             PYTHONUNBUFFERED="1",
+            PYTHONIOENCODING="utf-8",
             OFFLOAD_DATA_DIR=str(data.resolve()),
         )
         python = (
@@ -310,8 +386,7 @@ def execute_llm_runtime(
             task_id, capability, output, time.monotonic() - started
         )
     except TaskCancelled:
-        report_cancelled(transport, task_id, capability, output=output)
-        return True
+        report = make_cancelled_report(task_id, capability, output)
     except Exception as exc:
         output["error"] = str(exc)
         report = make_failure_report(
@@ -320,4 +395,4 @@ def execute_llm_runtime(
     finally:
         if acquired:
             _CACHE_LOCK.release()
-    return report_result(transport, report)
+    return report_result(transport, fit_runtime_report(report))
