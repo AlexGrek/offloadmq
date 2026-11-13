@@ -316,7 +316,23 @@ tasks:
   # ── Shortcut: build → push → deploy ─────────────────────────────────────
 
   ship:
-    desc: Build frontend, push Docker image, deploy to cluster
+    desc: Build frontend, push Docker image, deploy to cluster (prints start/finish times)
+    silent: true
+    cmds:
+      # One shell so the start time survives across the whole pipeline. A shell
+      # variable instead of date-start.txt: nothing to clean up if a step fails.
+      # On failure `&&` short-circuits, so no "finished" line and a non-zero exit.
+      # ship:run is deliberately not `internal` (that blocks calling it from the shell too).
+      - |
+        start_s=$(date +%s) && started="$(date)" && {{.TASK_EXE}} ship:run && {
+          end_s=$(date +%s); d=$((end_s - start_s))
+          echo "Started at  $started"
+          echo "Finished at $(date)"
+          printf 'Elapsed     %dm %02ds\n' $((d / 60)) $((d % 60))
+        }
+
+  # No desc on purpose: hidden from `task --list`, but callable by `ship`.
+  ship:run:
     cmds:
       - task: docker:release
       - task: deploy
