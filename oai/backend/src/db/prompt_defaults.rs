@@ -26,7 +26,6 @@ pub enum App {
     ImageCycles,
     GeneratorImprover,
     PromptStudioSystem,
-    PromptStudioTemplate,
 }
 
 impl PromptDefaults {
@@ -54,7 +53,6 @@ impl PromptDefaults {
             App::ImageCycles => (&self.image_cycles, "describe_image"),
             App::GeneratorImprover => (&self.generator_improver, "generator_improver"),
             App::PromptStudioSystem => (&self.prompt_studio_system, "prompt_studio_system"),
-            App::PromptStudioTemplate => (&self.prompt_studio_template, "prompt_studio_template"),
         };
         if let Some(text) = custom.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
             return text.to_owned();
@@ -140,7 +138,6 @@ mod tests {
         assert_eq!(settings.resolve(App::ImageCycles), "Cycles custom");
         assert_eq!(settings.resolve(App::GeneratorImprover), "Improver custom");
         assert_eq!(settings.resolve(App::PromptStudioSystem), "Studio custom");
-        assert!(settings.resolve(App::PromptStudioTemplate).contains("{prompt}"));
         let default = PromptDefaults::default();
         assert_eq!(
             default.resolve(App::ImageCycles),

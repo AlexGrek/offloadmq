@@ -1,12 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Loader2, RefreshCw } from 'lucide-react'
-import { listImgGenCapabilities, startImageJob, type ImgGenCapability } from '../../api/images'
-import { recordRecentPrompt } from '../../api/prompts'
-import { useProgress } from '../../contexts/ProgressContext'
-import { DIMENSION_PRESETS, filterCapabilitiesByWorkflow, MODE_DEFAULTS } from '../../lib/imggen'
-import { isListedCapability } from '../../lib/capability-picker'
-import type { CapabilitiesStatus } from '../../lib/capabilitiesStatus'
-import { capabilityBaseLabel, sortCapabilitiesForPicker } from '../../lib/modelAvailability'
+import { DIMENSION_PRESETS, MODE_DEFAULTS } from '../../lib/imggen'
+import { capabilityBaseLabel } from '../../lib/modelAvailability'
 import { cn } from '../../lib/utils'
 import { JobErrorBanner } from '../JobErrorBanner'
 import { Button } from '../ui/button'
@@ -21,8 +16,9 @@ import {
 } from '../ui/dialog'
 import { Label } from '../ui/label'
 import { Input } from '../ui/input'
+import { clampGenerateCount, MAX_QUICK_GENERATE, useQuickTxt2Img } from './useQuickTxt2Img'
 
-const MAX_GENERATE_MULTIPLE = 10
+const MAX_GENERATE_MULTIPLE = MAX_QUICK_GENERATE
 const DEFAULT_GENERATE_MULTIPLE = 1
 
 type QuickGenerateDialogProps = {
@@ -30,15 +26,34 @@ type QuickGenerateDialogProps = {
   onOpenChange: (open: boolean) => void
   prompt: string
   token: string
+  description?: string
+  /** `data-testid` prefix; Describe Image keeps `describe-generate`. */
+  testIdPrefix?: string
 }
 
-/** Start a txt2img job from a completed image description without leaving the page. */
-export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: QuickGenerateDialogProps) {
-  const { refreshRunningImageJobs } = useProgress()
-  const [allCapabilities, setAllCapabilities] = useState<ImgGenCapability[]>([])
-  const [capabilitiesStatus, setCapabilitiesStatus] = useState<CapabilitiesStatus>('loading')
-  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
-  const [capability, setCapability] = useState('')
+/**
+ * Start txt2img jobs from a prompt without leaving the page (Describe Image result,
+ * Prompt Studio). The prompt is editable but deliberately not focused on open — the
+ * usual next step is picking a size, not rewriting the text.
+ */
+export function QuickGenerateDialog({
+  open,
+  onOpenChange,
+  prompt,
+  token,
+  description = 'Use this description as the prompt for a new image.',
+  testIdPrefix = 'describe-generate',
+}: QuickGenerateDialogProps) {
+  const models = useQuickTxt2Img(token, open)
+  const {
+    capabilities,
+    status: capabilitiesStatus,
+    error: capabilitiesError,
+    capability,
+    setCapability,
+    refresh: refreshCapabilities,
+  } = models
+  const contentRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState<readonly [number, number]>([
     MODE_DEFAULTS.txt2img.width,
     MODE_DEFAULTS.txt2img.height,
@@ -47,54 +62,11 @@ export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: Quick
   const [countInput, setCountInput] = useState(String(DEFAULT_GENERATE_MULTIPLE))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const capabilities = useMemo(
-    () => sortCapabilitiesForPicker(filterCapabilitiesByWorkflow(allCapabilities, 'txt2img')),
-    [allCapabilities],
-  )
-
-  const onCapabilitiesLoaded = useCallback((listed: ImgGenCapability[]) => {
-    const eligible = filterCapabilitiesByWorkflow(listed, 'txt2img')
-    setAllCapabilities(listed)
-    setCapability(prev =>
-      eligible.some(cap => cap.base === prev)
-        ? prev
-        : eligible.find(cap => cap.online)?.base ?? eligible[0]?.base ?? '',
-    )
-    setCapabilitiesStatus('ready')
-  }, [])
-
-  const onCapabilitiesError = useCallback((e: unknown) => {
-    setCapabilitiesError(e instanceof Error ? e.message : 'Failed to load models')
-    setCapabilitiesStatus('error')
-  }, [])
-
-  useEffect(() => {
-    if (!open) return
-    let current = true
-    void listImgGenCapabilities(token)
-      .then(listed => { if (current) onCapabilitiesLoaded(listed) })
-      .catch(e => { if (current) onCapabilitiesError(e) })
-    return () => { current = false }
-  }, [open, token, onCapabilitiesLoaded, onCapabilitiesError])
-
-  function refreshCapabilities() {
-    setCapabilitiesStatus('loading')
-    setCapabilitiesError(null)
-    void listImgGenCapabilities(token)
-      .then(onCapabilitiesLoaded)
-      .catch(onCapabilitiesError)
-  }
-
-  function parseCount(raw: string): number {
-    const count = parseInt(raw, 10)
-    if (!Number.isFinite(count)) return DEFAULT_GENERATE_MULTIPLE
-    return Math.min(MAX_GENERATE_MULTIPLE, Math.max(1, count))
-  }
+  const tid = (suffix: string) => `${testIdPrefix}-${suffix}`
+  const parseCount = clampGenerateCount
 
   const canGenerate =
-    capabilitiesStatus === 'ready' &&
-    isListedCapability(capability, capabilities) &&
+    models.ready &&
     Boolean(promptInput.trim()) &&
     !submitting
 
@@ -102,22 +74,13 @@ export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: Quick
     if (!canGenerate) return
     setSubmitting(true)
     setError(null)
-    const text = promptInput.trim()
-    const count = parseCount(countInput)
     try {
-      for (let index = 0; index < count; index += 1) {
-        await startImageJob(token, {
-          capability,
-          prompt: text,
-          prompt_template: text,
-          width: size[0],
-          height: size[1],
-          workflow: 'txt2img',
-          override_negative: false,
-        })
-      }
-      void recordRecentPrompt(token, 'imggen-prompt', text).catch(() => {})
-      void refreshRunningImageJobs()
+      await models.generate({
+        prompt: promptInput,
+        width: size[0],
+        height: size[1],
+        count: parseCount(countInput),
+      })
       onOpenChange(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not start image generation')
@@ -133,37 +96,46 @@ export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: Quick
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent data-testid="describe-generate-dialog">
+      <DialogContent
+        ref={contentRef}
+        tabIndex={-1}
+        data-testid={tid('dialog')}
+        onOpenAutoFocus={event => {
+          // Radix focuses the first field (the prompt) by default — keep focus on the dialog.
+          event.preventDefault()
+          contentRef.current?.focus({ preventScroll: true })
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Generate image</DialogTitle>
           <DialogDescription>
-            Use this description as the prompt for a new image.
+            {description}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <>
             <div className="space-y-1.5">
-              <Label htmlFor="describe-generate-prompt">Prompt</Label>
+              <Label htmlFor={tid('prompt')}>Prompt</Label>
               <textarea
-                id="describe-generate-prompt"
+                id={tid('prompt')}
                 value={promptInput}
                 onChange={event => setPromptInput(event.target.value)}
                 rows={5}
                 className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                data-testid="describe-generate-prompt"
+                data-testid={tid('prompt')}
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="describe-generate-model">Model</Label>
+              <Label htmlFor={tid('model')}>Model</Label>
               <div className="flex gap-2">
                 <select
-                  id="describe-generate-model"
+                  id={tid('model')}
                   value={capability}
                   onChange={e => setCapability(e.target.value)}
                   disabled={capabilitiesStatus !== 'ready' || capabilities.length === 0}
                   className="min-h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-                  data-testid="describe-generate-model"
+                  data-testid={tid('model')}
                 >
                   {capabilities.length === 0 && (
                     <option value="">
@@ -189,7 +161,7 @@ export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: Quick
                 </Button>
               </div>
               {capabilitiesStatus === 'error' && capabilitiesError && (
-                <JobErrorBanner message={capabilitiesError} testId="describe-generate-model-error" />
+                <JobErrorBanner message={capabilitiesError} testId={tid('model-error')} />
               )}
               {capabilitiesStatus === 'ready' && capabilities.length === 0 && (
                 <p className="text-xs text-muted-foreground">
@@ -200,7 +172,7 @@ export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: Quick
 
             <div className="space-y-1.5">
               <Label>Size</Label>
-              <div className="flex flex-wrap gap-2" data-testid="describe-generate-sizes">
+              <div className="flex flex-wrap gap-2" data-testid={tid('sizes')}>
                 {DIMENSION_PRESETS.map(([width, height]) => (
                   <button
                     key={`${width}x${height}`}
@@ -213,7 +185,7 @@ export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: Quick
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-input bg-background hover:bg-muted/50',
                     )}
-                    data-testid={`describe-generate-size-${width}x${height}`}
+                    data-testid={tid(`size-${width}x${height}`)}
                   >
                     {width}×{height}
                   </button>
@@ -222,9 +194,9 @@ export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: Quick
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="describe-generate-count">Number of images</Label>
+              <Label htmlFor={tid('count')}>Number of images</Label>
               <Input
-                id="describe-generate-count"
+                id={tid('count')}
                 type="number"
                 inputMode="numeric"
                 min={1}
@@ -233,13 +205,13 @@ export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: Quick
                 onChange={e => setCountInput(e.target.value)}
                 onBlur={() => setCountInput(String(parseCount(countInput)))}
                 className="min-h-11 font-mono tabular-nums"
-                data-testid="describe-generate-count"
+                data-testid={tid('count')}
               />
               <p className="text-xs text-muted-foreground">
                 Up to {MAX_GENERATE_MULTIPLE} separate runs appear in Progress.
               </p>
             </div>
-            {error && <JobErrorBanner message={error} testId="describe-generate-error" />}
+            {error && <JobErrorBanner message={error} testId={tid('error')} />}
           </>
         </DialogBody>
         <DialogFooter>
@@ -257,7 +229,7 @@ export function QuickGenerateDialog({ open, onOpenChange, prompt, token }: Quick
             onClick={() => void onGenerate()}
             disabled={!canGenerate}
             className="min-h-11 w-full sm:w-auto"
-            data-testid="describe-generate-submit"
+            data-testid={tid('submit')}
           >
             {submitting && <Loader2 className="size-4 animate-spin" />}
             {submitting

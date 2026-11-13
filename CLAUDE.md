@@ -394,6 +394,15 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 - Remote MCP server at `/mcp` with OAuth sign-in, so Claude (web, desktop, mobile, Claude Code) can generate images and manage jobs/prompts/placeholders — see [oai/docs/mcp.md](oai/docs/mcp.md)
 - Also has a Go command-line client, [oai/cli/](oai/cli/) (`oai login`, `oai image generate|describe|prompts`, `oai nude`), that talks to the same HTTP API as the SPA
 
+### Prompt Studio
+
+Prompt Studio (`/app/prompt-studio`) is an LLM chat for image-prompt engineering: sessions are
+`chats` rows with `kind = 'prompt_studio'` sharing the whole chat stack (`ChatWorkspace`).
+Enter = newline, Ctrl/⌘+Enter sends; an example prompt (txt2img library) is rendered through a
+`{prompt}` message template; replies have "Use as prompt" and a "create another one" quick reply.
+System prompts and templates have their own prompt-library buckets. Image Generation and
+Describe Image open it via a "Prompt studio" button. See [docs/oai-prompt-studio.md](oai/docs/oai-prompt-studio.md).
+
 ### Generator Improver
 
 Generator Improver (`/app/generator-improver`) scores images with vision JSON

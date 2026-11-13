@@ -653,3 +653,12 @@ Where image generation is a bespoke multi-file pipeline, Image Tools is a plain
 7. **Compare mode** (`imgutils-compare-toggle`, shown once a job has both an input and an
    output) toggles a two-pane before/after grid — the same pattern as img2img compare on
    `ImageGenerationPage`, reset to off on every job switch.
+
+---
+
+## Prompt Studio entry points
+
+The Prompt label row has **Prompt studio** (`imggen-prompt-studio-open`) and the Describe result
+header has one too (`describe-prompt-studio-open`). Both `navigate('/app/prompt-studio', { state:
+{ examplePrompt } })` (`PromptStudioRouteState`, `lib/promptStudio.ts`). Studio replies come back
+through the existing `ImggenRouteState.usePrompt`. See `oai/docs/oai-prompt-studio.md`.

@@ -57,7 +57,7 @@ import {
   DESCRIBE_NEW_PANEL,
   DescribeHistorySidebar,
 } from '../components/describe/DescribeHistorySidebar'
-import { QuickGenerateDialog } from '../components/describe/QuickGenerateDialog'
+import { QuickGenerateDialog } from '../components/imggen/QuickGenerateDialog'
 import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
 import { keepIfUnchanged, mergeJobList, upsertJob } from '../lib/jobMerge'

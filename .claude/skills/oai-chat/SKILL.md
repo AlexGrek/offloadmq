@@ -351,3 +351,20 @@ Edit `services/chat.rs` (`build_offload_chat_messages`, `submit_chat` payload). 
 REST chat coverage: `oai/itests/tests/test_chats.py`. WS paths typically manual or future itests.
 Frontend E2E tests (Playwright) live in `oai/e2e/tests/chat.spec.ts`.
 - **Run E2E tests:** `cd oai/e2e && npm test` (Requires `task dev` running)
+
+---
+
+## Prompt Studio shares this stack
+
+`/app/prompt-studio` is the same chat UI and backend with `chats.kind = 'prompt_studio'`
+(`db::chats::ChatKind`). `pages/ChatPage.tsx` is now a thin `<ChatWorkspace kind="chat" />`;
+the page logic lives in `components/chat/ChatWorkspace.tsx` with a per-kind `KIND_CONFIG`
+(labels, Enter behaviour, documents, empty state, reply actions). Rules when editing chat:
+
+- `GET /api/chats` filters by `?kind=` (default `chat`); `POST /api/chats` takes `kind`.
+- System-prompt recents go to `ChatKind::system_prompt_bucket()` — `llm-system` for chat,
+  `prompt-studio-system` for studio — in `create_chat`, `update_system_prompt` and `run_chat`.
+- Composer props `enterSends` / `allowDocuments` / `topSlot`; message `onUseAsPrompt`;
+  transcript `emptyState` — all default to Chat's behaviour.
+- `sendWithText(text, attachments, chatId)` takes an explicit chat id (studio creates the
+  session on first send). Full doc: `oai/docs/oai-prompt-studio.md`.

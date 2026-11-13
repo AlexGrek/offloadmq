@@ -38,7 +38,9 @@ impl ChatKind {
         match value.trim() {
             "chat" => Ok(ChatKind::Chat),
             "prompt_studio" => Ok(ChatKind::PromptStudio),
-            other => Err(AppError::BadRequest(format!("unknown chat kind: {other:?}"))),
+            other => Err(AppError::BadRequest(format!(
+                "unknown chat kind: {other:?}"
+            ))),
         }
     }
 

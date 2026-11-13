@@ -7,6 +7,8 @@ const custom = {
   chat: 'You are my personal writing coach.',
   image_cycles: 'Describe only the composition for the next cycle.',
   generator_improver: 'Assess lighting and preserve the subject.',
+  prompt_studio_system: 'You write moody film-noir image prompts.',
+  prompt_studio_template: 'Make a noir variation of: {prompt}',
 }
 const empty = Object.fromEntries(Object.keys(custom).map(key => [key, null]))
 
@@ -46,6 +48,8 @@ test('user prompt defaults persist, stay independent, reset, and are isolated fr
     ['/app/chat', 'system-prompt-editor', custom.chat],
     ['/app/image-cycles', 'cycles-describe-prompt', custom.image_cycles],
     ['/app/generator-improver', 'cycles-describe-prompt', custom.generator_improver],
+    ['/app/prompt-studio', 'prompt-studio-system', custom.prompt_studio_system],
+    ['/app/prompt-studio', 'prompt-studio-template', custom.prompt_studio_template],
   ]) {
     await page.goto(route)
     await expect(page.getByTestId(testId)).toHaveValue(value)
@@ -56,6 +60,8 @@ test('user prompt defaults persist, stay independent, reset, and are isolated fr
   expect(explicitChat.system_prompt).toBe('Explicit chat prompt')
   const chat = await request.post('/api/chats', { headers: a.headers, data: {} })
   expect((await chat.json()).system_prompt).toBe(custom.chat)
+  const studio = await request.post('/api/chats', { headers: a.headers, data: { kind: 'prompt_studio' } })
+  expect((await studio.json()).system_prompt).toBe(custom.prompt_studio_system)
 
   await page.goto('/app/settings')
   await page.getByTestId('default-prompt-reset-chat').click()
