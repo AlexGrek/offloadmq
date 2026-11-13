@@ -298,3 +298,83 @@ test('non-admins can choose low or normal priority', async ({ page }) => {
   await select.selectOption('low')
   await expect(select).toHaveValue('low')
 })
+
+async function mockStudio(page: Page, options: { reply?: string; pending?: boolean; lateQueue?: boolean; offline?: boolean } = {}) {
+  const turns: { content: string; chat_id: string }[] = []
+  const chats: Record<string, unknown>[] = []
+  const cancellations: string[] = []
+  await page.routeWebSocket(/\/api\/ws\/chat/, ws => {
+    ws.onMessage(raw => {
+      const msg = JSON.parse(String(raw))
+      if (msg.type === 'list_capabilities') ws.send(JSON.stringify({
+        type: 'capabilities', req_id: msg.req_id,
+        capabilities: options.offline ? [] : [{ base: 'llm.artist', tags: [], online: true }],
+      }))
+      if (msg.type === 'chat') {
+        turns.push(msg)
+        const queued = () => ws.send(JSON.stringify({ type: 'task:queued', req_id: msg.req_id, cap: 'llm.artist', id: 'prompt-1' }))
+        if (options.lateQueue) setTimeout(queued, 500)
+        else queued()
+        if (!options.pending) ws.send(JSON.stringify({ type: 'task:result', req_id: msg.req_id, text: options.reply ?? '```\nA luminous glass forest\n```' }))
+      }
+    })
+  })
+  const base = await mock(page)
+  await page.route('**/api/chats', route => {
+    chats.push(route.request().postDataJSON())
+    return route.fulfill({ json: { id: 'studio-wallpaper' } })
+  })
+  await page.route('**/api/tasks/cancel/**', route => {
+    cancellations.push(route.request().url())
+    return route.fulfill({ json: { status: 'canceled' } })
+  })
+  await page.getByTestId('hallucinate-mode').selectOption('studio')
+  return { ...base, turns, chats, cancellations }
+}
+
+test('studio generates a fresh prompt before each image in the same slideshow', async ({ page }) => {
+  const { submissions, turns, chats } = await mockStudio(page)
+  await page.getByTestId('hallucinate-system').fill('Create image prompts only.')
+  await page.getByTestId('hallucinate-template').fill('Imagine a variation of {prompt}')
+  await page.getByTestId('hallucinate-prompt').fill('A {scene}')
+  await page.getByTestId('hallucinate-start').click()
+  await expect(page.getByTestId('hallucinate-display').getByRole('img').first()).toBeVisible()
+  await expect.poll(() => submissions.length).toBeGreaterThanOrEqual(2)
+  expect(chats).toEqual([{ kind: 'prompt_studio', system_prompt: 'Create image prompts only.', last_model: 'llm.artist' }])
+  expect(turns[0]).toMatchObject({ chat_id: 'studio-wallpaper' })
+  expect(turns[0].content).toMatch(/^Imagine a variation of A (moon garden|glass forest)$/)
+  expect(turns[1].chat_id).toBe(turns[0].chat_id)
+  expect(turns[1].content).not.toBe(turns[0].content)
+  expect(submissions[0].prompt).toBe('A luminous glass forest')
+  expect(submissions[1].prompt).toBe('A luminous glass forest')
+  await page.getByTestId('hallucinate-pause').click()
+  await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
+})
+
+for (const lateQueue of [false, true]) {
+  test(`Pause cancels prompt generation, late ID = ${lateQueue}`, async ({ page }) => {
+    const { turns, submissions, cancellations } = await mockStudio(page, { pending: true, lateQueue })
+    await page.getByTestId('hallucinate-start').click()
+    await expect.poll(() => turns.length).toBe(1)
+    await expect(page.getByTestId('hallucinate-job-status')).toContainText('Prompt')
+    await page.getByTestId('hallucinate-pause').click()
+    await expect(page.getByRole('button', { name: 'Resume wallpaper' })).toBeEnabled()
+    expect(cancellations).toHaveLength(1)
+    expect(submissions).toHaveLength(0)
+    await expect(page.getByRole('alert')).toHaveCount(0)
+  })
+}
+
+test('empty generated prompts stop visibly without rendering', async ({ page }) => {
+  const { submissions } = await mockStudio(page, { reply: '```\n\n```' })
+  await page.getByTestId('hallucinate-start').click()
+  await expect(page.getByRole('alert')).toHaveText('The LLM returned an empty image prompt.')
+  expect(submissions).toHaveLength(0)
+})
+
+test('studio needs an online LLM; direct mode remains available', async ({ page }) => {
+  await mockStudio(page, { offline: true })
+  await expect(page.getByTestId('hallucinate-start')).toBeDisabled()
+  await page.getByTestId('hallucinate-mode').selectOption('direct')
+  await expect(page.getByTestId('hallucinate-start')).toBeEnabled()
+})

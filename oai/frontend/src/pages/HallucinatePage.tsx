@@ -1,3 +1,6 @@
+import { useWsChat } from '@/hooks/useWsChat'
+import { useDefaultPrompts } from '@/hooks/useDefaultPrompts'
+import { PROMPT_STUDIO_SYSTEM_BUCKET, PROMPT_STUDIO_TEMPLATE_BUCKET } from '@/lib/promptStudio'
 import { useEffect, useRef, useState } from 'react'
 import { Expand, Minimize, Pause, Play, Settings2, Sparkles, Star } from 'lucide-react'
 import { useAdminStatus } from '@/hooks/useAdminStatus'
@@ -15,6 +18,15 @@ import { FADE_MS, HALLUCINATE_BUCKET, runWallpaper, wallpaperRequestSignal, Wall
 export default function HallucinatePage() {
   const { token } = useAuth()
   const { isAdmin } = useAdminStatus()
+  const defaults = useDefaultPrompts()
+  const [mode, setMode] = useState<'direct' | 'studio'>('direct')
+  const ws = useWsChat(mode === 'studio' ? token : null)
+  const [llm, setLlm] = useState('')
+  const [systemPrompt, setSystemPrompt] = useState(defaults.prompt_studio_system)
+  const [template, setTemplate] = useState(defaults.prompt_studio_template)
+  const onlineLlms = ws.capabilities.filter(c => c.online)
+  const selectedLlm = onlineLlms.some(c => c.base === llm) ? llm : onlineLlms[0]?.base ?? ''
+  const studioReady = mode === 'direct' || (ws.status === 'connected' && ws.capabilitiesStatus === 'ready' && !!selectedLlm && !!systemPrompt.trim() && !!template.trim())
   const [priority, setPriority] = useState<'low' | 'normal' | 'high'>('normal')
   const [models, setModels] = useState<ImgGenCapability[]>([])
   const [tools, setTools] = useState<ImgUtilTool[]>([])
@@ -95,7 +107,7 @@ export default function HallucinatePage() {
   }, [display, running])
 
   async function start() {
-    if (!token || controller.current || !models.some(m => m.base === model) || !prompt.trim()) return
+    if (!studioReady || !token || controller.current || !models.some(m => m.base === model) || !prompt.trim()) return
     const upscaler = tools.find(t => toolKey(t) === tool)
     if (upscale && !upscaler) return
     const abort = new AbortController()
@@ -108,6 +120,7 @@ export default function HallucinatePage() {
     try {
       await recordRecentPrompt(token, HALLUCINATE_BUCKET, prompt.trim(), wallpaperRequestSignal(abort.signal))
       await runWallpaper(token, {
+        studio: mode === 'studio' ? { capability: selectedLlm, systemPrompt: systemPrompt.trim(), template: template.trim() } : undefined,
         prompt: prompt.trim(), capability: model, width: size[0], height: size[1], scale,
         upscaler: upscale ? upscaler : undefined,
         priority: priority === 'high' && !isAdmin ? 'normal' : priority,
@@ -153,6 +166,35 @@ export default function HallucinatePage() {
           <p className="max-w-xl text-muted-foreground">One idea. Infinite variations. Turn your screen into a living wallpaper, one new image at a time.</p>
         </header>
         <section className="space-y-5" aria-label="Wallpaper settings">
+          <label className="block space-y-2 text-sm">Mode
+            <select aria-label="Mode" data-testid="hallucinate-mode" value={mode} disabled={running} onChange={e => setMode(e.target.value as typeof mode)} className="block min-h-11 w-full rounded-md border border-input bg-background px-3">
+              <option value="direct">Prompt variations</option>
+              <option value="studio">Prompt Studio → image</option>
+            </select>
+            <span className="block text-xs text-muted-foreground">{mode === 'studio' ? 'An LLM creates a fresh prompt before every image. The slideshow and upscaling work as usual.' : 'Render your prompt directly, with fresh substitutions for every image.'}</span>
+          </label>
+          {mode === 'studio' && <fieldset disabled={running} className="min-w-0 space-y-4" data-testid="hallucinate-studio-settings">
+            <legend className="sr-only">Prompt generation</legend>
+            <label className="block space-y-2 text-sm">Prompt model
+              <select aria-label="Prompt model" data-testid="hallucinate-prompt-model" value={selectedLlm} onChange={e => setLlm(e.target.value)} className="block min-h-11 w-full rounded-md border border-input bg-background px-3">
+                {!onlineLlms.length && <option value="">No LLM models online</option>}
+                {onlineLlms.map(m => <option key={m.base} value={m.base}>{m.base.replace('llm.', '')}</option>)}
+              </select>
+            </label>
+            {ws.capabilitiesError && <p role="alert" className="text-sm text-destructive">{ws.capabilitiesError}</p>}
+            <Button variant="ghost" onClick={ws.refreshCapabilities} disabled={running || ws.status !== 'connected'}>Refresh prompt models</Button>
+            <div className="space-y-2">
+              <label htmlFor="hallucinate-system" className="text-sm">System prompt</label>
+              <PromptTextarea id="hallucinate-system" data-testid="hallucinate-system" token={token} bucket={PROMPT_STUDIO_SYSTEM_BUCKET} value={systemPrompt} onChange={setSystemPrompt} disabled={running} rows={4} />
+              <Button variant="ghost" onClick={() => setSystemPrompt(defaults.prompt_studio_system)}>Reset system prompt</Button>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="hallucinate-template" className="text-sm">Message template</label>
+              <PromptTextarea id="hallucinate-template" data-testid="hallucinate-template" token={token} bucket={PROMPT_STUDIO_TEMPLATE_BUCKET} value={template} onChange={setTemplate} disabled={running} rows={3} />
+              <p className="text-xs text-muted-foreground">{'{prompt}'} is replaced with your recurring dream below. Each image starts with a new LLM turn in the same Prompt Studio conversation.</p>
+              <Button variant="ghost" onClick={() => setTemplate(defaults.prompt_studio_template)}>Reset message template</Button>
+            </div>
+          </fieldset>}
           <label className="block space-y-2 text-sm">Model
             <select aria-label="Model" value={model} disabled={running} onChange={e => setModel(e.target.value)} className="block min-h-11 w-full rounded-md border border-input bg-background px-3">
               {!models.length && <option value="">No txt2img models online</option>}
@@ -192,7 +234,7 @@ export default function HallucinatePage() {
             </div>}
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button className="min-h-11" onClick={() => void start()} disabled={running || !model || !prompt.trim() || (upscale && !tool)} data-testid="hallucinate-start"><Play className="size-4" /> Start dreaming</Button>
+            <Button className="min-h-11" onClick={() => void start()} disabled={running || !studioReady || !model || !prompt.trim() || (upscale && !tool)} data-testid="hallucinate-start"><Play className="size-4" /> Start dreaming</Button>
             {running && <Button variant="outline" onClick={stop}>Stop</Button>}
             {!!frames.length && <Button variant="outline" onClick={() => setDisplay(true)}>Return to wallpaper</Button>}
           </div>

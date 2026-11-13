@@ -44,10 +44,38 @@ the pending-reply reconcile worker, ToolDebug, image attachments — is reused u
   - A template is recorded as a recent in `prompt-studio-user` when it opened a session with an
     example. System prompts are recorded server-side per kind (`ChatKind::system_prompt_bucket`).
 - **Images** can be attached on any turn (upload, library, paste). Documents are not offered.
-- Every completed reply has **Use as prompt** → `/app/images` with `ImggenRouteState.usePrompt`
-  (switches to txt2img). `extractPrompt` takes the body of a single fenced code block, otherwise
-  the whole reply, minus one pair of wrapping quotes.
+- Every finished message (reply **and** the user's own message) and the setup panel's example
+  prompt get three actions (`components/promptStudio/PromptActions.tsx`). The prompt is
+  `extractPrompt(content)`: the body of a single fenced code block, otherwise the whole text, minus
+  one pair of wrapping quotes.
+  - **Generate** (Zap) — the shared quick txt2img dialog (`components/imggen/QuickGenerateDialog.tsx`,
+    also used by Describe Image): model, size preset, count; jobs show up in Progress and the user
+    stays in the studio. The prompt field is **not** auto-focused (size/model are the usual next step).
+  - **Edit** (Highlighter) — the smart **prompt editor** (below).
+  - **Use** (ImagePlus) — `/app/images` with `ImggenRouteState.usePrompt` (switches to txt2img).
 - **"Good, now create another one"** quick reply appears above the composer after each reply.
+
+## Prompt editor
+
+`components/promptStudio/PromptEditor.tsx` — a full-screen dialog; splitting/editing helpers are
+pure functions in `lib/promptSegments.ts` (`splitSegments`, `replaceSegment`, `removeSegment`,
+`appendSegment`). The prompt text is the single source of truth; segments are re-derived from it.
+
+- The prompt is laid out as **sentences** or **phrases** (sentences + `,` `;` `:`), toggle persisted
+  in `oai_prompt_editor_mode`. A terminator only splits when whitespace follows (`f/1.8`, `8.5mm`
+  stay whole); line breaks always split and survive edits.
+- Hover highlights a segment; click selects it (others dim) and shows **Edit / Delete**. Clicking a
+  selected segment edits it in place (Enter saves, Esc cancels, empty deletes). **Add sentence**
+  appends one with the punctuation the mode expects. Deleting a sentence-closing phrase repairs the
+  dangling comma (`a, b, c. Next` − `c.` → `a, b. Next`).
+- Keyboard: ←/→ select, Enter edit, Delete/Backspace delete (selection moves on), Esc deselect then
+  close, Ctrl/⌘+Z / Shift+Z undo/redo, Ctrl/⌘+Enter generate. **Plain text** mode edits the whole
+  prompt in a textarea (one undo step). Reset restores the original prompt.
+- Side panel: size presets (Square/Landscape/Portrait with aspect thumbnails, last pick persisted in
+  `oai_prompt_editor_size`), model, count and **Generate now** — starts txt2img jobs
+  (`components/imggen/useQuickTxt2Img.ts`, shared with the quick dialog) and keeps the editor open.
+  **Open in Image Generation** hands the edited prompt to txt2img; **Copy**; for the example prompt,
+  **Use as example** writes the edit back to the setup panel (re-rendering the composer).
 
 ## Entry points from other apps
 
@@ -77,7 +105,12 @@ separately from Chat's.
 ```
 prompt-studio-page, prompt-studio-setup, prompt-studio-system, prompt-studio-system-reset,
 prompt-studio-example, prompt-studio-template, prompt-studio-template-reset,
-prompt-studio-use-as-prompt, prompt-studio-another,
+prompt-studio-{generate,edit,use-as-prompt} (replies), prompt-studio-user-{…} (user messages),
+prompt-studio-example-{…} (example field), prompt-studio-generate-{dialog,prompt,model,size-WxH,submit},
+prompt-studio-another,
+prompt-editor, prompt-editor-{segment-N,segment-toolbar,segment-edit,segment-delete,segment-input,
+segment-save,add,mode-sentence,mode-phrase,raw,undo,redo,reset,close,size-WxH,model,count,generate,
+notice,use,copy,apply,stats},
 imggen-prompt-studio-open, describe-prompt-studio-open
 (+ shared chat ids: chat-input, send-btn, new-chat-btn, chat-item-{id}, …)
 ```

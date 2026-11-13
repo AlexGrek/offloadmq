@@ -26,7 +26,7 @@ export function ChatTranscript({
   canRetry,
   onRetry,
   emptyState,
-  onUseAsPrompt,
+  renderPromptActions,
 }: {
   scrollRef: React.RefObject<HTMLDivElement | null>
   contentRef: (el: HTMLDivElement | null) => void
@@ -48,7 +48,7 @@ export function ChatTranscript({
   onRetry: () => void
   /** Replaces the default `SystemPromptStudio` empty state (Prompt Studio setup). */
   emptyState?: React.ReactNode
-  onUseAsPrompt?: (content: string) => void
+  renderPromptActions?: (msg: Message) => React.ReactNode
 }) {
   return (
     <div
@@ -98,7 +98,7 @@ export function ChatTranscript({
               showRetry={idx === messages.length - 1 && canRetry}
               onRetry={onRetry}
               token={token}
-              onUseAsPrompt={onUseAsPrompt}
+              renderPromptActions={renderPromptActions}
             />
           ))}
           <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />

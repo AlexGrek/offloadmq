@@ -31,6 +31,7 @@ import {
   type PromptStudioRouteState,
 } from '../../lib/promptStudio'
 import { PromptStudioSetup } from '../promptStudio/PromptStudioSetup'
+import { PromptActions } from '../promptStudio/PromptActions'
 import type { ChatSidebarLabels } from './ChatSidebar'
 import { useDefaultPrompts } from '../../hooks/useDefaultPrompts'
 import { readChatPrompt, rememberChatPrompt } from '../../lib/chat/promptCache'
@@ -784,13 +785,27 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
   }, [input, pendingAttachments, sendWithText, messages.length, activeChatId, isStudio, ensureStudioSession, token, examplePrompt, template])
 
   const handleUseAsPrompt = useCallback(
-    (content: string) => {
-      const prompt = extractPrompt(content)
-      if (!prompt) return
-      const state: ImggenRouteState = { usePrompt: prompt }
+    (prompt: string) => {
+      const text = prompt.trim()
+      if (!text) return
+      const state: ImggenRouteState = { usePrompt: text }
       navigate('/app/images', { state })
     },
     [navigate],
+  )
+
+  const renderPromptActions = useCallback(
+    (msg: Message) =>
+      token ? (
+        <PromptActions
+          token={token}
+          prompt={extractPrompt(msg.content)}
+          onUse={handleUseAsPrompt}
+          tone={msg.role === 'user' ? 'muted' : 'default'}
+          testIdPrefix={msg.role === 'user' ? 'prompt-studio-user' : 'prompt-studio'}
+        />
+      ) : null,
+    [token, handleUseAsPrompt],
   )
 
   const retry = useCallback(() => {
@@ -953,7 +968,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
           messages={messages}
           canRetry={canRetry}
           onRetry={retry}
-          onUseAsPrompt={isStudio ? handleUseAsPrompt : undefined}
+          renderPromptActions={isStudio ? renderPromptActions : undefined}
           emptyState={
             isStudio && token ? (
               <PromptStudioSetup
@@ -966,6 +981,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
                 template={template}
                 onTemplateChange={changeTemplate}
                 defaultTemplate={defaultTemplate}
+                onUsePrompt={handleUseAsPrompt}
               />
             ) : undefined
           }

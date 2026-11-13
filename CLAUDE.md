@@ -399,7 +399,8 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 Prompt Studio (`/app/prompt-studio`) is an LLM chat for image-prompt engineering: sessions are
 `chats` rows with `kind = 'prompt_studio'` sharing the whole chat stack (`ChatWorkspace`).
 Enter = newline, Ctrl/⌘+Enter sends; an example prompt (txt2img library) is rendered through a
-`{prompt}` message template; replies have "Use as prompt" and a "create another one" quick reply.
+`{prompt}` message template; every message has Generate (quick txt2img dialog), Edit (full-screen sentence/phrase prompt
+editor with size picker + instant generate) and Use (→ txt2img), plus a "create another one" quick reply.
 System prompts and templates have their own prompt-library buckets. Image Generation and
 Describe Image open it via a "Prompt studio" button. See [docs/oai-prompt-studio.md](oai/docs/oai-prompt-studio.md).
 

@@ -62,6 +62,8 @@ test('generates a configurable batch from a description and stays on Describe Im
   expect(bounds!.y).toBeGreaterThanOrEqual(0)
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(667)
   await expect(page.getByTestId('describe-generate-prompt')).toHaveValue(description)
+  // The prompt is pre-filled but not focused — size/model are the usual next step.
+  await expect(page.getByTestId('describe-generate-prompt')).not.toBeFocused()
   await page.getByTestId('describe-generate-prompt').fill(editedDescription)
   await expect(page.getByTestId('describe-generate-model')).toHaveValue('imggen.paint')
   await expect(page.getByTestId('describe-generate-model').locator('option')).toHaveCount(1)

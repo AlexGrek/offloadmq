@@ -27,7 +27,7 @@ export function WallpaperJobStatus({ job, active }: { job: WallpaperJobProgress;
   const execution = job.executionSeconds ?? elapsed(started, end)
   const total = elapsed(submitted, end)
   const duration = (seconds: number | null) => seconds == null ? '—' : formatDuration(seconds)
-  const step = job.kind === 'upscale' ? 'Upscale' : 'Generation'
+  const step = job.kind === 'prompt' ? 'Prompt' : job.kind === 'upscale' ? 'Upscale' : 'Generation'
   const status = job.status === 'submitting' ? 'Submitting'
     : job.status === 'running' ? 'Running' : imageJobStatusLabel(job.status)
 
@@ -40,7 +40,7 @@ export function WallpaperJobStatus({ job, active }: { job: WallpaperJobProgress;
       </div>
       <div data-testid="hallucinate-job-timings" className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-white/70">
         <span>Queue {duration(queue)}</span>
-        <span>{job.kind === 'upscale' ? 'Upscale' : 'Render'} {duration(execution)}</span>
+        <span>{job.kind === 'prompt' ? 'LLM' : job.kind === 'upscale' ? 'Upscale' : 'Render'} {duration(execution)}</span>
         <span>Total {duration(total)}</span>
         {job.typicalRuntimeSeconds != null && job.typicalRuntimeSeconds > 0 && <span>Typical ~{duration(job.typicalRuntimeSeconds)}</span>}
       </div>

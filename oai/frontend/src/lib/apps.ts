@@ -13,16 +13,6 @@ export const apps = [
     iconColor: 'text-indigo-400',
   },
   {
-    id: 'prompt-studio',
-    icon: Feather,
-    title: 'Prompt Studio',
-    description: 'Craft and riff on image prompts with an LLM',
-    href: '/app/prompt-studio',
-    gradient: 'from-blue-500/20 to-sky-500/10',
-    iconBg: 'bg-blue-500/15 dark:bg-blue-500/20',
-    iconColor: 'text-blue-600 dark:text-blue-400',
-  },
-  {
     id: 'image-generation',
     icon: ImagePlus,
     title: 'Image Generation',
@@ -91,6 +81,16 @@ export const apps = [
     gradient: 'from-cyan-500/20 to-blue-500/20',
     iconBg: 'bg-cyan-500/20',
     iconColor: 'text-cyan-400',
+  },
+  {
+    id: 'prompt-studio',
+    icon: Feather,
+    title: 'Prompt Studio',
+    description: 'Craft and riff on image prompts with an LLM',
+    href: '/app/prompt-studio',
+    gradient: 'from-blue-500/20 to-sky-500/10',
+    iconBg: 'bg-blue-500/15 dark:bg-blue-500/20',
+    iconColor: 'text-blue-600 dark:text-blue-400',
   },
   {
     id: 'nude-detect',

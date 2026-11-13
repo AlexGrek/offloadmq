@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
-import { Check, Copy, ImagePlus, RefreshCw } from 'lucide-react'
+import { Check, Copy, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isMessagePending, type Message } from '@/lib/chat/messages'
 import { MarkdownContent } from '../MarkdownContent'
@@ -14,21 +14,21 @@ export function ChatMessageItem({
   showRetry,
   onRetry,
   token,
-  onUseAsPrompt,
+  renderPromptActions,
 }: {
   msg: Message
   showRetry: boolean
   onRetry: () => void
   token: string | null
-  /** Prompt Studio: assistant replies get "Use as prompt" (opens txt2img). */
-  onUseAsPrompt?: (content: string) => void
+  /** Prompt Studio: Generate / Edit / Use actions for a finished message. */
+  renderPromptActions?: (msg: Message) => ReactNode
 }) {
   const [copied, setCopied] = useState(false)
   const pending = isMessagePending(msg)
   const canCopy = !pending && msg.content.length > 0
   const canListen = canCopy && msg.role === 'assistant'
-  const canUseAsPrompt =
-    !!onUseAsPrompt && canListen && msg.status === 'complete'
+  const canPromptActions =
+    !!renderPromptActions && canCopy && msg.status === 'complete'
 
   function handleCopy() {
     void navigator.clipboard.writeText(msg.content).then(() => {
@@ -76,19 +76,8 @@ export function ChatMessageItem({
         </div>
       )}
       {(canCopy || canListen || showRetry) && (
-        <div className="mt-1.5 flex items-center gap-3">
-          {canUseAsPrompt && (
-            <button
-              type="button"
-              onClick={() => onUseAsPrompt?.(msg.content)}
-              data-testid="prompt-studio-use-as-prompt"
-              title="Open Image Generation (txt2img) with this prompt"
-              className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
-            >
-              <ImagePlus className="size-3" />
-              Use as prompt
-            </button>
-          )}
+        <div className="mt-1.5 flex flex-wrap items-center gap-3">
+          {canPromptActions && renderPromptActions?.(msg)}
           {canListen && (
             <SpeechListenWidget text={msg.content} testIdPrefix="message-listen" />
           )}

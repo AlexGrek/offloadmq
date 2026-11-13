@@ -16,10 +16,13 @@ type Captured = {
   createdChats: Record<string, unknown>[]
   wsChats: { content: string; chat_id: string }[]
   recentPrompts: { bucket: string; content: string }[]
+  imageJobs: Record<string, unknown>[]
 }
 
-async function mockApi(page: Page): Promise<Captured> {
-  const captured: Captured = { createdChats: [], wsChats: [], recentPrompts: [] }
+const defaultReply = (n: number) => '```\n' + REPLY_PROMPT + (n > 1 ? ` #${n}` : '') + '\n```'
+
+async function mockApi(page: Page, reply: (n: number) => string = defaultReply): Promise<Captured> {
+  const captured: Captured = { createdChats: [], wsChats: [], recentPrompts: [], imageJobs: [] }
 
   await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
   await page.routeWebSocket(/\/api\/ws\/chat/, ws => {
@@ -39,11 +42,7 @@ async function mockApi(page: Page): Promise<Captured> {
         captured.wsChats.push({ content: msg.content, chat_id: msg.chat_id })
         const n = captured.wsChats.length
         ws.send(JSON.stringify({ type: 'task:queued', req_id: msg.req_id, cap: 'llm.artist', id: `t${n}` }))
-        ws.send(JSON.stringify({
-          type: 'task:result',
-          req_id: msg.req_id,
-          text: '```\n' + REPLY_PROMPT + (n > 1 ? ` #${n}` : '') + '\n```',
-        }))
+        ws.send(JSON.stringify({ type: 'task:result', req_id: msg.req_id, text: reply(n) }))
       }
     })
   })
@@ -92,6 +91,10 @@ async function mockApi(page: Page): Promise<Captured> {
       ])
     }
     if (pathname === '/api/images/jobs' && method === 'GET') return json([])
+    if (pathname === '/api/images/jobs' && method === 'POST') {
+      captured.imageJobs.push(route.request().postDataJSON() as Record<string, unknown>)
+      return json({ job_id: `image-${captured.imageJobs.length}`, status: 'submitted' })
+    }
     if (pathname === '/api/images/stash') return json([])
     if (pathname === '/api/prompt-placeholders') return json([])
     if (pathname === '/api/progress/running') return json({ jobs: [] })
@@ -207,4 +210,126 @@ test('Describe Image opens Prompt Studio with the description as the example', a
   await expect(page).toHaveURL(/\/app\/prompt-studio$/)
   await expect(page.getByTestId('prompt-studio-example')).toHaveValue(description)
   await expect(page.getByTestId('chat-input')).toHaveValue(TEMPLATE.replace('{prompt}', description))
+})
+
+async function startSession(page: Page, captured: Captured) {
+  await page.goto('/app/prompt-studio')
+  await page.getByTestId('chat-input').fill('Give me a prompt')
+  await page.getByTestId('send-btn').click()
+  await expect.poll(() => captured.wsChats.length).toBe(1)
+}
+
+test('every reply has Generate / Edit / Use; Generate opens the quick dialog without focusing the prompt', async ({ page }) => {
+  const captured = await mockApi(page)
+  await startSession(page, captured)
+
+  await expect(page.getByTestId('prompt-studio-generate')).toBeVisible()
+  await expect(page.getByTestId('prompt-studio-edit')).toBeVisible()
+  await expect(page.getByTestId('prompt-studio-use-as-prompt')).toBeVisible()
+  // The user's own message gets the same three actions.
+  await expect(page.getByTestId('prompt-studio-user-generate')).toBeVisible()
+
+  await page.getByTestId('prompt-studio-generate').click()
+  await expect(page.getByTestId('prompt-studio-generate-dialog')).toBeVisible()
+  const promptField = page.getByTestId('prompt-studio-generate-prompt')
+  await expect(promptField).toHaveValue(REPLY_PROMPT)
+  await expect(promptField).not.toBeFocused()
+  await expect(page.getByTestId('prompt-studio-generate-model')).toHaveValue('imggen.flux')
+  await page.getByTestId('prompt-studio-generate-size-1280x720').click()
+  await page.getByTestId('prompt-studio-generate-submit').click()
+
+  await expect.poll(() => captured.imageJobs.length).toBe(1)
+  expect(captured.imageJobs[0]).toMatchObject({
+    capability: 'imggen.flux',
+    prompt: REPLY_PROMPT,
+    width: 1280,
+    height: 720,
+    workflow: 'txt2img',
+  })
+  await expect(page.getByTestId('prompt-studio-generate-dialog')).toBeHidden()
+  await expect(page).toHaveURL(/\/app\/prompt-studio$/)
+})
+
+test('prompt editor: highlight, delete and edit sentences, then generate at a picked size', async ({ page }) => {
+  const reply = 'A lone lighthouse on a cliff. Violet storm clouds swirl above. Shot on 35mm film.'
+  const captured = await mockApi(page, () => reply)
+  await startSession(page, captured)
+
+  await page.getByTestId('prompt-studio-edit').click()
+  const editor = page.getByTestId('prompt-editor')
+  await expect(editor).toBeVisible()
+  await expect(editor.locator('[data-segment]')).toHaveCount(3)
+  await expect(page.getByTestId('prompt-editor-segment-1')).toHaveText('Violet storm clouds swirl above.')
+
+  // Click selects (toolbar appears), Delete removes the sentence.
+  await page.getByTestId('prompt-editor-segment-1').click()
+  await expect(page.getByTestId('prompt-editor-segment-1')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('prompt-editor-segment-delete').click()
+  await expect(editor.locator('[data-segment]')).toHaveCount(2)
+  await expect(page.getByTestId('prompt-editor-segment-1')).toHaveText('Shot on 35mm film.')
+  // The next sentence is selected, so Delete can be pressed repeatedly.
+  await expect(page.getByTestId('prompt-editor-segment-1')).toHaveAttribute('aria-pressed', 'true')
+
+  // Undo brings it back; redo removes it again.
+  await page.getByTestId('prompt-editor-undo').click()
+  await expect(editor.locator('[data-segment]')).toHaveCount(3)
+  await page.getByTestId('prompt-editor-redo').click()
+  await expect(editor.locator('[data-segment]')).toHaveCount(2)
+
+  // Edit in place: select, Edit, type, Enter.
+  await page.getByTestId('prompt-editor-segment-0').click()
+  await page.getByTestId('prompt-editor-segment-edit').click()
+  const input = page.getByTestId('prompt-editor-segment-input')
+  await expect(input).toBeFocused()
+  await input.fill('A lone lighthouse on a basalt cliff at dusk.')
+  await input.press('Enter')
+  await expect(page.getByTestId('prompt-editor-segment-0')).toHaveText('A lone lighthouse on a basalt cliff at dusk.')
+
+  // Add a sentence at the end.
+  await page.getByTestId('prompt-editor-add').click()
+  await page.getByTestId('prompt-editor-segment-input').fill('Heavy grain')
+  await page.getByTestId('prompt-editor-segment-save').click()
+  const edited = 'A lone lighthouse on a basalt cliff at dusk. Shot on 35mm film. Heavy grain'
+  await expect(editor.locator('[data-segment]')).toHaveText([
+    'A lone lighthouse on a basalt cliff at dusk.',
+    'Shot on 35mm film.',
+    'Heavy grain',
+  ])
+
+  // Phrase mode splits on commas too.
+  await page.getByTestId('prompt-editor-mode-phrase').click()
+  await expect(page.getByTestId('prompt-editor-stats')).toContainText('3 phrases')
+  await page.getByTestId('prompt-editor-mode-sentence').click()
+
+  // Pick a size and generate right away; the editor stays open.
+  await page.getByTestId('prompt-editor-size-768x1024').click()
+  await expect(page.getByTestId('prompt-editor-model')).toHaveValue('imggen.flux')
+  await page.getByTestId('prompt-editor-generate').click()
+  await expect.poll(() => captured.imageJobs.length).toBe(1)
+  expect(captured.imageJobs[0]).toMatchObject({ prompt: edited, width: 768, height: 1024, workflow: 'txt2img' })
+  await expect(page.getByTestId('prompt-editor-notice')).toContainText('Started 1 image')
+  await expect(editor).toBeVisible()
+
+  // Use hands the edited prompt to Image Generation.
+  await page.getByTestId('prompt-editor-use').click()
+  await expect(page).toHaveURL(/\/app\/images$/)
+  await expect(page.getByTestId('imggen-prompt')).toHaveValue(edited)
+})
+
+test('example prompt can be edited in the prompt editor and applied back', async ({ page }) => {
+  await mockApi(page)
+  await page.goto('/app/prompt-studio')
+  await expect(page.getByTestId('prompt-studio-example-edit')).toBeDisabled()
+  await page.getByTestId('prompt-studio-example').fill('a red fox at dawn, golden light, oil painting')
+
+  await page.getByTestId('prompt-studio-example-edit').click()
+  await page.getByTestId('prompt-editor-mode-phrase').click()
+  await page.getByTestId('prompt-editor-segment-2').click()
+  // Keyboard: Delete removes the selected phrase.
+  await page.keyboard.press('Delete')
+  await page.getByTestId('prompt-editor-apply').click()
+  await expect(page.getByTestId('prompt-editor')).toBeHidden()
+
+  await expect(page.getByTestId('prompt-studio-example')).toHaveValue('a red fox at dawn, golden light')
+  await expect(page.getByTestId('chat-input')).toHaveValue(TEMPLATE.replace('{prompt}', 'a red fox at dawn, golden light'))
 })

@@ -1,3 +1,5 @@
+import { wallpaperPromptGenerator, WallpaperCancellationError, type WallpaperPromptSettings } from './hallucinatePrompt'
+import { renderTemplate } from './promptStudio'
 import { cancelImageJob, imageFileUrl, pollImageJob, startImageJob } from '@/api/images'
 import { cancelImgUtilsJob, pollImgUtilsJob, startImgUtilsJob, type ImgUtilTool } from '@/api/imgUtils'
 import { listPromptPlaceholders } from '@/api/promptPlaceholders'
@@ -14,7 +16,7 @@ export function wallpaperRequestSignal(signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
-export class WallpaperCancellationError extends Error {}
+export { WallpaperCancellationError } from './hallucinatePrompt'
 export const WALLPAPER_SIZES = [
   { ratio: '16:9', color: 'border-cyan-500', sizes: [[768, 432], [1024, 576], [1280, 720], [1536, 864], [1920, 1080]] },
   { ratio: '3:2', color: 'border-violet-500', sizes: [[768, 512], [1152, 768], [1536, 1024]] },
@@ -23,6 +25,7 @@ export const WALLPAPER_SIZES = [
 ] as const
 
 export interface WallpaperSettings {
+  studio?: WallpaperPromptSettings
   priority: 'low' | 'normal' | 'high'
   prompt: string
   capability: string
@@ -33,7 +36,7 @@ export interface WallpaperSettings {
 }
 
 export interface WallpaperJobProgress {
-  kind: 'generation' | 'upscale'
+  kind: 'prompt' | 'generation' | 'upscale'
   jobId: string | null
   capability: string
   status: string
@@ -80,6 +83,7 @@ export async function runWallpaper(
   const definitions = await listPromptPlaceholders(token, wallpaperRequestSignal(signal))
   const custom = Object.fromEntries(definitions.map(d => [d.name.toLowerCase(), d.variants]))
   const usage = createPlaceholderUsage()
+  const generatePrompt = settings.studio ? wallpaperPromptGenerator(token, settings.studio) : null
   let generation: string | undefined
   let upscale: string | undefined
   let generationDone = false
@@ -119,13 +123,20 @@ export async function runWallpaper(
         await delay(1000, signal)
       }
       check(signal)
+      let prompt = expandPromptPlaceholders(settings.prompt, usage, custom)
+      if (generatePrompt && settings.studio) {
+        onStage('Generating image prompt')
+        beginJob('prompt', settings.studio.capability)
+        prompt = await generatePrompt(renderTemplate(settings.studio.template, prompt), signal, updateJob)
+        check(signal)
+      }
       onStage('Rendering next image')
       generationDone = false
       beginJob('generation', settings.capability)
       const job = await startImageJob(token, {
         capability: settings.capability,
         priority: settings.priority,
-        prompt: expandPromptPlaceholders(settings.prompt, usage, custom),
+        prompt,
         workflow: 'txt2img', width: settings.width, height: settings.height,
         seed: Math.floor(Math.random() * 2147483647),
         override_negative: true, negative_prompt: '',

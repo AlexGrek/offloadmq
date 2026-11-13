@@ -2,6 +2,7 @@ import { Feather, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { PromptTextarea } from '@/components/PromptTextarea'
+import { PromptActions } from './PromptActions'
 import {
   IMGGEN_PROMPT_BUCKET,
   PROMPT_STUDIO_SYSTEM_BUCKET,
@@ -25,6 +26,7 @@ export function PromptStudioSetup({
   template,
   onTemplateChange,
   defaultTemplate,
+  onUsePrompt,
 }: {
   token: string
   systemPrompt: string
@@ -35,6 +37,8 @@ export function PromptStudioSetup({
   template: string
   onTemplateChange: (value: string) => void
   defaultTemplate: string
+  /** Opens Image Generation with a prompt (the example's "Use" action). */
+  onUsePrompt: (prompt: string) => void
 }) {
   return (
     <section
@@ -89,6 +93,16 @@ export function PromptStudioSetup({
           placeholder="Paste a prompt, or open the list to pick one from your Image Generation prompts"
           rows={3}
           data-testid="prompt-studio-example"
+        />
+        <PromptActions
+          token={token}
+          prompt={examplePrompt}
+          onUse={onUsePrompt}
+          onApply={onExamplePromptChange}
+          applyLabel="Use as example"
+          testIdPrefix="prompt-studio-example"
+          tone="muted"
+          className="mt-0.5"
         />
       </div>
 

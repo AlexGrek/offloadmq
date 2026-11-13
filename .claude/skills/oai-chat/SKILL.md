@@ -368,3 +368,7 @@ the page logic lives in `components/chat/ChatWorkspace.tsx` with a per-kind `KIN
   transcript `emptyState` — all default to Chat's behaviour.
 - `sendWithText(text, attachments, chatId)` takes an explicit chat id (studio creates the
   session on first send). Full doc: `oai/docs/oai-prompt-studio.md`.
+
+`ChatMessageItem` takes `renderPromptActions(msg)` (Prompt Studio only): Generate / Edit / Use per
+finished message via `components/promptStudio/PromptActions.tsx`; Edit opens the full-screen
+`PromptEditor`. See `oai/docs/oai-prompt-studio.md`.
