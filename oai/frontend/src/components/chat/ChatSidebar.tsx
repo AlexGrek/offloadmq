@@ -10,6 +10,8 @@ export type ChatSidebarLabels = {
   empty: string
   untitled: string
   delete: string
+  /** Lines of the title shown per row (default 1). */
+  titleLines?: 1 | 2
 }
 
 const DEFAULT_LABELS: ChatSidebarLabels = {
@@ -111,7 +113,12 @@ export function ChatSidebar({
                       data-testid={`chat-item-${chat.id}-loader`}
                     />
                   ) : null}
-                  <span className="truncate text-sm leading-tight min-w-0 flex-1">
+                  <span
+                    className={cn(
+                      'min-w-0 flex-1 break-words text-sm leading-tight',
+                      labels.titleLines === 2 ? 'line-clamp-2' : 'truncate',
+                    )}
+                  >
                     {chat.title || labels.untitled}
                   </span>
                 </button>

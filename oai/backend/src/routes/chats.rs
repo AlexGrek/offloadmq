@@ -41,6 +41,9 @@ pub struct CreateChatRequest {
     /// `chat` (default) or `prompt_studio`.
     #[serde(default)]
     pub kind: Option<String>,
+    /// Optional session title. Without one the title is taken from the first message.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -49,6 +52,9 @@ pub struct ListChatsQuery {
     #[serde(default)]
     pub kind: Option<String>,
 }
+
+/// Longest stored session title (chars).
+const MAX_TITLE_CHARS: usize = 200;
 
 fn parse_kind(kind: Option<&str>) -> Result<chats::ChatKind, AppError> {
     match kind.map(str::trim).filter(|k| !k.is_empty()) {
@@ -142,7 +148,19 @@ pub async fn create_chat(
     )
     .await;
     let id = state.next_id();
-    let chat = chats::create_chat(&state.db, id, user_id, &system_prompt, kind).await?;
+    let mut chat = chats::create_chat(&state.db, id, user_id, &system_prompt, kind).await?;
+    let title: String = body
+        .as_ref()
+        .and_then(|b| b.title.as_deref())
+        .map(str::trim)
+        .unwrap_or("")
+        .chars()
+        .take(MAX_TITLE_CHARS)
+        .collect();
+    if !title.is_empty() {
+        chats::set_title(&state.db, id, &title).await?;
+        chat.title = title;
+    }
     let chat = if let Some(ref model) = body.as_ref().and_then(|b| b.last_model.as_ref()) {
         let cap = model.trim();
         if cap.is_empty() {

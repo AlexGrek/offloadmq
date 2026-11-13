@@ -5,11 +5,19 @@ import { Button } from '@/components/ui/button'
 import { IMAGE_SIZE_PRESETS, rememberImageSize, validImageSize, type ImageSize } from '@/lib/imageSizes'
 import { cn } from '@/lib/utils'
 
-const GROUPS = [
-  { label: 'Square', color: 'border-violet-500', match: (w: number, h: number) => w === h },
-  { label: 'Portrait', color: 'border-rose-500', match: (w: number, h: number) => w < h },
-  { label: 'Landscape', color: 'border-cyan-500', match: (w: number, h: number) => w > h },
-]
+/** Orientation is told apart by a faint tint only: square green, portrait blue, landscape orange. */
+const ORIENTATIONS = {
+  square: 'border-emerald-500/25 bg-emerald-500/10 hover:bg-emerald-500/20 aria-pressed:border-emerald-500/70 aria-pressed:bg-emerald-500/30',
+  portrait: 'border-sky-500/25 bg-sky-500/10 hover:bg-sky-500/20 aria-pressed:border-sky-500/70 aria-pressed:bg-sky-500/30',
+  landscape: 'border-orange-500/25 bg-orange-500/10 hover:bg-orange-500/20 aria-pressed:border-orange-500/70 aria-pressed:bg-orange-500/30',
+} as const
+type Orientation = keyof typeof ORIENTATIONS
+
+const orientationOf = (w: number, h: number): Orientation => (w === h ? 'square' : w < h ? 'portrait' : 'landscape')
+const ORIENTATION_ORDER: Orientation[] = ['square', 'portrait', 'landscape']
+const PRESETS = IMAGE_SIZE_PRESETS
+  .map(([w, h]) => ({ w, h, orientation: orientationOf(w, h) }))
+  .sort((a, b) => ORIENTATION_ORDER.indexOf(a.orientation) - ORIENTATION_ORDER.indexOf(b.orientation))
 
 interface Props {
   width: number | string
@@ -56,13 +64,13 @@ export function ImageSizePicker({ width, height, onWidthChange, onHeightChange, 
       </label>
       {children}
     </div>
-    {GROUPS.map(group => {
-      const sizes = IMAGE_SIZE_PRESETS.filter(([w, h]) => group.match(w, h))
-      if (!sizes.length) return null
-      return <div key={group.label} role="group" aria-label={group.label} className="space-y-1.5">
-        <p className="text-xs text-muted-foreground">{group.label}</p>
-        <div className="flex flex-wrap gap-1.5">{sizes.map(([w, h]) => <button key={`${w}x${h}`} type="button" aria-pressed={Number(width) === w && Number(height) === h} disabled={w > max || h > max || w < min || h < min} data-testid={presetId(w, h)} onClick={() => choose([w, h])} className={cn('min-h-11 rounded-md border-2 px-2 text-xs tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40', group.color, Number(width) === w && Number(height) === h ? 'bg-foreground text-background' : 'bg-background hover:bg-muted')}>{w}×{h}</button>)}</div>
-      </div>
-    })}
+    <div className="flex flex-wrap gap-1" role="group" aria-label="Size presets">
+      {PRESETS.map(({ w, h, orientation }) => {
+        const pressed = Number(width) === w && Number(height) === h
+        return <button key={`${w}x${h}`} type="button" aria-pressed={pressed} data-orientation={orientation} title={`${w}×${h} · ${orientation}`}
+          disabled={w > max || h > max || w < min || h < min} data-testid={presetId(w, h)} onClick={() => choose([w, h])}
+          className={cn('h-6 rounded-md border px-1.5 text-[11px] leading-none tabular-nums text-foreground/80 transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 aria-pressed:font-semibold aria-pressed:text-foreground', ORIENTATIONS[orientation])}>{w}×{h}</button>
+      })}
+    </div>
   </fieldset>
 }

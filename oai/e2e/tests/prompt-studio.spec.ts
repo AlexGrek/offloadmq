@@ -143,34 +143,35 @@ test('Enter adds a newline; Ctrl+Enter sends and creates a prompt_studio session
   expect(captured.createdChats[0]).toMatchObject({ kind: 'prompt_studio', last_model: 'llm.artist' })
   expect(String(captured.createdChats[0].system_prompt)).toContain('prompt engineer')
   await expect(input).toHaveValue('')
+  // No example: the session is named after the message template.
+  expect(captured.createdChats[0].title).toBe(TEMPLATE)
   // Freeform first message — no template was used, so none is recorded.
   expect(captured.recentPrompts.filter(p => p.bucket === 'prompt-studio-user')).toHaveLength(0)
 })
 
-test('example prompt renders a message preview; replies offer another-one and Use as prompt', async ({ page }) => {
+test('no first-message preview; session is titled by the example; replies offer another-one and Use as prompt', async ({ page }) => {
   const captured = await mockApi(page)
   await page.goto('/app/prompt-studio')
 
   // During setup the message box lives inside the form — no separate chat bar.
   await expect(page.getByTestId('chat-input')).toHaveCount(1)
   await expect(page.getByTestId('prompt-studio-setup').getByTestId('chat-input')).toBeVisible()
-  await expect(page.getByTestId('prompt-studio-message-preview')).toHaveCount(0)
+  await expect(page.getByText('First message', { exact: true })).toHaveCount(0)
 
   await page.getByTestId('prompt-studio-example').fill('a red fox at dawn')
   const input = page.getByTestId('chat-input')
-  const preview = page.getByTestId('prompt-studio-message-preview')
-  await expect(preview).toHaveText(TEMPLATE.replace('{prompt}', 'a red fox at dawn'))
   // Typing the example does not mirror into the message box.
   await expect(input).toHaveValue('')
 
   await page.getByTestId('prompt-studio-template').fill('Riff on: {prompt}')
-  await expect(preview).toHaveText('Riff on: a red fox at dawn')
 
   // Extra text in the message box is appended to the rendered message.
   await input.fill('Make it moodier.')
   await page.getByTestId('send-btn').click()
   await expect.poll(() => captured.wsChats.length).toBe(1)
   expect(captured.wsChats[0].content).toBe('Riff on: a red fox at dawn\n\nMake it moodier.')
+  // The session is named after the example prompt, not the (near-identical) first message.
+  expect(captured.createdChats[0].title).toBe('a red fox at dawn')
   // After the first message the composer moves to the chat bar and setup disappears.
   await expect(page.getByTestId('prompt-studio-setup')).toHaveCount(0)
   await expect(input).toHaveValue('')
@@ -197,9 +198,6 @@ test('Image Generation opens Prompt Studio with its prompt as the example', asyn
 
   await expect(page).toHaveURL(/\/app\/prompt-studio$/)
   await expect(page.getByTestId('prompt-studio-example')).toHaveValue('a castle made of glass')
-  await expect(page.getByTestId('prompt-studio-message-preview')).toHaveText(
-    TEMPLATE.replace('{prompt}', 'a castle made of glass'),
-  )
 })
 
 test('Describe Image opens Prompt Studio with the description as the example', async ({ page }) => {
@@ -233,7 +231,6 @@ test('Describe Image opens Prompt Studio with the description as the example', a
 
   await expect(page).toHaveURL(/\/app\/prompt-studio$/)
   await expect(page.getByTestId('prompt-studio-example')).toHaveValue(description)
-  await expect(page.getByTestId('prompt-studio-message-preview')).toHaveText(TEMPLATE.replace('{prompt}', description))
 })
 
 async function startSession(page: Page, captured: Captured) {
@@ -259,15 +256,15 @@ test('every reply has Generate / Edit / Use; Generate opens the quick dialog wit
   await expect(promptField).toHaveValue(REPLY_PROMPT)
   await expect(promptField).not.toBeFocused()
   await expect(page.getByTestId('prompt-studio-generate-model')).toHaveValue('imggen.flux')
-  await page.getByTestId('prompt-studio-generate-size-1280x720').click()
+  await page.getByTestId('prompt-studio-generate-size-1920x1080').click()
   await page.getByTestId('prompt-studio-generate-submit').click()
 
   await expect.poll(() => captured.imageJobs.length).toBe(1)
   expect(captured.imageJobs[0]).toMatchObject({
     capability: 'imggen.flux',
     prompt: REPLY_PROMPT,
-    width: 1280,
-    height: 720,
+    width: 1920,
+    height: 1080,
     workflow: 'txt2img',
   })
   await expect(page.getByTestId('prompt-studio-generate-dialog')).toBeHidden()
@@ -326,11 +323,11 @@ test('prompt editor: highlight, delete and edit sentences, then generate at a pi
   await page.getByTestId('prompt-editor-mode-sentence').click()
 
   // Pick a size and generate right away; the editor stays open.
-  await page.getByTestId('prompt-editor-size-768x1024').click()
+  await page.getByTestId('prompt-editor-size-1024x1536').click()
   await expect(page.getByTestId('prompt-editor-model')).toHaveValue('imggen.flux')
   await page.getByTestId('prompt-editor-generate').click()
   await expect.poll(() => captured.imageJobs.length).toBe(1)
-  expect(captured.imageJobs[0]).toMatchObject({ prompt: edited, width: 768, height: 1024, workflow: 'txt2img' })
+  expect(captured.imageJobs[0]).toMatchObject({ prompt: edited, width: 1024, height: 1536, workflow: 'txt2img' })
   await expect(page.getByTestId('prompt-editor-notice')).toContainText('Started 1 image')
   await expect(editor).toBeVisible()
 
@@ -338,8 +335,8 @@ test('prompt editor: highlight, delete and edit sentences, then generate at a pi
   await page.getByTestId('prompt-editor-use').click()
   await expect(page).toHaveURL(/\/app\/images$/)
   await expect(page.getByTestId('imggen-prompt')).toHaveValue(edited)
-  await expect(page.getByTestId('imggen-width')).toHaveValue('768')
-  await expect(page.getByTestId('imggen-height')).toHaveValue('1024')
+  await expect(page.getByTestId('imggen-width')).toHaveValue('1024')
+  await expect(page.getByTestId('imggen-height')).toHaveValue('1536')
 })
 
 test('example prompt can be edited in the prompt editor and applied back', async ({ page }) => {
@@ -357,7 +354,6 @@ test('example prompt can be edited in the prompt editor and applied back', async
   await expect(page.getByTestId('prompt-editor')).toBeHidden()
 
   await expect(page.getByTestId('prompt-studio-example')).toHaveValue('a red fox at dawn, golden light')
-  await expect(page.getByTestId('prompt-studio-message-preview')).toHaveText(TEMPLATE.replace('{prompt}', 'a red fox at dawn, golden light'))
 })
 
 /** Leave Prompt Studio and come back without a page reload (app state survives). */

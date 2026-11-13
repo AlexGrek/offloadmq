@@ -97,6 +97,7 @@ const KIND_CONFIG: Record<
   prompt_studio: {
     pageTestId: 'prompt-studio-page',
     labels: {
+      titleLines: 2,
       title: 'Studio sessions',
       newItem: 'New session',
       empty: 'No sessions yet',
@@ -734,7 +735,10 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     if (!token) return null
     const text = systemPrompt.trim() || defaultPrompt
     if (!activeChatId) {
-      const chat = await createChat(token, { systemPrompt: text, lastModel: selectedModel, kind })
+      // Name the session after the example prompt, else the template — the first message
+      // is mostly the template, so first-N-chars titles all look the same.
+      const title = examplePrompt.trim() || template.trim()
+      const chat = await createChat(token, { systemPrompt: text, lastModel: selectedModel, kind, title })
       setChats(prev => [chat, ...prev])
       skipLoadForChatRef.current = chat.id
       setActiveChatId(chat.id)
@@ -745,7 +749,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
       setChats(prev => prev.map(c => (c.id === chat.id ? chat : c)))
     }
     return activeChatId
-  }, [token, systemPrompt, defaultPrompt, activeChatId, selectedModel, kind, messages.length, activeChat?.system_prompt])
+  }, [token, systemPrompt, defaultPrompt, activeChatId, selectedModel, kind, messages.length, activeChat?.system_prompt, examplePrompt, template])
 
   const send = useCallback(async () => {
     const text = studioSetup ? composeFirstMessage(studioSeed, input) : input.trim()
@@ -1013,14 +1017,13 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
                 onTemplateChange={setTemplate}
                 defaultTemplate={defaultTemplate}
                 onUsePrompt={handleUseAsPrompt}
-                messagePreview={studioSeed}
                 composer={
                   <ChatComposer
                     {...composerProps}
                     inline
                     placeholder={
                       studioSeed
-                        ? 'Add instructions (optional) — appended to the message above'
+                        ? 'Add instructions (optional) — sent together with the example'
                         : 'Describe what you want, or start from an example prompt above'
                     }
                   />

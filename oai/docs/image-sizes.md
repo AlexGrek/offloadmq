@@ -1,9 +1,12 @@
 # Shared image sizes
 
 All OAI output-size and exact-resize controls use `ImageSizePicker` and the
-`IMAGE_SIZE_PRESETS` catalog in `frontend/src/lib/imageSizes.ts`. Square presets
-have violet outlines, Portrait rose, and Landscape cyan. Text labels and pressed
-states identify each group and the current selection independently of color.
+`IMAGE_SIZE_PRESETS` catalog in `frontend/src/lib/imageSizes.ts`. The presets are
+compact chips in one wrapping line (no category headings, square → portrait →
+landscape). Orientation is only a faint tint — square green, portrait blue,
+landscape orange — also exposed as `data-orientation` and the chip tooltip; the
+pressed chip gets a stronger tint, a border and bold text, so selection does not
+depend on color alone.
 Width and Height fields accept manual overrides; the swap button exchanges them.
 
 Deliberate preset selections, swaps, and valid custom dimensions save one

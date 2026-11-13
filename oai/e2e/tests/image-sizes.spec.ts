@@ -23,7 +23,7 @@ async function mock(page: Page) {
 
 const APPS = [['images', 'imggen'], ['hallucinate', 'hallucinate'], ['image-cycles', 'cycles'], ['generator-improver', 'cycles'], ['img-model-wars', 'wars'], ['movie', 'movie'], ['img-utils', 'imgutils-resize']] as const
 
-test('apps share colored presets and remember custom dimensions across navigation and reload', async ({ page }) => {
+test('apps share tinted presets and remember custom dimensions across navigation and reload', async ({ page }) => {
   await mock(page)
   let presets: string[] | undefined
   for (const [route, prefix] of APPS) {
@@ -33,8 +33,8 @@ test('apps share colored presets and remember custom dimensions across navigatio
     const labels = await picker.locator('button[aria-pressed]').allTextContents()
     if (presets) expect(labels).toEqual(presets)
     else presets = labels
-    for (const [group, color] of [['Square', 'border-violet-500'], ['Portrait', 'border-rose-500'], ['Landscape', 'border-cyan-500']]) {
-      await expect(picker.getByRole('group', { name: group }).getByRole('button').first()).toHaveClass(new RegExp(color))
+    for (const [orientation, tint] of [['square', 'emerald'], ['portrait', 'sky'], ['landscape', 'orange']]) {
+      await expect(picker.locator(`button[data-orientation="${orientation}"]`).first()).toHaveClass(new RegExp(`bg-${tint}-500/10`))
     }
     if (route !== 'images') {
       await expect(page.getByTestId(`${prefix}-width`)).toHaveValue('1112')
@@ -54,15 +54,15 @@ for (const theme of ['light', 'dark']) {
     await mock(page)
     await page.addInitScript(theme => localStorage.setItem('oai_theme', theme), theme)
     await page.goto('/app/hallucinate')
-    const preset = page.getByTestId('hallucinate-sizes').getByRole('button', { name: '720×1280', exact: true })
+    const preset = page.getByTestId('hallucinate-sizes').getByRole('button', { name: '1080×1920', exact: true })
     await preset.click()
     await expect(preset).toHaveAttribute('aria-pressed', 'true')
     await page.getByTestId('hallucinate-swap-dims').click()
-    await expect(page.getByTestId('hallucinate-width')).toHaveValue('1280')
-    await expect(page.getByTestId('hallucinate-height')).toHaveValue('720')
+    await expect(page.getByTestId('hallucinate-width')).toHaveValue('1920')
+    await expect(page.getByTestId('hallucinate-height')).toHaveValue('1080')
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
     await page.getByTestId('hallucinate-width').fill('0')
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('oai_image_size')!))).toEqual([1280, 720])
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('oai_image_size')!))).toEqual([1920, 1080])
   })
 }
 

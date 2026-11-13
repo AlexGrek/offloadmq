@@ -30,12 +30,14 @@ export function listChats(token: string, kind: ChatKind = 'chat'): Promise<ChatS
 
 export function createChat(
   token: string,
-  options?: { systemPrompt?: string; lastModel?: string | null; kind?: ChatKind },
+  options?: { systemPrompt?: string; lastModel?: string | null; kind?: ChatKind; title?: string },
 ): Promise<ChatSummary> {
-  const body: { system_prompt?: string; last_model?: string; kind?: ChatKind } = {}
+  const body: { system_prompt?: string; last_model?: string; kind?: ChatKind; title?: string } = {}
   if (options?.kind) body.kind = options.kind
   const sp = options?.systemPrompt?.trim()
   if (sp) body.system_prompt = sp
+  const title = options?.title?.trim()
+  if (title) body.title = title
   const lm = options?.lastModel?.trim()
   if (lm) body.last_model = lm
   return request('/api/chats', token, {

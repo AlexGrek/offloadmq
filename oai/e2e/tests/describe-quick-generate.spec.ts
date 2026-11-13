@@ -67,8 +67,8 @@ test('generates a configurable batch from a description and stays on Describe Im
   await page.getByTestId('describe-generate-prompt').fill(editedDescription)
   await expect(page.getByTestId('describe-generate-model')).toHaveValue('imggen.paint')
   await expect(page.getByTestId('describe-generate-model').locator('option')).toHaveCount(1)
-  await page.getByTestId('describe-generate-size-1024x768').click()
-  await expect(page.getByTestId('describe-generate-size-1024x768')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('describe-generate-size-1536x1024').click()
+  await expect(page.getByTestId('describe-generate-size-1536x1024')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('describe-generate-count')).toHaveValue('1')
   await page.getByTestId('describe-generate-count').fill('2')
 
@@ -83,8 +83,8 @@ test('generates a configurable batch from a description and stays on Describe Im
       capability: 'imggen.paint',
       prompt: editedDescription,
       prompt_template: editedDescription,
-      width: 1024,
-      height: 768,
+      width: 1536,
+      height: 1024,
       workflow: 'txt2img',
     }))
   }

@@ -29,7 +29,6 @@ export function PromptStudioSetup({
   onTemplateChange,
   defaultTemplate,
   onUsePrompt,
-  messagePreview,
   composer,
 }: {
   token: string
@@ -43,8 +42,6 @@ export function PromptStudioSetup({
   defaultTemplate: string
   /** Opens Image Generation with a prompt (the example's "Use" action). */
   onUsePrompt: (prompt: string) => void
-  /** Template rendered with the example; empty when there is no example. */
-  messagePreview: string
   /** The inline chat composer that sends the first message. */
   composer: ReactNode
 }) {
@@ -139,22 +136,7 @@ export function PromptStudioSetup({
         </p>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label>First message</Label>
-        {messagePreview ? (
-          <div
-            className="whitespace-pre-wrap rounded-xl border border-blue-500/30 bg-blue-500/5 px-3.5 py-2.5 text-sm text-foreground"
-            data-testid="prompt-studio-message-preview"
-          >
-            {messagePreview}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            No example prompt — write the whole message below.
-          </p>
-        )}
-        {composer}
-      </div>
+      {composer}
     </section>
   )
 }

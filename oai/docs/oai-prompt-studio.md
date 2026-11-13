@@ -24,11 +24,16 @@ the pending-reply reconcile worker, ToolDebug, image attachments — is reused u
 
 - `GET /api/chats?kind=chat|prompt_studio` — default `chat`, so LLM Chat never lists studio
   sessions and vice versa. Unknown kind → 400.
-- `POST /api/chats` `{ kind?, system_prompt?, last_model? }` — empty system prompt resolves the
+- `POST /api/chats` `{ kind?, system_prompt?, last_model?, title? }` — empty system prompt resolves the
   per-kind default (`prompt_studio_system` for studio). Response carries `kind`.
 - Messages, PATCH system prompt / last model and DELETE are kind-agnostic (ownership only).
 
 ## UX
+
+- **Session names**: the first messages are all the same template, so first-N-chars titles are
+  indistinguishable. The client sends `title` on create: the **example prompt**, else the **message
+  template**. (Without a `title` the backend still uses the first 50 chars of the first message.)
+  Sidebar rows show two lines (`ChatSidebarLabels.titleLines`).
 
 - **Enter adds a newline**; Ctrl/⌘+Enter or the send button sends (`ChatComposer enterSends={false}`).
 - **New session** opens a draft (no row yet). The session is created on the **first send**
@@ -39,11 +44,11 @@ the pending-reply reconcile worker, ToolDebug, image attachments — is reused u
   - *Example prompt* (optional) — picks from the txt2img library (`imggen-prompt`, with previews).
   - *Message template* — own library bucket `prompt-studio-user`; `{prompt}` is replaced by the
     example (a template without it gets the example appended after a blank line).
-  - *First message* — the template rendered with the example is shown as a read-only preview
-    (`prompt-studio-message-preview`), updated live. Below it is the chat composer itself, rendered
-    **inline** in the form (`ChatComposer inline`); the bottom chat bar is hidden until the session
-    has a message. Text typed there is appended after a blank line (`composeFirstMessage`); with no
-    example it is the whole message. Images attach here too.
+  - *Message box* — the chat composer is rendered **inline** at the end of the form
+    (`ChatComposer inline`); the bottom chat bar is hidden until the session has a message. There is
+    no preview of the rendered first message — the example and template above already show it. Text
+    typed there is appended after a blank line (`composeFirstMessage`); with no example it is the whole
+    message. Images attach here too.
   - A template is recorded as a recent in `prompt-studio-user` when it opened a session with an
     example. System prompts are recorded server-side per kind (`ChatKind::system_prompt_bucket`).
 - **Images** can be attached on any turn (upload, library, paste). Documents are not offered.
