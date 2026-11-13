@@ -1,3 +1,4 @@
+mod llm_runtime;
 pub mod service;
 pub mod storage;
 pub mod watch;

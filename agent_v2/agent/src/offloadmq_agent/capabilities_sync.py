@@ -341,6 +341,8 @@ def check_ollama() -> CapResult:
     try:
         models = build_llm_cap_strings()
         if models:
+            if shutil.which("uv"):
+                models = models + ["llm-runtime." + m[4:].split("[", 1)[0] for m in models]
             short_names = ", ".join(m[len("llm."):] for m in models)
             return CapResult(
                 models, True, "llm.*",

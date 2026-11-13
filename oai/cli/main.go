@@ -66,10 +66,28 @@ Usage:
   oai nude cancel <job-id>
   oai nude retry <job-id> [--progress=false] [-t|-timeout 5m]
   oai nude delete <job-id>
+  oai persona list [-json]  |  show <persona> [-json]  |  models [-json]
+  oai persona create -name NAME [-look TEXT|-look-file F] [-system TEXT|-system-file F]
+                     [-llm C] [-txt2img C] [-img2img C] [-faceswap C] [-upscaler C]
+                     [-face img.jpg ...]          (model flags take a capability or auto)
+  oai persona update <persona> [same flags as create]
+  oai persona delete <persona> [persona ...]
+  oai persona face list|add|remove|primary <persona> [img.jpg ... | image-id ...]
+  oai persona photo <persona> "prompt" [-o out.jpg] [-n N] [-input img.jpg] [-face ID]
+                    [-no-faceswap] [-no-upscale] [-scale 2] [-negative TEXT] [-seed N]
+                    [-width N] [-height N] [-model imggen.X] [--no-wait] [-t|-timeout 5m]
+  oai persona photos <persona> [-limit N] [-json]
+  oai persona photo-job|photo-poll <job-id> [-json]
+  oai persona photo-cancel|photo-delete <job-id> [job-id ...]
+  oai persona photo-retry <job-id> [-o out.jpg] [--no-wait]
+  oai persona photo-download <job-id> [-o out.jpg]
+  oai persona chat <persona> "message" [-chat ID | -new] [-model llm.X] [-t|-timeout 5m]
+  oai persona chats <persona> [-json]  |  history <chat-id> [-limit N] [-json]
 
 Prompts may use {color} {animal} {adjective} {country} {language} {name}, your custom
 {placeholders} (manage with oai image placeholders), and {?} (expanded by the server).
 Inline {a|b|c} choices pick one literal option independently per occurrence (repeats allowed).
+Persona prompts also take {p_name}, {p_look} and {p_system} (substituted by the server).
 
 Config is stored in ~/.oai-cli.json. Set OAI_PASSWORD for non-interactive login.
 `
@@ -131,6 +149,8 @@ func main() {
 		err = cmdImgUtils(os.Args[2:])
 	case "upscale":
 		err = cmdUpscale(os.Args[2:])
+	case "persona", "personas":
+		err = cmdPersona(os.Args[2:])
 	case "help":
 		fmt.Print(usage)
 	default:

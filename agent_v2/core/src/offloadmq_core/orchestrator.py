@@ -109,6 +109,7 @@ class Orchestrator:
         "max_concurrent",
         "regular_disabled_caps",
         "sensitive_allowed_caps",
+        "llm_runtime_enabled",
         "slavemode_allowed_caps",
     }
     # Fields that require a full re-registration when changed while running.

@@ -44,6 +44,10 @@ class Settings(BaseModel):
     comfyui_main_py: str = ""
     comfyui_args: list[str] = Field(default_factory=list)
 
+    # Arbitrary Python execution: never enabled by capability discovery alone.
+    llm_runtime_enabled: bool = False
+    llm_runtime_cache_limit: int = Field(default=8, ge=1)
+
     ollama_base_url: str = "http://127.0.0.1:11434"
 
     # Kokoro TTS (OpenAI-compatible speech API)

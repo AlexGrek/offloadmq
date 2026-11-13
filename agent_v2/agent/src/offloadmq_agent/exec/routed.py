@@ -16,6 +16,7 @@ async def _run_routed(task: Task, ctx: ExecContext) -> TaskResult:
 
 def register_routed_executors() -> None:
     for prefix in (
+        "llm-runtime",
         "docker",
         "imggen",
         "img-utils",

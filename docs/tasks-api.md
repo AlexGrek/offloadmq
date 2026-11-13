@@ -1809,3 +1809,9 @@ Server-side task behavior is configured via environment variables:
 8. **Clean up old tasks** — archived tasks are deleted after 7 days; plan data retention
 9. **Use tier strategically** — higher tiers get better hardware; price accordingly
 
+
+### Python LLM runtime
+
+Agent v2 supports explicitly enabled `llm-runtime.<ollama-model>` tasks with
+Python applications, cached dependencies, prompts/tools, attachments, and mixed
+text/JSON/file outputs. See [LLM runtime contract and runner setup](llm-runtime-api.md).

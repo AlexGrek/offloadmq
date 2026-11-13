@@ -422,11 +422,27 @@ fn choose(
     })
 }
 
+/// When the model listing fails, a set preference still stands (marked offline:
+/// the task will queue for it); without one there is nothing to pick.
+fn preference_or(
+    preference: Option<&str>,
+    default_workflow: Option<&str>,
+    err: AppError,
+) -> Result<Option<EffectiveChoice>, AppError> {
+    match preference {
+        Some(_) => Ok(choose(preference, &[], &HashMap::new(), default_workflow)),
+        None => Err(err),
+    }
+}
+
 pub async fn resolve_llm(
     state: &AppState,
     persona: &Persona,
 ) -> Result<Option<EffectiveChoice>, AppError> {
-    let caps = chat::load_capabilities(state).await?;
+    let caps = match chat::load_capabilities(state).await {
+        Ok(caps) => caps,
+        Err(e) => return preference_or(persona.llm_capability.as_deref(), None, e),
+    };
     let usage = db_chats::recent_model_usage(&state.db, persona.user_id, USAGE_HISTORY).await?;
     let candidates: Vec<(String, Option<String>)> = caps
         .iter()
@@ -447,12 +463,14 @@ pub async fn resolve_imggen(
     persona: &Persona,
     workflow: &str,
 ) -> Result<Option<EffectiveChoice>, AppError> {
-    let caps = image_jobs::list_imggen_capabilities(state, persona.user_id).await?;
     let preference = match workflow {
         "img2img" => persona.img2img_capability.as_deref(),
         _ => persona.txt2img_capability.as_deref(),
     };
-    Ok(pick_imggen(&caps, preference, workflow))
+    match image_jobs::list_imggen_capabilities(state, persona.user_id).await {
+        Ok(caps) => Ok(pick_imggen(&caps, preference, workflow)),
+        Err(e) => preference_or(preference, None, e),
+    }
 }
 
 fn pick_imggen(
@@ -495,7 +513,15 @@ pub async fn resolve_img_tool(
     persona: &Persona,
     kind: &str,
 ) -> Result<Option<EffectiveChoice>, AppError> {
-    let caps = img_utils::list_capabilities(state).await?;
+    let preference = if kind == "face_swap" {
+        persona.face_swap_capability.as_deref()
+    } else {
+        persona.upscaler_capability.as_deref()
+    };
+    let caps = match img_utils::list_capabilities(state).await {
+        Ok(caps) => caps,
+        Err(e) => return preference_or(preference, Some(kind), e),
+    };
     let matches: fn(&str) -> bool = if kind == "face_swap" {
         is_face_swap
     } else {
@@ -510,11 +536,6 @@ pub async fn resolve_img_tool(
     candidates.sort();
     let usage =
         db_img_utils::capability_usage(&state.db, persona.user_id, kind, USAGE_HISTORY).await?;
-    let preference = if kind == "face_swap" {
-        persona.face_swap_capability.as_deref()
-    } else {
-        persona.upscaler_capability.as_deref()
-    };
     Ok(choose(preference, &candidates, &usage, Some(kind)))
 }
 
@@ -527,12 +548,13 @@ pub async fn effective_models(state: &AppState, persona: &Persona) -> EffectiveM
         Ok(v) => out.llm = v,
         Err(e) => errors.push(note("llm", e)),
     }
-    match image_jobs::list_imggen_capabilities(state, persona.user_id).await {
-        Ok(caps) => {
-            out.txt2img = pick_imggen(&caps, persona.txt2img_capability.as_deref(), "txt2img");
-            out.img2img = pick_imggen(&caps, persona.img2img_capability.as_deref(), "img2img");
-        }
-        Err(e) => errors.push(note("image models", e)),
+    match resolve_imggen(state, persona, "txt2img").await {
+        Ok(v) => out.txt2img = v,
+        Err(e) => errors.push(note("txt2img", e)),
+    }
+    match resolve_imggen(state, persona, "img2img").await {
+        Ok(v) => out.img2img = v,
+        Err(e) => errors.push(note("img2img", e)),
     }
     match resolve_img_tool(state, persona, "face_swap").await {
         Ok(v) => out.face_swap = v,

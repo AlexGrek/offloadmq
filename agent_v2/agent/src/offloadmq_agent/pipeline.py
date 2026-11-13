@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Executors that upload their results to a server bucket and therefore take an
 # extra output_bucket argument. "image_resize" is bare — it has no sub-name.
-_OUTPUT_BUCKET_PREFIXES = ("imggen.", "img-utils.", "txt2music.")
+_OUTPUT_BUCKET_PREFIXES = ("imggen.", "img-utils.", "txt2music.", "llm-runtime.")
 _OUTPUT_BUCKET_CAPS = ("image_resize",)
 
 
@@ -112,7 +113,16 @@ def _run_sync_pipeline(
     ctx: ExecContext,
     inner: SyncAgentTransport,
     progress_hook: Callable[[str, str], None] | None,
+    data_path_override: Path | None = None,
 ) -> TaskResult:
+    if task.capability.startswith("llm-runtime."):
+        from offloadmq_agent.exec.llm_runtime import require_enabled
+
+        try:
+            require_enabled(task.capability)
+        except ValueError as exc:
+            return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
+
     data = _task_data(task)
     payload = data.get("payload") or task.payload or {}
     fetch_files = data.get("fetchFiles") or []
@@ -139,7 +149,7 @@ def _run_sync_pipeline(
             error=f"No routed executor for '{capability}'",
         )
 
-    data_path = pick_directory(task_id)
+    data_path = data_path_override or pick_directory(task_id)
 
     try:
         report_starting(transport, task_id)
@@ -235,6 +245,12 @@ async def run_routed_task(
 
     if ctx.cancelled:
         raise TaskCancelled()
+
+    if task.capability.startswith("llm-runtime."):
+        with tempfile.TemporaryDirectory(prefix="offload-llm-runtime-") as work:
+            return await asyncio.to_thread(
+                _run_sync_pipeline, task, ctx, inner, progress_hook, Path(work)
+            )
 
     return await asyncio.to_thread(
         _run_sync_pipeline, task, ctx, inner, progress_hook

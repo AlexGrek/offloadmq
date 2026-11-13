@@ -15,6 +15,11 @@ def route_executor(cap: str) -> ExecutorFn | None:
     if cap.startswith("llm."):
         return None  # handled by native async llm executor
 
+    if cap.startswith("llm-runtime."):
+        from offloadmq_agent.exec.llm_runtime import execute_llm_runtime
+
+        return execute_llm_runtime
+
     if cap.startswith("docker."):
         from offloadmq_agent.exec.docker import execute_docker_run
 

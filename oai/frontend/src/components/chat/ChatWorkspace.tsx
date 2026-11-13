@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Feather } from 'lucide-react'
@@ -109,6 +109,31 @@ const KIND_CONFIG: Record<
     enterSends: false,
     allowDocuments: false,
   },
+  persona: {
+    pageTestId: 'persona-chat',
+    labels: {
+      title: 'Chats',
+      newItem: 'New chat',
+      empty: 'No chats yet',
+      untitled: 'New chat',
+      delete: 'Delete chat',
+    },
+    noChatTitle: 'New chat',
+    enterSends: true,
+    allowDocuments: false,
+  },
+}
+
+/** A persona's chat context (`kind="persona"`): its prompt is fixed, not edited here. */
+export interface PersonaChatContext {
+  id: string
+  name: string
+  /** The persona's system prompt with `{p_*}` tokens substituted (sent by the server). */
+  renderedSystemPrompt: string
+  /** The persona's effective LLM — the default model for its chats. */
+  defaultModel?: string | null
+  /** Shown instead of the system-prompt editor while a chat is empty. */
+  emptyState?: ReactNode
 }
 
 /**
@@ -116,9 +141,17 @@ const KIND_CONFIG: Record<
  * Prompt Studio (`kind="prompt_studio"`). Both are `chats` rows on the backend,
  * listed separately by kind.
  */
-export function ChatWorkspace({ kind }: { kind: ChatKind }) {
+export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: PersonaChatContext }) {
   const config = KIND_CONFIG[kind]
   const isStudio = kind === 'prompt_studio'
+  const isPersona = kind === 'persona' && !!persona
+  const personaId = isPersona ? persona.id : null
+  const personaDefaultModel = isPersona ? (persona.defaultModel ?? null) : null
+  /** A chat's saved model, else (persona chats) the persona's preferred one. */
+  const savedModel = useCallback(
+    (chat: ChatSummary | undefined) => chat?.last_model ?? personaDefaultModel,
+    [personaDefaultModel],
+  )
   const { token, user } = useAuth()
   const userId = user?.id
   const navigate = useNavigate()
@@ -277,17 +310,19 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
 
   // ── Load chats on mount ───────────────────────────────────────────────────
 
-  useResetOnChange(token ? `${token}|${kind}` : null, key => {
+  useResetOnChange(token ? `${token}|${kind}|${personaId ?? ''}` : null, key => {
     if (key) setLoadingChats(true)
+    // Another persona: its chats, not the previous persona's open one.
+    setActiveChatId(null)
   })
 
   useEffect(() => {
     if (!token) return
-    listChats(token, kind)
+    listChats(token, kind, personaId)
       .then(setChats)
       .catch(console.error)
       .finally(() => setLoadingChats(false))
-  }, [token, kind])
+  }, [token, kind, personaId])
 
   // ── Prompt Studio: seed a new session from another app (`PromptStudioRouteState`)
 
@@ -346,7 +381,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
         // `chats`/capabilities here would refetch the whole transcript on every send
         // (title/last_model update `chats`), racing the optimistic + streaming UI.
         const chat = chatsRef.current.find(c => c.id === activeChatId)
-        const model = resolveChatModel(chat?.last_model, records, capsRef.current)
+        const model = resolveChatModel(savedModel(chat), records, capsRef.current)
         if (model) setSelectedModel(model)
       })
       .catch(console.error)
@@ -356,7 +391,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     return () => {
       cancelled = true
     }
-  }, [activeChatId, token, finishChatTask])
+  }, [activeChatId, token, finishChatTask, savedModel])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   /* eslint-disable react-hooks/set-state-in-effect -- the next three effects reconcile
@@ -366,9 +401,9 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
   useEffect(() => {
     if (!activeChatId || ws.capabilities.length === 0) return
     const chat = chats.find(c => c.id === activeChatId)
-    const model = resolveChatModel(chat?.last_model, [], ws.capabilities)
+    const model = resolveChatModel(savedModel(chat), [], ws.capabilities)
     if (model) setSelectedModel(model)
-  }, [activeChatId, chats, ws.capabilities])
+  }, [activeChatId, chats, ws.capabilities, savedModel])
 
   // Patch in-flight assistant rows while this chat is open (progress survives tab/chat switches).
   useEffect(() => {
@@ -421,10 +456,11 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     },
   )
   useEffect(() => {
+    if (isPersona) return
     if (activeChatId && activeSystemPrompt !== undefined && userId !== undefined) {
       rememberChatPrompt(userId, activeSystemPrompt.trim() || defaultPrompt, kind)
     }
-  }, [activeChatId, activeSystemPrompt, defaultPrompt, userId, kind])
+  }, [activeChatId, activeSystemPrompt, defaultPrompt, userId, kind, isPersona])
 
   const applySystemPrompt = useCallback(
     async (content: string) => {
@@ -468,9 +504,17 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     if (ws.capabilities.length === 0 || !activeChatId) return
     if (modelListed(selectedModel, ws.capabilities)) return
     const chat = chats.find(c => c.id === activeChatId)
-    const model = resolveChatModel(chat?.last_model, [], ws.capabilities)
+    const model = resolveChatModel(savedModel(chat), [], ws.capabilities)
     if (model) setSelectedModel(model)
-  }, [ws.capabilities, activeChatId, chats, selectedModel])
+  }, [ws.capabilities, activeChatId, chats, selectedModel, savedModel])
+
+  // Persona draft (no chat open): the persona's preferred model, else the usual default.
+  useEffect(() => {
+    if (!isPersona || activeChatId || ws.capabilities.length === 0) return
+    if (modelListed(selectedModel, ws.capabilities)) return
+    const model = resolveChatModel(personaDefaultModel ?? chats[0]?.last_model, [], ws.capabilities)
+    if (model) setSelectedModel(model)
+  }, [isPersona, activeChatId, chats, ws.capabilities, selectedModel, personaDefaultModel])
 
   // Prompt Studio draft (no session yet): default to the most recent session's model.
   useEffect(() => {
@@ -656,10 +700,12 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
       return
     }
     try {
-      const chat = await createChat(token, {
-        systemPrompt: systemPrompt.trim() || defaultPrompt,
-        lastModel: selectedModel,
-      })
+      const chat = await createChat(
+        token,
+        isPersona
+          ? { kind, personaId: persona.id, lastModel: selectedModel }
+          : { systemPrompt: systemPrompt.trim() || defaultPrompt, lastModel: selectedModel, kind },
+      )
       setChats(prev => [chat, ...prev])
       setActiveChatId(chat.id)
       setMessages([])
@@ -787,6 +833,19 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     const attachments = pendingAttachments
     const firstTurn = messages.length === 0
     let chatId = activeChatId
+    if (isPersona && !chatId && token) {
+      // A persona chat starts on its first message.
+      try {
+        const chat = await createChat(token, { kind, personaId: persona.id, lastModel: selectedModel })
+        setChats(prev => [chat, ...prev])
+        skipLoadForChatRef.current = chat.id
+        setActiveChatId(chat.id)
+        chatId = chat.id
+      } catch (e) {
+        setAttachError((e as Error).message)
+        return
+      }
+    }
     if (isStudio) {
       try {
         chatId = await ensureStudioSession()
@@ -804,7 +863,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     if (isStudio && firstTurn && token && studioSeed && template.trim()) {
       recordRecentPrompt(token, PROMPT_STUDIO_TEMPLATE_BUCKET, template.trim()).catch(console.error)
     }
-  }, [input, pendingAttachments, sendWithText, messages.length, activeChatId, isStudio, ensureStudioSession, token, studioSetup, studioSeed, template])
+  }, [input, pendingAttachments, sendWithText, messages.length, activeChatId, isStudio, ensureStudioSession, token, studioSetup, studioSeed, template, isPersona, persona, kind, selectedModel])
 
   const handleUseAsPrompt = useCallback(
     (prompt: string) => {
@@ -875,7 +934,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     modelListed(selectedModel, ws.capabilities) &&
     ws.status === 'connected' &&
     ws.capabilitiesStatus === 'ready' &&
-    (isStudio || !!activeChatId)
+    (isStudio || isPersona || !!activeChatId)
 
   const activeChatTask = latestChatTaskForChat(activeChatId)
   const isGenerating =
@@ -923,7 +982,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     onChange: setInput,
     onSend: () => void send(),
     wsStatus: ws.status,
-    hasActiveChat: isStudio || !!activeChatId,
+    hasActiveChat: isStudio || isPersona || !!activeChatId,
     capabilities: ws.capabilities,
     selectedModel,
     onModelSelect: handleModelSelect,
@@ -1026,7 +1085,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
           showSystemStudio={showSystemStudio}
           loadingMessages={loadingMessages}
           hasActiveChat={!!activeChatId}
-          systemPrompt={systemPrompt}
+          systemPrompt={isPersona ? persona.renderedSystemPrompt : systemPrompt}
           onSystemPromptChange={setSystemPrompt}
           onApplySystemPrompt={applySystemPrompt}
           onNewChat={handleNewChat}
@@ -1035,7 +1094,9 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
           onRetry={retry}
           renderPromptActions={isStudio ? renderPromptActions : undefined}
           emptyState={
-            isStudio && token ? (
+            isPersona ? (
+              persona.emptyState
+            ) : isStudio && token ? (
               <PromptStudioSetup
                 token={token}
                 systemPrompt={systemPrompt}

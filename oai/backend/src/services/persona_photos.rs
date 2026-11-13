@@ -275,7 +275,7 @@ async fn resolve_params(
     }
     let (dw, dh) = input
         .as_ref()
-        .map(|f| (f.stored_width, f.stored_height))
+        .map(|f| default_size_for(f.stored_width, f.stored_height))
         .unwrap_or((DEFAULT_SIZE, DEFAULT_SIZE));
     let width = req.width.unwrap_or(dw);
     let height = req.height.unwrap_or(dh);
@@ -304,6 +304,19 @@ async fn resolve_params(
         prefs.upscaler_capability = Some(base_capability(&c).to_string());
     }
 
+    // Local checks before any OffloadMQ lookup, so they fail the same way offline.
+    let scale = req.scale.unwrap_or(DEFAULT_SCALE);
+    if !scale.is_finite() || !(1.0..=8.0).contains(&scale) {
+        return Err(AppError::BadRequest("scale must be between 1 and 8".into()));
+    }
+    let faces = personas::resolve_faces(state, persona).await?;
+    let face_swap_on = req.face_swap.unwrap_or(!faces.is_empty());
+    if face_swap_on && faces.is_empty() {
+        return Err(AppError::BadRequest(
+            "this persona has no face images; add one or pass face_swap=false".into(),
+        ));
+    }
+
     let image_model = personas::resolve_imggen(state, &prefs, &workflow)
         .await?
         .ok_or_else(|| AppError::BadRequest(format!("no {workflow} image model is online")))?
@@ -314,8 +327,6 @@ async fn resolve_params(
         ));
     }
 
-    let faces = personas::resolve_faces(state, persona).await?;
-    let face_swap_on = req.face_swap.unwrap_or(!faces.is_empty());
     let (face_image_id, face_swap) = if face_swap_on {
         if faces.is_empty() {
             return Err(AppError::BadRequest(
@@ -347,10 +358,6 @@ async fn resolve_params(
         (None, None)
     };
 
-    let scale = req.scale.unwrap_or(DEFAULT_SCALE);
-    if !scale.is_finite() || !(1.0..=8.0).contains(&scale) {
-        return Err(AppError::BadRequest("scale must be between 1 and 8".into()));
-    }
     let upscale = if req.upscale.unwrap_or(true) {
         let tool = personas::resolve_img_tool(state, &prefs, "upscale")
             .await?
@@ -378,6 +385,19 @@ async fn resolve_params(
         upscale,
         scale,
     })
+}
+
+/// img2img default size: the input's own size, unless it is outside the accepted
+/// range — then its aspect ratio at a 1024 long edge (8 px grid).
+fn default_size_for(w: i32, h: i32) -> (i32, i32) {
+    let in_range = |v: i32| (MIN_SIZE..=MAX_SIZE).contains(&v);
+    if in_range(w) && in_range(h) {
+        return (w, h);
+    }
+    let (w, h) = (w.max(1) as f64, h.max(1) as f64);
+    let k = DEFAULT_SIZE as f64 / w.max(h);
+    let snap = |v: f64| (((v * k) / 8.0).round() as i32 * 8).clamp(MIN_SIZE, MAX_SIZE);
+    (snap(w), snap(h))
 }
 
 async fn create_and_kick(
@@ -914,6 +934,13 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].capability, "imggen.flux");
         assert_eq!(steps[0].status, "pending");
+    }
+
+    #[test]
+    fn img2img_default_size_keeps_sane_inputs() {
+        assert_eq!(default_size_for(800, 600), (800, 600));
+        assert_eq!(default_size_for(32, 16), (1024, 512));
+        assert_eq!(default_size_for(8000, 4000), (1024, 512));
     }
 
     #[test]

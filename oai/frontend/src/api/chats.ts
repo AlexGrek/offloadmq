@@ -1,8 +1,11 @@
 import type { ChatAttachment } from './chatAttachments'
 import { apiRequest as request } from './http'
 
-/** `chat` = LLM Chat, `prompt_studio` = Prompt Studio session. Same API, separate lists. */
-export type ChatKind = 'chat' | 'prompt_studio'
+/**
+ * `chat` = LLM Chat, `prompt_studio` = Prompt Studio session, `persona` = a persona's
+ * chat (bound to `persona_id`; the persona's system prompt is used). Same API, separate lists.
+ */
+export type ChatKind = 'chat' | 'prompt_studio' | 'persona'
 
 export interface ChatSummary {
   id: string
@@ -10,6 +13,7 @@ export interface ChatSummary {
   system_prompt: string
   last_model: string | null
   kind?: ChatKind
+  persona_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -24,16 +28,34 @@ export interface ChatMessageRecord {
   attachments?: ChatAttachment[]
 }
 
-export function listChats(token: string, kind: ChatKind = 'chat'): Promise<ChatSummary[]> {
-  return request(`/api/chats?kind=${kind}`, token)
+export function listChats(
+  token: string,
+  kind: ChatKind = 'chat',
+  personaId?: string | null,
+): Promise<ChatSummary[]> {
+  const persona = personaId ? `&persona_id=${encodeURIComponent(personaId)}` : ''
+  return request(`/api/chats?kind=${kind}${persona}`, token)
 }
 
 export function createChat(
   token: string,
-  options?: { systemPrompt?: string; lastModel?: string | null; kind?: ChatKind; title?: string },
+  options?: {
+    systemPrompt?: string
+    lastModel?: string | null
+    kind?: ChatKind
+    title?: string
+    personaId?: string
+  },
 ): Promise<ChatSummary> {
-  const body: { system_prompt?: string; last_model?: string; kind?: ChatKind; title?: string } = {}
+  const body: {
+    system_prompt?: string
+    last_model?: string
+    kind?: ChatKind
+    title?: string
+    persona_id?: string
+  } = {}
   if (options?.kind) body.kind = options.kind
+  if (options?.personaId) body.persona_id = options.personaId
   const sp = options?.systemPrompt?.trim()
   if (sp) body.system_prompt = sp
   const title = options?.title?.trim()

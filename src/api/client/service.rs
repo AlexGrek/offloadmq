@@ -118,6 +118,7 @@ pub async fn do_submit_task_blocking(
             "Only urgent tasks can be submitted to this endpoint".to_string(),
         ));
     }
+    super::llm_runtime::validate(&req)?;
     let file_bucket = req.file_bucket.clone();
     let id = TaskId::new_with_cap(req.capability.clone());
     // Hold the reservation lock across validate + record so a concurrent
@@ -154,6 +155,7 @@ pub async fn do_submit_task(
             .verify_key(&req.api_key, &req.capability)?;
     }
     let urgent = req.urgent;
+    super::llm_runtime::validate(&req)?;
     let file_bucket = req.file_bucket.clone();
     let id = TaskId::new_with_cap(req.capability.clone());
     // Hold the reservation lock across validate + record so a concurrent

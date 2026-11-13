@@ -541,3 +541,48 @@ class TestSubstitutions:
         res = tool(client, token, "expand_prompt", {"prompt": prompt})
         out = res["structuredContent"]["expansions"][0]
         assert "{" not in out and len(out.split(" | ")) == 7, out
+
+
+class TestPersonaTools:
+    def test_persona_crud_round_trip(self, client: httpx.Client, tokens: dict):
+        token = tokens["access_token"]
+        name = f"Mcp {uuid.uuid4().hex[:6]}"
+        created = tool(client, token, "create_persona", {
+            "name": name, "look": "freckles", "system_prompt": "You are {p_name}.",
+            "llm_model": "llm.qwen3:8b",
+        })
+        assert not created.get("isError"), text_of(created)
+        persona = created["structuredContent"]["persona"]
+        assert persona["rendered_system_prompt"] == f"You are {name}."
+
+        listed = tool(client, token, "list_personas", {})
+        assert name in text_of(listed)
+
+        # By name, case-insensitively; a partial update keeps the other fields.
+        updated = tool(client, token, "update_persona", {"persona": name.lower(), "look": "curly hair", "llm_model": "auto"})
+        assert not updated.get("isError"), text_of(updated)
+        p = updated["structuredContent"]["persona"]
+        assert p["look"] == "curly hair" and p["llm_capability"] is None
+        assert p["system_prompt"] == "You are {p_name}."
+
+        got = tool(client, token, "get_persona", {"persona": persona["id"]})
+        assert "uses llm" in text_of(got)
+
+        bad_faces = tool(client, token, "set_persona_faces", {"persona": name, "image_ids": ["1"]})
+        assert bad_faces["isError"]
+
+        chats = tool(client, token, "list_persona_chats", {"persona": name})
+        assert "no chats yet" in text_of(chats)
+
+        no_faces = tool(client, token, "generate_persona_photos", {
+            "persona": name, "prompt": "{p_look}", "face_swap": True, "upscale": False,
+        })
+        assert no_faces["isError"] and "no face images" in text_of(no_faces)
+
+        photos = tool(client, token, "list_persona_photos", {"persona": name})
+        assert "no photos yet" in text_of(photos)
+
+        deleted = tool(client, token, "delete_persona", {"persona": name})
+        assert not deleted.get("isError")
+        missing = tool(client, token, "get_persona", {"persona": name})
+        assert missing["isError"]

@@ -30,7 +30,7 @@ def _cfg_list(cfg: dict[str, Any], *keys: str) -> list[str]:
 
 
 def is_sensitive_capability(cap: str) -> bool:
-    prefixes = ("docker.", "shell.", "shellcmd.")
+    prefixes = ("docker.", "shell.", "shellcmd.", "llm-runtime.")
     return any(cap.startswith(p) for p in prefixes)
 
 
@@ -149,4 +149,6 @@ def compute_registration_caps(
             )
 
     caps = regular_enabled + sensitive_enabled + unknown_enabled
+    if cfg.get("llm_runtime_enabled") is not True:
+        caps = [c for c in caps if not c.startswith("llm-runtime.")]
     return merge_registration_caps(caps, cfg)
