@@ -1,3 +1,5 @@
+import { ImageSizePicker } from '@/components/ImageSizePicker'
+import { rememberedImageSize } from '@/lib/imageSizes'
 import { useDefaultPrompts } from '../hooks/useDefaultPrompts'
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
@@ -104,8 +106,8 @@ export default function ImageCyclesPage({
     [],
   )
   const [bootstrap, setBootstrap] = useState('')
-  const [width, setWidth] = useState('1024')
-  const [height, setHeight] = useState('1024')
+  const [width, setWidth] = useState(() => String(rememberedImageSize([1024, 1024], 2048, 128)[0]))
+  const [height, setHeight] = useState(() => String(rememberedImageSize([1024, 1024], 2048, 128)[1]))
   const [visionModels, setVisionModels] = useState<LlmCapabilityInfo[]>([])
   const [imageModels, setImageModels] = useState<LlmCapabilityInfo[]>([])
   const [allImageModels, setAllImageModels] = useState<LlmCapabilityInfo[]>([])
@@ -765,7 +767,7 @@ export default function ImageCyclesPage({
                     />
                   </div>
                 )}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="cycles-count">
                       {improver ? 'Max steps (1–50)' : 'Cycles (1–50)'}
@@ -780,29 +782,8 @@ export default function ImageCyclesPage({
                       data-testid="cycles-count"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cycles-width">Width</Label>
-                    <Input
-                      id="cycles-width"
-                      type="number"
-                      min={128}
-                      max={2048}
-                      value={width}
-                      onChange={(e) => setWidth(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cycles-height">Height</Label>
-                    <Input
-                      id="cycles-height"
-                      type="number"
-                      min={128}
-                      max={2048}
-                      value={height}
-                      onChange={(e) => setHeight(e.target.value)}
-                    />
-                  </div>
                 </div>
+                <ImageSizePicker width={width} height={height} min={128} max={2048} testIdPrefix="cycles" onWidthChange={setWidth} onHeightChange={setHeight} onChange={([w,h]) => { setWidth(String(w)); setHeight(String(h)) }} />
                 <p className="text-sm text-muted-foreground">
                   {improver
                     ? `Up to ${cycles || '…'} ${improvementWorkflow} improvements; the starting and final images are also assessed.`

@@ -42,6 +42,8 @@ export function ChatComposer({
   enterSends = true,
   allowDocuments = true,
   topSlot,
+  inline = false,
+  placeholder,
 }: {
   value: string
   onChange: (value: string) => void
@@ -75,6 +77,10 @@ export function ChatComposer({
   allowDocuments?: boolean
   /** Rendered above the input box (e.g. Prompt Studio's quick-reply chip). */
   topSlot?: React.ReactNode
+  /** Render as a plain block inside a page (Prompt Studio setup) instead of the bottom bar. */
+  inline?: boolean
+  /** Placeholder while connected (default `Message…`). */
+  placeholder?: string
 }) {
   const { token } = useAuth()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -118,8 +124,8 @@ export function ChatComposer({
   }
 
   return (
-    <div className="shrink-0 border-t border-border bg-background px-4 pb-4 pt-2">
-      <div className="max-w-2xl mx-auto">
+    <div className={inline ? 'w-full' : 'shrink-0 border-t border-border bg-background px-4 pb-4 pt-2'}>
+      <div className={inline ? 'w-full' : 'max-w-2xl mx-auto'}>
         {topSlot}
         <input
           ref={imageInputRef}
@@ -177,7 +183,7 @@ export function ChatComposer({
             onPaste={handlePaste}
             placeholder={
               !hasActiveChat ? 'Select or create a chat first' :
-              wsStatus === 'connected' ? 'Message…' : 'Connecting…'
+              wsStatus === 'connected' ? (placeholder ?? 'Message…') : 'Connecting…'
             }
             disabled={wsStatus !== 'connected' || !hasActiveChat}
             rows={1}

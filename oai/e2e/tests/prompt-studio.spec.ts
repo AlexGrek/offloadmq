@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 /**
  * Prompt Studio (`/app/prompt-studio`): Enter adds a newline, Ctrl/⌘+Enter sends,
- * the example prompt is rendered through the message template into the composer,
+ * the example prompt is rendered through the message template into a preview,
  * the first send creates a `kind: prompt_studio` chat, replies offer "Use as prompt"
  * and the "another one" quick reply, and Image Generation / Describe Image open the
  * studio with their prompt. Fully mocked — no backend needed.
@@ -17,12 +17,23 @@ type Captured = {
   wsChats: { content: string; chat_id: string }[]
   recentPrompts: { bucket: string; content: string }[]
   imageJobs: Record<string, unknown>[]
+  /** What `GET /api/chats/{id}/messages` returns. */
+  restMessages: Record<string, unknown>[]
+  /** When true the socket reports queued + "starting" progress but never the result. */
+  holdResults: boolean
 }
 
 const defaultReply = (n: number) => '```\n' + REPLY_PROMPT + (n > 1 ? ` #${n}` : '') + '\n```'
 
 async function mockApi(page: Page, reply: (n: number) => string = defaultReply): Promise<Captured> {
-  const captured: Captured = { createdChats: [], wsChats: [], recentPrompts: [], imageJobs: [] }
+  const captured: Captured = {
+    createdChats: [],
+    wsChats: [],
+    recentPrompts: [],
+    imageJobs: [],
+    restMessages: [],
+    holdResults: false,
+  }
 
   await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
   await page.routeWebSocket(/\/api\/ws\/chat/, ws => {
@@ -42,6 +53,12 @@ async function mockApi(page: Page, reply: (n: number) => string = defaultReply):
         captured.wsChats.push({ content: msg.content, chat_id: msg.chat_id })
         const n = captured.wsChats.length
         ws.send(JSON.stringify({ type: 'task:queued', req_id: msg.req_id, cap: 'llm.artist', id: `t${n}` }))
+        if (captured.holdResults) {
+          ws.send(JSON.stringify({
+            type: 'task:progress', req_id: msg.req_id, cap: 'llm.artist', id: `t${n}`, status: 'running', stage: 'starting',
+          }))
+          return
+        }
         ws.send(JSON.stringify({ type: 'task:result', req_id: msg.req_id, text: reply(n) }))
       }
     })
@@ -59,7 +76,10 @@ async function mockApi(page: Page, reply: (n: number) => string = defaultReply):
     if (pathname === '/api/admin/am_i_admin') return json({ is_admin: false })
     if (pathname === '/api/chats' && method === 'GET') {
       expect(searchParams.get('kind')).toBe('prompt_studio')
-      return json([])
+      return json(captured.createdChats.map((body, i) => ({
+        id: `studio-${i + 1}`, title: 'Lighthouse', system_prompt: 'x', last_model: 'llm.artist',
+        kind: body.kind, created_at: now, updated_at: now,
+      })))
     }
     if (pathname === '/api/chats' && method === 'POST') {
       const body = route.request().postDataJSON() as Record<string, unknown>
@@ -74,7 +94,7 @@ async function mockApi(page: Page, reply: (n: number) => string = defaultReply):
         updated_at: now,
       }, 201)
     }
-    if (/^\/api\/chats\/[^/]+\/messages$/.test(pathname)) return json([])
+    if (/^\/api\/chats\/[^/]+\/messages$/.test(pathname)) return json(captured.restMessages)
     const recent = /^\/api\/prompts\/([^/]+)\/recent$/.exec(pathname)
     if (recent && method === 'POST') {
       const { content } = route.request().postDataJSON() as { content: string }
@@ -127,29 +147,33 @@ test('Enter adds a newline; Ctrl+Enter sends and creates a prompt_studio session
   expect(captured.recentPrompts.filter(p => p.bucket === 'prompt-studio-user')).toHaveLength(0)
 })
 
-test('example prompt fills the template; replies offer another-one and Use as prompt', async ({ page }) => {
+test('example prompt renders a message preview; replies offer another-one and Use as prompt', async ({ page }) => {
   const captured = await mockApi(page)
   await page.goto('/app/prompt-studio')
 
+  // During setup the message box lives inside the form — no separate chat bar.
+  await expect(page.getByTestId('chat-input')).toHaveCount(1)
+  await expect(page.getByTestId('prompt-studio-setup').getByTestId('chat-input')).toBeVisible()
+  await expect(page.getByTestId('prompt-studio-message-preview')).toHaveCount(0)
+
   await page.getByTestId('prompt-studio-example').fill('a red fox at dawn')
   const input = page.getByTestId('chat-input')
-  const rendered = TEMPLATE.replace('{prompt}', 'a red fox at dawn')
-  await expect(input).toHaveValue(rendered)
+  const preview = page.getByTestId('prompt-studio-message-preview')
+  await expect(preview).toHaveText(TEMPLATE.replace('{prompt}', 'a red fox at dawn'))
+  // Typing the example does not mirror into the message box.
+  await expect(input).toHaveValue('')
 
-  // Editing the template re-renders while the composer still holds the rendered text.
   await page.getByTestId('prompt-studio-template').fill('Riff on: {prompt}')
-  await expect(input).toHaveValue('Riff on: a red fox at dawn')
-  // A user edit is never clobbered by later example changes.
-  await input.fill('my own words')
-  await page.getByTestId('prompt-studio-example').fill('a blue fox')
-  await expect(input).toHaveValue('my own words')
-  await input.fill('')
-  await page.getByTestId('prompt-studio-example').fill('a red fox at dawn')
-  await expect(input).toHaveValue('Riff on: a red fox at dawn')
+  await expect(preview).toHaveText('Riff on: a red fox at dawn')
 
+  // Extra text in the message box is appended to the rendered message.
+  await input.fill('Make it moodier.')
   await page.getByTestId('send-btn').click()
   await expect.poll(() => captured.wsChats.length).toBe(1)
-  expect(captured.wsChats[0].content).toBe('Riff on: a red fox at dawn')
+  expect(captured.wsChats[0].content).toBe('Riff on: a red fox at dawn\n\nMake it moodier.')
+  // After the first message the composer moves to the chat bar and setup disappears.
+  await expect(page.getByTestId('prompt-studio-setup')).toHaveCount(0)
+  await expect(input).toHaveValue('')
   await expect
     .poll(() => captured.recentPrompts)
     .toContainEqual({ bucket: 'prompt-studio-user', content: 'Riff on: {prompt}' })
@@ -173,7 +197,7 @@ test('Image Generation opens Prompt Studio with its prompt as the example', asyn
 
   await expect(page).toHaveURL(/\/app\/prompt-studio$/)
   await expect(page.getByTestId('prompt-studio-example')).toHaveValue('a castle made of glass')
-  await expect(page.getByTestId('chat-input')).toHaveValue(
+  await expect(page.getByTestId('prompt-studio-message-preview')).toHaveText(
     TEMPLATE.replace('{prompt}', 'a castle made of glass'),
   )
 })
@@ -209,7 +233,7 @@ test('Describe Image opens Prompt Studio with the description as the example', a
 
   await expect(page).toHaveURL(/\/app\/prompt-studio$/)
   await expect(page.getByTestId('prompt-studio-example')).toHaveValue(description)
-  await expect(page.getByTestId('chat-input')).toHaveValue(TEMPLATE.replace('{prompt}', description))
+  await expect(page.getByTestId('prompt-studio-message-preview')).toHaveText(TEMPLATE.replace('{prompt}', description))
 })
 
 async function startSession(page: Page, captured: Captured) {
@@ -314,6 +338,8 @@ test('prompt editor: highlight, delete and edit sentences, then generate at a pi
   await page.getByTestId('prompt-editor-use').click()
   await expect(page).toHaveURL(/\/app\/images$/)
   await expect(page.getByTestId('imggen-prompt')).toHaveValue(edited)
+  await expect(page.getByTestId('imggen-width')).toHaveValue('768')
+  await expect(page.getByTestId('imggen-height')).toHaveValue('1024')
 })
 
 test('example prompt can be edited in the prompt editor and applied back', async ({ page }) => {
@@ -331,5 +357,76 @@ test('example prompt can be edited in the prompt editor and applied back', async
   await expect(page.getByTestId('prompt-editor')).toBeHidden()
 
   await expect(page.getByTestId('prompt-studio-example')).toHaveValue('a red fox at dawn, golden light')
-  await expect(page.getByTestId('chat-input')).toHaveValue(TEMPLATE.replace('{prompt}', 'a red fox at dawn, golden light'))
+  await expect(page.getByTestId('prompt-studio-message-preview')).toHaveText(TEMPLATE.replace('{prompt}', 'a red fox at dawn, golden light'))
+})
+
+/** Leave Prompt Studio and come back without a page reload (app state survives). */
+async function leaveAndReturn(page: Page, whileAway?: () => Promise<void>) {
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/app/images')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await expect(page.getByTestId('imggen-prompt')).toBeVisible()
+  await whileAway?.()
+  await page.goBack()
+  await page.getByTestId('chat-item-studio-1').click()
+}
+
+/** The in-transcript "thinking" bubble (the Progress drawer may show the same label). */
+const thinking = (page: Page) => page.getByTestId('messages-area').getByText('Starting…')
+
+const userRow = { id: 'm1', role: 'user', content: 'Give me a prompt', status: 'complete', model: null, created_at: now }
+
+test('a reply that finished while the page was closed shows as finished, not "Starting…"', async ({ page }) => {
+  const captured = await mockApi(page)
+  captured.holdResults = true
+  await startSession(page, captured)
+  await expect(thinking(page)).toBeVisible()
+
+  // The agent finishes while the user is on another page: the DB has the reply,
+  // but the result event went to the socket that is gone.
+  captured.restMessages = [
+    userRow,
+    { id: 'm2', role: 'assistant', content: REPLY_PROMPT, status: 'complete', model: 'llm.artist', created_at: now },
+  ]
+  // Record whether a thinking bubble shows up at any moment after returning — the
+  // stall watchdog would clear it a few seconds later, so a plain assertion misses it.
+  await leaveAndReturn(page, () =>
+    page.evaluate(() => {
+      const w = window as unknown as { sawThinking: boolean }
+      w.sawThinking = false
+      new MutationObserver(() => {
+        const area = document.querySelector('[data-testid="messages-area"]')
+        if (area?.textContent?.includes('Starting…')) w.sawThinking = true
+      }).observe(document.body, { subtree: true, childList: true, characterData: true })
+    }),
+  )
+
+  await expect(page.getByTestId('messages-area').getByText(REPLY_PROMPT)).toBeVisible()
+  await page.waitForTimeout(500)
+  expect(await page.evaluate(() => (window as unknown as { sawThinking: boolean }).sawThinking)).toBe(false)
+  await expect(thinking(page)).toHaveCount(0)
+  await expect(page.getByTestId('prompt-studio-another')).toBeVisible()
+  await expect(page.getByTestId('prompt-studio-use-as-prompt')).toHaveCount(1)
+})
+
+test('a reply still running when the page reopens resolves once the DB finalizes it', async ({ page }) => {
+  const captured = await mockApi(page)
+  captured.holdResults = true
+  await startSession(page, captured)
+
+  captured.restMessages = [
+    userRow,
+    { id: 'm2', role: 'assistant', content: '', status: 'pending', model: 'llm.artist', created_at: now },
+  ]
+  await leaveAndReturn(page)
+  await expect(thinking(page)).toBeVisible()
+
+  // The background worker finalizes the row; the stall watchdog polls and picks it up.
+  captured.restMessages = [
+    userRow,
+    { id: 'm2', role: 'assistant', content: REPLY_PROMPT, status: 'complete', model: 'llm.artist', created_at: now },
+  ]
+  await expect(page.getByTestId('messages-area').getByText(REPLY_PROMPT)).toBeVisible({ timeout: 10_000 })
+  await expect(thinking(page)).toHaveCount(0)
 })

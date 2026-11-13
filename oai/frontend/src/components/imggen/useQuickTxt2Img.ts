@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listImgGenCapabilities, startImageJob, type ImgGenCapability } from '../../api/images'
+import { listPromptPlaceholders } from '../../api/promptPlaceholders'
 import { recordRecentPrompt } from '../../api/prompts'
 import { useProgress } from '../../contexts/ProgressContext'
 import { isListedCapability } from '../../lib/capability-picker'
 import type { CapabilitiesStatus } from '../../lib/capabilitiesStatus'
 import { filterCapabilitiesByWorkflow } from '../../lib/imggen'
 import { sortCapabilitiesForPicker } from '../../lib/modelAvailability'
+import { createPlaceholderUsage, expandPromptPlaceholders } from '../../lib/promptPlaceholders'
+import { recordPlaceholdersUsed } from '../../lib/recentPlaceholders'
 
 export const MAX_QUICK_GENERATE = 10
 
@@ -18,7 +21,9 @@ export function clampGenerateCount(raw: string | number): number {
 /**
  * Quick txt2img from anywhere (Describe Image result, Prompt Studio): loads the txt2img
  * models while `enabled`, picks the first online one, and starts N independent jobs that
- * show up in Progress — the user stays on the current page.
+ * show up in Progress — the user stays on the current page. `{placeholders}` are expanded
+ * per job like Image Generation does (distinct values across the batch); the raw text is
+ * kept as `prompt_template` and recorded in the prompt library.
  */
 export function useQuickTxt2Img(token: string, enabled: boolean) {
   const { refreshRunningImageJobs } = useProgress()
@@ -69,11 +74,13 @@ export function useQuickTxt2Img(token: string, enabled: boolean) {
   const generate = useCallback(
     async ({ prompt, width, height, count }: { prompt: string; width: number; height: number; count: number }) => {
       const text = prompt.trim()
+      const customDefs = await customPlaceholderDefs(token)
+      const usage = createPlaceholderUsage()
       const ids: string[] = []
       for (let index = 0; index < clampGenerateCount(count); index += 1) {
         const started = await startImageJob(token, {
           capability,
-          prompt: text,
+          prompt: expandPromptPlaceholders(text, usage, customDefs).trim(),
           prompt_template: text,
           width,
           height,
@@ -82,6 +89,7 @@ export function useQuickTxt2Img(token: string, enabled: boolean) {
         })
         ids.push(started.job_id)
       }
+      recordPlaceholdersUsed(text)
       void recordRecentPrompt(token, 'imggen-prompt', text).catch(() => {})
       void refreshRunningImageJobs()
       return ids
@@ -90,4 +98,14 @@ export function useQuickTxt2Img(token: string, enabled: boolean) {
   )
 
   return { capabilities, status, error, capability, setCapability, refresh, ready, generate }
+}
+
+/** The user's own `{name}` placeholders; optional — built-in ones work without them. */
+async function customPlaceholderDefs(token: string): Promise<Record<string, string[]>> {
+  try {
+    const items = await listPromptPlaceholders(token)
+    return Object.fromEntries(items.map(i => [i.name.trim().toLowerCase(), i.variants]))
+  } catch {
+    return {}
+  }
 }

@@ -85,6 +85,22 @@ function inFlightToMessage(task: ChatTaskRecord): Message {
   }
 }
 
+/**
+ * In-flight tasks the transcript shows as already finished. Once a task is queued the
+ * backend has stored its reply as a `pending` row, so a queued task with no pending row
+ * in REST finished while no socket was listening (the page was left) and its result
+ * event is gone. Tasks still `sending` (no offload id) may predate their row — kept.
+ */
+export function staleChatTasks(
+  records: ChatMessageRecord[],
+  running: ChatTaskRecord[],
+): ChatTaskRecord[] {
+  const restPending = records.some(
+    r => r.role === 'assistant' && (r.status === 'pending' || r.status === 'thinking'),
+  )
+  return restPending ? [] : running.filter(t => t.id !== '')
+}
+
 export function mergeInFlightMessages(base: Message[], running: ChatTaskRecord[]): Message[] {
   const runningReqIds = new Set(running.map(t => t.reqId))
   const hasRunning = running.length > 0

@@ -1,3 +1,4 @@
+import { ImageSizePicker } from '@/components/ImageSizePicker'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import type { RescaleMode, RescaleState } from '@/lib/imggen'
@@ -36,23 +37,9 @@ export default function RescaleControls({
             <option value="max">max</option>
           </select>
           {state.mode === 'exact' ? (
-            <>
-              <Input
-                type="number"
-                value={state.width}
-                onChange={e => onChange({ width: Number(e.target.value) || 768 })}
-                className="h-8 w-20 text-xs"
-                aria-label="Rescale width"
-              />
-              <span className="text-xs text-muted-foreground">×</span>
-              <Input
-                type="number"
-                value={state.height}
-                onChange={e => onChange({ height: Number(e.target.value) || 768 })}
-                className="h-8 w-20 text-xs"
-                aria-label="Rescale height"
-              />
-            </>
+            <div className="w-full">
+              <ImageSizePicker width={state.width} height={state.height} testIdPrefix="imggen-rescale" widthLabel="Rescale width" heightLabel="Rescale height" onWidthChange={v => onChange({width: Number(v)})} onHeightChange={v => onChange({height: Number(v)})} onChange={([width,height]) => onChange({width,height})} />
+            </div>
           ) : (
             <>
               <Label className="text-xs text-muted-foreground">px</Label>

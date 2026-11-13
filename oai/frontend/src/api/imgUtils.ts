@@ -1,3 +1,4 @@
+import { rememberedImageSize } from '@/lib/imageSizes'
 import { apiRequest as request } from './http'
 import type { UploadedImage } from './images'
 
@@ -245,11 +246,12 @@ export interface ResizeFormState {
 }
 
 export function defaultResizeForm(methods: string[]): ResizeFormState {
+  const [width, height] = rememberedImageSize([1024, 1024], MAX_RESIZE_EDGE)
   return {
     sizeMode: 'pixels',
     mode: 'fit',
-    width: 1024,
-    height: 1024,
+    width,
+    height,
     percent: 50,
     method: methods.includes('lanczos') ? 'lanczos' : (methods[0] ?? ''),
     format: '',

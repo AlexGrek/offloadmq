@@ -1,3 +1,4 @@
+import { rememberedImageSize } from '@/lib/imageSizes'
 import { useDefaultPrompts } from '../hooks/useDefaultPrompts'
 import { DESCRIBE_PROMPT_BUCKET } from '../lib/describe'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
@@ -127,7 +128,7 @@ export default function DescribeImagePage() {
   const [selectedCap, setSelectedCap] = useState('')
   const defaultPrompt = useDefaultPrompts().describe_image
   const [prompt, setPrompt] = useState(defaultPrompt)
-  const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
+  const [rescale, setRescale] = useState<RescaleState>(() => { const [width, height] = rememberedImageSize(); return { ...DEFAULT_RESCALE, width, height } })
 
   // Each input image becomes its own analysis job on submit.
   const [uploadedInputs, setUploadedInputs] = useState<UploadedImage[]>(() =>

@@ -1,3 +1,5 @@
+import { ImageSizePicker } from '@/components/ImageSizePicker'
+import { rememberedImageSize, validImageSize } from '@/lib/imageSizes'
 import { useWsChat } from '@/hooks/useWsChat'
 import { useDefaultPrompts } from '@/hooks/useDefaultPrompts'
 import { PROMPT_STUDIO_SYSTEM_BUCKET, PROMPT_STUDIO_TEMPLATE_BUCKET } from '@/lib/promptStudio'
@@ -13,7 +15,7 @@ import { SavedPromptsDrawer } from '@/components/prompts/SavedPromptsDrawer'
 import { Button } from '@/components/ui/button'
 import { WallpaperJobStatus } from '@/components/hallucinate/WallpaperJobStatus'
 import { filterCapabilitiesByWorkflow } from '@/lib/imggen'
-import { FADE_MS, HALLUCINATE_BUCKET, runWallpaper, wallpaperRequestSignal, WallpaperCancellationError, WALLPAPER_SIZES, isWallpaperJobTerminal, type WallpaperJobProgress } from '@/lib/hallucinate'
+import { FADE_MS, HALLUCINATE_BUCKET, runWallpaper, wallpaperRequestSignal, WallpaperCancellationError, isWallpaperJobTerminal, type WallpaperJobProgress } from '@/lib/hallucinate'
 
 export default function HallucinatePage() {
   const { token } = useAuth()
@@ -33,7 +35,7 @@ export default function HallucinatePage() {
   const [model, setModel] = useState('')
   const [tool, setTool] = useState('')
   const [prompt, setPrompt] = useState('A dreamlike {color} landscape, intricate detail, cinematic light')
-  const [size, setSize] = useState<readonly number[]>([1280, 720])
+  const [size, setSize] = useState<readonly number[]>(() => rememberedImageSize([1280, 720]))
   const [upscale, setUpscale] = useState(false)
   const [scale, setScale] = useState(2)
   const [running, setRunning] = useState(false)
@@ -107,7 +109,7 @@ export default function HallucinatePage() {
   }, [display, running])
 
   async function start() {
-    if (!studioReady || !token || controller.current || !models.some(m => m.base === model) || !prompt.trim()) return
+    if (!validImageSize(size[0], size[1]) || !studioReady || !token || controller.current || !models.some(m => m.base === model) || !prompt.trim()) return
     const upscaler = tools.find(t => toolKey(t) === tool)
     if (upscale && !upscaler) return
     const abort = new AbortController()
@@ -218,13 +220,7 @@ export default function HallucinatePage() {
               <Button variant="ghost" disabled={running} onClick={() => setImportOpen(true)} data-testid="hallucinate-import">Import from txt2img</Button>
             </div>
           </div>
-          <fieldset disabled={running} className="space-y-3">
-            <legend className="mb-3 text-sm">Canvas size</legend>
-            {WALLPAPER_SIZES.map(group => <div key={group.ratio} className="flex flex-wrap items-center gap-2">
-              <span className="w-12 text-xs text-muted-foreground">{group.ratio}</span>
-              {group.sizes.map(([w, h]) => <button key={`${w}x${h}`} type="button" aria-pressed={size[0] === w && size[1] === h} onClick={() => setSize([w, h])} className={`min-h-11 rounded-lg border px-3 text-xs transition-colors ${group.color} ${size[0] === w && size[1] === h ? 'bg-foreground text-background' : 'hover:bg-muted'}`}>{w} × {h}</button>)}
-            </div>)}
-          </fieldset>
+          <ImageSizePicker width={size[0]} height={size[1]} disabled={running} testIdPrefix="hallucinate" onChange={setSize} onWidthChange={v => setSize([Number(v), size[1]])} onHeightChange={v => setSize([size[0], Number(v)])} />
           <div className="space-y-3">
             <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={upscale} disabled={running || !tools.length} onChange={e => setUpscale(e.target.checked)} /> Upscale before displaying</label>
             {!tools.length && <p className="text-xs text-muted-foreground">No upscaler is currently online.</p>}
@@ -234,7 +230,7 @@ export default function HallucinatePage() {
             </div>}
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button className="min-h-11" onClick={() => void start()} disabled={running || !studioReady || !model || !prompt.trim() || (upscale && !tool)} data-testid="hallucinate-start"><Play className="size-4" /> Start dreaming</Button>
+            <Button className="min-h-11" onClick={() => void start()} disabled={running || !validImageSize(size[0], size[1]) || !studioReady || !model || !prompt.trim() || (upscale && !tool)} data-testid="hallucinate-start"><Play className="size-4" /> Start dreaming</Button>
             {running && <Button variant="outline" onClick={stop}>Stop</Button>}
             {!!frames.length && <Button variant="outline" onClick={() => setDisplay(true)}>Return to wallpaper</Button>}
           </div>

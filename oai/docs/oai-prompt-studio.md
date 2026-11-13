@@ -39,8 +39,11 @@ the pending-reply reconcile worker, ToolDebug, image attachments — is reused u
   - *Example prompt* (optional) — picks from the txt2img library (`imggen-prompt`, with previews).
   - *Message template* — own library bucket `prompt-studio-user`; `{prompt}` is replaced by the
     example (a template without it gets the example appended after a blank line).
-  - The rendered message fills the composer; template/example edits re-render it only while the
-    composer is empty or still holds the last rendered text — user edits are never clobbered.
+  - *First message* — the template rendered with the example is shown as a read-only preview
+    (`prompt-studio-message-preview`), updated live. Below it is the chat composer itself, rendered
+    **inline** in the form (`ChatComposer inline`); the bottom chat bar is hidden until the session
+    has a message. Text typed there is appended after a blank line (`composeFirstMessage`); with no
+    example it is the whole message. Images attach here too.
   - A template is recorded as a recent in `prompt-studio-user` when it opened a session with an
     example. System prompts are recorded server-side per kind (`ChatKind::system_prompt_bucket`).
 - **Images** can be attached on any turn (upload, library, paste). Documents are not offered.
@@ -86,6 +89,22 @@ new draft session with that example and the default template.
   passes the raw prompt textarea (placeholders intact).
 - Describe Image: **Prompt studio** in the result header (`describe-prompt-studio-open`) — passes
   the description.
+
+## Leaving the page mid-reply
+
+Results are pushed only to the socket that sent the message, and the socket belongs to the page.
+A reply that finishes while the user is elsewhere leaves its task non-terminal in
+`WorkloadContext`. On load, `staleChatTasks` (`lib/chat/messages.ts`) retires queued tasks whose
+chat has no `pending` reply in the DB, so no "Starting…" bubble flashes over the finished reply.
+A reply still running on return is picked up by the existing stall watchdog / reconnect resync.
+This applies to LLM Chat as well (shared `ChatWorkspace`).
+
+## Placeholders
+
+The default system prompt tells the model to keep `{color}`, `{place}`… from the example prompt
+verbatim. Generate / Generate now (`useQuickTxt2Img`) expand built-in and custom placeholders per
+job like Image Generation does (distinct values across a batch) and keep the raw text as
+`prompt_template`; Use hands the raw prompt to Image Generation, which expands on submit.
 
 ## Defaults
 

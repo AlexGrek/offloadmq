@@ -33,6 +33,14 @@ export function renderTemplate(template: string, example: string): string {
   return `${tpl}\n\n${ex}`
 }
 
+/**
+ * The first message of a session: the rendered template (if an example is set) followed
+ * by whatever the user typed in the message box, separated by a blank line.
+ */
+export function composeFirstMessage(rendered: string, extra: string): string {
+  return [rendered.trim(), extra.trim()].filter(Boolean).join('\n\n')
+}
+
 const FENCE_RE = /```[^\n]*\n([\s\S]*?)```/g
 const WRAPPING_QUOTES: [string, string][] = [['"', '"'], ['“', '”'], ["'", "'"], ['«', '»']]
 

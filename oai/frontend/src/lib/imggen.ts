@@ -48,11 +48,7 @@ export function fitsOriginalResolution(width: number, height: number): boolean {
 export const PRESET_LONG_EDGES = [512, 768, 1024, 1280, 1536, 1792, 2048] as const
 
 /** Fixed width×height presets for txt2img / unlocked-ratio forms: squares, then landscape, then portrait. */
-export const DIMENSION_PRESETS: [number, number][] = [
-  [512, 512], [768, 768], [1024, 1024], [1280, 1280], [1536, 1536], [2048, 2048],
-  [1024, 768], [1280, 720], [1536, 1024], [1920, 1080], [2048, 1536],
-  [768, 1024], [720, 1280], [1024, 1536], [1080, 1920], [1536, 2048],
-]
+export { IMAGE_SIZE_PRESETS as DIMENSION_PRESETS } from './imageSizes'
 
 /** Diffusion models expect dimensions on an 8px grid; round (never below the grid step). */
 function roundToMultiple(value: number, multiple: number): number {

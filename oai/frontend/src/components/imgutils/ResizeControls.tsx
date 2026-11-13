@@ -1,3 +1,4 @@
+import { ImageSizePicker } from '@/components/ImageSizePicker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -10,8 +11,6 @@ import {
 } from '@/api/imgUtils'
 import { cn } from '@/lib/utils'
 
-/** Quick targets for the pixel presets — long edge of a `fit` box. */
-const PIXEL_PRESETS = [512, 768, 1024, 1920]
 const PERCENT_PRESETS = [25, 50, 75]
 
 interface ResizeControlsProps {
@@ -91,53 +90,7 @@ export default function ResizeControls({
         </div>
       ) : (
         <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              type="number"
-              min={1}
-              max={MAX_RESIZE_EDGE}
-              value={state.width}
-              onChange={e =>
-                onChange({ width: e.target.value === '' ? '' : Number(e.target.value) })
-              }
-              placeholder="auto"
-              className="h-9 w-24"
-              aria-label="Width"
-              data-testid="imgutils-resize-width"
-            />
-            <span className="text-sm text-muted-foreground">×</span>
-            <Input
-              type="number"
-              min={1}
-              max={MAX_RESIZE_EDGE}
-              value={state.height}
-              onChange={e =>
-                onChange({ height: e.target.value === '' ? '' : Number(e.target.value) })
-              }
-              placeholder="auto"
-              className="h-9 w-24"
-              aria-label="Height"
-              data-testid="imgutils-resize-height"
-            />
-            <div className="flex gap-1">
-              {PIXEL_PRESETS.map(px => (
-                <button
-                  key={px}
-                  type="button"
-                  onClick={() => onChange({ width: px, height: px })}
-                  className={cn(
-                    'rounded-md px-2 py-1 text-xs transition-colors',
-                    state.width === px && state.height === px
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted/60 text-muted-foreground hover:bg-muted',
-                  )}
-                  data-testid={`imgutils-resize-preset-${px}`}
-                >
-                  {px}
-                </button>
-              ))}
-            </div>
-          </div>
+          <ImageSizePicker width={state.width} height={state.height} max={MAX_RESIZE_EDGE} testIdPrefix="imgutils-resize" onWidthChange={v => onChange({width: v === '' ? '' : Number(v)})} onHeightChange={v => onChange({height: v === '' ? '' : Number(v)})} onChange={([width,height]) => onChange({width,height})} />
           {state.mode === 'fit' ? (
             <p className="text-xs text-muted-foreground">
               Leave one field blank to size by the other edge alone.

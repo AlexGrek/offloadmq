@@ -1,7 +1,8 @@
+import { ImageSizePicker } from '@/components/ImageSizePicker'
+import { rememberedImageSize } from '@/lib/imageSizes'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  ArrowLeftRight,
   Check,
   ImageIcon,
   Loader2,
@@ -51,7 +52,6 @@ import { useResetOnChange } from '../hooks/useResetOnChange'
 import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import {
-  DIMENSION_PRESETS,
   filterCapabilitiesByWorkflow,
   formatDuration,
   imageJobStatusLabel,
@@ -109,8 +109,8 @@ export default function ImgModelWarsPage() {
   const [prompt, setPrompt] = useState('')
   const [overrideNegative, setOverrideNegative] = useState(false)
   const [negativePrompt, setNegativePrompt] = useState('')
-  const [width, setWidth] = useState('1024')
-  const [height, setHeight] = useState('1024')
+  const [width, setWidth] = useState(() => String(rememberedImageSize([1024, 1024], 4096, 128)[0]))
+  const [height, setHeight] = useState(() => String(rememberedImageSize([1024, 1024], 4096, 128)[1]))
   const [seed, setSeed] = useState('')
 
   const [busy, setBusy] = useState(false)
@@ -320,7 +320,6 @@ export default function ImgModelWarsPage() {
     viewer?.panel === panel ? viewerImages.findIndex(i => i.id === viewer.imageId) : -1
   const viewed = viewerImages[viewerIndex]
   const fastest = job ? fastestSlot(job.slots) : null
-  const dimsPreset = (w: number, h: number) => Number(width) === w && Number(height) === h
 
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden" data-testid="img-model-wars-page">
@@ -570,51 +569,7 @@ export default function ImgModelWarsPage() {
                 )}
               </div>
 
-              <div className="space-y-2">
-                <div className="flex items-end gap-2">
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Label htmlFor="wars-width">Width</Label>
-                    <Input id="wars-width" type="number" value={width} onChange={e => setWidth(e.target.value)} data-testid="wars-width" />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="mb-0.5 shrink-0"
-                    title="Swap width and height"
-                    onClick={() => {
-                      setWidth(height)
-                      setHeight(width)
-                    }}
-                  >
-                    <ArrowLeftRight className="size-4" />
-                  </Button>
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Label htmlFor="wars-height">Height</Label>
-                    <Input id="wars-height" type="number" value={height} onChange={e => setHeight(e.target.value)} data-testid="wars-height" />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {DIMENSION_PRESETS.map(([w, h]) => (
-                    <button
-                      key={`${w}x${h}`}
-                      type="button"
-                      onClick={() => {
-                        setWidth(String(w))
-                        setHeight(String(h))
-                      }}
-                      className={cn(
-                        'h-7 rounded-md border px-2 text-xs transition-colors',
-                        dimsPreset(w, h)
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-input bg-background hover:bg-muted/50',
-                      )}
-                    >
-                      {w}×{h}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <ImageSizePicker width={width} height={height} testIdPrefix="wars" min={128} max={4096} onWidthChange={setWidth} onHeightChange={setHeight} onChange={([w,h]) => { setWidth(String(w)); setHeight(String(h)) }} />
 
               <div className="space-y-1.5">
                 <Label htmlFor="wars-seed">Seed (optional)</Label>

@@ -121,7 +121,7 @@ for (const width of [320, 1280]) {
     await expect(page.getByTestId('hallucinate-prompt')).toHaveValue('Imported dream')
     await expect.poll(() => events.includes('/api/prompts/hallucinate-prompt/recent')).toBe(true)
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
-    await expect(page.getByRole('button', { name: '1920 × 1080' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '1920×1080' })).toBeVisible()
     await page.getByRole('button', { name: 'Star prompt', exact: true }).click()
     await expect.poll(() => events.includes('/api/prompts/hallucinate-prompt/star')).toBe(true)
   })

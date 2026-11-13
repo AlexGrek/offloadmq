@@ -1,3 +1,4 @@
+import { rememberedImageSize, validImageSize } from '@/lib/imageSizes'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -69,8 +70,8 @@ export default function MoviePage() {
   const capabilitiesError = ws.capabilitiesError
 
   const [idea, setIdea] = useState('')
-  const [width, setWidth] = useState(768)
-  const [height, setHeight] = useState(512)
+  const [width, setWidth] = useState(() => rememberedImageSize([768, 512], 8192, 64)[0])
+  const [height, setHeight] = useState(() => rememberedImageSize([768, 512], 8192, 64)[1])
   const [sceneCount, setSceneCount] = useState(4)
   const [sceneLength, setSceneLength] = useState('25')
   const [directorModel, setDirectorModel] = useState('')
@@ -408,11 +409,13 @@ export default function MoviePage() {
 
   const canSubmit = useMemo(
     () =>
+      validImageSize(width, height) && width >= 64 && height >= 64 &&
       capabilitiesStatus === 'ready' &&
       Boolean(idea.trim() && directorModel && sceneModel && txt2VideoCapability) &&
       (!needsImg2Video || Boolean(img2VideoCapability)) &&
       !submitting,
     [
+      width, height,
       idea,
       directorModel,
       sceneModel,

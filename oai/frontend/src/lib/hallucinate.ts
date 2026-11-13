@@ -17,12 +17,7 @@ export function wallpaperRequestSignal(signal?: AbortSignal): AbortSignal {
 }
 
 export { WallpaperCancellationError } from './hallucinatePrompt'
-export const WALLPAPER_SIZES = [
-  { ratio: '16:9', color: 'border-cyan-500', sizes: [[768, 432], [1024, 576], [1280, 720], [1536, 864], [1920, 1080]] },
-  { ratio: '3:2', color: 'border-violet-500', sizes: [[768, 512], [1152, 768], [1536, 1024]] },
-  { ratio: '4:3', color: 'border-amber-500', sizes: [[768, 576], [1024, 768], [1280, 960]] },
-  { ratio: '1:1', color: 'border-rose-500', sizes: [[512, 512], [768, 768], [1024, 1024], [1280, 1280], [1536, 1536]] },
-] as const
+
 
 export interface WallpaperSettings {
   studio?: WallpaperPromptSettings

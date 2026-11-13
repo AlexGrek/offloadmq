@@ -1,9 +1,10 @@
+import { ImageSizePicker } from '@/components/ImageSizePicker'
+import { rememberedImageSize, rememberImageSize, validImageSize } from '@/lib/imageSizes'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Archive,
-  ArrowLeftRight,
   Inbox,
   Layers,
   ChevronDown,
@@ -106,7 +107,6 @@ import {
   randomTxt2videoPrompt,
   applyPipelineParamsToNewForm,
   applyStoredGenerationParamsToNewForm,
-  DIMENSION_PRESETS,
   filterCapabilitiesByWorkflow,
   fitsOriginalResolution,
   isInputImageMode,
@@ -116,7 +116,6 @@ import {
   jobTechMeta,
   pipelineParamsFromStored,
   proportionalCounterpart,
-  proportionalPresets,
   proportionalSize,
   appendInputs,
   batchInputDims,
@@ -256,8 +255,8 @@ export default function ImageGenerationPage() {
     token ? 'loading' : 'idle',
   )
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null)
-  const [width, setWidth] = useState(MODE_DEFAULTS.txt2img.width)
-  const [height, setHeight] = useState(MODE_DEFAULTS.txt2img.height)
+  const [width, setWidth] = useState(() => rememberedImageSize([MODE_DEFAULTS.txt2img.width, MODE_DEFAULTS.txt2img.height])[0])
+  const [height, setHeight] = useState(() => rememberedImageSize([MODE_DEFAULTS.txt2img.width, MODE_DEFAULTS.txt2img.height])[1])
   const [seed, setSeed] = useState('')
   const [videoLength, setVideoLength] = useState('25')
   const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
@@ -369,12 +368,13 @@ export default function ImageGenerationPage() {
   )
 
   const canSubmit = useMemo(() => {
+    if (!validImageSize(width, height)) return false
     if (capabilitiesStatus !== 'ready') return false
     if (!prompt.trim()) return false
     if (!capability) return false
     if (isInputImageMode(mode) && !uploadedInput) return false
     return true
-  }, [prompt, capability, mode, uploadedInput, capabilitiesStatus])
+  }, [prompt, capability, mode, uploadedInput, capabilitiesStatus, width, height])
 
   // "Original resolution" is only meaningful for img2img (not img2video), and
   // needs every input under 4K — each job then runs at its own input's size.
@@ -388,14 +388,6 @@ export default function ImageGenerationPage() {
 
   // Output aspect ratio is locked to the input whenever either toggle is on.
   const ratioLocked = originalResolution || keepProportions
-
-  // Dimension presets: proportional variants of the input while ratio-locked, else square/common sizes.
-  const dimensionPresets = useMemo<[number, number][]>(() => {
-    if (ratioLocked && uploadedInput) {
-      return proportionalPresets(uploadedInput.width, uploadedInput.height)
-    }
-    return DIMENSION_PRESETS
-  }, [ratioLocked, uploadedInput])
 
   const patchRescale = useCallback((patch: Partial<RescaleState>) => {
     setRescale(prev => ({ ...prev, ...patch }))
@@ -645,8 +637,9 @@ export default function ImageGenerationPage() {
           ? randomTxt2videoPrompt()
           : defaults.prompt,
     )
-    setWidth(defaults.width)
-    setHeight(defaults.height)
+    const [savedWidth, savedHeight] = rememberedImageSize([defaults.width, defaults.height])
+    setWidth(savedWidth)
+    setHeight(savedHeight)
     rescaleUserEditedRef.current = false
     setRescale(prev => ({
       ...prev,
@@ -2026,59 +2019,27 @@ export default function ImageGenerationPage() {
               </div>
 
               <div className="space-y-2 sm:col-span-2" data-testid="imggen-dimensions">
-                <div className="flex items-end gap-2">
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Label htmlFor="width">Width</Label>
-                    <Input
-                      id="width"
-                      type="number"
-                      value={width}
-                      disabled={originalResolution}
-                      onChange={e => {
-                        if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
-                        const w = Number(e.target.value) || 1024
-                        setWidth(w)
-                        if (keepProportions && uploadedInput) {
-                          setHeight(proportionalCounterpart('width', w, uploadedInput.width, uploadedInput.height))
-                        }
-                      }}
-                      data-testid="imggen-width"
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="mb-0.5 shrink-0"
-                    disabled={ratioLocked}
-                    onClick={() => {
-                      if (mode === 'img2img' && rescale.mode === 'exact') rescaleUserEditedRef.current = false
-                      setWidth(height)
-                      setHeight(width)
-                    }}
-                    title={ratioLocked ? 'Disabled while proportions are locked' : 'Swap width and height'}
-                    data-testid="imggen-swap-dims"
-                  >
-                    <ArrowLeftRight className="size-4" />
-                  </Button>
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Label htmlFor="height">Height</Label>
-                    <Input
-                      id="height"
-                      type="number"
-                      value={height}
-                      disabled={originalResolution}
-                      onChange={e => {
-                        if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
-                        const h = Number(e.target.value) || 1024
-                        setHeight(h)
-                        if (keepProportions && uploadedInput) {
-                          setWidth(proportionalCounterpart('height', h, uploadedInput.width, uploadedInput.height))
-                        }
-                      }}
-                      data-testid="imggen-height"
-                    />
-                  </div>
+                <ImageSizePicker width={width} height={height} widthId="width" heightId="height" testIdPrefix="imggen" disabled={originalResolution} swapDisabled={ratioLocked}
+                  onWidthChange={v => {
+                    if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                    const w = Number(v)
+                    const h = keepProportions && uploadedInput ? proportionalCounterpart('width', w, uploadedInput.width, uploadedInput.height) : height
+                    setWidth(w); setHeight(h)
+                    return [w, h]
+                  }}
+                  onHeightChange={v => {
+                    if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                    const h = Number(v)
+                    const w = keepProportions && uploadedInput ? proportionalCounterpart('height', h, uploadedInput.width, uploadedInput.height) : width
+                    setWidth(w); setHeight(h)
+                    return [w, h]
+                  }}
+                  onChange={([w,h]) => {
+                    if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
+                    setKeepProportions(false)
+                    setWidth(w); setHeight(h)
+                  }}
+                >
                   {isInputImageMode(mode) && uploadedInput && (
                     <Button
                       type="button"
@@ -2090,6 +2051,7 @@ export default function ImageGenerationPage() {
                         if (rescale.mode === 'exact') rescaleUserEditedRef.current = false
                         setWidth(uploadedInput.width)
                         setHeight(uploadedInput.height)
+                        rememberImageSize(uploadedInput.width, uploadedInput.height)
                       }}
                       title={`Use input dimensions: ${uploadedInput.width}×${uploadedInput.height}`}
                       data-testid="imggen-copy-from-input"
@@ -2098,42 +2060,7 @@ export default function ImageGenerationPage() {
                       Input
                     </Button>
                   )}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {dimensionPresets.map(([w, h]) => {
-                    const activePreset = width === w && height === h
-                    return (
-                      <button
-                        key={`${w}x${h}`}
-                        type="button"
-                        disabled={originalResolution}
-                        onClick={() => {
-                          if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
-                          setWidth(w)
-                          setHeight(h)
-                        }}
-                        className={cn(
-                          'relative isolate h-7 rounded-md border px-2 text-xs transition-colors',
-                          activePreset
-                            ? 'border-transparent text-primary'
-                            : 'border-input bg-background hover:bg-muted/50',
-                          originalResolution && 'cursor-not-allowed opacity-50 hover:bg-background',
-                        )}
-                        data-testid={`imggen-preset-${w}x${h}`}
-                      >
-                        {activePreset && (
-                          <motion.span
-                            layoutId="imggen-preset-pill"
-                            transition={morph.spring}
-                            aria-hidden
-                            className="absolute inset-0 -z-10 rounded-md border border-primary bg-primary/10"
-                          />
-                        )}
-                        {w}×{h}
-                      </button>
-                    )
-                  })}
-                </div>
+                </ImageSizePicker>
                 <MorphCollapse
                   show={mode === 'img2img' && Boolean(uploadedInput)}
                   data-testid="imggen-resolution-toggles"

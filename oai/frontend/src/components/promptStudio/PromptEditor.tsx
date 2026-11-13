@@ -1,3 +1,5 @@
+import { ImageSizePicker } from '@/components/ImageSizePicker'
+import { rememberedImageSize } from '@/lib/imageSizes'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
@@ -19,7 +21,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { JobErrorBanner } from '@/components/JobErrorBanner'
-import { DIMENSION_PRESETS, MODE_DEFAULTS } from '@/lib/imggen'
+import { MODE_DEFAULTS } from '@/lib/imggen'
 import { capabilityBaseLabel } from '@/lib/modelAvailability'
 import {
   appendSegment,
@@ -32,24 +34,13 @@ import {
 import { cn } from '@/lib/utils'
 import { clampGenerateCount, MAX_QUICK_GENERATE, useQuickTxt2Img } from '../imggen/useQuickTxt2Img'
 
-const SIZE_KEY = 'oai_prompt_editor_size'
 const MODE_KEY = 'oai_prompt_editor_mode'
 /** `editing === NEW_SEGMENT` → the "add a sentence" field at the end. */
 const NEW_SEGMENT = -1
 
 type Size = readonly [number, number]
 
-function loadSize(): Size {
-  try {
-    const raw = window.localStorage.getItem(SIZE_KEY)
-    const match = raw ? /^(\d+)x(\d+)$/.exec(raw) : null
-    if (match) {
-      const size: Size = [Number(match[1]), Number(match[2])]
-      if (DIMENSION_PRESETS.some(([w, h]) => w === size[0] && h === size[1])) return size
-    }
-  } catch { /* storage unavailable */ }
-  return [MODE_DEFAULTS.txt2img.width, MODE_DEFAULTS.txt2img.height]
-}
+function loadSize(): Size { return rememberedImageSize([MODE_DEFAULTS.txt2img.width, MODE_DEFAULTS.txt2img.height]) }
 
 function loadMode(): SegmentMode {
   try {
@@ -62,12 +53,6 @@ function loadMode(): SegmentMode {
 function persist(key: string, value: string) {
   try { window.localStorage.setItem(key, value) } catch { /* storage unavailable */ }
 }
-
-const SIZE_GROUPS: { label: string; sizes: Size[] }[] = [
-  { label: 'Square', sizes: DIMENSION_PRESETS.filter(([w, h]) => w === h) },
-  { label: 'Landscape', sizes: DIMENSION_PRESETS.filter(([w, h]) => w > h) },
-  { label: 'Portrait', sizes: DIMENSION_PRESETS.filter(([w, h]) => w < h) },
-]
 
 /**
  * Smart prompt editor (Prompt Studio): a full-screen workspace where the prompt is laid
@@ -115,7 +100,7 @@ export function PromptEditor({
   const segments = useMemo(() => splitSegments(text, mode), [text, mode])
   const words = countWords(text)
   const count = clampGenerateCount(countInput)
-  const canGenerate = models.ready && Boolean(text.trim()) && !generating && editing === null
+  const canGenerate = size.every(n => Number.isInteger(n) && n > 0 && n <= 8192) && models.ready && Boolean(text.trim()) && !generating && editing === null
 
   function commit(next: string) {
     const value = next.trim()
@@ -194,7 +179,6 @@ export function PromptEditor({
 
   function pickSize(next: Size) {
     setSize(next)
-    persist(SIZE_KEY, `${next[0]}x${next[1]}`)
   }
 
   async function generate() {
@@ -491,42 +475,7 @@ export function PromptEditor({
           <aside className="flex shrink-0 flex-col gap-5 border-t border-border bg-muted/20 p-4 lg:w-96 lg:overflow-y-auto lg:border-l lg:border-t-0">
             <div className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Size</h3>
-              <div className="space-y-2.5" data-testid="prompt-editor-sizes">
-                {SIZE_GROUPS.map(group => (
-                  <div key={group.label}>
-                    <p className="mb-1 text-[11px] text-muted-foreground">{group.label}</p>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {group.sizes.map(([w, h]) => {
-                        const active = size[0] === w && size[1] === h
-                        const scale = 18 / Math.max(w, h)
-                        return (
-                          <button
-                            key={`${w}x${h}`}
-                            type="button"
-                            aria-pressed={active}
-                            onClick={() => pickSize([w, h])}
-                            data-testid={`prompt-editor-size-${w}x${h}`}
-                            className={cn(
-                              'flex min-h-10 items-center gap-1.5 rounded-md border px-1.5 text-[11px] tabular-nums transition-colors',
-                              active
-                                ? 'border-blue-500/70 bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                                : 'border-input bg-background hover:bg-muted/60',
-                            )}
-                          >
-                            <span className="flex size-5 shrink-0 items-center justify-center">
-                              <span
-                                className={cn('rounded-[2px] border', active ? 'border-blue-500 bg-blue-500/30' : 'border-muted-foreground/60')}
-                                style={{ width: Math.round(w * scale), height: Math.round(h * scale) }}
-                              />
-                            </span>
-                            {w}×{h}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <ImageSizePicker width={size[0]} height={size[1]} testIdPrefix="prompt-editor" presetId={(w,h) => `prompt-editor-size-${w}x${h}`} onChange={pickSize} onWidthChange={v => pickSize([Number(v), size[1]])} onHeightChange={v => pickSize([size[0], Number(v)])} />
             </div>
 
             <div className="space-y-1.5">

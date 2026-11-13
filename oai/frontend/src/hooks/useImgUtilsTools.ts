@@ -79,7 +79,10 @@ export function useImgUtilsTools(token: string | null, enabled = true): ImgUtils
   const [selectedKey, setSelectedKey] = useState(() => initialPrefs.selectedKey ?? '')
   // Kept across tool switches so flipping back and forth never loses settings.
   const [resizeForm, setResizeForm] = useState<ResizeFormState>(
-    () => initialPrefs.resizeForm ?? defaultResizeForm([]),
+    () => {
+      const defaults = defaultResizeForm([])
+      return { ...defaults, ...initialPrefs.resizeForm, width: defaults.width, height: defaults.height }
+    },
   )
   const [scaleMultiplier, setScaleRaw] = useState<number>(
     initialPrefs.scaleMultiplier ?? DEFAULT_SCALE_MULTIPLIER,

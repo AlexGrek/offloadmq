@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Feather } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
@@ -27,6 +27,7 @@ import {
   ANOTHER_ONE_MESSAGE,
   PROMPT_STUDIO_TEMPLATE_BUCKET,
   extractPrompt,
+  composeFirstMessage,
   renderTemplate,
   type PromptStudioRouteState,
 } from '../../lib/promptStudio'
@@ -61,6 +62,7 @@ import {
   pendingMessageId,
   recordToMessage,
   resolveChatModel,
+  staleChatTasks,
   uid,
   type Message,
   type MessageStatus,
@@ -157,11 +159,11 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
   const [systemPrompt, setSystemPrompt] = useState(() =>
     (user ? readChatPrompt(user.id, kind) : null) ?? defaultPrompt,
   )
-  // Prompt Studio setup: example prompt rendered through a message template into the composer.
+  // Prompt Studio setup: the example prompt rendered through a message template becomes
+  // the first message (shown as a preview; the message box adds optional extra text).
   const defaultTemplate = promptDefaults.prompt_studio_template
   const [examplePrompt, setExamplePrompt] = useState('')
   const [template, setTemplate] = useState(defaultTemplate)
-  const lastRenderedRef = useRef('')
   // A just-created studio session has no history; skip its REST load so it can't
   // race (and wipe) the optimistic first message.
   const skipLoadForChatRef = useRef<string | null>(null)
@@ -287,32 +289,12 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     if (!isStudio) return
     const state = location.state as PromptStudioRouteState | null
     if (!state || typeof state.examplePrompt !== 'string') return
-    const rendered = renderTemplate(template, state.examplePrompt)
-    lastRenderedRef.current = rendered
     setActiveChatId(null)
     setMessages([])
     setExamplePrompt(state.examplePrompt)
-    setInput(rendered)
+    setInput('')
     navigate(location.pathname, { replace: true, state: null })
-  }, [isStudio, location.state, location.pathname, navigate]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  /** Renders template + example into the composer unless the user typed their own text. */
-  const applyStudioSeed = useCallback((nextTemplate: string, nextExample: string) => {
-    const rendered = renderTemplate(nextTemplate, nextExample)
-    const previous = lastRenderedRef.current
-    lastRenderedRef.current = rendered
-    setInput(cur => (cur.trim() === '' || cur === previous ? rendered : cur))
-  }, [])
-
-  const changeExamplePrompt = useCallback((value: string) => {
-    setExamplePrompt(value)
-    applyStudioSeed(template, value)
-  }, [applyStudioSeed, template])
-
-  const changeTemplate = useCallback((value: string) => {
-    setTemplate(value)
-    applyStudioSeed(value, examplePrompt)
-  }, [applyStudioSeed, examplePrompt])
+  }, [isStudio, location.state, location.pathname, navigate])
 
   // ── Load messages when active chat changes ────────────────────────────────
 
@@ -334,9 +316,13 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
         const running = chatTasksRef.current.filter(
           t => t.chatId === activeChatId && !t.terminal,
         )
+        // A reply that finished while the page was closed never delivered its result
+        // event — retire that task instead of resurrecting a "thinking" bubble.
+        const stale = staleChatTasks(records, running)
+        for (const t of stale) finishChatTask(t.reqId, 'completed', true)
         const merged = mergeInFlightMessages(
           records.map(recordToMessage).filter((m): m is Message => m != null),
-          running,
+          running.filter(t => !stale.includes(t)),
         )
         setMessages(merged)
         restoreReqMappings(merged)
@@ -354,7 +340,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     return () => {
       cancelled = true
     }
-  }, [activeChatId, token])
+  }, [activeChatId, token, finishChatTask])
 
   // Apply saved model immediately when switching chats (before messages finish loading).
   useEffect(() => {
@@ -612,6 +598,9 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
   }
 
   const showSystemStudio = !loadingMessages && (!activeChatId || messages.length === 0)
+  /** Prompt Studio before the first message: the composer lives inside the setup form. */
+  const studioSetup = isStudio && showSystemStudio
+  const studioSeed = studioSetup ? renderTemplate(template, examplePrompt) : ''
 
   const scroll = useTranscriptScroll({
     messages,
@@ -630,7 +619,6 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
       setMessages([])
       setInput('')
       setExamplePrompt('')
-      lastRenderedRef.current = ''
       setPendingAttachments([])
       setAttachError(null)
       if (isMobile) setSidebarOpen(false)
@@ -760,7 +748,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
   }, [token, systemPrompt, defaultPrompt, activeChatId, selectedModel, kind, messages.length, activeChat?.system_prompt])
 
   const send = useCallback(async () => {
-    const text = input.trim()
+    const text = studioSetup ? composeFirstMessage(studioSeed, input) : input.trim()
     if (!text && pendingAttachments.length === 0) return
     const attachments = pendingAttachments
     const firstTurn = messages.length === 0
@@ -779,10 +767,10 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     setAttachError(null)
     sendWithText(text, attachments, chatId)
     // The studio template library records templates actually used to open a session.
-    if (isStudio && firstTurn && token && examplePrompt.trim() && template.trim()) {
+    if (isStudio && firstTurn && token && studioSeed && template.trim()) {
       recordRecentPrompt(token, PROMPT_STUDIO_TEMPLATE_BUCKET, template.trim()).catch(console.error)
     }
-  }, [input, pendingAttachments, sendWithText, messages.length, activeChatId, isStudio, ensureStudioSession, token, examplePrompt, template])
+  }, [input, pendingAttachments, sendWithText, messages.length, activeChatId, isStudio, ensureStudioSession, token, studioSetup, studioSeed, template])
 
   const handleUseAsPrompt = useCallback(
     (prompt: string) => {
@@ -848,7 +836,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
       : null
 
   const canSend =
-    (!!input.trim() || pendingAttachments.length > 0) &&
+    (!!input.trim() || !!studioSeed || pendingAttachments.length > 0) &&
     !attaching &&
     modelListed(selectedModel, ws.capabilities) &&
     ws.status === 'connected' &&
@@ -895,6 +883,49 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
   }, [token, activeChatTask, finishChatTask])
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  const composerProps: ComponentProps<typeof ChatComposer> = {
+    value: input,
+    onChange: setInput,
+    onSend: () => void send(),
+    wsStatus: ws.status,
+    hasActiveChat: isStudio || !!activeChatId,
+    capabilities: ws.capabilities,
+    selectedModel,
+    onModelSelect: handleModelSelect,
+    onRefreshCapabilities: ws.refreshCapabilities,
+    capabilitiesStatus: ws.capabilitiesStatus,
+    capabilitiesError: ws.capabilitiesError,
+    isGenerating,
+    canSend,
+    canCancelTask,
+    onCancel: () => void handleCancel(),
+    attachments: pendingAttachments,
+    attaching,
+    attachError,
+    attachDisabled: pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE,
+    onUploadImages: files => void uploadAttachments(files, 'image'),
+    onUploadDocuments: files => void uploadAttachments(files, 'document'),
+    onRemoveAttachment: removeAttachment,
+    onOpenImageLibrary: () => setImagePickerOpen(true),
+    onOpenDocumentPicker: () => setDocumentPickerOpen(true),
+    visionWarning,
+    enterSends: config.enterSends,
+    allowDocuments: config.allowDocuments,
+    topSlot: canSendAnother ? (
+      <div className="mb-2 flex justify-center">
+        <button
+          type="button"
+          onClick={() => sendWithText(ANOTHER_ONE_MESSAGE)}
+          data-testid="prompt-studio-another"
+          className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-blue-500/10 px-3.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-500/20 dark:text-blue-300"
+        >
+          <Feather className="size-3.5" />
+          {ANOTHER_ONE_MESSAGE}
+        </button>
+      </div>
+    ) : undefined,
+  }
 
   return (
     <div
@@ -977,60 +1008,29 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
                 onSystemPromptChange={setSystemPrompt}
                 defaultSystemPrompt={defaultPrompt}
                 examplePrompt={examplePrompt}
-                onExamplePromptChange={changeExamplePrompt}
+                onExamplePromptChange={setExamplePrompt}
                 template={template}
-                onTemplateChange={changeTemplate}
+                onTemplateChange={setTemplate}
                 defaultTemplate={defaultTemplate}
                 onUsePrompt={handleUseAsPrompt}
+                messagePreview={studioSeed}
+                composer={
+                  <ChatComposer
+                    {...composerProps}
+                    inline
+                    placeholder={
+                      studioSeed
+                        ? 'Add instructions (optional) — appended to the message above'
+                        : 'Describe what you want, or start from an example prompt above'
+                    }
+                  />
+                }
               />
             ) : undefined
           }
         />
 
-        <ChatComposer
-          value={input}
-          onChange={setInput}
-          onSend={() => void send()}
-          wsStatus={ws.status}
-          hasActiveChat={isStudio || !!activeChatId}
-          capabilities={ws.capabilities}
-          selectedModel={selectedModel}
-          onModelSelect={handleModelSelect}
-          onRefreshCapabilities={ws.refreshCapabilities}
-          capabilitiesStatus={ws.capabilitiesStatus}
-          capabilitiesError={ws.capabilitiesError}
-          isGenerating={isGenerating}
-          canSend={canSend}
-          canCancelTask={canCancelTask}
-          onCancel={() => void handleCancel()}
-          attachments={pendingAttachments}
-          attaching={attaching}
-          attachError={attachError}
-          attachDisabled={pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
-          onUploadImages={files => void uploadAttachments(files, 'image')}
-          onUploadDocuments={files => void uploadAttachments(files, 'document')}
-          onRemoveAttachment={removeAttachment}
-          onOpenImageLibrary={() => setImagePickerOpen(true)}
-          onOpenDocumentPicker={() => setDocumentPickerOpen(true)}
-          visionWarning={visionWarning}
-          enterSends={config.enterSends}
-          allowDocuments={config.allowDocuments}
-          topSlot={
-            canSendAnother ? (
-              <div className="mb-2 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => sendWithText(ANOTHER_ONE_MESSAGE)}
-                  data-testid="prompt-studio-another"
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-blue-500/10 px-3.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-500/20 dark:text-blue-300"
-                >
-                  <Feather className="size-3.5" />
-                  {ANOTHER_ONE_MESSAGE}
-                </button>
-              </div>
-            ) : undefined
-          }
-        />
+        {!studioSetup && <ChatComposer {...composerProps} />}
       </div>
 
       {token && (

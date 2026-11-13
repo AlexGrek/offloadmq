@@ -1,8 +1,10 @@
+import { useResetOnChange } from '@/hooks/useResetOnChange'
+import { ImageSizePicker } from '@/components/ImageSizePicker'
+import { rememberedImageSize } from '@/lib/imageSizes'
 import { useRef, useState } from 'react'
 import { Loader2, RefreshCw } from 'lucide-react'
-import { DIMENSION_PRESETS, MODE_DEFAULTS } from '../../lib/imggen'
+import { MODE_DEFAULTS } from '../../lib/imggen'
 import { capabilityBaseLabel } from '../../lib/modelAvailability'
-import { cn } from '../../lib/utils'
 import { JobErrorBanner } from '../JobErrorBanner'
 import { Button } from '../ui/button'
 import {
@@ -54,10 +56,7 @@ export function QuickGenerateDialog({
     refresh: refreshCapabilities,
   } = models
   const contentRef = useRef<HTMLDivElement>(null)
-  const [size, setSize] = useState<readonly [number, number]>([
-    MODE_DEFAULTS.txt2img.width,
-    MODE_DEFAULTS.txt2img.height,
-  ])
+  const [size, setSize] = useState<readonly [number, number]>(() => rememberedImageSize([MODE_DEFAULTS.txt2img.width, MODE_DEFAULTS.txt2img.height]))
   const [promptInput, setPromptInput] = useState(prompt)
   const [countInput, setCountInput] = useState(String(DEFAULT_GENERATE_MULTIPLE))
   const [submitting, setSubmitting] = useState(false)
@@ -65,9 +64,12 @@ export function QuickGenerateDialog({
   const tid = (suffix: string) => `${testIdPrefix}-${suffix}`
   const parseCount = clampGenerateCount
 
+  useResetOnChange(open, active => { if (active) setSize(rememberedImageSize()) })
+
   const canGenerate =
     models.ready &&
     Boolean(promptInput.trim()) &&
+    size.every(n => Number.isInteger(n) && n > 0 && n <= 8192) &&
     !submitting
 
   async function onGenerate() {
@@ -172,25 +174,7 @@ export function QuickGenerateDialog({
 
             <div className="space-y-1.5">
               <Label>Size</Label>
-              <div className="flex flex-wrap gap-2" data-testid={tid('sizes')}>
-                {DIMENSION_PRESETS.map(([width, height]) => (
-                  <button
-                    key={`${width}x${height}`}
-                    type="button"
-                    aria-pressed={size[0] === width && size[1] === height}
-                    onClick={() => setSize([width, height])}
-                    className={cn(
-                      'min-h-11 rounded-md border px-3 text-xs transition-colors',
-                      size[0] === width && size[1] === height
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-input bg-background hover:bg-muted/50',
-                    )}
-                    data-testid={tid(`size-${width}x${height}`)}
-                  >
-                    {width}×{height}
-                  </button>
-                ))}
-              </div>
+              <ImageSizePicker width={size[0]} height={size[1]} testIdPrefix={testIdPrefix} presetId={(w,h) => tid(`size-${w}x${h}`)} onChange={setSize} onWidthChange={v => setSize([Number(v), size[1]])} onHeightChange={v => setSize([size[0], Number(v)])} />
             </div>
 
             <div className="space-y-1.5">

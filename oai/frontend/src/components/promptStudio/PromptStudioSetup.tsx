@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Feather, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -13,8 +14,9 @@ import {
 /**
  * Prompt Studio empty-session panel: system prompt, optional example prompt (from the
  * txt2img library) and the message template that turns the example into the first
- * message. The rendered message lands in the composer below; it is sent from there.
- * System prompts and templates live in their own prompt-library buckets.
+ * message. The rendered message is shown as a read-only preview; the message box at the
+ * end of the form (the chat composer, rendered inline) adds optional text and images and
+ * starts the session. System prompts and templates have their own prompt-library buckets.
  */
 export function PromptStudioSetup({
   token,
@@ -27,6 +29,8 @@ export function PromptStudioSetup({
   onTemplateChange,
   defaultTemplate,
   onUsePrompt,
+  messagePreview,
+  composer,
 }: {
   token: string
   systemPrompt: string
@@ -39,6 +43,10 @@ export function PromptStudioSetup({
   defaultTemplate: string
   /** Opens Image Generation with a prompt (the example's "Use" action). */
   onUsePrompt: (prompt: string) => void
+  /** Template rendered with the example; empty when there is no example. */
+  messagePreview: string
+  /** The inline chat composer that sends the first message. */
+  composer: ReactNode
 }) {
   return (
     <section
@@ -127,8 +135,25 @@ export function PromptStudioSetup({
         />
         <p className="text-xs text-muted-foreground">
           <code className="rounded bg-muted px-1 py-0.5">{TEMPLATE_TOKEN}</code> is replaced
-          with the example prompt; the result fills the message box below, ready to edit and send.
+          with the example prompt to build the first message.
         </p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>First message</Label>
+        {messagePreview ? (
+          <div
+            className="whitespace-pre-wrap rounded-xl border border-blue-500/30 bg-blue-500/5 px-3.5 py-2.5 text-sm text-foreground"
+            data-testid="prompt-studio-message-preview"
+          >
+            {messagePreview}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No example prompt — write the whole message below.
+          </p>
+        )}
+        {composer}
       </div>
     </section>
   )

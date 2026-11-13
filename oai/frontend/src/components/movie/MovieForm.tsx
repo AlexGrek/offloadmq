@@ -1,3 +1,4 @@
+import { ImageSizePicker } from '@/components/ImageSizePicker'
 import { useState, type FormEvent } from 'react'
 import { Clapperboard, FolderOpen, Loader2, Play, Upload, X } from 'lucide-react'
 import { uploadImage, imageFileUrl, type UploadedImage } from '../../api/images'
@@ -157,30 +158,7 @@ export function MovieForm({
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="movie-width">Width</Label>
-            <Input
-              id="movie-width"
-              type="number"
-              min={64}
-              value={width}
-              onChange={e => onWidthChange(Number(e.target.value) || 1024)}
-              data-testid="movie-width"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="movie-height">Height</Label>
-            <Input
-              id="movie-height"
-              type="number"
-              min={64}
-              value={height}
-              onChange={e => onHeightChange(Number(e.target.value) || 576)}
-              data-testid="movie-height"
-            />
-          </div>
-        </div>
+        <ImageSizePicker width={width} height={height} min={64} testIdPrefix="movie" onWidthChange={v => onWidthChange(Number(v))} onHeightChange={v => onHeightChange(Number(v))} onChange={([w,h]) => { onWidthChange(w); onHeightChange(h) }} />
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
