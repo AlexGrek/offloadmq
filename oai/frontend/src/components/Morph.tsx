@@ -1,6 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import type { ReactNode } from 'react'
-import { cn } from '@/lib/utils'
 import { COLLAPSE_MORPH, POP_MORPH, useMorph } from '@/lib/motion'
 
 type MorphProps = {
@@ -12,7 +11,8 @@ type MorphProps = {
 
 /**
  * Height collapse — for form sections that appear when a mode or toggle changes.
- * The wrapper owns `overflow-hidden`, so pad the children, not this element.
+ * The wrapper clips its children while animating (see `COLLAPSE_MORPH`) and lets them
+ * overflow once open, so popovers inside are not cut off. Pad the children, not this element.
  */
 export function MorphCollapse({ show, children, className, 'data-testid': testId }: MorphProps) {
   const morph = useMorph()
@@ -22,7 +22,7 @@ export function MorphCollapse({ show, children, className, 'data-testid': testId
         <motion.div
           {...COLLAPSE_MORPH}
           transition={morph.soft}
-          className={cn('overflow-hidden', className)}
+          className={className}
           data-testid={testId}
         >
           {children}

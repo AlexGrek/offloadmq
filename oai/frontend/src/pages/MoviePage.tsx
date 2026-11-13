@@ -1,4 +1,5 @@
 import { rememberedImageSize, validImageSize } from '@/lib/imageSizes'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -105,9 +106,10 @@ export default function MoviePage() {
   const viewingJob = activePanel !== MOVIE_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
 
-  useEffect(() => {
-    if (ws.capabilitiesStatus !== 'ready') return
-    const { llm, video } = capabilities
+  // Re-validate the model selections against each fresh capability list.
+  useResetOnChange(ws.capabilitiesStatus === 'ready' ? capabilities : null, caps => {
+    if (!caps) return
+    const { llm, video } = caps
     if (llm.length > 0) {
       const firstLlm = firstSelectableModel(llm)
       setDirectorModel(prev => pickListedCapability(prev, llm) ?? firstLlm ?? '')
@@ -127,18 +129,14 @@ export default function MoviePage() {
       setTxt2VideoCapability(prev => pickListedCapability(prev, txt2videoCaps) ?? firstTxt2Video ?? '')
       setImg2VideoCapability(prev => pickListedCapability(prev, img2videoCaps) ?? firstImg2Video ?? '')
     }
-  }, [capabilities, ws.capabilitiesStatus])
+  })
 
-  const loadJobs = useCallback(async () => {
-    if (!token) return
-    try {
-      const list = await listMovieJobs(token)
-      setJobs(list)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setJobsLoading(false)
-    }
+  const loadJobs = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return listMovieJobs(token)
+      .then(setJobs)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setJobsLoading(false))
   }, [token])
 
   useEffect(() => {

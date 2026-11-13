@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useNavigate } from 'react-router-dom'
 import {
   Download,
@@ -87,9 +88,9 @@ export default function FilesPage() {
     [navigate],
   )
 
-  const load = useCallback(() => {
+  // Fetch only — no synchronous state writes, so an effect may call it directly.
+  const fetchFiles = useCallback(() => {
     if (!token) return
-    setLoading(true)
     listFiles(token)
       .then(d => {
         setData(d)
@@ -99,7 +100,15 @@ export default function FilesPage() {
       .finally(() => setLoading(false))
   }, [token])
 
-  useEffect(() => load(), [load])
+  /** Reload with the spinner (refresh buttons, after a change). */
+  const load = useCallback(() => {
+    setLoading(true)
+    fetchFiles()
+  }, [fetchFiles])
+
+  useResetOnChange(token, t => { if (t) setLoading(true) })
+
+  useEffect(() => fetchFiles(), [fetchFiles])
 
   const files = useMemo(() => {
     const all = data?.files ?? []

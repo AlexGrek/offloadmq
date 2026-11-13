@@ -28,7 +28,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Restore session on mount
   useEffect(() => {
     const stored = localStorage.getItem(TOKEN_KEY)
-    if (!stored) { setLoading(false); return }
+    // `loading` starts false when there is no stored token, so there is nothing to settle.
+    if (!stored) return
     authApi.me(stored)
       .then(u => { setUser(u); setToken(stored) })
       .catch(logout)

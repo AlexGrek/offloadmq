@@ -289,12 +289,12 @@ async fn poll_loop(
         }
         first = false;
 
-        if let Some(limit) = deadline_secs {
-            if started_at.elapsed().as_secs() >= limit {
-                client.cancel_task(&task_id).await.log_warn("cancel chat task");
-                finish_failure(&state, &tx, &ctx, "Task timed out waiting for result".to_string(), None).await;
-                return;
-            }
+        if let Some(limit) = deadline_secs
+            && started_at.elapsed().as_secs() >= limit
+        {
+            client.cancel_task(&task_id).await.log_warn("cancel chat task");
+            finish_failure(&state, &tx, &ctx, "Task timed out waiting for result".to_string(), None).await;
+            return;
         }
 
         let resp = match client.poll_task(&task_id).await {
@@ -532,10 +532,10 @@ fn build_offload_chat_messages(
 
 /// Text to show while the task is still running: accumulated agent log, else partial output.
 fn progress_stream_text(resp: &crate::offload::PollResponse) -> Option<String> {
-    if let Some(log) = resp.log.as_ref() {
-        if !log.is_empty() {
-            return Some(log.clone());
-        }
+    if let Some(log) = resp.log.as_ref()
+        && !log.is_empty()
+    {
+        return Some(log.clone());
     }
     let partial = task_status::extract_llm_text(&resp.output);
     if partial.is_empty() {

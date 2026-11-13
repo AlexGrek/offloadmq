@@ -1,5 +1,6 @@
 import { ImageSizePicker } from '@/components/ImageSizePicker'
-import { rememberedImageSize, rememberImageSize, validImageSize } from '@/lib/imageSizes'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
+import { rememberedImageSize, rememberImageSize, validImageSize, VIDEO_SIZE_PRESETS, VIDEO_SIZE_STORAGE_KEY, IMAGE_SIZE_STORAGE_KEY } from '@/lib/imageSizes'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -126,6 +127,7 @@ import {
   imageJobStatusLabel,
   formatDuration,
   parseVideoLength,
+  DEFAULT_VIDEO_LENGTH,
   rescaleDataPrep,
   type ImgGenMode,
   type ImggenRouteState,
@@ -222,6 +224,11 @@ function samePollOr(
   return prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next
 }
 
+/** localStorage key that remembers the output size for `mode` (video has its own). */
+function sizeStorageKey(mode: ImgGenMode): string {
+  return isVideoMode(mode) ? VIDEO_SIZE_STORAGE_KEY : IMAGE_SIZE_STORAGE_KEY
+}
+
 /** `width`/`height` props for an `<img>`/`<video>`, omitted when unknown. */
 function intrinsicSize(width: number, height: number) {
   return width > 0 && height > 0 ? { width, height } : undefined
@@ -258,7 +265,7 @@ export default function ImageGenerationPage() {
   const [width, setWidth] = useState(() => rememberedImageSize([MODE_DEFAULTS.txt2img.width, MODE_DEFAULTS.txt2img.height])[0])
   const [height, setHeight] = useState(() => rememberedImageSize([MODE_DEFAULTS.txt2img.width, MODE_DEFAULTS.txt2img.height])[1])
   const [seed, setSeed] = useState('')
-  const [videoLength, setVideoLength] = useState('25')
+  const [videoLength, setVideoLength] = useState(String(DEFAULT_VIDEO_LENGTH))
   const [rescale, setRescale] = useState<RescaleState>(DEFAULT_RESCALE)
   // img2img "original resolution": lock generation dims to the input image and pass it
   // through to the agent un-rescaled. Only offered for sub-4K inputs; default-on after upload.
@@ -354,9 +361,7 @@ export default function ImageGenerationPage() {
     jobsRef.current = jobs
   }, [jobs])
 
-  useEffect(() => {
-    setDebugOpen(false)
-  }, [activePanel])
+  useResetOnChange(activePanel, () => setDebugOpen(false))
 
   // Another page (e.g. image analysis "Use as prompt", files "Edit"/"Animate") can route
   // here with state to prefill. Handled after sendOutputToInputMode is defined below.
@@ -403,43 +408,61 @@ export default function ImageGenerationPage() {
 
   // Availability + threshold for the External resize option. A failure here is
   // not worth surfacing: the option simply stays hidden.
-  const loadExternalResizeInfo = useCallback(async () => {
-    if (!token) return
-    try {
-      setExternalResizeInfo(await getExternalResizeInfo(token))
-    } catch {
-      setExternalResizeInfo(null)
-    }
+  const loadExternalResizeInfo = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return getExternalResizeInfo(token)
+      .then(setExternalResizeInfo)
+      .catch(() => setExternalResizeInfo(null))
   }, [token])
 
-  const loadCapabilities = useCallback(async () => {
-    if (!token) return
+  // The three loaders below write no state synchronously (the loading flags are set by
+  // the token reset further down, or by the manual wrappers), so an effect may call them.
+  const fetchCapabilities = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return listImgGenCapabilities(token)
+      .then(caps => {
+        setAllCapabilities(caps)
+        setCapabilitiesStatus('ready')
+      })
+      .catch((e: unknown) => {
+        setCapabilitiesStatus('error')
+        setCapabilitiesError(e instanceof Error ? e.message : 'Failed to load models')
+      })
+  }, [token])
+
+  const loadCapabilities = useCallback(() => {
+    if (!token) return Promise.resolve()
     setCapabilitiesStatus('loading')
     setCapabilitiesError(null)
-    try {
-      const caps = await listImgGenCapabilities(token)
-      setAllCapabilities(caps)
-      setCapabilitiesStatus('ready')
-    } catch (e) {
-      setCapabilitiesStatus('error')
-      setCapabilitiesError(
-        e instanceof Error ? e.message : 'Failed to load models',
-      )
-    }
+    return fetchCapabilities()
+  }, [token, fetchCapabilities])
+
+  const fetchJobs = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return listImageJobs(token)
+      .then(list => setJobs(prev => mergeJobList(prev, list, imageJobFingerprint)))
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setJobsLoading(false))
   }, [token])
 
-  const refreshJobs = useCallback(async () => {
-    if (!token) return
+  const refreshJobs = useCallback(() => {
+    if (!token) return Promise.resolve()
     setJobsLoading(true)
-    try {
-      const list = await listImageJobs(token)
-      setJobs(prev => mergeJobList(prev, list, imageJobFingerprint))
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setJobsLoading(false)
+    return fetchJobs()
+  }, [token, fetchJobs])
+
+  // Login / logout: reset what the token's loaders fill in.
+  useResetOnChange(token, t => {
+    if (t) {
+      setCapabilitiesStatus('loading')
+      setCapabilitiesError(null)
+      setJobsLoading(true)
+    } else {
+      setAllCapabilities([])
+      setCapabilitiesStatus('idle')
+      setCapabilitiesError(null)
     }
-  }, [token])
+  })
 
   // Keep the pipelines list fresh without any loading UI: no `jobsLoading`
   // toggle (which would flash the skeleton / spin the refresh icon) and no error
@@ -527,12 +550,7 @@ export default function ImageGenerationPage() {
   }, [slideshowOn, token])
 
   useEffect(() => {
-    if (!token) {
-      setAllCapabilities([])
-      setCapabilitiesStatus('idle')
-      setCapabilitiesError(null)
-      return
-    }
+    if (!token) return
     // Independent fetches run in parallel so every section fills in at once.
     getSettings(token)
       .then(settings => {
@@ -543,10 +561,10 @@ export default function ImageGenerationPage() {
       .catch(() => {
         // non-fatal
       })
-    void refreshJobs()
-    void loadCapabilities()
+    void fetchJobs()
+    void fetchCapabilities()
     void loadExternalResizeInfo()
-  }, [token, loadCapabilities, loadExternalResizeInfo, refreshJobs])
+  }, [token, fetchCapabilities, loadExternalResizeInfo, fetchJobs])
 
   const refreshCapabilities = useCallback(() => {
     void loadCapabilities()
@@ -557,6 +575,8 @@ export default function ImageGenerationPage() {
   // Layout effect: the chosen model is in place before paint, so the picker
   // never shows "Pick model" for a frame. The first pick waits for the job list
   // (capabilities and jobs load in parallel) so the last-used model wins.
+  /* eslint-disable react-hooks/set-state-in-effect -- deliberate: a layout effect so the
+     pick lands before paint; deriving it would also need the "first pick" ref in render. */
   useLayoutEffect(() => {
     if (capabilities.length === 0) return
 
@@ -579,6 +599,7 @@ export default function ImageGenerationPage() {
       setCapability(firstOnline?.base ?? capabilities[0].base)
     }
   }, [capabilities, capability, jobs, jobsLoading])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Until a model is picked, keep the picker on its loading skeleton.
   const pickerStatus: CapabilitiesStatus =
@@ -637,7 +658,7 @@ export default function ImageGenerationPage() {
           ? randomTxt2videoPrompt()
           : defaults.prompt,
     )
-    const [savedWidth, savedHeight] = rememberedImageSize([defaults.width, defaults.height])
+    const [savedWidth, savedHeight] = rememberedImageSize([defaults.width, defaults.height], 8192, 1, sizeStorageKey(next))
     setWidth(savedWidth)
     setHeight(savedHeight)
     rescaleUserEditedRef.current = false
@@ -911,6 +932,10 @@ export default function ImageGenerationPage() {
     [token, capabilities, pipelineFormHandlers],
   )
 
+  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps --
+     one-shot handler for navigation state: it applies the incoming prefill and clears
+     `location.state`. `sendOutputToInputMode` is a per-render closure, deliberately not a
+     dependency (re-running on every render would re-apply the prefill). */
   useEffect(() => {
     const state = location.state as ImggenRouteState | null
     if (!state) return
@@ -964,6 +989,7 @@ export default function ImageGenerationPage() {
     pipelineFormHandlers,
     capabilities,
   ])
+  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   // Job ids with a poll request in flight — auto-poll ticks never stack up
   // behind a slow backend poll.
@@ -1394,14 +1420,14 @@ export default function ImageGenerationPage() {
   const onSidebarSelectNew = useCallback(() => {
     selectNew()
     if (isMobile) setSidebarOpen(false)
-  }, [selectNew, isMobile])
+  }, [selectNew, isMobile, setSidebarOpen])
 
   const onSidebarSelectJob = useCallback(
     (jobId: string) => {
       void selectJob(jobId)
       if (isMobile) setSidebarOpen(false)
     },
-    [selectJob, isMobile],
+    [selectJob, isMobile, setSidebarOpen],
   )
 
   const jobStatusOverrides = useMemo(() => {
@@ -1514,10 +1540,10 @@ export default function ImageGenerationPage() {
     outputFiles.length > 0 &&
     outputFiles.every(f => !f.content_type.startsWith('video/'))
 
-  useEffect(() => {
+  useResetOnChange(selectedJob?.job_id, () => {
     setTimelineOpen(false)
     setCompareMode(false)
-  }, [selectedJob?.job_id])
+  })
 
   useEffect(() => {
     if (!generateMultipleOpen) return
@@ -2019,7 +2045,8 @@ export default function ImageGenerationPage() {
               </div>
 
               <div className="space-y-2 sm:col-span-2" data-testid="imggen-dimensions">
-                <ImageSizePicker width={width} height={height} widthId="width" heightId="height" testIdPrefix="imggen" disabled={originalResolution} swapDisabled={ratioLocked}
+                <ImageSizePicker width={width} height={height} widthId="width" heightId="height" testIdPrefix="imggen"
+                  presets={isVideoMode(mode) ? VIDEO_SIZE_PRESETS : undefined} storageKey={sizeStorageKey(mode)} disabled={originalResolution} swapDisabled={ratioLocked}
                   onWidthChange={v => {
                     if (isInputImageMode(mode) && rescale.mode === 'exact') rescaleUserEditedRef.current = false
                     const w = Number(v)
@@ -2051,7 +2078,7 @@ export default function ImageGenerationPage() {
                         if (rescale.mode === 'exact') rescaleUserEditedRef.current = false
                         setWidth(uploadedInput.width)
                         setHeight(uploadedInput.height)
-                        rememberImageSize(uploadedInput.width, uploadedInput.height)
+                        rememberImageSize(uploadedInput.width, uploadedInput.height, sizeStorageKey(mode))
                       }}
                       title={`Use input dimensions: ${uploadedInput.width}×${uploadedInput.height}`}
                       data-testid="imggen-copy-from-input"

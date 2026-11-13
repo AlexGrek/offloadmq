@@ -326,7 +326,7 @@ fn stop_reason(status: &str, p: &Params, steps: &[Step]) -> Option<String> {
         if steps
             .iter()
             .filter_map(|s| s.quality)
-            .last()
+            .next_back()
             .is_some_and(|q| q >= target)
         {
             "target_reached".into()

@@ -45,10 +45,10 @@ pub fn offload_task_missing_message(err: &AppError) -> Option<String> {
         return None;
     };
     for prefix in ["POLL_HTTP_", "CANCEL_HTTP_"] {
-        if let Some(rest) = msg.strip_prefix(prefix) {
-            if offload_http_is_task_missing(rest) {
-                return Some(offload_missing_detail(rest, OFFLOAD_TASK_MISSING));
-            }
+        if let Some(rest) = msg.strip_prefix(prefix)
+            && offload_http_is_task_missing(rest)
+        {
+            return Some(offload_missing_detail(rest, OFFLOAD_TASK_MISSING));
         }
     }
     if offload_message_indicates_missing(msg) {

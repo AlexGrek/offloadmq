@@ -440,10 +440,10 @@ async fn promote_to_upscale(
     state.watch.track(&id.cap, &id.id).await;
     // Generation's old input is no longer needed. Its output is now the
     // upscaler's input and is released by the normal terminal bucket cleanup.
-    if let Ok(old) = serde_json::from_str::<Value>(&current.submit_payload) {
-        if let Some(input) = old.get("file_bucket").and_then(Value::as_str) {
-            client.delete_bucket(input).await.log_warn("cleanup generation input");
-        }
+    if let Ok(old) = serde_json::from_str::<Value>(&current.submit_payload)
+        && let Some(input) = old.get("file_bucket").and_then(Value::as_str)
+    {
+        client.delete_bucket(input).await.log_warn("cleanup generation input");
     }
     image_generation::update_job_status(&state.db, job.id, "submitted", None).await?;
     record_event(state, job.id, "offload.upscale.submit", "ok",
@@ -492,7 +492,7 @@ pub(super) async fn promote_after_resize(
     let data_prep = data_preparation_map(&params.data_preparation);
     let (task_id, submit_payload) = client
         .submit_img_task_at_priority(
-            &crate::offload::base_capability(&params.capability).to_string(),
+            crate::offload::base_capability(&params.capability),
             payload,
             Some(&resized.bucket_uid),
             &output_bucket.bucket_uid,
@@ -535,10 +535,10 @@ pub(super) fn build_promoted_payload(params: &ImagePipelineParams, input_filenam
         "resolution": { "width": params.width, "height": params.height },
         "input_image": input_filename,
     });
-    if params.override_negative {
-        if let Some(neg) = params.negative_prompt.as_deref().filter(|s| !s.trim().is_empty()) {
-            payload["secondary_prompts"] = serde_json::json!({ "negative": neg });
-        }
+    if params.override_negative
+        && let Some(neg) = params.negative_prompt.as_deref().filter(|s| !s.trim().is_empty())
+    {
+        payload["secondary_prompts"] = serde_json::json!({ "negative": neg });
     }
     if let Some(seed) = params.seed {
         payload["seed"] = serde_json::json!(seed);

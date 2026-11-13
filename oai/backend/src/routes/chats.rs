@@ -161,7 +161,7 @@ pub async fn create_chat(
         chats::set_title(&state.db, id, &title).await?;
         chat.title = title;
     }
-    let chat = if let Some(ref model) = body.as_ref().and_then(|b| b.last_model.as_ref()) {
+    let chat = if let Some(model) = body.as_ref().and_then(|b| b.last_model.as_ref()) {
         let cap = model.trim();
         if cap.is_empty() {
             chat

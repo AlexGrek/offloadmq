@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Feather } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
@@ -177,14 +178,15 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
   const [imagePickerOpen, setImagePickerOpen] = useState(false)
   const [documentPickerOpen, setDocumentPickerOpen] = useState(false)
 
-  useEffect(() => {
+  // Per-chat UI state starts fresh whenever another chat opens.
+  useResetOnChange(activeChatId, () => {
     setDebugOpen(false)
     setTimeoutDrawerOpen(false)
     setPendingAttachments([])
     setAttachError(null)
     setImagePickerOpen(false)
     setDocumentPickerOpen(false)
-  }, [activeChatId])
+  })
 
 
   const addAttachment = useCallback((att: ChatAttachment) => {
@@ -275,9 +277,12 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
 
   // ── Load chats on mount ───────────────────────────────────────────────────
 
+  useResetOnChange(token ? `${token}|${kind}` : null, key => {
+    if (key) setLoadingChats(true)
+  })
+
   useEffect(() => {
     if (!token) return
-    setLoadingChats(true)
     listChats(token, kind)
       .then(setChats)
       .catch(console.error)
@@ -286,19 +291,29 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
 
   // ── Prompt Studio: seed a new session from another app (`PromptStudioRouteState`)
 
-  useEffect(() => {
-    if (!isStudio) return
+  const incomingSeed = (() => {
     const state = location.state as PromptStudioRouteState | null
-    if (!state || typeof state.examplePrompt !== 'string') return
+    return isStudio && state && typeof state.examplePrompt === 'string'
+      ? (state as PromptStudioRouteState & { examplePrompt: string })
+      : null
+  })()
+  useResetOnChange(incomingSeed, seed => {
+    if (!seed) return
     setActiveChatId(null)
     setMessages([])
-    setExamplePrompt(state.examplePrompt)
+    setExamplePrompt(seed.examplePrompt)
     setInput('')
-    navigate(location.pathname, { replace: true, state: null })
-  }, [isStudio, location.state, location.pathname, navigate])
+  })
+  // The seed is one-shot: consume it so a reload or back-navigation doesn't replay it.
+  useEffect(() => {
+    if (incomingSeed) navigate(location.pathname, { replace: true, state: null })
+  }, [incomingSeed, location.pathname, navigate])
 
   // ── Load messages when active chat changes ────────────────────────────────
 
+  /* eslint-disable react-hooks/set-state-in-effect -- async transcript load keyed on the
+     open chat: cancel-guarded, and it consumes `skipLoadForChatRef` (a just-created
+     session must not refetch over its optimistic first message). */
   useEffect(() => {
     if (!activeChatId || !token) {
       setMessages([])
@@ -342,7 +357,11 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
       cancelled = true
     }
   }, [activeChatId, token, finishChatTask])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
+  /* eslint-disable react-hooks/set-state-in-effect -- the next three effects reconcile
+     state with external, asynchronously-arriving data (model list, chat list, in-flight
+     task registry); they cannot be derived during render without changing when they fire. */
   // Apply saved model immediately when switching chats (before messages finish loading).
   useEffect(() => {
     if (!activeChatId || ws.capabilities.length === 0) return
@@ -361,6 +380,7 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
       return merged
     })
   }, [chatTasks, activeChatId, loadingMessages, chatTasksForChat])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const activeChat = chats.find(c => c.id === activeChatId)
   const activeSystemPrompt = activeChat?.system_prompt
@@ -391,11 +411,18 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     }
   }, [ws.status, activeChatId, token]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The open chat's stored system prompt becomes the current one (string key: re-runs on value change).
+  useResetOnChange(
+    activeChatId && activeSystemPrompt !== undefined
+      ? `${activeChatId}\u0000${activeSystemPrompt}\u0000${defaultPrompt}`
+      : null,
+    key => {
+      if (key) setSystemPrompt((activeSystemPrompt ?? '').trim() || defaultPrompt)
+    },
+  )
   useEffect(() => {
-    if (activeChatId && activeSystemPrompt !== undefined) {
-      const prompt = activeSystemPrompt.trim() || defaultPrompt
-      setSystemPrompt(prompt)
-      if (userId !== undefined) rememberChatPrompt(userId, prompt, kind)
+    if (activeChatId && activeSystemPrompt !== undefined && userId !== undefined) {
+      rememberChatPrompt(userId, activeSystemPrompt.trim() || defaultPrompt, kind)
     }
   }, [activeChatId, activeSystemPrompt, defaultPrompt, userId, kind])
 
@@ -434,6 +461,8 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     [token, activeChatId, ws.capabilities],
   )
 
+  /* eslint-disable react-hooks/set-state-in-effect -- re-resolves the selected model when
+     the (async) capability list or chat list changes; see the note above. */
   // If capabilities refresh and current selection vanished, re-resolve for this chat.
   useEffect(() => {
     if (ws.capabilities.length === 0 || !activeChatId) return
@@ -448,8 +477,9 @@ export function ChatWorkspace({ kind }: { kind: ChatKind }) {
     if (!isStudio || activeChatId || ws.capabilities.length === 0) return
     if (modelListed(selectedModel, ws.capabilities)) return
     const model = resolveChatModel(chats[0]?.last_model, [], ws.capabilities)
-    if (model) setSelectedModel(model) // eslint-disable-line react-hooks/set-state-in-effect
+    if (model) setSelectedModel(model)
   }, [isStudio, activeChatId, chats, ws.capabilities, selectedModel])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // ── Subscribe to WS events ────────────────────────────────────────────────
 

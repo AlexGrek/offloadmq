@@ -53,13 +53,14 @@ impl ResizeOptions {
         let opts = options.unwrap_or(&empty);
 
         let method = opt_string(opts, "method")?;
-        if let Some(m) = method.as_deref() {
-            if !available_methods.is_empty() && !available_methods.iter().any(|a| a == m) {
-                return Err(bad(format!(
-                    "unsupported method `{m}` — this agent offers: {}",
-                    available_methods.join(", ")
-                )));
-            }
+        if let Some(m) = method.as_deref()
+            && !available_methods.is_empty()
+            && !available_methods.iter().any(|a| a == m)
+        {
+            return Err(bad(format!(
+                "unsupported method `{m}` — this agent offers: {}",
+                available_methods.join(", ")
+            )));
         }
 
         let mode = opt_string(opts, "mode")?.unwrap_or_else(|| "fit".to_string());
@@ -84,20 +85,20 @@ impl ResizeOptions {
         }
 
         let format = opt_string(opts, "format")?.map(|f| f.to_ascii_lowercase());
-        if let Some(f) = format.as_deref() {
-            if !FORMATS.contains(&f) {
-                return Err(bad(format!(
-                    "unsupported format `{f}` — expected one of: {}",
-                    FORMATS.join(", ")
-                )));
-            }
+        if let Some(f) = format.as_deref()
+            && !FORMATS.contains(&f)
+        {
+            return Err(bad(format!(
+                "unsupported format `{f}` — expected one of: {}",
+                FORMATS.join(", ")
+            )));
         }
 
         let quality = opt_i64(opts, "quality")?;
-        if let Some(q) = quality {
-            if !(1..=100).contains(&q) {
-                return Err(bad(format!("quality must be between 1 and 100, got {q}")));
-            }
+        if let Some(q) = quality
+            && !(1..=100).contains(&q)
+        {
+            return Err(bad(format!("quality must be between 1 and 100, got {q}")));
         }
 
         let allow_upscale = match opts.get("allow_upscale") {

@@ -55,10 +55,10 @@ pub async fn image_thumbnail_bytes(
         .filter(|p| p != &file.storage_path)
         .unwrap_or(canonical_thumb.clone());
 
-    if let Ok(bytes) = storage::read(op, &thumb_path).await {
-        if image_processing::is_jpeg_blob(&bytes, "image/jpeg") {
-            return Ok(bytes);
-        }
+    if let Ok(bytes) = storage::read(op, &thumb_path).await
+        && image_processing::is_jpeg_blob(&bytes, "image/jpeg")
+    {
+        return Ok(bytes);
     }
 
     let main = storage::read(op, &file.storage_path).await?;

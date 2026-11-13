@@ -146,11 +146,10 @@ pub async fn list_files(
 
     let op = crate::services::storage::operator(&state).ok();
     let starred_checks = listing.files.iter().map(|f| {
-        let op = op.clone();
         let path = crate::services::image_paths::starred_image_path(user_id, f.id);
         async move {
             match op {
-                Some(ref o) => o.exists(&path).await.unwrap_or(false),
+                Some(o) => o.exists(&path).await.unwrap_or(false),
                 None => false,
             }
         }

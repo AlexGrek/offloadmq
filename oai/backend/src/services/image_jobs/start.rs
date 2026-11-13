@@ -333,8 +333,10 @@ async fn start_job_internal(
     )
     .await?;
 
-    if let Some(input) = &input {
-        if !preserve_input { link_fresh_input(state, user_id, job_id, input).await?; }
+    if let Some(input) = &input
+        && !preserve_input
+    {
+        link_fresh_input(state, user_id, job_id, input).await?;
     }
 
     Ok(job_id)
@@ -507,10 +509,10 @@ pub(super) fn build_submit_payload(
         "resolution": { "width": req.width, "height": req.height },
     });
     // An explicit empty string clears the workflow default; null leaves it alone.
-    if req.override_negative {
-        if let Some(neg) = req.negative_prompt.as_deref() {
-            payload["secondary_prompts"] = serde_json::json!({ "negative": neg });
-        }
+    if req.override_negative
+        && let Some(neg) = req.negative_prompt.as_deref()
+    {
+        payload["secondary_prompts"] = serde_json::json!({ "negative": neg });
     }
     if let Some(seed) = req.seed {
         payload["seed"] = serde_json::json!(seed);

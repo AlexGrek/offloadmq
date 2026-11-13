@@ -35,7 +35,6 @@ pub async fn sync_online(
                 raw: Set(cap.raw.clone()),
                 last_available_at: Set(now),
                 created_at: Set(now),
-                ..Default::default()
             };
             active.insert(db).await.map_err(AppError::Database)?;
         }
@@ -107,7 +106,7 @@ mod tests {
 
         let online = HashSet::from(["llm.a".to_string()]);
         let now = chrono::Utc::now().fixed_offset();
-        let mut rows = vec![
+        let mut rows = [
             LlmCapRow {
                 base: "llm.b".into(),
                 tags_json: "[]".into(),

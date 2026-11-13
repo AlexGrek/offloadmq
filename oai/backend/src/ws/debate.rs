@@ -42,10 +42,10 @@ impl DebateConnectionScope {
     }
 
     fn abort_watch(&self) {
-        if let Ok(mut watch) = self.watch.lock() {
-            if let Some(handle) = watch.take() {
-                handle.abort();
-            }
+        if let Ok(mut watch) = self.watch.lock()
+            && let Some(handle) = watch.take()
+        {
+            handle.abort();
         }
     }
 

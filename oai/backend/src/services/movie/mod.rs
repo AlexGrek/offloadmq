@@ -412,12 +412,12 @@ pub async fn resume(state: &AppState, user_id: i64, job_id: i64) -> Result<movie
     if job.phase == "video" {
         let mut scenes = parse_scenes(&job)?;
         let idx = job.current_scene as usize;
-        if let Some(scene) = scenes.get_mut(idx) {
-            if scene.status != "completed" {
-                scene.imggen_job_id = None;
-                scene.status = "pending".into();
-                scene.error = None;
-            }
+        if let Some(scene) = scenes.get_mut(idx)
+            && scene.status != "completed"
+        {
+            scene.imggen_job_id = None;
+            scene.status = "pending".into();
+            scene.error = None;
         }
         job.scenes_json = serde_json::to_string(&scenes).map_err(json_err)?;
     }
@@ -502,14 +502,13 @@ pub async fn cancel_job(state: &AppState, user_id: i64, job_id: i64) -> Result<C
 /// imggen video job (video phase).
 async fn cancel_inflight_task(state: &AppState, user_id: i64, job: &movie::MovieJob) {
     if job.phase == "video" {
-        if let Ok(scenes) = parse_scenes(job) {
-            if let Some(scene) = scenes.get(job.current_scene as usize) {
-                if let Some(imggen_job_id) = scene.imggen_job_id {
-                    image_jobs::cancel_job(state, user_id, imggen_job_id)
-                        .await
-                        .log_warn("cancel movie scene render");
-                }
-            }
+        if let Ok(scenes) = parse_scenes(job)
+            && let Some(scene) = scenes.get(job.current_scene as usize)
+            && let Some(imggen_job_id) = scene.imggen_job_id
+        {
+            image_jobs::cancel_job(state, user_id, imggen_job_id)
+                .await
+                .log_warn("cancel movie scene render");
         }
         return;
     }
@@ -528,17 +527,17 @@ pub async fn delete_job(state: &AppState, user_id: i64, job_id: i64) -> Result<(
     let job = movie::get_job(&state.db, job_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    if let Some(file_id) = job.movie_file_id {
-        if let Some(file) = image_generation::get_image_file(&state.db, file_id, user_id).await? {
-            if let Ok(op) = storage::operator(state) {
-                storage::delete(op, &file.storage_path).await.log_warn("delete movie scene clip");
-                if let Some(thumb) = file.thumbnail_storage_path.clone() {
-                    storage::delete(op, &thumb).await.log_warn("delete movie scene thumbnail");
-                }
+    if let Some(file_id) = job.movie_file_id
+        && let Some(file) = image_generation::get_image_file(&state.db, file_id, user_id).await?
+    {
+        if let Ok(op) = storage::operator(state) {
+            storage::delete(op, &file.storage_path).await.log_warn("delete movie scene clip");
+            if let Some(thumb) = file.thumbnail_storage_path.clone() {
+                storage::delete(op, &thumb).await.log_warn("delete movie scene thumbnail");
             }
-            image_generation::delete_image_file(&state.db, file.id, user_id).await?;
-            recalc_user_storage(state, user_id).await?;
         }
+        image_generation::delete_image_file(&state.db, file.id, user_id).await?;
+        recalc_user_storage(state, user_id).await?;
     }
     movie::delete_job(&state.db, job_id, user_id).await
 }

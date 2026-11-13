@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { isMessagePending, type Message } from '@/lib/chat/messages'
 
 const BOTTOM_THRESHOLD_PX = 48
@@ -141,10 +142,10 @@ export function useTranscriptScroll(opts: {
     if (followRef.current) snapToBottom('instant')
   }, [messages, isStreaming, showSystemStudio, loadingMessages, snapToBottom])
 
-  // New chat opened: re-attach follow and drop to the bottom once it renders.
+  // New chat opened: hide the jump button, re-attach follow and drop to the bottom once it renders.
+  useResetOnChange(activeChatId, () => setShowScrollBtn(false))
   useEffect(() => {
     followRef.current = true
-    setShowScrollBtn(false)
     requestAnimationFrame(() => snapToBottom('instant'))
   }, [activeChatId, snapToBottom])
 

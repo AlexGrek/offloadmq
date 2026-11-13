@@ -49,6 +49,7 @@ export const PRESET_LONG_EDGES = [512, 768, 1024, 1280, 1536, 1792, 2048] as con
 
 /** Fixed width×height presets for txt2img / unlocked-ratio forms: squares, then landscape, then portrait. */
 export { IMAGE_SIZE_PRESETS as DIMENSION_PRESETS } from './imageSizes'
+import { DEFAULT_VIDEO_SIZE } from './imageSizes'
 
 /** Diffusion models expect dimensions on an 8px grid; round (never below the grid step). */
 function roundToMultiple(value: number, multiple: number): number {
@@ -368,9 +369,12 @@ export function uploadedInputFromJobFile(
   }
 }
 
+/** Default video length (frames) for new video jobs. */
+export const DEFAULT_VIDEO_LENGTH = 45
+
 export function parseVideoLength(raw: string): number {
   const n = Number(raw.trim())
-  if (!Number.isFinite(n)) return 25
+  if (!Number.isFinite(n)) return DEFAULT_VIDEO_LENGTH
   return Math.min(300, Math.max(1, Math.round(n)))
 }
 
@@ -507,7 +511,7 @@ function applyPipelineParamsCore(
   handlers.setWidth(p.width)
   handlers.setHeight(p.height)
   handlers.setSeed(p.seed != null ? String(p.seed) : '')
-  handlers.setVideoLength(String(p.video_length ?? 25))
+  handlers.setVideoLength(String(p.video_length ?? DEFAULT_VIDEO_LENGTH))
   handlers.rescaleUserEditedRef.current = true
   handlers.setRescale(rescaleFromParams(p.rescale))
   if (inputFile) {
@@ -860,15 +864,15 @@ export const MODE_DEFAULTS: Record<
   },
   txt2video: {
     prompt: TXT2VIDEO_DEFAULT_PROMPTS[0],
-    width: 768,
-    height: 512,
+    width: DEFAULT_VIDEO_SIZE[0],
+    height: DEFAULT_VIDEO_SIZE[1],
     rescale: { enabled: false },
   },
   img2video: {
     prompt: 'animate this image with subtle motion',
-    width: 768,
-    height: 512,
-    rescale: { enabled: false, mode: 'exact', width: 768, height: 512 },
+    width: DEFAULT_VIDEO_SIZE[0],
+    height: DEFAULT_VIDEO_SIZE[1],
+    rescale: { enabled: false, mode: 'exact', width: DEFAULT_VIDEO_SIZE[0], height: DEFAULT_VIDEO_SIZE[1] },
   },
 }
 

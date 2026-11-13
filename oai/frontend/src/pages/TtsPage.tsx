@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Download,
@@ -129,10 +130,9 @@ export default function TtsPage() {
     return cap?.voices ?? []
   }, [capabilities, selectedCap])
 
-  const loadCapabilities = useCallback(() => {
+  // Fetch only — no synchronous state writes, so an effect may call it directly.
+  const fetchCapabilities = useCallback(() => {
     if (!token) return
-    setCapabilitiesStatus('loading')
-    setCapabilitiesError(null)
     listTtsCapabilities(token)
       .then(data => {
         setCapabilities(data.capabilities)
@@ -147,28 +147,38 @@ export default function TtsPage() {
       })
   }, [token])
 
-  const loadJobs = useCallback(async () => {
-    if (!token) return
-    try {
-      const list = await listTtsJobs(token)
-      setJobs(list)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setJobsLoading(false)
-    }
+  /** Manual refresh (model picker): show the loading state, then fetch. */
+  const loadCapabilities = useCallback(() => {
+    setCapabilitiesStatus('loading')
+    setCapabilitiesError(null)
+    fetchCapabilities()
+  }, [fetchCapabilities])
+
+  // A new token (login) starts a fresh load.
+  useResetOnChange(token, t => {
+    if (!t) return
+    setCapabilitiesStatus('loading')
+    setCapabilitiesError(null)
+  })
+
+  const loadJobs = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return listTtsJobs(token)
+      .then(setJobs)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setJobsLoading(false))
   }, [token])
 
   useEffect(() => {
-    loadCapabilities()
+    fetchCapabilities()
     void loadJobs()
-  }, [loadCapabilities, loadJobs])
+  }, [fetchCapabilities, loadJobs])
 
   // Keep voice in sync with the available list for the chosen capability.
-  useEffect(() => {
-    if (voicesForSelected.length === 0) return
-    setSelectedVoice(prev => (prev && voicesForSelected.includes(prev) ? prev : voicesForSelected[0]))
-  }, [voicesForSelected])
+  useResetOnChange(voicesForSelected, voices => {
+    if (voices.length === 0) return
+    setSelectedVoice(prev => (prev && voices.includes(prev) ? prev : voices[0]))
+  })
 
   const refreshJob = useCallback(
     async (jobId: string) => {

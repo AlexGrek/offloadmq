@@ -16,6 +16,15 @@ storage falls back to the app's default. Opening a form does not overwrite the
 preference. Each app still enforces its supported bounds; incompatible remembered
 sizes fall back locally without replacing the saved value.
 
+Video generation (Txt2Video / Img2Video on `/app/images`) has its own size: it
+uses `VIDEO_SIZE_PRESETS` (mostly sides under 1024 px: 512², 640², 768², 1024²,
+plus portrait and landscape variants such as 480×832, 720×1280, 832×480, 1280×720)
+and remembers deliberate choices under a separate `oai_video_size` entry, so an
+image size never leaks into video and vice versa. The default is
+`DEFAULT_VIDEO_SIZE` = 768×768 whenever no valid video size is remembered, and
+the default length is `DEFAULT_VIDEO_LENGTH` = 45 frames (`lib/imggen.ts`).
+`ImageSizePicker` takes `presets` and `storageKey` props for this.
+
 Image-to-image keeps its original-resolution and aspect-ratio controls. Manual
 edits respect Keep proportions and remember the resulting pair. Choosing a fixed
 preset turns Keep proportions off. Original resolution locks the picker until

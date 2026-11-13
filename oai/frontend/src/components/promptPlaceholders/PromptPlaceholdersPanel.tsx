@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { Link } from 'react-router-dom'
 import { Check, ChevronDown, Copy, Eye, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -124,10 +125,11 @@ function QuickNamesSection({ token }: { token: string | null }) {
 
   // First expand triggers the initial fetch; a failed attempt retries next
   // time it's expanded rather than looping (`loaded` only flips on success).
-  useEffect(() => {
-    if (!expanded || loaded) return
-    void loadNames()
-  }, [expanded, loaded, loadNames])
+  function toggleExpanded() {
+    const next = !expanded
+    setExpanded(next)
+    if (next && !loaded && !loading) void loadNames()
+  }
 
   useEffect(() => {
     if (!copiedPhrase) return
@@ -144,7 +146,7 @@ function QuickNamesSection({ token }: { token: string | null }) {
       <div className="flex items-center justify-between gap-2">
         <button
           type="button"
-          onClick={() => setExpanded(v => !v)}
+          onClick={toggleExpanded}
           aria-expanded={expanded}
           className="flex select-none items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
           data-testid="random-names-section-toggle"
@@ -228,22 +230,34 @@ function CustomPlaceholdersSection({ token }: { token: string | null }) {
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [previewText, setPreviewText] = useState('')
 
+  // Fetch only — no synchronous state writes, so an effect may call it directly.
+  const fetchItems = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return listPromptPlaceholders(token)
+      .then(setItems)
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : 'Failed to load placeholders'),
+      )
+      .finally(() => setLoading(false))
+  }, [token])
+
+  /** Reload with the spinner (after create / edit / delete). */
   const refresh = useCallback(async () => {
     if (!token) return
     setLoading(true)
     setError(null)
-    try {
-      setItems(await listPromptPlaceholders(token))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load placeholders')
-    } finally {
-      setLoading(false)
-    }
-  }, [token])
+    await fetchItems()
+  }, [token, fetchItems])
+
+  useResetOnChange(token, t => {
+    if (!t) return
+    setLoading(true)
+    setError(null)
+  })
 
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    void fetchItems()
+  }, [fetchItems])
 
   function openCreate() {
     setForm(EMPTY_FORM)

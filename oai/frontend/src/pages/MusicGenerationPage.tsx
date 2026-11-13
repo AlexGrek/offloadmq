@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import {
   ChevronDown,
   ChevronRight,
@@ -97,10 +98,9 @@ export default function MusicGenerationPage() {
   const viewingJob = activePanel !== MUSIC_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
 
-  const loadCapabilities = useCallback(() => {
+  // Fetch only — no synchronous state writes, so an effect may call it directly.
+  const fetchCapabilities = useCallback(() => {
     if (!token) return
-    setCapabilitiesStatus('loading')
-    setCapabilitiesError(null)
     listMusicCapabilities(token)
       .then(data => {
         setCapabilities(data.capabilities)
@@ -115,22 +115,32 @@ export default function MusicGenerationPage() {
       })
   }, [token])
 
-  const loadJobs = useCallback(async () => {
-    if (!token) return
-    try {
-      const list = await listMusicJobs(token)
-      setJobs(list)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setJobsLoading(false)
-    }
+  /** Manual refresh (model picker): show the loading state, then fetch. */
+  const loadCapabilities = useCallback(() => {
+    setCapabilitiesStatus('loading')
+    setCapabilitiesError(null)
+    fetchCapabilities()
+  }, [fetchCapabilities])
+
+  // A new token (login) starts a fresh load.
+  useResetOnChange(token, t => {
+    if (!t) return
+    setCapabilitiesStatus('loading')
+    setCapabilitiesError(null)
+  })
+
+  const loadJobs = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return listMusicJobs(token)
+      .then(setJobs)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setJobsLoading(false))
   }, [token])
 
   useEffect(() => {
-    loadCapabilities()
+    fetchCapabilities()
     void loadJobs()
-  }, [loadCapabilities, loadJobs])
+  }, [fetchCapabilities, loadJobs])
 
   const refreshJob = useCallback(
     async (jobId: string) => {

@@ -641,10 +641,10 @@ pub async fn delete_job(state: &AppState, user_id: i64, job_id: i64) -> Result<(
     let job = offload_jobs::get_job::<ImgUtilsJobEntity>(&state.db, job_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    if let Some(image_id) = job.output_image_id {
-        if let Err(e) = image_jobs::remove_user_image(state, user_id, image_id).await {
-            tracing::warn!("img_utils: failed to remove output image {image_id}: {e}");
-        }
+    if let Some(image_id) = job.output_image_id
+        && let Err(e) = image_jobs::remove_user_image(state, user_id, image_id).await
+    {
+        tracing::warn!("img_utils: failed to remove output image {image_id}: {e}");
     }
     offload_jobs::delete_job::<ImgUtilsJobEntity>(&state.db, job_id, user_id).await
 }

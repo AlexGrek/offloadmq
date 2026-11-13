@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { Activity, Cpu, Loader2, RefreshCw, UserRound } from 'lucide-react'
 import { listOnlineRunners, type RunnerSummary } from '../api/runners'
 import { useAuth } from '../contexts/AuthContext'
@@ -18,16 +19,20 @@ export default function RunnersPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    if (!token) return
-    setError(null)
-    const data = await listOnlineRunners(token)
-    setRunners(data.runners)
+  // Fetch only (rejects on failure); callers own the loading / error state.
+  const load = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return listOnlineRunners(token).then(data => setRunners(data.runners))
   }, [token])
+
+  useResetOnChange(token, t => {
+    if (!t) return
+    setLoading(true)
+    setError(null)
+  })
 
   useEffect(() => {
     if (!token) return
-    setLoading(true)
     void load()
       .catch(err => setError((err as Error).message))
       .finally(() => setLoading(false))
@@ -35,6 +40,7 @@ export default function RunnersPage() {
 
   async function handleRefresh() {
     setRefreshing(true)
+    setError(null)
     try {
       await load()
     } catch (err) {

@@ -69,12 +69,11 @@ pub(super) fn strip_list_marker(line: &str) -> String {
         }
     }
     let digits = trimmed.chars().take_while(|c| c.is_ascii_digit()).count();
-    if digits > 0 {
-        if let Some(sep) = trimmed.as_bytes().get(digits) {
-            if *sep == b'.' || *sep == b')' {
-                return trimmed[digits + 1..].trim().to_string();
-            }
-        }
+    if digits > 0
+        && let Some(sep) = trimmed.as_bytes().get(digits)
+        && (*sep == b'.' || *sep == b')')
+    {
+        return trimmed[digits + 1..].trim().to_string();
     }
     trimmed.to_string()
 }

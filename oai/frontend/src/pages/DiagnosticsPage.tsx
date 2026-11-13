@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Activity,
@@ -69,35 +70,44 @@ export default function DiagnosticsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    if (!token) return
-    setError(null)
-    try {
-      const [podStatus, podLogs] = await Promise.all([
-        getK8sPodStatus(token, tab),
-        getK8sPodLogs(token, tab, LOG_TAIL_LINES),
-      ])
-      setStatus(podStatus)
-      setLogs(podLogs)
-    } catch (e: unknown) {
-      setStatus(null)
-      setLogs(null)
-      setError(e instanceof Error ? e.message : 'Failed to load diagnostics')
-    }
+  // No synchronous state writes (the error is cleared by the reset / refresh below),
+  // so an effect may call it directly.
+  const load = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return Promise.all([
+      getK8sPodStatus(token, tab),
+      getK8sPodLogs(token, tab, LOG_TAIL_LINES),
+    ])
+      .then(([podStatus, podLogs]) => {
+        setStatus(podStatus)
+        setLogs(podLogs)
+      })
+      .catch((e: unknown) => {
+        setStatus(null)
+        setLogs(null)
+        setError(e instanceof Error ? e.message : 'Failed to load diagnostics')
+      })
   }, [token, tab])
 
   useEffect(() => {
     if (!adminLoading && !isAdmin) navigate('/app/settings', { replace: true })
   }, [isAdmin, adminLoading, navigate])
 
-  useEffect(() => {
-    if (!token || adminLoading || !isAdmin) return
+  const canLoad = Boolean(token) && !adminLoading && isAdmin
+  // A new token / tab starts a fresh load.
+  useResetOnChange(canLoad ? load : null, () => {
     setLoading(true)
+    setError(null)
+  })
+
+  useEffect(() => {
+    if (!canLoad) return
     void load().finally(() => setLoading(false))
-  }, [token, isAdmin, adminLoading, load])
+  }, [canLoad, load])
 
   async function handleRefresh() {
     setRefreshing(true)
+    setError(null)
     await load()
     setRefreshing(false)
   }

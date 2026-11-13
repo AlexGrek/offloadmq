@@ -268,13 +268,12 @@ pub async fn delete_job(state: &AppState, user_id: i64, job_id: i64) -> Result<(
     let job = offload_jobs::get_job::<MusicJobEntity>(&state.db, job_id, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
-    if let Some(json) = job.audio_files_json.as_deref() {
-        if let Ok(tracks) = serde_json::from_str::<Vec<AudioFileRecord>>(json) {
-            if let Ok(op) = storage::operator(state) {
-                for track in &tracks {
-                    storage::delete(op, &track.storage_path).await.log_warn("delete music track");
-                }
-            }
+    if let Some(json) = job.audio_files_json.as_deref()
+        && let Ok(tracks) = serde_json::from_str::<Vec<AudioFileRecord>>(json)
+        && let Ok(op) = storage::operator(state)
+    {
+        for track in &tracks {
+            storage::delete(op, &track.storage_path).await.log_warn("delete music track");
         }
     }
     offload_jobs::delete_job::<MusicJobEntity>(&state.db, job_id, user_id).await
@@ -343,15 +342,15 @@ fn build_task_payload(params: &StartJobParams) -> serde_json::Value {
     if let Some(ks) = params.keyscale.as_deref().filter(|s| !s.trim().is_empty()) {
         payload["keyscale"] = serde_json::Value::String(ks.to_string());
     }
-    if let Some(cfg) = params.cfg_scale {
-        if let Some(n) = serde_json::Number::from_f64(cfg) {
-            payload["cfg_scale"] = serde_json::Value::Number(n);
-        }
+    if let Some(cfg) = params.cfg_scale
+        && let Some(n) = serde_json::Number::from_f64(cfg)
+    {
+        payload["cfg_scale"] = serde_json::Value::Number(n);
     }
-    if let Some(temp) = params.temperature {
-        if let Some(n) = serde_json::Number::from_f64(temp) {
-            payload["temperature"] = serde_json::Value::Number(n);
-        }
+    if let Some(temp) = params.temperature
+        && let Some(n) = serde_json::Number::from_f64(temp)
+    {
+        payload["temperature"] = serde_json::Value::Number(n);
     }
     payload
 }

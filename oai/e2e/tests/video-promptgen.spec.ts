@@ -92,3 +92,32 @@ test('video prompt generator requires an online vision model for urgent inferenc
   await expect(page.getByTestId('video-promptgen-generate')).toBeDisabled()
   expect(commands).toHaveLength(0)
 })
+
+test('model dropdown is not clipped by the collapsing form section, with or without an error', async ({ page }) => {
+  const { commands, respond } = await openGenerator(page)
+  const optionHittable = () => page.evaluate(() => {
+    const option = document.querySelector('[data-testid="video-promptgen-model-option-llm.vision"]')!
+    const r = option.getBoundingClientRect()
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return Boolean(hit && option.contains(hit))
+  })
+  const trigger = page.getByTestId('video-promptgen-model-trigger')
+  const dropdown = page.getByTestId('video-promptgen-model-dropdown')
+
+  // Sections clip only while they animate open; wait for that to finish like a user would.
+  await expect(page.getByTestId('imggen-video-promptgen').locator('xpath=..')).toHaveCSS('overflow', 'visible')
+  await trigger.click()
+  await expect(dropdown).toBeVisible()
+  expect(await optionHittable()).toBe(true)
+  await trigger.click()
+  await expect(dropdown).toHaveCount(0)
+
+  await page.getByTestId('video-promptgen-generate').click()
+  await expect.poll(() => commands.length).toBe(1)
+  respond({ type: 'error', req_id: commands[0].req_id, message: 'Model returned an empty response' })
+  await expect(page.getByTestId('video-promptgen-error')).toBeVisible()
+
+  await trigger.click()
+  await expect(dropdown).toBeVisible()
+  expect(await optionHittable()).toBe(true)
+})

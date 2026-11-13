@@ -11,11 +11,15 @@ export const MORPH_FADE: Transition = { duration: 0.18, ease: [0.22, 1, 0.36, 1]
 
 const INSTANT: Transition = { duration: 0 }
 
-/** Height collapse for blocks that appear/disappear inside a form. Needs `overflow-hidden`. */
+/**
+ * Height collapse for blocks that appear/disappear inside a form. Content is clipped
+ * (`overflow: hidden`) only while the height animates; once open it is `visible`, so
+ * absolutely-positioned popovers (model pickers, dropdowns) inside aren't cut off.
+ */
 export const COLLAPSE_MORPH = {
-  initial: { opacity: 0, height: 0 },
-  animate: { opacity: 1, height: 'auto' },
-  exit: { opacity: 0, height: 0 },
+  initial: { opacity: 0, height: 0, overflow: 'hidden' },
+  animate: { opacity: 1, height: 'auto', transitionEnd: { overflow: 'visible' } },
+  exit: { opacity: 0, height: 0, overflow: 'hidden' },
 } as const
 
 /** Fade + scale for a single control coming and going inside a row. */

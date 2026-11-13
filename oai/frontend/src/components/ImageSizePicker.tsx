@@ -1,8 +1,8 @@
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { ArrowLeftRight } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { IMAGE_SIZE_PRESETS, rememberImageSize, validImageSize, type ImageSize } from '@/lib/imageSizes'
+import { IMAGE_SIZE_PRESETS, IMAGE_SIZE_STORAGE_KEY, rememberImageSize, validImageSize, type ImageSize } from '@/lib/imageSizes'
 import { cn } from '@/lib/utils'
 
 /** Orientation is told apart by a faint tint only: square green, portrait blue, landscape orange. */
@@ -15,9 +15,10 @@ type Orientation = keyof typeof ORIENTATIONS
 
 const orientationOf = (w: number, h: number): Orientation => (w === h ? 'square' : w < h ? 'portrait' : 'landscape')
 const ORIENTATION_ORDER: Orientation[] = ['square', 'portrait', 'landscape']
-const PRESETS = IMAGE_SIZE_PRESETS
+const withOrientation = (presets: readonly (readonly [number, number])[]) => presets
   .map(([w, h]) => ({ w, h, orientation: orientationOf(w, h) }))
   .sort((a, b) => ORIENTATION_ORDER.indexOf(a.orientation) - ORIENTATION_ORDER.indexOf(b.orientation))
+const IMAGE_PRESETS = withOrientation(IMAGE_SIZE_PRESETS)
 
 interface Props {
   width: number | string
@@ -36,16 +37,21 @@ interface Props {
   children?: ReactNode
   widthLabel?: string
   heightLabel?: string
+  /** Preset chips; defaults to the shared image catalog. */
+  presets?: readonly (readonly [number, number])[]
+  /** localStorage key the deliberate selections are remembered under. */
+  storageKey?: string
 }
 
 /** Shared output/exact-resize controls. Only deliberate user edits update the global preference. */
 export function ImageSizePicker({ width, height, onWidthChange, onHeightChange, onChange,
   testIdPrefix: id, presetId = (w, h) => `${id}-preset-${w}x${h}`,
   widthId = `${id}-width`, heightId = `${id}-height`, disabled, swapDisabled,
-  min = 1, max = 8192, children, widthLabel = 'Width', heightLabel = 'Height',
+  min = 1, max = 8192, children, widthLabel = 'Width', heightLabel = 'Height', presets, storageKey = IMAGE_SIZE_STORAGE_KEY,
 }: Props) {
+  const chips = useMemo(() => (presets ? withOrientation(presets) : IMAGE_PRESETS), [presets])
   const remember = (size: ImageSize) => {
-    if (validImageSize(size[0], size[1], max) && size.every(n => n >= min)) rememberImageSize(...size)
+    if (validImageSize(size[0], size[1], max) && size.every(n => n >= min)) rememberImageSize(size[0], size[1], storageKey)
   }
   const choose = (size: ImageSize) => { onChange(size); remember(size) }
   return <fieldset disabled={disabled} className="min-w-0 space-y-3" data-testid={`${id}-sizes`}>
@@ -65,7 +71,7 @@ export function ImageSizePicker({ width, height, onWidthChange, onHeightChange, 
       {children}
     </div>
     <div className="flex flex-wrap gap-1" role="group" aria-label="Size presets">
-      {PRESETS.map(({ w, h, orientation }) => {
+      {chips.map(({ w, h, orientation }) => {
         const pressed = Number(width) === w && Number(height) === h
         return <button key={`${w}x${h}`} type="button" aria-pressed={pressed} data-orientation={orientation} title={`${w}×${h} · ${orientation}`}
           disabled={w > max || h > max || w < min || h < min} data-testid={presetId(w, h)} onClick={() => choose([w, h])}

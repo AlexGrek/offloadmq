@@ -127,11 +127,11 @@ pub async fn watch_job_ws(
             }
         };
 
-        if !task_status::is_terminal(&job.status) {
-            if let Err(e) = reconcile_job(state, &mut job).await {
-                send_ws_error(tx, Some(&req_id), &e.to_string());
-                return;
-            }
+        if !task_status::is_terminal(&job.status)
+            && let Err(e) = reconcile_job(state, &mut job).await
+        {
+            send_ws_error(tx, Some(&req_id), &e.to_string());
+            return;
         }
 
         let terminal = task_status::is_terminal(&job.status);

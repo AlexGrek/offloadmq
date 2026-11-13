@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useResetOnChange } from './useResetOnChange'
 import { fetchRunningImageJobs, type RunningJobItem } from '../api/progress'
 
 const POLL_MS = 5000
@@ -22,6 +23,15 @@ export function useRunningImageJobs(token: string | null) {
     setJobs(next)
   }, [])
 
+  // Network fetch + publish with no synchronous state writes, so the poll effect can
+  // call it directly. Callers own the `loading` flag.
+  const fetchJobs = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return fetchRunningImageJobs(token)
+      .then(r => publish(r.jobs))
+      .catch(() => publish([]))
+  }, [token, publish])
+
   const load = useCallback(
     async (silent: boolean) => {
       if (!token) {
@@ -30,15 +40,12 @@ export function useRunningImageJobs(token: string | null) {
       }
       if (!silent) setLoading(true)
       try {
-        const r = await fetchRunningImageJobs(token)
-        publish(r.jobs)
-      } catch {
-        publish([])
+        await fetchJobs()
       } finally {
         if (!silent) setLoading(false)
       }
     },
-    [token, publish],
+    [token, publish, fetchJobs],
   )
 
   /** Manual refresh — shows the spinner. */
@@ -46,15 +53,20 @@ export function useRunningImageJobs(token: string | null) {
   /** Background refresh — no loading UI. */
   const refreshSilent = useCallback(() => load(true), [load])
 
+  // A new token shows the spinner until its first fetch lands.
+  useResetOnChange(token, t => {
+    if (t) setLoading(true)
+  })
+
   useEffect(() => {
     if (!token) return
-    void load(false)
+    void fetchJobs().finally(() => setLoading(false))
     const id = window.setInterval(() => {
       if (document.hidden) return
-      void load(true)
+      void fetchJobs()
     }, POLL_MS)
     return () => window.clearInterval(id)
-  }, [token, load])
+  }, [token, fetchJobs])
 
   return { jobs, loading, refresh, refreshSilent }
 }

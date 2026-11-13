@@ -5,12 +5,13 @@ import { amIAdmin } from '../api/admin'
 export function useAdminStatus() {
   const { token } = useAuth()
   const [isAdmin, setIsAdmin] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [settled, setSettled] = useState(false)
 
   useEffect(() => {
-    if (!token) { setLoading(false); return }
-    amIAdmin(token).then(setIsAdmin).finally(() => setLoading(false))
+    if (!token) return
+    amIAdmin(token).then(setIsAdmin).finally(() => setSettled(true))
   }, [token])
 
-  return { isAdmin, loading }
+  // Nothing to wait for without a token.
+  return { isAdmin, loading: Boolean(token) && !settled }
 }

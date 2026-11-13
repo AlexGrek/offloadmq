@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Gavel,
@@ -112,29 +113,26 @@ export default function LlmDebatePage() {
   const viewingJob = activePanel !== LLM_DEBATE_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
 
-  useEffect(() => {
-    if (ws.capabilitiesStatus !== 'ready' || capabilities.length === 0) return
-    const first = firstSelectableModel(capabilities)
-    const second = capabilities.find(c => c.base !== first)?.base ?? first ?? ''
-    setModelA(prev => pickListedCapability(prev, capabilities) ?? first ?? '')
+  // Re-validate the model selections against each fresh capability list.
+  useResetOnChange(ws.capabilitiesStatus === 'ready' ? capabilities : null, caps => {
+    if (!caps || caps.length === 0) return
+    const first = firstSelectableModel(caps)
+    const second = caps.find(c => c.base !== first)?.base ?? first ?? ''
+    setModelA(prev => pickListedCapability(prev, caps) ?? first ?? '')
     setModelB(prev => {
-      const picked = pickListedCapability(prev, capabilities)
+      const picked = pickListedCapability(prev, caps)
       if (picked) return picked
       return second
     })
-    setModelRef(prev => pickListedCapability(prev, capabilities) ?? first ?? '')
-  }, [capabilities, ws.capabilitiesStatus])
+    setModelRef(prev => pickListedCapability(prev, caps) ?? first ?? '')
+  })
 
-  const loadJobs = useCallback(async () => {
-    if (!token) return
-    try {
-      const list = await listLlmDebateJobs(token)
-      setJobs(list)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setJobsLoading(false)
-    }
+  const loadJobs = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return listLlmDebateJobs(token)
+      .then(setJobs)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setJobsLoading(false))
   }, [token])
 
   useEffect(() => {

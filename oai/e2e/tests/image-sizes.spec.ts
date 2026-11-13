@@ -73,3 +73,28 @@ test('malformed storage uses the app default', async ({ page }) => {
   await expect(page.getByTestId('hallucinate-width')).toHaveValue('1280')
   await expect(page.getByTestId('hallucinate-height')).toHaveValue('720')
 })
+
+test('video modes default to 768×768 / 45 frames and keep a size separate from images', async ({ page }) => {
+  await mock(page)
+  await page.addInitScript(() => localStorage.setItem('oai_image_size', '[1536,1024]'))
+  await page.goto('/app/images')
+  await expect(page.getByTestId('imggen-width')).toHaveValue('1536')
+
+  await page.getByTestId('imggen-mode-txt2video').click()
+  await expect(page.getByTestId('imggen-width')).toHaveValue('768')
+  await expect(page.getByTestId('imggen-height')).toHaveValue('768')
+  await expect(page.getByTestId('imggen-video-length')).toHaveValue('45')
+  const sizes = page.getByTestId('imggen-sizes')
+  await expect(sizes.getByRole('button', { name: '512×512', exact: true })).toBeVisible()
+  await expect(sizes.getByRole('button', { name: '1536×1024', exact: true })).toHaveCount(0)
+
+  await sizes.getByRole('button', { name: '832×480', exact: true }).click()
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('oai_video_size')!))).toEqual([832, 480])
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('oai_image_size')!))).toEqual([1536, 1024])
+
+  await page.getByTestId('imggen-mode-txt2img').click()
+  await expect(page.getByTestId('imggen-width')).toHaveValue('1536')
+  await page.getByTestId('imggen-mode-txt2video').click()
+  await expect(page.getByTestId('imggen-width')).toHaveValue('832')
+  await expect(page.getByTestId('imggen-height')).toHaveValue('480')
+})

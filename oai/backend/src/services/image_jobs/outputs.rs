@@ -287,10 +287,10 @@ pub(super) fn limit_job_output_files(
 
 /// Extracts the `video` object from a poll payload, falling back to the cached last-poll output.
 pub(super) fn collect_output_video(output: Option<&Value>, cached: Option<&str>) -> Option<Value> {
-    if let Some(v) = output.and_then(|o| o.get("video")) {
-        if v.is_object() {
-            return Some(v.clone());
-        }
+    if let Some(v) = output.and_then(|o| o.get("video"))
+        && v.is_object()
+    {
+        return Some(v.clone());
     }
     let cached_value = cached.and_then(|c| serde_json::from_str::<Value>(c).ok())?;
     let v = cached_value.get("video")?;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   AlertCircle,
@@ -111,29 +112,35 @@ export default function ImageWorkerLogsPage() {
   const [levelFilter, setLevelFilter] = useState<LevelFilter>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
-  const load = useCallback(async () => {
-    if (!token) return
-    setError(null)
-    try {
-      const data = await listImageWorkerLogs(token)
-      setLogs(data)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load worker logs')
-    }
+  // No synchronous state writes (the error is cleared by the reset / refresh below),
+  // so an effect may call it directly.
+  const load = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return listImageWorkerLogs(token)
+      .then(setLogs)
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : 'Failed to load worker logs'),
+      )
   }, [token])
 
   useEffect(() => {
     if (!adminLoading && !isAdmin) navigate('/app/settings', { replace: true })
   }, [isAdmin, adminLoading, navigate])
 
-  useEffect(() => {
-    if (!token || adminLoading || !isAdmin) return
+  const canLoad = Boolean(token) && !adminLoading && isAdmin
+  useResetOnChange(canLoad ? load : null, () => {
     setLoading(true)
+    setError(null)
+  })
+
+  useEffect(() => {
+    if (!canLoad) return
     void load().finally(() => setLoading(false))
-  }, [token, isAdmin, adminLoading, load])
+  }, [canLoad, load])
 
   async function handleRefresh() {
     setRefreshing(true)
+    setError(null)
     await load()
     setRefreshing(false)
   }

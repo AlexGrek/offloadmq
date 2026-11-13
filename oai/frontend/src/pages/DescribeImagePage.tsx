@@ -1,4 +1,5 @@
 import { rememberedImageSize } from '@/lib/imageSizes'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useDefaultPrompts } from '../hooks/useDefaultPrompts'
 import { DESCRIBE_PROMPT_BUCKET } from '../lib/describe'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
@@ -169,10 +170,9 @@ export default function DescribeImagePage() {
   const viewingJob = activePanel !== DESCRIBE_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
 
-  const loadCapabilities = useCallback(() => {
+  // Fetch only — no synchronous state writes, so an effect may call it directly.
+  const fetchCapabilities = useCallback(() => {
     if (!token) return
-    setCapabilitiesStatus('loading')
-    setCapabilitiesError(null)
     listDescribeCapabilities(token)
       .then(data => {
         setCapabilities(data.capabilities)
@@ -187,34 +187,42 @@ export default function DescribeImagePage() {
       })
   }, [token])
 
+  /** Manual refresh (model picker): show the loading state, then fetch. */
+  const loadCapabilities = useCallback(() => {
+    setCapabilitiesStatus('loading')
+    setCapabilitiesError(null)
+    fetchCapabilities()
+  }, [fetchCapabilities])
+
+  // A new token (login) starts a fresh load.
+  useResetOnChange(token, t => {
+    if (!t) return
+    setCapabilitiesStatus('loading')
+    setCapabilitiesError(null)
+  })
+
   // Availability + threshold for the External resize option. A failure is not
   // worth surfacing: the option simply stays hidden.
-  const loadExternalResizeInfo = useCallback(async () => {
-    if (!token) return
-    try {
-      setExternalResizeInfo(await getExternalResizeInfo(token))
-    } catch {
-      setExternalResizeInfo(null)
-    }
+  const loadExternalResizeInfo = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return getExternalResizeInfo(token)
+      .then(setExternalResizeInfo)
+      .catch(() => setExternalResizeInfo(null))
   }, [token])
 
-  const loadJobs = useCallback(async () => {
-    if (!token) return
-    try {
-      const list = await listDescribeJobs(token)
-      setJobs(prev => mergeJobList(prev, list, describeJobFingerprint))
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setJobsLoading(false)
-    }
+  const loadJobs = useCallback(() => {
+    if (!token) return Promise.resolve()
+    return listDescribeJobs(token)
+      .then(list => setJobs(prev => mergeJobList(prev, list, describeJobFingerprint)))
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setJobsLoading(false))
   }, [token])
 
   useEffect(() => {
-    loadCapabilities()
+    fetchCapabilities()
     void loadJobs()
     void loadExternalResizeInfo()
-  }, [loadCapabilities, loadJobs, loadExternalResizeInfo])
+  }, [fetchCapabilities, loadJobs, loadExternalResizeInfo])
 
   useEffect(() => {
     return () => {
@@ -265,14 +273,14 @@ export default function DescribeImagePage() {
   const onSidebarSelectNew = useCallback(() => {
     selectNew()
     if (isMobile) setSidebarOpen(false)
-  }, [selectNew, isMobile])
+  }, [selectNew, isMobile, setSidebarOpen])
 
   const onSidebarSelectJob = useCallback(
     (jobId: string) => {
       void selectJob(jobId)
       if (isMobile) setSidebarOpen(false)
     },
-    [selectJob, isMobile],
+    [selectJob, isMobile, setSidebarOpen],
   )
 
   function dropBlobPreview() {
