@@ -1,7 +1,12 @@
-import { Activity, Bot, Braces, Clapperboard, Eye, Feather, FolderOpen, GalleryVerticalEnd, GitCompareArrows, ImagePlus, MessageCircleMore, Music, Repeat2, ShieldAlert, Swords, Volume2, Wand2 } from 'lucide-react'
+import { Activity, Bot, Braces, Clapperboard, Eye, Feather, FolderOpen, GalleryVerticalEnd, GitCompareArrows, GitBranch, ImagePlus, MessageCircleMore, Music, Repeat2, ShieldAlert, Swords, Volume2, Wand2 } from 'lucide-react'
 
 /** Every app tile on the dashboard; also the source for the TopBar's most-used shortcuts. */
 export const apps = [
+  {
+    id: 'langgraph', icon: GitBranch, title: 'LangGraph',
+    description: 'Build Python agents with tools and local LLMs', href: '/app/langgraph',
+    gradient: 'from-teal-500/20 to-sky-500/20', iconBg: 'bg-teal-500/20', iconColor: 'text-teal-400',
+  },
   {
     id: 'chat',
     icon: Bot,
@@ -144,7 +149,7 @@ export const apps = [
   },
   {
     id: 'llm-compare',
-    icon: GitCompareArrows,
+    icon: GitCompareArrows, GitBranch,
     title: 'LLM Compare',
     description: 'Run the same prompt on multiple models in parallel',
     href: '/app/llm-compare',

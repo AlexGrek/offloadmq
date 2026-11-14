@@ -37,3 +37,5 @@ pub mod image_stash_entries;
 pub mod personas;
 
 pub mod persona_photo_jobs;
+
+pub mod langgraph_jobs;

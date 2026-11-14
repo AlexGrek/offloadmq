@@ -254,6 +254,7 @@ or shell env locally before `task dev:backend`). Most use the generic
 | Music generation | `MUSIC_GEN_WORKER_TICK_SECS` | `MUSIC_GEN_WORKER_BATCH_SIZE` | 10s / 20 |
 | Nude detect | `NUDE_DETECT_WORKER_TICK_SECS` | `NUDE_DETECT_WORKER_BATCH_SIZE` | 10s / 20 |
 | TTS | `TTS_WORKER_TICK_SECS` | `TTS_WORKER_BATCH_SIZE` | 10s / 20 |
+| LangGraph | `LANGGRAPH_WORKER_TICK_SECS` | `LANGGRAPH_WORKER_BATCH_SIZE` | 10s / 20 |
 | Stale job reaper | `STALE_JOB_REAPER_TICK_SECS` | `STALE_JOB_REAPER_MAX_AGE_HOURS` | 3600s / 24 |
 
 The stale job reaper is the odd one out: it is a set-based `UPDATE` with no batch, so

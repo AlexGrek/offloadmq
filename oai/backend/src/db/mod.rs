@@ -41,3 +41,5 @@ pub mod image_stash;
 
 pub mod personas;
 pub mod persona_photos;
+
+pub mod langgraph;

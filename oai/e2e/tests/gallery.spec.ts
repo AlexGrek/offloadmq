@@ -10,7 +10,10 @@ const PNG = Buffer.from(
   'base64',
 )
 
-const ago = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString()
+// Keep the fixture's recent files on one UTC day even when tests run near midnight.
+const fixtureNoon = new Date()
+fixtureNoon.setUTCHours(12, 0, 0, 0)
+const ago = (hours: number) => new Date(fixtureNoon.getTime() - hours * 3_600_000).toISOString()
 
 function userFile(id: number, hoursAgo: number, prompt: string | null, direction = 'output') {
   return {

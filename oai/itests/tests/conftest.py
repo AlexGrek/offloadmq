@@ -81,3 +81,12 @@ def new_user(client: httpx.Client) -> dict:
         "token": token,
         "headers": auth_headers(token),
     }
+
+
+@pytest.fixture(scope="session")
+def langgraph_capability(client: httpx.Client, session_headers: dict) -> str:
+    """Optional live runner coverage; no inference is needed for the test programs."""
+    response = client.get('/api/langgraph/capabilities', headers=session_headers)
+    if response.status_code != 200 or not response.json():
+        pytest.skip('No enabled llm-runtime runner is available')
+    return response.json()[0]['base']

@@ -57,6 +57,7 @@ async fn main() -> Result<()> {
     jobs::llm_capability_cleanup_worker::spawn(state.clone());
     jobs::chat_worker::spawn(state.clone());
     jobs::tts_worker::spawn(state.clone());
+    jobs::langgraph_worker::spawn(state.clone());
     jobs::music_generation_worker::spawn(state.clone());
     jobs::img_utils_worker::spawn(state.clone());
     jobs::llm_compare_worker::spawn(state.clone());

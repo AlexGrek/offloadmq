@@ -81,3 +81,8 @@ mod tests {
         assert_eq!(movie_output_path(7, 5, 99), "users/7/videos/movies/5/99.mp4");
     }
 }
+
+/// LangGraph artifacts use numeric slots; client filenames never become storage paths.
+pub fn langgraph_artifact_path(user_id: i64, job_id: i64, index: usize) -> String {
+    format!("users/{user_id}/langgraph/{job_id}/{index}")
+}

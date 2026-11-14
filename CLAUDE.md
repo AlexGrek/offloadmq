@@ -404,6 +404,14 @@ editor with size picker + instant generate) and Use (→ txt2img), plus a "creat
 System prompts and templates have their own prompt-library buckets. Image Generation and
 Describe Image open it via a "Prompt studio" button. See [docs/oai-prompt-studio.md](oai/docs/oai-prompt-studio.md).
 
+### LangGraph
+
+LangGraph (`/app/langgraph`) edits `main.py`, `tools.py`, pyproject dependencies and
+prompts, selects primary/named local models, and runs unsafe Python via explicitly
+enabled `llm-runtime.*` runners. Saved runs retain inputs, stdout/stderr, JSON and
+artifacts. Read [the feature skill](.agents/skills/oai-langgraph/SKILL.md) before
+editing LangGraph modules. API and lifecycle: [docs/oai-langgraph.md](docs/oai-langgraph.md).
+
 ### Generator Improver
 
 Generator Improver (`/app/generator-improver`) scores images with vision JSON
@@ -437,6 +445,7 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 |-------|------------|-------------------|
 | **oai-devops** | `.claude/skills/oai-devops/SKILL.md` | `oai/helm-chart/**`, `oai/Dockerfile`, `oai/docker-compose*.yml`, `oai/Taskfile.yml` (deploy/docker/infra tasks) |
 | **oai-itests** | `.claude/skills/oai-itests/SKILL.md` | `oai/itests/**` |
+| **oai-langgraph** | `.agents/skills/oai-langgraph/SKILL.md` | `langgraph` feature modules, `offload/runtime.rs`, `LanggraphPage.tsx`, `components/langgraph/**`, `lib/langgraph/**` |
 | **oai-chat** | `.claude/skills/oai-chat/SKILL.md` | Chat feature files (patterns below) |
 | **oai-img** | `.claude/skills/oai-img/SKILL.md` | Image generation feature files (patterns below) |
 | **oai-img-tools** | `.claude/skills/oai-img-tools/SKILL.md` | Image Tools (`img-utils.*` / resize) feature files (patterns below) |

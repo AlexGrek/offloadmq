@@ -20,6 +20,8 @@ import NudeDetectorPage from './pages/NudeDetectorPage'
 import ImgUtilsPage from './pages/ImgUtilsPage'
 import RunnersPage from './pages/RunnersPage'
 import TtsPage from './pages/TtsPage'
+import { lazy, Suspense } from 'react'
+const LanggraphPage = lazy(() => import('./pages/LanggraphPage'))
 import MusicGenerationPage from './pages/MusicGenerationPage'
 import LlmComparePage from './pages/LlmComparePage'
 import LlmDebatePage from './pages/LlmDebatePage'
@@ -65,6 +67,7 @@ export default function App() {
             <Route path="img-utils" element={<ImgUtilsPage />} />
             <Route path="runners" element={<RunnersPage />} />
             <Route path="tts" element={<TtsPage />} />
+            <Route path="langgraph" element={<Suspense fallback={<p className="p-6">Loading LangGraph…</p>}><LanggraphPage /></Suspense>} />
             <Route path="music" element={<MusicGenerationPage />} />
             <Route path="llm-compare" element={<LlmComparePage />} />
             <Route path="llm-debate" element={<LlmDebatePage />} />
