@@ -83,10 +83,12 @@ async function mockApi(page: Page) {
     }
     const photos = /^\/api\/personas\/(\w+)\/photos$/.exec(pathname)
     if (photos && method === 'GET') {
+      const existing = (state.photoStarts[0] as { workflow?: string } | undefined)?.workflow === 'existing'
       return json(state.photoStarts.length ? [{
-        job_id: 'j1', persona_id: photos[1], status: 'completed', prompt_template: '{p_look}', prompt: 'red hair',
-        params: { workflow: 'txt2img', image_model: 'imggen.flux', width: 1024, height: 1024, face_image_id: 'f1', scale: 2 },
-        steps: ['generate', 'face_swap', 'upscale'].map(kind => ({ kind, status: 'completed', capability: 'x', workflow: kind, child_job_id: '1', input_image_id: null, output_image_id: 'out', stage: null, error: null })),
+        job_id: 'j1', persona_id: photos[1], status: 'completed',
+        prompt_template: existing ? '' : '{p_look}', prompt: existing ? '' : 'red hair',
+        params: { workflow: existing ? 'existing' : 'txt2img', image_model: existing ? '' : 'imggen.flux', width: 1024, height: 1024, face_image_id: 'f1', scale: 2 },
+        steps: (existing ? ['face_swap', 'upscale'] : ['generate', 'face_swap', 'upscale']).map(kind => ({ kind, status: 'completed', capability: 'x', workflow: kind, child_job_id: '1', input_image_id: null, output_image_id: 'out', stage: null, error: null })),
         final_image_id: 'out', final_image: null, error: null, created_at: now, updated_at: now,
       }] : [])
     }
@@ -106,6 +108,16 @@ async function mockApi(page: Page) {
       return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') })
     }
     if (pathname.startsWith('/api/prompts/')) return json({ items: [], next_cursor: null })
+    if (pathname === '/api/files/images') {
+      return json({
+        files: [{
+          id: 'lib-1', kind: 'image', direction: 'output', source: 'image', filename: 'beach.jpg',
+          content_type: 'image/jpeg', width: 1024, height: 768, size_bytes: 1000, sha256: '', job_id: null,
+          created_at: now, url: '', thumbnail_url: '', is_image: true, is_video: false, is_audio: false, is_starred: false,
+        }],
+        has_more: false,
+      })
+    }
     return json({})
   })
   return state
@@ -140,6 +152,29 @@ test('photo defaults to txt2img → face swap → upscale ×2', async ({ page })
     prompt: '{p_look}, portrait of {p_name}', workflow: 'txt2img', face_swap: true, upscale: true, scale: 2, count: 1,
   })
   await expect(page.getByTestId('persona-photo-steps-j1')).toContainText('Face swap')
+})
+
+test('existing photo: face swap + upscale, no prompt or generation', async ({ page }) => {
+  const state = await mockApi(page)
+  await page.goto('/app/personas/p1/photos')
+  await page.getByTestId('persona-photo-workflow-existing').click()
+  await expect(page.getByTestId('persona-photo-prompt')).toHaveCount(0)
+  await expect(page.getByTestId('persona-photo-count')).toHaveCount(0)
+  await expect(page.getByTestId('persona-photo-faceswap')).toBeChecked()
+  await expect(page.getByTestId('persona-photo-faceswap')).toBeDisabled()
+  const submit = page.getByTestId('persona-photo-submit')
+  await expect(submit).toBeDisabled() // no photo picked yet
+  await expect(submit).toHaveText(/Swap face/)
+
+  await page.getByTestId('persona-photo-input').click()
+  await page.getByTestId('imggen-picker-file-lib-1').click()
+  await page.getByTestId('imggen-picker-confirm').click()
+  await page.getByTestId('persona-photo-upscale').uncheck()
+  await submit.click()
+  await expect(page.getByTestId('persona-photo-j1')).toBeVisible()
+  expect(state.photoStarts[0]).toEqual({ workflow: 'existing', input_image_id: 'lib-1', upscale: false, scale: 2 })
+  await expect(page.getByTestId('persona-photo-steps-j1')).not.toContainText('Generate')
+  await expect(page.getByTestId('persona-photo-j1')).toContainText('From an existing photo')
 })
 
 test('chat tab lists only this persona’s chats and starts one on send', async ({ page }) => {

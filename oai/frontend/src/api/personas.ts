@@ -172,10 +172,14 @@ export interface PersonaPhoto {
   updated_at: string
 }
 
+export type PhotoWorkflow = 'txt2img' | 'img2img' | 'existing'
+
 export interface StartPhotoRequest {
-  prompt: string
+  /** Required unless `workflow` is `existing`. */
+  prompt?: string
   negative_prompt?: string
-  workflow?: 'txt2img' | 'img2img'
+  /** `existing` = no generation: face swap (+ optional upscale) of `input_image_id`. */
+  workflow?: PhotoWorkflow
   input_image_id?: string
   width?: number
   height?: number

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -762,6 +763,7 @@ func cmdPersonaPhoto(args []string) error {
 	out := fs.String("o", "persona.jpg", "output file (batches add _2, _3, …)")
 	count := fs.Int("n", 1, "number of photos (1-8)")
 	input := fs.String("input", "", "img2img: source image file")
+	from := fs.String("from", "", "no generation: put the persona's face on this photo (file or library image id); prompt not needed")
 	face := fs.String("face", "", "face image id to swap in (default: the primary face)")
 	noSwap := fs.Bool("no-faceswap", false, "skip the face swap step")
 	noUpscale := fs.Bool("no-upscale", false, "skip the upscale step")
@@ -778,8 +780,20 @@ func cmdPersonaPhoto(args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) != 2 {
-		return errors.New(`usage: oai persona photo <persona> "prompt" [-o out.jpg] [-n N] [-input img.jpg] [-no-faceswap] [-no-upscale] [--no-wait]`)
+	if !(len(pos) == 2 || (len(pos) == 1 && *from != "")) {
+		return errors.New(`usage: oai persona photo <persona> "prompt" [-o out.jpg] [-n N] [-input img.jpg] [-no-faceswap] [-no-upscale] [--no-wait]
+       oai persona photo <persona> -from photo.jpg|<image-id> [-o out.jpg] [-face ID] [-no-upscale] [--no-wait]`)
+	}
+	if *from != "" {
+		if *input != "" {
+			return errors.New("-from and -input cannot be combined")
+		}
+		if *noSwap {
+			return errors.New("-from always face-swaps; -no-faceswap does not apply")
+		}
+		if *count != 1 {
+			return errors.New("-from makes one photo; -n does not apply")
+		}
 	}
 	if *noWait {
 		set := false
@@ -796,8 +810,12 @@ func cmdPersonaPhoto(args []string) error {
 	if err != nil {
 		return err
 	}
+	prompt := ""
+	if len(pos) == 2 {
+		prompt = pos[1]
+	}
 	req := startPhotoRequest{
-		Prompt: pos[1], NegativePrompt: *negative, Width: *width, Height: *height,
+		Prompt: prompt, NegativePrompt: *negative, Width: *width, Height: *height,
 		Count: *count, FaceImageID: *face, ImageModel: *model,
 	}
 	if *seed != 0 {
@@ -819,6 +837,16 @@ func cmdPersonaPhoto(args []string) error {
 			return err
 		}
 		req.Workflow, req.InputImageID = "img2img", ids[0]
+	}
+	if *from != "" {
+		id, err := photoSourceID(cfg, *from)
+		if err != nil {
+			return err
+		}
+		req = startPhotoRequest{
+			Workflow: "existing", InputImageID: id, FaceImageID: *face,
+			Upscale: req.Upscale, Scale: req.Scale,
+		}
 	}
 	var started struct {
 		JobIDs []string `json:"job_ids"`
@@ -844,6 +872,22 @@ func cmdPersonaPhoto(args []string) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// photoSourceID resolves -from: an existing file is uploaded, otherwise a numeric
+// value is taken as a library image id.
+func photoSourceID(cfg *Config, from string) (string, error) {
+	if _, err := os.Stat(from); err == nil {
+		ids, err := uploadImages(cfg, []string{from})
+		if err != nil {
+			return "", err
+		}
+		return ids[0], nil
+	}
+	if _, err := strconv.ParseInt(from, 10, 64); err == nil {
+		return from, nil
+	}
+	return "", fmt.Errorf("-from %q: no such file, and not an image id", from)
 }
 
 func waitForPersonaPhoto(cfg *Config, id, label string, timeout time.Duration, showProgress bool) (*personaPhoto, error) {

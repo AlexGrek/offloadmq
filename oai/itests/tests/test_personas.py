@@ -191,6 +191,55 @@ class TestPersonaPhotos:
         assert r.status_code == 400
         assert client.get(url, headers=h).json() == []
 
+    def test_existing_photo_validation(self, client: httpx.Client, new_user: dict):
+        h = new_user["headers"]
+        photo = upload(client, h)
+        faceless = create(client, h)
+        r = client.post(
+            f"/api/personas/{faceless['id']}/photos",
+            headers=h,
+            json={"workflow": "existing", "input_image_id": photo},
+        )
+        assert r.status_code == 400, r.text  # nothing to swap in
+
+        p = create(client, h, face_image_ids=[upload(client, h)])
+        url = f"/api/personas/{p['id']}/photos"
+        assert client.post(url, headers=h, json={"workflow": "existing"}).status_code == 400
+        base = {"workflow": "existing", "input_image_id": photo}
+        assert client.post(url, headers=h, json={**base, "face_swap": False}).status_code == 400
+        assert client.post(url, headers=h, json={**base, "count": 2}).status_code == 400
+        assert client.post(url, headers=h, json={**base, "input_image_id": "999"}).status_code == 400
+        assert client.get(url, headers=h).json() == []
+
+    def test_existing_photo_skips_generation(self, client: httpx.Client, new_user: dict):
+        h = new_user["headers"]
+        photo = upload(client, h)
+        p = create(
+            client,
+            h,
+            face_image_ids=[upload(client, h)],
+            face_swap_capability="img-utils.reactor",
+        )
+        # No prompt: an existing photo needs none.
+        r = client.post(
+            f"/api/personas/{p['id']}/photos",
+            headers=h,
+            json={"workflow": "existing", "input_image_id": photo, "upscale": False},
+        )
+        if r.status_code == 400 and "online" in r.text:
+            pytest.skip(f"face swap tool unavailable: {r.text}")
+        assert r.status_code == 201, r.text
+        (job_id,) = r.json()["job_ids"]
+
+        v = client.get(f"/api/persona-photos/{job_id}", headers=h).json()
+        assert v["params"]["workflow"] == "existing"
+        assert v["params"]["image_model"] == ""
+        assert v["prompt"] == ""
+        assert [s["kind"] for s in v["steps"]] == ["face_swap"]
+        assert v["steps"][0]["capability"] == "img-utils.reactor"
+        if v["steps"][0]["input_image_id"] is not None:
+            assert v["steps"][0]["input_image_id"] == photo
+
     def test_unknown_photo_and_foreign_persona(self, client: httpx.Client, new_user: dict, session_headers: dict):
         assert client.get("/api/persona-photos/123", headers=new_user["headers"]).status_code == 404
         p = create(client, new_user["headers"])

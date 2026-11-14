@@ -55,6 +55,13 @@ The default is all three steps with ×2 upscaling:
 - `upscale` defaults to on.
 - Each step's input is the previous step's output image.
 
+**From an existing photo (`workflow: "existing"`).** No generation: the chain is
+`face_swap → upscale?`, starting from `input_image_id` (any of the user's library images).
+Face swap is mandatory (persona must have faces; `face_swap: false` is a 400), `upscale` stays
+optional, `count` must be 1 (the swap is deterministic). `prompt`, `negative_prompt`, size,
+seed and `image_model` are ignored; the run stores an empty prompt and records nothing in the
+prompt recents. `params.width/height` are the photo's own size.
+
 **Visibility.** Children are normal jobs, so intermediates appear in Image Generation and
 Image Tools history, My Files, the Gallery and the Progress drawer.
 
@@ -128,7 +135,7 @@ txt2img_capability, img2img_capability, face_swap_capability, upscaler_capabilit
 - The prefix is checked: `llm.`, `imggen.` or `img-utils.`.
 - Faces must be the user's own images. Upload them with `POST /api/images/upload`.
 
-**StartPhotoRequest:** `{prompt, negative_prompt?, workflow? (txt2img|img2img), input_image_id?,
+**StartPhotoRequest:** `{prompt (not for existing), negative_prompt?, workflow? (txt2img|img2img|existing), input_image_id?,
 width?, height?, seed?, count? (1–8; one run each, seed+i), face_image_id?, face_swap?, upscale?,
 scale? (1–8, default 2), image_model?, face_swap_capability?, upscaler_capability?}`.
 

@@ -230,6 +230,7 @@ oai persona face add|remove|primary Mira …  # images to upload / face image id
 
 oai persona photo Mira "{p_look}, portrait of {p_name} in a cafe" -o mira.jpg -n 2
 oai persona photo Mira "{p_name} reading" -input room.jpg -no-upscale      # img2img
+oai persona photo Mira -from beach.jpg -o mira-beach.jpg                    # face swap an existing photo, no generation
 id=$(oai persona photo Mira "quick" -no-faceswap --no-wait)                # bare id on stdout
 oai persona photo-poll "$id"; oai persona photo-download "$id" -o q.jpg
 oai persona photos Mira; oai persona photo-retry|photo-cancel|photo-delete <id>

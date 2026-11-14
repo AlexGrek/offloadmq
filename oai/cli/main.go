@@ -76,6 +76,8 @@ Usage:
   oai persona photo <persona> "prompt" [-o out.jpg] [-n N] [-input img.jpg] [-face ID]
                     [-no-faceswap] [-no-upscale] [-scale 2] [-negative TEXT] [-seed N]
                     [-width N] [-height N] [-model imggen.X] [--no-wait] [-t|-timeout 5m]
+  oai persona photo <persona> -from photo.jpg|<image-id> [-o out.jpg] [-face ID] [-no-upscale]
+                    [-scale 2] [--no-wait]          # no generation: face swap an existing photo
   oai persona photos <persona> [-limit N] [-json]
   oai persona photo-job|photo-poll <job-id> [-json]
   oai persona photo-cancel|photo-delete <job-id> [job-id ...]

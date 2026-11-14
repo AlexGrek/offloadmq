@@ -71,7 +71,7 @@ and URL `…/mcp`. CORS on `/mcp` and the OAuth endpoints allows any origin.
 | `delete_persona` | `oai persona delete` | Also deletes its chats and photo runs; images stay |
 | `set_persona_faces` | `oai persona face add\|remove\|primary` | Library image ids, primary first (MCP cannot upload) |
 | `list_persona_models` | `oai persona models` | Choices per slot |
-| `generate_persona_photos` | `oai persona photo` | txt2img → face swap → upscale ×2 by default; `face_swap`/`upscale` false skip a step; `{p_name}`/`{p_look}`/`{p_system}` tokens; `count` ≤8; waits like `generate_images` |
+| `generate_persona_photos` | `oai persona photo` | txt2img → face swap → upscale ×2 by default; `face_swap`/`upscale` false skip a step; `workflow: "existing"` + `input_image_id` face-swaps a library photo (no generation, no prompt); `{p_name}`/`{p_look}`/`{p_system}` tokens; `count` ≤8; waits like `generate_images` |
 | `get_persona_photo` / `list_persona_photos` | `oai persona photo-job` / `photos` | Steps, final image, optional `wait_seconds` |
 | `cancel_persona_photos` / `retry_persona_photo` / `delete_persona_photos` | `oai persona photo-cancel` / `photo-retry` / `photo-delete` | Delete removes intermediates too |
 | `persona_chat` | `oai persona chat` | Sends and waits for the reply; latest chat unless `chat_id` / `new_chat` |

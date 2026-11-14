@@ -73,7 +73,8 @@ job, exactly like the web UI; preview with expand_prompt. Saved prompts \
 To regenerate a job with new random values, use its prompt_template; retry_image_job \
 repeats the exact same prompt. Personas (list_personas) are characters with face images, a \
 look description and a system prompt: generate_persona_photos makes photos of one (txt2img → \
-face swap → upscale ×2 by default; prompts may use {p_name}, {p_look} and {p_system}), and \
+face swap → upscale ×2 by default; prompts may use {p_name}, {p_look} and {p_system}; \
+workflow=existing puts the persona's face on an existing library photo instead), and \
 persona_chat talks to one using its system prompt.";
 
 fn server_info() -> Value {

@@ -1,6 +1,7 @@
 //! Persona photos: a parent job that chains ordinary child jobs —
 //! `generate` (imggen txt2img/img2img) → `face_swap` (img-utils, source = one of the
-//! persona's faces) → `upscale` (img-utils, `scale_multiplier`). Each child keeps its
+//! persona's faces) → `upscale` (img-utils, `scale_multiplier`). Workflow `existing`
+//! skips `generate`: the persona's face is swapped into a library photo. Each child keeps its
 //! own lifecycle, worker, buckets and storage, so intermediates show up in Image
 //! Generation / Image Tools history and My Files. Same engine shape as
 //! `services::image_cycles`: the child id is persisted before any side effect, and an
@@ -31,6 +32,8 @@ pub const DEFAULT_SCALE: f64 = 2.0;
 pub const MAX_COUNT: u32 = 8;
 const PROMPT_BUCKET: &str = "imggen-prompt";
 const NEGATIVE_BUCKET: &str = "imggen-negative";
+/// Workflow that starts from a library photo instead of generating one.
+pub const EXISTING_WORKFLOW: &str = "existing";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -49,7 +52,9 @@ pub struct ToolChoice {
 /// Everything resolved at start, so retry replays exactly the same chain.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Params {
+    /// `txt2img`, `img2img` or [`EXISTING_WORKFLOW`].
     pub workflow: String,
+    /// Empty for [`EXISTING_WORKFLOW`] (nothing is generated).
     pub image_model: String,
     pub input_image_id: Option<String>,
     pub negative_prompt: Option<String>,
@@ -96,10 +101,13 @@ pub struct PhotoView {
 /// `POST /api/personas/{id}/photos` body (also used by the CLI and MCP).
 #[derive(Debug, Default, Deserialize, Clone)]
 pub struct StartPhotoRequest {
+    /// Required, except for workflow `existing`, which ignores it.
+    #[serde(default)]
     pub prompt: String,
     #[serde(default)]
     pub negative_prompt: Option<String>,
-    /// `txt2img` (default) or `img2img` (needs `input_image_id`).
+    /// `txt2img` (default), `img2img` (needs `input_image_id`) or `existing` (no
+    /// generation: face swap + optional upscale of `input_image_id`).
     #[serde(default)]
     pub workflow: Option<String>,
     #[serde(default)]
@@ -145,7 +153,8 @@ fn blank_to_none(v: Option<String>) -> Option<String> {
     v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-/// The step list for a parameter set: generate, then the optional post-steps.
+/// The step list for a parameter set: generate (unless the photo already exists),
+/// then the optional post-steps.
 pub fn plan_steps(p: &Params) -> Vec<Step> {
     let step = |kind: Kind, capability: &str, workflow: &str| Step {
         kind,
@@ -158,7 +167,10 @@ pub fn plan_steps(p: &Params) -> Vec<Step> {
         stage: None,
         error: None,
     };
-    let mut steps = vec![step(Kind::Generate, &p.image_model, &p.workflow)];
+    let mut steps = Vec::new();
+    if p.workflow != EXISTING_WORKFLOW {
+        steps.push(step(Kind::Generate, &p.image_model, &p.workflow));
+    }
     if let (Some(t), Some(_)) = (&p.face_swap, &p.face_image_id) {
         steps.push(step(Kind::FaceSwap, &t.capability, &t.workflow));
     }
@@ -179,8 +191,9 @@ pub async fn start(
     req: StartPhotoRequest,
 ) -> Result<Vec<i64>, AppError> {
     let persona = personas::get(state, user_id, persona_id).await?;
+    let existing = req.workflow.as_deref().map(str::trim) == Some(EXISTING_WORKFLOW);
     let template = req.prompt.trim().to_string();
-    if template.is_empty() {
+    if template.is_empty() && !existing {
         return Err(AppError::BadRequest("prompt is required".into()));
     }
     let count = req.count.unwrap_or(1);
@@ -189,7 +202,17 @@ pub async fn start(
             "count must be between 1 and {MAX_COUNT}"
         )));
     }
+    if existing && count != 1 {
+        // Face swap is deterministic — copies of one photo would be identical.
+        return Err(AppError::BadRequest(
+            "count must be 1 for an existing photo".into(),
+        ));
+    }
     let params = resolve_params(state, &persona, &req).await?;
+    if existing {
+        let id = create_and_kick(state, user_id, persona.id, "", String::new(), params).await?;
+        return Ok(vec![id]);
+    }
 
     let mut expander = match PromptExpander::for_user(&state.db, user_id).await {
         Ok(e) => e,
@@ -249,11 +272,12 @@ async fn resolve_params(
     req: &StartPhotoRequest,
 ) -> Result<Params, AppError> {
     let workflow = blank_to_none(req.workflow.clone()).unwrap_or_else(|| "txt2img".into());
-    if !matches!(workflow.as_str(), "txt2img" | "img2img") {
+    if !matches!(workflow.as_str(), "txt2img" | "img2img" | EXISTING_WORKFLOW) {
         return Err(AppError::BadRequest(
-            "workflow must be txt2img or img2img".into(),
+            "workflow must be txt2img, img2img or existing".into(),
         ));
     }
+    let existing = workflow == EXISTING_WORKFLOW;
     let input = match blank_to_none(req.input_image_id.clone()) {
         Some(raw) => {
             let id = parse_id(&raw, "input_image_id")?;
@@ -268,6 +292,11 @@ async fn resolve_params(
     if workflow == "img2img" && input.is_none() {
         return Err(AppError::BadRequest("img2img needs input_image_id".into()));
     }
+    if existing && input.is_none() {
+        return Err(AppError::BadRequest(
+            "workflow=existing needs input_image_id (the photo to put the face on)".into(),
+        ));
+    }
     if workflow == "txt2img" && input.is_some() {
         return Err(AppError::BadRequest(
             "input_image_id is only used with workflow=img2img".into(),
@@ -280,7 +309,7 @@ async fn resolve_params(
     let width = req.width.unwrap_or(dw);
     let height = req.height.unwrap_or(dh);
     for (name, v) in [("width", width), ("height", height)] {
-        if !(MIN_SIZE..=MAX_SIZE).contains(&v) {
+        if !existing && !(MIN_SIZE..=MAX_SIZE).contains(&v) {
             return Err(AppError::BadRequest(format!(
                 "{name} must be between {MIN_SIZE} and {MAX_SIZE}"
             )));
@@ -310,6 +339,19 @@ async fn resolve_params(
         return Err(AppError::BadRequest("scale must be between 1 and 8".into()));
     }
     let faces = personas::resolve_faces(state, persona).await?;
+    if existing {
+        if faces.is_empty() {
+            return Err(AppError::BadRequest(
+                "this persona has no face images; add one to use an existing photo".into(),
+            ));
+        }
+        if req.face_swap == Some(false) {
+            return Err(AppError::BadRequest(
+                "an existing photo always gets the face swap; use Image Tools to only upscale"
+                    .into(),
+            ));
+        }
+    }
     let face_swap_on = req.face_swap.unwrap_or(!faces.is_empty());
     if face_swap_on && faces.is_empty() {
         return Err(AppError::BadRequest(
@@ -317,15 +359,20 @@ async fn resolve_params(
         ));
     }
 
-    let image_model = personas::resolve_imggen(state, &prefs, &workflow)
-        .await?
-        .ok_or_else(|| AppError::BadRequest(format!("no {workflow} image model is online")))?
-        .capability;
-    if !image_model.starts_with("imggen.") {
-        return Err(AppError::BadRequest(
-            "image_model must be an imggen.* capability".into(),
-        ));
-    }
+    let image_model = if existing {
+        String::new()
+    } else {
+        let model = personas::resolve_imggen(state, &prefs, &workflow)
+            .await?
+            .ok_or_else(|| AppError::BadRequest(format!("no {workflow} image model is online")))?
+            .capability;
+        if !model.starts_with("imggen.") {
+            return Err(AppError::BadRequest(
+                "image_model must be an imggen.* capability".into(),
+            ));
+        }
+        model
+    };
 
     let (face_image_id, face_swap) = if face_swap_on {
         if faces.is_empty() {
@@ -372,14 +419,23 @@ async fn resolve_params(
         None
     };
 
+    // An existing photo keeps its own size; these are informational only.
+    let (width, height) = match (&input, existing) {
+        (Some(f), true) => (f.stored_width, f.stored_height),
+        _ => (width, height),
+    };
     Ok(Params {
         workflow,
         image_model,
-        input_image_id: input.map(|f| f.id.to_string()),
-        negative_prompt: blank_to_none(req.negative_prompt.clone()),
+        negative_prompt: if existing {
+            None
+        } else {
+            blank_to_none(req.negative_prompt.clone())
+        },
         width,
         height,
-        seed: req.seed,
+        input_image_id: input.map(|f| f.id.to_string()),
+        seed: if existing { None } else { req.seed },
         face_image_id,
         face_swap,
         upscale,
@@ -934,6 +990,22 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].capability, "imggen.flux");
         assert_eq!(steps[0].status, "pending");
+    }
+
+    #[test]
+    fn existing_photo_skips_generate() {
+        let mut p = params();
+        p.workflow = EXISTING_WORKFLOW.into();
+        p.image_model = String::new();
+        p.input_image_id = Some("42".into());
+        let kinds: Vec<Kind> = plan_steps(&p).into_iter().map(|s| s.kind).collect();
+        assert_eq!(kinds, vec![Kind::FaceSwap, Kind::Upscale]);
+
+        p.upscale = None;
+        let steps = plan_steps(&p);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].kind, Kind::FaceSwap);
+        assert_eq!(steps[0].capability, "img-utils.reactor");
     }
 
     #[test]

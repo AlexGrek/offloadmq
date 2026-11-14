@@ -149,16 +149,18 @@ pub fn definitions() -> Vec<Value> {
             "generate_persona_photos",
             "Generate persona photos",
             "Makes photos of a persona (`oai persona photo`). Default chain: txt2img → face swap \
-             with the primary face → upscale ×2. The prompt may use {p_name}, {p_look}, \
+             with the primary face → upscale ×2. workflow=existing skips generation: the \
+             persona's face is swapped into an existing library photo (input_image_id), then \
+             optionally upscaled; prompt is not needed. The prompt may use {p_name}, {p_look}, \
              {p_system} plus the usual placeholders; pass it unexpanded. Waits and returns \
              previews of the final images. A run still going when the wait ends is normal — \
              call get_persona_photo; don't submit again.",
             json!({ "type": "object", "properties": {
                 "persona": persona_schema(),
-                "prompt": { "type": "string", "description": "Photo prompt, e.g. \"{p_look}, portrait of {p_name} on a beach at sunset\"" },
+                "prompt": { "type": "string", "description": "Photo prompt, e.g. \"{p_look}, portrait of {p_name} on a beach at sunset\". Required unless workflow=existing" },
                 "negative_prompt": { "type": "string" },
-                "workflow": { "type": "string", "enum": ["txt2img", "img2img"], "description": "Default txt2img; img2img needs input_image_id" },
-                "input_image_id": { "type": ["string", "integer"], "description": "img2img source image (library id)" },
+                "workflow": { "type": "string", "enum": ["txt2img", "img2img", "existing"], "description": "Default txt2img; img2img and existing need input_image_id. existing = no generation, face swap (+ optional upscale) of that photo" },
+                "input_image_id": { "type": ["string", "integer"], "description": "img2img source image, or the existing photo (library id)" },
                 "count": { "type": "integer", "minimum": 1, "maximum": persona_photos::MAX_COUNT, "description": "Photos to make (default 1)" },
                 "width": { "type": "integer" },
                 "height": { "type": "integer" },
@@ -169,7 +171,7 @@ pub fn definitions() -> Vec<Value> {
                 "scale": { "type": "number", "minimum": 1, "maximum": 8, "description": "Upscale factor (default 2)" },
                 "image_model": { "type": "string", "description": "Override the persona's image model" },
                 "wait_seconds": wait_schema(DEFAULT_WAIT_SECS),
-            }, "required": ["persona", "prompt"] }),
+            }, "required": ["persona"] }),
             WRITE,
         ),
         tool(
@@ -565,6 +567,7 @@ async fn models(ctx: &ToolContext) -> Result<ToolOutput, AppError> {
 #[derive(Deserialize)]
 struct GenerateArgs {
     persona: PersonaRef,
+    #[serde(default)]
     prompt: String,
     #[serde(default)]
     negative_prompt: Option<String>,

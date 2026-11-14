@@ -16,6 +16,7 @@ import {
   type Persona,
   type PersonaPhoto,
   type PhotoStep,
+  type PhotoWorkflow,
 } from '../../api/personas'
 import { PromptTextarea } from '../PromptTextarea'
 import { ImagePickerModal } from '../imggen/ImagePickerModal'
@@ -24,6 +25,12 @@ import { ImageLightbox } from '../ImageLightbox'
 /** Shared with Image Generation: prompts picked here come from (and go to) the txt2img pool. */
 const PROMPT_BUCKET = 'imggen-prompt'
 const POLL_MS = 3000
+
+const WORKFLOW_LABEL: Record<PhotoWorkflow, string> = {
+  txt2img: 'From text',
+  img2img: 'From an image',
+  existing: 'Existing photo',
+}
 
 const STEP_LABEL: Record<PhotoStep['kind'], string> = {
   generate: 'Generate',
@@ -40,10 +47,14 @@ function stepTone(status: string): string {
 
 type Props = { token: string; persona: Persona }
 
-/** Persona photos: txt2img/img2img → face swap → upscale, plus the run history. */
+/**
+ * Persona photos: txt2img/img2img → face swap → upscale, or an existing photo →
+ * face swap → upscale (no generation), plus the run history.
+ */
 export function PersonaPhotos({ token, persona }: Props) {
   const [prompt, setPrompt] = useState('')
-  const [workflow, setWorkflow] = useState<'txt2img' | 'img2img'>('txt2img')
+  const [workflow, setWorkflow] = useState<PhotoWorkflow>('txt2img')
+  const existing = workflow === 'existing'
   const [input, setInput] = useState<UploadedImage | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [faceId, setFaceId] = useState<string>('')
@@ -88,23 +99,29 @@ export function PersonaPhotos({ token, persona }: Props) {
     return () => clearInterval(timer)
   }, [inFlight, token])
 
-  const canSubmit = !!prompt.trim() && !submitting && (workflow === 'txt2img' || !!input)
+  const canSubmit = !submitting && (existing ? hasFaces && !!input : !!prompt.trim() && (workflow === 'txt2img' || !!input))
 
   async function submit() {
     if (!canSubmit) return
     setSubmitting(true)
     setError(null)
     try {
-      await startPersonaPhotos(token, persona.id, {
-        prompt: prompt.trim(),
-        workflow,
-        input_image_id: workflow === 'img2img' ? input?.image_id : undefined,
-        face_swap: hasFaces ? faceSwap : false,
-        face_image_id: hasFaces && faceSwap && faceId ? faceId : undefined,
-        upscale,
-        scale: 2,
-        count,
-      })
+      await startPersonaPhotos(
+        token,
+        persona.id,
+        existing
+          ? { workflow, input_image_id: input?.image_id, face_image_id: faceId || undefined, upscale, scale: 2 }
+          : {
+              prompt: prompt.trim(),
+              workflow,
+              input_image_id: workflow === 'img2img' ? input?.image_id : undefined,
+              face_swap: hasFaces ? faceSwap : false,
+              face_image_id: hasFaces && faceSwap && faceId ? faceId : undefined,
+              upscale,
+              scale: 2,
+              count,
+            },
+      )
       refresh()
     } catch (e) {
       setError((e as Error).message)
@@ -126,7 +143,7 @@ export function PersonaPhotos({ token, persona }: Props) {
   return (
     <div className="flex flex-col gap-6" data-testid="persona-photos">
       <section className="flex flex-col gap-4" data-testid="persona-photo-form">
-        <div className="flex flex-col gap-2">
+        {!existing && <div className="flex flex-col gap-2">
           <Label htmlFor="persona-photo-prompt">Prompt</Label>
           <PromptTextarea
             id="persona-photo-prompt"
@@ -143,10 +160,10 @@ export function PersonaPhotos({ token, persona }: Props) {
             Pick from your saved txt2img prompts (list icon). <code className="rounded bg-muted px-1">{'{p_look}'}</code> and{' '}
             <code className="rounded bg-muted px-1">{'{p_name}'}</code> are filled in from the persona.
           </p>
-        </div>
+        </div>}
 
         <div className="flex flex-wrap gap-2" role="tablist">
-          {(['txt2img', 'img2img'] as const).map(w => (
+          {(['txt2img', 'img2img', 'existing'] as const).map(w => (
             <Button
               key={w}
               type="button"
@@ -156,12 +173,18 @@ export function PersonaPhotos({ token, persona }: Props) {
               onClick={() => setWorkflow(w)}
               data-testid={`persona-photo-workflow-${w}`}
             >
-              {w === 'txt2img' ? 'From text' : 'From an image'}
+              {WORKFLOW_LABEL[w]}
             </Button>
           ))}
         </div>
 
-        {workflow === 'img2img' && (
+        {existing && (
+          <p className="text-xs text-muted-foreground" data-testid="persona-photo-existing-hint">
+            No generation: the persona's face is swapped into a photo from your library{hasFaces ? '' : ' — add a face first'}.
+          </p>
+        )}
+
+        {workflow !== 'txt2img' && (
           <div className="flex items-center gap-3">
             {input ? (
               <div className="relative size-20 overflow-hidden rounded-lg bg-muted">
@@ -172,7 +195,7 @@ export function PersonaPhotos({ token, persona }: Props) {
               </div>
             ) : null}
             <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} data-testid="persona-photo-input">
-              <Library /> {input ? 'Change image' : 'Pick input image'}
+              <Library /> {input ? 'Change image' : existing ? 'Pick photo' : 'Pick input image'}
             </Button>
           </div>
         )}
@@ -181,14 +204,14 @@ export function PersonaPhotos({ token, persona }: Props) {
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
-              checked={hasFaces && faceSwap}
-              disabled={!hasFaces}
+              checked={hasFaces && (existing || faceSwap)}
+              disabled={!hasFaces || existing}
               onChange={e => setFaceSwap(e.target.checked)}
               data-testid="persona-photo-faceswap"
             />
             Face swap{!hasFaces && <span className="text-xs text-muted-foreground">(add a face first)</span>}
           </label>
-          {hasFaces && faceSwap && persona.faces.length > 1 && (
+          {hasFaces && (existing || faceSwap) && persona.faces.length > 1 && (
             <div className="flex items-center gap-1.5" data-testid="persona-photo-face-picker">
               {persona.faces.map((f, i) => {
                 const selected = (faceId || persona.faces[0].image_id) === f.image_id
@@ -210,7 +233,7 @@ export function PersonaPhotos({ token, persona }: Props) {
             <input type="checkbox" checked={upscale} onChange={e => setUpscale(e.target.checked)} data-testid="persona-photo-upscale" />
             Upscale ×2
           </label>
-          <label className="flex items-center gap-2">
+          {!existing && <label className="flex items-center gap-2">
             Photos
             <select
               className="h-8 rounded-md border border-input bg-background px-2"
@@ -220,14 +243,14 @@ export function PersonaPhotos({ token, persona }: Props) {
             >
               {[1, 2, 3, 4, 6, 8].map(n => <option key={n} value={n}>{n}</option>)}
             </select>
-          </label>
+          </label>}
         </div>
 
         {error && <p className="text-sm text-destructive" data-testid="persona-photo-error">{error}</p>}
 
         <Button className="min-h-11 w-full sm:w-auto sm:self-start" disabled={!canSubmit} onClick={() => void submit()} data-testid="persona-photo-submit">
           {submitting ? <Loader2 className="animate-spin" /> : <Camera />}
-          {count > 1 ? `Take ${count} photos` : 'Take photo'}
+          {existing ? 'Swap face' : count > 1 ? `Take ${count} photos` : 'Take photo'}
         </Button>
       </section>
 
@@ -274,12 +297,13 @@ function PhotoCard({
   onDelete: () => void
 }) {
   const done = PHOTO_TERMINAL.has(photo.status)
+  const caption = photo.prompt || (photo.params.workflow === 'existing' ? 'From an existing photo' : '')
   return (
     <li className="flex flex-col gap-2" data-testid={`persona-photo-${photo.job_id}`}>
       <div className="relative aspect-square overflow-hidden rounded-lg bg-muted">
         {photo.final_image_id ? (
-          <ImageLightbox src={imageFileUrl(photo.final_image_id, token)} alt={photo.prompt} caption={photo.prompt} triggerClassName="block size-full">
-            <img src={imageThumbnailUrl(photo.final_image_id, token)} alt={photo.prompt} className="size-full object-cover" />
+          <ImageLightbox src={imageFileUrl(photo.final_image_id, token)} alt={caption} caption={caption} triggerClassName="block size-full">
+            <img src={imageThumbnailUrl(photo.final_image_id, token)} alt={caption} className="size-full object-cover" />
           </ImageLightbox>
         ) : (
           <div className="flex size-full items-center justify-center p-3 text-center text-xs text-muted-foreground">
@@ -294,7 +318,7 @@ function PhotoCard({
           </span>
         ))}
       </div>
-      <p className="line-clamp-2 text-xs text-muted-foreground" title={photo.prompt}>{photo.prompt}</p>
+      <p className="line-clamp-2 text-xs text-muted-foreground" title={caption}>{caption}</p>
       <div className="flex gap-1">
         {!done ? (
           <Button variant="ghost" size="icon-sm" title="Cancel" aria-label="Cancel" onClick={onCancel} data-testid={`persona-photo-cancel-${photo.job_id}`}>
