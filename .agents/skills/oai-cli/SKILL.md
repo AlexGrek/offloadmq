@@ -26,10 +26,11 @@ Style: flat `package main`, stdlib only (`net/http`, `encoding/json`, `flag`) pl
 | `image.go` | `image` sub-dispatch, `capabilities`, `generate`, shared `capabilityInfo`, `printCapabilities`, `pickCapability`, `waitForJob` (poll loop), `finishJob` |
 | `describe.go` | `image describe`, `image describe-capabilities` |
 | `placeholders.go` | `{color}`/`{animal}`/… (gofakeit) + custom `{name}` (server `GET /api/prompt-placeholders`) prompt expansion, mirroring `frontend/src/lib/promptPlaceholders.ts`; `{?}` stays server-side |
+| `personas.go` | `persona list|show|models|create|update|delete|face|photo|photos|photo-job|photo-poll|photo-cancel|photo-retry|photo-delete|photo-download|chat|chats|history` over `routes/personas.rs` + REST chat; `resolvePersona` (id or case-insensitive name), `profileFlags` (shared create/update flags, model flags take a capability or `auto`), `waitForPersonaPhoto`; chat waits on `GET /api/chats/{id}/messages/{mid}` via `waitForJob` (`chatStatus` maps message status). See the `oai-personas` skill |
 | `progress.go` | TTY-aware spinner/progress bar, web-UI timing heuristic, `--progress` / `--profress` flags, plain-output fallback |
 | `README.md` | User-facing usage — keep in sync with the usage banner in `main.go` |
 
-Commands today: `login`, `whoami`, `image capabilities|generate|describe|describe-capabilities`. Default server `https://oai.alexgr.space`.
+Commands today: `login`, `whoami`, `persona …`, `image capabilities|generate|describe|describe-capabilities`. Default server `https://oai.alexgr.space`.
 
 ## Conventions
 

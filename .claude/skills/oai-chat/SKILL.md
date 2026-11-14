@@ -56,7 +56,9 @@ sequenceDiagram
   OAI-->>WS: task:result or task:failed
 ```
 
-**Dual persistence:** User message saved when WS `chat` is handled. Assistant row written only on **success/failure** in `poll_loop` — in-flight UI is client-only + `WorkloadContext`.
+**Dual persistence:** User message saved when the turn is submitted. The assistant row is inserted as `status="pending"` (with `offload_cap`/`offload_task_id`) right after submit, and finalized by `poll_loop` or `chat_worker` (`finalize_message` only touches pending rows). Streaming partial text is client-only (`WorkloadContext`).
+
+**Transport-free core:** `services::chat::submit_turn` (persist, stage attachments, submit, pending row) is shared by the WS `chat` command and REST `POST /api/chats/{id}/messages` (CLI/MCP); poll a REST turn via `GET /api/chats/{id}/messages/{mid}` (`get_message_reconciled`). Persona chats (`kind=persona`, `chats.persona_id`) render their persona's system prompt at send time (`effective_system_prompt`) — see the `oai-personas` skill.
 
 ---
 
@@ -340,7 +342,7 @@ Edit `services/chat.rs` (`build_offload_chat_messages`, `submit_chat` payload). 
 1. **Event names are exact** — `task:progress`, not `task_progress`.
 2. **Send requires selected chat** — create/select chat before first message.
 3. **Cancel before `task:queued`** — no cap/id yet; stop button disabled.
-4. **Assistant not in DB until done** — refresh from REST alone won’t show streaming partial text.
+4. **Pending assistant row has no partial text** — the row exists while running, but streaming text is only in WS events; REST refresh shows an empty pending reply.
 5. **Capabilities empty** — missing OffloadMQ token/URL or no `llm.*` agents online.
 6. **Poll debug is JSON** — label UI/docs accordingly.
 

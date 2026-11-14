@@ -54,6 +54,15 @@ const EMPTY: Settings = {
 };
 
 export function SettingsPage() {
+  return (
+    <div className="space-y-6">
+      <LlmRuntimeSettings />
+      <GeneralSettings />
+    </div>
+  );
+}
+
+function GeneralSettings() {
   const [detecting, setDetecting] = useState(false);
 
   const { form: cfg, edit, flush, status, error } = useEditableSettings<Settings>(
@@ -84,8 +93,6 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6">
-    <LlmRuntimeSettings />
     <Card>
       <CardHeader className="flex-row items-start justify-between">
         <div className="space-y-1.5">
@@ -205,6 +212,5 @@ export function SettingsPage() {
         </label>
       </CardContent>
     </Card>
-    </div>
   );
 }

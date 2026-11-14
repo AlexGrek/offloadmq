@@ -392,7 +392,7 @@ OAI is a standalone web application that gives end users access to AI capabiliti
 - React UI built with shadcn/ui components
 - Deployed at `oai.alexgr.space`; Docker image `grekodocker/oai`
 - Remote MCP server at `/mcp` with OAuth sign-in, so Claude (web, desktop, mobile, Claude Code) can generate images and manage jobs/prompts/placeholders — see [oai/docs/mcp.md](oai/docs/mcp.md)
-- Also has a Go command-line client, [oai/cli/](oai/cli/) (`oai login`, `oai image generate|describe|prompts`, `oai nude`), that talks to the same HTTP API as the SPA
+- Also has a Go command-line client, [oai/cli/](oai/cli/) (`oai login`, `oai image generate|describe|prompts`, `oai nude`, `oai persona`), that talks to the same HTTP API as the SPA
 
 ### Prompt Studio
 
@@ -411,6 +411,15 @@ prompts, selects primary/named local models, and runs unsafe Python via explicit
 enabled `llm-runtime.*` runners. Saved runs retain inputs, stdout/stderr, JSON and
 artifacts. Read [the feature skill](.agents/skills/oai-langgraph/SKILL.md) before
 editing LangGraph modules. API and lifecycle: [docs/oai-langgraph.md](docs/oai-langgraph.md).
+
+### Personas
+
+Personas (`/app/personas`) are characters with face images, a look description, a system prompt
+and optional preferred models (LLM, txt2img, img2img, face swap, upscaler; unset = the user's
+most-used, else first online). Each has chats (`chats.kind = 'persona'`, persona prompt rendered
+at send time) and photos — a parent job chaining txt2img/img2img → face swap → upscale ×2 child
+jobs. Prompts take `{p_name}` `{p_look}` `{p_system}`. Full surface in the CLI (`oai persona …`)
+and MCP. Read [the feature skill](.agents/skills/oai-personas/SKILL.md); API: [oai/docs/personas.md](oai/docs/personas.md).
 
 ### Generator Improver
 
@@ -446,6 +455,7 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 | **oai-devops** | `.claude/skills/oai-devops/SKILL.md` | `oai/helm-chart/**`, `oai/Dockerfile`, `oai/docker-compose*.yml`, `oai/Taskfile.yml` (deploy/docker/infra tasks) |
 | **oai-itests** | `.claude/skills/oai-itests/SKILL.md` | `oai/itests/**` |
 | **oai-langgraph** | `.agents/skills/oai-langgraph/SKILL.md` | `langgraph` feature modules, `offload/runtime.rs`, `LanggraphPage.tsx`, `components/langgraph/**`, `lib/langgraph/**` |
+| **oai-personas** | `.agents/skills/oai-personas/SKILL.md` | `services/personas.rs`, `services/persona_photos.rs`, `routes/personas.rs`, `db/persona*.rs`, `mcp/tools/personas.rs`, `cli/personas.go`, `PersonasPage.tsx`, `components/personas/**`, `api/personas.ts` |
 | **oai-chat** | `.claude/skills/oai-chat/SKILL.md` | Chat feature files (patterns below) |
 | **oai-img** | `.claude/skills/oai-img/SKILL.md` | Image generation feature files (patterns below) |
 | **oai-img-tools** | `.claude/skills/oai-img-tools/SKILL.md` | Image Tools (`img-utils.*` / resize) feature files (patterns below) |
