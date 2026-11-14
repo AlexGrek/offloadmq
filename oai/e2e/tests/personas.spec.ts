@@ -187,3 +187,36 @@ test('chat tab lists only this persona’s chats and starts one on send', async 
   await expect.poll(() => state.chatCreates.length).toBe(1)
   expect(state.chatCreates[0]).toMatchObject({ kind: 'persona', persona_id: 'p1' })
 })
+
+test('photo opens in the shared lightbox with tools and scrolls between photos', async ({ page }) => {
+  await mockApi(page)
+  const mk = (id: string, img: string, prompt: string) => ({
+    job_id: id, persona_id: 'p1', status: 'completed', prompt_template: prompt, prompt,
+    params: { workflow: 'txt2img', image_model: 'imggen.flux', width: 1024, height: 1024, face_image_id: 'f1', scale: 2 },
+    steps: [], final_image_id: img, final_image: null, error: null,
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  })
+  // Registered last → wins over the mockApi handler.
+  await page.route('**/api/personas/p1/photos', route =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ json: [mk('j2', 'img-b', 'second'), mk('j1', 'img-a', 'first')] })
+      : route.fallback(),
+  )
+  await page.goto('/app/personas/p1/photos')
+  await page.getByTestId('persona-photo-open-j2').click()
+
+  const track = page.getByTestId('image-lightbox-track')
+  await expect(track).toBeVisible()
+  await expect(page.getByTestId('image-lightbox-counter')).toHaveText('1 / 2')
+  const actions = page.getByTestId('image-lightbox-actions')
+  await expect(actions.getByTestId('image-lightbox-imgutils')).toBeVisible()
+  await expect(actions.getByTestId('image-lightbox-edit')).toBeVisible()
+  await expect(actions.getByTestId('image-lightbox-star')).toBeVisible()
+  // Deleting the image alone would orphan the run — that stays on the card.
+  await expect(actions.getByTestId('image-lightbox-delete')).toHaveCount(0)
+
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByTestId('image-lightbox-counter')).toHaveText('2 / 2')
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.getByTestId('image-lightbox-counter')).toHaveText('1 / 2')
+})

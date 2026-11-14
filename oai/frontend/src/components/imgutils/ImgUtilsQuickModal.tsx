@@ -28,6 +28,7 @@ import {
   SheetTitle,
 } from '../ui/sheet'
 import { ImagePickerModal } from '../imggen/ImagePickerModal'
+import { PersonaFacePickerModal } from './PersonaFacePickerModal'
 import { JobProgressBar } from '../imggen/JobProgressBar'
 import { JobErrorBanner } from '../JobErrorBanner'
 import ResizeControls from './ResizeControls'
@@ -80,6 +81,7 @@ export function ImgUtilsQuickModal({
   const [canceling, setCanceling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [personaPickerOpen, setPersonaPickerOpen] = useState(false)
 
   const source = useImageSlot(token)
 
@@ -356,6 +358,7 @@ export function ImgUtilsQuickModal({
                     void source.pickFile(file)
                   }}
                   onPickFromLibrary={() => setPickerOpen(true)}
+                  onPickFromPersona={() => setPersonaPickerOpen(true)}
                   onClear={source.clear}
                 />
               ) : null}
@@ -417,6 +420,14 @@ export function ImgUtilsQuickModal({
           <ImagePickerModal
             open={pickerOpen}
             onClose={() => setPickerOpen(false)}
+            onSelect={source.pickStored}
+            token={token}
+          />
+        ) : null}
+        {token ? (
+          <PersonaFacePickerModal
+            open={personaPickerOpen}
+            onClose={() => setPersonaPickerOpen(false)}
             onSelect={source.pickStored}
             token={token}
           />

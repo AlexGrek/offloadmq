@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderOpen, ImageUp, Loader2, X } from 'lucide-react'
+import { FolderOpen, ImageUp, Loader2, UserRound, X } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Label } from '../ui/label'
 import { cn } from '../../lib/utils'
@@ -14,6 +14,8 @@ export type ImageSlotProps = {
   compact?: boolean
   onPick: (file: File) => void
   onPickFromLibrary: () => void
+  /** Adds a "From persona" button (face reference slots). */
+  onPickFromPersona?: () => void
   onClear: () => void
 }
 
@@ -25,6 +27,7 @@ export function ImageSlot({
   compact = false,
   onPick,
   onPickFromLibrary,
+  onPickFromPersona,
   onClear,
 }: ImageSlotProps) {
   const [dragOver, setDragOver] = useState(false)
@@ -95,17 +98,32 @@ export function ImageSlot({
               }}
             />
           </label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={onPickFromLibrary}
-            data-testid={`${testId}-pick-library`}
-          >
-            <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
-            From library
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={onPickFromLibrary}
+              data-testid={`${testId}-pick-library`}
+            >
+              <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
+              From library
+            </Button>
+            {onPickFromPersona ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={onPickFromPersona}
+                data-testid={`${testId}-pick-persona`}
+              >
+                <UserRound className="mr-1.5 h-3.5 w-3.5" />
+                From persona
+              </Button>
+            ) : null}
+          </div>
         </div>
       )}
     </div>

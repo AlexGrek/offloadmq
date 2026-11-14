@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { Ban, Camera, Library, Loader2, RotateCcw, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -20,7 +21,9 @@ import {
 } from '../../api/personas'
 import { PromptTextarea } from '../PromptTextarea'
 import { ImagePickerModal } from '../imggen/ImagePickerModal'
-import { ImageLightbox } from '../ImageLightbox'
+import { ImageLightbox, type LightboxSlide } from '../ImageLightbox'
+import { NudeDetectModal } from '../nudedetect/NudeDetectModal'
+import type { ImggenRouteState } from '../../lib/imggen'
 
 /** Shared with Image Generation: prompts picked here come from (and go to) the txt2img pool. */
 const PROMPT_BUCKET = 'imggen-prompt'
@@ -66,6 +69,10 @@ export function PersonaPhotos({ token, persona }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [photos, setPhotos] = useState<PersonaPhoto[]>([])
   const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
+  // The open image, by id: polling replaces `photos` under an open viewer.
+  const [viewerId, setViewerId] = useState<string | null>(null)
+  const [nudeTarget, setNudeTarget] = useState<{ imageId: string; filename: string } | null>(null)
   const photosRef = useRef(photos)
   useEffect(() => {
     photosRef.current = photos
@@ -82,6 +89,7 @@ export function PersonaPhotos({ token, persona }: Props) {
     setLoading(true)
     setPhotos([])
     setFaceId('')
+    setViewerId(null)
   })
   useEffect(refresh, [refresh])
 
@@ -98,6 +106,41 @@ export function PersonaPhotos({ token, persona }: Props) {
     }, POLL_MS)
     return () => clearInterval(timer)
   }, [inFlight, token])
+
+  // Finished photos, in grid order: the lightbox's swipe track.
+  const viewable = useMemo(() => photos.filter(p => !!p.final_image_id), [photos])
+  const slides = useMemo<LightboxSlide[]>(
+    () =>
+      viewable.map(p => ({
+        id: p.final_image_id!,
+        src: imageFileUrl(p.final_image_id!, token),
+        alt: photoCaption(p),
+      })),
+    [viewable, token],
+  )
+  const viewerIndex = viewerId ? viewable.findIndex(p => p.final_image_id === viewerId) : -1
+  const current = viewerIndex >= 0 ? viewable[viewerIndex] : undefined
+  const currentId = current?.final_image_id ?? null
+
+  const sendToGenerator = useCallback(
+    (p: PersonaPhoto, mode: 'img2img' | 'img2video') => {
+      const ref = p.final_image
+      const image: UploadedImage = {
+        image_id: p.final_image_id!,
+        filename: ref?.filename ?? `${p.job_id}.jpg`,
+        // Images served by the viewer are normalized to JPEG by OAI.
+        content_type: 'image/jpeg',
+        width: ref?.width ?? 0,
+        height: ref?.height ?? 0,
+        size_bytes: 0,
+        rescaled: false,
+        reencoded: false,
+      }
+      const state: ImggenRouteState = { useInputImage: { mode, image } }
+      navigate('/app/images', { state })
+    },
+    [navigate],
+  )
 
   const canSubmit = !submitting && (existing ? hasFaces && !!input : !!prompt.trim() && (workflow === 'txt2img' || !!input))
 
@@ -267,6 +310,7 @@ export function PersonaPhotos({ token, persona }: Props) {
                 key={p.job_id}
                 token={token}
                 photo={p}
+                onOpen={() => setViewerId(p.final_image_id)}
                 onCancel={() => void act(() => cancelPersonaPhoto(token, p.job_id))}
                 onRetry={() => void act(() => retryPersonaPhoto(token, p.job_id))}
                 onDelete={() => {
@@ -278,33 +322,94 @@ export function PersonaPhotos({ token, persona }: Props) {
         )}
       </section>
 
+      {current && currentId ? (
+        <ImageLightbox
+          open
+          onOpenChange={open => {
+            if (!open) setViewerId(null)
+          }}
+          src={imageFileUrl(currentId, token)}
+          alt={photoCaption(current)}
+          caption={current.prompt || undefined}
+          slides={slides}
+          index={viewerIndex}
+          onIndexChange={i => setViewerId(viewable[i]?.final_image_id ?? null)}
+          promptPanel={current.prompt ? <PhotoPromptSheet prompt={current.prompt} /> : undefined}
+          actions={{
+            imageId: currentId,
+            filename: current.final_image?.filename ?? `${current.job_id}.jpg`,
+            // Not 'output': the lightbox's Delete would orphan the run's final image.
+            // Photos are deleted from their card, which also cleans up the child jobs.
+            direction: 'persona-photo',
+            token,
+            onNudeDetect: () => setNudeTarget({ imageId: currentId, filename: current.final_image?.filename ?? `${current.job_id}.jpg` }),
+            onSendToImg2Img: () => sendToGenerator(current, 'img2img'),
+            onSendToImg2Video: () => sendToGenerator(current, 'img2video'),
+            imgUtils: {},
+          }}
+        />
+      ) : null}
+
+      {nudeTarget ? (
+        <NudeDetectModal
+          open
+          onOpenChange={open => {
+            if (!open) setNudeTarget(null)
+          }}
+          token={token}
+          imageId={nudeTarget.imageId}
+          imageUrl={imageFileUrl(nudeTarget.imageId, token)}
+          filename={nudeTarget.filename}
+        />
+      ) : null}
+
       <ImagePickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={img => { setInput(img); setPickerOpen(false) }} token={token} />
     </div>
+  )
+}
+
+function photoCaption(photo: PersonaPhoto): string {
+  return photo.prompt || (photo.params.workflow === 'existing' ? 'From an existing photo' : '')
+}
+
+function PhotoPromptSheet({ prompt }: { prompt: string }) {
+  return (
+    <p className="whitespace-pre-wrap break-words px-2 pt-1 text-sm leading-relaxed text-white/95 select-text" data-testid="persona-photo-prompt-text">
+      {prompt}
+    </p>
   )
 }
 
 function PhotoCard({
   token,
   photo,
+  onOpen,
   onCancel,
   onRetry,
   onDelete,
 }: {
   token: string
   photo: PersonaPhoto
+  onOpen: () => void
   onCancel: () => void
   onRetry: () => void
   onDelete: () => void
 }) {
   const done = PHOTO_TERMINAL.has(photo.status)
-  const caption = photo.prompt || (photo.params.workflow === 'existing' ? 'From an existing photo' : '')
+  const caption = photoCaption(photo)
   return (
     <li className="flex flex-col gap-2" data-testid={`persona-photo-${photo.job_id}`}>
       <div className="relative aspect-square overflow-hidden rounded-lg bg-muted">
         {photo.final_image_id ? (
-          <ImageLightbox src={imageFileUrl(photo.final_image_id, token)} alt={caption} caption={caption} triggerClassName="block size-full">
+          <button
+            type="button"
+            onClick={onOpen}
+            className="block size-full cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={`View full size: ${caption}`}
+            data-testid={`persona-photo-open-${photo.job_id}`}
+          >
             <img src={imageThumbnailUrl(photo.final_image_id, token)} alt={caption} className="size-full object-cover" />
-          </ImageLightbox>
+          </button>
         ) : (
           <div className="flex size-full items-center justify-center p-3 text-center text-xs text-muted-foreground">
             {done ? (photo.error ?? photo.status) : <Loader2 className="size-5 animate-spin" />}

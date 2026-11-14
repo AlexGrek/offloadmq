@@ -98,6 +98,7 @@ import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { InputImageGrid } from '../components/imggen/InputImageGrid'
 import { ImageStashDrawer } from '../components/imggen/ImageStashDrawer'
 import { useImageStash } from '../hooks/useImageStash'
+import { usePasteImages } from '../hooks/usePasteImages'
 import { VideoPromptGenerator } from '../components/imggen/VideoPromptGenerator'
 import { ToolDebugHeaderButton, ToolDebugModal } from '../components/ToolDebugModal'
 import { toolDebugReady } from '../lib/toolDebug'
@@ -769,6 +770,13 @@ export default function ImageGenerationPage() {
       return null
     })
   }
+
+  // ⌘/Ctrl+V of images adds them to the input set — img2img / img2video only, on the
+  // New form, and not while the library picker (not a role=dialog) is up.
+  usePasteImages(
+    files => void onUpload(files),
+    isInputImageMode(mode) && !viewingJob && !uploading && !pickerOpen,
+  )
 
   /**
    * Publishes a fetched job to the selected-job and list state. Unchanged
@@ -1842,6 +1850,9 @@ export default function ImageGenerationPage() {
                       <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
                       From library
                     </Button>
+                    <span className="hidden self-center text-xs text-muted-foreground sm:inline" data-testid="imggen-paste-hint">
+                      or paste with ⌘/Ctrl+V
+                    </span>
                     <MorphIn show={Boolean(uploadedInput) && !multiInput}>
                       {uploadedInput && !multiInput && (
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">

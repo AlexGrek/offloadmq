@@ -39,9 +39,13 @@ import {
 import ResizeControls from '../components/imgutils/ResizeControls'
 import { ImageSlot } from '../components/imgutils/ImageSlot'
 import { useImageSlot } from '../hooks/useImageSlot'
+import { useImageSet } from '../hooks/useImageSet'
+import { usePasteImages } from '../hooks/usePasteImages'
+import { ImageSetSlot } from '../components/imgutils/ImageSetSlot'
 import { ImgUtilsToolPicker } from '../components/imgutils/ImgUtilsToolPicker'
 import { ScaleControl } from '../components/imgutils/ScaleControl'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
+import { PersonaFacePickerModal } from '../components/imgutils/PersonaFacePickerModal'
 import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImageLightbox, type ImageLightboxActions } from '../components/ImageLightbox'
 import { NudeDetectModal } from '../components/nudedetect/NudeDetectModal'
@@ -66,9 +70,11 @@ export default function ImgUtilsPage() {
   // Online tools + their knobs; shared with the quick-transform popup.
   const tools = useImgUtilsTools(token)
 
-  const input = useImageSlot(token)
+  // Target images: one job per image. The face reference stays a single image.
+  const images = useImageSet(token)
   const source = useImageSlot(token)
   const [pickerTarget, setPickerTarget] = useState<'input' | 'source' | null>(null)
+  const [personaPickerOpen, setPersonaPickerOpen] = useState(false)
 
   const [jobs, setJobs] = useState<ImgUtilsJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -99,6 +105,9 @@ export default function ImgUtilsPage() {
   const viewedJobId = viewingJob ? activePanel : null
 
   const { activeTool, needsSource, takesScale, isResize } = tools
+
+  // ⌘/Ctrl+V of images adds them as targets (only on the form, not while a picker is up).
+  usePasteImages(images.addFiles, !viewingJob && pickerTarget === null && !personaPickerOpen)
 
   const loadJobs = useCallback(async () => {
     if (!token) return
@@ -158,7 +167,8 @@ export default function ImgUtilsPage() {
 
   /** Feed an image back into this page's New-transform form. */
   function applyAsInput(image: UploadedImage) {
-    input.pickStored(image)
+    images.clear()
+    images.addStored([image])
     source.clear()
     setError(null)
     setActivePanel(IMGUTILS_NEW_PANEL)
@@ -211,22 +221,42 @@ export default function ImgUtilsPage() {
     setError(null)
     setSubmitting(true)
     setJobDetailLoading(true)
+    // One job per target image, sharing the tool, options and face reference. Images
+    // leave the set as their job is accepted, so after a failure only the rest remain.
+    const targets = images.ready
+    let lastJobId: string | null = null
+    let submitted = 0
     try {
-      const res = await startImgUtilsJob(token, {
-        capability: activeTool!.capability,
-        // Always explicit: the pack directory is not a usable task type, and a
-        // pack may install more than one operation.
-        workflow: activeTool!.workflow,
-        input_image_id: input.slot!.uploaded!.image_id,
-        source_image_id: needsSource ? source.slot!.uploaded!.image_id : undefined,
-        options: tools.buildOptions(),
-      })
-      input.clear()
+      for (const target of targets) {
+        const res = await startImgUtilsJob(token, {
+          capability: activeTool!.capability,
+          // Always explicit: the pack directory is not a usable task type, and a
+          // pack may install more than one operation.
+          workflow: activeTool!.workflow,
+          input_image_id: target.uploaded!.image_id,
+          source_image_id: needsSource ? source.slot!.uploaded!.image_id : undefined,
+          options: tools.buildOptions(),
+        })
+        images.remove(target.key)
+        lastJobId = res.job_id
+        submitted++
+      }
       source.clear()
-      setActivePanel(res.job_id)
-      void refreshRunningImageJobs()
-      await refreshJob(res.job_id)
-      await loadJobs()
+    } catch (err) {
+      const message = (err as Error).message
+      setError(submitted > 0 ? `Submitted ${submitted} of ${targets.length} jobs, then failed: ${message}` : message)
+    }
+    try {
+      if (lastJobId) {
+        void refreshRunningImageJobs()
+        await loadJobs()
+        // Everything went through → show the newest job; otherwise stay on the form
+        // (with the error and the images still to do) and let the sidebar list the rest.
+        if (submitted === targets.length) {
+          setActivePanel(lastJobId)
+          await refreshJob(lastJobId)
+        }
+      }
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -335,7 +365,7 @@ export default function ImgUtilsPage() {
     return () => window.clearInterval(id)
   }, [token, hasPendingJobs, loadJobs])
 
-  const inputReady = Boolean(input.slot?.uploaded && !input.slot.error)
+  const inputReady = images.ready.length > 0 && !images.uploading
   const sourceReady = Boolean(source.slot?.uploaded && !source.slot.error)
   const resizeError = tools.resizeError
   const canSubmit =
@@ -469,18 +499,21 @@ export default function ImgUtilsPage() {
                     onRefresh={tools.reload}
                   />
 
-                  <ImageSlot
-                    label={needsSource ? 'Target image' : 'Image'}
+                  <ImageSetSlot
+                    label={needsSource ? 'Target images' : 'Images'}
                     hint={
                       needsSource
-                        ? 'The photo whose face gets replaced'
+                        ? 'The photos whose face gets replaced'
                         : 'PNG, JPEG, WebP or GIF'
                     }
-                    slot={input.slot}
+                    entries={images.entries}
+                    note={images.note}
+                    max={images.max}
                     testId="imgutils-input"
-                    onPick={file => void input.pickFile(file)}
+                    onAddFiles={images.addFiles}
                     onPickFromLibrary={() => setPickerTarget('input')}
-                    onClear={input.clear}
+                    onRemove={images.remove}
+                    onClear={images.clear}
                   />
 
                   {isResize ? (
@@ -488,9 +521,10 @@ export default function ImgUtilsPage() {
                       state={tools.resizeState}
                       onChange={tools.patchResize}
                       methods={activeTool?.methods ?? []}
+                      // The before→after size preview only makes sense for a single image.
                       inputSize={
-                        input.slot?.uploaded
-                          ? { width: input.slot.uploaded.width, height: input.slot.uploaded.height }
+                        images.ready.length === 1
+                          ? { width: images.ready[0].uploaded!.width, height: images.ready[0].uploaded!.height }
                           : null
                       }
                       error={resizeError}
@@ -512,6 +546,7 @@ export default function ImgUtilsPage() {
                       testId="imgutils-source"
                       onPick={file => void source.pickFile(file)}
                       onPickFromLibrary={() => setPickerTarget('source')}
+                      onPickFromPersona={() => setPersonaPickerOpen(true)}
                       onClear={source.clear}
                     />
                   ) : null}
@@ -531,6 +566,7 @@ export default function ImgUtilsPage() {
                       <>
                         <Wand2 className="mr-2 size-4" />
                         Run {activeTool ? prettyLabel(activeTool.workflow) : 'transform'}
+                        {images.ready.length > 1 ? ` on ${images.ready.length} images` : ''}
                       </>
                     )}
                   </Button>
@@ -790,9 +826,18 @@ export default function ImgUtilsPage() {
         <ImagePickerModal
           open={pickerTarget !== null}
           onClose={() => setPickerTarget(null)}
-          onSelect={image => {
-            ;(pickerTarget === 'source' ? source : input).pickStored(image)
-          }}
+          {...(pickerTarget === 'source'
+            ? { onSelect: source.pickStored }
+            : { onSelectMany: images.addStored })}
+          token={token}
+        />
+      )}
+
+      {token && (
+        <PersonaFacePickerModal
+          open={personaPickerOpen}
+          onClose={() => setPersonaPickerOpen(false)}
+          onSelect={source.pickStored}
           token={token}
         />
       )}

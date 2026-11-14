@@ -290,3 +290,56 @@ test.describe('Describe image with several input images', () => {
     await expect(page.getByTestId('describe-job-detail')).toBeVisible()
   })
 })
+
+/** Dispatches one paste carrying `names.length` 1×1 PNGs (and optional plain text) on the page. */
+async function pasteImages(page: Page, names: string[], text = '') {
+  await page.evaluate(
+    ([fileNames, t]) => {
+      const png = Uint8Array.from(
+        atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='),
+        c => c.charCodeAt(0),
+      )
+      const dt = new DataTransfer()
+      for (const name of fileNames) dt.items.add(new File([png], name, { type: 'image/png' }))
+      if (t) dt.setData('text/plain', t)
+      document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    },
+    [names, text] as const,
+  )
+}
+
+test.describe('pasting images into img2img / img2video', () => {
+  test('a paste adds every image to the set, and pastes accumulate', async ({ page }) => {
+    const captured = await mockApi(page)
+    await openImg2Img(page)
+
+    await pasteImages(page, ['wide.png', 'tall.png'])
+    await expect(page.locator('[data-testid^="imggen-input-thumb-"]')).toHaveCount(2)
+    await pasteImages(page, ['third.png'])
+    await expect(page.locator('[data-testid^="imggen-input-thumb-"]')).toHaveCount(3)
+    expect(captured.uploads).toEqual(['wide.png', 'tall.png', 'third.png'])
+
+    await expect(page.getByTestId('imggen-submit-job')).toHaveText('Edit 3 Images')
+  })
+
+  test('works for img2video too', async ({ page }) => {
+    const captured = await mockApi(page)
+    await page.goto('/app/images')
+    await page.getByTestId('imggen-mode-img2video').click()
+    await expect(page.getByTestId('imggen-input-section')).toBeVisible()
+    await pasteImages(page, ['wide.png'])
+    await expect.poll(() => captured.uploads.length).toBe(1)
+  })
+
+  test('is ignored in text modes and for text pastes', async ({ page }) => {
+    const captured = await mockApi(page)
+    await page.goto('/app/images') // txt2img: no input image
+    await pasteImages(page, ['wide.png'])
+    await page.getByTestId('imggen-mode-img2img').click()
+    await expect(page.getByTestId('imggen-input-section')).toBeVisible()
+    // A copied-from-Word style paste (image + text) stays a text paste.
+    await pasteImages(page, ['tall.png'], 'some copied text')
+    await page.waitForTimeout(300)
+    expect(captured.uploads).toEqual([])
+  })
+})
