@@ -418,8 +418,9 @@ Personas (`/app/personas`) are characters with face images, a look description, 
 and optional preferred models (LLM, txt2img, img2img, face swap, upscaler; unset = the user's
 most-used, else first online). Each has chats (`chats.kind = 'persona'`, persona prompt rendered
 at send time) and photos — a parent job chaining txt2img/img2img → face swap → upscale ×2 child
-jobs. Prompts take `{p_name}` `{p_look}` `{p_system}`. Full surface in the CLI (`oai persona …`)
-and MCP. Read [the feature skill](.agents/skills/oai-personas/SKILL.md); API: [oai/docs/personas.md](oai/docs/personas.md).
+jobs. Prompts take `{p_name}` `{p_look}` `{p_system}`. "Describe look" fills the look from the
+primary face via a Describe Image job (persona-level vision model + prompt, built-in default).
+Full surface in the CLI (`oai persona …`) and MCP. Read [the feature skill](.agents/skills/oai-personas/SKILL.md); API: [oai/docs/personas.md](oai/docs/personas.md).
 
 ### Generator Improver
 

@@ -23,6 +23,8 @@ pub struct PersonaFields {
     pub img2img_capability: Option<String>,
     pub face_swap_capability: Option<String>,
     pub upscaler_capability: Option<String>,
+    pub vision_capability: Option<String>,
+    pub look_prompt: Option<String>,
 }
 
 pub async fn create(
@@ -44,6 +46,8 @@ pub async fn create(
         img2img_capability: Set(f.img2img_capability),
         face_swap_capability: Set(f.face_swap_capability),
         upscaler_capability: Set(f.upscaler_capability),
+        vision_capability: Set(f.vision_capability),
+        look_prompt: Set(f.look_prompt),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -67,6 +71,8 @@ pub async fn update(
         img2img_capability: Set(f.img2img_capability),
         face_swap_capability: Set(f.face_swap_capability),
         upscaler_capability: Set(f.upscaler_capability),
+        vision_capability: Set(f.vision_capability),
+        look_prompt: Set(f.look_prompt),
         updated_at: Set(chrono::Utc::now().fixed_offset()),
         ..Default::default()
     }

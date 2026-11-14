@@ -24,6 +24,7 @@ export interface EffectiveModels {
   img2img: EffectiveChoice | null
   face_swap: EffectiveChoice | null
   upscaler: EffectiveChoice | null
+  vision?: EffectiveChoice | null
   errors: string[]
 }
 
@@ -40,6 +41,10 @@ export interface Persona {
   img2img_capability: string | null
   face_swap_capability: string | null
   upscaler_capability: string | null
+  /** Vision model for "describe look"; null = automatic. */
+  vision_capability: string | null
+  /** Custom "describe look" prompt; null = `ModelOptions.default_look_prompt`. */
+  look_prompt: string | null
   /** Detail endpoint only. */
   effective?: EffectiveModels
   created_at: string
@@ -57,10 +62,14 @@ export interface PersonaInput {
   img2img_capability: string | null
   face_swap_capability: string | null
   upscaler_capability: string | null
+  vision_capability: string | null
+  /** null (or the default text) = the built-in default prompt. */
+  look_prompt: string | null
 }
 
-export type ModelSlot = 'llm' | 'txt2img' | 'img2img' | 'face_swap' | 'upscaler'
+export type ModelSlot = 'llm' | 'txt2img' | 'img2img' | 'face_swap' | 'upscaler' | 'vision'
 
+/** The "Preferred models" grid; `vision` lives in the describe-look panel instead. */
 export const MODEL_SLOTS: { slot: ModelSlot; field: keyof PersonaInput; label: string }[] = [
   { slot: 'llm', field: 'llm_capability', label: 'Chat model' },
   { slot: 'txt2img', field: 'txt2img_capability', label: 'Txt2img model' },
@@ -75,7 +84,11 @@ export interface ModelOption {
   online: boolean
 }
 
-export type ModelOptions = Record<ModelSlot, ModelOption[]> & { errors: string[] }
+export type ModelOptions = Record<ModelSlot, ModelOption[]> & {
+  /** What "describe look" asks when the persona has no custom prompt. */
+  default_look_prompt?: string
+  errors: string[]
+}
 
 export const PERSONA_TOKENS = ['{p_name}', '{p_look}', '{p_system}'] as const
 
@@ -90,6 +103,8 @@ export function personaInputFrom(p: Persona): PersonaInput {
     img2img_capability: p.img2img_capability,
     face_swap_capability: p.face_swap_capability,
     upscaler_capability: p.upscaler_capability,
+    vision_capability: p.vision_capability ?? null,
+    look_prompt: p.look_prompt ?? null,
   }
 }
 
@@ -103,6 +118,8 @@ export const EMPTY_PERSONA: PersonaInput = {
   img2img_capability: null,
   face_swap_capability: null,
   upscaler_capability: null,
+  vision_capability: null,
+  look_prompt: null,
 }
 
 export function listPersonas(token: string): Promise<Persona[]> {
@@ -130,6 +147,29 @@ export function deletePersona(token: string, id: string): Promise<void> {
 
 export function getPersonaModelOptions(token: string): Promise<ModelOptions> {
   return request('/api/personas/options', token)
+}
+
+// ── Describe look ──────────────────────────────────────────────────────────
+
+export interface DescribeLookRequest {
+  /** Supplies defaults (primary face, vision model, prompt) and `{p_*}` tokens. */
+  persona_id?: string
+  /** Required without `persona_id`. */
+  image_id?: string
+  capability?: string
+  prompt?: string
+}
+
+export interface DescribeLookStarted {
+  /** A Describe Image job: poll it with `pollDescribeJob`; `result` is the look. */
+  job_id: string
+  capability: string
+  prompt: string
+  image_id: string
+}
+
+export function describePersonaLook(token: string, req: DescribeLookRequest): Promise<DescribeLookStarted> {
+  return request('/api/personas/describe-look', token, { method: 'POST', body: JSON.stringify(req) })
 }
 
 // ── Photos ──────────────────────────────────────────────────────────────────

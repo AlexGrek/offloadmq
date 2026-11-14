@@ -21,6 +21,13 @@ Full reference: `oai/docs/personas.md`. Stack with `oai-backend` / `oai-frontend
 - **Model resolution** (`effective_models`, `resolve_llm|imggen|img_tool`): preference →
   user's most-used online → first online (`source` says which). If the OffloadMQ listing
   fails, a set preference still stands (`preference_or`, `online:false`).
+- **Describe look** (`personas::describe_look`, `POST /api/personas/describe-look`): starts a
+  plain Describe Image job (`image_analysis::start_job`) on the primary face. Model: request →
+  `vision_capability` → `resolve_vision` (most used in describe history → first online).
+  Prompt: request → `look_prompt` → `DEFAULT_LOOK_PROMPT`, with tokens rendered. It never writes
+  `look`: `DescribeLookPanel` polls the describe job and puts the result into the unsaved form.
+  `vision_capability` / `look_prompt` are **keep-on-absent** in `PersonaInput`
+  (`Option<Option<_>>` + `present`), because the CLI's read → merge → PUT does not know them.
 - **Photos** (`persona_photos.rs`): parent job modelled on `image_cycles.rs` — steps in
   `steps_json`, child id saved *before* submit, advisory lock (`db::image_cycles::lock`).
   Steps: `generate` (`image_jobs::start_job_with_id`), `face_swap` / `upscale`
@@ -40,8 +47,10 @@ Full reference: `oai/docs/personas.md`. Stack with `oai-backend` / `oai-frontend
 
 - `PersonasPage` (`/app/personas/:personaId?/:tab?`, tabs profile|chat|photos, `new` = create
   form). Sidebar on md+, chip row on phones.
-- `PersonaProfile` — faces (upload / library multi-pick / primary / remove), look, system
-  prompt, model selects fed by `GET /api/personas/options` with "Auto — X (most used)".
+- `PersonaProfile` — faces (upload / library multi-pick / primary / remove), look (+ the
+  *Describe look* toggle → `DescribeLookPanel`: vision select, prompt with default from
+  `options.default_look_prompt`, run/cancel/undo), system prompt, model selects fed by
+  `GET /api/personas/options` with "Auto — X (most used)".
 - `PersonaPhotos` — `PromptTextarea` on the shared `imggen-prompt` bucket, txt2img/img2img,
   face picker, Face swap / Upscale ×2 toggles, history grid with step chips, 3 s poll while
   any run is in flight.

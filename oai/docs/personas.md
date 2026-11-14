@@ -6,12 +6,17 @@ Personas (`/app/personas`) are reusable characters. Each one has:
 - **face reference images**, ordered, up to 10. The first is the **primary** face;
 - a **look** description (hair, body, style…);
 - a **system prompt** for its chats;
-- optional **preferred models**: chat LLM, txt2img, img2img, face swap and upscaler.
+- optional **preferred models**: chat LLM, txt2img, img2img, face swap, upscaler, and the
+  vision LLM used by **describe look**;
+- an optional **look prompt** for describe look (unset = the built-in default).
 
 A persona owns **chats** and **photos**. Memory is planned and not implemented yet.
 
 Every function is available in the web UI, the CLI (`oai persona …`, see
 [cli/README.md](../cli/README.md)) and MCP (the `*persona*` tools, see [mcp.md](mcp.md)).
+The exception is **running** describe look: it is web UI and REST only. MCP
+`create_persona` / `update_persona` can set its model and prompt (`vision_model`,
+`look_prompt`).
 
 ## Persona tokens
 
@@ -40,6 +45,35 @@ A slot with no preference resolves at use time, in this order:
 A set preference is always used, even while it is offline: the task queues until the agent
 returns. `GET /api/personas/{id}` reports `effective` per slot as
 `{capability, workflow?, source: preference|most_used|only|first_online, online}`.
+
+## Describe look
+
+Describe look fills the look field from a face photo. It runs a vision LLM on the
+primary face. In the profile, the **Describe look** button next to *Look* opens a panel with:
+
+- a **vision model** select. The default is "Auto": the persona's preference, else the
+  online vision model the user ran most in Describe Image (last 20 jobs), else the first
+  online one;
+- a **prompt** textarea. It starts with the built-in default
+  (`services::personas::DEFAULT_LOOK_PROMPT`), which asks for a comma-separated list of
+  physical traits and leaves out clothing, pose and background, because the result is
+  spliced into photo prompts through `{p_look}`. `{p_*}` tokens work here. *Reset to
+  default* clears the custom prompt.
+
+Both values are persona fields (`vision_capability`, `look_prompt`) and are saved with the
+profile. The run itself is an ordinary **Describe Image job**: it shows up in Describe
+history, and the panel polls `POST /api/describe/jobs/{id}/poll`. On completion the answer
+**replaces the look in the form**, clipped to 4000 characters. It is not saved until the
+user saves, and *Undo* restores the previous text. The form sends its unsaved values (face,
+model, prompt), so an unsaved new persona can be described too.
+
+`POST /api/personas/describe-look`: `{persona_id?, image_id?, capability?, prompt?}` →
+201 `{job_id, capability, prompt, image_id}`. Every field is optional. Missing values fall
+back to the persona: its primary face, then `vision_capability` (or the auto pick), then
+`look_prompt`, then the default prompt. Without a persona, `image_id` is required. It
+returns 400 when there is no face, when no vision model is online, or for a non-`llm.`
+capability. Uploads above 9 MiB are shrunk by an `image_resize` pre-step when one is
+available, as in Describe Image.
 
 ## Photos — the chain
 
@@ -114,7 +148,9 @@ stay in the library.
 ```
 GET    /api/personas                     list (no `effective`)
 POST   /api/personas                     PersonaInput → 201 persona
-GET    /api/personas/options             model choices per slot (online + known offline)
+GET    /api/personas/options             model choices per slot (online + known offline),
+                                         incl. `vision`, plus `default_look_prompt`
+POST   /api/personas/describe-look       DescribeLookRequest → 201 {job_id, …} (a Describe Image job)
 GET    /api/personas/{id}[?effective=false]
 PUT    /api/personas/{id}                full replace (PersonaInput)
 DELETE /api/personas/{id}
@@ -128,11 +164,16 @@ POST   /api/chats {kind:"persona", persona_id}
 ```
 
 **PersonaInput:** `{name, system_prompt, look, face_image_ids[], llm_capability,
-txt2img_capability, img2img_capability, face_swap_capability, upscaler_capability}`.
+txt2img_capability, img2img_capability, face_swap_capability, upscaler_capability,
+vision_capability?, look_prompt?}`.
 
 - Model fields take a capability or `null`. Blank and `"auto"` mean `null`.
+- `vision_capability` and `look_prompt` are **keep-on-absent**: a PUT that leaves them out
+  keeps the stored values, so older read → merge → PUT clients (the CLI) do not wipe them.
+  An explicit `null` resets them. A blank `look_prompt`, or one equal to the default, is
+  stored as `null`. Max 4000 characters.
 - Bracket attributes are stripped.
-- The prefix is checked: `llm.`, `imggen.` or `img-utils.`.
+- The prefix is checked: `llm.` (chat and vision), `imggen.` or `img-utils.`.
 - Faces must be the user's own images. Upload them with `POST /api/images/upload`.
 
 **StartPhotoRequest:** `{prompt (not for existing), negative_prompt?, workflow? (txt2img|img2img|existing), input_image_id?,
@@ -147,11 +188,11 @@ scale? (1–8, default 2), image_model?, face_swap_capability?, upscaler_capabil
 
 | Layer | Files |
 |-------|-------|
-| DB | `db/personas.rs`, `db/persona_photos.rs`, entities `personas`, `persona_photo_jobs`, `chats.persona_id` (migration `m20261113_000043_personas`) |
-| Services | `services/personas.rs` (CRUD, tokens, model resolution, `chat_for`), `services/persona_photos.rs` (chain driver), `services/chat.rs` (`submit_turn`, `effective_system_prompt`, `get_message_reconciled`) |
+| DB | `db/personas.rs`, `db/persona_photos.rs`, entities `personas`, `persona_photo_jobs`, `chats.persona_id` (migrations `m20261113_000043_personas`, `m20261115_000045_persona_describe_look`) |
+| Services | `services/personas.rs` (CRUD, tokens, model resolution, `chat_for`, `describe_look`), `services/image_analysis.rs` (the describe job itself), `services/persona_photos.rs` (chain driver), `services/chat.rs` (`submit_turn`, `effective_system_prompt`, `get_message_reconciled`) |
 | Routes | `routes/personas.rs`, `routes/chats.rs` (`send_message`, `get_message`) |
 | Worker | `jobs/persona_photos_worker.rs` |
 | MCP | `mcp/tools/personas.rs` |
 | CLI | `cli/personas.go` |
-| Frontend | `pages/PersonasPage.tsx`, `components/personas/{PersonaProfile,PersonaPhotos}.tsx`, `api/personas.ts`, `ChatWorkspace` `kind="persona"` (`PersonaChatContext`) |
+| Frontend | `pages/PersonasPage.tsx`, `components/personas/{PersonaProfile,DescribeLookPanel,PersonaPhotos}.tsx`, `api/personas.ts`, `ChatWorkspace` `kind="persona"` (`PersonaChatContext`) |
 | Tests | `itests/tests/test_personas.py`, `test_mcp.py::TestPersonaTools`, `cli/personas_test.go`, `e2e/tests/personas.spec.ts`, unit tests in both services |

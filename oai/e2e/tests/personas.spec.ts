@@ -33,6 +33,9 @@ async function mockApi(page: Page) {
     photoStarts: [] as unknown[],
     chatQueries: [] as string[],
     chatCreates: [] as unknown[],
+    describeStarts: [] as unknown[],
+    describePolls: 0,
+    updates: [] as Record<string, unknown>[],
   }
   await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
   await page.routeWebSocket(/\/api\/ws\//, ws => {
@@ -63,6 +66,8 @@ async function mockApi(page: Page) {
         img2img: [],
         face_swap: [{ capability: 'img-utils.reactor', workflow: 'face_swap', online: true }],
         upscaler: [{ capability: 'img-utils.seedvr2', workflow: 'upscale', online: true }],
+        vision: [{ capability: 'llm.vis', online: true }],
+        default_look_prompt: 'Describe the face.',
         errors: [],
       })
     }
@@ -74,12 +79,33 @@ async function mockApi(page: Page) {
       state.personas = [p, ...state.personas]
       return json(p, 201)
     }
+    if (pathname === '/api/personas/describe-look' && method === 'POST') {
+      const body = route.request().postDataJSON()
+      state.describeStarts.push(body)
+      return json({ job_id: 'd1', capability: body.capability ?? 'llm.vis', prompt: body.prompt, image_id: body.image_id }, 201)
+    }
+    if (pathname === '/api/describe/jobs/d1/poll') {
+      state.describePolls += 1
+      const done = state.describePolls > 1
+      return json({
+        job_id: 'd1', status: done ? 'completed' : 'running', prompt: '', capability: 'llm.vis', input_image_id: 'f1',
+        result: done ? 'green eyes, freckles' : null, stage: null, error: null, offload_cap: null, offload_task_id: null,
+        created_at: now, updated_at: now,
+      })
+    }
     const detail = /^\/api\/personas\/(\w+)$/.exec(pathname)
     if (detail && method === 'GET') {
       const p = state.personas.find(x => x.id === detail[1])
       return p
         ? json({ ...p, effective: { llm: { capability: 'llm.fake', source: 'only', online: true }, txt2img: null, img2img: null, face_swap: null, upscaler: null, errors: [] } })
         : json({ error: 'Not found' }, 404)
+    }
+    if (detail && method === 'PUT') {
+      const body = route.request().postDataJSON()
+      state.updates.push(body)
+      const p = { ...state.personas.find(x => x.id === detail[1])!, ...body }
+      state.personas = state.personas.map(x => (x.id === p.id ? p : x))
+      return json(p)
     }
     const photos = /^\/api\/personas\/(\w+)\/photos$/.exec(pathname)
     if (photos && method === 'GET') {
@@ -219,4 +245,29 @@ test('photo opens in the shared lightbox with tools and scrolls between photos',
   await expect(page.getByTestId('image-lightbox-counter')).toHaveText('2 / 2')
   await page.keyboard.press('ArrowLeft')
   await expect(page.getByTestId('image-lightbox-counter')).toHaveText('1 / 2')
+})
+
+test('describe look fills the look from the primary face and saves model + prompt', async ({ page }) => {
+  const state = await mockApi(page)
+  await page.goto('/app/personas/p1/profile')
+  await expect(page.getByTestId('persona-look')).toHaveValue('red hair')
+  await page.getByTestId('persona-describe-toggle').click()
+  await expect(page.getByTestId('persona-describe-prompt')).toHaveValue('Describe the face.')
+  await page.getByTestId('persona-describe-model').selectOption('llm.vis')
+  await page.getByTestId('persona-describe-prompt').fill('Describe {p_name}.')
+  await page.getByTestId('persona-describe-run').click()
+
+  await expect(page.getByTestId('persona-look')).toHaveValue('green eyes, freckles')
+  await expect(page.getByTestId('persona-describe-done')).toBeVisible()
+  expect(state.describeStarts[0]).toMatchObject({ persona_id: 'p1', image_id: 'f1', capability: 'llm.vis', prompt: 'Describe {p_name}.' })
+
+  await page.getByTestId('persona-describe-undo').click()
+  await expect(page.getByTestId('persona-look')).toHaveValue('red hair')
+
+  await page.getByTestId('persona-describe-prompt-reset').click()
+  await expect(page.getByTestId('persona-describe-prompt')).toHaveValue('Describe the face.')
+  await page.getByTestId('persona-describe-prompt').fill('Describe {p_name}.')
+  await page.getByTestId('persona-save').click()
+  await expect.poll(() => state.updates.length).toBe(1)
+  expect(state.updates[0]).toMatchObject({ look: 'red hair', vision_capability: 'llm.vis', look_prompt: 'Describe {p_name}.' })
 })

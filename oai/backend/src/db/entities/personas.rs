@@ -20,6 +20,11 @@ pub struct Model {
     pub img2img_capability: Option<String>,
     pub face_swap_capability: Option<String>,
     pub upscaler_capability: Option<String>,
+    /// Vision model for "describe look" (NULL = automatic).
+    pub vision_capability: Option<String>,
+    /// Custom "describe look" prompt (NULL = `services::personas::DEFAULT_LOOK_PROMPT`).
+    #[sea_orm(column_type = "Text", nullable)]
+    pub look_prompt: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

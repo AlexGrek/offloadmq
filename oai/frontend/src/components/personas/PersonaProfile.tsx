@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
-import { ImagePlus, Library, Loader2, Star, Trash2, X } from 'lucide-react'
+import { ChevronUp, ImagePlus, Library, Loader2, ScanFace, Star, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,6 +15,7 @@ import {
   type PersonaInput,
 } from '../../api/personas'
 import { ImagePickerModal } from '../imggen/ImagePickerModal'
+import { DescribeLookPanel } from './DescribeLookPanel'
 
 const textareaClass =
   'w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed ' +
@@ -65,7 +66,11 @@ export function PersonaProfile({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  useResetOnChange(personaId, () => setUploadError(null))
+  const [describeOpen, setDescribeOpen] = useState(false)
+  useResetOnChange(personaId, () => {
+    setUploadError(null)
+    setDescribeOpen(false)
+  })
 
   const set = <K extends keyof PersonaInput>(key: K, v: PersonaInput[K]) => onChange({ ...value, [key]: v })
   const addFaces = (imgs: UploadedImage[]) => {
@@ -167,7 +172,35 @@ export function PersonaProfile({
       </section>
 
       <section className="flex flex-col gap-2">
-        <Label htmlFor="persona-look">Look</Label>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label htmlFor="persona-look">Look</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setDescribeOpen(o => !o)}
+            aria-expanded={describeOpen}
+            data-testid="persona-describe-toggle"
+          >
+            {describeOpen ? <ChevronUp /> : <ScanFace />} Describe look
+          </Button>
+        </div>
+        {describeOpen && (
+          <DescribeLookPanel
+            token={token}
+            personaId={personaId}
+            faceId={value.face_image_ids[0] ?? null}
+            look={value.look}
+            onLook={v => set('look', v)}
+            capability={value.vision_capability}
+            onCapability={v => set('vision_capability', v)}
+            prompt={value.look_prompt}
+            onPrompt={v => set('look_prompt', v)}
+            models={options?.vision ?? []}
+            defaultPrompt={options?.default_look_prompt ?? ''}
+            effective={effective?.vision}
+          />
+        )}
         <textarea
           id="persona-look"
           className={textareaClass}

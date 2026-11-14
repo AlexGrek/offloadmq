@@ -1,4 +1,4 @@
-//! `/api/personas/*` (persona CRUD, model options, photo start/list) and
+//! `/api/personas/*` (persona CRUD, model options, describe look, photo start/list) and
 //! `/api/persona-photos/*` (one photo run). Persona chats are ordinary chats:
 //! `/api/chats?kind=persona&persona_id=…`.
 
@@ -18,7 +18,9 @@ use crate::{
     routes::job_common::parse_id,
     services::{
         persona_photos::{self, PhotoView, StartPhotoRequest},
-        personas::{self, ModelOptions, PersonaInput, PersonaView},
+        personas::{
+            self, DescribeLookRequest, DescribeLookStarted, ModelOptions, PersonaInput, PersonaView,
+        },
     },
     state::AppState,
 };
@@ -27,6 +29,7 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", get(list).post(create))
         .route("/options", get(options))
+        .route("/describe-look", post(describe_look))
         .route("/{id}", get(detail).put(update).delete(delete))
         .route("/{id}/photos", get(list_photos).post(start_photos))
 }
@@ -67,6 +70,19 @@ async fn options(
     AuthenticatedUser(user): AuthenticatedUser,
 ) -> Json<ModelOptions> {
     Json(personas::model_options(&state, user).await)
+}
+
+/// Starts a Describe Image job that describes a face — the client polls it and
+/// puts the result into the look field.
+async fn describe_look(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Json(req): Json<DescribeLookRequest>,
+) -> Result<(StatusCode, Json<DescribeLookStarted>), AppError> {
+    Ok((
+        StatusCode::CREATED,
+        Json(personas::describe_look(&state, user, req).await?),
+    ))
 }
 
 #[derive(Deserialize)]

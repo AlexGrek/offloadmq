@@ -15,7 +15,7 @@ use crate::{
     },
     error::AppError,
     offload::{LlmCapabilityInfo, base_capability},
-    services::{chat, image_jobs, img_utils},
+    services::{chat, external_resize, image_analysis, image_jobs, img_utils},
     state::AppState,
 };
 
@@ -23,6 +23,17 @@ pub const MAX_NAME_CHARS: usize = 100;
 pub const MAX_SYSTEM_PROMPT_CHARS: usize = 32_000;
 pub const MAX_LOOK_CHARS: usize = 4_000;
 pub const MAX_FACES: usize = 10;
+pub const MAX_LOOK_PROMPT_CHARS: usize = 4_000;
+
+/// "Describe look" prompt used when the persona has no custom one. Asks for a
+/// prompt-ready list of stable physical traits (no clothing / scene), since the
+/// result is spliced into photo prompts through `{p_look}`.
+pub const DEFAULT_LOOK_PROMPT: &str = "Describe the physical appearance of the person in this photo so an \
+image generator can recreate them. Cover apparent age, gender presentation, ethnicity, face shape, \
+eyes (colour and shape), eyebrows, nose, lips, skin tone, hair (colour, length, texture, style), \
+facial hair, body type and distinctive features (freckles, moles, tattoos, piercings, glasses). \
+Leave out clothing, pose, expression, background and lighting. Answer with one comma-separated \
+list of short visual descriptors — no full sentences, no preamble — under 80 words.";
 
 /// Persona tokens, substituted before the regular prompt placeholders. Reserved as
 /// custom placeholder names (`db::prompt_placeholders::RESERVED_PLACEHOLDER_NAMES`).
@@ -52,6 +63,31 @@ pub struct PersonaInput {
     pub face_swap_capability: Option<String>,
     #[serde(default)]
     pub upscaler_capability: Option<String>,
+    /// Vision model for "describe look". Absent = keep the stored value (so older
+    /// read→merge→PUT clients don't wipe it); `null` / blank / `auto` = automatic.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub vision_capability: Option<Option<String>>,
+    /// Custom "describe look" prompt. Absent = keep; `null` / blank / the default
+    /// text = use [`DEFAULT_LOOK_PROMPT`].
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub look_prompt: Option<Option<String>>,
+}
+
+/// Distinguishes an explicit `null` (`Some(None)`) from an absent field (`None`).
+fn present<'de, D, T>(d: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(d).map(Some)
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -82,6 +118,7 @@ pub struct EffectiveModels {
     pub img2img: Option<EffectiveChoice>,
     pub face_swap: Option<EffectiveChoice>,
     pub upscaler: Option<EffectiveChoice>,
+    pub vision: Option<EffectiveChoice>,
     /// Lookup problems (OffloadMQ unreachable, …); slots that failed stay `null`.
     pub errors: Vec<String>,
 }
@@ -101,6 +138,9 @@ pub struct PersonaView {
     pub img2img_capability: Option<String>,
     pub face_swap_capability: Option<String>,
     pub upscaler_capability: Option<String>,
+    pub vision_capability: Option<String>,
+    /// Custom "describe look" prompt; `null` = the default (`/api/personas/options`).
+    pub look_prompt: Option<String>,
     /// Only on the detail endpoint (it asks OffloadMQ what is online).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effective: Option<EffectiveModels>,
@@ -211,12 +251,29 @@ fn normalize_pref(
     Ok(Some(base))
 }
 
+fn normalize_look_prompt(value: Option<String>) -> Result<Option<String>, AppError> {
+    let Some(v) = value
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty() && v != DEFAULT_LOOK_PROMPT)
+    else {
+        return Ok(None);
+    };
+    if v.chars().count() > MAX_LOOK_PROMPT_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "look prompt exceeds {MAX_LOOK_PROMPT_CHARS} characters"
+        )));
+    }
+    Ok(Some(v))
+}
+
+/// `existing` supplies the values of keep-on-absent fields.
 async fn validate(
     state: &AppState,
     user_id: i64,
-    exclude_id: Option<i64>,
+    existing: Option<&Persona>,
     input: PersonaInput,
 ) -> Result<PersonaFields, AppError> {
+    let exclude_id = existing.map(|p| p.id);
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return Err(AppError::BadRequest("persona name cannot be empty".into()));
@@ -299,6 +356,18 @@ async fn validate(
             "img-utils.",
             "upscaler_capability",
         )?,
+        vision_capability: normalize_pref(
+            input
+                .vision_capability
+                .unwrap_or_else(|| existing.and_then(|p| p.vision_capability.clone())),
+            "llm.",
+            "vision_capability",
+        )?,
+        look_prompt: normalize_look_prompt(
+            input
+                .look_prompt
+                .unwrap_or_else(|| existing.and_then(|p| p.look_prompt.clone())),
+        )?,
     })
 }
 
@@ -317,8 +386,8 @@ pub async fn update(
     id: i64,
     input: PersonaInput,
 ) -> Result<Persona, AppError> {
-    db::get(&state.db, id, user_id).await?;
-    let fields = validate(state, user_id, Some(id), input).await?;
+    let existing = db::get(&state.db, id, user_id).await?;
+    let fields = validate(state, user_id, Some(&existing), input).await?;
     db::update(&state.db, id, fields).await
 }
 
@@ -374,6 +443,8 @@ pub async fn view(
         img2img_capability: persona.img2img_capability,
         face_swap_capability: persona.face_swap_capability,
         upscaler_capability: persona.upscaler_capability,
+        vision_capability: persona.vision_capability,
+        look_prompt: persona.look_prompt,
         effective,
         created_at: persona.created_at.to_rfc3339(),
         updated_at: persona.updated_at.to_rfc3339(),
@@ -539,6 +610,31 @@ pub async fn resolve_img_tool(
     Ok(choose(preference, &candidates, &usage, Some(kind)))
 }
 
+/// Vision model for "describe look": `preference` (already a base capability),
+/// else the online vision model the user ran most in Describe Image, else the
+/// first online one.
+pub async fn resolve_vision(
+    state: &AppState,
+    user_id: i64,
+    preference: Option<&str>,
+) -> Result<Option<EffectiveChoice>, AppError> {
+    match image_analysis::list_vision_capabilities(state, user_id).await {
+        Ok(caps) => Ok(pick_vision(&caps, preference)),
+        Err(e) => preference_or(preference, None, e),
+    }
+}
+
+fn pick_vision(caps: &[LlmCapabilityInfo], preference: Option<&str>) -> Option<EffectiveChoice> {
+    let online: Vec<&LlmCapabilityInfo> = caps.iter().filter(|c| c.online).collect();
+    let candidates: Vec<(String, Option<String>)> =
+        online.iter().map(|c| (c.base.clone(), None)).collect();
+    let usage: HashMap<String, u32> = online
+        .iter()
+        .map(|c| (c.base.clone(), c.usage_count))
+        .collect();
+    choose(preference, &candidates, &usage, None)
+}
+
 /// Every slot, best-effort: a failed lookup leaves the slot empty and adds an error.
 pub async fn effective_models(state: &AppState, persona: &Persona) -> EffectiveModels {
     let mut out = EffectiveModels::default();
@@ -563,6 +659,10 @@ pub async fn effective_models(state: &AppState, persona: &Persona) -> EffectiveM
     match resolve_img_tool(state, persona, "upscale").await {
         Ok(v) => out.upscaler = v,
         Err(e) => errors.push(note("upscaler", e)),
+    }
+    match resolve_vision(state, persona.user_id, persona.vision_capability.as_deref()).await {
+        Ok(v) => out.vision = v,
+        Err(e) => errors.push(note("vision", e)),
     }
     out.errors = errors;
     out
@@ -625,6 +725,8 @@ pub fn input_from(persona: &Persona) -> PersonaInput {
         img2img_capability: persona.img2img_capability.clone(),
         face_swap_capability: persona.face_swap_capability.clone(),
         upscaler_capability: persona.upscaler_capability.clone(),
+        vision_capability: Some(persona.vision_capability.clone()),
+        look_prompt: Some(persona.look_prompt.clone()),
     }
 }
 
@@ -646,11 +748,18 @@ pub struct ModelOptions {
     pub img2img: Vec<ModelOption>,
     pub face_swap: Vec<ModelOption>,
     pub upscaler: Vec<ModelOption>,
+    /// Vision-capable LLMs for "describe look".
+    pub vision: Vec<ModelOption>,
+    /// What "describe look" asks when the persona has no custom prompt.
+    pub default_look_prompt: &'static str,
     pub errors: Vec<String>,
 }
 
 pub async fn model_options(state: &AppState, user_id: i64) -> ModelOptions {
-    let mut out = ModelOptions::default();
+    let mut out = ModelOptions {
+        default_look_prompt: DEFAULT_LOOK_PROMPT,
+        ..Default::default()
+    };
     match chat::load_capabilities(state).await {
         Ok(caps) => {
             out.llm = caps
@@ -704,7 +813,149 @@ pub async fn model_options(state: &AppState, user_id: i64) -> ModelOptions {
         }
         Err(e) => out.errors.push(format!("image tools: {e}")),
     }
+    match image_analysis::list_vision_capabilities(state, user_id).await {
+        Ok(caps) => {
+            out.vision = caps
+                .into_iter()
+                .map(|c| ModelOption {
+                    capability: c.base,
+                    workflow: None,
+                    online: c.online,
+                })
+                .collect()
+        }
+        Err(e) => out.errors.push(format!("vision: {e}")),
+    }
     out
+}
+
+// ── Describe look ───────────────────────────────────────────────────────────
+
+/// `POST /api/personas/describe-look`. Every field is optional: the persona
+/// supplies defaults (primary face, vision preference, look prompt) and `{p_*}`
+/// tokens; without one, `image_id` is required. The form sends its unsaved values,
+/// so a new persona can be described before it is created.
+#[derive(Debug, Default, Deserialize)]
+pub struct DescribeLookRequest {
+    #[serde(default)]
+    pub persona_id: Option<String>,
+    #[serde(default)]
+    pub image_id: Option<String>,
+    #[serde(default)]
+    pub capability: Option<String>,
+    #[serde(default)]
+    pub prompt: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DescribeLookStarted {
+    /// A Describe Image job — poll `/api/describe/jobs/{id}`; `result` is the look.
+    pub job_id: String,
+    pub capability: String,
+    /// The prompt actually sent (tokens rendered).
+    pub prompt: String,
+    pub image_id: String,
+}
+
+/// Starts a Describe Image job on the persona's face. It does not write `look`
+/// back: the caller reviews the text (the job also lands in Describe history).
+pub async fn describe_look(
+    state: &AppState,
+    user_id: i64,
+    req: DescribeLookRequest,
+) -> Result<DescribeLookStarted, AppError> {
+    let persona = match req
+        .persona_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(raw) => {
+            let id = raw
+                .parse()
+                .map_err(|_| AppError::BadRequest(format!("invalid persona_id {raw:?}")))?;
+            Some(db::get(&state.db, id, user_id).await?)
+        }
+        None => None,
+    };
+
+    let image_id: i64 = match req
+        .image_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(raw) => raw
+            .parse()
+            .map_err(|_| AppError::BadRequest(format!("invalid image_id {raw:?}")))?,
+        None => {
+            let face = match &persona {
+                Some(p) => resolve_faces(state, p).await?.into_iter().next(),
+                None => None,
+            };
+            face.map(|f| f.id).ok_or_else(|| {
+                AppError::BadRequest("describe look needs a face image — add one first".into())
+            })?
+        }
+    };
+    let image = image_generation::get_image_file(&state.db, image_id, user_id)
+        .await?
+        .ok_or_else(|| AppError::BadRequest(format!("image {image_id} not found")))?;
+    if !image.content_type.starts_with("image/") {
+        return Err(AppError::BadRequest(format!("{image_id} is not an image")));
+    }
+
+    let template = req
+        .prompt
+        .filter(|p| !p.trim().is_empty())
+        .or_else(|| persona.as_ref().and_then(|p| p.look_prompt.clone()))
+        .unwrap_or_else(|| DEFAULT_LOOK_PROMPT.to_string());
+    let prompt = match &persona {
+        Some(p) => render_tokens(&template, p, false),
+        None => template,
+    }
+    .trim()
+    .to_string();
+    if prompt.chars().count() > MAX_LOOK_PROMPT_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "look prompt exceeds {MAX_LOOK_PROMPT_CHARS} characters"
+        )));
+    }
+
+    let capability = match normalize_pref(req.capability, "llm.", "capability")? {
+        Some(c) => c,
+        None => {
+            let preference = persona.as_ref().and_then(|p| p.vision_capability.clone());
+            resolve_vision(state, user_id, preference.as_deref())
+                .await?
+                .map(|c| c.capability)
+                .ok_or_else(|| AppError::BadRequest("no vision model is online".into()))?
+        }
+    };
+
+    // Uploads big enough to skip local transcoding are shrunk on an agent instead
+    // of shipping the original to the vision model (same rule as Describe Image).
+    let external_resize = image.stored_bytes > external_resize::EXTERNAL_RESIZE_THRESHOLD_BYTES
+        && external_resize::is_available(state).await;
+    let job_id = image_analysis::start_job(
+        state,
+        user_id,
+        image_analysis::StartJobParams {
+            capability: capability.clone(),
+            prompt: prompt.clone(),
+            response_format: None,
+            image_id,
+            data_preparation: None,
+            external_resize,
+        },
+    )
+    .await?;
+    Ok(DescribeLookStarted {
+        job_id: job_id.to_string(),
+        capability,
+        prompt,
+        image_id: image_id.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -725,6 +976,8 @@ mod tests {
             img2img_capability: None,
             face_swap_capability: None,
             upscaler_capability: None,
+            vision_capability: None,
+            look_prompt: None,
             created_at: now,
             updated_at: now,
         }
@@ -793,6 +1046,58 @@ mod tests {
             Some("llm.qwen3".into())
         );
         assert!(normalize_pref(Some("imggen.flux".into()), "llm.", "x").is_err());
+    }
+
+    #[test]
+    fn look_prompt_normalization() {
+        assert_eq!(normalize_look_prompt(None).unwrap(), None);
+        assert_eq!(normalize_look_prompt(Some("  ".into())).unwrap(), None);
+        assert_eq!(
+            normalize_look_prompt(Some(format!(" {DEFAULT_LOOK_PROMPT} "))).unwrap(),
+            None
+        );
+        assert_eq!(
+            normalize_look_prompt(Some(" describe {p_name} ".into())).unwrap(),
+            Some("describe {p_name}".into())
+        );
+        assert!(normalize_look_prompt(Some("x".repeat(MAX_LOOK_PROMPT_CHARS + 1))).is_err());
+    }
+
+    #[test]
+    fn input_keeps_absent_describe_fields() {
+        let absent: PersonaInput = serde_json::from_str(r#"{"name":"A"}"#).unwrap();
+        assert_eq!(absent.vision_capability, None);
+        assert_eq!(absent.look_prompt, None);
+        let cleared: PersonaInput =
+            serde_json::from_str(r#"{"name":"A","vision_capability":null,"look_prompt":"hi"}"#)
+                .unwrap();
+        assert_eq!(cleared.vision_capability, Some(None));
+        assert_eq!(cleared.look_prompt, Some(Some("hi".into())));
+    }
+
+    #[test]
+    fn pick_vision_skips_offline_and_ranks_usage() {
+        let cap = |base: &str, online: bool, usage_count: u32| LlmCapabilityInfo {
+            base: base.into(),
+            online,
+            usage_count,
+            tags: vec!["vision".into()],
+            raw: base.into(),
+            last_available_at: String::new(),
+        };
+        let caps = vec![
+            cap("llm.off", false, 9),
+            cap("llm.a", true, 0),
+            cap("llm.b", true, 2),
+        ];
+        let got = pick_vision(&caps, None).unwrap();
+        assert_eq!(
+            (got.capability.as_str(), got.source),
+            ("llm.b", "most_used")
+        );
+        assert!(pick_vision(&caps[..1], None).is_none());
+        let pref = pick_vision(&caps, Some("llm.off")).unwrap();
+        assert_eq!((pref.source, pref.online), ("preference", false));
     }
 
     #[test]

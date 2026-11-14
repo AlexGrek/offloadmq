@@ -50,6 +50,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261113_000042_prompt_studio::Migration),
             Box::new(m20261113_000043_personas::Migration),
             Box::new(m20261114_000044_create_langgraph_jobs::Migration),
+            Box::new(m20261115_000045_persona_describe_look::Migration),
         ]
     }
 }
@@ -162,3 +163,6 @@ mod m20261113_000042_prompt_studio;
 mod m20261113_000043_personas;
 
 mod m20261114_000044_create_langgraph_jobs;
+
+/// Personas "describe look": vision model preference + look prompt.
+mod m20261115_000045_persona_describe_look;

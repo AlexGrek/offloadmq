@@ -79,6 +79,11 @@ fn profile_properties(require_name: bool) -> serde_json::Map<String, Value> {
         "upscaler_model".into(),
         model_schema("upscaler (img-utils.*)"),
     );
+    p.insert(
+        "vision_model".into(),
+        model_schema("vision LLM for \"describe look\" (llm.* with vision)"),
+    );
+    p.insert("look_prompt".into(), json!({ "type": "string", "description": "Prompt the vision model gets when describing the persona's look from its primary face; \"\" = the built-in default. May use {p_name}." }));
     p
 }
 
@@ -316,6 +321,7 @@ fn persona_line(v: &PersonaView) -> String {
         ("img2img", &v.img2img_capability),
         ("face swap", &v.face_swap_capability),
         ("upscaler", &v.upscaler_capability),
+        ("vision", &v.vision_capability),
     ]
     .iter()
     .filter_map(|(k, c)| c.as_ref().map(|c| format!("{k}={c}")))
@@ -451,6 +457,10 @@ struct ProfileArgs {
     face_swap_model: Option<String>,
     #[serde(default)]
     upscaler_model: Option<String>,
+    #[serde(default)]
+    vision_model: Option<String>,
+    #[serde(default)]
+    look_prompt: Option<String>,
 }
 
 /// Overlays the given fields; model fields of "" / "auto" clear the preference.
@@ -477,6 +487,12 @@ fn merge(mut input: PersonaInput, a: ProfileArgs) -> PersonaInput {
         if let Some(v) = src {
             *dst = Some(v); // blank / "auto" is normalized to None by the service
         }
+    }
+    if let Some(v) = a.vision_model {
+        input.vision_capability = Some(Some(v));
+    }
+    if let Some(v) = a.look_prompt {
+        input.look_prompt = Some(Some(v)); // blank = back to the default prompt
     }
     input
 }
@@ -554,6 +570,7 @@ async fn models(ctx: &ToolContext) -> Result<ToolOutput, AppError> {
         fmt("txt2img", &o.txt2img),
         fmt("img2img", &o.img2img),
         fmt("face swap", &o.face_swap),
+        fmt("vision (describe look)", &o.vision),
         fmt("upscaler", &o.upscaler),
     ];
     lines.extend(o.errors.iter().map(|e| format!("warning: {e}")));

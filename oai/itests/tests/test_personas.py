@@ -110,8 +110,54 @@ class TestPersonaCrud:
         r = client.get("/api/personas/options", headers=new_user["headers"])
         assert r.status_code == 200, r.text
         body = r.json()
-        for key in ("llm", "txt2img", "img2img", "face_swap", "upscaler", "errors"):
+        for key in ("llm", "txt2img", "img2img", "face_swap", "upscaler", "vision", "errors"):
             assert key in body
+        assert body["default_look_prompt"].strip()
+
+    def test_describe_look_fields_survive_put_without_them(self, client: httpx.Client, new_user: dict):
+        h = new_user["headers"]
+        p = create(client, h, vision_capability="llm.qwen3-vl:8b[vision]", look_prompt="  Describe {p_name}.  ")
+        assert p["vision_capability"] == "llm.qwen3-vl:8b"
+        assert p["look_prompt"] == "Describe {p_name}."
+        # Older clients (CLI read→merge→PUT) don't send the fields: they are kept.
+        r = client.put(f"/api/personas/{p['id']}", headers=h, json={"name": p["name"], "look": "tall"})
+        assert r.status_code == 200, r.text
+        assert r.json()["vision_capability"] == "llm.qwen3-vl:8b"
+        assert r.json()["look_prompt"] == "Describe {p_name}."
+        # Explicit null / blank resets to automatic / the default prompt.
+        r = client.put(
+            f"/api/personas/{p['id']}",
+            headers=h,
+            json={"name": p["name"], "vision_capability": None, "look_prompt": " "},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["vision_capability"] is None
+        assert r.json()["look_prompt"] is None
+        r = client.put(
+            f"/api/personas/{p['id']}",
+            headers=h,
+            json={"name": p["name"], "vision_capability": "imggen.flux"},
+        )
+        assert r.status_code == 400
+
+    def test_describe_look_validation(self, client: httpx.Client, new_user: dict):
+        h = new_user["headers"]
+        faceless = create(client, h)
+        r = client.post("/api/personas/describe-look", headers=h, json={"persona_id": faceless["id"]})
+        assert r.status_code == 400 and "face" in r.json()["error"], r.text
+        r = client.post("/api/personas/describe-look", headers=h, json={})
+        assert r.status_code == 400, r.text
+        r = client.post("/api/personas/describe-look", headers=h, json={"image_id": "123"})
+        assert r.status_code == 400, r.text
+        face = upload(client, h)
+        r = client.post(
+            "/api/personas/describe-look",
+            headers=h,
+            json={"image_id": face, "capability": "imggen.flux"},
+        )
+        assert r.status_code == 400, r.text
+        r = client.post("/api/personas/describe-look", headers=h, json={"persona_id": "999"})
+        assert r.status_code == 404, r.text
 
     def test_persona_tokens_are_reserved_placeholder_names(self, client: httpx.Client, new_user: dict):
         for name in ("p_look", "P_NAME", "p_system"):
