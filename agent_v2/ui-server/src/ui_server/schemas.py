@@ -21,6 +21,8 @@ class SettingsPayload(BaseModel):
     comfyui_python: str | None = None
     comfyui_main_py: str | None = None
     comfyui_args: list[str] | None = None
+    llm_runtime_enabled: bool | None = None
+    llm_runtime_cache_limit: int | None = Field(default=None, ge=1)
     ollama_base_url: str | None = None
     kokoro_api_url: str | None = None
     kokoro_api_key: str | None = None

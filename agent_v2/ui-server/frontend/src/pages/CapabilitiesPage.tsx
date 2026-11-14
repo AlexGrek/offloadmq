@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LlmRuntimeSettings } from "@/components/LlmRuntimeSettings";
 import { SaveIndicator } from "@/components/SaveIndicator";
 import { useDebouncedSave } from "@/hooks/useDebouncedSave";
 import { usePoll } from "@/hooks/usePoll";
@@ -129,6 +130,7 @@ export function CapabilitiesPage() {
       {state.scanning && (
         <p className="text-sm text-muted-foreground">Scanning…</p>
       )}
+      <LlmRuntimeSettings modelsDetected={state.tierCaps.sensitive.some((cap) => cap.startsWith("llm-runtime."))} />
       <div className="grid gap-4 md:grid-cols-2">
         <CapList
           title="Regular (opt-out)"

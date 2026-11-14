@@ -9,7 +9,15 @@ Only enable this for clients you trust to execute code on that machine.
 ## Runner setup
 
 Install `uv` on the runner PATH and install a model in its configured Ollama
-server. In `~/.offloadmq-agent.json` (or the runner UI's Config JSON editor), set:
+server. In the agent UI (including the Windows GUI), open **Capabilities** and
+turn on **Enable LLM runtime (LangGraph) on this runner**. The same controls are
+also on **Settings**. Adjust **Dependency cache limit** if needed (default 8),
+then approve each `llm-runtime.<model>` under **Sensitive (opt-in)** on Capabilities.
+Both approvals are required; neither silently enables the other. Changes save
+and apply to the running agent. If models are absent, click Rescan; restart the
+UI after changing PATH on Windows so it can find newly installed `uv`.
+
+For JSON configuration, in `~/.offloadmq-agent.json` (or Raw config), set:
 
 ```json
 {

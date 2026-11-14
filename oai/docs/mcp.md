@@ -65,9 +65,20 @@ and URL `…/mcp`. CORS on `/mcp` and the OAuth endpoints allows any origin.
 | `list_placeholders` | `oai image placeholders list` | Custom placeholders plus the built-ins |
 | `save_placeholder` | `create` / `set` / `add` / `remove` / `rename` | Create if missing; `variants` (replace), `add_variants`, `remove_variants`, `rename_to` |
 | `delete_placeholders` | `oai image placeholders delete` | By name or ID |
+| `list_personas` | `oai persona list` | Personas with face count and model preferences ([personas.md](personas.md)) |
+| `get_persona` | `oai persona show` | Faces (previews), rendered system prompt, the model each slot resolves to |
+| `create_persona` / `update_persona` | `oai persona create` / `update` | `name`, `look`, `system_prompt`, `face_image_ids`, `*_model` (`"auto"` clears); update is partial; persona by id or name |
+| `delete_persona` | `oai persona delete` | Also deletes its chats and photo runs; images stay |
+| `set_persona_faces` | `oai persona face add\|remove\|primary` | Library image ids, primary first (MCP cannot upload) |
+| `list_persona_models` | `oai persona models` | Choices per slot |
+| `generate_persona_photos` | `oai persona photo` | txt2img → face swap → upscale ×2 by default; `face_swap`/`upscale` false skip a step; `{p_name}`/`{p_look}`/`{p_system}` tokens; `count` ≤8; waits like `generate_images` |
+| `get_persona_photo` / `list_persona_photos` | `oai persona photo-job` / `photos` | Steps, final image, optional `wait_seconds` |
+| `cancel_persona_photos` / `retry_persona_photo` / `delete_persona_photos` | `oai persona photo-cancel` / `photo-retry` / `photo-delete` | Delete removes intermediates too |
+| `persona_chat` | `oai persona chat` | Sends and waits for the reply; latest chat unless `chat_id` / `new_chat` |
+| `list_persona_chats` / `get_persona_chat` | `oai persona chats` / `history` | |
 | `expand_prompt` | `oai image placeholders expand` | Same expander as `generate_images`; resolves `{?}` (unless `resolve_names:false`); reports unknown tokens |
 
-The CLI and this table should stay in step: a new `oai image` feature gets a tool here too.
+The CLI and this table should stay in step: a new `oai image` / `oai persona` feature gets a tool here too.
 
 `generate_images` can generate and upscale in one call, like Hallucinate. For example:
 

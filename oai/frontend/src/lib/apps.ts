@@ -1,4 +1,4 @@
-import { Activity, Bot, Braces, Clapperboard, Eye, Feather, FolderOpen, GalleryVerticalEnd, GitCompareArrows, GitBranch, ImagePlus, MessageCircleMore, Music, Repeat2, ShieldAlert, Swords, Volume2, Wand2 } from 'lucide-react'
+import { Activity, Bot, Braces, Clapperboard, Eye, Feather, FolderOpen, GalleryVerticalEnd, GitCompareArrows, GitBranch, ImagePlus, MessageCircleMore, Music, Repeat2, ShieldAlert, Swords, VenetianMask, Volume2, Wand2 } from 'lucide-react'
 
 /** Every app tile on the dashboard; also the source for the TopBar's most-used shortcuts. */
 export const apps = [
@@ -6,6 +6,11 @@ export const apps = [
     id: 'langgraph', icon: GitBranch, title: 'LangGraph',
     description: 'Build Python agents with tools and local LLMs', href: '/app/langgraph',
     gradient: 'from-teal-500/20 to-sky-500/20', iconBg: 'bg-teal-500/20', iconColor: 'text-teal-400',
+  },
+  {
+    id: 'personas', icon: VenetianMask, title: 'Personas',
+    description: 'Characters with faces and a voice — chat with them, take their photos', href: '/app/personas',
+    gradient: 'from-fuchsia-500/20 to-orange-500/20', iconBg: 'bg-fuchsia-500/20', iconColor: 'text-fuchsia-400',
   },
   {
     id: 'chat',

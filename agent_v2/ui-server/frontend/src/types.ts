@@ -70,6 +70,8 @@ export interface Settings {
   comfyui_python: string;
   comfyui_main_py: string;
   comfyui_args: string[];
+  llm_runtime_enabled: boolean;
+  llm_runtime_cache_limit: number;
   ollama_base_url: string;
   kokoro_api_url: string;
   kokoro_api_key: string;

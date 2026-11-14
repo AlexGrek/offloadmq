@@ -215,6 +215,34 @@ Other `nude` subcommands manage jobs directly, matching the web UI's history sid
 - `nude retry <id>` — resubmit a failed/canceled job (reuses its original image and threshold) and wait for the new result
 - `nude delete <id>` — delete a job's history entry
 
+### Personas
+
+Characters with face images, a look, a system prompt and model preferences — see
+[docs/personas.md](../docs/personas.md). A persona is named by id or (case-insensitive) name.
+
+```bash
+oai persona create -name Mira -look "copper hair, freckles" \
+  -system "You are {p_name}. You look like {p_look}." -face mira1.jpg -face mira2.jpg
+oai persona show Mira                       # faces, rendered prompt, models it resolves to
+oai persona models                          # choices for -llm/-txt2img/-img2img/-faceswap/-upscaler
+oai persona update Mira -llm llm.qwen3:8b -upscaler auto
+oai persona face add|remove|primary Mira …  # images to upload / face image ids
+
+oai persona photo Mira "{p_look}, portrait of {p_name} in a cafe" -o mira.jpg -n 2
+oai persona photo Mira "{p_name} reading" -input room.jpg -no-upscale      # img2img
+id=$(oai persona photo Mira "quick" -no-faceswap --no-wait)                # bare id on stdout
+oai persona photo-poll "$id"; oai persona photo-download "$id" -o q.jpg
+oai persona photos Mira; oai persona photo-retry|photo-cancel|photo-delete <id>
+
+oai persona chat Mira "hi!"                 # reply on stdout; reuses the latest chat
+oai persona chat Mira "start over" -new     # or -chat <id>, -model llm.X
+oai persona chats Mira; oai persona history <chat-id> -limit 10
+```
+
+The default photo chain is txt2img → face swap (primary face, or `-face ID`) → upscale ×2 (`-scale`).
+Prompts are expanded server-side (persona tokens, then placeholders) and recorded in the
+shared txt2img prompt history.
+
 ## Progress UI
 
 Live progress is enabled by default for `image generate` and `image describe`. On a terminal, the CLI renders a responsive Unicode spinner/bar with color, the current status and stage, queue time, estimated time remaining, and percentage. Image generation uses the same heuristic as the web UI: progress begins when an agent starts executing, divides elapsed time by `typical_runtime_seconds`, caps at 99% until completion, and switches to `finishing…` after the estimate is exceeded.

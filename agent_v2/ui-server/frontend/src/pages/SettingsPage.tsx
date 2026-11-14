@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LlmRuntimeSettings } from "@/components/LlmRuntimeSettings";
 import { SaveIndicator } from "@/components/SaveIndicator";
 import { useEditableSettings } from "@/hooks/useEditableSettings";
 import type { Settings } from "@/types";
@@ -35,6 +36,8 @@ const EMPTY: Settings = {
   comfyui_python: "",
   comfyui_main_py: "",
   comfyui_args: [],
+  llm_runtime_enabled: false,
+  llm_runtime_cache_limit: 8,
   ollama_base_url: "http://127.0.0.1:11434",
   kokoro_api_url: "",
   kokoro_api_key: "",
@@ -56,7 +59,13 @@ export function SettingsPage() {
   const { form: cfg, edit, flush, status, error } = useEditableSettings<Settings>(
     EMPTY,
     () => api.getSettings(),
-    (next) => api.saveSettings(next)
+    // Runtime controls save independently; this form must not overwrite them
+    // with values loaded before the runtime switch was changed.
+    (next) => api.saveSettings({
+      ...next,
+      llm_runtime_enabled: undefined,
+      llm_runtime_cache_limit: undefined,
+    })
   );
 
   const editNow = (patch: Partial<Settings>) => {
@@ -75,6 +84,8 @@ export function SettingsPage() {
   };
 
   return (
+    <div className="space-y-6">
+    <LlmRuntimeSettings />
     <Card>
       <CardHeader className="flex-row items-start justify-between">
         <div className="space-y-1.5">
@@ -194,5 +205,6 @@ export function SettingsPage() {
         </label>
       </CardContent>
     </Card>
+    </div>
   );
 }
