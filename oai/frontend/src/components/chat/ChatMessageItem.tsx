@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
-import { Check, Copy, RefreshCw } from 'lucide-react'
+import { Bug, Check, Copy, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isMessagePending, type Message } from '@/lib/chat/messages'
 import { MarkdownContent } from '../MarkdownContent'
@@ -15,6 +15,7 @@ export function ChatMessageItem({
   onRetry,
   token,
   renderPromptActions,
+  onDebug,
 }: {
   msg: Message
   showRetry: boolean
@@ -22,11 +23,19 @@ export function ChatMessageItem({
   token: string | null
   /** Prompt Studio: Generate / Edit / Use actions for a finished message. */
   renderPromptActions?: (msg: Message) => ReactNode
+  /** Failed replies: open the raw OffloadMQ task for this message. */
+  onDebug?: (cap: string, taskId: string) => void
 }) {
   const [copied, setCopied] = useState(false)
   const pending = isMessagePending(msg)
   const canCopy = !pending && msg.content.length > 0
   const canListen = canCopy && msg.role === 'assistant'
+  const canDebug =
+    !!onDebug &&
+    msg.role === 'assistant' &&
+    msg.status === 'failed' &&
+    !!msg.offloadCap &&
+    !!msg.offloadTaskId
   const canPromptActions =
     !!renderPromptActions && canCopy && msg.status === 'complete'
 
@@ -75,7 +84,7 @@ export function ChatMessageItem({
           </MarkdownContent>
         </div>
       )}
-      {(canCopy || canListen || showRetry) && (
+      {(canCopy || canListen || showRetry || canDebug) && (
         <div className="mt-1.5 flex flex-wrap items-center gap-3">
           {canPromptActions && renderPromptActions?.(msg)}
           {canListen && (
@@ -92,6 +101,18 @@ export function ChatMessageItem({
             >
               {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
               {copied ? 'Copied' : 'Copy'}
+            </button>
+          )}
+          {canDebug && (
+            <button
+              type="button"
+              onClick={() => onDebug?.(msg.offloadCap!, msg.offloadTaskId!)}
+              data-testid="message-debug-btn"
+              title={`OffloadMQ task ${msg.offloadCap}/${msg.offloadTaskId}`}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Bug className="size-3" />
+              Debug
             </button>
           )}
           {showRetry && (

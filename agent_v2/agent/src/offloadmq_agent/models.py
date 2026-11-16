@@ -45,6 +45,25 @@ class Task(BaseModel):
         )
 
 
+def describe_exception(exc: BaseException) -> str:
+    """A failure reason that is never empty.
+
+    ``str(exc)`` is ``""`` for timeouts and many bare raises, which used to
+    reach clients as a contentless "failed". Keep the exception type so the
+    reason stays diagnosable; ``RuntimeError`` messages are already ours and
+    read better without it.
+    """
+    name = type(exc).__name__
+    message = str(exc).strip()
+    if isinstance(exc, TimeoutError) and not message:
+        return f"{name}: timed out"
+    if not message:
+        return f"{name} (no message)"
+    if type(exc) is RuntimeError:
+        return message
+    return f"{name}: {message}"
+
+
 class TaskResult(BaseModel):
     task_id: str
     status: TaskStatus

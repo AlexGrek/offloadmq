@@ -14,7 +14,7 @@ import aiohttp
 from offloadmq_agent.context import ExecContext, TaskCancelled
 from offloadmq_agent.data.task_inputs import stage_task_inputs
 from offloadmq_agent.executor import register
-from offloadmq_agent.models import Task, TaskResult, TaskStatus
+from offloadmq_agent.models import Task, TaskResult, TaskStatus, describe_exception
 from offloadmq_agent.ollama import get_ollama_base_url
 
 # Image extensions Ollama vision models accept via the per-message ``images`` field.
@@ -129,6 +129,8 @@ def _attach_images(messages: list[dict[str, Any]], images: list[str]) -> list[di
 
 
 _STREAM_FLUSH_INTERVAL = 2.0  # seconds between progress log flushes
+# Whole-request limit for one Ollama chat call, streaming included.
+_OLLAMA_TIMEOUT_SECS = 600
 
 # Ollama /api/chat request fields taken from the task payload as-is. The
 # server's OpenRouter-compatible API (/api/v1) translates OpenAI parameters
@@ -266,7 +268,7 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
         return TaskResult(
             task_id=task.id,
             status=TaskStatus.FAILED,
-            error=f"Failed to stage input files: {exc}",
+            error=f"Failed to stage input files: {describe_exception(exc)}",
         )
     try:
         ctx.raise_if_cancelled()
@@ -281,7 +283,9 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
             task_id=task.id, status=TaskStatus.CANCELLED, error="Cancelled by user"
         )
     except Exception as exc:
-        return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
+        return TaskResult(
+            task_id=task.id, status=TaskStatus.FAILED, error=describe_exception(exc)
+        )
     messages = _attach_documents(messages, document_attachments)
     messages = _attach_images(messages, image_attachments)
 
@@ -304,7 +308,7 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
             async with session.post(
                 f"{get_ollama_base_url()}/api/chat",
                 json=body,
-                timeout=aiohttp.ClientTimeout(total=600),
+                timeout=aiohttp.ClientTimeout(total=_OLLAMA_TIMEOUT_SECS),
             ) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
@@ -327,8 +331,23 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
                 # update, so the streamed reply text stays clean.
                 await ctx.progress("running", "")
                 was_cancelled = await _stream_with_cancel(resp, collected, ctx, extras)
+    except TimeoutError as exc:
+        # aiohttp's total timeout covers the whole stream; its str() is empty.
+        return TaskResult(
+            task_id=task.id,
+            status=TaskStatus.FAILED,
+            error=(
+                f"Ollama did not finish {model} within {_OLLAMA_TIMEOUT_SECS}s "
+                f"({len(collected)} tokens streamed; {describe_exception(exc)})"
+            ),
+            output={"partial": "".join(collected)} if collected else {},
+        )
     except Exception as exc:
-        return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
+        return TaskResult(
+            task_id=task.id,
+            status=TaskStatus.FAILED,
+            error=f"Ollama request for {model} failed: {describe_exception(exc)}",
+        )
 
     if was_cancelled:
         await ctx.warn("cancelled — stopping generation")

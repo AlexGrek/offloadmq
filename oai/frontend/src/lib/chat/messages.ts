@@ -16,6 +16,9 @@ export type Message = {
   reqId?: string
   statusText?: string
   attachments?: ChatAttachment[]
+  /** OffloadMQ task behind an assistant reply — opens the per-message debug view. */
+  offloadCap?: string
+  offloadTaskId?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -41,6 +44,8 @@ export function recordToMessage(r: ChatMessageRecord): Message | null {
     content: r.content,
     status: normalizeStatus(r.status),
     attachments: r.attachments,
+    offloadCap: r.offload_cap ?? undefined,
+    offloadTaskId: r.offload_task_id ?? undefined,
   }
 }
 

@@ -141,6 +141,9 @@ pub struct MessageResponse {
     pub content: String,
     pub status: String,
     pub model: Option<String>,
+    /// OffloadMQ task behind an assistant reply (for the per-message debug view).
+    pub offload_cap: Option<String>,
+    pub offload_task_id: Option<String>,
     pub created_at: String,
     pub attachments: Vec<attachment_service::AttachmentDto>,
 }
@@ -168,6 +171,8 @@ fn message_to_response(
         content: m.content,
         status: m.status,
         model: m.model,
+        offload_cap: m.offload_cap,
+        offload_task_id: m.offload_task_id,
         created_at: m.created_at.to_rfc3339(),
         attachments,
     }

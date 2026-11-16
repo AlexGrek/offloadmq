@@ -38,6 +38,23 @@ impl UnassignedTask {
         }
     }
 
+    /// Why a still-queued task is being expired at `now`: which deadline it hit.
+    pub fn queue_timeout_reason(&self, now: DateTime<Utc>) -> String {
+        let waited = (now - self.created_at).num_seconds().max(0);
+        let cap = &self.id.cap;
+        match (self.data.max_wait_secs, self.data.timeout_secs) {
+            (_, Some(total)) if waited as u64 >= total => format!(
+                "timed out after {waited}s still queued (timeoutSecs {total}s); \
+                 no agent for {cap} picked it up"
+            ),
+            (Some(wait), _) => format!(
+                "no agent for {cap} picked it up within maxWaitSecs ({wait}s); \
+                 its agents were busy or offline"
+            ),
+            _ => format!("timed out after {waited}s still queued; no agent for {cap} picked it up"),
+        }
+    }
+
     pub fn into_status_report(self) -> TaskStatusResponse {
         TaskStatusResponse {
             id: self.id,
@@ -155,6 +172,24 @@ impl AssignedTask {
 
     pub fn change_stage(&mut self, stage: &str) {
         self.stage = Some(stage.to_owned())
+    }
+
+    /// Fails the task from the server side (timeout, lost or orphaned work) and
+    /// records `reason` where clients look for it: `result.error` (unless an
+    /// agent already left a result) and a `[server]` log line. Without this a
+    /// server-failed task polls back as `failed` with no explanation at all.
+    pub fn fail_by_server(&mut self, reason: &str) {
+        self.change_status(TaskStatus::Failed);
+        self.stage = None;
+        let has_result = match &self.result {
+            None | Some(serde_json::Value::Null) => false,
+            Some(serde_json::Value::Object(m)) => !m.is_empty(),
+            Some(_) => true,
+        };
+        if !has_result {
+            self.result = Some(serde_json::json!({ "error": reason }));
+        }
+        self.append_log(Some(format!("\n[server] Task failed: {reason}")));
     }
 
     pub fn into_status_report(self) -> TaskStatusResponse {

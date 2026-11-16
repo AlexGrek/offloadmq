@@ -346,9 +346,9 @@ impl TaskStorage {
             if self.unassigned.remove(key.as_bytes())?.is_none() {
                 continue;
             }
+            let reason = task.queue_timeout_reason(now);
             let mut assigned = task.into_assigned("(timeout)");
-            assigned.change_status(TaskStatus::Failed);
-            assigned.stage = None;
+            assigned.fail_by_server(&reason);
             self.update_assigned(&assigned)?;
             count += 1;
             info!(
@@ -433,8 +433,11 @@ impl TaskStorage {
 
         let count = stuck.len();
         for mut task in stuck {
-            task.change_status(TaskStatus::Failed);
-            task.stage = None;
+            let reason = format!(
+                "cancel was requested but agent {} never acknowledged it",
+                task.agent_id
+            );
+            task.fail_by_server(&reason);
             self.update_assigned(&task)?;
             info!(
                 "Task {} cancel-requested but never acknowledged, marked failed",
@@ -507,12 +510,9 @@ impl TaskStorage {
         if task.status.is_terminal() {
             return Ok(false);
         }
-        task.change_status(TaskStatus::Failed);
-        task.stage = None;
-        task.append_log(Some(format!(
-            "\n[server] Task failed: agent {} no longer reports it as running (result lost in transit)",
-            agent_id
-        )));
+        task.fail_by_server(&format!(
+            "agent {agent_id} no longer reports it as running (result lost in transit)"
+        ));
         self.update_assigned(&task)?;
         info!("Task {} disowned by agent {}, marked failed", id, agent_id);
         Ok(true)
@@ -556,12 +556,7 @@ impl TaskStorage {
         let count = orphaned.len();
         for mut task in orphaned {
             let agent_id = task.agent_id.clone();
-            task.change_status(TaskStatus::Failed);
-            task.stage = None;
-            task.append_log(Some(format!(
-                "\n[server] Task failed: agent {} went offline and stopped reporting",
-                agent_id
-            )));
+            task.fail_by_server(&format!("agent {agent_id} went offline and stopped reporting"));
             self.update_assigned(&task)?;
             info!(
                 "Task {} orphaned (agent {} offline and silent), marked failed",
@@ -777,10 +772,36 @@ mod tests {
         assert_eq!(task.status, TaskStatus::Failed);
         assert!(task.finished_at.is_some());
         assert!(task.log.unwrap().contains("no longer reports it"));
+        assert!(task.result.unwrap()["error"]
+            .as_str()
+            .unwrap()
+            .contains("no longer reports it"));
 
         // A second pass (or a resolve that already landed) must not rewrite it.
         assert!(!store.fail_disowned_assigned(&tid("lost"), "a1").unwrap());
         assert!(!store.fail_disowned_assigned(&tid("missing"), "a1").unwrap());
+    }
+
+    #[test]
+    fn queue_timeout_failure_says_why() {
+        let (store, _guard) = storage();
+        let task = UnassignedTask {
+            id: tid("stale"),
+            data: TaskSubmissionRequest {
+                max_wait_secs: Some(300),
+                ..Default::default()
+            },
+            created_at: Utc::now() - chrono::Duration::seconds(301),
+        };
+        store.add_unassigned(&task).unwrap();
+
+        assert_eq!(store.expire_timed_out_unassigned().unwrap(), 1);
+        let failed = store.get_assigned(&tid("stale")).unwrap().unwrap();
+        assert_eq!(failed.status, TaskStatus::Failed);
+        let error = failed.result.unwrap()["error"].as_str().unwrap().to_string();
+        assert!(error.contains("maxWaitSecs (300s)"), "{error}");
+        assert!(error.contains("test.cap"), "{error}");
+        assert!(failed.log.unwrap().contains("[server] Task failed: no agent"));
     }
 
     const DAY: i64 = 24 * 60 * 60;

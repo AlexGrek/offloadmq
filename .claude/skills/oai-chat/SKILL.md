@@ -221,6 +221,13 @@ Local `systemPrompt` state synced from `activeChat.system_prompt` on chat switch
 - Source: `latestChatTaskForChat(activeChatId)` — last non-terminal or last task for chat.
 - `POST /api/debug/offload_poll` `{ cap, id }` → **pretty-printed JSON** (`tool-debug-poll`), not YAML.
 - Service: `services/debug_offload.rs` → `OffloadClient::poll_task_raw`.
+- **Per failed reply:** messages carry `offload_cap`/`offload_task_id` (REST) or the
+  `task:failed` cap/id (live); a failed assistant bubble shows `message-debug-btn`, which
+  opens the same modal on *that* task (survives reload, unlike the header button).
+- Failure text comes from `task_status::describe_failure` (output `error`/`message`/
+  `detail`/`stderr` → last `[server]` log line → `FAILURE_WITHOUT_REASON` + stage/output),
+  never a bare "Unknown error". OffloadMQ itself now writes `result.error` when it fails a
+  task (queue timeout, lost/orphaned agent, unacked cancel) via `AssignedTask::fail_by_server`.
 
 ---
 

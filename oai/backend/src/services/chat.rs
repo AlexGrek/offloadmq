@@ -440,7 +440,9 @@ async fn poll_loop(
                 return;
             }
             "failed" => {
-                finish_failure(&state, &tx, &ctx, task_status::extract_error_text(&resp.output, "Unknown error"), resp.log).await;
+                let reason = task_status::describe_failure(&resp.output, resp.log.as_deref(), resp.stage.as_deref());
+                tracing::warn!(cap = %ctx.cap, task_id = %ctx.id, chat_id = ctx.chat_id, "chat task failed: {reason}");
+                finish_failure(&state, &tx, &ctx, reason, resp.log).await;
                 return;
             }
             "canceled" => {
@@ -616,7 +618,9 @@ async fn reconcile_pending_message(
             state.watch.untrack(&task_id.cap, &task_id.id).await;
         }
         "failed" => {
-            db_chats::finalize_message(&state.db, msg.id, &task_status::extract_error_text(&resp.output, "Unknown error"), "failed")
+            let reason = task_status::describe_failure(&resp.output, resp.log.as_deref(), resp.stage.as_deref());
+            tracing::warn!(cap = %task_id.cap, task_id = %task_id.id, chat_id = msg.chat_id, "chat task failed: {reason}");
+            db_chats::finalize_message(&state.db, msg.id, &reason, "failed")
                 .await?;
             state.watch.untrack(&task_id.cap, &task_id.id).await;
         }

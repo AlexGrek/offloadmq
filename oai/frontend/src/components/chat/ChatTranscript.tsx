@@ -27,6 +27,7 @@ export function ChatTranscript({
   onRetry,
   emptyState,
   renderPromptActions,
+  onDebugMessage,
 }: {
   scrollRef: React.RefObject<HTMLDivElement | null>
   contentRef: (el: HTMLDivElement | null) => void
@@ -49,6 +50,8 @@ export function ChatTranscript({
   /** Replaces the default `SystemPromptStudio` empty state (Prompt Studio setup). */
   emptyState?: React.ReactNode
   renderPromptActions?: (msg: Message) => React.ReactNode
+  /** Opens the OffloadMQ debug view for a failed reply's task. */
+  onDebugMessage?: (cap: string, taskId: string) => void
 }) {
   return (
     <div
@@ -99,6 +102,7 @@ export function ChatTranscript({
               onRetry={onRetry}
               token={token}
               renderPromptActions={renderPromptActions}
+              onDebug={onDebugMessage}
             />
           ))}
           <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />

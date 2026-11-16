@@ -23,7 +23,7 @@ from offloadmq_agent.exec.reporting import (
     report_starting,
 )
 from offloadmq_agent.exec.route import route_executor
-from offloadmq_agent.models import Task, TaskResult, TaskStatus
+from offloadmq_agent.models import Task, TaskResult, TaskStatus, describe_exception
 from offloadmq_agent.result_convert import report_to_task_result
 from offloadmq_agent.transport_exec import CaptureTransport
 from offloadmq_agent.transport_sync import SyncAgentTransport
@@ -84,7 +84,7 @@ def _download_buckets(
                 save_path.write_bytes(dl.content)
         except Exception as exc:
             logger.error("Bucket download failed: %s", exc)
-            report = make_failure_report(task_id, capability, str(exc))
+            report = make_failure_report(task_id, capability, describe_exception(exc))
             report_result(transport, report)
             return False
     return True
@@ -103,7 +103,7 @@ def _download_fetch_files(
             process_data_download(data_path, parsed)
         except Exception as exc:
             logger.error("fetchFiles failed: %s", exc)
-            report = make_failure_report(task_id, capability, str(exc))
+            report = make_failure_report(task_id, capability, describe_exception(exc))
             report_result(transport, report)
             return False
     return True
@@ -124,7 +124,7 @@ def _run_sync_pipeline(
                 task.capability, _task_data(task).get("payload") or task.payload or {}
             )
         except ValueError as exc:
-            return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
+            return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=describe_exception(exc))
 
     data = _task_data(task)
     payload = data.get("payload") or task.payload or {}
@@ -184,11 +184,11 @@ def _run_sync_pipeline(
 
             apply_data_preparation(data_path, data_preparation)
         except Exception as exc:
-            report = make_failure_report(task_id, capability, str(exc))
+            report = make_failure_report(task_id, capability, describe_exception(exc))
             report_result(transport, report)
             if transport.captured_report:
                 return report_to_task_result(transport.captured_report)
-            return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
+            return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=describe_exception(exc))
 
     try:
         if _takes_output_bucket(capability):
@@ -217,7 +217,7 @@ def _run_sync_pipeline(
         )
     except Exception as exc:
         logger.exception("Executor failed")
-        report = make_failure_report(task_id, capability, str(exc))
+        report = make_failure_report(task_id, capability, describe_exception(exc))
         report_result(transport, report)
 
     if transport.captured_report:

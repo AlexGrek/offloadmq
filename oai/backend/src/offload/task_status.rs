@@ -110,6 +110,68 @@ pub fn extract_error_text(output: &Option<serde_json::Value>, fallback: &str) ->
         .to_string()
 }
 
+/// Longest slice of upstream output/log text kept in a failure reason.
+const MAX_FAILURE_DETAIL_CHARS: usize = 600;
+
+/// Shown when a failed task carries no reason at all (older OffloadMQ servers
+/// fail queue timeouts and lost tasks with an empty result and no log line).
+pub const FAILURE_WITHOUT_REASON: &str = "OffloadMQ marked the task failed without giving a reason. \
+     Usually no agent for this model picked it up before its max wait ran out \
+     (agents busy or offline), or its agent went offline mid-task.";
+
+/// A human-readable reason for a failed task, digging past `output.error`:
+/// a bare string output, other common error keys (`message`, `detail`,
+/// `stderr`), the last `[server]` line of the log (where OffloadMQ explains
+/// tasks it failed itself), then any remaining output as compact JSON. Never
+/// collapses to a contentless "Unknown error".
+pub fn describe_failure(
+    output: &Option<serde_json::Value>,
+    log: Option<&str>,
+    stage: Option<&str>,
+) -> String {
+    let nonempty = |s: &str| {
+        let t = s.trim();
+        (!t.is_empty()).then(|| clip(t))
+    };
+    if let Some(v) = output {
+        if let Some(s) = v.as_str().and_then(nonempty) {
+            return s;
+        }
+        for key in ["error", "message", "detail", "stderr"] {
+            if let Some(s) = v.get(key).and_then(|e| e.as_str()).and_then(nonempty) {
+                return s;
+            }
+        }
+    }
+    if let Some(line) = log.and_then(|l| {
+        l.lines()
+            .rev()
+            .find_map(|line| line.trim().strip_prefix("[server]").map(str::trim))
+    }) && !line.is_empty()
+    {
+        return clip(line);
+    }
+    let detail = match output {
+        Some(v @ serde_json::Value::Object(m)) if !m.is_empty() => {
+            format!(" Task output: {}", clip(&v.to_string()))
+        }
+        _ => String::new(),
+    };
+    match stage.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(stage) => format!("{FAILURE_WITHOUT_REASON} Last stage: {stage}.{detail}"),
+        None => format!("{FAILURE_WITHOUT_REASON}{detail}"),
+    }
+}
+
+/// Char-safe truncation (upstream text may contain multibyte characters).
+fn clip(s: &str) -> String {
+    if s.chars().count() <= MAX_FAILURE_DETAIL_CHARS {
+        return s.to_string();
+    }
+    let head: String = s.chars().take(MAX_FAILURE_DETAIL_CHARS).collect();
+    format!("{head}…")
+}
+
 /// Extract the assistant text from an LLM/vision task output. Handles the Ollama
 /// (`message.content`), OpenAI (`choices[0].message.content`), and bare
 /// (`response` / `content`) shapes. Returns an empty string when none match.
@@ -232,6 +294,47 @@ mod tests {
 
     fn ext(msg: &str) -> AppError {
         AppError::ExternalService(msg.to_string())
+    }
+
+    #[test]
+    fn describe_failure_prefers_explicit_error_fields() {
+        let out = Some(serde_json::json!({ "error": "Ollama error 500: oom" }));
+        assert_eq!(describe_failure(&out, Some("[server] x"), None), "Ollama error 500: oom");
+        let out = Some(serde_json::json!("plain text failure"));
+        assert_eq!(describe_failure(&out, None, None), "plain text failure");
+        let out = Some(serde_json::json!({ "error": "", "stderr": "Traceback…" }));
+        assert_eq!(describe_failure(&out, None, None), "Traceback…");
+    }
+
+    #[test]
+    fn describe_failure_falls_back_to_last_server_log_line() {
+        let log = "partial reply\n[server] Task failed: agent a1 went offline\n";
+        assert_eq!(
+            describe_failure(&None, Some(log), None),
+            "Task failed: agent a1 went offline"
+        );
+    }
+
+    #[test]
+    fn describe_failure_without_any_reason_explains_the_usual_causes() {
+        let msg = describe_failure(&None, Some("streamed tokens"), None);
+        assert_eq!(msg, FAILURE_WITHOUT_REASON);
+        let msg = describe_failure(
+            &Some(serde_json::json!({ "code": 7 })),
+            None,
+            Some("loading_model"),
+        );
+        assert!(msg.starts_with(FAILURE_WITHOUT_REASON), "{msg}");
+        assert!(msg.contains("Last stage: loading_model."), "{msg}");
+        assert!(msg.contains(r#"Task output: {"code":7}"#), "{msg}");
+    }
+
+    #[test]
+    fn describe_failure_clips_long_text_on_char_boundaries() {
+        let long = "ж".repeat(MAX_FAILURE_DETAIL_CHARS + 50);
+        let msg = describe_failure(&Some(serde_json::json!({ "error": long })), None, None);
+        assert_eq!(msg.chars().count(), MAX_FAILURE_DETAIL_CHARS + 1);
+        assert!(msg.ends_with('…'));
     }
 
     #[test]

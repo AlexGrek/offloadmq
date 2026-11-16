@@ -21,6 +21,10 @@ type Captured = {
   restMessages: Record<string, unknown>[]
   /** When true the socket reports queued + "starting" progress but never the result. */
   holdResults: boolean
+  /** When set, every turn fails with this error (`task:failed`). */
+  failWith: string | null
+  /** Tasks requested through `POST /api/debug/offload_poll`. */
+  debugPolls: { cap: string; id: string }[]
 }
 
 const defaultReply = (n: number) => '```\n' + REPLY_PROMPT + (n > 1 ? ` #${n}` : '') + '\n```'
@@ -33,6 +37,8 @@ async function mockApi(page: Page, reply: (n: number) => string = defaultReply):
     imageJobs: [],
     restMessages: [],
     holdResults: false,
+    failWith: null,
+    debugPolls: [],
   }
 
   await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
@@ -56,6 +62,12 @@ async function mockApi(page: Page, reply: (n: number) => string = defaultReply):
         if (captured.holdResults) {
           ws.send(JSON.stringify({
             type: 'task:progress', req_id: msg.req_id, cap: 'llm.artist', id: `t${n}`, status: 'running', stage: 'starting',
+          }))
+          return
+        }
+        if (captured.failWith) {
+          ws.send(JSON.stringify({
+            type: 'task:failed', req_id: msg.req_id, cap: 'llm.artist', id: `t${n}`, error: captured.failWith,
           }))
           return
         }
@@ -118,6 +130,11 @@ async function mockApi(page: Page, reply: (n: number) => string = defaultReply):
     if (pathname === '/api/images/stash') return json([])
     if (pathname === '/api/prompt-placeholders') return json([])
     if (pathname === '/api/progress/running') return json({ jobs: [] })
+    if (pathname === '/api/debug/offload_poll' && method === 'POST') {
+      const task = route.request().postDataJSON() as { cap: string; id: string }
+      captured.debugPolls.push(task)
+      return json({ id: task, status: 'failed', output: null, log: null })
+    }
     return json({ error: 'Not mocked' }, 404)
   })
   return captured
@@ -425,4 +442,19 @@ test('a reply still running when the page reopens resolves once the DB finalizes
   ]
   await expect(page.getByTestId('messages-area').getByText(REPLY_PROMPT)).toBeVisible({ timeout: 10_000 })
   await expect(thinking(page)).toHaveCount(0)
+})
+
+test('a failed reply shows its reason and a Debug button for that task', async ({ page }) => {
+  const captured = await mockApi(page)
+  captured.failWith = 'no agent for llm.artist picked it up within maxWaitSecs (300s)'
+  await startSession(page, captured)
+
+  await expect(page.getByText(`⚠ ${captured.failWith}`)).toBeVisible()
+  await page.getByTestId('message-debug-btn').click()
+  const modal = page.getByTestId('tool-debug-modal')
+  await expect(modal).toBeVisible()
+  await expect(modal).toContainText('llm.artist / t1')
+  await page.getByTestId('tool-debug-fetch-poll').click()
+  await expect.poll(() => captured.debugPolls).toEqual([{ cap: 'llm.artist', id: 't1' }])
+  await expect(page.getByTestId('tool-debug-poll')).toContainText('"status": "failed"')
 })

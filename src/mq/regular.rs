@@ -8,7 +8,7 @@ use log::info;
 use crate::{
     db::{agent::AgentStorage, persistent_task_storage::TaskStorage},
     models::{AssignedTask, UnassignedTask},
-    schema::{TaskId, TaskStatus},
+    schema::TaskId,
     utils::base_capability,
 };
 
@@ -216,9 +216,9 @@ impl RegularTaskStore {
                 task_storage.add_unassigned(&task_snapshot)?;
                 continue;
             };
+            let reason = task.queue_timeout_reason(now);
             let mut assigned = task.into_assigned("(timeout)");
-            assigned.change_status(TaskStatus::Failed);
-            assigned.stage = None;
+            assigned.fail_by_server(&reason);
             if let Err(e) = task_storage.update_assigned(&assigned) {
                 // Best-effort rollback to avoid orphaning the queue entry.
                 task_storage.add_unassigned(&task_snapshot)?;

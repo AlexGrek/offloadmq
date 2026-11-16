@@ -51,14 +51,18 @@ def task_result_to_wire(task_id: str, capability: str, result: TaskResult) -> di
             output=result.output or {},
         )
     else:
+        reason = result.error or "task failed (the executor gave no reason)"
+        output = dict(result.output or {})
+        # The server only folds the failure message into an *empty* output, so a
+        # failure that also carries data (e.g. partial LLM text) must name its
+        # reason itself or clients see no error at all.
+        if output and not output.get("error"):
+            output["error"] = reason
         report = TaskResultReport(
             id=tid,
             capability=capability,
-            status=TaskResultStatus(
-                status="failure",
-                data=(result.error or "failed", timedelta(seconds=1.0)),
-            ),
-            output=result.output or {},
+            status=TaskResultStatus(status="failure", data=(reason, timedelta(seconds=1.0))),
+            output=output,
         )
     if capability.startswith("llm-runtime."):
         # Cover early pipeline failures as well as executor-generated reports.

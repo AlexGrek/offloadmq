@@ -24,6 +24,9 @@ export interface ChatMessageRecord {
   content: string
   status: 'complete' | 'failed' | 'thinking' | 'pending'
   model: string | null
+  /** OffloadMQ task behind an assistant reply; null for user messages. */
+  offload_cap?: string | null
+  offload_task_id?: string | null
   created_at: string
   attachments?: ChatAttachment[]
 }

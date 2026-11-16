@@ -203,6 +203,8 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
   // race (and wipe) the optimistic first message.
   const skipLoadForChatRef = useRef<string | null>(null)
   const [debugOpen, setDebugOpen] = useState(false)
+  /** Task picked from a failed message's Debug button; null = the chat's latest task. */
+  const [debugMessageTask, setDebugMessageTask] = useState<{ cap: string; id: string } | null>(null)
   const [timeoutDrawerOpen, setTimeoutDrawerOpen] = useState(false)
   const [chatTimeoutMap, setChatTimeoutMap] = useState<Map<string, ChatTimeoutEntry>>(new Map())
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([])
@@ -214,6 +216,7 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
   // Per-chat UI state starts fresh whenever another chat opens.
   useResetOnChange(activeChatId, () => {
     setDebugOpen(false)
+    setDebugMessageTask(null)
     setTimeoutDrawerOpen(false)
     setPendingAttachments([])
     setAttachError(null)
@@ -577,7 +580,9 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
         }
         case 'task:result': {
           const text = event.text.trim() || event.log?.trim() || ''
-          if (onActiveChat) resolveThinking(event.req_id, text, 'complete')
+          if (onActiveChat) {
+            resolveThinking(event.req_id, text, 'complete', { cap: event.cap, id: event.id })
+          }
           else if (chatId && token) {
             refreshChatMessages(chatId)
           }
@@ -585,13 +590,23 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
           break
         }
         case 'task:failed':
-          if (onActiveChat) resolveThinking(event.req_id, `⚠ ${event.error}`, 'failed')
+          if (onActiveChat) {
+            resolveThinking(event.req_id, `⚠ ${event.error}`, 'failed', {
+              cap: event.cap,
+              id: event.id,
+            })
+          }
           else if (chatId && token) refreshChatMessages(chatId)
           finishChatTask(event.req_id, 'failed', true)
           break
         case 'error':
           if (event.req_id) {
-            if (onActiveChat) resolveThinking(event.req_id, `⚠ ${event.message}`, 'failed')
+            if (onActiveChat) {
+              resolveThinking(event.req_id, `⚠ ${event.message}`, 'failed', {
+                cap: task?.cap,
+                id: task?.id,
+              })
+            }
             else if (chatId && token) refreshChatMessages(chatId)
             finishChatTask(event.req_id, 'failed', true)
           }
@@ -626,7 +641,15 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
     })
   }
 
-  function resolveThinking(reqId: string, content: string, status: MessageStatus) {
+  function resolveThinking(
+    reqId: string,
+    content: string,
+    status: MessageStatus,
+    offload?: { cap?: string; id?: string },
+  ) {
+    const ids = offload?.cap && offload.id
+      ? { offloadCap: offload.cap, offloadTaskId: offload.id }
+      : {}
     const msgId = reqToMsgId.current.get(reqId) ?? pendingMessageId(reqId)
     reqToMsgId.current.delete(reqId)
     setMessages(prev => {
@@ -639,11 +662,14 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
             role: 'assistant' as const,
             content,
             status,
+            ...ids,
           },
         ]
       }
       return prev.map((m, i) =>
-        i === idx ? { ...m, content, status, statusText: undefined, reqId: undefined } : m,
+        i === idx
+          ? { ...m, content, status, statusText: undefined, reqId: undefined, ...ids }
+          : m,
       )
     })
   }
@@ -1050,7 +1076,10 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
           title={activeChat?.title || (activeChatId ? config.labels.untitled : config.noChatTitle)}
           hasActiveChat={!!activeChatId}
           onOpenTimeout={() => setTimeoutDrawerOpen(v => !v)}
-          onOpenDebug={() => setDebugOpen(true)}
+          onOpenDebug={() => {
+            setDebugMessageTask(null)
+            setDebugOpen(true)
+          }}
           debugActive={toolDebugReady(debugTask?.cap, debugTask?.id)}
           wsStatus={ws.status}
         />
@@ -1058,11 +1087,17 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
         <ToolDebugModal
           open={debugOpen}
           onOpenChange={setDebugOpen}
-          cap={debugTask?.cap}
-          taskId={debugTask?.id}
-          subject={activeChat?.title || config.labels.untitled}
+          cap={debugMessageTask?.cap ?? debugTask?.cap}
+          taskId={debugMessageTask?.id ?? debugTask?.id}
+          subject={
+            debugMessageTask
+              ? `Failed reply · ${debugMessageTask.cap}`
+              : activeChat?.title || config.labels.untitled
+          }
           disabledReason={
-            debugTask ? undefined : 'Send a message to capture OffloadMQ task ids.'
+            debugMessageTask || debugTask
+              ? undefined
+              : 'Send a message to capture OffloadMQ task ids.'
           }
         />
 
@@ -1093,6 +1128,10 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
           canRetry={canRetry}
           onRetry={retry}
           renderPromptActions={isStudio ? renderPromptActions : undefined}
+          onDebugMessage={(cap, id) => {
+            setDebugMessageTask({ cap, id })
+            setDebugOpen(true)
+          }}
           emptyState={
             isPersona ? (
               persona.emptyState

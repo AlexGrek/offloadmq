@@ -8,7 +8,13 @@ from typing import Any, Callable
 
 from offloadmq_agent.context import ExecContext, TaskCancelled
 from offloadmq_agent.executor import Executor
-from offloadmq_agent.models import LogEntry, Task, TaskResult, TaskStatus
+from offloadmq_agent.models import (
+    LogEntry,
+    Task,
+    TaskResult,
+    TaskStatus,
+    describe_exception,
+)
 
 DoneCallback = Callable[[Task, TaskResult], None]
 LogCallback = Callable[[str, LogEntry], None]
@@ -81,6 +87,6 @@ class ExecutorPool:
             result = TaskResult(
                 task_id=task.id,
                 status=TaskStatus.FAILED,
-                error=str(exc),
+                error=describe_exception(exc),
             )
         on_done(task, result)
