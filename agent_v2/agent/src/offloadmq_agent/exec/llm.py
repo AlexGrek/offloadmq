@@ -129,8 +129,6 @@ def _attach_images(messages: list[dict[str, Any]], images: list[str]) -> list[di
 
 
 _STREAM_FLUSH_INTERVAL = 2.0  # seconds between progress log flushes
-# Whole-request limit for one Ollama chat call, streaming included.
-_OLLAMA_TIMEOUT_SECS = 600
 
 # Ollama /api/chat request fields taken from the task payload as-is. The
 # server's OpenRouter-compatible API (/api/v1) translates OpenAI parameters
@@ -296,6 +294,9 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
         documents=len(document_attachments),
     )
 
+    # The client's execution budget (OAI chat sends runtimeSecs) bounds the
+    # whole Ollama call, model load and streaming included.
+    limit_secs = task.runtime_limit_secs()
     body: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
     for key in _FORWARDED_KEYS:
         if key in task.payload:
@@ -308,7 +309,7 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
             async with session.post(
                 f"{get_ollama_base_url()}/api/chat",
                 json=body,
-                timeout=aiohttp.ClientTimeout(total=_OLLAMA_TIMEOUT_SECS),
+                timeout=aiohttp.ClientTimeout(total=limit_secs),
             ) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
@@ -337,7 +338,7 @@ async def execute_llm(task: Task, ctx: ExecContext) -> TaskResult:
             task_id=task.id,
             status=TaskStatus.FAILED,
             error=(
-                f"Ollama did not finish {model} within {_OLLAMA_TIMEOUT_SECS}s "
+                f"Ollama did not finish {model} within its {limit_secs}s runtime limit "
                 f"({len(collected)} tokens streamed; {describe_exception(exc)})"
             ),
             output={"partial": "".join(collected)} if collected else {},

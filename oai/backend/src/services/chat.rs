@@ -655,6 +655,11 @@ fn send_error(tx: &UnboundedSender<ServerEvent>, req_id: &str, message: &str) {
 }
 
 /// Ollama-style message list: optional system prompt, then user + assistant turns.
+///
+/// A failed exchange (failed/canceled/timed-out reply *and* the user turn it
+/// answered) is left out: the reply is an error message, not something the
+/// model said, and Retry re-sends the question as a new user turn, so keeping
+/// it would show the model the same question twice.
 fn build_offload_chat_messages(
     system_prompt: &str,
     records: &[db_chats::ChatMessage],
@@ -667,22 +672,24 @@ fn build_offload_chat_messages(
             content: sys.to_string(),
         });
     }
-    out.extend(
-        records
-        .iter()
-        .filter(|m| matches!(m.role.as_str(), "user" | "assistant"))
-        .filter(|m| !m.content.trim().is_empty())
-        .filter(|m| match m.role.as_str() {
-            "user" => m.status == "complete",
-            // Include failed replies so the model still sees the full thread.
-            "assistant" => matches!(m.status.as_str(), "complete" | "failed"),
-            _ => false,
-        })
-        .map(|m| ChatMessage {
-            role: m.role.clone(),
-            content: m.content.clone(),
-        }),
-    );
+    let dialog_start = out.len();
+    for m in records {
+        match (m.role.as_str(), m.status.as_str()) {
+            ("assistant", "failed") => {
+                // Drop the question this failed reply answered.
+                if out.len() > dialog_start && out.last().is_some_and(|p| p.role == "user") {
+                    out.pop();
+                }
+            }
+            ("user", "complete") | ("assistant", "complete") if !m.content.trim().is_empty() => {
+                out.push(ChatMessage {
+                    role: m.role.clone(),
+                    content: m.content.clone(),
+                });
+            }
+            _ => {}
+        }
+    }
     out
 }
 
@@ -785,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn build_offload_chat_messages_includes_failed_assistant() {
+    fn build_offload_chat_messages_drops_failed_exchanges() {
         let records = vec![
             db_chats::ChatMessage {
                 id: 1,
@@ -822,9 +829,10 @@ mod tests {
             },
         ];
         let msgs = build_offload_chat_messages("", &records);
-        assert_eq!(msgs.len(), 3);
-        assert_eq!(msgs[1].role, "assistant");
-        assert_eq!(msgs[1].content, "⚠ timeout");
+        // The failed exchange (q + its error reply) is gone; only the retry remains.
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].role, "user");
+        assert_eq!(msgs[0].content, "retry");
     }
 
     #[test]
@@ -869,6 +877,50 @@ mod tests {
         assert_eq!(msgs[0].role, "system");
         assert_eq!(msgs[0].content, "From chat column.");
         assert_eq!(msgs[1].content, "ok");
+    }
+
+    fn msg(id: i64, role: &str, content: &str, status: &str) -> db_chats::ChatMessage {
+        db_chats::ChatMessage {
+            id,
+            chat_id: 1,
+            role: role.to_string(),
+            content: content.to_string(),
+            status: status.to_string(),
+            model: None,
+            offload_cap: None,
+            offload_task_id: None,
+            created_at: chrono::Utc::now().fixed_offset(),
+        }
+    }
+
+    #[test]
+    fn build_offload_chat_messages_keeps_good_turns_around_failed_ones() {
+        let records = vec![
+            msg(1, "user", "q1", "complete"),
+            msg(2, "assistant", "a1", "complete"),
+            msg(3, "user", "q2", "complete"),
+            msg(4, "assistant", "Task was canceled", "failed"),
+            msg(5, "user", "q2", "complete"),
+            msg(6, "assistant", "no agent picked it up", "failed"),
+            msg(7, "user", "q2", "complete"),
+            // The just-submitted turn's own reply is still pending.
+            msg(8, "assistant", "", "pending"),
+        ];
+        let msgs = build_offload_chat_messages("sys", &records);
+        let got: Vec<(&str, &str)> =
+            msgs.iter().map(|m| (m.role.as_str(), m.content.as_str())).collect();
+        assert_eq!(
+            got,
+            vec![("system", "sys"), ("user", "q1"), ("assistant", "a1"), ("user", "q2")]
+        );
+    }
+
+    #[test]
+    fn build_offload_chat_messages_never_pops_the_system_prompt() {
+        let records = vec![msg(1, "assistant", "orphan failure", "failed"), msg(2, "user", "hi", "complete")];
+        let msgs = build_offload_chat_messages("sys", &records);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].role, "system");
     }
 
     #[test]

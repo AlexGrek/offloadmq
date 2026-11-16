@@ -87,5 +87,40 @@ def test_llm_timeout_reports_model_limit_and_partial_text(
     assert result.status == TaskStatus.FAILED
     assert result.error is not None
     assert "qwen3:8b" in result.error
-    assert f"within {llm_exec._OLLAMA_TIMEOUT_SECS}s" in result.error
+    assert "within its 600s runtime limit" in result.error
     assert result.output == {"partial": "partial "}
+
+
+def _task(data: dict[str, Any]) -> Task:
+    return Task(id="t", capability="llm.m", server_task={"data": data})
+
+
+def test_runtime_limit_prefers_runtime_secs_then_timeout_secs() -> None:
+    assert _task({"runtimeSecs": 900, "timeoutSecs": 1200}).runtime_limit_secs() == 900
+    assert _task({"timeoutSecs": 1200}).runtime_limit_secs() == 1200
+    assert _task({}).runtime_limit_secs() == 600
+    assert _task({"runtimeSecs": 0, "timeoutSecs": "bad"}).runtime_limit_secs() == 600
+    assert Task(id="t", capability="llm.m").runtime_limit_secs() == 600
+
+
+def test_llm_uses_the_task_runtime_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+
+    class _CapturingSession(_Session):
+        def post(self, *args: Any, **kwargs: Any) -> _Ctx:
+            seen["timeout"] = kwargs["timeout"]
+            return super().post(*args, **kwargs)
+
+    monkeypatch.setattr(llm_exec.aiohttp, "ClientSession", lambda *a, **kw: _CapturingSession())
+    ctx = ExecContext(log_sink=lambda entry: None, progress_reporter=lambda *a: None)
+    task = Task(
+        id="t1",
+        capability="llm.qwen3:8b",
+        payload={"prompt": "hi"},
+        server_task={"data": {"runtimeSecs": 900}},
+    )
+
+    result = asyncio.run(llm_exec.execute_llm(task, ctx))
+
+    assert seen["timeout"].total == 900
+    assert "within its 900s runtime limit" in (result.error or "")

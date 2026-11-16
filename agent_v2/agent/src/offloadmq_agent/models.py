@@ -22,6 +22,10 @@ class LogLevel(StrEnum):
     ERROR = "error"
 
 
+# Execution limit when the client set neither runtimeSecs nor timeoutSecs.
+DEFAULT_RUNTIME_SECS = 600
+
+
 class Task(BaseModel):
     id: str
     capability: str
@@ -29,6 +33,23 @@ class Task(BaseModel):
     priority: int = 0
     # Full server-pushed task frame (id + data + createdAt) for legacy executors.
     server_task: dict[str, Any] = Field(default_factory=dict)
+
+    def runtime_limit_secs(self) -> int:
+        """How long this task may execute on the agent.
+
+        ``runtimeSecs`` is the client's agent-side execution limit (the server
+        passes it through and never enforces it); ``timeoutSecs`` is the overall
+        wall-clock deadline and the fallback for older clients.
+        """
+        data = self.server_task.get("data") or {}
+        for key in ("runtimeSecs", "timeoutSecs"):
+            try:
+                value = int(data.get(key) or 0)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                return value
+        return DEFAULT_RUNTIME_SECS
 
     @classmethod
     def from_wire(cls, raw: dict[str, Any]) -> Task:

@@ -138,7 +138,7 @@ On connect, frontend sends `list_capabilities` with `req_id: 'init'`.
 - Poll: `POST /api/task/poll/{cap}/{id}` every **1s**, **300** attempts (~5 min)
 - Client: `backend/src/offload/mod.rs`; factory: `services/offload_factory.rs` (admin settings)
 
-`build_offload_chat_messages`: system from `chats.system_prompt`; user `complete` only; assistant `complete` or `failed` (failed turns stay in context for the model).
+`build_offload_chat_messages`: system from `chats.system_prompt`; user `complete` only; assistant `complete` only. A failed reply (error/cancel/timeout) is dropped **together with the user turn it answered** — Retry re-sends the question as a new turn, so the model sees it once and never sees error text as its own words.
 
 ---
 

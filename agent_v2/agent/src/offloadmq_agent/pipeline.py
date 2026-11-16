@@ -131,11 +131,7 @@ def _run_sync_pipeline(
     fetch_files = data.get("fetchFiles") or []
     file_buckets = data.get("file_bucket") or []
     output_bucket = data.get("output_bucket")
-    # runtimeSecs — agent-only execution limit set by the client; takes
-    # precedence over timeoutSecs (which is the global wall-clock deadline
-    # enforced by the server and may include wait time).  Fall back to
-    # timeoutSecs for backwards compatibility with old clients, then to 600 s.
-    job_timeout = int(data.get("runtimeSecs") or data.get("timeoutSecs") or 600)
+    job_timeout = task.runtime_limit_secs()
     data_preparation: dict[str, str] = dict(data.get("dataPreparation") or {})
 
     task_id = TaskId(id=task.id, cap=task.capability)
