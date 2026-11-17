@@ -10,7 +10,8 @@ import { sortCapabilitiesForPicker } from '../../lib/modelAvailability'
 import { createPlaceholderUsage, expandPromptPlaceholders } from '../../lib/promptPlaceholders'
 import { recordPlaceholdersUsed } from '../../lib/recentPlaceholders'
 
-export const MAX_QUICK_GENERATE = 10
+export const MAX_QUICK_GENERATE = 24
+export const GENERATE_COUNT_PRESETS = [1, 2, 3, 4, 5, 8] as const
 
 export function clampGenerateCount(raw: string | number): number {
   const count = typeof raw === 'number' ? raw : parseInt(raw, 10)

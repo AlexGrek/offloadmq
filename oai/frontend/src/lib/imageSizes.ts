@@ -15,8 +15,8 @@ export const VIDEO_SIZE_PRESETS: [number, number][] = [
 
 export const IMAGE_SIZE_PRESETS: [number, number][] = [
   [1024, 1024], [1280, 1280], [1536, 1536], [2048, 2048],
-  [1536, 1024], [1920, 1080], [2048, 1536],
-  [1024, 1536], [1080, 1920], [1536, 2048],
+  [1536, 1024], [1920, 1080], [1920, 1280], [2048, 1536],
+  [1024, 1536], [1080, 1920], [1280, 1920], [1536, 2048],
 ]
 
 export function validImageSize(width: number, height: number, max = 8192): boolean {

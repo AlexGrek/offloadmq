@@ -18,7 +18,12 @@ import {
 } from '../ui/dialog'
 import { Label } from '../ui/label'
 import { Input } from '../ui/input'
-import { clampGenerateCount, MAX_QUICK_GENERATE, useQuickTxt2Img } from './useQuickTxt2Img'
+import {
+  clampGenerateCount,
+  GENERATE_COUNT_PRESETS,
+  MAX_QUICK_GENERATE,
+  useQuickTxt2Img,
+} from './useQuickTxt2Img'
 
 const MAX_GENERATE_MULTIPLE = MAX_QUICK_GENERATE
 const DEFAULT_GENERATE_MULTIPLE = 1
@@ -179,6 +184,30 @@ export function QuickGenerateDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor={tid('count')}>Number of images</Label>
+              <div
+                className="flex flex-wrap gap-1.5"
+                role="group"
+                aria-label="Number of images presets"
+                data-testid={tid('count-presets')}
+              >
+                {GENERATE_COUNT_PRESETS.map(preset => {
+                  const active = countInput.trim() !== '' && Number(countInput) === preset
+                  return (
+                    <Button
+                      key={preset}
+                      type="button"
+                      variant={active ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setCountInput(String(preset))}
+                      aria-pressed={active}
+                      className="min-w-10 flex-1 font-mono tabular-nums"
+                      data-testid={tid(`count-preset-${preset}`)}
+                    >
+                      {preset}
+                    </Button>
+                  )
+                })}
+              </div>
               <Input
                 id={tid('count')}
                 type="number"

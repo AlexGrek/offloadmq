@@ -150,8 +150,9 @@ import {
 } from '@/components/imgutils/ImgUtilsQuickModal'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
-const MAX_GENERATE_MULTIPLE = 10
+const MAX_GENERATE_MULTIPLE = 24
 const DEFAULT_GENERATE_MULTIPLE = 4
+const GENERATE_MULTIPLE_PRESETS = [1, 2, 3, 4, 5, 8] as const
 
 const BURST_SPARKS = [
   { x: -62, y: -28, delay: 0 },
@@ -2883,6 +2884,32 @@ export default function ImageGenerationPage() {
         <DialogBody>
           <div className="space-y-2">
             <Label htmlFor="imggen-generate-multiple-count">Number of images</Label>
+            <div
+              className="flex flex-wrap gap-1.5"
+              role="group"
+              aria-label="Number of images presets"
+              data-testid="imggen-generate-multiple-presets"
+            >
+              {GENERATE_MULTIPLE_PRESETS.map(preset => {
+                const active =
+                  generateMultipleCountInput.trim() !== '' &&
+                  Number(generateMultipleCountInput) === preset
+                return (
+                  <Button
+                    key={preset}
+                    type="button"
+                    variant={active ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setGenerateMultipleCountInput(String(preset))}
+                    aria-pressed={active}
+                    className="min-w-10 flex-1 font-mono tabular-nums"
+                    data-testid={`imggen-generate-multiple-preset-${preset}`}
+                  >
+                    {preset}
+                  </Button>
+                )
+              })}
+            </div>
             <Input
               id="imggen-generate-multiple-count"
               type="number"
