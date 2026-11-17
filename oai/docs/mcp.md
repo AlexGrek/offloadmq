@@ -43,14 +43,14 @@ and URL `…/mcp`. CORS on `/mcp` and the OAuth endpoints allows any origin.
 | Tool | CLI equivalent | Notes |
 |------|----------------|-------|
 | `list_image_models` | `oai image capabilities` | Online/offline status, tags (txt2img, img2img…), recent usage |
-| `generate_images` | `oai image generate` | `prompt`, `negative_prompt`, `model`, `workflow`, `input_image_id` (img2img), `width`/`height` (original resolution), `upscale_factor` (optional 1–8), `upscale_model` (optional img-utils capability), `seed` (job N uses seed+N), `count` ≤10, `save_to_history`, `star_prompt`, `wait_seconds` |
+| `generate_images` | `oai image generate` | `prompt`, `negative_prompt`, `model`, `workflow`, `input_image_id` (img2img), `width`/`height` (original resolution), `upscale_factor` (optional 1–3), `upscale_model` (optional img-utils capability), `seed` (job N uses seed+N), `count` ≤10, `save_to_history`, `star_prompt`, `wait_seconds` |
 | `get_image_job` | `oai image job` / `poll` / `download` | Forces a reconcile; optional `wait_seconds`; returns previews and links |
 | `list_image_jobs` | `oai image jobs` | `status` (comma list), `active_only`, `limit` ≤50 |
 | `cancel_image_jobs` | `oai image cancel` | Several IDs; continues past failures |
 | `retry_image_job` | `oai image retry` | New job with identical settings, waits like generate |
 | `delete_image_jobs` | `oai image delete` | Also deletes the stored images |
 | `list_image_tools` | `oai img-utils tools` | Online Image Tools (upscale, depth, face_swap, resize) and the options each takes |
-| `upscale_image` | `oai upscale` | `image_id`/`image_ids` (≤10, one job each), `scale` 1–8 (**default 2**; the web UI page defaults to 4), `capability`, `wait_seconds` |
+| `upscale_image` | `oai upscale` | `image_id`/`image_ids` (≤10, one job each), `scale` 1–3 (**default 2**; the web UI page defaults to 3), `capability`, `wait_seconds` |
 | `run_image_tool` | `oai img-utils run` | `tool` (upscale\|depth\|face_swap\|resize), `image_id`/`image_ids`, `source_image_id` (face_swap), `scale`, resize `width`/`height`/`mode`/`method`/`format`/`quality`/`allow_upscale`, `options` (ComfyUI, as-is) |
 | `get_image_tool_job` | `oai img-utils job` / `poll` / `download` | Forces a reconcile; optional `wait_seconds`; returns a preview and link of the result |
 | `list_image_tool_jobs` | `oai img-utils jobs` | `status` (comma list), `active_only`, `limit` ≤50 |

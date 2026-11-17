@@ -85,7 +85,8 @@ export function useImgUtilsTools(token: string | null, enabled = true): ImgUtils
     },
   )
   const [scaleMultiplier, setScaleRaw] = useState<number>(
-    initialPrefs.scaleMultiplier ?? DEFAULT_SCALE_MULTIPLIER,
+    // A pref saved under an older, higher cap would be rejected by the server.
+    Math.min(MAX_SCALE_MULTIPLIER, Math.max(MIN_SCALE_MULTIPLIER, initialPrefs.scaleMultiplier ?? DEFAULT_SCALE_MULTIPLIER)),
   )
 
   useEffect(() => {

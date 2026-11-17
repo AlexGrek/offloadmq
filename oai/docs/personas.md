@@ -178,7 +178,7 @@ vision_capability?, look_prompt?}`.
 
 **StartPhotoRequest:** `{prompt (not for existing), negative_prompt?, workflow? (txt2img|img2img|existing), input_image_id?,
 width?, height?, seed?, count? (1–8; one run each, seed+i), face_image_id?, face_swap?, upscale?,
-scale? (1–8, default 2), image_model?, face_swap_capability?, upscaler_capability?}`.
+scale? (1–3, default 2), image_model?, face_swap_capability?, upscaler_capability?}`.
 
 - txt2img defaults to 1024×1024.
 - img2img defaults to the input's size, or its aspect ratio at a 1024 long edge when the

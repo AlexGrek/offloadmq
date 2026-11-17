@@ -130,7 +130,7 @@ pub struct StartPhotoRequest {
     /// Default: on.
     #[serde(default)]
     pub upscale: Option<bool>,
-    /// Upscale multiplier, 1–8 (default 2).
+    /// Upscale multiplier, 1–3 (default 2).
     #[serde(default)]
     pub scale: Option<f64>,
     /// Per-request overrides of the persona's preferences.
@@ -335,8 +335,8 @@ async fn resolve_params(
 
     // Local checks before any OffloadMQ lookup, so they fail the same way offline.
     let scale = req.scale.unwrap_or(DEFAULT_SCALE);
-    if !scale.is_finite() || !(1.0..=8.0).contains(&scale) {
-        return Err(AppError::BadRequest("scale must be between 1 and 8".into()));
+    if !scale.is_finite() || !(crate::services::image_pipeline_params::MIN_UPSCALE_SCALE..=crate::services::image_pipeline_params::MAX_UPSCALE_SCALE).contains(&scale) {
+        return Err(AppError::BadRequest("scale must be between 1 and 3".into()));
     }
     let faces = personas::resolve_faces(state, persona).await?;
     if existing {

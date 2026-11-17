@@ -18,6 +18,11 @@ pub struct RescaleParams {
     pub mp: Option<f64>,
 }
 
+/// Bounds for an upscale multiplier, shared by every entry point (web UI, MCP, CLI,
+/// personas, image generation, Image Tools).
+pub const MIN_UPSCALE_SCALE: f64 = 1.0;
+pub const MAX_UPSCALE_SCALE: f64 = 3.0;
+
 /// A persisted post-generation upscale, replayed on retry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpscaleParams {
@@ -28,12 +33,12 @@ pub struct UpscaleParams {
 
 impl UpscaleParams {
     pub fn validate(&self) -> Result<(), crate::error::AppError> {
-        if !self.scale.is_finite() || !(1.0..=8.0).contains(&self.scale)
+        if !self.scale.is_finite() || !(MIN_UPSCALE_SCALE..=MAX_UPSCALE_SCALE).contains(&self.scale)
             || !self.capability.starts_with("img-utils.")
             || !self.workflow.starts_with("upscale")
         {
             return Err(crate::error::AppError::BadRequest(
-                "upscale requires an img-utils upscaler and a scale between 1 and 8".into(),
+                "upscale requires an img-utils upscaler and a scale between 1 and 3".into(),
             ));
         }
         Ok(())
@@ -149,11 +154,11 @@ mod tests {
         let mut p = UpscaleParams {
             capability: "img-utils.seedvr2".into(), workflow: "upscale".into(), scale: 2.0,
         };
-        for scale in [f64::NAN, f64::INFINITY, 0.0, 0.99, 8.01] {
+        for scale in [f64::NAN, f64::INFINITY, 0.0, 0.99, 3.01, 4.0, 8.0] {
             p.scale = scale;
             assert!(p.validate().is_err());
         }
-        for scale in [1.0, 2.5, 8.0] {
+        for scale in [1.0, 1.5, 2.5, 3.0] {
             p.scale = scale;
             assert!(p.validate().is_ok());
         }

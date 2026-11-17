@@ -767,7 +767,7 @@ func cmdPersonaPhoto(args []string) error {
 	face := fs.String("face", "", "face image id to swap in (default: the primary face)")
 	noSwap := fs.Bool("no-faceswap", false, "skip the face swap step")
 	noUpscale := fs.Bool("no-upscale", false, "skip the upscale step")
-	scale := fs.Float64("scale", 2, "upscale factor (1-8)")
+	scale := fs.Float64("scale", 2, "upscale factor (1-3)")
 	negative := fs.String("negative", "", "negative prompt")
 	seed := fs.Int64("seed", 0, "seed (0 = random; batches add the index)")
 	width := fs.Int("width", 0, "width (default 1024, or the input's size)")

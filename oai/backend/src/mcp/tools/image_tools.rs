@@ -24,11 +24,11 @@ use super::{
     parse_args, require_ids, tool,
 };
 
-/// Upscale `scale_multiplier` bounds. The default is 2 (the web UI's page defaults to 4),
+/// Upscale `scale_multiplier` bounds. The default is 2 (the web UI's page defaults to 3),
 /// matching `defaultScaleMultiplier` in the CLI.
 pub const DEFAULT_SCALE_MULTIPLIER: f64 = 2.0;
 const MIN_SCALE_MULTIPLIER: f64 = 1.0;
-const MAX_SCALE_MULTIPLIER: f64 = 8.0;
+const MAX_SCALE_MULTIPLIER: f64 = 3.0;
 /// Images per call; each becomes its own job (like the CLI's multiple inputs).
 const MAX_IMAGES: usize = 10;
 
@@ -64,7 +64,7 @@ pub fn definitions() -> Vec<Value> {
             format!(
                 "Upscale an image the user already has in OAI (an image_id from an earlier \
                  result, e.g. generate_images) with the online upscaler. scale is the \
-                 multiplier, 1-8, default {DEFAULT_SCALE_MULTIPLIER}. Submits one job per \
+                 multiplier, 1-3, default {DEFAULT_SCALE_MULTIPLIER}. Submits one job per \
                  image, waits, and returns a preview plus a signed link to the full-resolution \
                  result. Same as `oai upscale`."
             )
@@ -309,7 +309,7 @@ pub(super) async fn generation_upscaler(
         return Ok(None);
     };
     if !scale.is_finite() || !(MIN_SCALE_MULTIPLIER..=MAX_SCALE_MULTIPLIER).contains(&scale) {
-        return Err(AppError::BadRequest("upscale_factor must be between 1 and 8".into()));
+        return Err(AppError::BadRequest("upscale_factor must be between 1 and 3".into()));
     }
     let tools = online_tools(ctx).await?;
     let selected = pick_tool(&tools, "upscale", model)?;
@@ -964,10 +964,10 @@ mod tests {
         let up = pick_tool(&tools, "upscale", None).unwrap();
         let opts = build_options(up, &args(json!({}))).unwrap().unwrap();
         assert_eq!(opts["scale_multiplier"], json!(2));
-        let opts = build_options(up, &args(json!({ "scale": 4 })))
+        let opts = build_options(up, &args(json!({ "scale": 3 })))
             .unwrap()
             .unwrap();
-        assert_eq!(opts["scale_multiplier"], json!(4));
+        assert_eq!(opts["scale_multiplier"], json!(3));
         let opts = build_options(up, &args(json!({ "scale": 1.5 })))
             .unwrap()
             .unwrap();
@@ -977,6 +977,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(opts["scale_multiplier"], json!(3));
+        assert!(build_options(up, &args(json!({ "scale": 4 }))).is_err());
         assert!(build_options(up, &args(json!({ "scale": 9 }))).is_err());
         assert!(build_options(up, &args(json!({ "scale": 0.5 }))).is_err());
     }

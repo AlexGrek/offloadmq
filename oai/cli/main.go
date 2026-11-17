@@ -51,7 +51,7 @@ Usage:
                     [-source FACE] [-scale N] [-opt key=value ...]
                     [-width N] [-height N] [-mode fit|exact|cover] [-method M] [-format F]
                     [-quality Q] [-allow-upscale] [--progress=false] [-t|-timeout 5m]
-  oai upscale <image> [image ...] [-scale 1-8] [-o out.png] ...   (= img-utils run upscale)
+  oai upscale <image> [image ...] [-scale 1-3] [-o out.png] ...   (= img-utils run upscale)
   oai img-utils jobs [-status S[,S]] [-active] [-ids] [-json]
   oai img-utils job|poll <job-id> [-json]
   oai img-utils cancel|delete <job-id> [job-id ...]

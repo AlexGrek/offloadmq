@@ -103,7 +103,7 @@ pub fn definitions() -> Vec<Value> {
                     "input_image_id": { "type": "string", "description": "img2img source: an image_id from an earlier result in this account." },
                     "width": { "type": "integer", "minimum": MIN_SIZE, "maximum": MAX_SIZE, "description": "Default 1024 (img2img: the input's size)." },
                     "height": { "type": "integer", "minimum": MIN_SIZE, "maximum": MAX_SIZE, "description": "Default 1024 (img2img: the input's size)." },
-                    "upscale_factor": { "type": "number", "minimum": 1, "maximum": 8, "description": "Optional second-stage multiplier (e.g. width=1024, height=768, upscale_factor=2 produces 2048x1536). Omit to generate only." },
+                    "upscale_factor": { "type": "number", "minimum": 1, "maximum": 3, "description": "Optional second-stage multiplier (e.g. width=1024, height=768, upscale_factor=2 produces 2048x1536). Omit to generate only." },
                     "upscale_model": { "type": "string", "description": "Optional img-utils.* upscaler capability from list_image_tools; requires upscale_factor. Default: first online upscaler." },
                     "seed": { "type": "integer", "description": "Fixed seed for reproducible results; job N of a batch uses seed+N. Default random." },
                     "count": { "type": "integer", "minimum": 1, "maximum": MAX_COUNT, "default": 1, "description": "Number of images (separate jobs)." },

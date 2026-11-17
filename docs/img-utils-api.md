@@ -106,7 +106,7 @@ bucket, pass the bucket UID in `file_bucket`, and reference files by name.
 |-----------|-----------|--------|-------|
 | `img-utils.image_lotus_depth_v1_1` | `depth` | `input_image` | Lotus depth model (`lotus-depth-d-v1-1.safetensors`), 1 step, inverted output. |
 | `img-utils.face_swap_reactor` | `face_swap` | `input_image` (target), `face_swap` (donor) | ReActor (`inswapper_128.onnx` + `GFPGANv1.3.onnx`). |
-| `img-utils.seedvr2_upscale_image` | `upscale` | `input_image` | SeedVR2 upscaler. Takes a `scale_multiplier` knob (default 4). |
+| `img-utils.seedvr2_upscale_image` | `upscale` | `input_image` | SeedVR2 upscaler. Takes a `scale_multiplier` knob (OAI accepts 1–3, e.g. `1.5`; default 3 in the web UI). |
 
 `face_swap` additionally accepts these `secondary_prompts` keys, mapped by its params
 file: `face_restore_visibility`, `codeformer_weight`, `input_faces_index`,

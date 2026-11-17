@@ -165,8 +165,9 @@ DTO field.
 methods }`). `toolKey(tool)` = `${capability}::${workflow}` is the picker's selection key.
 Name-based flags mirror the backend, keyed on the operation:
 - `takesSourceImage(workflow)` = `/^face[_-]swap/` → second upload slot.
-- `takesScaleMultiplier(workflow)` = `/^upscale/` → scale-multiplier control (presets 2/4/6/8 +
-  numeric `MIN..MAX_SCALE_MULTIPLIER` 1–8, default `DEFAULT_SCALE_MULTIPLIER` = 4); submit sends
+- `takesScaleMultiplier(workflow)` = `/^upscale/` → scale-multiplier control (presets 1.5/2/3 +
+  numeric `MIN..MAX_SCALE_MULTIPLIER` 1–3, default `DEFAULT_SCALE_MULTIPLIER` = 3; the backend
+  enforces the same 1–3 via `MAX_UPSCALE_SCALE` in `image_pipeline_params.rs`); submit sends
   `options: { scale_multiplier }`.
 - `prettyLabel(slug)` renders the operation label (`RESIZE_WORKFLOW` `basic_resize` → "Basic resize").
 - `OPERATION_HINTS` in `ImgUtilsPage.tsx` holds the one-line blurbs (keyed on operation).

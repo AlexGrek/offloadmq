@@ -6,7 +6,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { cn } from '../../lib/utils'
 
-const PRESETS = [2, 4, 6, 8]
+const PRESETS = [1.5, 2, 3]
 
 export type ScaleControlProps = {
   value: number
@@ -53,7 +53,7 @@ export function ScaleControl({
           type="number"
           min={MIN_SCALE_MULTIPLIER}
           max={MAX_SCALE_MULTIPLIER}
-          step={1}
+          step={0.5}
           value={value}
           onChange={e => onChange(Number(e.target.value))}
           className="h-9 w-24"

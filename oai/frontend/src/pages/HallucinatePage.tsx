@@ -226,7 +226,7 @@ export default function HallucinatePage() {
             {!tools.length && <p className="text-xs text-muted-foreground">No upscaler is currently online.</p>}
             {upscale && <div className="flex flex-wrap gap-3">
               <select aria-label="Upscaler" value={tool} disabled={running} onChange={e => setTool(e.target.value)} className="min-h-11 max-w-full rounded-md border border-input bg-background px-3">{tools.map(t => <option key={toolKey(t)} value={toolKey(t)}>{t.pack} · {t.workflow}</option>)}</select>
-              <label className="flex items-center gap-2 text-sm">Scale <select aria-label="Upscale multiplier" value={scale} disabled={running} onChange={e => setScale(Number(e.target.value))} className="min-h-11 rounded-md border border-input bg-background px-3">{[2, 3, 4, 6, 8].map(n => <option key={n} value={n}>×{n}</option>)}</select></label>
+              <label className="flex items-center gap-2 text-sm">Scale <select aria-label="Upscale multiplier" value={scale} disabled={running} onChange={e => setScale(Number(e.target.value))} className="min-h-11 rounded-md border border-input bg-background px-3">{[1.5, 2, 3].map(n => <option key={n} value={n}>×{n}</option>)}</select></label>
             </div>}
           </div>
           <div className="flex flex-wrap gap-3">

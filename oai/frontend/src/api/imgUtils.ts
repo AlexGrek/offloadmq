@@ -76,11 +76,11 @@ export function toolsFromCapabilities(caps: ImgUtilCapability[]): ImgUtilTool[] 
   )
 }
 
-/** Default scale multiplier for upscale tools (SeedVR2's own default). */
-export const DEFAULT_SCALE_MULTIPLIER = 4
+/** Default scale multiplier for upscale tools. */
+export const DEFAULT_SCALE_MULTIPLIER = 3
 /** Bounds enforced by the scale control. */
 export const MIN_SCALE_MULTIPLIER = 1
-export const MAX_SCALE_MULTIPLIER = 8
+export const MAX_SCALE_MULTIPLIER = 3
 
 /** Stable key for a tool — a pack may install more than one operation. */
 export function toolKey(tool: ImgUtilTool): string {

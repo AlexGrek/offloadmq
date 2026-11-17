@@ -173,7 +173,7 @@ pub fn definitions() -> Vec<Value> {
                 "face_image_id": { "type": ["string", "integer"], "description": "Which of the persona's faces to swap in (default: the primary)" },
                 "face_swap": { "type": "boolean", "description": "Default true when the persona has faces" },
                 "upscale": { "type": "boolean", "description": "Default true" },
-                "scale": { "type": "number", "minimum": 1, "maximum": 8, "description": "Upscale factor (default 2)" },
+                "scale": { "type": "number", "minimum": 1, "maximum": 3, "description": "Upscale factor (default 2)" },
                 "image_model": { "type": "string", "description": "Override the persona's image model" },
                 "wait_seconds": wait_schema(DEFAULT_WAIT_SECS),
             }, "required": ["persona"] }),

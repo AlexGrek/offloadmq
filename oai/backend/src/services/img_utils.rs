@@ -434,6 +434,20 @@ pub async fn start_job_with_id(
         )));
     }
 
+    if !resize && workflow.starts_with("upscale") {
+        if let Some(v) = params.options.as_ref().and_then(|o| o.get("scale_multiplier")) {
+            use crate::services::image_pipeline_params::{MAX_UPSCALE_SCALE, MIN_UPSCALE_SCALE};
+            let ok = v
+                .as_f64()
+                .is_some_and(|s| s.is_finite() && (MIN_UPSCALE_SCALE..=MAX_UPSCALE_SCALE).contains(&s));
+            if !ok {
+                return Err(AppError::BadRequest(format!(
+                    "scale_multiplier must be a number between {MIN_UPSCALE_SCALE} and {MAX_UPSCALE_SCALE}"
+                )));
+            }
+        }
+    }
+
     // Validate up front: a typo should be a 400 on submit, not a job that queues
     // for minutes and then fails on the agent.
     let resize_options = if resize {
