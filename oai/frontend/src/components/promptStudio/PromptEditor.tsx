@@ -369,7 +369,6 @@ export function PromptEditor({
             >
               {rawMode ? (
                 <textarea
-                  autoFocus
                   value={text}
                   onChange={e => setText(e.target.value)}
                   className="mx-auto block min-h-[50dvh] w-full max-w-3xl resize-none rounded-xl border border-input bg-background/60 p-4 font-display text-lg leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 sm:text-xl"
@@ -614,13 +613,6 @@ function SegmentEditor({
   placeholder?: string
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.focus()
-    el.setSelectionRange(el.value.length, el.value.length)
-  }, [])
 
   useEffect(() => {
     const el = ref.current

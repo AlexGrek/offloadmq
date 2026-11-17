@@ -62,6 +62,8 @@ function DialogContent({
           'sm:w-full',
           className,
         )}
+        // Never auto-focus the first field on open; callers can still override.
+        onOpenAutoFocus={event => event.preventDefault()}
         {...props}
       >
         {children}

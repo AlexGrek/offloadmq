@@ -11,7 +11,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
-import { useIsMobile } from '@/hooks/useIsMobile'
 import { usePromptLibrary } from '@/hooks/usePromptLibrary'
 import { deletePrompt, starPrompt, updatePrompt, type PromptEntry, type PromptKind } from '@/api/prompts'
 import { PromptEntryCard, type PromptViewMode } from './PromptEntryCard'
@@ -63,7 +62,6 @@ export function SavedPromptsDrawer({
   previews = false,
   initialKind,
 }: SavedPromptsDrawerProps) {
-  const isMobile = useIsMobile()
   const [kind, setKind] = useState<PromptKind>(initialKind ?? 'recent')
   // Jump to `initialKind` on every open (state adjusted during render, not in an effect).
   const [wasOpen, setWasOpen] = useState(open)
@@ -169,11 +167,6 @@ export function SavedPromptsDrawer({
         side="right"
         className="max-w-full sm:max-w-xl lg:max-w-2xl"
         data-testid="prompt-library-drawer"
-        onOpenAutoFocus={e => {
-          // Desktop: jump straight into search. Mobile: don't pop the keyboard.
-          e.preventDefault()
-          if (!isMobile) searchRef.current?.focus()
-        }}
       >
         <SheetHeader className="gap-3">
           <SheetTitle>Saved prompts</SheetTitle>

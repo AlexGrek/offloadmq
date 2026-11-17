@@ -64,7 +64,6 @@ export function PromptEntryCard({
           value={editValue}
           onChange={e => setEditValue(e.target.value)}
           rows={6}
-          autoFocus
           className="w-full resize-y rounded-md border border-input bg-background px-2.5 py-2 text-sm leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
           data-testid={`prompt-edit-input-${entry.id}`}
         />

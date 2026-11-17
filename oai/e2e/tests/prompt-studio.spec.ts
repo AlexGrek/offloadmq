@@ -318,7 +318,7 @@ test('prompt editor: highlight, delete and edit sentences, then generate at a pi
   await page.getByTestId('prompt-editor-segment-0').click()
   await page.getByTestId('prompt-editor-segment-edit').click()
   const input = page.getByTestId('prompt-editor-segment-input')
-  await expect(input).toBeFocused()
+  await expect(input).toBeVisible()
   await input.fill('A lone lighthouse on a basalt cliff at dusk.')
   await input.press('Enter')
   await expect(page.getByTestId('prompt-editor-segment-0')).toHaveText('A lone lighthouse on a basalt cliff at dusk.')

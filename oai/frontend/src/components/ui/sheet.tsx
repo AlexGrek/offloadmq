@@ -61,6 +61,8 @@ function SheetContent({
             : 'left-0 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left',
           className,
         )}
+        // Never auto-focus the first field on open; callers can still override.
+        onOpenAutoFocus={event => event.preventDefault()}
         {...props}
       >
         {children}

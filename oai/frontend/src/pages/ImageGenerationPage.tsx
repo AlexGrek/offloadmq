@@ -342,7 +342,6 @@ export default function ImageGenerationPage() {
   const [generateMultipleCountInput, setGenerateMultipleCountInput] = useState(
     String(DEFAULT_GENERATE_MULTIPLE),
   )
-  const generateMultipleCountRef = useRef<HTMLInputElement>(null)
   const imageStash = useImageStash(token)
   const [stashOpen, setStashOpen] = useState(false)
   const [stashing, setStashing] = useState(false)
@@ -1553,15 +1552,6 @@ export default function ImageGenerationPage() {
     setCompareMode(false)
   })
 
-  useEffect(() => {
-    if (!generateMultipleOpen) return
-    const id = window.requestAnimationFrame(() => {
-      generateMultipleCountRef.current?.focus()
-      generateMultipleCountRef.current?.select()
-    })
-    return () => window.cancelAnimationFrame(id)
-  }, [generateMultipleOpen])
-
   return (
     <>
     <div
@@ -1639,7 +1629,6 @@ export default function ImageGenerationPage() {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="pl-8 h-8 text-sm"
-                autoFocus
               />
             </div>
           </div>
@@ -2895,7 +2884,6 @@ export default function ImageGenerationPage() {
           <div className="space-y-2">
             <Label htmlFor="imggen-generate-multiple-count">Number of images</Label>
             <Input
-              ref={generateMultipleCountRef}
               id="imggen-generate-multiple-count"
               type="number"
               inputMode="numeric"
