@@ -77,7 +77,7 @@ export function toolsFromCapabilities(caps: ImgUtilCapability[]): ImgUtilTool[] 
 }
 
 /** Default scale multiplier for upscale tools. */
-export const DEFAULT_SCALE_MULTIPLIER = 3
+export const DEFAULT_SCALE_MULTIPLIER = 2
 /** Bounds enforced by the scale control. */
 export const MIN_SCALE_MULTIPLIER = 1
 export const MAX_SCALE_MULTIPLIER = 3

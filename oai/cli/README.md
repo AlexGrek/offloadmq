@@ -193,7 +193,7 @@ Per-tool flags (a flag that doesn't apply to the chosen tool is an error):
 
 | Tool | Flags |
 |------|-------|
-| `upscale` | `-scale 1..3` — SeedVR2 multiplier (fractions like `1.5` allowed), default `2` (the web UI defaults to 3). Upscale outputs are not capped at 1920 px |
+| `upscale` | `-scale 1..3` — SeedVR2 multiplier (fractions like `1.5` allowed), default `2` (same as the web UI). Upscale outputs are not capped at 1920 px |
 | `face_swap` | `-source FACE_IMAGE` (required) — the face to put into each input |
 | `resize` | `-scale F` (max 4) or `-width` / `-height`; `-mode fit\|exact\|cover` (default `fit`; `exact` / `cover` need both sides), `-method` (a filter from `img-utils tools`), `-format png\|jpeg\|webp\|bmp\|tiff`, `-quality 1..100`, `-allow-upscale`. Validated by the server; dimensions cap at 1920 |
 | ComfyUI tools | `-opt key=value` (repeatable) — extra workflow knobs, forwarded verbatim as `secondary_prompts`; numbers and `true` / `false` stay typed |

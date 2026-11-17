@@ -166,7 +166,7 @@ methods }`). `toolKey(tool)` = `${capability}::${workflow}` is the picker's sele
 Name-based flags mirror the backend, keyed on the operation:
 - `takesSourceImage(workflow)` = `/^face[_-]swap/` → second upload slot.
 - `takesScaleMultiplier(workflow)` = `/^upscale/` → scale-multiplier control (presets 1.5/2/3 +
-  numeric `MIN..MAX_SCALE_MULTIPLIER` 1–3, default `DEFAULT_SCALE_MULTIPLIER` = 3; the backend
+  numeric `MIN..MAX_SCALE_MULTIPLIER` 1–3, default `DEFAULT_SCALE_MULTIPLIER` = 2 (the default is 2 everywhere); the backend
   enforces the same 1–3 via `MAX_UPSCALE_SCALE` in `image_pipeline_params.rs`); submit sends
   `options: { scale_multiplier }`.
 - `prettyLabel(slug)` renders the operation label (`RESIZE_WORKFLOW` `basic_resize` → "Basic resize").

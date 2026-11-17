@@ -129,7 +129,7 @@
   "66:57": {
     "inputs": {
       "resize_type": "scale by multiplier",
-      "resize_type.multiplier": 4,
+      "resize_type.multiplier": 2,
       "scale_method": "lanczos",
       "input": [
         "66:50",

@@ -27,7 +27,7 @@ const (
 	// resizeWorkflow is the synthetic operation the backend reports for resize.
 	resizeWorkflow = "basic_resize"
 	// Upscale scale_multiplier bounds, as in imgUtils.ts. The default is 2 here (and in the
-	// MCP tools), deliberately lower than the web UI's 3.
+	// MCP tools), the same as the web UI's.
 	defaultScaleMultiplier = 2
 	minScaleMultiplier     = 1
 	maxScaleMultiplier     = 3

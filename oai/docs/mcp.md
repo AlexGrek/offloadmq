@@ -50,7 +50,7 @@ and URL `…/mcp`. CORS on `/mcp` and the OAuth endpoints allows any origin.
 | `retry_image_job` | `oai image retry` | New job with identical settings, waits like generate |
 | `delete_image_jobs` | `oai image delete` | Also deletes the stored images |
 | `list_image_tools` | `oai img-utils tools` | Online Image Tools (upscale, depth, face_swap, resize) and the options each takes |
-| `upscale_image` | `oai upscale` | `image_id`/`image_ids` (≤10, one job each), `scale` 1–3 (**default 2**; the web UI page defaults to 3), `capability`, `wait_seconds` |
+| `upscale_image` | `oai upscale` | `image_id`/`image_ids` (≤10, one job each), `scale` 1–3 (**default 2**, same as the web UI), `capability`, `wait_seconds` |
 | `run_image_tool` | `oai img-utils run` | `tool` (upscale\|depth\|face_swap\|resize), `image_id`/`image_ids`, `source_image_id` (face_swap), `scale`, resize `width`/`height`/`mode`/`method`/`format`/`quality`/`allow_upscale`, `options` (ComfyUI, as-is) |
 | `get_image_tool_job` | `oai img-utils job` / `poll` / `download` | Forces a reconcile; optional `wait_seconds`; returns a preview and link of the result |
 | `list_image_tool_jobs` | `oai img-utils jobs` | `status` (comma list), `active_only`, `limit` ≤50 |

@@ -24,8 +24,8 @@ use super::{
     parse_args, require_ids, tool,
 };
 
-/// Upscale `scale_multiplier` bounds. The default is 2 (the web UI's page defaults to 3),
-/// matching `defaultScaleMultiplier` in the CLI.
+/// Upscale `scale_multiplier` bounds. The default is 2 everywhere (web UI, CLI, MCP,
+/// workflow template), matching `defaultScaleMultiplier` in the CLI.
 pub const DEFAULT_SCALE_MULTIPLIER: f64 = 2.0;
 const MIN_SCALE_MULTIPLIER: f64 = 1.0;
 const MAX_SCALE_MULTIPLIER: f64 = 3.0;
