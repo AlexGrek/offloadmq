@@ -82,6 +82,7 @@ Usage:
   oai persona photo-job|photo-poll <job-id> [-json]
   oai persona photo-cancel|photo-delete <job-id> [job-id ...]
   oai persona photo-retry <job-id> [-o out.jpg] [--no-wait]
+  oai persona photo-reface <job-id> <face-image-id> [-o out.jpg] [--no-wait]
   oai persona photo-download <job-id> [-o out.jpg]
   oai persona chat <persona> "message" [-chat ID | -new] [-model llm.X] [-t|-timeout 5m]
   oai persona chats <persona> [-json]  |  history <chat-id> [-limit N] [-json]

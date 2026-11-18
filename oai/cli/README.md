@@ -234,6 +234,7 @@ oai persona photo Mira -from beach.jpg -o mira-beach.jpg                    # fa
 id=$(oai persona photo Mira "quick" -no-faceswap --no-wait)                # bare id on stdout
 oai persona photo-poll "$id"; oai persona photo-download "$id" -o q.jpg
 oai persona photos Mira; oai persona photo-retry|photo-cancel|photo-delete <id>
+oai persona photo-reface <id> <face-image-id>   # same photo, another face (no regeneration)
 
 oai persona chat Mira "hi!"                 # reply on stdout; reuses the latest chat
 oai persona chat Mira "start over" -new     # or -chat <id>, -model llm.X

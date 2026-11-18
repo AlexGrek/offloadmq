@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { cancelDescribeJob, pollDescribeJob } from '../../api/describe'
 import { describePersonaLook, type EffectiveChoice, type ModelOption } from '../../api/personas'
+import { PersonaModelPicker } from './PersonaModelPicker'
 
 const POLL_MS = 2000
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
@@ -35,7 +36,9 @@ type Props = {
   /** null = the default prompt. */
   prompt: string | null
   onPrompt: (prompt: string | null) => void
-  models: ModelOption[]
+  /** `null` while the model options are loading. */
+  models: ModelOption[] | null
+  onRefreshModels?: () => void
   defaultPrompt: string
   effective?: EffectiveChoice | null
 }
@@ -56,6 +59,7 @@ export function DescribeLookPanel({
   prompt,
   onPrompt,
   models,
+  onRefreshModels,
   defaultPrompt,
   effective,
 }: Props) {
@@ -143,26 +147,17 @@ export function DescribeLookPanel({
 
   return (
     <div className="flex flex-col gap-3 rounded-lg bg-muted/40 p-3" data-testid="persona-describe-look">
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         Vision model
-        <select
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
-          value={capability ?? ''}
-          onChange={e => onCapability(e.target.value || null)}
-          data-testid="persona-describe-model"
-        >
-          <option value="">{autoLabel}</option>
-          {capability && !models.some(o => o.capability === capability) && (
-            <option value={capability}>{capability} (offline)</option>
-          )}
-          {models.map(o => (
-            <option key={o.capability} value={o.capability}>
-              {o.capability}
-              {o.online ? '' : ' (offline)'}
-            </option>
-          ))}
-        </select>
-      </label>
+        <PersonaModelPicker
+          options={models}
+          value={capability}
+          onChange={onCapability}
+          autoLabel={autoLabel}
+          onRefresh={onRefreshModels}
+          testIdPrefix="persona-describe-model"
+        />
+      </div>
 
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
         <span className="flex items-center justify-between gap-2">

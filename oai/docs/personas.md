@@ -91,6 +91,8 @@ The default is all three steps with ×2 upscaling:
 
 **From an existing photo (`workflow: "existing"`).** No generation: the chain is
 `face_swap → upscale?`, starting from `input_image_id` (any of the user's library images).
+In the UI the photo is either **uploaded** from disk (`POST /api/images/upload`, straight into
+the library) or picked **from the library**; the same two choices apply to img2img inputs.
 Face swap is mandatory (persona must have faces; `face_swap: false` is a 400), `upscale` stays
 optional, `count` must be 1 (the swap is deterministic). `prompt`, `negative_prompt`, size,
 seed and `image_model` are ignored; the run stores an empty prompt and records nothing in the
@@ -118,6 +120,17 @@ Image Tools history, My Files, the Gallery and the Progress drawer.
   persisted rows.
 - A foreground `POST …/poll` also polls the active child upstream, so a watched photo
   finishes promptly.
+
+**Re-generate with another face (`reface`).** `POST /api/persona-photos/{id}/reface`
+`{face_image_id}` → 201 `{job_id}`. It reuses the photo's base image (the image that went
+*into* the face swap, or the generated image when the run had no swap) and runs
+`face_swap → upscale?` with the chosen face — nothing is regenerated. Upscale and scale follow
+the source run; models are re-resolved from the persona's preferences. The new run is an
+`existing`-workflow run that keeps the source prompt for its caption. `face_image_id` must be
+one of the persona's faces (400 otherwise); a run with no base image is a 400. The new run
+points at the source run's intermediate image, so deleting the source run while it is in
+flight fails it. UI: the face icon on a finished photo card; CLI `oai persona photo-reface`;
+MCP `reface_persona_photo`.
 
 **Retry and delete.** `retry` starts a new run with the same resolved prompt and models.
 `delete` removes the run and its child jobs, including their images. The stale-job reaper
@@ -159,6 +172,7 @@ POST   /api/personas/{id}/photos         StartPhotoRequest → 201 {job_ids}
 GET    /api/persona-photos/{id}
 DELETE /api/persona-photos/{id}
 POST   /api/persona-photos/{id}/poll | /cancel | /retry
+POST   /api/persona-photos/{id}/reface   {face_image_id} → 201 {job_id}
 GET    /api/chats?kind=persona&persona_id=…
 POST   /api/chats {kind:"persona", persona_id}
 ```

@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
-import { Ban, Camera, Library, Loader2, RotateCcw, Trash2, X } from 'lucide-react'
+import { Ban, Camera, ImagePlus, Library, Loader2, RotateCcw, Trash2, UserRound, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { imageFileUrl, imageThumbnailUrl, type UploadedImage } from '../../api/images'
+import { imageFileUrl, imageThumbnailUrl, uploadImage, type UploadedImage } from '../../api/images'
 import {
   PHOTO_TERMINAL,
   cancelPersonaPhoto,
   deletePersonaPhoto,
   listPersonaPhotos,
   pollPersonaPhoto,
+  refacePersonaPhoto,
   retryPersonaPhoto,
   startPersonaPhotos,
   type Persona,
@@ -60,6 +61,8 @@ export function PersonaPhotos({ token, persona }: Props) {
   const existing = workflow === 'existing'
   const [input, setInput] = useState<UploadedImage | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
   const [faceId, setFaceId] = useState<string>('')
   const hasFaces = persona.faces.length > 0
   const [faceSwap, setFaceSwap] = useState(true)
@@ -173,6 +176,21 @@ export function PersonaPhotos({ token, persona }: Props) {
     }
   }
 
+  /** Uploads straight into the library and uses it as the input photo. */
+  async function onUpload(file: File | undefined) {
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    try {
+      setInput(await uploadImage(token, file))
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
   async function act(fn: () => Promise<unknown>) {
     setError(null)
     try {
@@ -223,7 +241,7 @@ export function PersonaPhotos({ token, persona }: Props) {
 
         {existing && (
           <p className="text-xs text-muted-foreground" data-testid="persona-photo-existing-hint">
-            No generation: the persona's face is swapped into a photo from your library{hasFaces ? '' : ' — add a face first'}.
+            No generation: the persona's face is swapped into a photo you upload or pick from your library{hasFaces ? '' : ' — add a face first'}.
           </p>
         )}
 
@@ -237,9 +255,20 @@ export function PersonaPhotos({ token, persona }: Props) {
                 </button>
               </div>
             ) : null}
-            <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} data-testid="persona-photo-input">
-              <Library /> {input ? 'Change image' : existing ? 'Pick photo' : 'Pick input image'}
+            <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading} data-testid="persona-photo-upload">
+              {uploading ? <Loader2 className="animate-spin" /> : <ImagePlus />} Upload
             </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} data-testid="persona-photo-input">
+              <Library /> {input ? 'Pick another' : 'From library'}
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={e => void onUpload(e.target.files?.[0])}
+              data-testid="persona-photo-upload-input"
+            />
           </div>
         )}
 
@@ -310,9 +339,11 @@ export function PersonaPhotos({ token, persona }: Props) {
                 key={p.job_id}
                 token={token}
                 photo={p}
+                faces={persona.faces}
                 onOpen={() => setViewerId(p.final_image_id)}
                 onCancel={() => void act(() => cancelPersonaPhoto(token, p.job_id))}
                 onRetry={() => void act(() => retryPersonaPhoto(token, p.job_id))}
+                onReface={faceId => void act(() => refacePersonaPhoto(token, p.job_id, faceId))}
                 onDelete={() => {
                   if (window.confirm('Delete this photo and its intermediate images?')) void act(() => deletePersonaPhoto(token, p.job_id))
                 }}
@@ -383,20 +414,30 @@ function PhotoPromptSheet({ prompt }: { prompt: string }) {
 function PhotoCard({
   token,
   photo,
+  faces,
   onOpen,
   onCancel,
   onRetry,
+  onReface,
   onDelete,
 }: {
   token: string
   photo: PersonaPhoto
+  faces: Persona['faces']
   onOpen: () => void
   onCancel: () => void
   onRetry: () => void
+  onReface: (faceImageId: string) => void
   onDelete: () => void
 }) {
   const done = PHOTO_TERMINAL.has(photo.status)
   const caption = photoCaption(photo)
+  const [facesOpen, setFacesOpen] = useState(false)
+  // Needs a base image: a generated one, or the photo the face swap started from.
+  const canReface =
+    done &&
+    faces.length > 0 &&
+    photo.steps.some(s => (s.kind !== 'upscale' && !!s.output_image_id) || (s.kind === 'face_swap' && !!s.input_image_id))
   return (
     <li className="flex flex-col gap-2" data-testid={`persona-photo-${photo.job_id}`}>
       <div className="relative aspect-square overflow-hidden rounded-lg bg-muted">
@@ -434,12 +475,45 @@ function PhotoCard({
             <Button variant="ghost" size="icon-sm" title="Run again" aria-label="Run again" onClick={onRetry} data-testid={`persona-photo-retry-${photo.job_id}`}>
               <RotateCcw />
             </Button>
+            {canReface && (
+              <Button
+                variant={facesOpen ? 'secondary' : 'ghost'}
+                size="icon-sm"
+                title="Re-generate with another face"
+                aria-label="Re-generate with another face"
+                aria-expanded={facesOpen}
+                onClick={() => setFacesOpen(o => !o)}
+                data-testid={`persona-photo-reface-${photo.job_id}`}
+              >
+                <UserRound />
+              </Button>
+            )}
             <Button variant="ghost" size="icon-sm" title="Delete" aria-label="Delete" onClick={onDelete} data-testid={`persona-photo-delete-${photo.job_id}`}>
               <Trash2 />
             </Button>
           </>
         )}
       </div>
+      {canReface && facesOpen && (
+        <div className="flex flex-wrap items-center gap-1.5" data-testid={`persona-photo-reface-faces-${photo.job_id}`}>
+          {faces.map((f, i) => (
+            <button
+              key={f.image_id}
+              type="button"
+              title={i === 0 ? 'Primary face — use this face' : 'Use this face'}
+              aria-label={i === 0 ? 'Use primary face' : `Use face ${i + 1}`}
+              onClick={() => {
+                setFacesOpen(false)
+                onReface(f.image_id)
+              }}
+              className="size-9 overflow-hidden rounded-md ring-2 ring-transparent hover:ring-primary focus-visible:ring-primary"
+              data-testid={`persona-photo-reface-face-${f.image_id}`}
+            >
+              <img src={imageThumbnailUrl(f.image_id, token)} alt="" className="size-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
     </li>
   )
 }

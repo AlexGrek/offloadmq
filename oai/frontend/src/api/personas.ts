@@ -260,6 +260,14 @@ export function retryPersonaPhoto(token: string, jobId: string): Promise<{ job_i
   return request(`/api/persona-photos/${encodeURIComponent(jobId)}/retry`, token, { method: 'POST' })
 }
 
+/** Re-run a photo with another persona face; the generated base image is reused. */
+export function refacePersonaPhoto(token: string, jobId: string, faceImageId: string): Promise<{ job_id: string }> {
+  return request(`/api/persona-photos/${encodeURIComponent(jobId)}/reface`, token, {
+    method: 'POST',
+    body: JSON.stringify({ face_image_id: faceImageId }),
+  })
+}
+
 export function deletePersonaPhoto(token: string, jobId: string): Promise<void> {
   return request(`/api/persona-photos/${encodeURIComponent(jobId)}`, token, { method: 'DELETE' })
 }

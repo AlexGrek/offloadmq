@@ -40,6 +40,7 @@ pub fn photos_router() -> Router<Arc<AppState>> {
         .route("/{id}/poll", post(poll_photo))
         .route("/{id}/cancel", post(cancel_photo))
         .route("/{id}/retry", post(retry_photo))
+        .route("/{id}/reface", post(reface_photo))
 }
 
 async fn list(
@@ -202,6 +203,28 @@ async fn retry_photo(
     Path(id): Path<String>,
 ) -> Result<(StatusCode, Json<RetryResponse>), AppError> {
     let new_id = persona_photos::retry(&state, user, parse_id(&id, "job_id")?).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(RetryResponse {
+            job_id: new_id.to_string(),
+        }),
+    ))
+}
+
+#[derive(Deserialize)]
+struct RefaceRequest {
+    face_image_id: String,
+}
+
+async fn reface_photo(
+    State(state): State<Arc<AppState>>,
+    AuthenticatedUser(user): AuthenticatedUser,
+    Path(id): Path<String>,
+    Json(req): Json<RefaceRequest>,
+) -> Result<(StatusCode, Json<RetryResponse>), AppError> {
+    let new_id =
+        persona_photos::reface(&state, user, parse_id(&id, "job_id")?, req.face_image_id.trim())
+            .await?;
     Ok((
         StatusCode::CREATED,
         Json(RetryResponse {

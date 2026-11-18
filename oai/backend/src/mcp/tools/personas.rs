@@ -39,6 +39,7 @@ const TOOLS: &[&str] = &[
     "list_persona_photos",
     "cancel_persona_photos",
     "retry_persona_photo",
+    "reface_persona_photo",
     "delete_persona_photos",
     "persona_chat",
     "list_persona_chats",
@@ -221,6 +222,20 @@ pub fn definitions() -> Vec<Value> {
             WRITE,
         ),
         tool(
+            "reface_persona_photo",
+            "Re-generate a persona photo with another face",
+            "Runs a photo again with a different one of the persona's faces \
+             (`oai persona photo-reface`). The generated base image is reused — nothing is \
+             regenerated; only face swap (and upscale, if the original had it) run again. \
+             face_image_id is one of the persona's face image ids (see get_persona).",
+            json!({ "type": "object", "properties": {
+                "job_id": { "type": ["string", "integer"] },
+                "face_image_id": { "type": ["string", "integer"], "description": "The persona face to use" },
+                "wait_seconds": wait_schema(DEFAULT_WAIT_SECS),
+            }, "required": ["job_id", "face_image_id"] }),
+            WRITE,
+        ),
+        tool(
             "delete_persona_photos",
             "Delete persona photos",
             "Deletes finished photo runs and their images, intermediates included \
@@ -281,6 +296,7 @@ pub async fn call(ctx: &ToolContext, name: &str, args: Value) -> Result<ToolOutp
         "list_persona_photos" => list_photos(ctx, parse_args(args)?).await,
         "cancel_persona_photos" => cancel_photos(ctx, parse_args(args)?).await,
         "retry_persona_photo" => retry_photo(ctx, parse_args(args)?).await,
+        "reface_persona_photo" => reface_photo(ctx, parse_args(args)?).await,
         "delete_persona_photos" => delete_photos(ctx, parse_args(args)?).await,
         "persona_chat" => send_chat(ctx, parse_args(args)?).await,
         "list_persona_chats" => list_chats(ctx, parse_args(args)?).await,
@@ -812,6 +828,27 @@ async fn retry_photo(ctx: &ToolContext, a: PhotoArgs) -> Result<ToolOutput, AppE
         ctx,
         &[new_id],
         vec![format!("Retry of {} → {new_id}", a.job_id.0)],
+    )
+    .await
+}
+
+#[derive(Deserialize)]
+struct RefaceArgs {
+    job_id: Id,
+    face_image_id: Id,
+    #[serde(default)]
+    wait_seconds: Option<u64>,
+}
+
+async fn reface_photo(ctx: &ToolContext, a: RefaceArgs) -> Result<ToolOutput, AppError> {
+    let wait = wait_duration(a.wait_seconds, DEFAULT_WAIT_SECS)?;
+    let face = a.face_image_id.0.to_string();
+    let new_id = persona_photos::reface(&ctx.state, ctx.user_id, a.job_id.0, &face).await?;
+    wait_for_photos(ctx, &[new_id], wait).await;
+    render_photos(
+        ctx,
+        &[new_id],
+        vec![format!("Face {face} on photo {} → {new_id}", a.job_id.0)],
     )
     .await
 }

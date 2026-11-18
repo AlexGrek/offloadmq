@@ -905,6 +905,61 @@ pub async fn retry(state: &AppState, user: i64, id: i64) -> Result<i64, AppError
     .await
 }
 
+/// The image a run had *before* its face swap — the generated photo (or the
+/// original library photo). `None` when no step produced/consumed one.
+fn pre_swap_image(steps: &[Step], p: &Params) -> Option<String> {
+    if let Some(id) = steps
+        .iter()
+        .find(|s| s.kind == Kind::FaceSwap)
+        .and_then(|s| s.input_image_id.clone())
+    {
+        return Some(id);
+    }
+    steps
+        .iter()
+        .filter(|s| s.kind != Kind::Upscale)
+        .rev()
+        .find_map(|s| s.output_image_id.clone())
+        .or_else(|| p.input_image_id.clone())
+}
+
+/// Re-runs a photo with another of the persona's faces. The base image (before the
+/// original face swap) is reused, so nothing is regenerated: the chain is just
+/// `face_swap → upscale?` like workflow `existing`, with the original prompt kept
+/// for the caption. Upscale/scale follow the source run.
+pub async fn reface(
+    state: &AppState,
+    user: i64,
+    id: i64,
+    face_image_id: &str,
+) -> Result<i64, AppError> {
+    let job = db::get(&state.db, id, user).await?;
+    let persona = personas::get(state, user, job.persona_id).await?;
+    let params: Params = decode(&job.params_json)?;
+    let steps: Vec<Step> = decode(&job.steps_json)?;
+    let base = pre_swap_image(&steps, &params).ok_or_else(|| {
+        AppError::BadRequest("this photo has no base image to put another face on".into())
+    })?;
+    let req = StartPhotoRequest {
+        workflow: Some(EXISTING_WORKFLOW.into()),
+        input_image_id: Some(base),
+        face_image_id: Some(face_image_id.to_string()),
+        upscale: Some(params.upscale.is_some()),
+        scale: Some(params.scale),
+        ..Default::default()
+    };
+    let new_params = resolve_params(state, &persona, &req).await?;
+    create_and_kick(
+        state,
+        user,
+        persona.id,
+        &job.prompt_template,
+        job.prompt,
+        new_params,
+    )
+    .await
+}
+
 /// Deletes the photo run and its child jobs (and with them their images).
 pub async fn delete(state: &AppState, user: i64, id: i64) -> Result<(), AppError> {
     db::get(&state.db, id, user).await?;
@@ -1006,6 +1061,28 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].kind, Kind::FaceSwap);
         assert_eq!(steps[0].capability, "img-utils.reactor");
+    }
+
+    #[test]
+    fn reface_base_is_the_image_before_the_swap() {
+        let mut steps = plan_steps(&params());
+        steps[0].output_image_id = Some("10".into());
+        steps[1].input_image_id = Some("10".into());
+        steps[1].output_image_id = Some("11".into());
+        steps[2].input_image_id = Some("11".into());
+        steps[2].output_image_id = Some("12".into());
+        assert_eq!(pre_swap_image(&steps, &params()).as_deref(), Some("10"));
+
+        // No swap in the run: the generated image itself (not the upscale).
+        let mut p = params();
+        p.face_image_id = None;
+        let mut steps = plan_steps(&p);
+        steps[0].output_image_id = Some("20".into());
+        steps[1].output_image_id = Some("21".into());
+        assert_eq!(pre_swap_image(&steps, &p).as_deref(), Some("20"));
+
+        // Nothing produced yet and no input: no base.
+        assert_eq!(pre_swap_image(&plan_steps(&p), &p), None);
     }
 
     #[test]

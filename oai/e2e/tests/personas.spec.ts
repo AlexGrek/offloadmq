@@ -35,6 +35,7 @@ async function mockApi(page: Page) {
     chatCreates: [] as unknown[],
     describeStarts: [] as unknown[],
     describePolls: 0,
+    uploads: 0,
     updates: [] as Record<string, unknown>[],
   }
   await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
@@ -130,6 +131,10 @@ async function mockApi(page: Page) {
       state.chatCreates.push(route.request().postDataJSON())
       return json({ id: 'c1', title: '', system_prompt: 'You are Ada.', last_model: null, kind: 'persona', persona_id: 'p1', created_at: now, updated_at: now }, 201)
     }
+    if (pathname === '/api/images/upload' && method === 'POST') {
+      state.uploads += 1
+      return json({ image_id: 'up-1', filename: 'mine.png', content_type: 'image/png', width: 64, height: 64, size_bytes: 70, rescaled: false, reencoded: false }, 201)
+    }
     if (pathname.startsWith('/api/images/files/')) {
       return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') })
     }
@@ -161,7 +166,8 @@ test('opens the first persona, creates a new one', async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/personas\/new/)
   await page.getByTestId('persona-name').fill('Bea')
   await page.getByTestId('persona-look').fill('short black hair')
-  await page.getByTestId('persona-model-upscaler').selectOption('img-utils.seedvr2')
+  await page.getByTestId('persona-model-upscaler-trigger').click()
+  await page.getByTestId('persona-model-upscaler-option-img-utils.seedvr2').click()
   await page.getByTestId('persona-save').click()
   await expect(page).toHaveURL(/\/app\/personas\/p2\/profile/)
   expect(state.created[0]).toMatchObject({ name: 'Bea', look: 'short black hair', upscaler_capability: 'img-utils.seedvr2', llm_capability: null })
@@ -201,6 +207,25 @@ test('existing photo: face swap + upscale, no prompt or generation', async ({ pa
   expect(state.photoStarts[0]).toEqual({ workflow: 'existing', input_image_id: 'lib-1', upscale: false, scale: 2 })
   await expect(page.getByTestId('persona-photo-steps-j1')).not.toContainText('Generate')
   await expect(page.getByTestId('persona-photo-j1')).toContainText('From an existing photo')
+})
+
+test('existing photo can be uploaded instead of picked from the library', async ({ page }) => {
+  const state = await mockApi(page)
+  await page.goto('/app/personas/p1/photos')
+  await page.getByTestId('persona-photo-workflow-existing').click()
+  const submit = page.getByTestId('persona-photo-submit')
+  await expect(submit).toBeDisabled()
+
+  await page.getByTestId('persona-photo-upload-input').setInputFiles({
+    name: 'mine.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'),
+  })
+  await expect(submit).toBeEnabled()
+  expect(state.uploads).toBe(1)
+  await submit.click()
+  await expect(page.getByTestId('persona-photo-j1')).toBeVisible()
+  expect(state.photoStarts[0]).toMatchObject({ workflow: 'existing', input_image_id: 'up-1' })
 })
 
 test('chat tab lists only this persona’s chats and starts one on send', async ({ page }) => {
@@ -253,7 +278,8 @@ test('describe look fills the look from the primary face and saves model + promp
   await expect(page.getByTestId('persona-look')).toHaveValue('red hair')
   await page.getByTestId('persona-describe-toggle').click()
   await expect(page.getByTestId('persona-describe-prompt')).toHaveValue('Describe the face.')
-  await page.getByTestId('persona-describe-model').selectOption('llm.vis')
+  await page.getByTestId('persona-describe-model-trigger').click()
+  await page.getByTestId('persona-describe-model-option-llm.vis').click()
   await page.getByTestId('persona-describe-prompt').fill('Describe {p_name}.')
   await page.getByTestId('persona-describe-run').click()
 

@@ -154,5 +154,11 @@ def save_settings(cfg: Settings, path: Path = SETTINGS_FILE) -> None:
         except OSError as exc:
             logger.warning("Could not snapshot %s to .bak: %s", path, exc)
     tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(cfg.model_dump_json(indent=2))
+    # fsync before the rename: without it a crash/power loss can leave the
+    # renamed file as zero-filled blocks (NTFS/ext4 delayed allocation), which
+    # also gets copied into .bak on the next save.
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        fh.write(cfg.model_dump_json(indent=2))
+        fh.flush()
+        os.fsync(fh.fileno())
     os.replace(tmp_path, path)

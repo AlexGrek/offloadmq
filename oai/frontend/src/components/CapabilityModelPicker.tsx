@@ -26,6 +26,11 @@ export interface CapabilityModelPickerProps {
   testIdPrefix?: string
   /** When set, trigger stays disabled until WebSocket is connected (chat). */
   connectionLabel?: string | null
+  /**
+   * Adds an "automatic" entry on top of the list. Selecting it calls `onSelect('')`, and an
+   * empty `selected` shows this label (personas: "Auto — most used").
+   */
+  autoLabel?: string
 }
 
 export function CapabilityModelPicker({
@@ -41,6 +46,7 @@ export function CapabilityModelPicker({
   filterTags = tags => tags,
   testIdPrefix = 'capability-model-picker',
   connectionLabel = null,
+  autoLabel,
 }: CapabilityModelPickerProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -63,16 +69,18 @@ export function CapabilityModelPicker({
     offline ? connectionLabel :
     modelsLoading ? 'Loading models…' :
     modelsError ? (capabilitiesError ?? 'Failed to load models') :
+    autoLabel !== undefined && !selected ? autoLabel :
     sorted.length === 0 ? 'No models' :
     selectedCap ? formatLabel(selectedCap) :
     'Pick model'
 
-  const canOpen =
-    !offline && capabilitiesStatus === 'ready' && sorted.length > 0
+  // With an auto entry the list is never empty, so it can open even with no models.
+  const hasEntries = sorted.length > 0 || autoLabel !== undefined
+  const canOpen = !offline && capabilitiesStatus === 'ready' && hasEntries
   const triggerDisabled =
     offline ||
     modelsLoading ||
-    (capabilitiesStatus === 'ready' && sorted.length === 0)
+    (capabilitiesStatus === 'ready' && !hasEntries)
 
   const dropdownPosition =
     placement === 'above'
@@ -179,6 +187,19 @@ export function CapabilityModelPicker({
               className="max-h-[min(50vh,16rem)] overflow-y-auto overscroll-contain py-1"
               data-testid={`${testIdPrefix}-list`}
             >
+              {autoLabel !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => { onSelect(''); setOpen(false) }}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer',
+                    !selected && 'bg-muted font-medium',
+                  )}
+                  data-testid={`${testIdPrefix}-option-auto`}
+                >
+                  <span className="flex-1 truncate">{autoLabel}</span>
+                </button>
+              )}
               {sorted.map(cap => {
                 const tags = filterTags(cap.tags)
                 return (

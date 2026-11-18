@@ -16,6 +16,7 @@ import {
 } from '../../api/personas'
 import { ImagePickerModal } from '../imggen/ImagePickerModal'
 import { DescribeLookPanel } from './DescribeLookPanel'
+import { PersonaModelPicker } from './PersonaModelPicker'
 
 const textareaClass =
   'w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed ' +
@@ -38,6 +39,8 @@ type Props = {
   faceRefs: Record<string, PersonaImageRef>
   onFaceRefs: (refs: PersonaImageRef[]) => void
   options: ModelOptions | null
+  /** Re-fetch the model options (the picker's refresh button). */
+  onRefreshOptions?: () => void
   effective?: EffectiveModels
   saving: boolean
   dirty: boolean
@@ -55,6 +58,7 @@ export function PersonaProfile({
   faceRefs,
   onFaceRefs,
   options,
+  onRefreshOptions,
   effective,
   saving,
   dirty,
@@ -196,7 +200,8 @@ export function PersonaProfile({
             onCapability={v => set('vision_capability', v)}
             prompt={value.look_prompt}
             onPrompt={v => set('look_prompt', v)}
-            models={options?.vision ?? []}
+            models={options ? options.vision ?? [] : null}
+            onRefreshModels={onRefreshOptions}
             defaultPrompt={options?.default_look_prompt ?? ''}
             effective={effective?.vision}
           />
@@ -233,34 +238,22 @@ export function PersonaProfile({
         <Label>Preferred models</Label>
         <div className="grid gap-3 sm:grid-cols-2">
           {MODEL_SLOTS.map(({ slot, field, label }) => {
-            const current = (value[field] as string | null) ?? ''
-            const list = options?.[slot] ?? []
             const eff = effective?.[slot]
             const autoLabel = eff && !value[field]
               ? `Auto — ${eff.capability} (${SOURCE_LABEL[eff.source] ?? eff.source})`
               : 'Auto (most used, else first online)'
             return (
-              <label key={slot} className="flex flex-col gap-1 text-xs text-muted-foreground">
+              <div key={slot} className="flex flex-col gap-1 text-xs text-muted-foreground">
                 {label}
-                <select
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
-                  value={current}
-                  onChange={e => set(field, (e.target.value || null) as never)}
-                  data-testid={`persona-model-${slot}`}
-                >
-                  <option value="">{autoLabel}</option>
-                  {current && !list.some(o => o.capability === current) && (
-                    <option value={current}>{current} (offline)</option>
-                  )}
-                  {list.map(o => (
-                    <option key={`${o.capability}|${o.workflow ?? ''}`} value={o.capability}>
-                      {o.capability}
-                      {o.workflow ? ` [${o.workflow}]` : ''}
-                      {o.online ? '' : ' (offline)'}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <PersonaModelPicker
+                  options={options ? options[slot] : null}
+                  value={(value[field] as string | null) ?? null}
+                  onChange={v => set(field, v as never)}
+                  autoLabel={autoLabel}
+                  onRefresh={onRefreshOptions}
+                  testIdPrefix={`persona-model-${slot}`}
+                />
+              </div>
             )
           })}
         </div>

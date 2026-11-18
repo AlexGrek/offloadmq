@@ -193,7 +193,7 @@ type sendMessageResponse struct {
 	Capability         string `json:"capability"`
 }
 
-const personaUsage = "usage: oai persona <list|show|models|create|update|delete|face|photo|photos|photo-job|photo-poll|photo-cancel|photo-retry|photo-delete|photo-download|chat|chats|history> ..."
+const personaUsage = "usage: oai persona <list|show|models|create|update|delete|face|photo|photos|photo-job|photo-poll|photo-cancel|photo-retry|photo-reface|photo-delete|photo-download|chat|chats|history> ..."
 
 func cmdPersona(args []string) error {
 	if len(args) == 0 {
@@ -227,6 +227,8 @@ func cmdPersona(args []string) error {
 		return cmdPersonaPhotoCancel(rest)
 	case "photo-retry":
 		return cmdPersonaPhotoRetry(rest)
+	case "photo-reface":
+		return cmdPersonaPhotoReface(rest)
 	case "photo-delete":
 		return cmdPersonaPhotoDelete(rest)
 	case "photo-download":
@@ -1078,6 +1080,45 @@ func cmdPersonaPhotoRetry(args []string) error {
 	}
 	fmt.Fprintf(os.Stderr, "Photo job: %s\n", resp.JobID)
 	photo, err := waitForPersonaPhoto(cfg, resp.JobID, "retry", *timeout, *progress)
+	if err != nil {
+		return err
+	}
+	return savePersonaPhoto(cfg, photo, *out)
+}
+
+// cmdPersonaPhotoReface re-runs a photo with another of the persona's faces; the
+// generated base image is reused (face swap → upscale, no regeneration).
+func cmdPersonaPhotoReface(args []string) error {
+	fs := flag.NewFlagSet("persona photo-reface", flag.ContinueOnError)
+	out := fs.String("o", "persona.jpg", "output file")
+	noWait := fs.Bool("no-wait", false, "print the new job id and exit")
+	progress := progressFlag(fs)
+	timeout := timeoutFlag(fs)
+	pos, err := parseInterleaved(fs, args)
+	if err != nil {
+		return err
+	}
+	usage := errors.New("usage: oai persona photo-reface <job-id> <face-image-id> [-o out.jpg] [--no-wait]")
+	if len(pos) != 2 || requireIDs(pos[:1]) != nil || strings.TrimSpace(pos[1]) == "" {
+		return usage
+	}
+	cfg, err := requireLogin()
+	if err != nil {
+		return err
+	}
+	var resp struct {
+		JobID string `json:"job_id"`
+	}
+	body := map[string]string{"face_image_id": strings.TrimSpace(pos[1])}
+	if err := doJSON("POST", personaPhotoURL(cfg, pos[0], "reface"), cfg.Token, body, &resp); err != nil {
+		return err
+	}
+	if *noWait {
+		fmt.Println(resp.JobID)
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "Photo job: %s\n", resp.JobID)
+	photo, err := waitForPersonaPhoto(cfg, resp.JobID, "reface", *timeout, *progress)
 	if err != nil {
 		return err
 	}

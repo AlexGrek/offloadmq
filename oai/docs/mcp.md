@@ -74,6 +74,7 @@ and URL `…/mcp`. CORS on `/mcp` and the OAuth endpoints allows any origin.
 | `generate_persona_photos` | `oai persona photo` | txt2img → face swap → upscale ×2 by default; `face_swap`/`upscale` false skip a step; `workflow: "existing"` + `input_image_id` face-swaps a library photo (no generation, no prompt); `{p_name}`/`{p_look}`/`{p_system}` tokens; `count` ≤8; waits like `generate_images` |
 | `get_persona_photo` / `list_persona_photos` | `oai persona photo-job` / `photos` | Steps, final image, optional `wait_seconds` |
 | `cancel_persona_photos` / `retry_persona_photo` / `delete_persona_photos` | `oai persona photo-cancel` / `photo-retry` / `photo-delete` | Delete removes intermediates too |
+| `reface_persona_photo` | `oai persona photo-reface` | Same photo with another persona face; reuses the base image, no regeneration |
 | `persona_chat` | `oai persona chat` | Sends and waits for the reply; latest chat unless `chat_id` / `new_chat` |
 | `list_persona_chats` / `get_persona_chat` | `oai persona chats` / `history` | |
 | `expand_prompt` | `oai image placeholders expand` | Same expander as `generate_images`; resolves `{?}` (unless `resolve_names:false`); reports unknown tokens |

@@ -63,9 +63,10 @@ export default function PersonasPage() {
   }, [token])
 
   useEffect(reloadList, [reloadList])
-  useEffect(() => {
+  const reloadOptions = useCallback(() => {
     if (token) getPersonaModelOptions(token).then(setOptions).catch(console.error)
   }, [token])
+  useEffect(reloadOptions, [reloadOptions])
 
   // Open the first persona (or the new form) when none is selected.
   useEffect(() => {
@@ -273,6 +274,7 @@ export default function PersonasPage() {
                   faceRefs={allFaceRefs}
                   onFaceRefs={refs => setFaceRefs(prev => ({ ...prev, ...Object.fromEntries(refs.map(r => [r.image_id, r])) }))}
                   options={options}
+                  onRefreshOptions={reloadOptions}
                   effective={detail?.effective}
                   saving={saving}
                   dirty={dirty}
