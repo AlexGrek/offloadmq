@@ -215,6 +215,22 @@ pub async fn remove_user_image(
     Ok(())
 }
 
+/// Deletes any of the user's images (uploads included) — blobs, starred copy and row.
+/// Unlike `remove_user_image` there is no direction check: for owners cleaning up
+/// after themselves (e.g. a deleted persona's face images).
+pub async fn remove_user_image_any(
+    state: &AppState,
+    user_id: i64,
+    image_id: i64,
+) -> Result<(), AppError> {
+    let file = image_generation::get_image_file(&state.db, image_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    remove_user_file_record(state, user_id, &file).await?;
+    recalc_user_storage(state, user_id).await?;
+    Ok(())
+}
+
 /// Removes main image and thumbnail blobs from storage (call before deleting the DB row).
 pub async fn purge_stored_image(state: &AppState, file: &image_generation::ImageFile) -> Result<(), AppError> {
     let op = storage::operator(state)?;

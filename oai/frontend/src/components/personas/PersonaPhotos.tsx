@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
-import { Ban, Camera, ImagePlus, Library, Loader2, RotateCcw, Trash2, UserRound, X } from 'lucide-react'
+import { Ban, Camera, Check, Copy, ImagePlus, Library, Loader2, RotateCcw, Trash2, UserRound, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { ImageSizePicker } from '@/components/ImageSizePicker'
+import { rememberedImageSize, validImageSize } from '@/lib/imageSizes'
 import { cn } from '@/lib/utils'
 import { imageFileUrl, imageThumbnailUrl, uploadImage, type UploadedImage } from '../../api/images'
 import {
@@ -20,6 +23,7 @@ import {
   type PhotoStep,
   type PhotoWorkflow,
 } from '../../api/personas'
+import { ConfirmDeleteDialog } from './ConfirmDeleteDialog'
 import { PromptTextarea } from '../PromptTextarea'
 import { ImagePickerModal } from '../imggen/ImagePickerModal'
 import { ImageLightbox, type LightboxSlide } from '../ImageLightbox'
@@ -29,6 +33,50 @@ import type { ImggenRouteState } from '../../lib/imggen'
 /** Shared with Image Generation: prompts picked here come from (and go to) the txt2img pool. */
 const PROMPT_BUCKET = 'imggen-prompt'
 const POLL_MS = 3000
+const MAX_PHOTOS = 24
+const COUNT_PRESETS = [1, 2, 3, 4, 5, 8] as const
+const SCALES = [1.5, 2, 3] as const
+const PROMPT_TOKENS = ['{p_name}', '{p_look}', '{p_system}'] as const
+
+function clampCount(raw: string): number {
+  const n = parseInt(raw, 10)
+  return Number.isFinite(n) ? Math.min(MAX_PHOTOS, Math.max(1, n)) : 1
+}
+
+/** A `{p_*}` token: click inserts it into the prompt, the icon copies it. */
+function TokenChip({ token, onInsert }: { token: string; onInsert: (t: string) => void }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = window.setTimeout(() => setCopied(false), 1500)
+    return () => window.clearTimeout(t)
+  }, [copied])
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded-2xl bg-muted/60 py-0.5 pr-1 pl-2.5">
+      <button
+        type="button"
+        onClick={() => onInsert(token)}
+        className="rounded-sm font-mono text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        title={`Insert ${token}`}
+        data-testid={`persona-photo-token-${token}`}
+      >
+        {token}
+      </button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        title={copied ? 'Copied' : `Copy ${token}`}
+        aria-label={copied ? 'Copied' : `Copy ${token}`}
+        onClick={() => void navigator.clipboard.writeText(token).then(() => setCopied(true)).catch(() => undefined)}
+        className={cn('rounded-full text-muted-foreground', copied && 'text-emerald-600 dark:text-emerald-400')}
+        data-testid={`persona-photo-token-copy-${token}`}
+      >
+        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+      </Button>
+    </span>
+  )
+}
 
 const WORKFLOW_LABEL: Record<PhotoWorkflow, string> = {
   txt2img: 'From text',
@@ -68,6 +116,9 @@ export function PersonaPhotos({ token, persona }: Props) {
   const [faceSwap, setFaceSwap] = useState(true)
   const [upscale, setUpscale] = useState(true)
   const [count, setCount] = useState(1)
+  const [countInput, setCountInput] = useState('1')
+  const [scale, setScale] = useState<number>(2)
+  const [size, setSize] = useState<readonly [number, number]>(() => rememberedImageSize([1024, 1024]))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [photos, setPhotos] = useState<PersonaPhoto[]>([])
@@ -75,6 +126,7 @@ export function PersonaPhotos({ token, persona }: Props) {
   const navigate = useNavigate()
   // The open image, by id: polling replaces `photos` under an open viewer.
   const [viewerId, setViewerId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [nudeTarget, setNudeTarget] = useState<{ imageId: string; filename: string } | null>(null)
   const photosRef = useRef(photos)
   useEffect(() => {
@@ -145,7 +197,8 @@ export function PersonaPhotos({ token, persona }: Props) {
     [navigate],
   )
 
-  const canSubmit = !submitting && (existing ? hasFaces && !!input : !!prompt.trim() && (workflow === 'txt2img' || !!input))
+  const sizeOk = existing || validImageSize(size[0], size[1])
+  const canSubmit = !submitting && sizeOk && (existing ? hasFaces && !!input : !!prompt.trim() && (workflow === 'txt2img' || !!input))
 
   async function submit() {
     if (!canSubmit) return
@@ -156,15 +209,17 @@ export function PersonaPhotos({ token, persona }: Props) {
         token,
         persona.id,
         existing
-          ? { workflow, input_image_id: input?.image_id, face_image_id: faceId || undefined, upscale, scale: 2 }
+          ? { workflow, input_image_id: input?.image_id, face_image_id: faceId || undefined, upscale, scale }
           : {
               prompt: prompt.trim(),
               workflow,
               input_image_id: workflow === 'img2img' ? input?.image_id : undefined,
               face_swap: hasFaces ? faceSwap : false,
               face_image_id: hasFaces && faceSwap && faceId ? faceId : undefined,
+              width: size[0],
+              height: size[1],
               upscale,
-              scale: 2,
+              scale,
               count,
             },
       )
@@ -218,9 +273,13 @@ export function PersonaPhotos({ token, persona }: Props) {
             data-testid="persona-photo-prompt"
           />
           <p className="text-xs text-muted-foreground">
-            Pick from your saved txt2img prompts (list icon). <code className="rounded bg-muted px-1">{'{p_look}'}</code> and{' '}
-            <code className="rounded bg-muted px-1">{'{p_name}'}</code> are filled in from the persona.
+            Pick from your saved txt2img prompts (list icon). Persona tokens are filled in on submit.
           </p>
+          <div className="flex flex-wrap gap-1.5" data-testid="persona-photo-tokens">
+            {PROMPT_TOKENS.map(t => (
+              <TokenChip key={t} token={t} onInsert={tok => setPrompt(v => (v && !/\s$/.test(v) ? `${v} ${tok}` : `${v}${tok}`))} />
+            ))}
+          </div>
         </div>}
 
         <div className="flex flex-wrap gap-2" role="tablist">
@@ -272,6 +331,17 @@ export function PersonaPhotos({ token, persona }: Props) {
           </div>
         )}
 
+        {!existing && (
+          <ImageSizePicker
+            width={size[0]}
+            height={size[1]}
+            testIdPrefix="persona-photo"
+            onChange={setSize}
+            onWidthChange={v => setSize([Number(v) || 0, size[1]])}
+            onHeightChange={v => setSize([size[0], Number(v) || 0])}
+          />
+        )}
+
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3 text-sm">
           <label className="flex items-center gap-2">
             <input
@@ -303,20 +373,59 @@ export function PersonaPhotos({ token, persona }: Props) {
           )}
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={upscale} onChange={e => setUpscale(e.target.checked)} data-testid="persona-photo-upscale" />
-            Upscale ×2
+            Upscale
           </label>
-          {!existing && <label className="flex items-center gap-2">
-            Photos
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2"
-              value={count}
-              onChange={e => setCount(Number(e.target.value))}
-              data-testid="persona-photo-count"
-            >
-              {[1, 2, 3, 4, 6, 8].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>}
+          {upscale && (
+            <label className="flex items-center gap-2">
+              Scale
+              <select
+                className="h-8 rounded-md border border-input bg-background px-2"
+                value={scale}
+                onChange={e => setScale(Number(e.target.value))}
+                data-testid="persona-photo-scale"
+              >
+                {SCALES.map(n => <option key={n} value={n}>×{n}</option>)}
+              </select>
+            </label>
+          )}
         </div>
+
+        {!existing && (
+          <div className="space-y-2" data-testid="persona-photo-count-group">
+            <Label htmlFor="persona-photo-count">Number of photos</Label>
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Number of photos presets">
+              {COUNT_PRESETS.map(n => (
+                <Button
+                  key={n}
+                  type="button"
+                  variant={count === n ? 'default' : 'outline'}
+                  size="sm"
+                  aria-pressed={count === n}
+                  className="min-w-10 flex-1 font-mono tabular-nums"
+                  onClick={() => { setCount(n); setCountInput(String(n)) }}
+                  data-testid={`persona-photo-count-preset-${n}`}
+                >
+                  {n}
+                </Button>
+              ))}
+            </div>
+            <Input
+              id="persona-photo-count"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={MAX_PHOTOS}
+              value={countInput}
+              onChange={e => {
+                setCountInput(e.target.value)
+                if (e.target.value.trim() !== '') setCount(clampCount(e.target.value))
+              }}
+              onBlur={() => setCountInput(String(count))}
+              className="font-mono tabular-nums"
+              data-testid="persona-photo-count"
+            />
+          </div>
+        )}
 
         {error && <p className="text-sm text-destructive" data-testid="persona-photo-error">{error}</p>}
 
@@ -344,9 +453,7 @@ export function PersonaPhotos({ token, persona }: Props) {
                 onCancel={() => void act(() => cancelPersonaPhoto(token, p.job_id))}
                 onRetry={() => void act(() => retryPersonaPhoto(token, p.job_id))}
                 onReface={faceId => void act(() => refacePersonaPhoto(token, p.job_id, faceId))}
-                onDelete={() => {
-                  if (window.confirm('Delete this photo and its intermediate images?')) void act(() => deletePersonaPhoto(token, p.job_id))
-                }}
+                onDelete={() => setDeleteTarget(p.job_id)}
               />
             ))}
           </ul>
@@ -393,6 +500,19 @@ export function PersonaPhotos({ token, persona }: Props) {
           filename={nudeTarget.filename}
         />
       ) : null}
+
+      <ConfirmDeleteDialog
+        open={deleteTarget !== null}
+        title="Delete this photo?"
+        description="The photo and its intermediate images are permanently deleted."
+        testIdPrefix="persona-photo-delete"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          const id = deleteTarget
+          setDeleteTarget(null)
+          if (id) void act(() => deletePersonaPhoto(token, id))
+        }}
+      />
 
       <ImagePickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={img => { setInput(img); setPickerOpen(false) }} token={token} />
     </div>

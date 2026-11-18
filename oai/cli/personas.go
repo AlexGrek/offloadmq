@@ -763,7 +763,7 @@ func cmdPersonaFace(args []string) error {
 func cmdPersonaPhoto(args []string) error {
 	fs := flag.NewFlagSet("persona photo", flag.ContinueOnError)
 	out := fs.String("o", "persona.jpg", "output file (batches add _2, _3, …)")
-	count := fs.Int("n", 1, "number of photos (1-8)")
+	count := fs.Int("n", 1, "number of photos (1-24)")
 	input := fs.String("input", "", "img2img: source image file")
 	from := fs.String("from", "", "no generation: put the persona's face on this photo (file or library image id); prompt not needed")
 	face := fs.String("face", "", "face image id to swap in (default: the primary face)")

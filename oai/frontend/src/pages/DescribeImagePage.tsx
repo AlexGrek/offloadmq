@@ -70,7 +70,6 @@ import { ToolSidebar } from '../components/ToolSidebar'
 import RescaleControls from '../components/imggen/RescaleControls'
 import {
   appendInputs,
-  MAX_BATCH_INPUT_IMAGES,
   rescaleDataPrep,
   type RescaleState,
 } from '../lib/imggen'
@@ -311,12 +310,7 @@ export default function DescribeImagePage() {
   /** Uploads `files` one by one and appends them to the input set. */
   async function onUpload(files: File[]) {
     if (!token || files.length === 0) return
-    const room = MAX_BATCH_INPUT_IMAGES - uploadedInputs.length
-    if (room <= 0) {
-      setError(`At most ${MAX_BATCH_INPUT_IMAGES} images — remove one to add another.`)
-      return
-    }
-    const batch = files.slice(0, room)
+    const batch = files
     setError(null)
     setUploading(true)
     const single = uploadedInputs.length === 0 && batch.length === 1
@@ -333,7 +327,7 @@ export default function DescribeImagePage() {
       setUploadProgress({ done: i + 1, total: batch.length })
       try {
         const img = await uploadImage(token, file)
-        next = appendInputs(next, [img])
+        next = appendInputs(next, [img], Infinity)
         setUploadedInputs(next)
         if (blobUrl) setBlobPreview({ url: blobUrl, imageId: img.image_id })
       } catch (e) {
@@ -343,9 +337,6 @@ export default function DescribeImagePage() {
     setUploading(false)
     setUploadProgress(null)
     applyInputs(next)
-    if (files.length > batch.length) {
-      failures.push(`${files.length - batch.length} more skipped — at most ${MAX_BATCH_INPUT_IMAGES} images.`)
-    }
     if (failures.length > 0) setError(failures.join('; '))
   }
 
@@ -373,7 +364,7 @@ export default function DescribeImagePage() {
   /** Appends library picks to the input set. */
   function onPickInputs(picked: UploadedImage[]) {
     setError(null)
-    applyInputs(appendInputs(uploadedInputs, picked))
+    applyInputs(appendInputs(uploadedInputs, picked, Infinity))
   }
 
   /** Submits one analysis job per input image, all with the same settings. */
@@ -802,7 +793,7 @@ export default function DescribeImagePage() {
                               : 'Click, drag, or paste images here'}
                           </span>
                           <span className="text-xs">
-                            PNG, JPEG, WebP, GIF… · up to {MAX_BATCH_INPUT_IMAGES}, one analysis each
+                            PNG, JPEG, WebP, GIF… · any number, one analysis each
                           </span>
                           {imageFileInput}
                         </label>

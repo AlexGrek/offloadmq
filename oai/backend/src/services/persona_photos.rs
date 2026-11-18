@@ -29,7 +29,7 @@ pub const DEFAULT_SIZE: i32 = 1024;
 const MIN_SIZE: i32 = 64;
 const MAX_SIZE: i32 = 4096;
 pub const DEFAULT_SCALE: f64 = 2.0;
-pub const MAX_COUNT: u32 = 8;
+pub const MAX_COUNT: u32 = 24;
 const PROMPT_BUCKET: &str = "imggen-prompt";
 const NEGATIVE_BUCKET: &str = "imggen-negative";
 /// Workflow that starts from a library photo instead of generating one.
@@ -118,7 +118,7 @@ pub struct StartPhotoRequest {
     pub height: Option<i32>,
     #[serde(default)]
     pub seed: Option<i64>,
-    /// Photos to make (one parent job each), 1–8.
+    /// Photos to make (one parent job each), 1–24.
     #[serde(default)]
     pub count: Option<u32>,
     /// One of the persona's faces; defaults to the primary (first) face.
@@ -962,6 +962,37 @@ pub async fn reface(
 
 /// Deletes the photo run and its child jobs (and with them their images).
 pub async fn delete(state: &AppState, user: i64, id: i64) -> Result<(), AppError> {
+    delete_run(state, user, id, false).await
+}
+
+/// Deletes every photo run of a persona being deleted, in-flight ones included
+/// (their children are cancelled, then removed with their images).
+pub async fn delete_all_for_persona(
+    state: &AppState,
+    user: i64,
+    persona_id: i64,
+) -> Result<(), AppError> {
+    // Batches until none are left: a failed delete aborts, so this always shrinks.
+    loop {
+        let jobs = db::list_for_persona(&state.db, user, persona_id, 100).await?;
+        if jobs.is_empty() {
+            return Ok(());
+        }
+        for job in jobs {
+            if !is_terminal(&job.status)
+                && let Err(e) = cancel(state, user, job.id).await
+            {
+                tracing::warn!("persona photo {} cancel before delete: {e}", job.id);
+            }
+            match delete_run(state, user, job.id, true).await {
+                Ok(()) | Err(AppError::NotFound) => {}
+                Err(e) => return Err(e),
+            }
+        }
+    }
+}
+
+async fn delete_run(state: &AppState, user: i64, id: i64, force: bool) -> Result<(), AppError> {
     db::get(&state.db, id, user).await?;
     let _slot = ADVANCE_SLOTS
         .acquire()
@@ -969,7 +1000,7 @@ pub async fn delete(state: &AppState, user: i64, id: i64) -> Result<(), AppError
         .map_err(|e| AppError::Internal(e.to_string()))?;
     let lock = db::lock_wait(&state.db, id).await?;
     let job = db::get(&state.db, id, user).await?;
-    if !is_terminal(&job.status) {
+    if !force && !is_terminal(&job.status) {
         return Err(AppError::BadRequest(
             "cancel the photo before deleting it".into(),
         ));

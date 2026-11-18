@@ -101,11 +101,11 @@ export function proportionalCounterpart(
 /** Most input images one submission takes; each becomes its own job. */
 export const MAX_BATCH_INPUT_IMAGES = 10
 
-/** Appends `added` to the input set — duplicates (by `image_id`) skipped, capped at `MAX_BATCH_INPUT_IMAGES`. */
-export function appendInputs<T extends { image_id: string }>(prev: T[], added: T[]): T[] {
+/** Appends `added` to the input set — duplicates (by `image_id`) skipped, capped at `max` (default `MAX_BATCH_INPUT_IMAGES`; `Infinity` = unlimited). */
+export function appendInputs<T extends { image_id: string }>(prev: T[], added: T[], max = MAX_BATCH_INPUT_IMAGES): T[] {
   const next = [...prev]
   for (const img of added) {
-    if (next.length >= MAX_BATCH_INPUT_IMAGES) break
+    if (next.length >= max) break
     if (!next.some(existing => existing.image_id === img.image_id)) next.push(img)
   }
   return next

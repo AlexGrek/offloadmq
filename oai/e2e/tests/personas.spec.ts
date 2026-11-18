@@ -178,10 +178,14 @@ test('photo defaults to txt2img → face swap → upscale ×2', async ({ page })
   await page.goto('/app/personas/p1/photos')
   await expect(page.getByTestId('persona-photos-empty')).toBeVisible()
   await page.getByTestId('persona-photo-prompt').fill('{p_look}, portrait of {p_name}')
+  await page.getByTestId('persona-photo-scale').selectOption('3')
+  await page.getByTestId('persona-photo-count-preset-3').click()
+  await page.getByTestId('persona-photo-token-{p_system}').click()
+  await expect(page.getByTestId('persona-photo-prompt')).toHaveValue('{p_look}, portrait of {p_name} {p_system}')
   await page.getByTestId('persona-photo-submit').click()
   await expect(page.getByTestId('persona-photo-j1')).toBeVisible()
   expect(state.photoStarts[0]).toMatchObject({
-    prompt: '{p_look}, portrait of {p_name}', workflow: 'txt2img', face_swap: true, upscale: true, scale: 2, count: 1,
+    prompt: '{p_look}, portrait of {p_name} {p_system}', workflow: 'txt2img', face_swap: true, upscale: true, scale: 3, count: 3, width: 1024, height: 1024,
   })
   await expect(page.getByTestId('persona-photo-steps-j1')).toContainText('Face swap')
 })

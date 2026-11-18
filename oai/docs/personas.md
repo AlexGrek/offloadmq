@@ -153,8 +153,10 @@ covers this table.
 
 Both paths share `services::chat::submit_turn` with the WebSocket `chat` command.
 
-**Deleting a persona** deletes its chats and photo runs (FK cascade). Generated images
-stay in the library.
+**Deleting a persona** removes everything that belongs to it: every photo run (in-flight
+ones are cancelled first) with its child jobs and generated images, its face images (unless
+another persona also uses them), and — by FK cascade — its chats and messages. Face images
+are deleted from the library even if they were picked there rather than uploaded.
 
 ## API
 
@@ -191,7 +193,7 @@ vision_capability?, look_prompt?}`.
 - Faces must be the user's own images. Upload them with `POST /api/images/upload`.
 
 **StartPhotoRequest:** `{prompt (not for existing), negative_prompt?, workflow? (txt2img|img2img|existing), input_image_id?,
-width?, height?, seed?, count? (1–8; one run each, seed+i), face_image_id?, face_swap?, upscale?,
+width?, height?, seed?, count? (1–24; one run each, seed+i), face_image_id?, face_swap?, upscale?,
 scale? (1–3, default 2), image_model?, face_swap_capability?, upscaler_capability?}`.
 
 - txt2img defaults to 1024×1024.

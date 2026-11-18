@@ -22,7 +22,6 @@ use crate::{
 pub const MAX_NAME_CHARS: usize = 100;
 pub const MAX_SYSTEM_PROMPT_CHARS: usize = 32_000;
 pub const MAX_LOOK_CHARS: usize = 4_000;
-pub const MAX_FACES: usize = 10;
 pub const MAX_LOOK_PROMPT_CHARS: usize = 4_000;
 
 /// "Describe look" prompt used when the persona has no custom one. Asks for a
@@ -323,11 +322,6 @@ async fn validate(
             faces.push(id);
         }
     }
-    if faces.len() > MAX_FACES {
-        return Err(AppError::BadRequest(format!(
-            "a persona can have at most {MAX_FACES} face images"
-        )));
-    }
 
     Ok(PersonaFields {
         name,
@@ -391,7 +385,25 @@ pub async fn update(
     db::update(&state.db, id, fields).await
 }
 
+/// Deletes the persona with everything that belongs to it: its photo runs (child jobs
+/// and generated images), its face images (unless another persona also uses them), and —
+/// through the FK cascade — its chats and their messages.
 pub async fn delete(state: &AppState, user_id: i64, id: i64) -> Result<(), AppError> {
+    let persona = db::get(&state.db, id, user_id).await?;
+    super::persona_photos::delete_all_for_persona(state, user_id, id).await?;
+
+    let shared: std::collections::HashSet<i64> = db::list(&state.db, user_id)
+        .await?
+        .iter()
+        .filter(|p| p.id != id)
+        .flat_map(face_ids)
+        .collect();
+    for face in face_ids(&persona).into_iter().filter(|f| !shared.contains(f)) {
+        match image_jobs::remove_user_image_any(state, user_id, face).await {
+            Ok(()) | Err(AppError::NotFound) => {}
+            Err(e) => tracing::warn!("persona {id}: deleting face image {face}: {e}"),
+        }
+    }
     db::delete(&state.db, id, user_id).await
 }
 

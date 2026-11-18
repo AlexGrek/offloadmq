@@ -20,6 +20,7 @@ import {
   type PersonaInput,
 } from '../api/personas'
 import { PersonaProfile } from '../components/personas/PersonaProfile'
+import { ConfirmDeleteDialog } from '../components/personas/ConfirmDeleteDialog'
 import { PersonaPhotos } from '../components/personas/PersonaPhotos'
 import { ChatWorkspace } from '../components/chat/ChatWorkspace'
 import { SystemPromptBlock } from '../components/chat/SystemPromptBlock'
@@ -137,15 +138,22 @@ export default function PersonasPage() {
     }
   }
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
   async function remove() {
     if (!token || !detail) return
-    if (!window.confirm(`Delete ${detail.name}? Its chats and photo history go too; generated images stay in your library.`)) return
+    setDeleting(true)
     try {
       await deletePersona(token, detail.id)
       setPersonas(prev => prev.filter(p => p.id !== detail.id))
+      setConfirmingDelete(false)
       go(null)
     } catch (e) {
+      setConfirmingDelete(false)
       setError((e as Error).message)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -280,7 +288,7 @@ export default function PersonasPage() {
                   dirty={dirty}
                   error={error}
                   onSave={() => void save()}
-                  onDelete={detail ? () => void remove() : undefined}
+                  onDelete={detail ? () => setConfirmingDelete(true) : undefined}
                 />
               ) : (
                 <p className="text-sm text-muted-foreground">{error ?? 'Loading…'}</p>
@@ -289,6 +297,15 @@ export default function PersonasPage() {
           </main>
         )}
       </div>
+      <ConfirmDeleteDialog
+        open={confirmingDelete}
+        title={`Delete ${detail?.name ?? 'persona'}?`}
+        description="Its photos, face images, chats and photo history are permanently deleted."
+        busy={deleting}
+        testIdPrefix="persona-delete"
+        onCancel={() => setConfirmingDelete(false)}
+        onConfirm={() => void remove()}
+      />
     </div>
   )
 }
