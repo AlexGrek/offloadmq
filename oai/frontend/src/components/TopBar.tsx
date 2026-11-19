@@ -43,15 +43,6 @@ export function TopBar() {
         <Link to="/app/dashboard" className="font-display select-none text-xl font-bold tracking-tight">
           oai
         </Link>
-        {currentApp && (
-          <span
-            className="ml-3 flex min-w-0 items-center gap-1.5 border-l border-border pl-3"
-            data-testid="topbar-app-title"
-          >
-            <currentApp.icon className={cn('size-4 shrink-0', currentApp.iconColor)} />
-            <span className="font-display truncate text-sm font-semibold">{currentApp.title}</span>
-          </span>
-        )}
         <TopApps />
       </div>
       <div className="flex items-center gap-1">
