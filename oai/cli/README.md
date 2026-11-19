@@ -215,6 +215,29 @@ Other `nude` subcommands manage jobs directly, matching the web UI's history sid
 - `nude retry <id>` — resubmit a failed/canceled job (reuses its original image and threshold) and wait for the new result
 - `nude delete <id>` — delete a job's history entry
 
+### LangGraph (`langgraph`)
+
+Runs Python LangGraph programs on a runner that has the LLM runtime enabled — the same
+backend as the web UI's `/app/langgraph` ([docs/oai-langgraph.md](../../docs/oai-langgraph.md)).
+Python runs with the runner account's permissions; nothing runs on OAI itself.
+
+```bash
+oai langgraph capabilities                  # online llm-runtime.<model> capabilities
+oai langgraph run "Say hi"                  # the default program (dummy tool), answer on stdout
+oai langgraph run "Plan a trip" -model qwen3:8b -role critic=gemma3:12b -allowed-tools none
+oai langgraph init app && oai langgraph run -dir app -system-file sys.md -file report.md -o out/
+id=$(oai langgraph run "x" --no-wait)       # bare job id on stdout
+oai langgraph job|poll "$id" [-json]; oai langgraph download "$id" -o out/
+oai langgraph jobs -active; oai langgraph retry|cancel|delete <id>
+```
+
+`-dir` supplies `main.py`/`tools.py`/`pyproject.toml` (missing files use the built-in
+defaults, which `init` writes out); `-main`/`-tools`/`-pyproject` override single files.
+Prompts may use `{tools}` — the default `main.py` expands it to the tools left after
+`-allowed-tools` (`all`, `none`, or names). The answer is the only thing on stdout; job id,
+stderr and structured `data` go to stderr. Declared output files (`-file`, repeatable;
+`-data-file` defaults to `result.json`) are saved with `-o DIR`.
+
 ### Personas
 
 Characters with face images, a look, a system prompt and model preferences — see

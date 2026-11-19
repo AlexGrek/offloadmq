@@ -39,6 +39,13 @@ System and user prompts each have a saved prompt library (`langgraph-system` and
 `langgraph-user` buckets). Successful submissions record prompt recents server-side;
 favorites, search, edits, and deletion use OAI's shared prompt drawer.
 
+Both prompts may contain a `{tools}` placeholder. It is expanded at run time by the
+default `main.py` (`render()` + `describe_tools()` in `tools.py`) into a bullet list
+of `name: description` for the tools exposed after the allowlist (or
+`(no tools available)`). OAI itself never sees tool names — they live in
+user-editable Python — so custom code must do its own substitution. The default
+system prompt includes it.
+
 The allowed-tools input supports all, none, or a named list. The default tools.py
 honors this contract and rejects unknown names. Submitted code is responsible for
 honoring it; the setting does not constrain arbitrary Python.
@@ -62,6 +69,13 @@ runs and creates a new run from the exact saved request. Editing a completed run
 creates a fresh request. Delete is allowed only after terminal status and removes
 job artifacts, including partially persisted files. Each file is capped at 64 MiB,
 with at most 16 files per run; the runner's normal inline-result limits also apply.
+
+## CLI
+
+`oai langgraph capabilities|init|run|jobs|job|poll|cancel|retry|delete|download` drives
+the same API (see [oai/cli/README.md](../oai/cli/README.md)). The default program files
+are embedded in the CLI (`oai/cli/langgraph_defaults/`); a Go test fails if they drift
+from `oai/frontend/src/lib/langgraph/defaults.ts`, so update both together.
 
 ## API
 

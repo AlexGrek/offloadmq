@@ -66,6 +66,18 @@ Usage:
   oai nude cancel <job-id>
   oai nude retry <job-id> [--progress=false] [-t|-timeout 5m]
   oai nude delete <job-id>
+  oai langgraph capabilities [-json]
+  oai langgraph init <dir> [-force]              (writes the default main.py, tools.py, pyproject.toml)
+  oai langgraph run ["user prompt"] [-dir D] [-main F] [-tools F] [-pyproject F]
+                    [-system T|-system-file F] [-user T|-user-file F] [-model M|-capability C]
+                    [-role name=model ...] [-allowed-tools all|none|a,b] [-resources JSON|@F]
+                    [-data-file result.json] [-file out.md ...] [-runtime SECS] [-o DIR]
+                    [--no-wait] [-json] [--progress=false] [-t|-timeout 5m]
+  oai langgraph jobs [-status S[,S]] [-active] [-ids] [-json]
+  oai langgraph job|poll <job-id> [-json]
+  oai langgraph cancel|delete <job-id> [job-id ...]
+  oai langgraph retry <job-id> [-o DIR] [--no-wait] [-json]
+  oai langgraph download <job-id> [-o DIR]
   oai persona list [-json]  |  show <persona> [-json]  |  models [-json]
   oai persona create -name NAME [-look TEXT|-look-file F] [-system TEXT|-system-file F]
                      [-llm C] [-txt2img C] [-img2img C] [-faceswap C] [-upscaler C]
@@ -90,6 +102,7 @@ Usage:
 Prompts may use {color} {animal} {adjective} {country} {language} {name}, your custom
 {placeholders} (manage with oai image placeholders), and {?} (expanded by the server).
 Inline {a|b|c} choices pick one literal option independently per occurrence (repeats allowed).
+LangGraph prompts also take {tools} (expanded at run time by the default main.py).
 Persona prompts also take {p_name}, {p_look} and {p_system} (substituted by the server).
 
 Config is stored in ~/.oai-cli.json. Set OAI_PASSWORD for non-interactive login.
@@ -152,6 +165,8 @@ func main() {
 		err = cmdImgUtils(os.Args[2:])
 	case "upscale":
 		err = cmdUpscale(os.Args[2:])
+	case "langgraph":
+		err = cmdLanggraph(os.Args[2:])
 	case "persona", "personas":
 		err = cmdPersona(os.Args[2:])
 	case "help":

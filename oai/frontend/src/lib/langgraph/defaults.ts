@@ -17,6 +17,13 @@ def get_tools(allowed_tools):
     if unknown:
         raise ValueError(f"Unknown tools: {sorted(unknown)}")
     return [registry[name] for name in allowed_tools]
+
+
+def describe_tools(tools):
+    """Render tools as a bullet list for the {tools} prompt placeholder."""
+    if not tools:
+        return "(no tools available)"
+    return "\\n".join(f"- {t.name}: {t.description}" for t in tools)
 `
 export const DEFAULT_MAIN = `import json
 import sys
@@ -26,7 +33,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
-from tools import get_tools
+from tools import describe_tools, get_tools
 
 request = json.load(sys.stdin)
 
@@ -40,6 +47,11 @@ def local_llm(role=None):
 tools = get_tools(request.get("allowed_tools"))
 llm = local_llm()
 model = llm.bind_tools(tools) if tools else llm
+
+
+def render(prompt):
+    # {tools} expands to the tools this run exposes (after the allowlist).
+    return prompt.replace("{tools}", describe_tools(tools))
 
 
 def generate(state: MessagesState):
@@ -57,8 +69,8 @@ else:
     graph.add_edge("generate", END)
 
 result = graph.compile().invoke({"messages": [
-    SystemMessage(content=request["system_prompt"]),
-    HumanMessage(content=request["user_prompt"]),
+    SystemMessage(content=render(request["system_prompt"])),
+    HumanMessage(content=render(request["user_prompt"])),
 ]}, config={"recursion_limit": 25})
 text = str(result["messages"][-1].content)
 print(text)
@@ -85,7 +97,7 @@ dependencies = [
 `
 export const defaultRequest = (): LanggraphRequest => ({
   capability: '', models: {}, main_py: DEFAULT_MAIN, tools_py: DEFAULT_TOOLS,
-  pyproject: DEFAULT_PYPROJECT, system_prompt: 'You are a helpful assistant. Use tools when useful.',
+  pyproject: DEFAULT_PYPROJECT, system_prompt: 'You are a helpful assistant. Use tools when useful.\n\nAvailable tools:\n{tools}',
   user_prompt: 'Say hello and explain what you can do.', allowed_tools: null,
   resources: {}, output: { data_file: 'result.json', files: [] }, runtime_secs: 600,
 })
