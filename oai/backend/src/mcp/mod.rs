@@ -66,8 +66,8 @@ list_image_models). It waits for the result and returns preview thumbnails plus 
 full-resolution files. If a job is still running when the wait ends, call get_image_job with \
 its job_id (optionally with wait_seconds) instead of submitting again. Prompts may contain \
 placeholders: {color} {animal} {adjective} {country} {language} {name} {starwars}, the user's \
-custom placeholders (list_placeholders, edit with save_placeholder), and {?} for a random \
-two-word name. Keep placeholders in the prompt as written — the server substitutes them per \
+custom placeholders (list_placeholders, edit with save_placeholder), {?} for a random \
+two-word name, and {random} for any one of those placeholders picked at random. Keep placeholders in the prompt as written — the server substitutes them per \
 job, exactly like the web UI; preview with expand_prompt. Saved prompts \
 (list_saved_prompts) often contain placeholders and can be passed to generate_images as-is. \
 To regenerate a job with new random values, use its prompt_template; retry_image_job \

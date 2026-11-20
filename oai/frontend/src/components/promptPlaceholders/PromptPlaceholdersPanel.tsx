@@ -22,6 +22,7 @@ import {
   isReservedPlaceholderName,
   isValidPlaceholderName,
   PLACEHOLDER_CATEGORIES,
+  RANDOM_PLACEHOLDER,
 } from '@/lib/promptPlaceholders'
 
 const QUICK_NAMES_BATCH = 6
@@ -508,8 +509,8 @@ function CustomPlaceholdersSection({ token, nameFilter }: { token: string | null
   )
 }
 
-/** Built-in tokens in display order: the server-side `{?}` first, then the dictionaries. */
-const RESERVED_TOKENS = ['?', ...PLACEHOLDER_CATEGORIES].map(name => `{${name}}`)
+/** Built-in tokens in display order: the server-side `{?}` first, then `{random}`, then the dictionaries. */
+const RESERVED_TOKENS = ['?', RANDOM_PLACEHOLDER, ...PLACEHOLDER_CATEGORIES].map(name => `{${name}}`)
 
 function ReservedNamesSection({ nameFilter }: { nameFilter: string }) {
   const filteredTokens = RESERVED_TOKENS.filter(token => token.slice(1, -1).includes(nameFilter))
@@ -534,7 +535,9 @@ function ReservedNamesSection({ nameFilter }: { nameFilter: string }) {
       ) : null}
       <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
         Each category resolves to a random word from a built-in dictionary, and{' '}
-        <span className="font-mono">{'{?}'}</span> resolves to a random two-word name on the server. Your own
+        <span className="font-mono">{'{?}'}</span> resolves to a random two-word name on the server.{' '}
+        <span className="font-mono">{'{random}'}</span> becomes any other placeholder — a built-in,{' '}
+        <span className="font-mono">{'{?}'}</span> or one of yours — picked at random each time. Your own
         placeholder names can't reuse any of these.
       </p>
     </section>

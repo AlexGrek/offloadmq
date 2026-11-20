@@ -27,14 +27,21 @@ const CATEGORY_DICTIONARIES: Record<string, string[]> = {
 export const PLACEHOLDER_CATEGORIES = Object.keys(CATEGORY_DICTIONARIES).sort()
 
 /**
- * Names reserved for the 7 builtin categories above, plus the server-side `{?}`
+ * `{random}` expands into another random placeholder — any builtin category,
+ * `{?}`, or one of the user's non-empty custom placeholders — which is then
+ * expanded as if it had been written in the prompt.
+ */
+export const RANDOM_PLACEHOLDER = 'random'
+
+/**
+ * Names reserved for the 7 builtin categories above, `{random}`, plus the server-side `{?}`
  * two-word-name placeholder (expanded in image_job_names.rs, not here). Custom
  * placeholder names may not collide with these (case-insensitive). Keep in sync
  * with `RESERVED_PLACEHOLDER_NAMES` in
  * `oai/backend/src/db/prompt_placeholders.rs` by hand — there is no shared schema
  * between Rust and TypeScript here.
  */
-export const RESERVED_PLACEHOLDER_NAMES: readonly string[] = [...PLACEHOLDER_CATEGORIES, '?']
+export const RESERVED_PLACEHOLDER_NAMES: readonly string[] = [...PLACEHOLDER_CATEGORIES, RANDOM_PLACEHOLDER, '?']
 
 export function isReservedPlaceholderName(name: string): boolean {
   return RESERVED_PLACEHOLDER_NAMES.includes(name.trim().toLowerCase())
@@ -116,6 +123,18 @@ function expandLevel(
       return pickUnique(builtin, usedSetFor(usage, token))
     }
 
+    if (token === RANDOM_PLACEHOLDER) {
+      const pool = [
+        ...PLACEHOLDER_CATEGORIES,
+        '?',
+        ...Object.keys(customDefs).filter(name => name !== RANDOM_PLACEHOLDER && customDefs[name]?.length),
+      ]
+      const name = pool[Math.floor(Math.random() * pool.length)]
+      // `{?}` is expanded server-side, so hand it back literally.
+      if (name === '?') return '{?}'
+      return expandLevel(`{${name}}`, usage, customDefs, depth + 1)
+    }
+
     const variants = customDefs[token]
     if (variants && variants.length > 0) {
       const picked = pickUnique(variants, usedSetFor(usage, token))
@@ -129,7 +148,7 @@ function expandLevel(
 }
 
 /**
- * Expand `{category}`, user-defined `{name}`, and inline `{a|b|c}` choices.
+ * Expand `{category}`, `{random}`, user-defined `{name}`, and inline `{a|b|c}` choices.
  * Each choice occurrence is an independent random draw, including across a batch.
  * `customDefs` maps a lowercased custom placeholder name to its variant list
  * (fetched from `GET /api/prompt-placeholders`); omit it if unavailable — custom

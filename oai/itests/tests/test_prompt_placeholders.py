@@ -49,7 +49,7 @@ class TestPromptPlaceholdersLifecycle:
 
 class TestPromptPlaceholdersValidation:
     def test_reserved_name_rejected(self, client: httpx.Client, session_headers: dict):
-        for name in ["color", "Animal", "adjective", "country", "language", "name", "starwars", "?"]:
+        for name in ["color", "Animal", "adjective", "country", "language", "name", "starwars", "random", "Random", "?"]:
             payload = {"name": name, "variants": ["test"]}
             r = client.post("/api/prompt-placeholders", headers=session_headers, json=payload)
             assert r.status_code == 400

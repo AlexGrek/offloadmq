@@ -16,6 +16,8 @@ import (
 //     analog, so the word pools differ slightly but the behaviour is the same.
 //   - {starwars} has no Go equivalent and is left literal (see unsupportedPlaceholders).
 //   - {?} is expanded by the server at job creation — it is never touched here.
+//   - {random} becomes another placeholder picked at random (a builtin, {?}, or a
+//     non-empty custom one) and expands as that. {starwars} is left out of its pool.
 //   - Any other {name} is a custom placeholder from the user's server-side
 //     definitions (GET /api/prompt-placeholders), shared with the web UI.
 
@@ -51,6 +53,9 @@ func splitCamelCase(s string) string {
 	}
 	return b.String()
 }
+
+// randomPlaceholder expands into a random other placeholder.
+const randomPlaceholder = "random"
 
 // unsupportedPlaceholders are reserved by the web UI but have no Go dictionary.
 var unsupportedPlaceholders = map[string]bool{"starwars": true}
@@ -123,6 +128,13 @@ func (e *placeholderExpander) expandLevel(text string, depth int) string {
 		}
 		token := strings.ToLower(raw)
 
+		if token == randomPlaceholder {
+			name := e.randomName()
+			if name == "?" {
+				return "{?}"
+			}
+			return e.expandLevel("{"+name+"}", depth+1)
+		}
 		if gen, ok := builtinPlaceholders[token]; ok {
 			return strings.ToLower(pick(gen, e.usedSet(token)))
 		}
@@ -136,6 +148,20 @@ func (e *placeholderExpander) expandLevel(text string, depth int) string {
 		// Unknown name (including {?}, expanded server-side) — leave untouched.
 		return match
 	})
+}
+
+// randomName picks a builtin, "?", or a non-empty custom placeholder name.
+func (e *placeholderExpander) randomName() string {
+	pool := []string{"?"}
+	for name := range builtinPlaceholders {
+		pool = append(pool, name)
+	}
+	for name, variants := range e.custom {
+		if len(variants) > 0 && name != randomPlaceholder {
+			pool = append(pool, name)
+		}
+	}
+	return pool[rand.IntN(len(pool))]
 }
 
 // Unsupported lists reserved placeholders that were left literal because the CLI has no dictionary for them.

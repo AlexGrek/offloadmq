@@ -211,3 +211,19 @@ func TestInlineChoices(t *testing.T) {
 		}
 	}
 }
+
+func TestExpandRandomPicksAnotherPlaceholder(t *testing.T) {
+	e := newPlaceholderExpander([]promptPlaceholder{{Name: "pet", Variants: []string{"PET"}}, {Name: "empty"}})
+	sawPet, sawQuestion := false, false
+	for i := 0; i < 500; i++ {
+		got := e.Expand("{Random}")
+		if got == "" || (got != "{?}" && strings.Contains(got, "{")) {
+			t.Fatalf("unexpected expansion %q", got)
+		}
+		sawPet = sawPet || got == "PET"
+		sawQuestion = sawQuestion || got == "{?}"
+	}
+	if !sawPet || !sawQuestion {
+		t.Fatalf("pool not covered: pet=%v ?=%v", sawPet, sawQuestion)
+	}
+}

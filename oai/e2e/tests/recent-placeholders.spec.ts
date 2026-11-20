@@ -81,6 +81,7 @@ test('dice copies an available custom substitution and announces the exact token
   await expect(page.getByTestId('imggen-recent-placeholders-list').locator('button').last()).toHaveAttribute('data-testid', 'imggen-random-placeholder-copy')
   await dice.click()
   await expect(page.getByTestId('imggen-random-placeholder-notification')).toHaveText('Copied {.cinematic}')
+  await expect(page.getByTestId('imggen-random-placeholder-copied')).toHaveText('{.cinematic}')
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('{.cinematic}')
   await expect(page.getByTestId('imggen-prompt')).toHaveValue('A bird')
   await expect(page.getByTestId('imggen-random-placeholder-notification')).toHaveCount(0, { timeout: 5000 })
@@ -93,6 +94,7 @@ test('dice works without recent substitutions and reports clipboard failure', as
   const dice = page.getByTestId('imggen-random-placeholder-copy')
   await dice.click()
   await expect(page.getByTestId('imggen-random-placeholder-notification')).toHaveText('Copied {?}')
+  await expect(page.getByTestId('imggen-random-placeholder-copied')).toHaveText('{?}')
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('{?}')
   await page.evaluate(() => {
     navigator.clipboard.writeText = async () => { throw new Error('Clipboard denied') }

@@ -18,14 +18,14 @@ const MAX_NAME_LEN: usize = 64;
 const MAX_VARIANT_LEN: usize = 2_000;
 
 /// Names reserved for the 7 builtin categories in the frontend's
-/// `lib/promptPlaceholders.ts::CATEGORY_DICTIONARIES`, plus the server-side `{?}`
+/// `lib/promptPlaceholders.ts::CATEGORY_DICTIONARIES`, `{random}`, plus the server-side `{?}`
 /// placeholder (`services::image_job_names::expand_prompt_placeholders`). Custom
 /// placeholder names may not collide with these (case-insensitive). Keep this list
 /// in sync with `RESERVED_PLACEHOLDER_NAMES` in
 /// `oai/frontend/src/lib/promptPlaceholders.ts` by hand — there is no shared schema
 /// between the two languages here.
 pub const RESERVED_PLACEHOLDER_NAMES: &[&str] =
-    &["color", "animal", "adjective", "country", "language", "name", "starwars", "?"];
+    &["color", "animal", "adjective", "country", "language", "name", "starwars", "random", "?"];
 
 /// Also reserved: the persona tokens (`{p_name}`, `{p_look}`, `{p_system}`) that
 /// `services::personas::render_tokens` substitutes before placeholder expansion.

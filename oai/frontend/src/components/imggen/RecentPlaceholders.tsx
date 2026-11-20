@@ -26,7 +26,7 @@ export function RecentPlaceholders({ onInsert }: RecentPlaceholdersProps) {
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [copyError, setCopyError] = useState(false)
   const [customTokens, setCustomTokens] = useState<string[]>([])
-  const [notification, setNotification] = useState<{ message: string; error: boolean } | null>(null)
+  const [notification, setNotification] = useState<{ message: string; error: boolean; token?: string } | null>(null)
   const recent = useRecentPlaceholders()
 
   useEffect(() => {
@@ -67,7 +67,7 @@ export function RecentPlaceholders({ onInsert }: RecentPlaceholdersProps) {
     const selected = available[Math.floor(Math.random() * available.length)]
     try {
       await navigator.clipboard.writeText(selected)
-      setNotification({ message: `Copied ${selected}`, error: false })
+      setNotification({ message: `Copied ${selected}`, error: false, token: selected })
     } catch {
       setNotification({ message: "Couldn't copy. Try again.", error: true })
     }
@@ -133,13 +133,22 @@ export function RecentPlaceholders({ onInsert }: RecentPlaceholdersProps) {
           >
             <Dices className="size-4" />
           </Button>
+          {notification?.token ? (
+            <span
+              className="inline-flex items-center gap-1 self-center font-mono text-xs text-emerald-600 dark:text-emerald-400"
+              data-testid="imggen-random-placeholder-copied"
+            >
+              <Check className="size-3" />
+              {notification.token}
+            </span>
+          ) : null}
         </div>
       </MorphCollapse>
 
       <span className="sr-only" aria-live="polite">{copiedToken ? `Copied ${copiedToken}` : ''}</span>
       {copyError ? <p role="alert" className="text-xs text-destructive">Couldn't copy. Try again.</p> : null}
       {notification && createPortal(
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-3">
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[100] flex justify-center px-3">
           <div
             role={notification.error ? 'alert' : 'status'}
             data-testid="imggen-random-placeholder-notification"

@@ -135,7 +135,7 @@ fn find<'a>(all: &'a [Placeholder], key: &str) -> Option<&'a Placeholder> {
 async fn list(ctx: &ToolContext) -> Result<ToolOutput, AppError> {
     let all = prompt_placeholders::list_for_user(&ctx.state.db, ctx.user_id).await?;
     let mut lines = vec![format!(
-        "Built-in: {} (random words), {{?}} (random two-word name). Inline {{a|b|c}} picks one literal option independently per occurrence.",
+        "Built-in: {} (random words), {{?}} (random two-word name), {{random}} (any other placeholder, picked at random). Inline {{a|b|c}} picks one literal option independently per occurrence.",
         BUILTIN_CATEGORIES
             .iter()
             .map(|c| format!("{{{c}}}"))

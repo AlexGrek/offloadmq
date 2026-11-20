@@ -54,3 +54,28 @@ test('image submission expands choices while retaining the raw template', async 
   expect(body.prompt_template).toBe(template)
   await expect(page.getByTestId('imggen-prompt')).toHaveValue(template)
 })
+
+test('{random} expands into another placeholder', async ({ page }) => {
+  await page.goto('/login')
+  const results = await page.evaluate(async () => {
+    const modulePath = '/src/lib/promptPlaceholders.ts'
+    const { expandPromptPlaceholders, createPlaceholderUsage } = await import(modulePath)
+    const originalRandom = Math.random
+    try {
+      // Pool: 7 builtin categories, then `?`, then non-empty custom names (`pet`).
+      const defs = { pet: ['PET'], empty: [] }
+      const results = []
+      for (const random of [0.999999, 7.5 / 9]) {
+        Math.random = () => random
+        results.push(expandPromptPlaceholders('a {Random}', createPlaceholderUsage(), defs))
+      }
+      Math.random = () => 0
+      results.push(expandPromptPlaceholders('{random}', createPlaceholderUsage(), defs))
+      return results
+    } finally {
+      Math.random = originalRandom
+    }
+  })
+  expect(results.slice(0, 2)).toEqual(['a PET', 'a {?}'])
+  expect(results[2]).toMatch(/^[^{}]+$/)
+})

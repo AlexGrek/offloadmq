@@ -136,6 +136,8 @@ under Node.
 - `{a|b|c}` — inline choices: pick one literal option independently per occurrence and per job (repeats allowed). Options preserve case and internal spacing; surrounding whitespace is trimmed. Empty options are allowed (`{hat|}`). Choices also work inside custom placeholder variants; alternatives do not contain nested braces.
 - **Custom placeholders.** Names are matched case-insensitively. A variant may contain more
   placeholders, which are expanded up to 5 levels deep; that limit also stops cycles.
+- **`{random}`** becomes another placeholder picked at random — a built-in, `{?}`, or one of
+  the user's non-empty custom placeholders — and expands as that one. `random` is reserved.
 - **`{?}`** becomes a random two-word name at job creation (`image_job_names`), as everywhere
   else.
 - **Named placeholders avoid repeats.** One expander per call means a batch (`count`) avoids repeats until a
