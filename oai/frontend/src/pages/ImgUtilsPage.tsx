@@ -56,7 +56,7 @@ import { useImgUtilsTools } from '../hooks/useImgUtilsTools'
 import { JobErrorBanner } from '../components/JobErrorBanner'
 import { markImageDownloaded, triggerImageDownload } from '../lib/downloadedImages'
 import { ToolSidebar } from '../components/ToolSidebar'
-import { imageJobStatusLabel, type ImggenRouteState } from '../lib/imggen'
+import { formatDuration, imageJobStatusLabel, type ImggenRouteState } from '../lib/imggen'
 
 const POLL_INTERVAL_MS = 3000
 const LIST_REFRESH_INTERVAL_MS = 5000
@@ -377,8 +377,12 @@ export default function ImgUtilsPage() {
 
   const status = selectedJob?.status
   const isRunning = status != null && !TERMINAL.has(status)
+  const executionSeconds = selectedJob?.started_at && !isRunning
+    ? (Date.parse(selectedJob.updated_at) - Date.parse(selectedJob.started_at)) / 1000
+    : null
   const canRetry = status === 'failed' || status === 'canceled'
   const outputImage = selectedJob?.output_image ?? null
+  const canDownload = status === 'completed' && outputImage != null && selectedJob?.job_id === viewedJobId
   const inputImage = selectedJob?.input_image ?? null
   // Metadata only comes back from the single-job endpoints; fall back to the bare
   // id so a listing-sourced row still renders (without lightbox actions).
@@ -387,10 +391,10 @@ export default function ImgUtilsPage() {
   const canCompare = outputImage != null && inputImage != null
 
   const downloadJobOutput = useCallback(() => {
-    if (!token || !outputImage) return
+    if (!token || !outputImage || !canDownload) return
     triggerImageDownload(imageFileUrl(outputImage.image_id, token), outputImage.filename)
     markImageDownloaded(outputImage.image_id)
-  }, [token, outputImage])
+  }, [token, outputImage, canDownload])
 
   // A fresh job has nothing to compare yet — never carry the toggle across jobs.
   // Render-phase reset (React's "adjust state on change" pattern) rather than an effect.
@@ -460,7 +464,7 @@ export default function ImgUtilsPage() {
               )}
             </Button>
           ) : null}
-          {viewingJob && outputImage ? (
+          {viewingJob && canDownload ? (
             <Button
               type="button"
               variant="ghost"
@@ -606,6 +610,7 @@ export default function ImgUtilsPage() {
                               triggerClassName="group block w-full overflow-hidden"
                               testId={testId}
                               actions={lightboxActions(image)}
+                              allowDownload={canDownload && image.image_id === outputImage?.image_id}
                             >
                               <img
                                 src={imageFileUrl(image.image_id, token, mediaRevision)}
@@ -625,6 +630,7 @@ export default function ImgUtilsPage() {
                         triggerClassName="group block w-full overflow-hidden rounded-xl bg-muted/30"
                         testId="imgutils-job-image"
                         actions={lightboxActions(shownImage)}
+                        allowDownload={canDownload && shownImage.image_id === outputImage?.image_id}
                       >
                         <img
                           src={imageFileUrl(shownImage.image_id, token, mediaRevision)}
@@ -651,6 +657,13 @@ export default function ImgUtilsPage() {
                       <p className="font-mono text-xs text-muted-foreground">
                         {selectedJob.capability} · {selectedJob.status.replace(/_/g, ' ')}
                       </p>
+                      {!isRunning && (
+                        <p className="font-mono text-xs text-muted-foreground" data-testid="imgutils-job-timing">
+                          Execution time: {executionSeconds != null && Number.isFinite(executionSeconds) && executionSeconds >= 0
+                            ? formatDuration(executionSeconds)
+                            : 'Unavailable'}
+                        </p>
+                      )}
                       {selectedJob.workflow === RESIZE_WORKFLOW ? (
                         <p
                           className="text-xs text-muted-foreground"
@@ -751,7 +764,7 @@ export default function ImgUtilsPage() {
                           Retry
                         </Button>
                       ) : null}
-                      <Button
+                      {isRunning && <Button
                         variant="outline"
                         size="sm"
                         onClick={() => void onPollNow(selectedJob.job_id)}
@@ -764,7 +777,7 @@ export default function ImgUtilsPage() {
                           <RefreshCw className="mr-1 h-4 w-4" />
                         )}
                         Poll now
-                      </Button>
+                      </Button>}
                       {isRunning ? (
                         <>
                           <Button

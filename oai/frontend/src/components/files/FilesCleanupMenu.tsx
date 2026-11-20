@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useConfirmation } from '@/contexts/ConfirmationContext'
 import { ChevronDown, Loader2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -20,6 +21,7 @@ const SCOPE_LABELS: Record<CleanupFilesScope, string> = {
 }
 
 export function FilesCleanupMenu({ token, onCompleted }: FilesCleanupMenuProps) {
+  const confirm = useConfirmation()
   const [open, setOpen] = useState(false)
   const [keepStarred, setKeepStarred] = useState(true)
   const [busy, setBusy] = useState<CleanupFilesScope | null>(null)
@@ -40,22 +42,26 @@ export function FilesCleanupMenu({ token, onCompleted }: FilesCleanupMenuProps) 
   async function runCleanup(scope: CleanupFilesScope) {
     if (!token) return
     const label = SCOPE_LABELS[scope]
+    const preserveStarred = keepStarred
+    setOpen(false)
     if (
-      !window.confirm(
-        keepStarred
+      !await confirm({
+        title: 'Delete files?',
+        description: preserveStarred
           ? `Delete ${label}, except starred items? This cannot be undone.`
           : `Delete ${label}, including starred items? This cannot be undone.`,
-      )
+      })
     ) {
       return
     }
     setBusy(scope)
     setError(null)
     try {
-      const res = await cleanupFiles(token, { scope, keep_starred: keepStarred })
+      const res = await cleanupFiles(token, { scope, keep_starred: preserveStarred })
       onCompleted(res, scope)
       setOpen(false)
     } catch (e) {
+      setOpen(true)
       setError(e instanceof Error ? e.message : 'Cleanup failed')
     } finally {
       setBusy(null)

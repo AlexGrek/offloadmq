@@ -1,3 +1,4 @@
+import { useConfirmation } from '@/contexts/ConfirmationContext'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -152,6 +153,7 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
     (chat: ChatSummary | undefined) => chat?.last_model ?? personaDefaultModel,
     [personaDefaultModel],
   )
+  const confirm = useConfirmation()
   const { token, user } = useAuth()
   const userId = user?.id
   const navigate = useNavigate()
@@ -748,7 +750,7 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
     e.stopPropagation()
     if (!token) return
     const title = chats.find(c => c.id === chatId)?.title || config.labels.untitled
-    if (!window.confirm(`Delete "${title}"? This cannot be undone.`)) return
+    if (!await confirm({ title: 'Delete chat?', description: `Delete "${title}"? This cannot be undone.` })) return
     try {
       await deleteChat(token, chatId)
       setChats(prev => prev.filter(c => c.id !== chatId))

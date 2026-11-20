@@ -127,6 +127,10 @@
     }
   html {
     @apply font-sans;
+    /* App-like UI: no double-tap zoom, no text inflation on rotate. */
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     }
 }
 

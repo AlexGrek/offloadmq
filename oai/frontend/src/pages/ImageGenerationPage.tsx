@@ -38,6 +38,7 @@ import { cn } from '@/lib/utils'
 import { MorphCollapse, MorphIn } from '@/components/Morph'
 import { useMorph } from '@/lib/motion'
 import { ImageLightbox, type ImageLightboxActions } from '@/components/ImageLightbox'
+import { SlideshowViewer } from '@/components/imggen/SlideshowViewer'
 import { LoadingImage } from '@/components/LoadingImage'
 import { PromptTextarea } from '../components/PromptTextarea'
 import { PROMPT_STUDIO_PATH, type PromptStudioRouteState } from '../lib/promptStudio'
@@ -320,6 +321,8 @@ export default function ImageGenerationPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [slideshowOn, setSlideshowOn] = useState(false)
+  const [slideshowPaused, setSlideshowPaused] = useState(false)
+  const slideshowPausedRef = useRef(false)
   const [slideshowCurrent, setSlideshowCurrent] = useState<SlideshowEntry | null>(null)
   const slideshowSeenRef = useRef<Set<string>>(new Set())
   const slideshowQueueRef = useRef<SlideshowEntry[]>([])
@@ -488,6 +491,8 @@ export default function ImageGenerationPage() {
   }, [token, slideshowOn])
 
   const toggleSlideshow = useCallback(() => {
+    slideshowPausedRef.current = false
+    setSlideshowPaused(false)
     setSlideshowOn(prev => {
       const next = !prev
       if (next) {
@@ -510,8 +515,15 @@ export default function ImageGenerationPage() {
 
   const closeSlideshow = useCallback(() => {
     setSlideshowOn(false)
+    slideshowPausedRef.current = false
+    setSlideshowPaused(false)
     slideshowQueueRef.current = []
     setSlideshowCurrent(null)
+  }, [])
+
+  const toggleSlideshowPause = useCallback(() => {
+    slideshowPausedRef.current = !slideshowPausedRef.current
+    setSlideshowPaused(slideshowPausedRef.current)
   }, [])
 
   // Slideshow: poll for freshly completed output images (not just the viewed job)
@@ -519,17 +531,21 @@ export default function ImageGenerationPage() {
   useEffect(() => {
     if (!slideshowOn || !token) return
     let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
     const tick = async () => {
-      let list: ImageJobDetails[]
+      let list: ImageJobDetails[] | null = null
       try {
         list = await listImageJobs(token)
       } catch {
-        return
+        // Keep showing already queued images if a refresh fails.
       }
       if (cancelled) return
-      setJobs(prev => mergeJobList(prev, list, imageJobFingerprint))
+      if (list) {
+        const snapshot = list
+        setJobs(prev => mergeJobList(prev, snapshot, imageJobFingerprint))
+      }
       // Newest-first from the API — walk oldest-to-newest so the queue fills in generation order.
-      for (const job of [...list].reverse()) {
+      for (const job of [...(list ?? [])].reverse()) {
         for (const file of job.files) {
           if (file.direction !== 'output') continue
           if (file.content_type.startsWith('video/')) continue
@@ -538,15 +554,15 @@ export default function ImageGenerationPage() {
           slideshowQueueRef.current.push({ file, jobId: job.job_id, prompt: job.prompt })
         }
       }
-      if (slideshowQueueRef.current.length > 0) {
+      if (!slideshowPausedRef.current && slideshowQueueRef.current.length > 0) {
         setSlideshowCurrent(slideshowQueueRef.current.shift() ?? null)
       }
+      timer = setTimeout(() => void tick(), POLL_MS)
     }
     void tick()
-    const id = window.setInterval(() => void tick(), POLL_MS)
     return () => {
       cancelled = true
-      window.clearInterval(id)
+      clearTimeout(timer)
     }
   }, [slideshowOn, token])
 
@@ -2757,7 +2773,25 @@ export default function ImageGenerationPage() {
 
               {/* ── Prompt ── */}
               <section className="space-y-1.5" data-testid="imggen-job-prompt">
-                <h3 className="text-xs font-medium text-muted-foreground">Prompt</h3>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-xs font-medium text-muted-foreground">Prompt</h3>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                    onClick={() => {
+                      const state: PromptStudioRouteState = { examplePrompt: selectedJob.prompt }
+                      navigate(PROMPT_STUDIO_PATH, { state })
+                    }}
+                    disabled={!selectedJob.prompt.trim()}
+                    title="Open Prompt Studio with this prompt as the example"
+                    data-testid="imggen-job-prompt-studio-open"
+                  >
+                    <Feather className="mr-1 size-3.5" />
+                    Prompt studio
+                  </Button>
+                </div>
                 <p className="whitespace-pre-wrap text-sm text-foreground">{selectedJob.prompt.trim() || '—'}</p>
               </section>
 
@@ -2841,33 +2875,16 @@ export default function ImageGenerationPage() {
       image={imgUtilsTarget}
       onResult={onImageMutated}
     />
-    {slideshowOn && slideshowCurrent && token ? (
-      <ImageLightbox
-        open
-        onOpenChange={next => {
-          if (!next) closeSlideshow()
-        }}
-        src={imageFileUrl(slideshowCurrent.file.image_id, token, mediaRevision)}
-        alt={slideshowCurrent.file.filename}
-        caption={`${jobPromptTitle(slideshowCurrent.prompt, 72)} — ${slideshowCurrent.file.width}×${slideshowCurrent.file.height}`}
-        testId="imggen-slideshow"
-        actions={{
-          ...lightboxActionsFor(
-            token,
-            slideshowCurrent.file.image_id,
-            slideshowCurrent.file.filename,
-            slideshowCurrent.file.direction,
-            true,
-          ),
-          onSendToImg2Img: () => {
-            closeSlideshow()
-            sendToImg2Img(slideshowCurrent.file)
-          },
-          onSendToImg2Video: () => {
-            closeSlideshow()
-            sendToImg2Video(slideshowCurrent.file, slideshowCurrent.prompt)
-          },
-        }}
+    {slideshowOn && token ? (
+      <SlideshowViewer
+        image={slideshowCurrent ? {
+          src: imageFileUrl(slideshowCurrent.file.image_id, token, mediaRevision),
+          alt: slideshowCurrent.file.filename,
+          caption: `${jobPromptTitle(slideshowCurrent.prompt, 72)} — ${slideshowCurrent.file.width}×${slideshowCurrent.file.height}`,
+        } : null}
+        paused={slideshowPaused}
+        onTogglePause={toggleSlideshowPause}
+        onClose={closeSlideshow}
       />
     ) : null}
     <RewritePromptDialog open={rewritePromptOpen} onOpenChange={setRewritePromptOpen}

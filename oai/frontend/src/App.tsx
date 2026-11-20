@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthProvider'
 import { ThemeProvider } from './contexts/ThemeProvider'
+import { ConfirmationProvider } from './contexts/ConfirmationProvider'
 import { RequireAuth } from './components/RequireAuth'
 import { AppShell } from './components/AppShell'
 import LoginPage from './pages/LoginPage'
@@ -40,6 +41,7 @@ export default function App() {
     <ThemeProvider>
     <BrowserRouter>
       <AuthProvider>
+        <ConfirmationProvider>
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -94,6 +96,7 @@ export default function App() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </ConfirmationProvider>
       </AuthProvider>
     </BrowserRouter>
     </ThemeProvider>

@@ -1,7 +1,8 @@
+import { useConfirmation } from '@/contexts/ConfirmationContext'
 import { useCallback, useEffect, useState } from 'react'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { Link } from 'react-router-dom'
-import { Check, ChevronDown, Copy, Eye, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, Copy, Eye, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MorphCollapse } from '@/components/Morph'
@@ -40,6 +41,8 @@ type PromptPlaceholdersPanelProps = {
  */
 export function PromptPlaceholdersPanel({ onClose, className }: PromptPlaceholdersPanelProps) {
   const { token } = useAuth()
+  const [search, setSearch] = useState('')
+  const nameFilter = search.trim().replace(/^\{/, '').replace(/\}$/, '').toLowerCase()
 
   return (
     <div
@@ -91,9 +94,22 @@ export function PromptPlaceholdersPanel({ onClose, className }: PromptPlaceholde
         ) : null}
       </div>
 
-      <QuickNamesSection token={token} />
-      <CustomPlaceholdersSection token={token} />
-      <ReservedNamesSection />
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+        <Input
+          type="search"
+          value={search}
+          onChange={event => setSearch(event.target.value)}
+          placeholder="Filter by name…"
+          aria-label="Filter placeholders by name"
+          className="pl-9"
+          data-testid="prompt-placeholders-search"
+        />
+      </div>
+
+      {!nameFilter || nameFilter === '?' ? <QuickNamesSection token={token} /> : null}
+      <CustomPlaceholdersSection token={token} nameFilter={nameFilter} />
+      <ReservedNamesSection nameFilter={nameFilter} />
     </div>
   )
 }
@@ -219,7 +235,8 @@ type FormState = {
 
 const EMPTY_FORM: FormState = { id: null, name: '', variantsText: '' }
 
-function CustomPlaceholdersSection({ token }: { token: string | null }) {
+function CustomPlaceholdersSection({ token, nameFilter }: { token: string | null; nameFilter: string }) {
+  const confirm = useConfirmation()
   const [items, setItems] = useState<PromptPlaceholder[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -315,7 +332,7 @@ function CustomPlaceholdersSection({ token }: { token: string | null }) {
 
   async function remove(item: PromptPlaceholder) {
     if (!token) return
-    if (!window.confirm(`Delete placeholder "{${item.name}}"?`)) return
+    if (!await confirm({ title: 'Delete placeholder?', description: `Delete placeholder "{${item.name}}"? This cannot be undone.` })) return
     setBusy(true)
     setError(null)
     try {
@@ -340,6 +357,8 @@ function CustomPlaceholdersSection({ token }: { token: string | null }) {
     setPreviewId(item.id)
     setPreviewText(result)
   }
+
+  const filteredItems = items.filter(item => item.name.toLowerCase().includes(nameFilter))
 
   return (
     <section>
@@ -414,9 +433,11 @@ function CustomPlaceholdersSection({ token }: { token: string | null }) {
           <p className="py-2 text-xs text-muted-foreground">
             No custom placeholders yet — add one above, e.g. <span className="font-mono">{'{.cinematic}'}</span>.
           </p>
+        ) : filteredItems.length === 0 ? (
+          <p role="status" className="py-2 text-xs text-muted-foreground">No custom placeholders match this name.</p>
         ) : (
           <div className="flex flex-col divide-y divide-border rounded-md border border-border/60">
-            {items.map(item => (
+            {filteredItems.map(item => (
               <div key={item.id} data-testid={`prompt-placeholders-item-${item.id}`}>
                 <div className="group flex items-center gap-2 px-2.5 py-2">
                   <div className="min-w-0 flex-1">
@@ -490,14 +511,15 @@ function CustomPlaceholdersSection({ token }: { token: string | null }) {
 /** Built-in tokens in display order: the server-side `{?}` first, then the dictionaries. */
 const RESERVED_TOKENS = ['?', ...PLACEHOLDER_CATEGORIES].map(name => `{${name}}`)
 
-function ReservedNamesSection() {
+function ReservedNamesSection({ nameFilter }: { nameFilter: string }) {
+  const filteredTokens = RESERVED_TOKENS.filter(token => token.slice(1, -1).includes(nameFilter))
   return (
     <section data-testid="prompt-placeholders-reserved-list">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Built-in (reserved) names
       </p>
       <ul className="mt-1.5 flex flex-wrap gap-1.5">
-        {RESERVED_TOKENS.map(token => (
+        {filteredTokens.map(token => (
           <li
             key={token}
             className="flex items-center gap-0.5 rounded-md bg-muted/50 py-0.5 pl-2 pr-0.5"
@@ -507,6 +529,9 @@ function ReservedNamesSection() {
           </li>
         ))}
       </ul>
+      {filteredTokens.length === 0 ? (
+        <p role="status" className="mt-1.5 text-xs text-muted-foreground">No built-in placeholders match this name.</p>
+      ) : null}
       <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
         Each category resolves to a random word from a built-in dictionary, and{' '}
         <span className="font-mono">{'{?}'}</span> resolves to a random two-word name on the server. Your own

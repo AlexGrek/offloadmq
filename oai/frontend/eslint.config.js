@@ -18,5 +18,11 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      'no-restricted-globals': ['error', 'alert', 'confirm', 'prompt'],
+      'no-restricted-properties': ['error', ...['window', 'globalThis', 'self'].flatMap(object =>
+        ['alert', 'confirm', 'prompt'].map(property => ({ object, property, message: 'Use an in-app modal instead of a native browser dialog.' })),
+      )],
+    },
   },
 ])

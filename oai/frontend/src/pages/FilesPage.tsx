@@ -1,3 +1,4 @@
+import { useConfirmation } from '@/contexts/ConfirmationContext'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useNavigate } from 'react-router-dom'
@@ -362,6 +363,7 @@ function AudioList({
   onError: (msg: string) => void
   onShowProperties: (filename: string) => void
 }) {
+  const confirm = useConfirmation()
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -418,7 +420,7 @@ function AudioList({
 
   async function handleDelete(file: UserFile) {
     if (!token) return
-    if (!window.confirm(`Delete "${file.filename}"? This cannot be undone.`)) return
+    if (!await confirm({ title: 'Delete audio?', description: `Delete "${file.filename}"? This cannot be undone.` })) return
     setDeletingId(file.id)
     try {
       if (playingId === file.id) stopPlayback()

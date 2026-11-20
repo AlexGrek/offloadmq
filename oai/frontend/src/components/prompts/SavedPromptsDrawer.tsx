@@ -1,3 +1,4 @@
+import { useConfirmation } from '@/contexts/ConfirmationContext'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlignLeft, Clock, LayoutGrid, Loader2, Rows3, Search, Star, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -62,6 +63,7 @@ export function SavedPromptsDrawer({
   previews = false,
   initialKind,
 }: SavedPromptsDrawerProps) {
+  const confirm = useConfirmation()
   const [kind, setKind] = useState<PromptKind>(initialKind ?? 'recent')
   // Jump to `initialKind` on every open (state adjusted during render, not in an effect).
   const [wasOpen, setWasOpen] = useState(open)
@@ -150,7 +152,7 @@ export function SavedPromptsDrawer({
   }
 
   async function remove(entry: PromptEntry) {
-    if (!token || !window.confirm('Delete this saved prompt?')) return
+    if (!token || !await confirm({ title: 'Delete saved prompt?', description: 'Delete this saved prompt? This cannot be undone.' })) return
     await run(async () => {
       await deletePrompt(token, entry.id)
       library.removeItem(entry.id)

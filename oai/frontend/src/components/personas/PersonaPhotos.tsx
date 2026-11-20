@@ -305,7 +305,7 @@ export function PersonaPhotos({ token, persona }: Props) {
         )}
 
         {workflow !== 'txt2img' && (
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {input ? (
               <div className="relative size-20 overflow-hidden rounded-lg bg-muted">
                 <img src={imageThumbnailUrl(input.image_id, token)} alt={input.filename} className="size-full object-cover" />
@@ -354,7 +354,7 @@ export function PersonaPhotos({ token, persona }: Props) {
             Face swap{!hasFaces && <span className="text-xs text-muted-foreground">(add a face first)</span>}
           </label>
           {hasFaces && (existing || faceSwap) && persona.faces.length > 1 && (
-            <div className="flex items-center gap-1.5" data-testid="persona-photo-face-picker">
+            <div className="flex min-w-0 max-w-full basis-full flex-wrap items-center gap-1.5 sm:basis-auto" data-testid="persona-photo-face-picker">
               {persona.faces.map((f, i) => {
                 const selected = (faceId || persona.faces[0].image_id) === f.image_id
                 return (
@@ -363,7 +363,7 @@ export function PersonaPhotos({ token, persona }: Props) {
                     type="button"
                     title={i === 0 ? 'Primary face' : 'Use this face'}
                     onClick={() => setFaceId(f.image_id)}
-                    className={cn('size-9 overflow-hidden rounded-md ring-2', selected ? 'ring-primary' : 'ring-transparent opacity-70')}
+                    className={cn('size-9 shrink-0 overflow-hidden rounded-md ring-2', selected ? 'ring-primary' : 'ring-transparent opacity-70')}
                   >
                     <img src={imageThumbnailUrl(f.image_id, token)} alt="" className="size-full object-cover" />
                   </button>

@@ -3,16 +3,6 @@ import { Activity, Bot, Braces, Clapperboard, Eye, Feather, FolderOpen, GalleryV
 /** Every app tile on the dashboard; also the source for the TopBar's most-used shortcuts. */
 export const apps = [
   {
-    id: 'langgraph', icon: GitBranch, title: 'LangGraph',
-    description: 'Build Python agents with tools and local LLMs', href: '/app/langgraph',
-    gradient: 'from-teal-500/20 to-sky-500/20', iconBg: 'bg-teal-500/20', iconColor: 'text-teal-400',
-  },
-  {
-    id: 'personas', icon: VenetianMask, title: 'Personas',
-    description: 'Characters with faces and a voice — chat with them, take their photos', href: '/app/personas',
-    gradient: 'from-fuchsia-500/20 to-orange-500/20', iconBg: 'bg-fuchsia-500/20', iconColor: 'text-fuchsia-400',
-  },
-  {
     id: 'chat',
     icon: Bot,
     title: 'LLM Chat',
@@ -53,6 +43,16 @@ export const apps = [
     iconColor: 'text-sky-400',
   },
   {
+    id: 'img-utils',
+    icon: Wand2,
+    title: 'Image Tools',
+    description: 'One-shot transforms: depth maps, face swap — image in, image out',
+    href: '/app/img-utils',
+    gradient: 'from-cyan-500/20 to-blue-500/20',
+    iconBg: 'bg-cyan-500/20',
+    iconColor: 'text-cyan-400',
+  },
+  {
     id: 'image-cycles',
     icon: Repeat2,
     title: 'Image Cycles',
@@ -61,6 +61,11 @@ export const apps = [
     gradient: 'from-violet-500/20 to-sky-500/20',
     iconBg: 'bg-violet-500/20',
     iconColor: 'text-violet-400',
+  },
+  {
+    id: 'personas', icon: VenetianMask, title: 'Personas',
+    description: 'Characters with faces and a voice — chat with them, take their photos', href: '/app/personas',
+    gradient: 'from-fuchsia-500/20 to-orange-500/20', iconBg: 'bg-fuchsia-500/20', iconColor: 'text-fuchsia-400',
   },
   {
     id: 'generator-improver',
@@ -83,16 +88,6 @@ export const apps = [
     iconColor: 'text-orange-400',
   },
   {
-    id: 'img-utils',
-    icon: Wand2,
-    title: 'Image Tools',
-    description: 'One-shot transforms: depth maps, face swap — image in, image out',
-    href: '/app/img-utils',
-    gradient: 'from-cyan-500/20 to-blue-500/20',
-    iconBg: 'bg-cyan-500/20',
-    iconColor: 'text-cyan-400',
-  },
-  {
     id: 'prompt-studio',
     icon: Feather,
     title: 'Prompt Studio',
@@ -111,16 +106,6 @@ export const apps = [
     gradient: 'from-rose-500/20 to-orange-500/20',
     iconBg: 'bg-rose-500/20',
     iconColor: 'text-rose-400',
-  },
-  {
-    id: 'runners',
-    icon: Activity,
-    title: 'Runners',
-    description: 'View active OffloadMQ runner nodes',
-    href: '/app/runners',
-    gradient: 'from-teal-500/20 to-emerald-500/20',
-    iconBg: 'bg-teal-500/20',
-    iconColor: 'text-teal-400',
   },
   {
     id: 'music',
@@ -201,5 +186,20 @@ export const apps = [
     gradient: 'from-purple-500/20 to-indigo-500/20',
     iconBg: 'bg-purple-500/20',
     iconColor: 'text-purple-400',
+  },
+  {
+    id: 'langgraph', icon: GitBranch, title: 'LangGraph',
+    description: 'Build Python agents with tools and local LLMs', href: '/app/langgraph',
+    gradient: 'from-teal-500/20 to-sky-500/20', iconBg: 'bg-teal-500/20', iconColor: 'text-teal-400',
+  },
+  {
+    id: 'runners',
+    icon: Activity,
+    title: 'Runners',
+    description: 'View active OffloadMQ runner nodes',
+    href: '/app/runners',
+    gradient: 'from-teal-500/20 to-emerald-500/20',
+    iconBg: 'bg-teal-500/20',
+    iconColor: 'text-teal-400',
   },
 ] as const

@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Braces, Check, Copy } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Braces, Check, Copy, Dices } from 'lucide-react'
+import { listPromptPlaceholders } from '@/api/promptPlaceholders'
 import { Button } from '@/components/ui/button'
 import { MorphCollapse } from '@/components/Morph'
+import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
+import { PLACEHOLDER_CATEGORIES } from '@/lib/promptPlaceholders'
 import { useRecentPlaceholders } from '@/lib/recentPlaceholders'
+
+const BUILTIN_TOKENS = ['{?}', ...PLACEHOLDER_CATEGORIES.map(name => `{${name}}`)]
 
 export type RecentPlaceholdersProps = {
   /** Called with the token (e.g. `{color}`) when a chip is clicked. */
@@ -12,13 +18,33 @@ export type RecentPlaceholdersProps = {
 
 /** "{}" toggle below the prompt — expands into a wrapping tag cloud
  *  of the user's most recently used `{placeholder}` tokens (max 7, most
- *  recent first). History lives entirely in localStorage; nothing here talks
- *  to the server. */
+ *  recent first), followed by a random-copy button. History lives in localStorage;
+ *  custom definitions are loaded for the random button. */
 export function RecentPlaceholders({ onInsert }: RecentPlaceholdersProps) {
+  const { token } = useAuth()
   const [open, setOpen] = useState(false)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [copyError, setCopyError] = useState(false)
+  const [customTokens, setCustomTokens] = useState<string[]>([])
+  const [notification, setNotification] = useState<{ message: string; error: boolean } | null>(null)
   const recent = useRecentPlaceholders()
+
+  useEffect(() => {
+    if (!open || !token) return
+    const controller = new AbortController()
+    void listPromptPlaceholders(token, controller.signal).then(items => {
+      setCustomTokens(items.filter(item => item.variants.length > 0).map(item => `{${item.name}}`))
+    }).catch(() => {
+      if (!controller.signal.aborted) setCustomTokens([])
+    })
+    return () => controller.abort()
+  }, [open, token])
+
+  useEffect(() => {
+    if (!notification) return
+    const timeout = window.setTimeout(() => setNotification(null), 3000)
+    return () => window.clearTimeout(timeout)
+  }, [notification])
 
   useEffect(() => {
     if (!copiedToken) return
@@ -33,6 +59,17 @@ export function RecentPlaceholders({ onInsert }: RecentPlaceholdersProps) {
       setCopiedToken(token)
     } catch {
       setCopyError(true)
+    }
+  }
+
+  async function copyRandomToken() {
+    const available = [...new Set([...BUILTIN_TOKENS, ...customTokens])]
+    const selected = available[Math.floor(Math.random() * available.length)]
+    try {
+      await navigator.clipboard.writeText(selected)
+      setNotification({ message: `Copied ${selected}`, error: false })
+    } catch {
+      setNotification({ message: "Couldn't copy. Try again.", error: true })
     }
   }
 
@@ -52,7 +89,7 @@ export function RecentPlaceholders({ onInsert }: RecentPlaceholdersProps) {
         <Braces className="size-3.5" />
       </Button>
 
-      <MorphCollapse show={open && recent.length > 0}>
+      <MorphCollapse show={open}>
         <div
           className="flex min-w-0 flex-wrap gap-1.5 pb-1 pt-1.5"
           data-testid="imggen-recent-placeholders-list"
@@ -84,11 +121,35 @@ export function RecentPlaceholders({ onInsert }: RecentPlaceholdersProps) {
               </Button>
             </div>
           ))}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => void copyRandomToken()}
+            aria-label="Copy random substitution"
+            title="Copy a random available substitution"
+            data-testid="imggen-random-placeholder-copy"
+            className="self-center rounded-full text-muted-foreground"
+          >
+            <Dices className="size-4" />
+          </Button>
         </div>
       </MorphCollapse>
 
       <span className="sr-only" aria-live="polite">{copiedToken ? `Copied ${copiedToken}` : ''}</span>
       {copyError ? <p role="alert" className="text-xs text-destructive">Couldn't copy. Try again.</p> : null}
+      {notification && createPortal(
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-3">
+          <div
+            role={notification.error ? 'alert' : 'status'}
+            data-testid="imggen-random-placeholder-notification"
+            className={cn('max-w-md rounded-xl bg-background/95 px-4 py-3 text-sm shadow-lg ring-1 ring-border backdrop-blur [overflow-wrap:anywhere]', notification.error && 'text-destructive')}
+          >
+            {notification.message}
+          </div>
+        </div>,
+        document.body,
+      )}
 
       <MorphCollapse show={open && recent.length === 0}>
         <p className="pb-1 pt-1.5 text-xs text-muted-foreground">

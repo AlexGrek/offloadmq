@@ -1,3 +1,4 @@
+import { useConfirmation } from '@/contexts/ConfirmationContext'
 import {
   useCallback,
   useEffect,
@@ -62,6 +63,7 @@ export function VideoLightbox({
   const [open, setOpen] = useState(false)
   const [starred, setStarred] = useState(false)
   const [starLoading, setStarLoading] = useState(false)
+  const confirm = useConfirmation()
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [chromeVisible, setChromeVisible] = useState(true)
@@ -155,7 +157,7 @@ export function VideoLightbox({
 
   const onDelete = useCallback(async () => {
     if (!actions?.token || !canDelete) return
-    if (!window.confirm(`Delete "${actions.filename}"? This cannot be undone.`)) return
+    if (!await confirm({ title: 'Delete video?', description: `Delete "${actions.filename}"? This cannot be undone.` })) return
     setActionError(null)
     setDeleteLoading(true)
     try {
@@ -167,7 +169,7 @@ export function VideoLightbox({
     } finally {
       setDeleteLoading(false)
     }
-  }, [actions, canDelete])
+  }, [actions, canDelete, confirm])
 
   const stop = useCallback((e: { stopPropagation: () => void }) => e.stopPropagation(), [])
 

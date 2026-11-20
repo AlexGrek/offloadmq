@@ -1,3 +1,4 @@
+import { useConfirmation } from '@/contexts/ConfirmationContext'
 import {
   useCallback,
   useEffect,
@@ -74,6 +75,7 @@ export type ImageLightboxProps = {
   /** Omit when using controlled mode (`open`/`onOpenChange`) — no trigger is rendered then. */
   children?: ReactNode
   actions?: ImageLightboxActions
+  allowDownload?: boolean
   /** Controlled mode: drive the dialog externally (e.g. slideshow auto-advance). */
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -106,6 +108,7 @@ export function ImageLightbox({
   testId,
   children,
   actions,
+  allowDownload = true,
   open: controlledOpen,
   onOpenChange,
   slides,
@@ -113,6 +116,7 @@ export function ImageLightbox({
   onIndexChange,
   promptPanel,
 }: ImageLightboxProps) {
+  const confirm = useConfirmation()
   const navigate = useNavigate()
   const isControlled = controlledOpen !== undefined
   const [internalOpen, setInternalOpen] = useState(false)
@@ -266,7 +270,7 @@ export function ImageLightbox({
 
   const onDelete = useCallback(async () => {
     if (!actions?.token || !canDelete) return
-    if (!window.confirm(`Delete "${actions.filename}"? This cannot be undone.`)) return
+    if (!await confirm({ title: 'Delete image?', description: `Delete "${actions.filename}"? This cannot be undone.` })) return
     setActionError(null)
     setDeleteLoading(true)
     try {
@@ -278,7 +282,7 @@ export function ImageLightbox({
     } finally {
       setDeleteLoading(false)
     }
-  }, [actions, canDelete, setOpen])
+  }, [actions, canDelete, setOpen, confirm])
 
   // --- gallery track: keep scroll position and `index` in sync ---------------
   useEffect(() => {
@@ -625,7 +629,7 @@ export function ImageLightbox({
                   Image Tools
                 </button>
               ) : null}
-              <button
+              {allowDownload && <button
                 type="button"
                 className={cn(glassButton, downloaded && 'text-emerald-300 hover:text-emerald-200')}
                 onClick={onDownload}
@@ -633,7 +637,7 @@ export function ImageLightbox({
               >
                 <Download className="size-3" />
                 {downloaded ? 'Downloaded' : 'Download'}
-              </button>
+              </button>}
               <button
                 type="button"
                 className={cn(glassButton, starred && 'text-amber-300 hover:text-amber-200')}
