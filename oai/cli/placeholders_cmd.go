@@ -183,6 +183,8 @@ func cmdPlaceholdersList(args []string) error {
 	}
 	if len(items) == 0 {
 		fmt.Println("No custom placeholders. Create one with: oai image placeholders create NAME \"variant\" ...")
+		fmt.Println()
+		fmt.Println(builtinPlaceholdersSummary())
 		return nil
 	}
 	if *full {
@@ -195,6 +197,8 @@ func cmdPlaceholdersList(args []string) error {
 				fmt.Printf("  %s\n", v)
 			}
 		}
+		fmt.Println()
+		fmt.Println(builtinPlaceholdersSummary())
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -206,7 +210,24 @@ func cmdPlaceholdersList(args []string) error {
 		}
 		fmt.Fprintf(w, "{%s}\t%s\t%d\t%s\n", p.Name, p.ID, len(p.Variants), first)
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	fmt.Println()
+	fmt.Println(builtinPlaceholdersSummary())
+	return nil
+}
+
+// builtinPlaceholdersSummary lists the reserved placeholders that need no definition.
+func builtinPlaceholdersSummary() string {
+	names := []string{"adjective", "animal", "color", "country", "language", "name", "starwars"}
+	tokens := make([]string, len(names))
+	for i, n := range names {
+		tokens[i] = "{" + n + "}"
+	}
+	return "Built-in: " + strings.Join(tokens, " ") + " (random words; {starwars} is left literal by the CLI)\n" +
+		"  {?}       random two-word name, filled by the server\n" +
+		"  {random}  any other placeholder (built-in, {?} or custom), picked at random per use"
 }
 
 // cmdPlaceholdersShow prints the variants one per line — bare on stdout, the same

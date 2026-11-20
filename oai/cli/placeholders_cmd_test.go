@@ -143,7 +143,8 @@ func TestPlaceholdersCreateListShow(t *testing.T) {
 	}
 
 	list := mustRunPlaceholders(t, "list")
-	if !strings.Contains(list, "{.cinematic}") || !strings.Contains(list, "cinematic lighting") {
+	if !strings.Contains(list, "{.cinematic}") || !strings.Contains(list, "cinematic lighting") ||
+		!strings.Contains(list, "{random}") || !strings.Contains(list, "{?}") {
 		t.Errorf("list = %q", list)
 	}
 	// show is case-insensitive, accepts braces or the ID, and prints bare lines.

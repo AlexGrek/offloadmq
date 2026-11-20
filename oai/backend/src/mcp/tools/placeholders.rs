@@ -37,7 +37,8 @@ pub fn definitions() -> Vec<Value> {
             "list_placeholders",
             "List prompt placeholders",
             "List the user's custom prompt placeholders ({name} → one random variant per use) \
-             and the built-in ones. Same as `oai image placeholders list`.",
+             and the built-in ones, including {?} (random two-word name) and {random} (any \
+             other placeholder, picked at random per use). Same as `oai image placeholders list`.",
             json!({ "type": "object", "properties": {} }),
             READ_ONLY,
         ),
@@ -77,7 +78,8 @@ pub fn definitions() -> Vec<Value> {
             "Show what a prompt with placeholders expands to, exactly as generate_images would \
              expand it. Named placeholders avoid repeats within a batch; inline {a|b|c} choices \
              pick one literal option independently (repeats allowed, spaces trimmed, empty options \
-             allowed). Includes {?} random names unless \
+             allowed). {random} becomes another placeholder picked at random and expands as \
+             that. Includes {?} random names unless \
              resolve_names is false. Flags unknown {tokens}, which would otherwise reach the \
              image model literally. Same as `oai image placeholders expand`.",
             json!({
@@ -157,7 +159,14 @@ async fn list(ctx: &ToolContext) -> Result<ToolOutput, AppError> {
         items.push(placeholder_json(p)?);
     }
     let mut out = ToolOutput::text(lines.join("\n"));
-    out.set_structured(json!({ "builtin": BUILTIN_CATEGORIES, "custom": items }));
+    out.set_structured(json!({
+        "builtin": BUILTIN_CATEGORIES,
+        "special": [
+            { "token": "{?}", "description": "random two-word name, filled at job creation" },
+            { "token": "{random}", "description": "any other placeholder (built-in, {?} or custom), picked at random per use" },
+        ],
+        "custom": items,
+    }));
     Ok(out)
 }
 

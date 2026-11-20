@@ -534,6 +534,8 @@ class TestSubstitutions:
         assert listed["structuredContent"]["builtin"] == [
             "adjective", "animal", "color", "country", "language", "name", "starwars"
         ]
+        assert [s["token"] for s in listed["structuredContent"]["special"]] == ["{?}", "{random}"]
+        assert "{random}" in text_of(listed)
 
     def test_every_builtin_expands(self, client: httpx.Client, tokens: dict):
         token = tokens["access_token"]
