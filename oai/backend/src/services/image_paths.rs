@@ -82,6 +82,23 @@ mod tests {
     }
 }
 
+/// VR Worlds splat scene (3DGS binary PLY). One per job, written once.
+pub fn world_ply_path(user_id: i64, job_id: i64) -> String {
+    format!("users/{user_id}/worlds/{job_id}/scene.ply")
+}
+
+/// VR Worlds preview contact sheet (PNG) rendered by the agent.
+pub fn world_preview_path(user_id: i64, job_id: i64) -> String {
+    format!("users/{user_id}/worlds/{job_id}/preview.png")
+}
+
+#[cfg(test)]
+#[test]
+fn world_paths_are_stable() {
+    assert_eq!(world_ply_path(7, 5), "users/7/worlds/5/scene.ply");
+    assert_eq!(world_preview_path(7, 5), "users/7/worlds/5/preview.png");
+}
+
 /// LangGraph artifacts use numeric slots; client filenames never become storage paths.
 pub fn langgraph_artifact_path(user_id: i64, job_id: i64, index: usize) -> String {
     format!("users/{user_id}/langgraph/{job_id}/{index}")

@@ -21,6 +21,7 @@ def register_routed_executors() -> None:
         "imggen",
         "img-utils",
         "image_resize",
+        "world",
         "txt2music",
         "onnx",
         "custom",

@@ -18,3 +18,4 @@ pub mod image_cycles_worker;
 pub mod persona_photos_worker;
 
 pub mod langgraph_worker;
+pub mod worlds_worker;

@@ -34,3 +34,4 @@ pub mod user_settings;
 pub mod personas;
 
 pub mod langgraph;
+pub mod worlds;

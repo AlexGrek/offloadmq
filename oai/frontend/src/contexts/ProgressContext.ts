@@ -8,6 +8,7 @@ export type ProgressContextValue = {
   runningImageJobs: RunningJobItem[]
   runningDescribeJobs: RunningJobItem[]
   runningImgUtilsJobs: RunningJobItem[]
+  runningWorldJobs: RunningJobItem[]
   runningImageJobsLoading: boolean
   refreshRunningImageJobs: () => Promise<void>
   /**

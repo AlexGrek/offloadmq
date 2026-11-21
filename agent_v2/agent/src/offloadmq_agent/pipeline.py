@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Executors that upload their results to a server bucket and therefore take an
 # extra output_bucket argument. "image_resize" is bare — it has no sub-name.
-_OUTPUT_BUCKET_PREFIXES = ("imggen.", "img-utils.", "txt2music.", "llm-runtime.")
+_OUTPUT_BUCKET_PREFIXES = ("imggen.", "img-utils.", "txt2music.", "llm-runtime.", "world.")
 _OUTPUT_BUCKET_CAPS = ("image_resize",)
 
 

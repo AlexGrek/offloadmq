@@ -1,11 +1,11 @@
 //! Lightweight running-job list for the global Progress drawer (DB only, no OffloadMQ poll).
 //! Covers image generation (`source: "image"`), describe (`source: "describe"`) and
-//! Image Tools (`source: "img-utils"`).
+//! Image Tools (`source: "img-utils"`) and VR Worlds (`source: "worlds"`).
 
 use serde::Serialize;
 
 use crate::{
-    db::{image_analysis, image_generation, img_utils},
+    db::{image_analysis, image_generation, img_utils, worlds},
     error::AppError,
     offload::base_capability,
     services::{image_job_names, img_utils::RESIZE_CAPABILITY},
@@ -77,6 +77,25 @@ pub async fn list_running_jobs(
         key: format!("img-utils:{}", job.id),
         source: "img-utils".to_string(),
         label: img_utils_label(&job.workflow, &job.utility),
+        status: job.status,
+        stage: job.stage,
+        job_id: job.id.to_string(),
+        offload_cap: job.offload_cap.unwrap_or_default(),
+        offload_task_id: job.offload_task_id.unwrap_or_default(),
+        started_at: job.started_at.map(|d| d.to_rfc3339()),
+        typical_runtime_seconds: job.typical_runtime_seconds.filter(|s| *s > 0.0),
+        submitted_at: Some(job.created_at.to_rfc3339()),
+    }));
+
+    let worlds = worlds::list_user_active(&state.db, user_id).await?;
+    jobs.extend(worlds.into_iter().map(|job| RunningJobItem {
+        key: format!("worlds:{}", job.id),
+        source: "worlds".to_string(),
+        label: match job.mode.as_str() {
+            "pano" => "VR world · 360°".to_string(),
+            "perspective" => "VR world · window".to_string(),
+            _ => "VR world".to_string(),
+        },
         status: job.status,
         stage: job.stage,
         job_id: job.id.to_string(),

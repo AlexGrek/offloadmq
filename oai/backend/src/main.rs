@@ -60,6 +60,7 @@ async fn main() -> Result<()> {
     jobs::langgraph_worker::spawn(state.clone());
     jobs::music_generation_worker::spawn(state.clone());
     jobs::img_utils_worker::spawn(state.clone());
+    jobs::worlds_worker::spawn(state.clone());
     jobs::llm_compare_worker::spawn(state.clone());
     jobs::llm_debate_worker::spawn(state.clone());
     jobs::movie_worker::spawn(state.clone());

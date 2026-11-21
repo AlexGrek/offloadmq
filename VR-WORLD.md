@@ -155,11 +155,14 @@ Use the courtyard and a room beyond its door. Give each scene an ID, asset refer
 
 Test courtyard → room → courtyard three times. Only one heavy scene should remain resident after each transition. Check orientation, return placement, load delay, stereo, controller selection, and frame delivery after the last transition. Try the same route with a panorama substituted for one splat. This establishes whether the simpler representation actually costs the artwork anything the viewer notices.
 
-## OffloadMQ integration after the headset trial
+## OffloadMQ integration
 
-1. Reuse existing image generation or accept an uploaded image. Propose one GPU capability, `custom.world.splat`, on agents that have passed the WorldGen smoke and generation tests. Submit a regular persistent task with an input file reference and generation settings. Keep the working CLI and the queue adapter on the same generator revision. [Custom capabilities](docs/custom-capabilities.md)
-2. Implement the worker as a bounded, noninteractive generation process that writes a splat and exits. The demo starts a persistent Viser server. Use WorldGen's Python API for the worker. Write each attempt to its own temporary directory and return success only after validating and uploading the file. [WorldGen API](https://github.com/ZiYang-xie/WorldGen#-advanced-usage)
-3. Return artifact references, source hash, effective settings, model revisions, elapsed time, splat count, and bytes. Use the existing bucket pattern for transport and copy approved worlds into durable OAI storage before temporary buckets expire. Cache by source and generator settings so changing a hotspot or spawn pose reuses the expensive asset. [Comfy output bucket example](docs/comfy-api.md) · [Storage API](docs/client-storage-api.md)
-4. Serve a headset-reachable HTTPS gallery URL from OAI. Keep the manifest separate from the large scene file. Test authorization and interrupted downloads on the headset, plus retry after a worker interruption. A successful retry should publish one complete scene and leave any previously approved version accessible.
+The productized Lotus/LDI pipeline uses `world.splat` (not `custom.*`) and OAI
+`/app/worlds`. Input is a library image or upload; output is a PLY, preview and
+depth map with hashes, settings and timings. Auto mode uses 2:1 inputs as panoramas.
+See [VR Worlds](docs/oai-worlds.md) for the final API and lifecycle contract.
 
-**Decision after the trial.** Adopt standalone splats for scenes that pass the turn, lean, and frame tests. Offer panoramas for art that works best from a fixed vantage point. Keep PC VR as an option for detailed splats that exceed the headset's rendering budget. The first deliverable is a measured headset experience from one artwork. The integration work follows that result.
+OAI copies results into durable storage before releasing temporary buckets and
+serves Range-capable scene downloads. Signed HTTPS headset links open without
+login. Run the headset turn/lean/FPS trials above before assessing visual quality.
+WorldGen remains a possible future generator behind the same capability contract.

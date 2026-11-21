@@ -73,6 +73,15 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
     let public = Router::new()
         .route("/api/health", get(routes::health::health))
         .route("/api/version", get(routes::health::version))
+        // VR Worlds share links: authorized by an HMAC signature, no login (headset).
+        .route(
+            "/api/worlds/public/{id}/scene.ply",
+            get(routes::worlds::public_scene),
+        )
+        .route(
+            "/api/worlds/public/{id}/preview.png",
+            get(routes::worlds::public_preview),
+        )
         .merge(credential_routes);
 
     let authenticated = Router::new()
@@ -327,6 +336,21 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/img-utils/jobs/{id}/retry",
             post(routes::img_utils::retry_job),
         )
+        .route("/api/worlds/capabilities", get(routes::worlds::list_capabilities))
+        .route(
+            "/api/worlds/jobs",
+            post(routes::worlds::start_job).get(routes::worlds::list_jobs),
+        )
+        .route(
+            "/api/worlds/jobs/{id}",
+            get(routes::worlds::get_job).delete(routes::worlds::delete_job),
+        )
+        .route("/api/worlds/jobs/{id}/poll", post(routes::worlds::poll_job))
+        .route("/api/worlds/jobs/{id}/cancel", post(routes::worlds::cancel_job))
+        .route("/api/worlds/jobs/{id}/retry", post(routes::worlds::retry_job))
+        .route("/api/worlds/jobs/{id}/share", post(routes::worlds::share))
+        .route("/api/worlds/jobs/{id}/scene.ply", get(routes::worlds::get_scene))
+        .route("/api/worlds/jobs/{id}/preview.png", get(routes::worlds::get_preview))
         .route(
             "/api/llm-compare/capabilities",
             get(routes::llm_compare::list_capabilities),

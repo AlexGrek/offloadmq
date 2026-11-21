@@ -188,6 +188,36 @@ def check_comfyui() -> CapResult:
     )
 
 
+WORLD_SPLAT_CAP = "world.splat[ply;preview;pano]"
+
+
+def check_world_splat() -> CapResult:
+    """``world.splat``: image → Gaussian-splat world.
+
+    Needs ComfyUI plus an installed ``img-utils`` *depth* workflow — installing the
+    depth workflow is what enables it, the same rule img-utils itself follows.
+    """
+    import requests
+
+    from offloadmq_agent.exec.imggen.comfyui import comfyui_url
+    from offloadmq_agent.exec.imggen.workflow import _find_workflows_dir
+    from offloadmq_agent.exec.world import find_depth_pack
+
+    url = comfyui_url()
+    try:
+        requests.get(f"{url}/system_stats", timeout=3).raise_for_status()
+    except requests.RequestException as e:
+        return CapResult([], False, "world.splat", f"ComfyUI API not reachable at {url}: {type(e).__name__}")
+    workflows_dir = _find_workflows_dir()
+    pack = find_depth_pack(workflows_dir)
+    if pack is None:
+        return CapResult(
+            [], False, "world.splat",
+            f"no img-utils depth workflow in {workflows_dir / 'img-utils'}",
+        )
+    return CapResult([WORLD_SPLAT_CAP], True, "world.splat", f"depth via img-utils.{pack} at {url}")
+
+
 # Namespaced capability prefixes that live in a subdirectory of workflows/.
 _NAMESPACED_CAP_PREFIXES = ("txt2music", "img-utils")
 
@@ -366,6 +396,7 @@ _CHECKS: List[Callable[[], CapResult]] = [
     check_docker,
     check_kokoro,
     check_comfyui,
+    check_world_splat,
     check_custom_caps,
     check_onnx,
     check_ollama,

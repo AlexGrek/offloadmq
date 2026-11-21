@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VR world POC</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; }
+  #hud { position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,.65); padding: 8px 10px; border-radius: 6px; max-width: 360px; }
+  #hud select, #hud button { font: inherit; margin: 2px 4px 2px 0; }
+  #stats { white-space: pre; font-family: ui-monospace, monospace; font-size: 12px; margin-top: 6px; }
+  #help { opacity: .7; margin-top: 6px; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.4.0/spark.module.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <div><b>VR world POC</b> · <select id="scene"></select><button id="recenter">Recenter (R)</button></div>
+  <div id="stats">loading…</div>
+  <div id="help">Desktop: drag to look, WASD/QE to move, Shift = fast.<br>
+    Headset: Enter VR, then lean. Left stick moves, right stick turns, R/recenter resets.</div>
+</div>
+<script type="module">
+import * as THREE from "three";
+import { SparkRenderer, SplatMesh, SparkXr, SparkControls } from "@sparkjsdev/spark";
+
+const params = new URLSearchParams(location.search);
+const $ = (id) => document.getElementById(id);
+
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.add(new SparkRenderer({ renderer }));
+
+// The painting's camera sits at the origin. With the "local" reference space the XR
+// origin is the head pose at session start, so the opening view matches the art.
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 500);
+const rig = new THREE.Group();
+rig.add(camera);
+scene.add(rig);
+
+const xr = new SparkXr({
+  renderer,
+  mode: "vr",
+  referenceSpaceType: "local",
+  frameBufferScaleFactor: Number(params.get("fbscale") ?? 1),
+  controllers: { moveSpeed: 0.6 },
+  onEnterXr: () => { recenter(); stats.xr = true; },
+  onExitXr: () => { stats.xr = false; },
+});
+const controls = new SparkControls({ canvas: renderer.domElement });
+controls.fpsMovement.moveSpeed = 1.0;
+
+let mesh = null;
+const stats = { name: "", splats: 0, bytes: 0, loadMs: 0, fps: 0, xr: false, worst: 0 };
+
+function recenter() {
+  rig.position.set(0, 0, 0);
+  rig.quaternion.identity();
+  camera.position.set(0, 0, 0);
+  camera.quaternion.identity();
+}
+
+async function loadScene(name) {
+  if (mesh) { scene.remove(mesh); mesh.dispose?.(); mesh = null; }
+  stats.name = name; stats.loadMs = 0;
+  $("stats").textContent = `loading ${name}…`;
+  const meta = await fetch(`runs/${name}/run.json`).then((r) => r.json()).catch(() => ({}));
+  const t0 = performance.now();
+  const m = new SplatMesh({ url: `runs/${name}/scene.ply` });
+  // PLY is in the 3DGS/OpenCV frame (y down, z forward); flip to three.js (y up, -z forward).
+  m.quaternion.set(1, 0, 0, 0);
+  scene.add(m);
+  mesh = m;
+  await m.initialized;
+  stats.loadMs = performance.now() - t0;
+  stats.splats = meta.splats ?? 0;
+  stats.bytes = meta.ply_bytes ?? 0;
+  stats.meta = meta;
+  recenter();
+  history.replaceState(null, "", `?scene=${encodeURIComponent(name)}`);
+}
+
+const runs = await fetch("runs/index.json").then((r) => r.json()).catch(() => []);
+for (const r of runs) $("scene").add(new Option(r, r));
+const initial = params.get("scene") ?? runs[0];
+if (initial) { $("scene").value = initial; loadScene(initial); }
+else $("stats").textContent = "no runs yet — run pipeline.py first";
+$("scene").onchange = (e) => loadScene(e.target.value);
+$("recenter").onclick = recenter;
+addEventListener("keydown", (e) => { if (e.key === "r" || e.key === "R") recenter(); });
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// Frame timing: app FPS over the last second, plus the worst frame in that window.
+let frames = 0, windowStart = performance.now(), last = performance.now(), worst = 0;
+renderer.setAnimationLoop((time, xrFrame) => {
+  const now = performance.now();
+  worst = Math.max(worst, now - last); last = now; frames++;
+  if (now - windowStart >= 1000) {
+    stats.fps = (frames * 1000) / (now - windowStart); stats.worst = worst;
+    frames = 0; worst = 0; windowStart = now;
+    const s = stats;
+    $("stats").textContent =
+      `${s.name}\n${s.splats.toLocaleString()} splats · ${(s.bytes / 2 ** 20).toFixed(1)} MiB\n` +
+      `load ${(s.loadMs / 1000).toFixed(2)} s · ${s.fps.toFixed(0)} fps · worst ${s.worst.toFixed(1)} ms` +
+      (s.xr ? " · XR" : "");
+    window.__vrStats = { ...s };
+  }
+  if (renderer.xr.isPresenting) xr.updateControllers(camera);
+  else controls.update(rig, camera);
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

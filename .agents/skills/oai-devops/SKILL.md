@@ -282,3 +282,8 @@ between the row insert and the OffloadMQ submit.
 
 - **oai-frontend** — UI work, not cluster deploy
 - **oai-itests** — API tests against local backend (`task dev` + `task itest`)
+
+## VR Worlds
+
+`WORLDS_WORKER_TICK_SECS` (10), `WORLDS_WORKER_BATCH_SIZE` (20) control reconciliation.
+`WORLD_LINK_TTL_HOURS` (24; valid 1?720) controls signed headset links.

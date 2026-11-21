@@ -24,6 +24,9 @@ import RunnersPage from './pages/RunnersPage'
 import TtsPage from './pages/TtsPage'
 import { lazy, Suspense } from 'react'
 const LanggraphPage = lazy(() => import('./pages/LanggraphPage'))
+// three.js + Spark are heavy — keep both VR Worlds pages out of the main bundle.
+const WorldsPage = lazy(() => import('./pages/WorldsPage'))
+const WorldViewerPage = lazy(() => import('./pages/WorldViewerPage'))
 import MusicGenerationPage from './pages/MusicGenerationPage'
 import LlmComparePage from './pages/LlmComparePage'
 import LlmDebatePage from './pages/LlmDebatePage'
@@ -46,6 +49,11 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          {/* Public: a signed share link opens a VR world without logging in (Quest browser). */}
+          <Route
+            path="/worlds/view/:jobId"
+            element={<Suspense fallback={<div className="h-dvh bg-black" />}><WorldViewerPage /></Suspense>}
+          />
 
           <Route
             path="/app"
@@ -69,6 +77,7 @@ export default function App() {
             <Route path="img-model-wars" element={<ImgModelWarsPage />} />
             <Route path="nude-detect" element={<NudeDetectorPage />} />
             <Route path="img-utils" element={<ImgUtilsPage />} />
+            <Route path="worlds" element={<Suspense fallback={<p className="p-6">Loading VR Worlds…</p>}><WorldsPage /></Suspense>} />
             <Route path="runners" element={<RunnersPage />} />
             <Route path="tts" element={<TtsPage />} />
             <Route path="langgraph" element={<Suspense fallback={<p className="p-6">Loading LangGraph…</p>}><LanggraphPage /></Suspense>} />

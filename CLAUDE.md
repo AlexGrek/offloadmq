@@ -465,6 +465,7 @@ Skills live in `.claude/skills/oai-*/SKILL.md`. **Before editing OAI code, read 
 | **oai-generator-improver** | `.agents/skills/oai-generator-improver/SKILL.md` | Generator Improver page, quality/JSON/img2img branches in the shared image-cycle engine |
 | **oai-cli** | `.claude/skills/oai-cli/SKILL.md` | `oai/cli/**` (Go CLI client) |
 | **oai-mcp** | `.claude/skills/oai-mcp/SKILL.md` | `oai/backend/src/mcp/**`, `routes/oauth.rs`, `services/oauth.rs`, `db/oauth.rs`, `services/prompt_expansion.rs`, `jobs/oauth_cleanup_worker.rs` (MCP server + OAuth) |
+| **oai-worlds** | `.agents/skills/oai-worlds/SKILL.md` | VR Worlds world_jobs, worlds services/routes/worker, WorldsPage, WorldViewerPage, components/worlds, api/worlds.ts, agent exec/world |
 | **oai-backend** | `.claude/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |
 | **oai-frontend** | `.claude/skills/oai-frontend/SKILL.md` | Any `oai/frontend/**` file, or cross-cutting SPA work |
 
@@ -638,3 +639,9 @@ so no finished job leaves an OffloadMQ bucket behind (image generation does the 
 - [oai/Dockerfile](oai/Dockerfile) — multi-stage: Rust 1.91 builder → Debian bookworm-slim runtime; frontend `dist/` copied to `/app/static/`
 - [oai/docker-compose.dev.yml](oai/docker-compose.dev.yml) — local Postgres (port 5432, db/user/pass all `oai`/`oai`/`oai_dev_password`)
 - Image pushed to `grekodocker/oai` tagged with git commit hash
+
+### VR Worlds
+
+`/app/worlds` converts uploads/library images through `world.splat`; `/worlds/view/:jobId`
+is the public signed headset viewer. Read `.agents/skills/oai-worlds/SKILL.md` before
+editing this feature. API and lifecycle: [docs/oai-worlds.md](docs/oai-worlds.md).

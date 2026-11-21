@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 export function TopBar() {
   const { user, logout } = useAuth()
   const { theme, toggle } = useTheme()
-  const { drawerOpen, toggleDrawer, runningImageJobs, runningDescribeJobs, runningImgUtilsJobs } =
+  const { drawerOpen, toggleDrawer, runningImageJobs, runningDescribeJobs, runningImgUtilsJobs, runningWorldJobs } =
     useProgress()
   const { runningChatTasks } = useWorkload()
   const navigate = useNavigate()
@@ -30,7 +30,8 @@ export function TopBar() {
     runningChatTasks.length +
     runningImageJobs.length +
     runningDescribeJobs.length +
-    runningImgUtilsJobs.length
+    runningImgUtilsJobs.length +
+    runningWorldJobs.length
 
   function handleLogout() {
     logout()

@@ -9,6 +9,7 @@ import { cancelOffloadTask } from '../api/tasks'
 import { cancelImageJob } from '../api/images'
 import { cancelDescribeJob } from '../api/describe'
 import { cancelImgUtilsJob } from '../api/imgUtils'
+import { cancelWorldJob } from '../api/worlds'
 import type { RunningJobItem } from '../api/progress'
 import type { ChatTaskRecord } from '../contexts/WorkloadContext'
 import {
@@ -28,6 +29,7 @@ export function GlobalProgressDrawer() {
     runningImageJobs: imageJobs,
     runningDescribeJobs: describeJobs,
     runningImgUtilsJobs: imgUtilsJobs,
+    runningWorldJobs: worldJobs,
     runningImageJobsLoading: loadingImages,
     refreshRunningImageJobs: refreshImages,
   } = useProgress()
@@ -102,8 +104,11 @@ export function GlobalProgressDrawer() {
     () => imgUtilsProgressRows(imgUtilsJobs, handleCancelImgUtils),
     [imgUtilsJobs, handleCancelImgUtils],
   )
+  const worldRows = imgUtilsProgressRows(worldJobs, job => {
+    if (token) void cancelWorldJob(token, job.job_id).then(refreshImages).catch(console.error)
+  })
   const totalRunning =
-    chatRows.length + imageRows.length + describeRows.length + imgUtilsRows.length
+    chatRows.length + imageRows.length + describeRows.length + imgUtilsRows.length + worldRows.length
 
   return (
     <>
@@ -158,6 +163,7 @@ export function GlobalProgressDrawer() {
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <ProgressPanel title="VR Worlds" rows={worldRows} emptyMessage="No worlds in progress." />
           <ProgressPanel
             title="Chat"
             emptyMessage="No chat tasks running."

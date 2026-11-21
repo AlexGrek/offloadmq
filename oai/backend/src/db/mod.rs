@@ -43,3 +43,4 @@ pub mod personas;
 pub mod persona_photos;
 
 pub mod langgraph;
+pub mod worlds;

@@ -42,6 +42,11 @@ def route_executor(cap: str) -> ExecutorFn | None:
 
         return execute_imgutils_comfyui
 
+    if cap.startswith("world."):
+        from offloadmq_agent.exec.world import execute_world_splat
+
+        return execute_world_splat
+
     if cap.startswith("txt2music."):
         from offloadmq_agent.exec.musicgen import execute_musicgen_comfyui
 

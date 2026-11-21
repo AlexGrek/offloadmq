@@ -11,6 +11,7 @@ import { useRunningImageJobs } from '../hooks/useRunningImageJobs'
 import { cancelImageJob, pollImageJob } from '../api/images'
 import { pollDescribeJob } from '../api/describe'
 import { pollImgUtilsJob } from '../api/imgUtils'
+import { pollWorldJob } from '../api/worlds'
 import type { RunningJobItem } from '../api/progress'
 import { ProgressContext } from './ProgressContext'
 
@@ -50,6 +51,8 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     [runningJobs],
   )
 
+  const runningWorldJobs = useMemo(() => runningJobs.filter(j => j.source === 'worlds'), [runningJobs])
+
   // Keep a ref so the polling loop always sees the latest job list without
   // recreating the timer on every refresh.
   const runningJobsRef = useRef(runningJobs)
@@ -81,6 +84,10 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         }
         if (job.source === 'img-utils') {
           await pollImgUtilsJob(token, job.job_id)
+          return
+        }
+        if (job.source === 'worlds') {
+          await pollWorldJob(token, job.job_id)
           return
         }
         if (job.status === 'cancelRequested') {
@@ -128,6 +135,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       runningImageJobs,
       runningDescribeJobs,
       runningImgUtilsJobs,
+      runningWorldJobs,
       runningImageJobsLoading,
       refreshRunningImageJobs: refresh,
       setForegroundJob,
@@ -138,6 +146,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       runningImageJobs,
       runningDescribeJobs,
       runningImgUtilsJobs,
+      runningWorldJobs,
       runningImageJobsLoading,
       refresh,
       setForegroundJob,

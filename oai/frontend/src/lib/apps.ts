@@ -1,4 +1,4 @@
-import { Activity, Bot, Braces, Clapperboard, Eye, Feather, FolderOpen, GalleryVerticalEnd, GitCompareArrows, GitBranch, ImagePlus, MessageCircleMore, Music, Repeat2, ShieldAlert, Swords, VenetianMask, Volume2, Wand2 } from 'lucide-react'
+import { Activity, Bot, Braces, Clapperboard, Eye, Feather, FolderOpen, GalleryVerticalEnd, GitCompareArrows, GitBranch, ImagePlus, MessageCircleMore, Music, Orbit, Repeat2, ShieldAlert, Swords, VenetianMask, Volume2, Wand2 } from 'lucide-react'
 
 /** Every app tile on the dashboard; also the source for the TopBar's most-used shortcuts. */
 export const apps = [
@@ -51,6 +51,16 @@ export const apps = [
     gradient: 'from-cyan-500/20 to-blue-500/20',
     iconBg: 'bg-cyan-500/20',
     iconColor: 'text-cyan-400',
+  },
+  {
+    id: 'worlds',
+    icon: Orbit,
+    title: 'VR Worlds',
+    description: 'Turn a picture into a 3D place to stand in — open it in a Quest 3',
+    href: '/app/worlds',
+    gradient: 'from-violet-500/20 to-fuchsia-500/20',
+    iconBg: 'bg-violet-500/20',
+    iconColor: 'text-violet-400',
   },
   {
     id: 'image-cycles',

@@ -688,3 +688,10 @@ ollama pull mistral:7b
 ```
 
 Then restart the agent or rescan capabilities via the web UI.
+
+## world.splat ? VR Worlds
+
+Converts an input-bucket `input_image` to a Gaussian-splat `scene.ply`,
+`preview.png` and `depth.png` in the required output bucket. Discovery requires
+ComfyUI and an installed img-utils depth workflow. See [VR Worlds](oai-worlds.md)
+for the payload, bounds, file references and operational limits.

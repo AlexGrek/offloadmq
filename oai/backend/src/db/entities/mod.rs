@@ -39,3 +39,5 @@ pub mod personas;
 pub mod persona_photo_jobs;
 
 pub mod langgraph_jobs;
+
+pub mod world_jobs;
