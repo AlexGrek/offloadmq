@@ -37,6 +37,7 @@ import {
   type WorldsRouteState,
 } from '../api/worlds'
 import { imageFileUrl } from '../api/images'
+import { cn } from '../lib/utils'
 import { Button } from '../components/ui/button'
 import { Label } from '../components/ui/label'
 import { ToolSidebar } from '../components/ToolSidebar'
@@ -366,7 +367,7 @@ export default function WorldsPage() {
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <div className="mx-auto max-w-3xl space-y-5 px-3 py-4 sm:px-6 sm:py-5">
+          <div className={cn("mx-auto space-y-5 px-3 py-4 sm:px-6 sm:py-5", viewerOpen && viewingJob ? "max-w-screen-2xl" : "max-w-3xl")}>
             {!viewingJob && (
               <section data-testid="worlds-new-panel" className="flex flex-col gap-5">
                 <header className="space-y-1">

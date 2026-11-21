@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { SparkControls, SparkRenderer, SparkXr, SplatMesh } from '@sparkjsdev/spark'
-import { Glasses, Loader2, LocateFixed } from 'lucide-react'
+import { Glasses, Loader2, LocateFixed, Maximize, Minimize } from 'lucide-react'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
 
@@ -31,6 +31,8 @@ const VR_SCALES = [
 ]
 
 export default function SplatViewer({ url, className, testId = 'worlds-viewer', prominentVr }: SplatViewerProps) {
+  const viewerRef = useRef<HTMLDivElement>(null)
+  const [fullscreen, setFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const xrRef = useRef<SparkXr | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
@@ -74,6 +76,27 @@ export default function SplatViewer({ url, className, testId = 'worlds-viewer', 
 
     const controls = new SparkControls({ canvas: renderer.domElement })
     controls.fpsMovement.moveSpeed = 1
+    // Track letters ourselves as well as physical codes: Firefox can report a
+    // localized key when the active keyboard layout is not English.
+    const movement = controls.fpsMovement
+    const letters = ['W', 'A', 'S', 'D', 'Q', 'E']
+    for (const letter of letters) {
+      movement.keycodeMoveMapping[`viewer-${letter}`] = movement.keycodeMoveMapping[`Key${letter}`]
+      delete movement.keycodeMoveMapping[`Key${letter}`]
+    }
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target
+      if (event.type === 'keydown' && target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
+      const physical = event.code.startsWith('Key') ? event.code.slice(3) : ''
+      const letter = letters.includes(physical) ? physical : event.key.toUpperCase()
+      if (!letters.includes(letter)) return
+      movement.keycode[`viewer-${letter}`] = event.type === 'keydown'
+      event.preventDefault()
+    }
+    const clearKeys = () => { for (const letter of letters) movement.keycode[`viewer-${letter}`] = false }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('keyup', onKey)
+    window.addEventListener('blur', clearKeys)
 
     // A detached element: SparkXr wires its own click listener to it, which under
     // StrictMode's double effect would make one real click enter *and* exit VR.
@@ -152,6 +175,9 @@ export default function SplatViewer({ url, className, testId = 'worlds-viewer', 
     return () => {
       disposed = true
       resize.disconnect()
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('keyup', onKey)
+      window.removeEventListener('blur', clearKeys)
       void xr.session?.end()
       renderer.setAnimationLoop(null)
       scene.remove(mesh)
@@ -164,6 +190,21 @@ export default function SplatViewer({ url, className, testId = 'worlds-viewer', 
     }
   }, [url])
 
+  useEffect(() => {
+    const update = () => setFullscreen(document.fullscreenElement === viewerRef.current)
+    document.addEventListener('fullscreenchange', update)
+    return () => document.removeEventListener('fullscreenchange', update)
+  }, [])
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement === viewerRef.current) await document.exitFullscreen()
+      else await viewerRef.current?.requestFullscreen()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not change fullscreen mode')
+    }
+  }
+
   function changeVrScale(value: number) {
     setVrScale(value)
     vrScaleRef.current = value
@@ -173,7 +214,7 @@ export default function SplatViewer({ url, className, testId = 'worlds-viewer', 
   }
 
   return (
-    <div className={cn('relative overflow-hidden bg-black', className)} data-testid={testId}>
+    <div ref={viewerRef} className={cn('relative overflow-hidden bg-black fullscreen:rounded-none', className)} data-testid={testId}>
       <div ref={containerRef} className="absolute inset-0 touch-none" />
 
       {loading ? (
@@ -200,6 +241,12 @@ export default function SplatViewer({ url, className, testId = 'worlds-viewer', 
           Drag to look · WASD/QE to move · Shift = fast
         </span>
         <div className="ml-auto flex items-center gap-2">
+          {document.fullscreenEnabled ? (
+            <Button type="button" size="sm" variant="secondary" onClick={() => void toggleFullscreen()} data-testid={`${testId}-fullscreen`}>
+              {fullscreen ? <Minimize className="mr-1 size-4" /> : <Maximize className="mr-1 size-4" />}
+              {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="sm"
