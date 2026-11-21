@@ -152,6 +152,27 @@ pub async fn delete(op: &Operator, path: &str) -> Result<(), AppError> {
 mod range_tests {
     use super::{ByteRange::*, parse_range};
 
+    #[tokio::test]
+    async fn streams_requested_bytes_and_reports_unsatisfiable_ranges() {
+        use axum::{body::to_bytes, http::StatusCode};
+        let root = std::env::temp_dir().join(format!("oai-world-stream-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir(&root).unwrap();
+        let builder = opendal::services::Fs::default().root(root.to_str().unwrap());
+        let op = opendal::Operator::new(builder).unwrap().finish();
+        op.write("scene.ply", "ply\n0123456789").await.unwrap();
+        let response = super::stream_file(&op, "scene.ply", "application/octet-stream", Some("bytes=0-3")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(response.headers()["content-range"], "bytes 0-3/14");
+        assert_eq!(response.headers()["content-length"], "4");
+        assert_eq!(to_bytes(response.into_body(), 100).await.unwrap().as_ref(), b"ply\n");
+        let response = super::stream_file(&op, "scene.ply", "application/octet-stream", Some("bytes=14-")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(response.headers()["content-range"], "bytes */14");
+        op.delete("scene.ply").await.unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
     #[test]
     fn parses_single_ranges() {
         assert_eq!(parse_range(None, 100), Full);

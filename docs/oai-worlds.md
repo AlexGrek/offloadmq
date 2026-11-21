@@ -70,3 +70,12 @@ API: `cd oai/itests` then `uv run pytest tests/test_worlds.py` against a running
 the GPU lifecycle skips when world.splat is offline.
 Browser: `cd oai/e2e` then `npx playwright test tests/worlds.spec.ts` with Vite on 5174.
 Headset: open a share link over HTTPS, enter VR, test turns and leans, record FPS.
+
+Validation on Windows (2026-11-21): 18 agent world tests and 34 API checks passed;
+the live GPU lifecycle skipped because no world.splat agent was connected.
+World/signature and streaming Range unit tests passed, as did frontend build/lint
+and the focused world/viewer/progress browser checks. Full browser suite: 165/166
+passed; the Image Cycles lightbox failure passed on isolated retry. Broader agent
+and Rust suites have unrelated Windows failures (Unix executable/newline assumptions,
+missing libvips/Unix tools); strict mypy/clippy also report existing errors outside
+VR Worlds. Physical Quest VR, FPS and actual depth generation remain unverified.

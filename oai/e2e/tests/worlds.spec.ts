@@ -64,10 +64,16 @@ test('public viewer needs no login and rejects incomplete or expired links', asy
 })
 
 test('signed public viewer mounts its 3D controls without authentication', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'xr', { configurable: true, value: {
+      isSessionSupported: async () => true,
+      addEventListener: () => {}, removeEventListener: () => {},
+    } })
+  })
   await page.route('**/api/worlds/public/**', route => route.fulfill({ status: 403 }))
   await page.goto('/worlds/view/77?u=1&exp=9999999999&sig=bad')
   await expect(page.getByTestId('worlds-viewer')).toBeVisible()
   await expect(page.getByTestId('worlds-viewer-recenter')).toBeVisible()
-  await expect(page.getByTestId('worlds-vr-unavailable')).toBeVisible()
+  await expect(page.getByTestId('worlds-enter-vr')).toBeVisible()
   await expect(page.getByText('Could not load this world:', { exact: false })).toBeVisible()
 })

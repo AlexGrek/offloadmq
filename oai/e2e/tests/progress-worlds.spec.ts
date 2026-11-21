@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 /**
- * Image Tools jobs in the global Progress drawer: the `/api/progress/running` feed
+ * VR Worlds jobs in the global Progress drawer: the `/api/progress/running` feed
  * carries `source: "worlds"` rows, which get their own panel, count toward the
  * top-bar badge, are advanced by the shell's background poll and can be canceled.
  * Fully mocked — no backend needed.
@@ -31,11 +31,11 @@ test('world jobs show in the progress drawer and can be canceled', async ({ page
               {
                 key: 'worlds:77',
                 source: 'worlds',
-                label: 'World · seedvr2_upscale_image',
+                label: 'World · pano',
                 status: 'running',
                 stage: 'sampling',
                 job_id: '77',
-                offload_cap: 'worlds.seedvr2_upscale_image',
+                offload_cap: 'world.splat',
                 offload_task_id: 't-77',
                 started_at: now,
                 typical_runtime_seconds: 30,
@@ -67,7 +67,7 @@ test('world jobs show in the progress drawer and can be canceled', async ({ page
 
   const drawer = page.getByTestId('progress-drawer')
   const row = drawer.getByTestId('progress-row-worlds:77')
-  await expect(row).toContainText('World · seedvr2_upscale_image')
+  await expect(row).toContainText('World · pano')
   await expect(drawer.getByTestId('progress-panel').filter({ hasText: 'VR Worlds' })).toContainText(
     'World',
   )
@@ -78,5 +78,5 @@ test('world jobs show in the progress drawer and can be canceled', async ({ page
   await drawer.getByTestId('progress-cancel-worlds:77').click()
   await expect.poll(() => canceled).toBe(true)
   await expect(row).toHaveCount(0)
-  await expect(drawer).toContainText('No world jobs in progress.')
+  await expect(drawer).toContainText('No worlds in progress.')
 })

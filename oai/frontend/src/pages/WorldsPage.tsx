@@ -108,7 +108,7 @@ export default function WorldsPage() {
     try {
       const data = await listWorldCapabilities(token)
       setCapabilities(data.capabilities)
-      setCapability(prev => pickListedCapability(prev, data.capabilities) ?? '')
+      setCapability(prev => pickListedCapability(prev || data.capabilities[0]?.base || '', data.capabilities) ?? '')
     } catch (e) {
       setError((e as Error).message)
     } finally {

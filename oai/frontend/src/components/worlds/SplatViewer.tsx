@@ -58,7 +58,8 @@ export default function SplatViewer({ url, className, testId = 'worlds-viewer', 
     rendererRef.current = renderer
 
     const scene = new THREE.Scene()
-    scene.add(new SparkRenderer({ renderer }))
+    const spark = new SparkRenderer({ renderer })
+    scene.add(spark)
     const camera = new THREE.PerspectiveCamera(70, (container.clientWidth || 1) / (container.clientHeight || 1), 0.05, 500)
     const rig = new THREE.Group()
     rig.add(camera)
@@ -104,6 +105,10 @@ export default function SplatViewer({ url, className, testId = 'worlds-viewer', 
     let loadMs = 0
     mesh.initialized
       .then(() => {
+        if (disposed) {
+          mesh.dispose()
+          return
+        }
         loadMs = performance.now() - t0
         if (!disposed) setLoading(false)
       })
@@ -151,6 +156,7 @@ export default function SplatViewer({ url, className, testId = 'worlds-viewer', 
       renderer.setAnimationLoop(null)
       scene.remove(mesh)
       mesh.dispose()
+      spark.dispose()
       renderer.dispose()
       renderer.domElement.remove()
       xrRef.current = null

@@ -180,9 +180,7 @@ fn file_ref<'a>(output: &'a serde_json::Value, key: &str, bucket: &str) -> Resul
         .and_then(|v| v.as_str())
         .filter(|u| !u.is_empty() && u.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
         .ok_or_else(|| AppError::BadRequest(format!("world output `{key}` has no valid file_uid")))?;
-    if let Some(b) = entry.get("bucket_uid").and_then(|v| v.as_str())
-        && b != bucket
-    {
+    if entry.get("bucket_uid").and_then(|v| v.as_str()) != Some(bucket) {
         return Err(AppError::BadRequest(format!("world output `{key}` points outside the job's bucket")));
     }
     let bytes = entry.get("bytes").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -495,16 +493,24 @@ mod tests {
             "ply": {"file_uid": "abc-123", "bucket_uid": "b1", "bytes": 42},
             "evil": {"file_uid": "../x", "bucket_uid": "b1"},
             "other": {"file_uid": "abc", "bucket_uid": "b2"},
+            "unscoped": {"file_uid": "abc"},
         });
         assert_eq!(file_ref(&out, "ply", "b1").unwrap(), Some(("abc-123", 42)));
         assert_eq!(file_ref(&out, "missing", "b1").unwrap(), None);
         assert!(file_ref(&out, "evil", "b1").is_err());
         assert!(file_ref(&out, "other", "b1").is_err());
+        assert!(file_ref(&out, "unscoped", "b1").is_err());
     }
 
     #[test]
     fn link_message_binds_job_user_and_expiry() {
         assert_eq!(link_message(5, 7, 99), "vr-world:5.7.99");
         assert_ne!(link_message(5, 7, 99), link_message(5, 8, 99));
+        let auth = crate::middleware::auth::Auth::new(b"test-world-signatures", 1);
+        let sig = auth.sign_link(&link_message(5, 7, 99));
+        assert!(auth.verify_link(&link_message(5, 7, 99), &sig));
+        for message in [link_message(6, 7, 99), link_message(5, 8, 99), link_message(5, 7, 100)] {
+            assert!(!auth.verify_link(&message, &sig));
+        }
     }
 }
