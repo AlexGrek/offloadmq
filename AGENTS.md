@@ -1,578 +1,208 @@
-# AGENTS.md
+# Repository guidance
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+OffloadMQ is a client/server/agent task queue. Its Rust MQ server, Python agent,
+management UI/CLI, and OAI application are separate surfaces. Choose the owning
+surface before changing code.
 
-## Project Overview
+## Start here
 
-OffloadMQ is a distributed task queue system for offloading computational tasks to remote agent nodes. It follows a client-server-agent architecture where clients submit tasks, the server orchestrates distribution, and agents execute tasks.
+- Use Go Task: `task --list` in the relevant directory. Root, `agent_v2/`, and
+  `oai/` have separate Taskfiles. Only `itests/` uses Make.
+- Read all matching skills **before implementation**, most specific first, then
+  parent skills. Canonical skills live in [.agents/skills/](.agents/skills/).
+  Detailed file maps and feature workflows belong in skills, not this file.
+- For cross-surface symptoms (stuck tasks, missing progress/poll fields/results),
+  start with [debug-stack](.agents/skills/debug-stack/SKILL.md).
+- Preserve the required pre-commit checks below. Report checks that could not run
+  and why.
 
-## Development Commands
+## Skill routing
 
-The repo root uses [Go Task](https://taskfile.dev) — run `task --list` for everything in [Taskfile.yml](Taskfile.yml). There is no root Makefile; `itests/` keeps its own Makefile and `agent_v2/` its own Taskfile.
+Read every matching skill; links below point to `SKILL.md`.
 
-### Rust Backend (Message Queue Server)
-```bash
-task dev                 # Run the server (cargo run)
-cargo build              # Build release
-task test:unit           # Run Rust unit tests (cargo test)
+| Area / trigger | Skill |
+| --- | --- |
+| Any `agent_v2/**` work | [agent-v2](.agents/skills/agent-v2/SKILL.md) |
+| Any `oai/backend/**` work | [oai-backend](.agents/skills/oai-backend/SKILL.md) |
+| Any `oai/frontend/**` work | [oai-frontend](.agents/skills/oai-frontend/SKILL.md) |
+| OAI Helm, Docker, Compose, deployment/infra Taskfile changes | [oai-devops](.agents/skills/oai-devops/SKILL.md) |
+| `oai/itests/**` | [oai-itests](.agents/skills/oai-itests/SKILL.md) + feature under test |
+| Chat, WS chat, system prompts, WorkloadContext, chat tasks/debug | [oai-chat](.agents/skills/oai-chat/SKILL.md) |
+| Image generation, files/buckets, promptgen, image jobs/pipeline, ProgressContext | [oai-img](.agents/skills/oai-img/SKILL.md) |
+| Image Tools: ImgUtilsPage, img_utils, image_resize, agent imgutils executor/workflows/autowiring | [oai-img-tools](.agents/skills/oai-img-tools/SKILL.md) |
+| Movie Studio page/components/API/WS, movie services/jobs, ffmpeg | [oai-movie](.agents/skills/oai-movie/SKILL.md) |
+| Image Cycles: image_cycles*, image_cycle_jobs, ImageCyclesPage, api/imageCycles.ts | [oai-image-cycles](.agents/skills/oai-image-cycles/SKILL.md) |
+| Generator Improver page or quality/JSON/img2img branches of Image Cycles | [oai-generator-improver](.agents/skills/oai-generator-improver/SKILL.md) |
+| LangGraph editors, runtime, dependencies, history/artifacts | [oai-langgraph](.agents/skills/oai-langgraph/SKILL.md) |
+| Personas, persona chats/photos, persona prompt tokens | [oai-personas](.agents/skills/oai-personas/SKILL.md) |
+| VR Worlds, image-to-splat jobs, headset links/WebXR viewer | [oai-worlds](.agents/skills/oai-worlds/SKILL.md) |
+| OAI MCP tools, OAuth, connector auth, prompt expansion | [oai-mcp](.agents/skills/oai-mcp/SKILL.md) |
+| `oai/cli/**` Go client | [oai-cli](.agents/skills/oai-cli/SKILL.md) |
+| New OAI app backed by OffloadMQ jobs | [oai-new-feature](.agents/skills/oai-new-feature/SKILL.md); add documentation |
+| Management UI sandbox apps, DevPanel, SandboxApps | [sandbox-apps](.agents/skills/sandbox-apps/SKILL.md) |
+
+Feature skills stack with backend/frontend skills for the files touched. Agent-side
+Image Tools also require `agent-v2`. Deploy-only work needs `oai-devops`; load
+feature skills when application code also changes. Shared ToolDebugModal and
+GlobalProgressDrawer require chat and/or image skills for the rows changed.
+Keep image generation (`oai-img`) distinct from Image Tools (`oai-img-tools`).
+For shared Image Cycles/Generator Improver changes, load both affected feature skills.
+
+## Development and validation
+
+Commands run from the directory in the first column. `cargo build` is a debug
+build; use `cargo build --release` for release binaries.
+
+| Directory | Setup / run | Validation |
+| --- | --- | --- |
+| Root (Rust MQ) | `task dev` | `task test:unit` (`cargo test`); `cargo build` |
+| `agent_v2/` | `task install`; `task dev` (web UI) or `uv run omq serve` (headless) | **`task typecheck` mandatory before commit**; `uv run --with pytest pytest tests` |
+| `management-frontend/` | `npm install`; `npm run dev` | `npm run build`; `npm run lint` |
+| `management-frontend/e2e/` | Start dev server first | `npm test` (Playwright); `npm run test:ui` |
+| `offloadmq-cli/` (separate Rust crate) | `cargo build --release` | `cargo fmt --check`; `cargo test`; `cargo clippy -- -D warnings` |
+| `oai/` | `task install`; `task dev` (infra + backend + Vite) | `task build`; `task itest` (live backend integration tests) |
+| `oai/e2e/` | Start OAI backend + frontend first | **`npm test` mandatory before committing OAI changes**; `npm run test:ui` |
+
+OAI dev uses backend port **3001** and Vite port **5174**
+([oai/Taskfile.yml](oai/Taskfile.yml)); the standalone backend defaults to 3000.
+`task dev` requires vips CLI and ffmpeg. From `oai/`: `task infra:up`,
+`task infra:down` (keeps volumes), `task infra:destroy` (deletes volumes),
+`task kill` (stops dev ports and infrastructure).
+
+MQ integration tests, from root: `task test:full` starts server/agent, tests, and
+stops them; `task test` uses a running stack. Manual lifecycle: `task test:start`,
+`task test:logs`, `task test:stop`. Underlying Make commands are in
+[itests/Makefile](itests/Makefile); see [docs/testing.md](docs/testing.md).
+
+Agent settings: `~/.offloadmq-agent.json`. From `agent_v2/`:
+
+```sh
+uv run omq config set --server http://localhost:3069 --api-key <agent-key>
+uv run omq register
+uv run omq serve
 ```
 
-### Python Agent (`agent_v2/`)
-```bash
-cd agent_v2
-task install             # uv sync + frontend deps
-task typecheck           # mypy over the Python packages (MANDATORY before commit)
-uv run --with pytest pytest tests   # Unit tests
-uv run omq config set --server http://localhost:3069 --api-key <agent key>
-uv run omq register      # Register this agent with the server
-uv run omq serve         # Start serving headless (or `task dev` for the web UI)
-```
+`omqcli` is the operator CLI; `oai` is the OAI end-user CLI. Fleet status, agent
+self-management, tasks, logs, heuristics, and storage commands are documented in
+[offloadmq-cli/README.md](offloadmq-cli/README.md). Authenticate with
+`omqcli auth --key <management-token>`.
 
-The agent keeps its settings in `~/.offloadmq-agent.json`. Use the `agent-v2` skill for
-agent work.
+### Local development credentials
 
-### Releasing the Agent Binary
+Use these supplied test values directly; **do not grep `.env` for them**.
 
-Build and publish the agent_v2 binaries — `omq` (CLI) and `omq-gui` (GUI) — to `dl.alexgr.space`. A release only covers the OS/arch of the machine it runs on (PyInstaller output is platform-specific), so run it once per platform.
-
-**Version is auto-computed** by [scripts/compute-agent-version.sh](scripts/compute-agent-version.sh): major.minor from the latest `release-*` tag + current commit count, e.g. latest tag `release-v0.3.250` with 260 commits → `v0.3.260`. No tag needed before running.
-
-`DL_API_KEY` is stored in `~/.zshrc` and inherited automatically — no need to pass it inline for normal usage.
-
-```bash
-# macOS / Linux — from repo root (preferred)
-task release                              # tag release-<version>, push the tag, then build + upload
-task release:agent                        # build + upload only (no tag)
-task release:agent VERSION=v0.3.260       # explicit version
-task release:agent DL_BASE_URL=http://... # override target server (default: https://dl.alexgr.space)
-DL_API_KEY=dlk_... task release:agent     # override key inline
-./scripts/release-agent.sh [version]      # the script release:agent wraps
-
-# Windows (PowerShell)
-$env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1            # auto-detects
-$env:DL_API_KEY="dlk_..."; .\scripts\release-agent.ps1 v0.3.260   # explicit
-```
-
-Scripts: [scripts/release-agent.sh](scripts/release-agent.sh) · [scripts/release-agent.ps1](scripts/release-agent.ps1)
-
-The scripts build the frontend, then a one-file PyInstaller binary per target, and upload them to bucket `offload-agent` as `omq-<os>-<arch>` and `omq-gui-<os>-<arch>` (`.exe` on Windows). The latest build is always at `https://dl.alexgr.space/rs/offload-agent/latest/<os>-<arch>/<file>`. The releaser key requires scopes `release-create` + `release-write:offload-agent`. `DL_BUCKET` overrides the bucket.
-
-Linux (amd64) binaries are built by CI when the `release-*` tag is pushed — `task release` pushes it, `task release:agent` does not. Full process: [docs/releasing.md](docs/releasing.md).
-
-Install the latest release on the current machine with `task agent:update:mac` or `task agent:update:linux`.
-
-### React Management Frontend
-```bash
-cd management-frontend
-npm install              # Install dependencies
-npm run dev              # Start dev server
-npm run build            # Production build
-npm run lint             # Run ESLint
-
-# E2E Tests (Playwright)
-cd e2e
-npm test                 # Run Playwright smoke tests (requires dev server running)
-npm run test:ui          # Run with Playwright UI
-```
-
-### Management CLI (`omqcli`)
-
-Standalone Rust CLI in [offloadmq-cli/](offloadmq-cli/) (own `Cargo.toml`, not part
-of the root crate) for operators — lists/describes/deletes agents, runs
-`slavemode.*` self-management commands (force-rescan, agent binary update, Ollama
-model management, ONNX model management, custom-capability CRUD) pinned to one
-specific agent, `status` prints a one-shot fleet dashboard (online agents +
-success rate, up to 5 running/scheduled tasks, bucket usage vs. quota per API
-key, available capabilities), and full task control (`list tasks`, `describe
-task`, `cancel task`, `reset tasks`) matches everything the Tasks page in
-management-frontend can do. It also mirrors the Agent Logs, Pod Logs,
-Heuristics, and Storage pages with `logs agent|pod`, `heuristics
-records|runners|machines`, and `storage list|quotas|delete|delete-key|purge`.
-Talks to the management API + the client API's management override
-(`X-MGMT-API-KEY`), authenticated with `MGMT_TOKEN`. Full docs:
-[offloadmq-cli/README.md](offloadmq-cli/README.md).
-
-```bash
-cd offloadmq-cli
-cargo fmt --check
-cargo test
-cargo clippy -- -D warnings
-cargo build --release
-./target/release/omqcli auth --key <management-token>
-./target/release/omqcli status
-./target/release/omqcli logs agent --severity ERROR
-./target/release/omqcli storage list
-./target/release/omqcli agent <id-or-fingerprint> force-rescan
-```
-
-### Integration Tests
-```bash
-# From project root:
-task test:full           # Full test: start server+agent, run tests, stop everything
-task test:unit           # Run Rust unit tests only
-task test                # Run integration tests (requires running server+agent)
-task test:start          # Start server and agent for manual testing
-task test:stop           # Stop server and agent
-task test:logs           # Show server and agent logs
-
-# From itests directory:
-cd itests
-make venv                # Setup test environment
-make test-full           # Full automated test run
-make start-server        # Start server in background
-make start-agent         # Start agent in background (starts server if needed)
-make stop-all            # Stop server and agent
-make logs                # Show logs
-make run                 # Run pytest (server+agent must be running)
-```
-
-### Docker/Kubernetes Deployment
-```bash
-task docker:release            # Build + push backend image (linux/amd64), tagged with the commit count
-task docker:release:frontend   # Build + push management frontend image
-task docker:release:multi      # Build + push multi-arch backend image (amd64 + arm64)
-task secrets                   # Generate .secrets.yaml (required by deploy/template/diff)
-task deploy                    # helm install/upgrade
-task ship                      # Build + push both images, then deploy
-task template                  # Preview helm manifests
-task diff                      # Diff deployed vs local chart (helm-diff plugin)
-task rollback                  # Roll back to the previous helm revision
-task clean                     # Clean build artifacts (cargo, frontend dist)
-```
-
-### Releasing
-
-See [docs/releasing.md](docs/releasing.md) for the release process, including:
-- Creating `release*` tagged releases
-- Automated CI/CD workflow for building and publishing agent binaries
-- GitHub release artifact management
-- Tag naming conventions
-
-## Architecture
-
-### Four API Surfaces
-
-All APIs are defined in [src/main.rs](src/main.rs) with middleware-protected nested routes:
-
-1. **Client API** (`/api/*`) — Task submission & polling
-   See [docs/tasks-api.md#client-api](docs/tasks-api.md#client-api)
-   Supports **management override**: pass `X-MGMT-API-KEY: <mgmt_token>` header to bypass client key and capability checks (used by the management frontend for slavemode commands etc.)
-
-2. **Storage API** (`/api/storage/*`) — File bucket management
-   See [docs/client-storage-api.md](docs/client-storage-api.md)
-
-3. **Agent API** (`/private/agent/*`) — Agent registration & task execution
-   See [docs/tasks-api.md#agent-api](docs/tasks-api.md#agent-api)
-
-4. **Management API** (`/management/*`) — Monitoring & administration
-   - Tasks/agents/keys: [docs/management-api.md](docs/management-api.md)
-   - Storage: [docs/management-storage-api.md](docs/management-storage-api.md)
-
-### LLM Integration
-
-See [docs/integration-guide-llm.md](docs/integration-guide-llm.md) for the complete self-contained guide on integrating LLM inference (including vision/file analysis) into a client application. Covers both blocking and polling request patterns, full JSON field reference (camelCase for Task API, snake_case for Storage API), storage bucket workflow, progress bars, and error handling.
-
-### Extended Capability Attributes
-
-Agents can register capabilities with extended metadata using bracket notation:
-- **Base capability**: `"llm.qwen3:8b"`
-- **Extended capability**: `"llm.qwen3:8b[vision;tools;8b]"`
-
-Attributes are semicolon-separated strings inside brackets. Examples:
-- `"llm.mistral[7b;quantized;fp16]"` — model size, quantization, precision
-- `"vision[gpu;cuda12.1]"` — GPU support with CUDA version
-- `"database[postgresql;replication]"` — database type and features
-
-**Capability Matching:**
-- Clients always submit tasks with **base capabilities only** (no brackets)
-- Agent registration accepts **raw capabilities** (with or without brackets)
-- Scheduler strips brackets when matching: `"llm.qwen3:8b[...]"` matches task requiring `"llm.qwen3:8b"`
-- Client APIs (`/api/capabilities/online`, management `/capabilities/list/online`) return only base capabilities
-- Management endpoint `/capabilities/list/online_ext` returns raw capabilities with extended attributes for inspection
-
-**Custom Capabilities:** Agents can register arbitrary capabilities with extended attributes that declare the payload schema (field names and types). See [docs/custom-capabilities.md](docs/custom-capabilities.md) for the full convention.
-
-### ComfyUI Capability Families
-
-Three capability prefixes are backed by ComfyUI workflow templates on the agent. Reference
-copies live in `agent_v2/workflows/`; operators copy the ones they want into the
-agent's own directory (`$OFFLOAD_WORKFLOWS_DIR`, else `~/.offload-agent/workflows/`) — they
-are not installed automatically. A flat sub-directory is an `imggen` workflow; `txt2music/`
-and `img-utils/` are reserved as *namespaces* whose children map to those prefixes instead.
-
-| Prefix | Layout | Contract |
-|--------|--------|----------|
-| `imggen.<workflow>` | `workflows/<workflow>/<task-type>.json` | [docs/comfy-api.md](docs/comfy-api.md) |
-| `txt2music.<workflow>` | `workflows/txt2music/<workflow>/<task-type>.json` | [docs/comfy-api.md](docs/comfy-api.md) |
-| `img-utils.<utility>` | `workflows/img-utils/<utility>/<task-type>.json` | [docs/img-utils-api.md](docs/img-utils-api.md) |
-
-`img-utils.*` are single-purpose transforms (depth map, face swap) — no prompt, images in
-and one image out. A utility is advertised **only if its workflow directory exists**, so
-installing the workflow is what enables the capability; there is no config flag. The
-utility name doubles as the default task type, so clients may omit `payload.workflow`.
-
-### Key Data Flow
-
-1. Agents register (`POST /agent/register`) with capabilities that may include extended attributes in brackets
-2. Clients submit tasks with base capability only (no brackets)
-3. Scheduler strips extended attributes and matches tasks to agents by base capability, tier, and capacity
-4. Urgent tasks use in-memory store with 60s TTL; regular tasks persist to Sled DB
-
-### Task Scheduling Logic
-
-#### Urgent vs Non-Urgent Tasks
-
-| Aspect               | Urgent                                                    | Non-Urgent                                                                                  |
-| -------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| **Storage**          | In-memory IndexMap ([src/mq/urgent.rs](src/mq/urgent.rs)) | Sled persistent DB ([src/db/persistent_task_storage.rs](src/db/persistent_task_storage.rs)) |
-| **TTL**              | 60 seconds (auto-expires)                                 | No TTL (archived after 7 days)                                                              |
-| **Client Blocking**  | Yes - `/submit_blocking` waits for result                 | No - `/submit` returns immediately with task ID                                             |
-| **Tier Filtering**   | None (FIFO)                                               | Higher-tier agents get priority                                                             |
-| **Polling Endpoint** | `GET /private/agent/task/poll_urgent`                     | `GET /private/agent/task/poll` (checks urgent first)                                        |
-
-#### Submission Flow
-
-**Urgent Tasks** ([src/api/client/mod.rs](src/api/client/mod.rs) lines 21-44):
-1. Client calls `POST /api/task/submit_blocking`
-2. Task stored in memory with `tokio::sync::watch` channel for status notifications
-3. Client connection blocks waiting for completion
-4. Background expiration task removes stale tasks every 10 seconds
-
-**Non-Urgent Tasks** ([src/api/client/mod.rs](src/api/client/mod.rs) lines 46-77):
-1. Client calls `POST /api/task/submit`
-2. Task persisted to Sled DB `tasks_unassigned` tree
-3. Returns immediately with task ID and "pending" status
-
-#### Agent Polling & Assignment
-
-**Polling** ([src/api/agent/mod.rs](src/api/agent/mod.rs)):
-- Agents periodically poll for tasks matching their capabilities (extended attributes are stripped for matching)
-- Non-urgent polling always checks urgent queue first (line 49)
-- Updates agent's `last_contact` timestamp (online if < 120 seconds ago)
-
-**Tier-Based Scheduling** ([src/mq/scheduler.rs](src/mq/scheduler.rs) lines 20-46):
-```
-For each non-urgent task matching capability:
-  1. Find all ONLINE agents with same capability
-  2. Get MAX tier among those agents
-  3. If requesting agent's tier < max tier:
-     - Skip task (reserve for higher-tier agents)
-  4. Else:
-     - Include task in available pool
-  5. Select the OLDEST eligible task (FIFO by createdAt, task id as tie-break)
-```
-This ensures high-performance agents get priority while lower-tier agents still receive tasks when no higher-tier agents are online. Within the eligible pool the order is strict FIFO — the longest-waiting task is always handed out first, so a queue that fills faster than it drains never starves its earliest entries.
-
-**Task Pickup** ([src/api/agent/mod.rs](src/api/agent/mod.rs) lines 130-145):
-1. Agent calls `POST /private/agent/take/{cap}/{id}`
-2. Task atomically moved from unassigned → assigned state
-3. For urgent tasks: status updated via watch channel notifies waiting client
-
-#### Task Resolution
-
-**Progress Updates**: `POST /private/agent/task/progress/{cap}/{id}` - appends logs and stage info
-**Completion**: `POST /private/agent/task/resolve/{cap}/{id}` - sets final status (Completed/Failed)
-
-For urgent tasks, resolution triggers the watch channel to unblock the waiting client and return the result.
-
-### Storage Layer
-
-- **Sled DB** ([src/db/](src/db/)) - Embedded key-value store for persistent data
-- Agent storage: [src/db/agent.rs](src/db/agent.rs) (Sled-backed; online if last contact within 120s)
-- Task storage: [src/db/persistent_task_storage.rs](src/db/persistent_task_storage.rs)
-- Urgent queue: [src/mq/urgent.rs](src/mq/urgent.rs)
-- Bucket metadata: [src/db/bucket_storage.rs](src/db/bucket_storage.rs)
-- File store (opendal): [src/storage/mod.rs](src/storage/mod.rs)
-
-### File Bucket System
-
-Clients can create temporary buckets to stage files alongside task submissions.
-
-**Design constraints (per API key):**
-- Max buckets: 256 (configurable via `STORAGE_MAX_BUCKETS_PER_KEY`)
-- Max size per bucket: 1 GiB (configurable via `STORAGE_BUCKET_SIZE_BYTES`)
-- Bucket TTL: 24 hours (configurable via `STORAGE_BUCKET_TTL_MINUTES`)
-- No file download endpoint — this is intentional to prevent use as a file exchange service
-- SHA-256 digest is computed at upload time and stored in bucket metadata
-
-**Bucket metadata** (`BucketMeta` / `FileMeta` in [src/db/bucket_storage.rs](src/db/bucket_storage.rs)):
-- Stored in a separate Sled DB under `{DATABASE_ROOT_PATH}/buckets/`
-- Each bucket is scoped to one client API key (ownership enforced on every request)
-- Two Sled trees: `buckets` (uid → BucketMeta) and `owner_idx` (api_key|uid → uid)
-
-**File storage backend** ([src/storage/mod.rs](src/storage/mod.rs)):
-- Configured via `STORAGE_BACKEND` env var: `local` (default), `webdav`, or `s3`
-- Backed by [Apache OpenDAL](https://opendal.apache.org/) — same interface regardless of backend
-- Files stored at path `{bucket_uid}/{file_uid}` within the configured root
-
-**Cleanup worker** (spawned in [src/main.rs](src/main.rs)):
-- Runs on startup and every 3 hours
-- First reaps *spent* buckets ([src/storage/bucket_reaper.rs](src/storage/bucket_reaper.rs)): an
-  `rm_after_task` bucket whose recorded tasks have all reached a terminal state (or no longer
-  exist). Agent resolve deletes these inline, but a task cancelled while queued, timed out, or
-  orphaned by an offline agent never reaches that path — this sweep is what keeps the
-  `rm_after_task` promise for those. Buckets with no recorded task, or younger than 10 minutes,
-  are left to the TTL.
-- Then purges buckets past their TTL
-- Deletes files from the storage backend, then removes bucket metadata from Sled
-
-### Core Types
-
-- Models: [src/models.rs](src/models.rs) - Agent, AssignedTask, UnassignedTask
-- API schemas: [src/schema.rs](src/schema.rs) - Request/response DTOs
-- Auth middleware: [src/middleware/](src/middleware/)
-- Utilities: [src/utils.rs](src/utils.rs) - `base_capability()` and `capability_attrs()` for parsing extended capabilities
-
-## Configuration
-
-Server reads from `.env` file:
-- `SERVER_ADDRESS` - Host:port binding (default: 0.0.0.0:3069)
-- `DATABASE_ROOT_PATH` - Sled database location
-- `JWT_SECRET` - Secret for agent JWT tokens
-- `AGENT_API_KEYS` - Comma-separated agent registration keys
-- `CLIENT_API_KEYS` - Comma-separated client API keys
-- `MGMT_TOKEN` - Management endpoint auth token
-
-### Local Dev API Keys (from `.env`)
-
-These are the hardcoded keys used for local development and testing. Use them directly — do not grep `.env` for them.
-
-| Purpose | Key |
-|---------|-----|
+| Purpose | Value |
+| --- | --- |
 | Client API key | `client_secret_key_123` |
 | Agent API key | `ak_live_7f8e9d2c1b4a6f3e8d9c2b1a4f6e8d9c2b1a4f6e` |
 | Management token | `this-is-for-testing-management-tokens` |
 
-### Storage Configuration
+## MQ architecture and contracts
 
-- `STORAGE_BACKEND` - `local` (default), `webdav`, or `s3`
-- `STORAGE_LOCAL_ROOT` - Root dir for local backend (default: `{DATABASE_ROOT_PATH}/file_storage`)
-- `STORAGE_MAX_BUCKETS_PER_KEY` - Max buckets per client API key (default: `256`)
-- `STORAGE_BUCKET_SIZE_BYTES` - Max bytes per bucket (default: `1073741824` = 1 GiB)
-- `STORAGE_BUCKET_TTL_MINUTES` - Bucket lifetime in minutes (default: `1440` = 24 h)
-- WebDAV: `STORAGE_WEBDAV_ENDPOINT`, `STORAGE_WEBDAV_USERNAME`, `STORAGE_WEBDAV_PASSWORD`
-- S3: `STORAGE_S3_BUCKET`, `STORAGE_S3_REGION`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY`, `STORAGE_S3_ENDPOINT`
+The MQ server uses Rust/Axum, Tokio, Sled, and OpenDAL. Start with
+[src/main.rs](src/main.rs) (routes), [src/models.rs](src/models.rs) (models),
+[src/schema.rs](src/schema.rs) (DTOs), and [src/middleware/](src/middleware/) (auth).
 
-## Tech Stack
+| API surface | Reference |
+| --- | --- |
+| Client tasks (`/api/*`); agent execution (`/private/agent/*`) | [Tasks API](docs/tasks-api.md) |
+| Client buckets (`/api/storage/*`) | [Client storage API](docs/client-storage-api.md) |
+| Management (`/management/*`) | [Management API](docs/management-api.md), [management storage](docs/management-storage-api.md) |
+| LLM/vision integration, payloads, progress, errors | [LLM integration guide](docs/integration-guide-llm.md) |
+| Custom capability payload schemas | [Custom capabilities](docs/custom-capabilities.md) |
 
-- **Backend**: Rust with Axum 0.8, Tokio, Sled, jsonwebtoken
-- **Agent**: Python 3 uv workspace (`agent_v2/`) — Ollama, ComfyUI, ONNX, shell/docker executors; WebSocket push
-- **Frontend**: React 19 with Vite, framer-motion, lucide-react
-- **Deployment**: Docker multi-stage build, Kubernetes via Helm
+- Client API management override: `X-MGMT-API-KEY: <mgmt_token>` bypasses
+  client-key/capability checks.
+- Task API JSON uses camelCase; Storage API uses snake_case.
+- Clients submit **base capabilities**, e.g. `llm.qwen3:8b`. Agents may register
+  `llm.qwen3:8b[vision;tools;8b]`. Matching strips attributes; use
+  `base_capability()` / `capability_attrs()` in [src/utils.rs](src/utils.rs).
+  Base and extended listings have separate endpoints; consult the API docs.
+- Urgent tasks (`submit_blocking`) live in memory with a 60-second TTL and notify
+  waiting clients through watch channels. Regular tasks (`submit`) persist in Sled.
+  Agent communication primarily uses WebSocket push; HTTP polling is deprecated.
+- Preserve urgent-first selection and regular-task tier priority. Within the
+  eligible regular pool, select the oldest task (`createdAt`, task ID tie-break).
+  Agents are online when last contact is less than 120 seconds old.
+  See [src/mq/](src/mq/) and [persistent task storage](src/db/persistent_task_storage.rs).
+- Buckets are scoped to a client API key; enforce ownership on every request.
+  Default limits: 256 buckets/key, 1 GiB/bucket, 24-hour TTL. Upload metadata includes SHA-256.
+- Bucket cleanup runs at startup and every 3 hours: reap spent `rm_after_task`
+  buckets, then expired buckets; delete stored files before metadata.
+  The spent-bucket sweep requires recorded tasks all terminal/missing and a
+  10-minute minimum age. Buckets without recorded tasks remain subject to TTL.
+  See [bucket_reaper.rs](src/storage/bucket_reaper.rs).
 
----
+### ComfyUI workflows
 
-## OAI — Own AI Frontend (`oai/`)
+Reference workflows in `agent_v2/workflows/` are **not installed automatically**.
+Operators copy them into `$OFFLOAD_WORKFLOWS_DIR`, otherwise
+`~/.offload-agent/workflows/`.
 
-OAI is a standalone web application that gives end users access to AI capabilities (LLM chat, image generation/analysis, text-to-speech) routed through OffloadMQ. It lives in [oai/](oai/) and has its own backend, frontend, Helm chart, and Docker image.
+| Capability | Path relative to workflow root | Contract |
+| --- | --- | --- |
+| `imggen.<workflow>` | `<workflow>/<task-type>.json` | [Comfy API](docs/comfy-api.md) |
+| `txt2music.<workflow>` | `txt2music/<workflow>/<task-type>.json` | [Comfy API](docs/comfy-api.md) |
+| `img-utils.<utility>` | `img-utils/<utility>/<task-type>.json` | [Image utilities API](docs/img-utils-api.md) |
 
-### What it is
+`txt2music/` and `img-utils/` are namespaces; other flat workflow directories map
+to `imggen`. An `img-utils` capability is advertised only when its directory exists
+(no config flag). These transforms take images and return one image without a
+prompt; the utility name is the default task type when `payload.workflow` is omitted.
 
-- SPA web app — users log in, chat with LLMs over WebSocket, and submit image generation/analysis and TTS tasks
-- Stateless Rust/Axum backend; all state lives in PostgreSQL (users, sessions, quotas) and Garage/S3 (generated files)
-- Calls the OffloadMQ Client API to submit and poll tasks — OffloadMQ URI and credentials are admin-configurable at runtime
-- User accounts with per-user usage quotas
-- React UI built with shadcn/ui components
-- Deployed at `oai.alexgr.space`; Docker image `grekodocker/oai`
+## OAI architecture
 
-### Generator Improver
+OAI (`oai/`) is a separate React 19/TypeScript/Vite/shadcn SPA and stateless
+Rust/Axum backend. State lives in PostgreSQL (SeaORM) and OpenDAL FS or S3/Garage.
+It submits/polls OffloadMQ tasks; MQ connection settings are admin-configurable.
+Deployment: `oai.alexgr.space`, image `grekodocker/oai`.
 
-Generator Improver (`/app/generator-improver`) scores images with vision JSON
-`{quality: 0..100, improve_prompt: string}` and applies img2img until expected
-quality or max steps. It shares the Image Cycles engine with separate app history.
-Read [the feature skill](.agents/skills/oai-generator-improver/SKILL.md) before
-editing the improvement branches or `GeneratorImproverPage.tsx`.
-API and stopping semantics: [docs/oai-generator-improver.md](docs/oai-generator-improver.md).
-Both apps support pause/resume, cancel, restart, and live model selection.
-Historical steps retain their model snapshots; failed JSON assessments can retry
-parsing their saved responses without another inference.
+- Backend entry points: `src/app.rs` (router), `src/state.rs` (`AppState`),
+  `src/db/migrator.rs` + `src/db/migrator/` (migrations run on startup).
+  Paths here are relative to `oai/backend/`.
+- Reuse the offload-job framework for new submit/poll/persist features:
+  `db/offload_jobs.rs`, `services/offload_job.rs`, `offload/task_status.rs`,
+  `jobs/worker_runtime.rs`, `routes/job_common.rs`. Supply feature traits,
+  `start_job`, and completed-result handling; see `oai-new-feature`.
+  Chat WS and the image generation pipeline have bespoke lifecycles.
+- Release job buckets on **every terminal transition**. Image generation uses
+  `image_jobs::release_job_buckets` for both input and output buckets.
+- Frontend routing: `oai/frontend/src/App.tsx`; auth: `contexts/AuthContext.tsx`
+  (`oai_token` in localStorage). Authenticated API clients share
+  [api/http.ts](oai/frontend/src/api/http.ts) (`apiRequest`).
+- Image Cycles and Generator Improver share an engine with separate histories.
+  Preserve historical model snapshots and saved-response JSON retry without new
+  inference. Lifecycle details: [Image Cycles](docs/oai-image-cycles.md) and
+  [Generator Improver](docs/oai-generator-improver.md).
 
-### Image Cycles
+## Configuration, deployment, and releases
 
-Image Cycles (`/app/image-cycles`) chains an image or text seed through n
-vision-description → txt2img cycles. It shares Describe Image's prompt library
-and default and persists every intermediate prompt and image. Parent jobs wrap
-the existing describe/image workers. API and lifecycle: [docs/oai-image-cycles.md](docs/oai-image-cycles.md).
-Before editing `image_cycles.rs`, `image_cycle_jobs.rs`, `image_cycles_worker.rs`,
-`ImageCyclesPage.tsx`, or `api/imageCycles.ts`, read
-[the feature skill](.agents/skills/oai-image-cycles/SKILL.md) plus the matching
-backend/frontend skills.
+MQ reads `.env`: `SERVER_ADDRESS` (default `0.0.0.0:3069`),
+`DATABASE_ROOT_PATH`, `JWT_SECRET`, `AGENT_API_KEYS`, `CLIENT_API_KEYS`, `MGMT_TOKEN`.
+Storage uses `STORAGE_BACKEND=local|webdav|s3` and `STORAGE_LOCAL_ROOT`;
+limits use `STORAGE_MAX_BUCKETS_PER_KEY`, `STORAGE_BUCKET_SIZE_BYTES`,
+`STORAGE_BUCKET_TTL_MINUTES`. See [src/storage/mod.rs](src/storage/mod.rs).
 
-### Skills
+OAI configuration is described in [oai-backend](.agents/skills/oai-backend/SKILL.md)
+and [oai-devops](.agents/skills/oai-devops/SKILL.md). `JWT_SECRET` is required;
+`DATABASE_URL` configures Postgres. `ROOT_ADMIN_PASSWORD` defaults to `000000`
+on first boot; set it for deployments. OAI storage uses `STORAGE_BACKEND=fs|s3`
+(or unset to disable), unlike MQ's `local|webdav|s3`.
 
-Skills live in `.Codex/skills/oai-*/SKILL.md`. **Before editing OAI code, read every matching skill below** — load the most specific skill(s) first, then parent skills. Do not implement until relevant skill(s) are loaded.
+Root deployment commands are in [Taskfile.yml](Taskfile.yml):
+`task docker:release`, `task docker:release:frontend`, `task docker:release:multi`;
+`task secrets` generates `.secrets.yaml`, required by `task deploy`, `task template`,
+and `task diff`. `task ship` builds/pushes both images and deploys;
+`task rollback` restores the previous Helm revision.
+OAI has its own Docker/Helm commands in [oai/Taskfile.yml](oai/Taskfile.yml);
+run them from `oai/` and read `oai-devops` first.
 
-#### Activation matrix
-
-| Skill | Skill file | Read when touching |
-|-------|------------|-------------------|
-| **oai-devops** | `.Codex/skills/oai-devops/SKILL.md` | `oai/helm-chart/**`, `oai/Dockerfile`, `oai/docker-compose*.yml`, `oai/Taskfile.yml` (deploy/docker/infra tasks) |
-| **oai-itests** | `.Codex/skills/oai-itests/SKILL.md` | `oai/itests/**` |
-| **oai-chat** | `.Codex/skills/oai-chat/SKILL.md` | Chat feature files (patterns below) |
-| **oai-img** | `.Codex/skills/oai-img/SKILL.md` | Image generation feature files (patterns below) |
-| **oai-img-tools** | `.Codex/skills/oai-img-tools/SKILL.md` | Image Tools (`img-utils.*` / resize) feature files (patterns below) |
-| **oai-movie** | `.Codex/skills/oai-movie/SKILL.md` | Movie Studio feature files (patterns below) |
-| **oai-image-cycles** | `.agents/skills/oai-image-cycles/SKILL.md` | Image Cycles modules and page (`image_cycles*`, `ImageCyclesPage.tsx`, `api/imageCycles.ts`) |
-| **oai-generator-improver** | `.agents/skills/oai-generator-improver/SKILL.md` | Generator Improver page, quality/JSON/img2img branches in the shared image-cycle engine |
-| **oai-backend** | `.Codex/skills/oai-backend/SKILL.md` | Any `oai/backend/**` file, or cross-cutting backend work |
-| **oai-frontend** | `.Codex/skills/oai-frontend/SKILL.md` | Any `oai/frontend/**` file, or cross-cutting SPA work |
-
-#### Stacking rules
-
-1. **Feature + parent** — chat work → `oai-chat` + `oai-frontend` and/or `oai-backend`; image generation → `oai-img` + `oai-frontend` and/or `oai-backend`; Image Tools (`/app/img-utils`) → `oai-img-tools` + `oai-frontend` and/or `oai-backend`; Movie Studio work → `oai-movie` + `oai-frontend` and/or `oai-backend`.
-2. **Feature wins on overlap** — files listed under `oai-chat`, `oai-img`, or `oai-img-tools` use that feature skill first; still read `oai-backend` / `oai-frontend` for shared patterns (AppState, routing, layout). `oai-img` (generation) and `oai-img-tools` (`/app/img-utils` transforms) are distinct features — match by the file, not by "image".
-3. **DevOps** — Helm/Docker/deploy-only changes → `oai-devops` (skip feature skills unless app code changes too).
-4. **Tests** — `oai/itests/**` → `oai-itests` plus the skill for the route/feature under test.
-
-#### oai-chat — file patterns
-
-Paths are relative to `oai/`.
-
-**Frontend:** `frontend/src/pages/ChatPage.tsx`, `frontend/src/hooks/useWsChat.ts`, `frontend/src/types/ws.ts`, `frontend/src/contexts/WorkloadContext.tsx`, `frontend/src/api/chats.ts`, `frontend/src/api/systemPrompts.ts`, `frontend/src/api/tasks.ts`, `frontend/src/api/debug.ts`, `frontend/src/components/chat/**`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (chat rows)
-
-**Backend:** `backend/src/ws/**`, `backend/src/services/chat.rs`, `backend/src/routes/chats.rs`, `backend/src/routes/system_prompts.rs`, `backend/src/routes/tasks.rs`, `backend/src/routes/debug.rs`, `backend/src/db/chats.rs`, `backend/src/db/user_system_prompts.rs`, `backend/src/db/llm_capabilities.rs`, `backend/src/jobs/chat_worker.rs`, `backend/src/jobs/llm_capability_cleanup_worker.rs`
-
-#### oai-img — file patterns
-
-Paths are relative to `oai/`.
-
-**Frontend:** `frontend/src/pages/ImageGenerationPage.tsx`, `frontend/src/pages/ImageWorkerLogsPage.tsx`, `frontend/src/pages/FilesPage.tsx`, `frontend/src/components/imggen/**`, `frontend/src/lib/imggen.ts`, `frontend/src/api/images.ts`, `frontend/src/api/promptgen.ts`, `frontend/src/hooks/useRunningImageJobs.ts`, `frontend/src/contexts/ProgressContext.tsx`, `frontend/src/components/ToolDebugModal.tsx`, `frontend/src/components/GlobalProgressDrawer.tsx` (image rows)
-
-**Backend:** `backend/src/routes/images.rs`, `backend/src/routes/progress.rs`, `backend/src/routes/files.rs`, `backend/src/routes/promptgen.rs`, `backend/src/services/image_jobs/**`, `backend/src/services/image_processing.rs`, `backend/src/services/image_pipeline_params.rs`, `backend/src/services/image_job_names.rs`, `backend/src/services/progress.rs`, `backend/src/services/promptgen.rs`, `backend/src/db/image_generation.rs`, `backend/src/db/image_worker_logs.rs`, `backend/src/offload/image_tasks.rs`, `backend/src/jobs/image_pipeline_worker.rs`, admin image handlers in `backend/src/routes/admin.rs`
-
-#### oai-img-tools — file patterns
-
-Paths are relative to `oai/`. The `/app/img-utils` "Image Tools" feature (`img-utils.*` ComfyUI transforms + built-in `image_resize`). The agent-side workflow install / autowiring lives in `agent_v2/**` (stack with `agent-v2`).
-
-**Frontend:** `frontend/src/pages/ImgUtilsPage.tsx`, `frontend/src/components/imgutils/**`, `frontend/src/api/imgUtils.ts`
-
-**Backend:** `backend/src/routes/img_utils.rs`, `backend/src/services/img_utils.rs`, `backend/src/services/image_resize.rs`, `backend/src/db/img_utils.rs`, `backend/src/db/entities/img_utils_jobs.rs`, `backend/src/jobs/img_utils_worker.rs` (shared offload-job backbone: `backend/src/db/offload_jobs.rs`, `backend/src/services/offload_job.rs`, `backend/src/jobs/worker_runtime.rs`)
-
-**Agent:** `agent_v2/agent/src/offloadmq_agent/exec/imgutils/**`, `agent_v2/core/src/offloadmq_core/comfy_autowire.py` (img-utils keys), `comfy_service.py` (img-utils param rows), `agent_v2/ui-server/frontend/src/pages/ComfyPage.tsx` (namespace auto-fill), `agent_v2/workflows/img-utils/**` (reference workflows)
-
-#### oai-movie — file patterns
-
-Paths are relative to `oai/`.
-
-**Frontend:** `frontend/src/pages/MoviePage.tsx`, `frontend/src/components/movie/**`, `frontend/src/hooks/useWsMovie.ts`, `frontend/src/types/ws-movie.ts`, `frontend/src/api/movie.ts`, `frontend/src/lib/moviePromptBuckets.ts`
-
-**Backend:** `backend/src/services/movie/**`, `backend/src/services/movie_ffmpeg.rs`, `backend/src/db/movie.rs`, `backend/src/db/entities/movie_jobs.rs`, `backend/src/routes/movie.rs`, `backend/src/ws/movie.rs`, `backend/src/jobs/movie_worker.rs`
-
-#### Skill summaries
-
-- **oai-frontend** — React 19 + TypeScript SPA, shadcn/ui, Tailwind v4, routing, API clients, dark/light mode, AppShell layout.
-- **oai-chat** — LLM chat at `/app/chat`: WebSocket protocol, WorkloadContext, system prompts, cancel, ToolDebug, OffloadMQ submit/poll.
-- **oai-img** — Image generation at `/app/images`: txt2img/img2img, buckets, dataPreparation, job poll/cancel, pipeline worker, Progress drawer.
-- **oai-img-tools** — Image Tools at `/app/img-utils`: one-shot transforms (image in, one out, no prompt). Two families sharing the page/table/endpoints — `img-utils.*` ComfyUI tools (depth, face swap, SeedVR2 upscale) and built-in `image_resize` "Basic resize". Spans the agent workflow install/autowiring, the OAI offload-job backend, and `ImgUtilsPage`. Pack=model / operation=file convention; scalar knobs via `secondary_prompts`.
-- **oai-movie** — Multi-scene AI film generator at `/app/movie`: director LLM outline, per-scene vision prompt + video render, long-shot continuity via ffmpeg, final concat.
-- **oai-backend** — Rust/Axum backend: routes, services, DB migrations (SeaORM), middleware, OffloadMQ client, background workers.
-- **oai-itests** — Python integration tests (httpx + pytest-xdist) against the live backend; one test file per route group; no mocking.
-- **oai-devops** — Helm/Kubernetes deploy, Garage init job, Docker publish, troubleshooting (`garage-init`, `wait-garage-creds`, ImagePullBackOff).
-
-In Cursor, `.cursor/rules/oai-*.mdc` mirrors this matrix and auto-applies when matching files are open.
-
-### Development Commands
-
-Uses [Go Task](https://taskfile.dev) (`task`) — no Makefile.
-
-```bash
-# Start local infrastructure (Postgres + optional Garage S3)
-task infra:up
-
-# Install frontend deps, start backend (cargo run) + Vite dev server
-task install
-task dev
-
-# Production build (backend release binary + frontend dist)
-task build
-
-# E2E Tests (Playwright)
-cd oai/e2e
-npm test             # Run Playwright tests (MANDATORY before committing OAI changes)
-npm run test:ui      # Run with Playwright UI
-
-# Docker
-task docker:build    # Build image locally
-task docker:release  # Build and push to Docker Hub
-
-# Kubernetes / Helm
-task deploy          # helm upgrade --install
-task ship            # Full pipeline: build frontend → push Docker → deploy
-task undeploy
-task template        # Preview manifests
-task status
-task diff
-
-# Teardown
-task infra:down      # Stop infra, keep data
-task infra:destroy   # Stop infra, delete volumes
-task kill            # Kill ports 3000/5173 and stop infra
-```
-
-### Architecture
-
-**Backend** ([oai/backend/](oai/backend/)) — Rust + Axum 0.8, async Tokio, listens on `0.0.0.0:3000`
-
-- [oai/backend/src/app.rs](oai/backend/src/app.rs) — router + middleware setup
-- [oai/backend/src/state.rs](oai/backend/src/state.rs) — shared `AppState`: DB pool, auth, storage operator, snowflake ID generator
-- [oai/backend/src/routes/](oai/backend/src/routes/) — API handlers
-- [oai/backend/src/db/](oai/backend/src/db/) — SeaORM models + migrations (auto-run on startup)
-- [oai/backend/src/storage.rs](oai/backend/src/storage.rs) — OpenDAL operator (FS or S3/Garage)
-- Public routes: `/api/auth/register`, `/api/auth/login`, `/api/health`
-- Authenticated routes (JWT middleware): `/api/me`, WebSocket chat, task submission
-- Static assets (React build) served via `tower-http::ServeDir` with SPA fallback
-
-**Offload-job framework** — the "submit task → poll → persist" features (describe, nude_detect, tts, music_generation) share a generic backbone instead of each re-implementing the lifecycle: [db/offload_jobs.rs](oai/backend/src/db/offload_jobs.rs) (generic DB ops + `OffloadJobEntity`/`OffloadJobModel` traits), [services/offload_job.rs](oai/backend/src/services/offload_job.rs) (generic poll/cancel/reconcile + `JobReconciler` trait), [offload/task_status.rs](oai/backend/src/offload/task_status.rs) (shared status helpers + `OffloadPoller`), [jobs/worker_runtime.rs](oai/backend/src/jobs/worker_runtime.rs) (generic worker loop), and [routes/job_common.rs](oai/backend/src/routes/job_common.rs) (shared DTOs + `parse_id`). Each feature supplies only its trait impls, `start_job`, and the completed-result handler. The
-driver also owns bucket lifetime: a job's `bucket_uid()` is released on every terminal transition,
-so no finished job leaves an OffloadMQ bucket behind (image generation does the same in
-`image_jobs::release_job_buckets`, covering both its output and input buckets). Chat (WS) and image generation (multi-file pipeline) are intentionally bespoke. On the frontend, all authenticated API clients share [api/http.ts](oai/frontend/src/api/http.ts) (`apiRequest`). **Building a new such feature: use the `oai-new-feature` skill.**
-
-**Frontend** ([oai/frontend/](oai/frontend/)) — React 19 + React Router 7 + TypeScript + Vite + shadcn/ui
-
-- [oai/frontend/src/App.tsx](oai/frontend/src/App.tsx) — client-side router
-- [oai/frontend/src/pages/](oai/frontend/src/pages/) — LoginPage, RegisterPage, HomePage
-- [oai/frontend/src/contexts/AuthContext.tsx](oai/frontend/src/contexts/AuthContext.tsx) — global auth state; token stored in `localStorage` as `oai_token`
-- [oai/frontend/src/api/auth.ts](oai/frontend/src/api/auth.ts) — API client helpers
-- `/api` proxy to backend (Vite dev only)
-
-**Database** — PostgreSQL 17
-
-- SeaORM with migrations; schema in [oai/backend/src/db/migrator.rs](oai/backend/src/db/migrator.rs) (the `migrations()` list; each migration is its own file under `oai/backend/src/db/migrator/`)
-- `users` table: `id` (snowflake i64), `login`, `password_hash`, `google_id`, `created_at`
-
-**Storage** — OpenDAL (FS or S3/Garage)
-
-- Configured via `STORAGE_BACKEND` (`fs` or `s3`); disabled if unset
-- Used for generated images and file analysis task inputs/outputs
-
-**Helm chart** — [oai/helm-chart/](oai/helm-chart/)
-
-- Deploys oai app + PostgreSQL StatefulSet + Garage S3 StatefulSet
-- Ingress: `oai.alexgr.space` via Traefik + cert-manager
-
-### Configuration (oai backend env vars)
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `JWT_SECRET` | Secret for signing user JWT tokens — **required**: the backend refuses to start without it |
-| `ROOT_ADMIN_PASSWORD` | Password for the `root` admin created on first boot (default `000000` — set it in real deployments; it is never logged) |
-| `AUTH_RATE_LIMIT_BURST` / `AUTH_RATE_LIMIT_REPLENISH_SECS` | Per-IP limit on login/register/change_password (default burst 10, +1 per 6 s). `AUTH_RATE_LIMIT_TRUST_FORWARDED=false` when not behind a proxy; `AUTH_RATE_LIMIT_DISABLED=1` turns it off |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed for credentialed CORS (default: local Vite ports + `oai.alexgr.space`) |
-| `SERVER_ADDRESS` | Bind address (default `0.0.0.0:3000`) |
-| `STATIC_DIR` | Path to built frontend assets (default `/app/static`) |
-| `OFFLOAD_MQ_URL` | OffloadMQ server base URL |
-| `OFFLOAD_MQ_CLIENT_KEY` | OffloadMQ client API key |
-| `STORAGE_BACKEND` | `fs`, `s3`, or unset (disabled) |
-| `STORAGE_FS_ROOT` | Root dir for filesystem storage backend |
-| `STORAGE_S3_ENDPOINT` | S3/Garage endpoint URL |
-| `STORAGE_S3_BUCKET` | S3 bucket name |
-| `STORAGE_S3_REGION` | S3 region |
-| `STORAGE_S3_ACCESS_KEY_ID` | S3 access key |
-| `STORAGE_S3_SECRET_ACCESS_KEY` | S3 secret key |
-
-### Docker / CI
-
-- [oai/Dockerfile](oai/Dockerfile) — multi-stage: Rust 1.91 builder → Debian bookworm-slim runtime; frontend `dist/` copied to `/app/static/`
-- [oai/docker-compose.dev.yml](oai/docker-compose.dev.yml) — local Postgres (port 5432, db/user/pass all `oai`/`oai`/`oai_dev_password`)
-- Image pushed to `grekodocker/oai` tagged with git commit hash
+Agent releases: [docs/releasing.md](docs/releasing.md) is the full procedure.
+From root, `task release` computes the version, creates/pushes `release-<version>`,
+and builds/uploads binaries for the current platform. Tag push triggers Linux
+amd64 CI. `task release:agent` builds/uploads without tagging; `VERSION=` overrides
+the computed version. PyInstaller builds are platform-specific.
+Windows build/upload: `.\scripts\release-agent.ps1 [version]`.
+Scripts need `DL_API_KEY` (normally inherited from `~/.zshrc` on macOS/Linux);
+target overrides are `DL_BASE_URL` and `DL_BUCKET`.
+Install latest builds with `task agent:update:mac` or `task agent:update:linux`.
