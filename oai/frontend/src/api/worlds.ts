@@ -1,9 +1,12 @@
 import { apiRequest as request } from './http'
 import type { JobImageRef } from './imgUtils'
+import type { UploadedImage } from './images'
 
 /** VR Worlds — a library image turned into a Gaussian-splat world (`world.splat`). */
 
 export type WorldMode = 'auto' | 'perspective' | 'pano'
+
+export type WorldsRouteState = { worldImage?: UploadedImage }
 
 export interface WorldCapability {
   base: string

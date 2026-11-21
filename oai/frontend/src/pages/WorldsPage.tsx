@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   Box,
   Check,
@@ -31,6 +32,7 @@ import {
   type WorldCapability,
   type WorldJob,
   type WorldMode,
+  type WorldsRouteState,
 } from '../api/worlds'
 import { imageFileUrl } from '../api/images'
 import { Button } from '../components/ui/button'
@@ -74,8 +76,12 @@ function autoModeHint(width?: number, height?: number): string | null {
 
 export default function WorldsPage() {
   const { token } = useAuth()
+  const location = useLocation()
+  const routeImage = (location.state as WorldsRouteState | null)?.worldImage
+  const appliedRouteKey = useRef<string | null>(null)
   const { refreshRunningImageJobs, setForegroundJob } = useProgress()
   const input = useImageSlot(token)
+  const { pickStored } = input
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const [capabilities, setCapabilities] = useState<WorldCapability[]>([])
@@ -101,6 +107,15 @@ export default function WorldsPage() {
   const [sidebarOpen, setSidebarOpen] = useToolSidebarOpen(isMobile)
   const viewingJob = activePanel !== WORLDS_NEW_PANEL
   const viewedJobId = viewingJob ? activePanel : null
+
+  useEffect(() => {
+    if (!token || !routeImage || appliedRouteKey.current === location.key) return
+    appliedRouteKey.current = location.key
+    pickStored(routeImage)
+    setActivePanel(WORLDS_NEW_PANEL)
+    setError(null)
+    setViewerOpen(false)
+  }, [token, routeImage, location.key, pickStored])
 
   const loadCapabilities = useCallback(async () => {
     if (!token) return

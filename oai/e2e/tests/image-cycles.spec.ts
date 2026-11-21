@@ -21,6 +21,30 @@ const completed: ImageCycleJob = {
 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 
+test('lightbox sends the selected image to VR Worlds', async ({ page }) => {
+  await setup(page, completed)
+  let submission: unknown
+  await page.route('**/api/worlds/**', route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/worlds/capabilities') return route.fulfill({ json: { capabilities: [{ base: 'world.splat', tags: [], raw: 'world.splat' }] } })
+    if (path === '/api/worlds/jobs' && route.request().method() === 'POST') {
+      submission = route.request().postDataJSON()
+      return route.fulfill({ json: { job_id: '77', status: 'submitted' } })
+    }
+    if (path === '/api/worlds/jobs') return route.fulfill({ json: [] })
+    return route.fulfill({ status: 404 })
+  })
+  await page.goto('/app/image-cycles?job=123')
+  await page.getByTestId('cycles-step-image-3').click()
+  await page.getByTestId('image-lightbox-etc').click()
+  await page.getByRole('menuitem', { name: 'Send to VR Worlds' }).click()
+  await expect(page).toHaveURL('/app/worlds')
+  await expect(page.getByTestId('worlds-input').locator('img')).toHaveAttribute('src', /\/44\?token=/)
+  expect(submission).toBeUndefined()
+  await page.getByTestId('worlds-submit').click()
+  await expect.poll(() => submission).toMatchObject({ capability: 'world.splat', input_image_id: '44' })
+})
+
 async function setup(page: Page, initial: ImageCycleJob | null = null, improver = false) {
   const root = `/api/${improver ? 'generator-improver' : 'image-cycles'}/jobs`
   let job = initial

@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import type { ImageCycleRouteState } from '@/lib/imageCycles'
+import type { WorldsRouteState } from '@/api/worlds'
 
 export type ImageLightboxActions = {
   imageId: string
@@ -249,6 +250,25 @@ export function ImageLightbox({
           reencoded: false,
         },
       } satisfies ImageCycleRouteState,
+    })
+  }
+
+  const onSendToWorlds = () => {
+    if (!actions) return
+    setOpen(false)
+    navigate('/app/worlds', {
+      state: {
+        worldImage: {
+          image_id: actions.imageId,
+          filename: actions.filename,
+          content_type: 'image/jpeg',
+          width: 0,
+          height: 0,
+          size_bytes: 0,
+          rescaled: false,
+          reencoded: false,
+        },
+      } satisfies WorldsRouteState,
     })
   }
 
@@ -700,6 +720,12 @@ export function ImageLightbox({
                       className="cursor-pointer rounded-md px-3 py-2 outline-none focus:bg-white/15"
                     >
                       Send to cycles
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      onSelect={onSendToWorlds}
+                      className="cursor-pointer rounded-md px-3 py-2 outline-none focus:bg-white/15"
+                    >
+                      Send to VR Worlds
                     </DropdownMenu.Item>
                   </DropdownMenu.Content>
                 </DropdownMenu.Portal>
