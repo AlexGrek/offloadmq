@@ -1,0 +1,3 @@
+[submodule "agent_v2/third_party/ml-sharp"]
+	path = agent_v2/third_party/ml-sharp
+	url = https://github.com/apple-aiml-research/ml-sharp.git

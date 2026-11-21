@@ -4,6 +4,7 @@ import { Layout } from "@/components/Layout";
 import { CapabilitiesPage } from "@/pages/CapabilitiesPage";
 import { ComfyPage } from "@/pages/ComfyPage";
 import { KokoroPage } from "@/pages/KokoroPage";
+import { SharpPage } from "@/pages/SharpPage";
 import { OllamaPage } from "@/pages/OllamaPage";
 import { ConfigPage } from "@/pages/ConfigPage";
 import { ConnectionPage } from "@/pages/ConnectionPage";
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="comfy" element={<ComfyPage />} />
         <Route path="ollama" element={<OllamaPage />} />
         <Route path="kokoro" element={<KokoroPage />} />
+        <Route path="sharp" element={<SharpPage />} />
         <Route path="system" element={<SystemPage />} />
         <Route path="logs" element={<LogsPage />} />
         <Route path="config" element={<ConfigPage />} />

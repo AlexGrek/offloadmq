@@ -42,6 +42,11 @@ def route_executor(cap: str) -> ExecutorFn | None:
 
         return execute_imgutils_comfyui
 
+    if cap == "world.sharp":
+        from offloadmq_agent.exec.world.sharp import execute_world_sharp
+
+        return execute_world_sharp
+
     if cap.startswith("world."):
         from offloadmq_agent.exec.world import execute_world_splat
 

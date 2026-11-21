@@ -77,3 +77,50 @@ test('signed public viewer mounts its 3D controls without authentication', async
   await expect(page.getByTestId('worlds-enter-vr')).toBeVisible()
   await expect(page.getByText('Could not load this world:', { exact: false })).toBeVisible()
 })
+
+test('SHARP generator hides depth knobs and submits only the chosen field of view', async ({ page }) => {
+  let submitted: unknown
+  const photo = { ...image, filename: 'temple.png', width: 1536, height: 1536 }
+  await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (!path.startsWith('/api/')) return route.continue()
+    const json = (body: unknown, status = 200) => route.fulfill({ status, json: body })
+    if (path === '/api/me') return json({ id: 1, login: 'tester', created_at: now, used_storage_bytes: 0 })
+    if (path === '/api/admin/am_i_admin') return json({ is_admin: false })
+    if (path === '/api/progress/running') return json({ jobs: [] })
+    if (path === '/api/worlds/capabilities') return json({ capabilities: [
+      { base: 'world.sharp', tags: ['ply', 'preview', 'metric'], raw: 'world.sharp[ply;preview;metric]' },
+      { base: 'world.splat', tags: ['pano'], raw: 'world.splat[pano]' },
+    ] })
+    if (path === '/api/files/images') return json({ files: [{ ...photo, id: '42', direction: 'input' }], has_more: false })
+    if (path === '/api/worlds/jobs' && route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON()
+      return json({ job_id: '78', status: 'submitted' }, 201)
+    }
+    if (path === '/api/worlds/jobs') return json([])
+    if (path === '/api/worlds/jobs/78') return json({ ...completed, job_id: '78', capability: 'world.sharp',
+      mode: 'perspective', input_image: photo, result: { mode: 'perspective', generator: 'apple-sharp',
+        splat_count: 1179648, depth_range_m: [2.1, 13.7], settings: { hfov: 55 } } })
+    return route.fulfill({ status: 404 })
+  })
+  await page.goto('/app/worlds')
+  await expect(page.getByTestId('worlds-capability')).toHaveValue('world.sharp')
+  await expect(page.getByTestId('worlds-capability')).toContainText('Apple SHARP')
+  await expect(page.getByTestId('worlds-generator-hint')).toContainText('no 360°')
+  await expect(page.getByTestId('worlds-mode')).toHaveCount(0)
+  await expect(page.getByTestId('worlds-lean')).toHaveCount(0)
+  await page.getByTestId('worlds-input-pick-library').click()
+  await page.getByTestId('imggen-picker-file-42').click()
+  await page.getByTestId('imggen-picker-confirm').click()
+  await page.getByTestId('worlds-fov').selectOption('55')
+  await page.getByTestId('worlds-submit').click()
+  await expect.poll(() => submitted).toEqual({ capability: 'world.sharp', input_image_id: '42', mode: 'perspective', hfov: 55 })
+  await expect(page.getByTestId('worlds-result-summary')).toContainText('55° FOV')
+
+  // Switching back to Lotus restores its knobs.
+  await page.getByTestId('worlds-new-panel-btn').click()
+  await page.getByTestId('worlds-capability').selectOption('world.splat')
+  await expect(page.getByTestId('worlds-mode')).toBeVisible()
+  await expect(page.getByTestId('worlds-lean')).toBeVisible()
+})

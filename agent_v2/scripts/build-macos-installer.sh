@@ -62,6 +62,8 @@ done
 
 # ── Build frontend ─────────────────────────────────────────────────────────────
 
+echo "-- git submodule (ml-sharp)"
+git -C "${AGENT_DIR}" submodule update --init third_party/ml-sharp
 echo "-- npm ci"
 ( cd "${FRONTEND}" && npm ci )
 echo "-- npm run build"
@@ -90,6 +92,7 @@ echo "-- pyinstaller omq"
     --name omq \
     --icon ../assets/icon.png \
     --add-data "../ui-server/frontend/dist:frontend/dist" \
+    --add-data "../third_party/ml-sharp:ml-sharp" \
     src/cli_manager/main.py
 )
 
@@ -105,6 +108,7 @@ echo "-- pyinstaller omq-gui"
     --name omq-gui \
     --icon ../assets/icon.png \
     --add-data "../ui-server/frontend/dist:frontend/dist" \
+    --add-data "../third_party/ml-sharp:ml-sharp" \
     src/gui_manager/main.py
 )
 

@@ -2,7 +2,20 @@ import { apiRequest as request } from './http'
 import type { JobImageRef } from './imgUtils'
 import type { UploadedImage } from './images'
 
-/** VR Worlds — a library image turned into a Gaussian-splat world (`world.splat`). */
+/**
+ * VR Worlds — a library image turned into a Gaussian-splat world.
+ * Generators: `world.splat` (Lotus depth → per-pixel splats, 360° panoramas) and
+ * `world.sharp` (Apple SHARP learned splat, perspective only, solid when leaning).
+ */
+
+export const SHARP_CAPABILITY = 'world.sharp'
+
+/** One-line description of a world generator for the picker. */
+export function worldGeneratorLabel(base: string): string {
+  if (base === 'world.sharp') return 'Apple SHARP — solid, metric (perspective only)'
+  if (base === 'world.splat') return 'Lotus depth — fast, 360° panoramas'
+  return base
+}
 
 export type WorldMode = 'auto' | 'perspective' | 'pano'
 
@@ -20,7 +33,8 @@ export interface WorldParams {
   max_width: number
   /** Head movement (m) the hidden background layer covers. */
   fill_lean: number
-  hfov: number
+  /** Horizontal FOV (degrees). Omitted = generator default (splat 70°, SHARP EXIF / 30 mm). */
+  hfov?: number
   near: number
   far: number
 }
@@ -35,6 +49,8 @@ export interface WorldResult {
   grid?: { width: number; height: number }
   depth_range_m?: [number, number]
   timings?: Record<string, number>
+  settings?: { hfov?: number; focal_source?: string; [key: string]: unknown }
+  runtime?: { device?: string; torch?: string; revision?: string; peak_vram_gib?: number }
   source?: { width: number; height: number; sha256: string }
   ply_sha256?: string
 }

@@ -218,6 +218,24 @@ def check_world_splat() -> CapResult:
     return CapResult([WORLD_SPLAT_CAP], True, "world.splat", f"depth via img-utils.{pack} at {url}")
 
 
+WORLD_SHARP_CAP = "world.sharp[ply;preview;metric]"
+
+
+def check_world_sharp() -> CapResult:
+    """``world.sharp``: image → Apple SHARP Gaussian splat.
+
+    Advertised only once the SHARP venv + model are installed (``omq sharp
+    install`` or the GUI) — nothing is installed with the agent. File checks
+    only; ``omq sharp doctor`` does the expensive torch/CUDA validation.
+    """
+    from offloadmq_agent.exec.world.sharp_runtime import status
+
+    st = status()
+    if not st.ready:
+        return CapResult([], False, "world.sharp", st.describe())
+    return CapResult([WORLD_SHARP_CAP], True, "world.sharp", st.describe())
+
+
 # Namespaced capability prefixes that live in a subdirectory of workflows/.
 _NAMESPACED_CAP_PREFIXES = ("txt2music", "img-utils")
 
@@ -397,6 +415,7 @@ _CHECKS: List[Callable[[], CapResult]] = [
     check_kokoro,
     check_comfyui,
     check_world_splat,
+    check_world_sharp,
     check_custom_caps,
     check_onnx,
     check_ollama,

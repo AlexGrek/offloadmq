@@ -28,6 +28,8 @@ use crate::{
 
 pub const CAPABILITY_PREFIX: &str = "world.";
 pub const MODES: [&str; 3] = ["auto", "perspective", "pano"];
+/// Apple SHARP: a learned single-view splat; perspective pictures only.
+pub const SHARP_CAPABILITY: &str = "world.sharp";
 /// Hard cap on a stored scene. The agent's own budget (`max_width` ≤ 2048) keeps
 /// real scenes far below it; this only guards against a misbehaving agent.
 pub const MAX_PLY_BYTES: i64 = 512 * 1024 * 1024;
@@ -51,7 +53,10 @@ pub struct WorldParams {
     pub mode: String,
     pub max_width: u32,
     pub fill_lean: f64,
-    pub hfov: f64,
+    /// Horizontal field of view of the picture. `None` lets the generator decide:
+    /// `world.splat` assumes 70°, `world.sharp` reads EXIF or assumes a 30 mm lens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hfov: Option<f64>,
     pub near: f64,
     pub far: f64,
 }
@@ -95,7 +100,7 @@ impl WorldParamsInput {
             mode: mode.to_string(),
             max_width,
             fill_lean: in_range("fill_lean", self.fill_lean.unwrap_or(0.25), 0.0, 1.0)?,
-            hfov: in_range("hfov", self.hfov.unwrap_or(70.0), 20.0, 150.0)?,
+            hfov: self.hfov.map(|v| in_range("hfov", v, 20.0, 150.0)).transpose()?,
             near,
             far,
         })
@@ -270,6 +275,11 @@ pub async fn start_job(state: &AppState, user_id: i64, params: StartJobParams) -
         return Err(AppError::BadRequest(format!("capability must start with `{CAPABILITY_PREFIX}`")));
     }
     let world_params = params.params.normalize()?;
+    if capability == SHARP_CAPABILITY && world_params.mode == "pano" {
+        return Err(AppError::BadRequest(format!(
+            "{SHARP_CAPABILITY} handles perspective pictures only; use world.splat for 360° panoramas"
+        )));
+    }
     let input = image_generation::get_image_file(&state.db, params.input_image_id, user_id)
         .await?
         .ok_or_else(|| AppError::BadRequest("input_image_id must reference an image in your library".into()))?;
@@ -359,7 +369,7 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
                 mode: p.as_ref().map(|p| p.mode.clone()),
                 max_width: p.as_ref().map(|p| p.max_width),
                 fill_lean: p.as_ref().map(|p| p.fill_lean),
-                hfov: p.as_ref().map(|p| p.hfov),
+                hfov: p.as_ref().and_then(|p| p.hfov),
                 near: p.as_ref().map(|p| p.near),
                 far: p.as_ref().map(|p| p.far),
             },
@@ -476,13 +486,24 @@ mod tests {
         let p = WorldParamsInput::default().normalize().unwrap();
         assert_eq!(
             p,
-            WorldParams { mode: "auto".into(), max_width: 1024, fill_lean: 0.25, hfov: 70.0, near: 1.2, far: 50.0 }
+            WorldParams { mode: "auto".into(), max_width: 1024, fill_lean: 0.25, hfov: None, near: 1.2, far: 50.0 }
         );
+        // No hfov in the agent payload unless chosen: each generator has its own default.
+        assert!(serde_json::to_value(&p).unwrap().get("hfov").is_none());
+        let wide = WorldParamsInput { hfov: Some(90.0), ..Default::default() }.normalize().unwrap();
+        assert_eq!(serde_json::to_value(&wide).unwrap()["hfov"], 90.0);
+        // Jobs stored before hfov became optional still replay.
+        let old: WorldParams = serde_json::from_str(
+            r#"{"mode":"auto","max_width":1024,"fill_lean":0.25,"hfov":70.0,"near":1.2,"far":50.0}"#,
+        )
+        .unwrap();
+        assert_eq!(old.hfov, Some(70.0));
         let bad = |i: WorldParamsInput| assert!(matches!(i.normalize(), Err(AppError::BadRequest(_))));
         bad(WorldParamsInput { mode: Some("cubemap".into()), ..Default::default() });
         bad(WorldParamsInput { max_width: Some(4096), ..Default::default() });
         bad(WorldParamsInput { fill_lean: Some(f64::NAN), ..Default::default() });
         bad(WorldParamsInput { near: Some(10.0), far: Some(10.2), ..Default::default() });
+        bad(WorldParamsInput { hfov: Some(10.0), ..Default::default() });
         let pano = WorldParamsInput { mode: Some(" pano ".into()), ..Default::default() }.normalize().unwrap();
         assert_eq!(pano.mode, "pano");
     }

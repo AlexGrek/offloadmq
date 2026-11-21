@@ -3,6 +3,8 @@ import type {
   AutoUpdateStatus,
   CapabilitiesState,
   Settings,
+  SharpDoctorReport,
+  SharpStatus,
   TaskRecord,
 } from "@/types";
 
@@ -156,6 +158,23 @@ export const api = {
     request<{ ok: boolean; capabilities: string[]; reason: string }>(
       "/ollama/status"
     ),
+  getSharpStatus: () => request<SharpStatus>("/sharp/status"),
+  saveSharpSettings: (p: {
+    sharp_venv_dir?: string;
+    sharp_models_dir?: string;
+    sharp_torch_index?: string;
+  }) =>
+    request<SharpStatus>("/sharp/settings", { method: "POST", body: JSON.stringify(p) }),
+  installSharp: (force = false) =>
+    request<SharpStatus>("/sharp/install", { method: "POST", body: JSON.stringify({ force }) }),
+  repairSharp: () => request<SharpStatus>("/sharp/repair", { method: "POST" }),
+  uninstallSharp: (remove_models: boolean) =>
+    request<SharpStatus>("/sharp/uninstall", {
+      method: "POST",
+      body: JSON.stringify({ remove_models }),
+    }),
+  cancelSharp: () => request<SharpStatus>("/sharp/cancel", { method: "POST" }),
+  doctorSharp: () => request<SharpDoctorReport>("/sharp/doctor", { method: "POST" }),
   getKokoroStatus: () =>
     request<{ ok: boolean; capabilities: string[]; reason: string }>(
       "/kokoro/status"

@@ -79,6 +79,21 @@ class KokoroSettingsPayload(BaseModel):
     kokoro_api_key: str = ""
 
 
+class SharpSettingsPayload(BaseModel):
+    # None = leave unchanged; "" = back to the default location.
+    sharp_venv_dir: str | None = None
+    sharp_models_dir: str | None = None
+    sharp_torch_index: str | None = None
+
+
+class SharpInstallPayload(BaseModel):
+    force: bool = False
+
+
+class SharpUninstallPayload(BaseModel):
+    remove_models: bool = True
+
+
 class WorkflowAddPayload(BaseModel):
     workflow_name: str
     task_type: str

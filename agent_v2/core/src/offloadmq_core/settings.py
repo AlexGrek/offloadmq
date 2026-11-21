@@ -54,6 +54,12 @@ class Settings(BaseModel):
     kokoro_api_url: str = "https://localhost:8443/v1/audio/speech"
     kokoro_api_key: str = ""
 
+    # Apple SHARP runtime behind world.sharp — installed on demand (omq sharp
+    # install / GUI), never with the agent. Blank dirs = ~/.offload-agent/sharp/{venv,models}.
+    sharp_venv_dir: str = ""
+    sharp_models_dir: str = ""
+    sharp_torch_index: str = "auto"  # auto | cuda | cpu | pypi | <index URL>
+
     # Rescan cadence
     rescan_interval_secs: int = Field(default=180, ge=30)
 
@@ -87,6 +93,9 @@ class Settings(BaseModel):
         "ollama_base_url",
         "kokoro_api_url",
         "kokoro_api_key",
+        "sharp_venv_dir",
+        "sharp_models_dir",
+        "sharp_torch_index",
         mode="before",
     )
     @classmethod

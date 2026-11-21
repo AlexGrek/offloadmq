@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 from rich.console import Console
@@ -325,6 +325,125 @@ def comfy_import(
         f"[green]Imported[/green] {result['namespace'] or 'imggen'}.{result['name']} "
         f"({', '.join(result['task_types'])}). Restart or rescan the agent to advertise it."
     )
+
+
+# ------------------------------------------------------------------
+# sharp
+# ------------------------------------------------------------------
+
+
+sharp_app = typer.Typer(
+    help="Apple SHARP runtime behind world.sharp (image -> Gaussian splat). Installed on demand only."
+)
+app.add_typer(sharp_app, name="sharp")
+
+
+def _sharp_ctx() -> tuple[Any, str]:
+    """(paths, torch_index) from the agent settings."""
+    from offloadmq_core.sharp_install import SharpPaths
+
+    settings = _orch().get_settings()
+    return SharpPaths.from_settings(settings.model_dump()), settings.sharp_torch_index
+
+
+def _plain(line: str) -> None:
+    console.print(line, markup=False, highlight=False)
+
+
+@sharp_app.command("status")
+def sharp_status() -> None:
+    """Show where SHARP lives and whether it is installed (fast; no imports)."""
+    from offloadmq_core.sharp_install import rt
+
+    paths, index = _sharp_ctx()
+    st = rt.status(paths)
+    _plain(st.describe())
+    _plain(f"venv dir:    {paths.venv}")
+    _plain(f"models dir:  {paths.models}")
+    _plain(f"torch index: {index}")
+    if not st.ready:
+        raise typer.Exit(1)
+
+
+@sharp_app.command("config")
+def sharp_config(
+    venv_dir: Optional[str] = typer.Option(None, "--venv-dir", help="Where to build the venv ('' = default)"),
+    models_dir: Optional[str] = typer.Option(None, "--models-dir", help="Where to keep the 2.8 GB model ('' = default)"),
+    torch_index: Optional[str] = typer.Option(None, "--torch-index", help="auto | cuda | cpu | pypi | <index URL>"),
+) -> None:
+    """Change SHARP locations / torch build. Run `omq sharp install` afterwards for a new location."""
+    from offloadmq_core.sharp_install import SharpInstallError, resolve_torch_index
+
+    if torch_index is not None:
+        try:
+            resolve_torch_index(torch_index)
+        except SharpInstallError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
+    _orch().update_settings(sharp_venv_dir=venv_dir, sharp_models_dir=models_dir, sharp_torch_index=torch_index)
+    sharp_status()
+
+
+@sharp_app.command("install")
+def sharp_install(
+    force: bool = typer.Option(False, "--force", help="Rebuild the venv from scratch (keeps a valid model)"),
+) -> None:
+    """Install or update the SHARP venv + model (needs uv; several GB)."""
+    from offloadmq_core.sharp_install import SharpInstallError, install
+
+    paths, index = _sharp_ctx()
+    try:
+        install(paths, log=_plain, torch_index=index, force=force)
+    except SharpInstallError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print("[green]Done.[/green] Restart or rescan the agent to advertise world.sharp.")
+
+
+@sharp_app.command("doctor")
+def sharp_doctor(
+    fix: bool = typer.Option(False, "--fix", help="Reinstall whatever is broken or outdated"),
+) -> None:
+    """Validate source, uv, venv, torch/CUDA, model and version; optionally repair."""
+    from offloadmq_core.sharp_install import SharpInstallError, doctor, repair
+
+    paths, index = _sharp_ctx()
+    try:
+        report = repair(paths, log=_plain, torch_index=index) if fix else doctor(paths, index)
+    except SharpInstallError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    if not fix:
+        for c in report["checks"]:
+            mark = "[green]ok[/green]  " if c["ok"] else "[red]FAIL[/red]"
+            console.print(f"{mark} {c['name']}: ", end="")
+            _plain(c["detail"])
+    if report["ok"]:
+        console.print("[green]SHARP is healthy.[/green]")
+        return
+    if not fix:
+        console.print(f"[yellow]Run `omq sharp doctor --fix` to {report['action']}.[/yellow]")
+    raise typer.Exit(1)
+
+
+@sharp_app.command("uninstall")
+def sharp_uninstall(
+    keep_model: bool = typer.Option(False, "--keep-model", help="Keep the 2.8 GB model file"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation"),
+) -> None:
+    """Delete the SHARP venv (and the model unless --keep-model)."""
+    from offloadmq_core.sharp_install import SharpInstallError, uninstall
+
+    paths, _ = _sharp_ctx()
+    what = f"{paths.venv}" + ("" if keep_model else f" and {paths.checkpoint}")
+    if not yes and not typer.confirm(f"Delete {what}?"):
+        raise typer.Exit(1)
+    try:
+        uninstall(paths, remove_models=not keep_model, log=_plain)
+    except SharpInstallError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print("[green]SHARP removed.[/green] Restart or rescan the agent to stop advertising world.sharp.")
 
 
 # ------------------------------------------------------------------

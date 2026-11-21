@@ -53,6 +53,8 @@ from offloadmq_core.comfy_process import ComfyProcessManager, detect_desktop_ins
 from offloadmq_core.error_pool import ErrorPool, PendingLog, Severity
 from offloadmq_core.executor_pool import ExecutorPool
 from offloadmq_core.scan_state import ScanState
+from offloadmq_core.sharp_install import SharpInstallJob, SharpInstallError
+from offloadmq_core import sharp_install
 from offloadmq_core.settings import SETTINGS_FILE, Settings, load_settings, save_settings
 from offloadmq_core.task_store import TaskRecord, TaskStore
 from offloadmq_core.version import get_app_version
@@ -122,6 +124,7 @@ class Orchestrator:
         self._lock = threading.Lock()
         self._logs = AgentLogBuffer()
         self._scan = ScanState()
+        self._sharp_job = SharpInstallJob()
         self._errors = ErrorPool()
 
         self._pool: ExecutorPool | None = None
@@ -790,6 +793,86 @@ class Orchestrator:
 
     def detect_comfy_install(self) -> dict[str, Any] | None:
         return detect_desktop_install()
+
+    # ==================================================================
+    # SHARP runtime (world.sharp) — installed on demand, never by default
+    # ==================================================================
+
+    def _sharp_paths(self) -> sharp_install.SharpPaths:
+        return sharp_install.SharpPaths.from_settings(self.get_settings().model_dump())
+
+    def get_sharp_status(self) -> dict[str, Any]:
+        import shutil
+
+        settings = self.get_settings()
+        return {
+            **sharp_install.rt.status(self._sharp_paths()).to_dict(),
+            "settings": {
+                "sharp_venv_dir": settings.sharp_venv_dir,
+                "sharp_models_dir": settings.sharp_models_dir,
+                "sharp_torch_index": settings.sharp_torch_index,
+            },
+            "default_venv_dir": str(sharp_install.rt.DEFAULT_ROOT / "venv"),
+            "default_models_dir": str(sharp_install.rt.DEFAULT_ROOT / "models"),
+            "source_available": sharp_install.rt.find_source() is not None,
+            "uv_available": shutil.which("uv") is not None,
+            "job": self._sharp_job.snapshot(),
+        }
+
+    def update_sharp_settings(
+        self,
+        venv_dir: str | None = None,
+        models_dir: str | None = None,
+        torch_index: str | None = None,
+    ) -> dict[str, Any]:
+        if self._sharp_job.running():
+            raise SharpInstallError("wait for the running SHARP job to finish before changing its settings")
+        if torch_index is not None:
+            sharp_install.resolve_torch_index(torch_index)  # reject typos up front
+        self.apply_settings(
+            sharp_venv_dir=venv_dir, sharp_models_dir=models_dir, sharp_torch_index=torch_index,
+        )
+        self.start_background_scan()  # a new location may (un)advertise world.sharp
+        return self.get_sharp_status()
+
+    def start_sharp_install(self, force: bool = False) -> dict[str, Any]:
+        paths = self._sharp_paths()
+        index = self.get_settings().sharp_torch_index
+        sharp_install.resolve_torch_index(index)
+        self._sharp_job.start(
+            "install",
+            lambda log, cancelled: sharp_install.install(paths, log, index, force, cancelled),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_sharp_status()
+
+    def run_sharp_doctor(self) -> dict[str, Any]:
+        """Validate the runtime (imports torch in the venv: a few seconds)."""
+        return sharp_install.doctor(self._sharp_paths(), self.get_settings().sharp_torch_index)
+
+    def start_sharp_repair(self) -> dict[str, Any]:
+        paths = self._sharp_paths()
+        index = self.get_settings().sharp_torch_index
+        sharp_install.resolve_torch_index(index)
+        self._sharp_job.start(
+            "repair",
+            lambda log, cancelled: sharp_install.repair(paths, log, index, cancelled),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_sharp_status()
+
+    def start_sharp_uninstall(self, remove_models: bool = True) -> dict[str, Any]:
+        paths = self._sharp_paths()
+        self._sharp_job.start(
+            "uninstall",
+            lambda log, _cancelled: sharp_install.uninstall(paths, remove_models, log),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_sharp_status()
+
+    def cancel_sharp_job(self) -> dict[str, Any]:
+        self._sharp_job.cancel()
+        return self.get_sharp_status()
 
     def check_update(self) -> dict[str, Any]:
         return check_for_update(get_app_version())

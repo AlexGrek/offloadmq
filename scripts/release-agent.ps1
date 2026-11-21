@@ -83,6 +83,10 @@ if (-not $UvExe) {
 
 Push-Location $AgentDir
 try {
+    # ml-sharp submodule: bundled into the binaries for `omq sharp install` (world.sharp)
+    git -C $AgentDir submodule update --init third_party/ml-sharp
+    if ($LASTEXITCODE -ne 0) { throw "git submodule update (ml-sharp) failed" }
+
     # Build frontend bundle
     Push-Location "ui-server/frontend"
     npm ci
@@ -111,6 +115,7 @@ try {
         --name omq `
         --icon ../assets/icon.ico `
         "--add-data=../ui-server/frontend/dist;frontend/dist" `
+        "--add-data=../third_party/ml-sharp;ml-sharp" `
         src/cli_manager/main.py
     if ($LASTEXITCODE -ne 0) { throw "pyinstaller (omq) failed" }
     Pop-Location
@@ -124,6 +129,7 @@ try {
         --name omq-gui `
         --icon ../assets/icon.ico `
         "--add-data=../ui-server/frontend/dist;frontend/dist" `
+        "--add-data=../third_party/ml-sharp;ml-sharp" `
         src/gui_manager/main.py
     if ($LASTEXITCODE -ne 0) { throw "pyinstaller (omq-gui) failed" }
     Pop-Location

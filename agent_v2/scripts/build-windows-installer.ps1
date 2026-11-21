@@ -41,6 +41,10 @@ Write-Host ""
 
 # ── Build frontend ─────────────────────────────────────────────────────────────
 
+Write-Host "-- git submodule (ml-sharp)"
+git -C $AgentDir submodule update --init third_party/ml-sharp
+if ($LASTEXITCODE -ne 0) { throw "git submodule update (ml-sharp) failed" }
+
 Push-Location (Join-Path $AgentDir "ui-server\frontend")
 try {
     Write-Host "-- npm ci"
@@ -79,6 +83,7 @@ try {
         --name omq `
         --icon ../assets/icon.ico `
         "--add-data=../ui-server/frontend/dist;frontend/dist" `
+        "--add-data=../third_party/ml-sharp;ml-sharp" `
         src/cli_manager/main.py
     if ($LASTEXITCODE -ne 0) { throw "pyinstaller (omq) failed" }
 } finally { Pop-Location }
@@ -95,6 +100,7 @@ try {
         --name omq-gui `
         --icon ../assets/icon.ico `
         "--add-data=../ui-server/frontend/dist;frontend/dist" `
+        "--add-data=../third_party/ml-sharp;ml-sharp" `
         src/gui_manager/main.py
     if ($LASTEXITCODE -ne 0) { throw "pyinstaller (omq-gui) failed" }
 } finally { Pop-Location }

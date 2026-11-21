@@ -13,6 +13,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true  # agent_v2/third_party/ml-sharp is bundled into the binaries
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -71,6 +73,7 @@ jobs:
             --name omq \
             --icon ../assets/icon.png \
             --add-data "../ui-server/frontend/dist:frontend/dist" \
+            --add-data "../third_party/ml-sharp:ml-sharp" \
             src/cli_manager/main.py
 
       - name: Build GUI executable (omq-gui)
@@ -82,6 +85,7 @@ jobs:
             --name omq-gui \
             --icon ../assets/icon.png \
             --add-data "../ui-server/frontend/dist:frontend/dist" \
+            --add-data "../third_party/ml-sharp:ml-sharp" \
             src/gui_manager/main.py
 
       - name: Rename binaries with platform suffix

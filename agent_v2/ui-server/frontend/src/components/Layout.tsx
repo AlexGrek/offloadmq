@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import {
   Bot,
+  Box,
   FileCode,
   Image,
   LayoutDashboard,
@@ -32,6 +33,7 @@ const NAV = [
   { to: "/comfy", label: "ComfyUI", icon: Image },
   { to: "/ollama", label: "Ollama", icon: Bot },
   { to: "/kokoro", label: "Kokoro", icon: Mic },
+  { to: "/sharp", label: "3D Worlds", icon: Box },
   { to: "/system", label: "System", icon: Wrench },
   { to: "/logs", label: "Logs", icon: ScrollText },
   { to: "/config", label: "Raw config", icon: FileCode },

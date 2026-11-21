@@ -25,6 +25,8 @@ import {
   retryWorldJob,
   shareWorldJob,
   startWorldJob,
+  SHARP_CAPABILITY,
+  worldGeneratorLabel,
   worldModeLabel,
   worldPreviewUrl,
   worldSceneUrl,
@@ -62,6 +64,15 @@ const BUDGETS = [
   { value: 2048, label: 'Full', hint: '≈2.3 M splats — sharper; PC VR / desktop' },
 ]
 
+/** Field of view of the picture; `null` = the generator's own default. */
+const FOVS: { value: number | null; label: string }[] = [
+  { value: null, label: 'Auto' },
+  { value: 40, label: '40° (tele)' },
+  { value: 55, label: '55°' },
+  { value: 70, label: '70°' },
+  { value: 90, label: '90° (wide)' },
+]
+
 const selectClass =
   'h-11 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-9'
 
@@ -90,6 +101,8 @@ export default function WorldsPage() {
   const [mode, setMode] = useState<WorldMode>('auto')
   const [maxWidth, setMaxWidth] = useState(1024)
   const [fillLean, setFillLean] = useState(0.25)
+  const [fov, setFov] = useState<number | null>(null)
+  const isSharp = capability === SHARP_CAPABILITY
 
   const [jobs, setJobs] = useState<WorldJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -213,9 +226,9 @@ export default function WorldsPage() {
       startWorldJob(token, {
         capability,
         input_image_id: inputImage.image_id,
-        mode,
-        max_width: maxWidth,
-        fill_lean: fillLean,
+        // SHARP has no projection / budget / lean knobs: it predicts the whole splat.
+        ...(isSharp ? { mode: 'perspective' as const } : { mode, max_width: maxWidth, fill_lean: fillLean }),
+        ...(fov != null ? { hfov: fov } : {}),
       }),
     )
     if (!res) return
@@ -384,7 +397,7 @@ export default function WorldsPage() {
                         ) : (
                           capabilities.map(c => (
                             <option key={c.base} value={c.base}>
-                              {c.base}
+                              {worldGeneratorLabel(c.base)}
                             </option>
                           ))
                         )}
@@ -401,6 +414,12 @@ export default function WorldsPage() {
                         <RefreshCw className={capsLoading ? 'size-4 animate-spin' : 'size-4'} />
                       </Button>
                     </div>
+                    {isSharp ? (
+                      <p className="text-xs text-muted-foreground" data-testid="worlds-generator-hint">
+                        Learned Gaussians at real-world scale: leaning and short steps stay solid. Covers what the
+                        picture shows — no 360°, so panoramas belong to the Lotus generator.
+                      </p>
+                    ) : null}
                   </div>
 
                   <ImageSlot
@@ -413,6 +432,32 @@ export default function WorldsPage() {
                     onClear={input.clear}
                   />
 
+                  <div className="space-y-1.5">
+                    <Label htmlFor="worlds-fov">Field of view</Label>
+                    <select
+                      id="worlds-fov"
+                      className={selectClass}
+                      value={fov ?? ''}
+                      onChange={e => setFov(e.target.value === '' ? null : Number(e.target.value))}
+                      data-testid="worlds-fov"
+                    >
+                      {FOVS.map(f => (
+                        <option key={f.label} value={f.value ?? ''}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      {fov != null
+                        ? "How wide the picture's camera was. Wider pushes the scene closer and deeper."
+                        : isSharp
+                          ? 'Auto: camera EXIF if present, otherwise a 30 mm lens (≈55° on a square image).'
+                          : 'Auto: 70°.'}
+                    </p>
+                  </div>
+
+                  {!isSharp ? (
+                  <>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-1.5">
                       <Label htmlFor="worlds-mode">Projection</Label>
@@ -478,6 +523,8 @@ export default function WorldsPage() {
                       background (blurrier, more splats).
                     </p>
                   </div>
+                  </>
+                  ) : null}
 
                   <Button type="submit" disabled={!canSubmit} className="min-h-11 w-full" data-testid="worlds-submit">
                     {busy === 'submit' ? (
@@ -548,6 +595,7 @@ export default function WorldsPage() {
                           {result.depth_range_m
                             ? ` · depth ${result.depth_range_m[0].toFixed(1)}–${result.depth_range_m[1].toFixed(0)} m`
                             : ''}
+                          {typeof result.settings?.hfov === 'number' ? ` · ${Math.round(result.settings.hfov)}° FOV` : ''}
                         </p>
                       ) : null}
                       {!isRunning ? (

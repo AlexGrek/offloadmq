@@ -91,6 +91,9 @@ if [[ "${SKIP_BUILD:-}" == "1" ]]; then
     fi
   done
 else
+  echo "→ Checking out the ml-sharp submodule (bundled for world.sharp)..."
+  git -C "${AGENT_DIR}" submodule update --init third_party/ml-sharp
+
   echo "→ Building frontend bundle..."
   ( cd "${AGENT_DIR}/ui-server/frontend" && npm ci && npm run build )
   if [[ ! -d "$FRONTEND_DIST" ]]; then
@@ -113,6 +116,7 @@ else
   ( cd "${AGENT_DIR}/cli-manager" && rm -rf build dist ./*.spec && \
     uv run --with pyinstaller pyinstaller --onefile --name omq --icon ../assets/icon.png \
       --add-data "../ui-server/frontend/dist:frontend/dist" \
+      --add-data "../third_party/ml-sharp:ml-sharp" \
       src/cli_manager/main.py )
   if [[ ! -f "$CLI_DIST" ]]; then
     echo "error: expected CLI binary not found at ${CLI_DIST}" >&2
@@ -123,6 +127,7 @@ else
   ( cd "${AGENT_DIR}/gui-manager" && rm -rf build dist ./*.spec && \
     uv run --with pyinstaller pyinstaller --onefile --windowed --name omq-gui --icon ../assets/icon.png \
       --add-data "../ui-server/frontend/dist:frontend/dist" \
+      --add-data "../third_party/ml-sharp:ml-sharp" \
       src/gui_manager/main.py )
   if [[ ! -f "$GUI_DIST" ]]; then
     echo "error: expected GUI binary not found at ${GUI_DIST}" >&2

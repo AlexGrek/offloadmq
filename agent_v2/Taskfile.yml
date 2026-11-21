@@ -18,8 +18,36 @@ tasks:
   install:
     desc: Sync the uv workspace and install frontend deps
     cmds:
+      - task: submodules
       - uv sync
       - task: frontend:install
+
+  submodules:
+    desc: Check out third_party/ml-sharp (SHARP source bundled into the binaries for world.sharp)
+    cmds:
+      - git submodule update --init third_party/ml-sharp
+    status:
+      - test -f third_party/ml-sharp/pyproject.toml
+
+  # ----------------------------------------------------------------
+  # Apple SHARP runtime (world.sharp) — optional, never installed by default
+  # ----------------------------------------------------------------
+
+  sharp:install:
+    desc: Install/update the SHARP venv + model (locations from `omq sharp config`)
+    deps: [submodules]
+    cmds:
+      - uv run omq sharp install
+
+  sharp:doctor:
+    desc: Validate the SHARP runtime; FIX=1 repairs what is broken
+    cmds:
+      - uv run omq sharp doctor {{if .FIX}}--fix{{end}}
+
+  sharp:uninstall:
+    desc: Delete the SHARP venv and model
+    cmds:
+      - uv run omq sharp uninstall --yes
 
   frontend:install:
     desc: Install frontend npm dependencies
@@ -100,7 +128,7 @@ tasks:
 
   package:cli:
     desc: Build a single-file CLI binary (PyInstaller)
-    deps: [frontend:build]
+    deps: [frontend:build, submodules]
     dir: cli-manager
     cmds:
       - rm -rf build dist omq.spec
@@ -108,16 +136,18 @@ tasks:
         uv run --with pyinstaller pyinstaller --onefile --name omq --icon ../assets/icon.png
         --paths src
         --add-data "../ui-server/frontend/dist:frontend/dist"
+        --add-data "../third_party/ml-sharp:ml-sharp"
         _pyi_entry.py
 
   package:gui:
     desc: Build a single-file GUI binary (PyInstaller)
-    deps: [frontend:build]
+    deps: [frontend:build, submodules]
     dir: gui-manager
     cmds:
       - >-
         uv run --with pyinstaller pyinstaller --onefile --windowed --name omq-gui --icon ../assets/icon.png
         --add-data "../ui-server/frontend/dist:frontend/dist"
+        --add-data "../third_party/ml-sharp:ml-sharp"
         src/gui_manager/main.py
 
   installer:windows:

@@ -185,3 +185,42 @@ export interface AutoUpdateStatus {
   interval_hours: number;
   unsupported_reason: string | null;
 }
+
+export type SharpJob = {
+  state: "idle" | "running" | "succeeded" | "failed";
+  action: "install" | "repair" | "uninstall" | null;
+  error: string | null;
+  started_at: number | null;
+  finished_at: number | null;
+  log: string[];
+};
+
+export type SharpStatus = {
+  ready: boolean;
+  venv_dir: string;
+  models_dir: string;
+  has_venv: boolean;
+  has_model: boolean;
+  model_bytes: number;
+  manifest: {
+    revision?: string;
+    torch?: string;
+    cuda?: boolean;
+    device?: string | null;
+    torch_index?: string;
+    installed_at?: number;
+  };
+  summary: string;
+  settings: { sharp_venv_dir: string; sharp_models_dir: string; sharp_torch_index: string };
+  default_venv_dir: string;
+  default_models_dir: string;
+  source_available: boolean;
+  uv_available: boolean;
+  job: SharpJob;
+};
+
+export type SharpDoctorReport = {
+  ok: boolean;
+  action: "install" | "reinstall" | null;
+  checks: { name: string; ok: boolean; detail: string }[];
+};
