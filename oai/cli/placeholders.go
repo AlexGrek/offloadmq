@@ -2,7 +2,6 @@ package main
 
 import (
 	"math/rand/v2"
-	"regexp"
 	"strings"
 	"unicode"
 
@@ -28,7 +27,49 @@ const maxPlaceholderDepth = 5
 // maxPickAttempts bounds the search for an unused value before the used set is reset.
 const maxPickAttempts = 64
 
-var placeholderRE = regexp.MustCompile(`\{([A-Za-z0-9._-]+|[^{}|]*\|[^{}]*)\}`)
+func isTokenChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_'
+}
+
+func isToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !isTokenChar(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// matchBraced matches a {...} block starting at text[0] == '{', balancing nested
+// {...} pairs. It returns the byte index of the matching '}', any top-level '|'
+// choices (at brace depth 1), and whether a closing '}' was found.
+func matchBraced(text string) (closeIdx int, choices []string, ok bool) {
+	depth := 1
+	choiceStart := 1
+	for i := 1; i < len(text); i++ {
+		switch text[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				if choices != nil {
+					choices = append(choices, text[choiceStart:i])
+				}
+				return i, choices, true
+			}
+		case '|':
+			if depth == 1 {
+				choices = append(choices, text[choiceStart:i])
+				choiceStart = i + 1
+			}
+		}
+	}
+	return 0, nil, false
+}
 
 var builtinPlaceholders = map[string]func() string{
 	"color":     func() string { return splitCamelCase(gofakeit.Color()) },
@@ -110,8 +151,9 @@ func pick(next func() string, used map[string]bool) string {
 	return v
 }
 
-// Expand resolves {category}, custom {name}, and literal {a|b|c} choices.
-// Each choice occurrence is picked independently, preserving case; empty options are allowed.
+// Expand resolves {category}, custom {name}, and {a|b|c} choices.
+// Each choice occurrence is picked independently, preserving case; empty options are allowed
+// and the chosen option is expanded for nested placeholders.
 func (e *placeholderExpander) Expand(prompt string) string {
 	return e.expandLevel(prompt, 0)
 }
@@ -120,34 +162,66 @@ func (e *placeholderExpander) expandLevel(text string, depth int) string {
 	if !strings.Contains(text, "{") || depth >= maxPlaceholderDepth {
 		return text
 	}
-	return placeholderRE.ReplaceAllStringFunc(text, func(match string) string {
-		raw := match[1 : len(match)-1]
-		if strings.Contains(raw, "|") {
-			choices := strings.Split(raw, "|")
-			return strings.TrimSpace(choices[rand.IntN(len(choices))])
+	var out strings.Builder
+	out.Grow(len(text))
+	rest := text
+	for {
+		open := strings.IndexByte(rest, '{')
+		if open < 0 {
+			out.WriteString(rest)
+			break
+		}
+		out.WriteString(rest[:open])
+		braced := rest[open:]
+		closeIdx, choices, ok := matchBraced(braced)
+		if !ok {
+			out.WriteByte('{')
+			rest = braced[1:]
+			continue
+		}
+		if choices != nil {
+			picked := strings.TrimSpace(choices[rand.IntN(len(choices))])
+			out.WriteString(e.expandLevel(picked, depth+1))
+			rest = braced[closeIdx+1:]
+			continue
+		}
+		raw := braced[1:closeIdx]
+		if !isToken(raw) {
+			out.WriteByte('{')
+			rest = braced[1:]
+			continue
 		}
 		token := strings.ToLower(raw)
 
 		if token == randomPlaceholder {
 			name := e.randomName()
 			if name == "?" {
-				return "{?}"
+				out.WriteString("{?}")
+			} else {
+				out.WriteString(e.expandLevel("{"+name+"}", depth+1))
 			}
-			return e.expandLevel("{"+name+"}", depth+1)
+			rest = braced[closeIdx+1:]
+			continue
 		}
 		if gen, ok := builtinPlaceholders[token]; ok {
-			return strings.ToLower(pick(gen, e.usedSet(token)))
+			out.WriteString(strings.ToLower(pick(gen, e.usedSet(token))))
+			rest = braced[closeIdx+1:]
+			continue
 		}
 		if variants := e.custom[token]; len(variants) > 0 {
 			v := pick(func() string { return variants[rand.IntN(len(variants))] }, e.usedSet(token))
-			return e.expandLevel(v, depth+1)
+			out.WriteString(e.expandLevel(v, depth+1))
+			rest = braced[closeIdx+1:]
+			continue
 		}
 		if unsupportedPlaceholders[token] {
 			e.unsupported[token] = true
 		}
 		// Unknown name (including {?}, expanded server-side) — leave untouched.
-		return match
-	})
+		out.WriteString(braced[:closeIdx+1])
+		rest = braced[closeIdx+1:]
+	}
+	return out.String()
 }
 
 // randomName picks a builtin, "?", or a non-empty custom placeholder name.

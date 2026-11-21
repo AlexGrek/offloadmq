@@ -52,16 +52,6 @@ export function isValidPlaceholderName(name: string): boolean {
   return /^[A-Za-z0-9._-]{1,64}$/.test(name.trim())
 }
 
-/**
- * Matches `{token}` where token is 1+ chars of letters/digits/`.`/`-`/`_`. Custom
- * names may start with `.` or a digit (e.g. `{.cinematic}`, `{film.}`). `?` is
- * deliberately excluded from the charset, so `{?}` (expanded server-side) and
- * empty `{}` both fail to match and pass through untouched — no special casing
- * needed.
- */
-// Choices contain literal text (no nested braces); empty alternatives are allowed.
-const PLACEHOLDER_RE = /\{([A-Za-z0-9._-]+|[^{}|]*\|[^{}]*)\}/g
-
 /** Tracks values already handed out per placeholder name so a batch never repeats one. */
 export type PlaceholderUsage = Map<string, Set<string>>
 
@@ -75,6 +65,39 @@ export function createPlaceholderUsage(): PlaceholderUsage {
  * reached, remaining `{token}` text is left literal instead of expanding further.
  */
 export const MAX_PLACEHOLDER_DEPTH = 5
+
+const TOKEN_RE = /^[A-Za-z0-9._-]+$/
+
+/**
+ * Matches a `{...}` block starting at `start` (where `text[start] === '{'`),
+ * balancing nested `{...}` pairs. Returns the matching closing `}` index and the
+ * top-level `|` choices (if any `|` appears at brace depth 1), or `null` if the
+ * brace is unclosed.
+ */
+function matchBraced(text: string, start: number): { close: number; choices: string[] | null } | null {
+  let depth = 1
+  let choiceStart = start + 1
+  let choices: string[] | null = null
+  for (let i = start + 1; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === '{') {
+      depth += 1
+    } else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) {
+        if (choices !== null) {
+          choices.push(text.slice(choiceStart, i))
+        }
+        return { close: i, choices }
+      }
+    } else if (ch === '|' && depth === 1) {
+      if (choices === null) choices = []
+      choices.push(text.slice(choiceStart, i))
+      choiceStart = i + 1
+    }
+  }
+  return null
+}
 
 function pickUnique(dict: string[], used: Set<string>): string {
   if (dict.length === 0) return ''
@@ -109,10 +132,34 @@ function expandLevel(
 ): string {
   if (!text.includes('{')) return text
   if (depth >= MAX_PLACEHOLDER_DEPTH) return text
-  return text.replace(PLACEHOLDER_RE, (match, rawToken: string) => {
-    if (rawToken.includes('|')) {
-      const choices = rawToken.split('|').map(choice => choice.trim())
-      return choices[Math.floor(Math.random() * choices.length)]
+
+  let out = ''
+  let i = 0
+  while (i < text.length) {
+    const open = text.indexOf('{', i)
+    if (open === -1) {
+      out += text.slice(i)
+      break
+    }
+    out += text.slice(i, open)
+    const matched = matchBraced(text, open)
+    if (!matched) {
+      out += '{'
+      i = open + 1
+      continue
+    }
+    const { close, choices } = matched
+    if (choices !== null) {
+      const picked = choices[Math.floor(Math.random() * choices.length)].trim()
+      out += expandLevel(picked, usage, customDefs, depth + 1)
+      i = close + 1
+      continue
+    }
+    const rawToken = text.slice(open + 1, close)
+    if (!TOKEN_RE.test(rawToken)) {
+      out += '{'
+      i = open + 1
+      continue
     }
     const token = rawToken.toLowerCase()
 
@@ -120,7 +167,9 @@ function expandLevel(
     if (builtin) {
       // Builtin dictionary entries are plain words with no braces, so they never
       // need recursive re-expansion.
-      return pickUnique(builtin, usedSetFor(usage, token))
+      out += pickUnique(builtin, usedSetFor(usage, token))
+      i = close + 1
+      continue
     }
 
     if (token === RANDOM_PLACEHOLDER) {
@@ -131,25 +180,35 @@ function expandLevel(
       ]
       const name = pool[Math.floor(Math.random() * pool.length)]
       // `{?}` is expanded server-side, so hand it back literally.
-      if (name === '?') return '{?}'
-      return expandLevel(`{${name}}`, usage, customDefs, depth + 1)
+      if (name === '?') {
+        out += '{?}'
+      } else {
+        out += expandLevel(`{${name}}`, usage, customDefs, depth + 1)
+      }
+      i = close + 1
+      continue
     }
 
     const variants = customDefs[token]
     if (variants && variants.length > 0) {
       const picked = pickUnique(variants, usedSetFor(usage, token))
-      return expandLevel(picked, usage, customDefs, depth + 1)
+      out += expandLevel(picked, usage, customDefs, depth + 1)
+      i = close + 1
+      continue
     }
 
     // Unknown placeholder name (including `{?}`, expanded server-side at submit
     // time) — leave it untouched.
-    return match
-  })
+    out += text.slice(open, close + 1)
+    i = close + 1
+  }
+  return out
 }
 
 /**
  * Expand `{category}`, `{random}`, user-defined `{name}`, and inline `{a|b|c}` choices.
- * Each choice occurrence is an independent random draw, including across a batch.
+ * Each choice occurrence is an independent random draw, including across a batch;
+ * the chosen alternative may itself contain `{placeholders}` or nested choices.
  * `customDefs` maps a lowercased custom placeholder name to its variant list
  * (fetched from `GET /api/prompt-placeholders`); omit it if unavailable — custom
  * placeholders are additive, never required for a submission to succeed. `usage`

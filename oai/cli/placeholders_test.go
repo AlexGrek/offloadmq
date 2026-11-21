@@ -191,7 +191,11 @@ func TestImageGenerateSurvivesPlaceholderFetchFailure(t *testing.T) {
 }
 
 func TestInlineChoices(t *testing.T) {
-	e := newPlaceholderExpander([]promptPlaceholder{{Name: "scene", Variants: []string{"a {Red fox|Blue whale|Green bird}"}}})
+	e := newPlaceholderExpander([]promptPlaceholder{
+		{Name: "scene", Variants: []string{"a {Red fox|Blue whale|Green bird}"}},
+		{Name: ".start", Variants: []string{"breathtaking shot of"}},
+		{Name: "weapon", Variants: []string{"baseball bat"}},
+	})
 	for range 100 {
 		for input, allowed := range map[string][]string{
 			"{a|b|c}":                   {"a", "b", "c"},
@@ -199,6 +203,10 @@ func TestInlineChoices(t *testing.T) {
 			"{ Hat | }":                 {"Hat", ""},
 			"{é|é} / {same|same} / {|}": {"é / same / "},
 			"{a|b {?} {unknown} {}":     {"{a|b {?} {unknown} {}"},
+			"{.start} woman with a {{weapon}|{?}}": {
+				"breathtaking shot of woman with a baseball bat",
+				"breathtaking shot of woman with a {?}",
+			},
 		} {
 			got := e.Expand(input)
 			found := false

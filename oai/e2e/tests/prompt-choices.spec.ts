@@ -8,12 +8,17 @@ test('inline choices use independent draws and preserve existing placeholders', 
     const originalRandom = Math.random
     try {
       const usage = createPlaceholderUsage()
-      const defs = { scene: ['a {Red fox|Blue whale|Green bird}'] }
+      const defs = {
+        scene: ['a {Red fox|Blue whale|Green bird}'],
+        '.start': ['breathtaking shot of'],
+        weapon: ['baseball bat'],
+      }
       const results = []
       for (const random of [0, 0.5, 0.999999]) {
         Math.random = () => random
         results.push(expandPromptPlaceholders('{a|b|c} + {a|b|c}', usage))
         results.push(expandPromptPlaceholders('{scene}', usage, defs))
+        results.push(expandPromptPlaceholders('{.start} woman with a {{animal}|{weapon}|{?}}', usage, defs))
       }
       results.push(expandPromptPlaceholders('{ Hat | }', usage))
       results.push(expandPromptPlaceholders('{é|é} / {same|same} / {|}', usage))
@@ -23,8 +28,12 @@ test('inline choices use independent draws and preserve existing placeholders', 
       Math.random = originalRandom
     }
   })
-  expect(results).toEqual([
-    'a + a', 'a Red fox', 'b + b', 'a Blue whale', 'c + c', 'a Green bird',
+  expect(results[0]).toBe('a + a')
+  expect(results[1]).toBe('a Red fox')
+  expect(results[2]).toMatch(/^breathtaking shot of woman with a [^{}|]+$/)
+  expect(results.slice(3)).toEqual([
+    'b + b', 'a Blue whale', 'breathtaking shot of woman with a baseball bat',
+    'c + c', 'a Green bird', 'breathtaking shot of woman with a {?}',
     '', 'é / same / ', '{a|b {?} {unknown} {}',
   ])
 })

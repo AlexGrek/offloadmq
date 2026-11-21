@@ -21,7 +21,7 @@ resources:
   requests:
     memory: 128Mi
   limits:
-    memory: 512Mi
+    memory: 1536Mi
 
 # Pin the app next to Postgres: every DB round trip across nodes costs ~24 ms
 # vs ~0.65 ms on-node, and request handlers make many sequential queries.
