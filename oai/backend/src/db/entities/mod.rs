@@ -1,29 +1,29 @@
 pub mod app_settings;
-pub mod imggen_capabilities;
-pub mod llm_capabilities;
 pub mod chat_attachments;
 pub mod chat_messages;
 pub mod chats;
 pub mod generation_parameters;
-pub mod prompt_entries;
-pub mod prompt_placeholders;
 pub mod image_analysis_jobs;
-pub mod nude_detect_jobs;
 pub mod image_files;
 pub mod image_generation_jobs;
 pub mod image_offload_tasks;
 pub mod image_pipeline_events;
 pub mod image_worker_logs;
 pub mod img_utils_jobs;
-pub mod tts_jobs;
-pub mod music_generation_jobs;
+pub mod imggen_capabilities;
+pub mod llm_capabilities;
 pub mod llm_compare_jobs;
 pub mod llm_debate_jobs;
 pub mod movie_jobs;
+pub mod music_generation_jobs;
+pub mod nude_detect_jobs;
 pub mod oauth_auth_codes;
 pub mod oauth_clients;
 pub mod oauth_grants;
 pub mod oauth_tokens;
+pub mod prompt_entries;
+pub mod prompt_placeholders;
+pub mod tts_jobs;
 pub mod users;
 
 pub mod image_cycle_jobs;
@@ -41,3 +41,5 @@ pub mod persona_photo_jobs;
 pub mod langgraph_jobs;
 
 pub mod world_jobs;
+
+pub mod img_utils_capabilities;

@@ -16,6 +16,11 @@ pub fn spawn(state: Arc<AppState>) {
             default_tick_secs: 10,
             default_batch_size: 20,
         },
-        |state, batch| async move { img_utils::run_background_reconcile_pass(&state, batch).await },
+        |state, batch| async move {
+            if let Err(e) = img_utils::list_capabilities(&state).await {
+                tracing::warn!("img_utils: capability refresh failed: {e}");
+            }
+            img_utils::run_background_reconcile_pass(&state, batch).await
+        },
     );
 }

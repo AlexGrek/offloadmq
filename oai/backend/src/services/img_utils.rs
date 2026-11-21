@@ -18,6 +18,7 @@
 //! polls with the image client.
 
 use async_trait::async_trait;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, Set, sea_query::OnConflict};
 use serde::Serialize;
 
 use crate::{
@@ -305,15 +306,58 @@ async fn carry_generation_parameters(
     }
     .await;
     if let Err(e) = result {
-        tracing::warn!("img_utils: could not carry generation parameters for job {}: {e:?}", job.id);
+        tracing::warn!(
+            "img_utils: could not carry generation parameters for job {}: {e:?}",
+            job.id
+        );
     }
 }
 
-/// Every Image Tools capability online right now — both families, in one round
-/// trip to OffloadMQ.
+/// Online tools and tools seen within the last 48 hours.
 pub async fn list_capabilities(state: &AppState) -> Result<Vec<ImgUtilCapability>, AppError> {
     let client = offload_factory::chat_client(state).await?;
-    let raw = client.list_capabilities_raw().await?;
+    let raw = match client.list_capabilities_raw().await {
+        Ok(raw) => raw,
+        Err(e) => {
+            tracing::warn!("img_utils: capability listing failed: {e}");
+            Vec::new()
+        }
+    };
+    use crate::db::entities::img_utils_capabilities::{ActiveModel, Column, Entity};
+    let now = chrono::Utc::now().fixed_offset();
+    let online: Vec<_> = raw
+        .iter()
+        .filter(|s| {
+            let base = crate::offload::base_capability(s);
+            base.starts_with(CAPABILITY_PREFIX) || is_resize_capability(base)
+        })
+        .cloned()
+        .collect();
+    for cap in &online {
+        let base = crate::offload::base_capability(cap);
+        let row = ActiveModel {
+            base: Set(base.to_string()),
+            tags_json: Set(String::new()),
+            raw: Set(cap.clone()),
+            last_available_at: Set(now),
+            created_at: Set(now),
+        };
+        Entity::insert(row)
+            .on_conflict(
+                OnConflict::column(Column::Base)
+                    .update_columns([Column::Raw, Column::LastAvailableAt])
+                    .to_owned(),
+            )
+            .exec(&state.db)
+            .await?;
+    }
+    let raw: Vec<String> = Entity::find()
+        .filter(Column::LastAvailableAt.gte(now - chrono::Duration::hours(48)))
+        .all(&state.db)
+        .await?
+        .into_iter()
+        .map(|row| row.raw)
+        .collect();
 
     let mut caps: Vec<ImgUtilCapability> =
         crate::offload::parse_capabilities_with_prefix(&raw, CAPABILITY_PREFIX)
@@ -420,7 +464,12 @@ pub async fn start_job_with_id(
         // Resize has exactly one operation and sends no `workflow` to the agent.
         RESIZE_WORKFLOW.to_string()
     } else {
-        match params.workflow.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        match params
+            .workflow
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             Some(w) => w.to_string(),
             // The pack directory is named after the model, so it is never a usable
             // task type — ask the agent which operations it actually installed.
@@ -435,11 +484,15 @@ pub async fn start_job_with_id(
     }
 
     if !resize && workflow.starts_with("upscale") {
-        if let Some(v) = params.options.as_ref().and_then(|o| o.get("scale_multiplier")) {
+        if let Some(v) = params
+            .options
+            .as_ref()
+            .and_then(|o| o.get("scale_multiplier"))
+        {
             use crate::services::image_pipeline_params::{MAX_UPSCALE_SCALE, MIN_UPSCALE_SCALE};
-            let ok = v
-                .as_f64()
-                .is_some_and(|s| s.is_finite() && (MIN_UPSCALE_SCALE..=MAX_UPSCALE_SCALE).contains(&s));
+            let ok = v.as_f64().is_some_and(|s| {
+                s.is_finite() && (MIN_UPSCALE_SCALE..=MAX_UPSCALE_SCALE).contains(&s)
+            });
             if !ok {
                 return Err(AppError::BadRequest(format!(
                     "scale_multiplier must be a number between {MIN_UPSCALE_SCALE} and {MAX_UPSCALE_SCALE}"
@@ -554,7 +607,7 @@ async fn resolve_sole_workflow(state: &AppState, capability: &str) -> Result<Str
     let caps = list_capabilities(state).await?;
     let Some(cap) = caps.into_iter().find(|c| c.base == capability) else {
         return Err(AppError::BadRequest(format!(
-            "no online agent provides `{capability}`"
+            "no recently available agent provides `{capability}`"
         )));
     };
     match cap.workflows.as_slice() {
@@ -580,7 +633,8 @@ async fn stage_image(
 ) -> Result<String, AppError> {
     let op = storage::operator(state)?;
     let bytes = storage::read(op, &file.storage_path).await?;
-    let processed = image_processing::process_image_async(bytes, Some(file.content_type.clone())).await?;
+    let processed =
+        image_processing::process_image_async(bytes, Some(file.content_type.clone())).await?;
     let name = format!("{slot}_{}.jpg", file.id);
     client
         .upload_bucket_file(bucket_uid, processed.bytes, &name, &processed.content_type)

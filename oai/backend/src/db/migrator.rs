@@ -52,6 +52,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261114_000044_create_langgraph_jobs::Migration),
             Box::new(m20261115_000045_persona_describe_look::Migration),
             Box::new(m20261121_000046_create_world_jobs::Migration),
+            Box::new(m20261121_000047_create_img_utils_capabilities::Migration),
         ]
     }
 }
@@ -128,7 +129,6 @@ mod m20260903_000033_create_prompt_placeholders;
 mod m20260926_000034_prompt_entry_previews;
 mod m20261009_000035_create_oauth_tables;
 
-
 #[cfg(test)]
 mod movie_migration_idens {
     use super::m20260731_000030_movie_split_video_capability as m30;
@@ -138,9 +138,18 @@ mod movie_migration_idens {
     /// which does not match the entity field — hence the explicit `iden` attributes.
     #[test]
     fn migration_column_idens_match_entity_fields() {
-        assert_eq!(m30::MovieJobs::Txt2VideoCapability.to_string(), "txt2video_capability");
-        assert_eq!(m30::MovieJobs::Img2VideoCapability.to_string(), "img2video_capability");
-        assert_eq!(m30::MovieJobs::VideoCapability.to_string(), "video_capability");
+        assert_eq!(
+            m30::MovieJobs::Txt2VideoCapability.to_string(),
+            "txt2video_capability"
+        );
+        assert_eq!(
+            m30::MovieJobs::Img2VideoCapability.to_string(),
+            "img2video_capability"
+        );
+        assert_eq!(
+            m30::MovieJobs::VideoCapability.to_string(),
+            "video_capability"
+        );
     }
 }
 
@@ -170,3 +179,5 @@ mod m20261115_000045_persona_describe_look;
 
 /// VR Worlds: `world.splat` jobs.
 mod m20261121_000046_create_world_jobs;
+
+mod m20261121_000047_create_img_utils_capabilities;
