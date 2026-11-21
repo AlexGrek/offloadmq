@@ -100,7 +100,7 @@ Usage:
   oai persona chats <persona> [-json]  |  history <chat-id> [-limit N] [-json]
 
 Prompts may use {color} {animal} {adjective} {country} {language} {name}, your custom
-{placeholders} (manage with oai image placeholders), and {?} (expanded by the server).
+{placeholders} (manage with oai image placeholders), {random}, and {?} (expanded by the server).
 Inline {a|b|c} choices pick one literal option independently per occurrence (repeats allowed).
 LangGraph prompts also take {tools} (expanded at run time by the default main.py).
 Persona prompts also take {p_name}, {p_look} and {p_system} (substituted by the server).

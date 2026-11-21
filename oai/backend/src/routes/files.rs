@@ -63,6 +63,8 @@ pub struct UserFile {
 #[derive(Serialize)]
 pub struct GenerationInfo {
     pub prompt: String,
+    /// The prompt before placeholder substitution; `None` for older jobs.
+    pub prompt_template: Option<String>,
     pub negative_prompt: Option<String>,
     pub capability: String,
     pub workflow: String,
@@ -259,6 +261,7 @@ pub async fn list_image_library(
                 .and_then(|id| jobs.get(&id))
                 .map(|job| GenerationInfo {
                     prompt: job.prompt.clone(),
+                    prompt_template: crate::services::image_jobs::prompt_template_for_job(job),
                     negative_prompt: job.negative_prompt.clone(),
                     capability: job.capability.clone(),
                     workflow: job.workflow.clone(),

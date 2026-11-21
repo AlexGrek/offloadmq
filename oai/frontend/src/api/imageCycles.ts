@@ -34,6 +34,8 @@ export interface ImageCycleStep {
   error: string | null
   quality?: number | null
   improve_prompt?: string | null
+  /** `prompt` before placeholder expansion; absent on older steps. */
+  prompt_template?: string | null
 }
 export interface ImageCycleJob {
   job_id: string

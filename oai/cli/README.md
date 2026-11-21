@@ -116,7 +116,7 @@ Pass `--no-wait` to submit detached work and return immediately. For one job, st
 - `{random}` — any other placeholder (built-in except `{starwars}`, `{?}`, or one of your custom ones), picked at random and expanded as that.
 - `{?}` — random two-word name, expanded by the server; the CLI leaves it alone.
 
-Tokens are case-insensitive and unknown ones are left untouched. The expanded prompt is printed before each job, and the raw template is sent as `prompt_template` so Retry and saved-prompt previews in the web UI see it.
+Tokens are case-insensitive and unknown ones are left untouched. The expanded prompt is printed before each job, and the raw template is sent as `prompt_template` so Retry, "Edit original" and saved-prompt previews in the web UI see it. `oai image job` prints it as `Original:` when it differs from the prompt.
 
 Each job is polled every 5s, like the web UI. A failed poll caused by a network error or a gateway/overload response (502, 503, 504, 408, 429) is retried on the next tick, with a notice on stderr; the CLI gives up only after 3 such failures in a row. Any other error (auth, unknown job, a backend 500) fails immediately. `-timeout` also bounds an in-flight poll request. If `-timeout` expires for a job, it keeps running on the server; only the CLI stops waiting for it.
 

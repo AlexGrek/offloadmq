@@ -76,6 +76,9 @@ pub struct JobDetailsResponse {
     pub display_name: String,
     pub status: String,
     pub prompt: String,
+    /// The prompt as originally written, before placeholder substitution. `None`
+    /// for older jobs that never recorded one (then `prompt` is all there is).
+    pub prompt_template: Option<String>,
     pub negative_prompt: Option<String>,
     pub capability: String,
     pub workflow: String,
@@ -390,11 +393,16 @@ pub fn job_details_response(detail: JobDetail) -> JobDetailsResponse {
     } = detail;
     let pipeline_params = image_jobs::pipeline_params_for_job(&job);
     let display_name = image_jobs::display_name_for_job(&job);
+    let prompt_template = pipeline_params
+        .prompt_template
+        .clone()
+        .filter(|t| !t.trim().is_empty());
     JobDetailsResponse {
         job_id: job.id.to_string(),
         display_name,
         status: job.status,
         prompt: job.prompt,
+        prompt_template,
         negative_prompt: job.negative_prompt,
         capability: job.capability,
         workflow: job.workflow,

@@ -23,7 +23,40 @@ export type ImggenRouteState = {
   generateAgain?: {
     jobId?: string
     parameters: Record<string, unknown>
+    /** Fill the prompt with the original (unsubstituted) text instead of the
+     *  prompt the model received. Falls back to the latter when none is stored. */
+    useOriginalPrompt?: boolean
   }
+}
+
+/**
+ * The original prompt worth offering next to the substituted one: the template
+ * trimmed, or `null` when there is none (older jobs) or it is identical to the
+ * prompt (nothing was substituted, so "Edit original" would be a duplicate).
+ */
+export function distinctPromptTemplate(
+  template: string | null | undefined,
+  prompt: string | null | undefined,
+): string | null {
+  const t = template?.trim()
+  if (!t) return null
+  return t === (prompt ?? '').trim() ? null : t
+}
+
+/** A job's original prompt (`prompt_template`), from the field or its pipeline snapshot. */
+export function jobPromptTemplate(
+  job: Pick<ImageJobDetails, 'prompt_template' | 'pipeline_params'>,
+): string | null {
+  const t = job.prompt_template ?? job.pipeline_params?.prompt_template
+  return t?.trim() ? t.trim() : null
+}
+
+/** The original prompt in a `generation_parameters` row. Rows written before the
+ *  top-level key existed may still carry it inside `pipeline_params`. */
+export function storedPromptTemplate(stored: Record<string, unknown>): string | null {
+  const nested = asParamRecord(stored.pipeline_params)
+  const raw = stored.prompt_template ?? nested?.prompt_template
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null
 }
 
 export function isVideoMode(mode: ImgGenMode): boolean {
@@ -442,6 +475,7 @@ export function pipelineParamsFromStored(stored: Record<string, unknown>): Image
     // Only a full pipeline snapshot says whether the job was high priority;
     // without one leave it unknown so the form keeps the user's choice.
     high_priority: nested ? Boolean(nested.high_priority) : undefined,
+    prompt_template: storedPromptTemplate(stored),
   }
 }
 
@@ -536,14 +570,23 @@ function applyPipelineParamsCore(
   if (p.high_priority !== undefined) handlers.setHighPriority(p.high_priority)
 }
 
+/** Swap in the original prompt when one was asked for and exists. */
+function withPromptChoice(p: ImagePipelineParams, original: string | null): ImagePipelineParams {
+  return original ? { ...p, prompt: original } : p
+}
+
 /** Copy a job's stored pipeline parameters into the New job form. */
 export function applyPipelineParamsToNewForm(
   job: ImageJobDetails,
   handlers: ApplyPipelineToNewFormHandlers,
   imagePreviewUrl?: string | null,
   availableCapabilities?: readonly { base: string }[],
+  options?: { useOriginalPrompt?: boolean },
 ): void {
-  const p = pipelineParamsFromJob(job)
+  const p = withPromptChoice(
+    pipelineParamsFromJob(job),
+    options?.useOriginalPrompt ? jobPromptTemplate(job) : null,
+  )
   const mode = workflowToMode(p.workflow)
   let inputFile: UploadedImage | ImageJobFile | undefined =
     (mode === 'img2img' || mode === 'img2video') && p.input_image_id
@@ -573,9 +616,14 @@ export function applyStoredGenerationParamsToNewForm(
     > | null
     imagePreviewUrl?: string | null
     availableCapabilities?: readonly { base: string }[]
+    /** Fill the prompt with the stored original instead of the substituted prompt. */
+    useOriginalPrompt?: boolean
   },
 ): void {
-  const p = pipelineParamsFromStored(stored)
+  const p = withPromptChoice(
+    pipelineParamsFromStored(stored),
+    options?.useOriginalPrompt ? storedPromptTemplate(stored) : null,
+  )
   const mode = workflowToMode(p.workflow)
   let inputFile = options?.inputFile ?? null
   if (!inputFile && (mode === 'img2img' || mode === 'img2video') && p.input_image_id) {

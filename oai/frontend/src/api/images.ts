@@ -41,6 +41,8 @@ export interface ImagePipelineParams {
    *  own snapshot absent = regular; `undefined` after `pipelineParamsFromStored`
    *  with no snapshot = unknown (the form keeps its current choice). */
   high_priority?: boolean
+  /** The prompt as typed, before placeholder substitution. Absent on older jobs. */
+  prompt_template?: string | null
 }
 
 export interface StartImageJobRequest {
@@ -153,7 +155,11 @@ export interface ImageJobDetails {
   /** Human-readable name (e.g. `rusty-nail`). */
   display_name: string
   status: string
+  /** The prompt the model received (placeholders substituted). */
   prompt: string
+  /** The prompt as originally written, before substitution. `null`/absent on
+   *  older jobs that never recorded one — then `prompt` is all there is. */
+  prompt_template?: string | null
   negative_prompt: string | null
   capability: string
   workflow: string

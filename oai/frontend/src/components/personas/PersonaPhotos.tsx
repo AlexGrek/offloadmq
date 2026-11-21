@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
-import { Ban, Camera, Check, Copy, ImagePlus, Library, Loader2, RotateCcw, Trash2, UserRound, X } from 'lucide-react'
+import { Ban, Braces, Camera, Check, Copy, ImagePlus, Library, Loader2, Pencil, RotateCcw, Trash2, UserRound, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -28,7 +28,7 @@ import { PromptTextarea } from '../PromptTextarea'
 import { ImagePickerModal } from '../imggen/ImagePickerModal'
 import { ImageLightbox, type LightboxSlide } from '../ImageLightbox'
 import { NudeDetectModal } from '../nudedetect/NudeDetectModal'
-import type { ImggenRouteState } from '../../lib/imggen'
+import { distinctPromptTemplate, type ImggenRouteState } from '../../lib/imggen'
 
 /** Shared with Image Generation: prompts picked here come from (and go to) the txt2img pool. */
 const PROMPT_BUCKET = 'imggen-prompt'
@@ -472,7 +472,19 @@ export function PersonaPhotos({ token, persona }: Props) {
           slides={slides}
           index={viewerIndex}
           onIndexChange={i => setViewerId(viewable[i]?.final_image_id ?? null)}
-          promptPanel={current.prompt ? <PhotoPromptSheet prompt={current.prompt} /> : undefined}
+          promptPanel={
+            current.prompt ? (
+              <PhotoPromptSheet
+                photo={current}
+                onEdit={text => {
+                  // Back to the form above with this run's prompt; the photo's own
+                  // workflow (txt2img / img2img) is kept as the user left it.
+                  setPrompt(text)
+                  setViewerId(null)
+                }}
+              />
+            ) : undefined
+          }
           actions={{
             imageId: currentId,
             filename: current.final_image?.filename ?? `${current.job_id}.jpg`,
@@ -523,11 +535,40 @@ function photoCaption(photo: PersonaPhoto): string {
   return photo.prompt || (photo.params.workflow === 'existing' ? 'From an existing photo' : '')
 }
 
-function PhotoPromptSheet({ prompt }: { prompt: string }) {
+/** The lightbox prompt sheet: the prompt sent to the model, the original
+ *  (`{p_*}` / placeholders intact) when it differs, and buttons to edit either. */
+function PhotoPromptSheet({ photo, onEdit }: { photo: PersonaPhoto; onEdit: (prompt: string) => void }) {
+  const original = distinctPromptTemplate(photo.prompt_template, photo.prompt)
+  const btn =
+    'inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-white/85 hover:bg-white/12 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
   return (
-    <p className="whitespace-pre-wrap break-words px-2 pt-1 text-sm leading-relaxed text-white/95 select-text" data-testid="persona-photo-prompt-text">
-      {prompt}
-    </p>
+    <div className="flex flex-col gap-2 px-2 pt-1">
+      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/95 select-text" data-testid="persona-photo-prompt-text">
+        {photo.prompt}
+      </p>
+      {original ? (
+        <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-white/70 select-text" data-testid="persona-photo-prompt-original">
+          <span className="font-medium text-white/80">Original · </span>
+          {original}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-1">
+        <button type="button" className={btn} onClick={() => onEdit(photo.prompt)} data-testid="persona-photo-edit-prompt">
+          <Pencil className="size-3.5" /> Edit prompt
+        </button>
+        {original ? (
+          <button
+            type="button"
+            className={btn}
+            onClick={() => onEdit(original)}
+            title="Edit the prompt as written, before placeholders were filled in"
+            data-testid="persona-photo-edit-original"
+          >
+            <Braces className="size-3.5" /> Edit original
+          </button>
+        ) : null}
+      </div>
+    </div>
   )
 }
 

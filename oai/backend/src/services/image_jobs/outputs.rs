@@ -460,6 +460,9 @@ pub(super) async fn record_image_generation_parameters(
         "job_id": job.id.to_string(),
         "display_name": job.display_name,
         "prompt": job.prompt,
+        // Original text before placeholder substitution. Rows written before this
+        // key existed only have it (if at all) under `pipeline_params`.
+        "prompt_template": pipeline.prompt_template.as_deref().filter(|t| !t.trim().is_empty()),
         "negative_prompt": job.negative_prompt,
         "capability": job.capability,
         "workflow": job.workflow,

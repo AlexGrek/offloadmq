@@ -238,8 +238,36 @@ Two independent substitution mechanisms can appear in the Prompt textarea, both 
 - Category tokens are matched case-insensitively (`{Color}` works); unknown `{...}` tokens — including `{?}` — are left untouched by the frontend expander so the server still substitutes them.
 - **Uniqueness (named placeholders):** each placeholder occurrence gets a distinct value from its dictionary within the same expansion pass. `ImageGenerationPage` creates one `PlaceholderUsage` map (`createPlaceholderUsage()`) per submit call for a single job (`onSubmit`), but shares **one** map across the whole loop in `onSubmitMultiple` — so a "Generate multiple" batch never repeats a `{color}`/`{animal}`/etc. value across jobs, mirroring how `{?}` already guarantees distinct names within one prompt server-side. The dictionary resets (clears used-set) if a batch is larger than the dictionary size, rather than looping forever.
 - `buildSubmitRequest(promptOverride?)` takes the already-expanded prompt string instead of reading `prompt` state directly, so the textarea itself still shows the raw `{color}`/`{?}` template — only the submitted payload is resolved.
-- Retry / "Generate again" (`onResubmitJob` → `retryImageJob`) replays the **stored, already-expanded** prompt from the original job — no re-expansion, so a retried job keeps the exact values it was first generated with.
+- Retry / "Generate again" (`onResubmitJob` → `retryImageJob`) replays the **stored, already-expanded** prompt from the original job — no re-expansion, so a retried job keeps the exact values it was first generated with. **Edit original** loads the stored template instead (fresh values on submit) — see below.
 - Adding a category: extend `CATEGORY_DICTIONARIES` in `promptPlaceholders.ts` with another `unique-names-generator` dictionary (or a custom `string[]`).
+
+---
+
+### Original vs substituted prompt (`prompt_template`)
+
+Every image job stores both the prompt the model got (`job.prompt`, placeholders
+substituted) and the prompt as typed (`ImagePipelineParams.prompt_template`, JSON — no
+migration). `start_job` defaults a missing template to the prompt as received, *before*
+it resolves `{?}` (`default_prompt_template`), so API/LLM callers (Movie, Image Cycles
+without placeholders) still record one. Image Cycles keeps each fresh step's
+pre-expansion text in `Step.prompt_template` and forwards it; Hallucinate sends the
+template outside studio mode. Read it via `image_jobs::prompt_template_for_job`.
+
+- Surfaces: `JobDetailsResponse.prompt_template`, `GenerationInfo.prompt_template`
+  (gallery), top-level `prompt_template` in the per-file `generation_parameters` row
+  (survives file deletion; Image Tools carry it to derived files).
+- **Backward compatibility:** older jobs/rows have no template → `null`; older
+  `generation_parameters` rows may hold it only under `pipeline_params`
+  (`storedPromptTemplate` reads both). The UI offers the original only when it exists
+  **and differs** from the prompt (`distinctPromptTemplate` in `lib/imggen.ts`).
+- UI: job detail shows `Original: …` (`imggen-job-original-prompt`) and **Edit
+  original** (`imggen-edit-original`) beside **Edit prompt**; Files properties
+  (`file-properties-edit-original`, `generateAgain.useOriginalPrompt`); Gallery prompt
+  sheet (`gallery-prompt-use-original`); Model Wars (`wars-edit` = substituted,
+  `wars-edit-original`); persona photo sheet (`persona-photo-edit-prompt` /
+  `persona-photo-edit-original`); Image Cycles viewer shows the original. CLI
+  `oai image job` / `oai persona photo` print an `Original:` line.
+- Mocked e2e: `oai/e2e/tests/original-prompt.spec.ts`.
 
 ---
 

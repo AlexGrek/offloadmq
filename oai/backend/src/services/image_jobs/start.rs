@@ -40,8 +40,8 @@ pub struct StartJobParams {
     pub priority: crate::offload::image_tasks::ImageTaskPriority,
     /// The prompt as the user typed it, before placeholder expansion. Saved prompts
     /// store this raw text, so it is the key a finished job's thumbnail is attached
-    /// to as the saved prompt's preview. Absent for API/CLI callers — the stored
-    /// prompt is used then.
+    /// to as the saved prompt's preview, and what "Edit original" restores. When a
+    /// caller omits it, `start_job` uses the prompt as received (before `{?}`).
     #[serde(default)]
     pub prompt_template: Option<String>,
 }
@@ -217,6 +217,7 @@ async fn start_job_internal(
     validate_start_job(&req, &workflow)?;
 
     let mut req = req;
+    default_prompt_template(&mut req);
     req.prompt = image_job_names::expand_prompt_placeholders(req.prompt.trim());
 
     let display_name = image_job_names::generate_display_name();
@@ -449,6 +450,25 @@ pub fn pipeline_params_for_job(job: &image_generation::ImageGenerationJob) -> Im
     image_pipeline_params::parse_stored_pipeline_params(job)
 }
 
+/// Callers that send no `prompt_template` (plain API clients, LLM-written prompts)
+/// still get one: the prompt as received, before the server resolves `{?}`. So
+/// every new job records its original text, and "Edit original" can offer it.
+pub(super) fn default_prompt_template(req: &mut StartJobParams) {
+    let has_template = req.prompt_template.as_deref().is_some_and(|t| !t.trim().is_empty());
+    if !has_template {
+        req.prompt_template = Some(req.prompt.trim().to_owned());
+    }
+}
+
+/// The prompt as originally written, before placeholder substitution — what to
+/// resubmit for fresh random values. `None` for jobs that predate the field and
+/// were submitted without one; then the stored prompt is the only record.
+pub fn prompt_template_for_job(job: &image_generation::ImageGenerationJob) -> Option<String> {
+    pipeline_params_for_job(job)
+        .prompt_template
+        .filter(|t| !t.trim().is_empty())
+}
+
 pub fn display_name_for_job(job: &image_generation::ImageGenerationJob) -> String {
     image_job_names::effective_display_name(job)
 }
@@ -547,6 +567,36 @@ mod tests {
         assert_eq!((retry.width, retry.height), (1024, 768));
         assert_eq!(retry.seed, Some(17));
         assert_eq!(restored.upscale.unwrap().scale, 2.0);
+    }
+
+    #[test]
+    fn missing_prompt_template_defaults_to_the_prompt_as_received() {
+        let base = serde_json::json!({
+            "capability": "imggen.test", "prompt": "  a {?} cat ", "width": 512, "height": 512
+        });
+        let mut req: StartJobParams = serde_json::from_value(base.clone()).unwrap();
+        default_prompt_template(&mut req);
+        assert_eq!(req.prompt_template.as_deref(), Some("a {?} cat"));
+
+        let mut blank = base.clone();
+        blank["prompt_template"] = serde_json::json!("  ");
+        let mut req: StartJobParams = serde_json::from_value(blank).unwrap();
+        default_prompt_template(&mut req);
+        assert_eq!(req.prompt_template.as_deref(), Some("a {?} cat"));
+
+        let mut given = base;
+        given["prompt"] = serde_json::json!("a red {?} cat");
+        given["prompt_template"] = serde_json::json!("a {color} {?} cat");
+        let mut req: StartJobParams = serde_json::from_value(given).unwrap();
+        default_prompt_template(&mut req);
+        assert_eq!(req.prompt_template.as_deref(), Some("a {color} {?} cat"));
+        let stored = build_pipeline_params(&req, "txt2img", None).to_json().unwrap();
+        let restored = ImagePipelineParams::from_json(&stored).unwrap();
+        assert_eq!(
+            start_params_from_pipeline(&restored).prompt_template.as_deref(),
+            Some("a {color} {?} cat"),
+            "retry replays the original template"
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@ import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, use
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Archive,
+  Braces,
   Inbox,
   Layers,
   ChevronDown,
@@ -110,6 +111,8 @@ import {
   randomTxt2videoPrompt,
   applyPipelineParamsToNewForm,
   applyStoredGenerationParamsToNewForm,
+  distinctPromptTemplate,
+  jobPromptTemplate,
   filterCapabilitiesByWorkflow,
   fitsOriginalResolution,
   isInputImageMode,
@@ -945,10 +948,10 @@ export default function ImageGenerationPage() {
   )
 
   const copyPipelineToNewForm = useCallback(
-    (job: ImageJobDetails) => {
+    (job: ImageJobDetails, options?: { useOriginalPrompt?: boolean }) => {
       const previewUrl =
         job.input_image_id && token ? imageFileUrl(job.input_image_id, token) : null
-      applyPipelineParamsToNewForm(job, pipelineFormHandlers, previewUrl, capabilities)
+      applyPipelineParamsToNewForm(job, pipelineFormHandlers, previewUrl, capabilities, options)
       setActivePanel(IMGGEN_NEW_PANEL)
       setInfo('Pipeline parameters copied to New job. Adjust and submit when ready.')
       setError(null)
@@ -973,14 +976,14 @@ export default function ImageGenerationPage() {
     }
 
     if (state.generateAgain) {
-      const { jobId, parameters } = state.generateAgain
+      const { jobId, parameters, useOriginalPrompt } = state.generateAgain
       navigate(location.pathname, { replace: true, state: null })
       if (!token) return
       void (async () => {
         if (jobId) {
           try {
             const job = await getImageJob(token, jobId)
-            copyPipelineToNewForm(job)
+            copyPipelineToNewForm(job, { useOriginalPrompt })
             return
           } catch {
             // job removed — fall back to stored metadata
@@ -991,6 +994,7 @@ export default function ImageGenerationPage() {
         applyStoredGenerationParamsToNewForm(parameters, pipelineFormHandlers, {
           imagePreviewUrl: previewUrl,
           availableCapabilities: capabilities,
+          useOriginalPrompt,
         })
         setActivePanel(IMGGEN_NEW_PANEL)
         setInfo('Pipeline parameters copied to New job. Adjust and submit when ready.')
@@ -1361,6 +1365,13 @@ export default function ImageGenerationPage() {
     copyPipelineToNewForm(selectedJob)
   }
 
+  /** Like "Edit prompt", but with the prompt as typed — placeholders intact, so
+   *  submitting draws fresh values. */
+  function editOriginalFromJob() {
+    if (!selectedJob) return
+    copyPipelineToNewForm(selectedJob, { useOriginalPrompt: true })
+  }
+
   function rescaleForSubmit(
     jobRescale: RescaleState,
     jobWidth: number,
@@ -1503,6 +1514,10 @@ export default function ImageGenerationPage() {
     (selectedJob.status === 'failed' || selectedJob.status === 'canceled')
   const canGenerateAgain =
     viewingJob && selectedJob != null && selectedJob.status === 'completed'
+  // Only when substitution changed something; older jobs have no template.
+  const selectedJobOriginalPrompt = selectedJob
+    ? distinctPromptTemplate(jobPromptTemplate(selectedJob), selectedJob.prompt)
+    : null
 
   const pipelineEvents = useMemo(
     () => (selectedJob ? pipelineEventsWithoutPolls(selectedJob.events) : []),
@@ -2574,6 +2589,15 @@ export default function ImageGenerationPage() {
               <h2 className="text-base font-medium leading-snug text-foreground">
                 {jobPromptTitle(selectedJob.prompt, 120)}
               </h2>
+              {selectedJobOriginalPrompt && (
+                <p
+                  className="truncate font-mono text-xs text-muted-foreground"
+                  title={selectedJobOriginalPrompt}
+                  data-testid="imggen-job-original-prompt"
+                >
+                  Original: {selectedJobOriginalPrompt}
+                </p>
+              )}
               <p className="font-mono text-xs text-muted-foreground" data-testid="imggen-job-tech-meta">
                 {jobTechMeta(selectedJob)} · {imageJobStatusLabel(displayStatus ?? selectedJob.status)}
                 {selectedJob.pipeline_params?.high_priority && (
@@ -2611,6 +2635,18 @@ export default function ImageGenerationPage() {
                     Edit prompt
                   </Button>
                 </motion.div>
+                <MorphIn show={selectedJobOriginalPrompt != null}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={editOriginalFromJob}
+                    title="Edit the prompt as written, before placeholders were filled in"
+                    data-testid="imggen-edit-original"
+                  >
+                    <Braces className="mr-1 h-4 w-4" />
+                    Edit original
+                  </Button>
+                </MorphIn>
                 <MorphIn show={canGenerateAgain}>
                   <Button
                     variant="default"

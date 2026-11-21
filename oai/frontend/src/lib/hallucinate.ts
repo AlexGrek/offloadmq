@@ -132,6 +132,9 @@ export async function runWallpaper(
         capability: settings.capability,
         priority: settings.priority,
         prompt,
+        // The template as typed, so the stored image keeps its placeholders for
+        // "Edit original". A studio-written prompt has no template of its own.
+        prompt_template: settings.studio ? null : settings.prompt.trim() || null,
         workflow: 'txt2img', width: settings.width, height: settings.height,
         seed: Math.floor(Math.random() * 2147483647),
         override_negative: true, negative_prompt: '',

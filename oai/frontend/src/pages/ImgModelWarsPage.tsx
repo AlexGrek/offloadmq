@@ -3,6 +3,7 @@ import { rememberedImageSize } from '@/lib/imageSizes'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
+  Braces,
   Check,
   ImageIcon,
   Loader2,
@@ -52,6 +53,7 @@ import { useResetOnChange } from '../hooks/useResetOnChange'
 import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
 import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
 import {
+  distinctPromptTemplate,
   filterCapabilitiesByWorkflow,
   formatDuration,
   imageJobStatusLabel,
@@ -291,10 +293,12 @@ export default function ImgModelWarsPage() {
       select(res.job_id)
     })
 
-  function editFrom(j: ImgModelWarJob) {
+  /** Copy a war into the New form; `original` restores the prompt as typed
+   *  (placeholders intact) instead of the one sent to the models. */
+  function editFrom(j: ImgModelWarJob, original = false) {
     const p = j.params
     setModels(p.models)
-    setPrompt(p.prompt_template ?? p.prompt)
+    setPrompt((original && distinctPromptTemplate(p.prompt_template, p.prompt)) || p.prompt)
     setOverrideNegative(p.override_negative)
     setNegativePrompt(p.negative_prompt ?? '')
     setWidth(String(p.width))
@@ -411,7 +415,18 @@ export default function ImgModelWarsPage() {
             )}
             {job && (
               <Button variant="outline" size="sm" onClick={() => editFrom(job)} data-testid="wars-edit">
-                <Pencil /> Edit
+                <Pencil /> Edit prompt
+              </Button>
+            )}
+            {job && distinctPromptTemplate(job.params.prompt_template, job.params.prompt) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => editFrom(job, true)}
+                title="Edit the prompt as written, before placeholders were filled in"
+                data-testid="wars-edit-original"
+              >
+                <Braces /> Edit original
               </Button>
             )}
             {job && terminal(job.status) && (

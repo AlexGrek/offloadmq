@@ -3,6 +3,8 @@ import { apiRequest as request } from './http'
 /** Prompt and settings of the generation job behind a library image. */
 export interface GenerationInfo {
   prompt: string
+  /** Prompt before placeholder substitution; absent/null for older jobs. */
+  prompt_template?: string | null
   negative_prompt: string | null
   capability: string
   workflow: string

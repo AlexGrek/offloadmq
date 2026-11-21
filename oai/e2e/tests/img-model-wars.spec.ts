@@ -130,10 +130,13 @@ test('renders the same expanded prompt with every selected model', async ({ page
   await expect(page.getByTestId('wars-slot-imggen.flux').getByTestId('wars-fastest')).toBeVisible()
   await expect(page.getByTestId('wars-fastest')).toHaveCount(1)
 
-  // Edit loads the raw template back into the form.
+  // Edit prompt loads the prompt the models got; Edit original the raw template.
   await page.getByTestId('wars-edit').click()
-  await expect(page.getByTestId('wars-prompt')).toHaveValue('a {color} {animal} named {?}')
+  await expect(page.getByTestId('wars-prompt')).toHaveValue(req.prompt as string)
   await expect(page.getByTestId('wars-seed')).toHaveValue('42')
+  await page.getByTestId('wars-item-war-1').click()
+  await page.getByTestId('wars-edit-original').click()
+  await expect(page.getByTestId('wars-prompt')).toHaveValue('a {color} {animal} named {?}')
 })
 
 test('needs at least two models', async ({ page }) => {

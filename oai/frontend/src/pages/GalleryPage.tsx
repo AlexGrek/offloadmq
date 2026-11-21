@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, Copy, Loader2, Sparkles, Star, WandSparkles } from 'lucide-react'
+import { Braces, Check, Copy, Loader2, Sparkles, Star, WandSparkles } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { listImageLibrary } from '../api/files'
 import type { UserFile } from '../api/files'
 import { imageFileUrl, imageThumbnailUrl } from '../api/images'
 import type { UploadedImage } from '../api/images'
-import type { ImggenRouteState } from '../lib/imggen'
+import { distinctPromptTemplate, type ImggenRouteState } from '../lib/imggen'
 import { ImageLightbox, type LightboxSlide } from '@/components/ImageLightbox'
 import { LoadingImage } from '@/components/LoadingImage'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
@@ -441,6 +441,9 @@ function PromptSheet({
 }) {
   const [copied, setCopied] = useState(false)
   const generation = file.generation
+  const originalPrompt = generation
+    ? distinctPromptTemplate(generation.prompt_template, generation.prompt)
+    : null
 
   useEffect(() => {
     if (!copied) return
@@ -493,6 +496,24 @@ function PromptSheet({
               </button>
             </div>
           </div>
+          {originalPrompt ? (
+            <div className="flex items-start gap-2" data-testid="gallery-prompt-original">
+              <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-white/70 select-text">
+                <span className="font-medium text-white/80">Original · </span>
+                {originalPrompt}
+              </p>
+              <button
+                type="button"
+                onClick={() => onUsePrompt(originalPrompt)}
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-white/80 hover:bg-white/12 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                aria-label="Use the original prompt"
+                title="Use the original prompt (placeholders intact)"
+                data-testid="gallery-prompt-use-original"
+              >
+                <Braces className="size-4" />
+              </button>
+            </div>
+          ) : null}
           {generation.negative_prompt ? (
             <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-white/55 select-text">
               <span className="font-medium text-white/70">Negative · </span>

@@ -996,6 +996,9 @@ func cmdPersonaPhotoJob(args []string, poll bool) error {
 		return printJSON(photo)
 	}
 	fmt.Printf("Job:     %s\nStatus:  %s\nSteps:   %s\nPrompt:  %s\n", photo.JobID, photo.Status, photo.stepSummary(), photo.Prompt)
+	if t := distinctTemplate(&photo.PromptTemplate, photo.Prompt); t != "" {
+		fmt.Printf("Original: %s\n", t)
+	}
 	if photo.FinalImageID != nil {
 		fmt.Printf("Image:   %s\n", *photo.FinalImageID)
 	}

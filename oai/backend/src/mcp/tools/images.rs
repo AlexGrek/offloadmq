@@ -580,12 +580,10 @@ fn job_line(detail: &JobDetail, outputs: usize) -> String {
 }
 
 /// The prompt as typed, before `{placeholder}` substitution — what to resubmit for
-/// fresh random values (the web UI's "Edit prompt"). `None` for jobs created without
-/// one (older API/CLI jobs); then the stored prompt *is* the template.
+/// fresh random values (the web UI's "Edit original"). `None` for older jobs created
+/// without one; then the stored prompt *is* the template.
 fn prompt_template(job: &image_generation::ImageGenerationJob) -> Option<String> {
-    image_jobs::pipeline_params_for_job(job)
-        .prompt_template
-        .filter(|t| !t.trim().is_empty())
+    image_jobs::prompt_template_for_job(job)
 }
 
 fn job_json(ctx: &ToolContext, detail: &JobDetail, outputs: &[ImageView]) -> Value {

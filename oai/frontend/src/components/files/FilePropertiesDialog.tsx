@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useResetOnChange } from '../../hooks/useResetOnChange'
-import { Copy, Loader2, Sparkles } from 'lucide-react'
+import { Braces, Copy, Loader2, Sparkles } from 'lucide-react'
 import {
   Dialog,
   DialogBody,
@@ -12,7 +12,13 @@ import {
 } from '../ui/dialog'
 import { Button } from '../ui/button'
 import { getFileProperties, type FileProperties } from '../../api/files'
-import { pipelineParamsFromStored, storedImggenWorkflow, type ImggenRouteState } from '../../lib/imggen'
+import {
+  distinctPromptTemplate,
+  pipelineParamsFromStored,
+  storedImggenWorkflow,
+  storedPromptTemplate,
+  type ImggenRouteState,
+} from '../../lib/imggen'
 import { canGenerateAgainFromTtsStored, type TtsRouteState } from '../../lib/tts'
 
 type Props = {
@@ -97,7 +103,7 @@ export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Pr
       .finally(() => setLoading(false))
   }, [open, filename, token])
 
-  function handleGenerateAgain() {
+  function handleGenerateAgain(useOriginalPrompt = false) {
     if (!data) return
     const parameters = data.parameters
     const jobId =
@@ -108,7 +114,7 @@ export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Pr
 
     if (data.source === 'image' && storedImggenWorkflow(parameters)) {
       const state: ImggenRouteState = {
-        generateAgain: { jobId, parameters },
+        generateAgain: { jobId, parameters, useOriginalPrompt },
       }
       navigate('/app/images', { state })
       return
@@ -138,8 +144,14 @@ export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Pr
       storedImggenWorkflow(params) != null &&
       pipelineParamsFromStored(params).prompt.trim() !== '') ||
     (data?.source === 'audio' && canGenerateAgainFromTtsStored(params))
+  // Rendered as its own row right after "Prompt", and only when it differs.
+  // Older rows keep it inside `pipeline_params` only — `storedPromptTemplate` reads both.
+  const originalPrompt =
+    data?.source === 'image'
+      ? distinctPromptTemplate(storedPromptTemplate(params), String(params.prompt ?? ''))
+      : null
   const order = data ? KEY_ORDER[data.source] ?? [] : []
-  const knownKeys = new Set(order)
+  const knownKeys = new Set([...order, 'prompt_template'])
   const otherKeys = Object.keys(params)
     .filter(k => !knownKeys.has(k) && k !== 'source')
     .sort()
@@ -167,9 +179,12 @@ export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Pr
               <dl className="space-y-3">
                 {order
                   .filter(key => params[key] != null && params[key] !== '')
-                  .map(key => (
-                    <PropertyRow key={key} label={LABELS[key] ?? key} value={params[key]} />
-                  ))}
+                  .flatMap(key => [
+                    <PropertyRow key={key} label={LABELS[key] ?? key} value={params[key]} />,
+                    key === 'prompt' && originalPrompt ? (
+                      <PropertyRow key="prompt_template" label="Original prompt" value={originalPrompt} />
+                    ) : null,
+                  ])}
                 {otherKeys.length > 0 && (
                   <>
                     <dt className="pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -191,12 +206,26 @@ export function FilePropertiesDialog({ open, onOpenChange, filename, token }: Pr
                       type="button"
                       variant="default"
                       size="sm"
-                      onClick={handleGenerateAgain}
+                      onClick={() => handleGenerateAgain()}
                       className="min-h-11 w-full gap-1.5 sm:min-h-8 sm:w-auto"
                       data-testid="file-properties-generate-again"
                     >
                       <Sparkles className="size-3.5" />
                       Generate again
+                    </Button>
+                  ) : null}
+                  {canGenerateAgain && originalPrompt ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleGenerateAgain(true)}
+                      title="Open with the prompt as written, before placeholders were filled in"
+                      className="min-h-11 w-full gap-1.5 sm:min-h-8 sm:w-auto"
+                      data-testid="file-properties-edit-original"
+                    >
+                      <Braces className="size-3.5" />
+                      Edit original
                     </Button>
                   ) : null}
                   <Button

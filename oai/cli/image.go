@@ -114,6 +114,7 @@ type imageJobDetail struct {
 	Capability            string         `json:"capability"`
 	Workflow              string         `json:"workflow"`
 	Prompt                string         `json:"prompt"`
+	PromptTemplate        *string        `json:"prompt_template"` // as typed, before substitution; null on older jobs
 	Error                 *string        `json:"error"`
 	StartedAt             *string        `json:"started_at"`
 	TypicalRuntimeSeconds *float64       `json:"typical_runtime_seconds"`
@@ -307,6 +308,10 @@ func printImageJobDetail(job *imageJobDetail) {
 	fmt.Printf("Status:     %s\n", job.Status)
 	fmt.Printf("Capability: %s\n", job.Capability)
 	fmt.Printf("Workflow:   %s\n", job.Workflow)
+	fmt.Printf("Prompt:     %s\n", job.Prompt)
+	if t := distinctTemplate(job.PromptTemplate, job.Prompt); t != "" {
+		fmt.Printf("Original:   %s\n", t)
+	}
 	if job.Error != nil && *job.Error != "" {
 		fmt.Printf("Error:      %s\n", *job.Error)
 	}
@@ -320,6 +325,19 @@ func printImageJobDetail(job *imageJobDetail) {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\n", file.ImageID, file.Direction, file.Filename, file.SizeBytes)
 	}
 	_ = w.Flush()
+}
+
+// distinctTemplate returns the original prompt when it differs from the prompt
+// the model received, or "" when there is none or nothing was substituted.
+func distinctTemplate(template *string, prompt string) string {
+	if template == nil {
+		return ""
+	}
+	t := strings.TrimSpace(*template)
+	if t == "" || t == strings.TrimSpace(prompt) {
+		return ""
+	}
+	return t
 }
 
 func printImagePoll(polled *pollResponse) {

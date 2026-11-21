@@ -52,6 +52,7 @@ import {
 } from '../lib/describe'
 import { pastedImageFiles } from '../lib/clipboardImages'
 import { cn } from '../lib/utils'
+import { distinctPromptTemplate } from '../lib/imggen'
 import type { ImageCycleRouteState } from '../lib/imageCycles'
 import type { LlmCapabilityInfo } from '../types/ws'
 
@@ -319,6 +320,7 @@ export default function ImageCyclesPage({
       filename: string
       direction: string
       prompt: string | null
+      originalPrompt?: string | null
     }[] = []
     if (!token) return images
     const add = (
@@ -327,6 +329,7 @@ export default function ImageCyclesPage({
       direction: string,
       prompt: string | null,
       filename = `image-${id}.jpg`,
+      originalPrompt: string | null = null,
     ) => {
       if (!deletedImages.has(id) && !images.some((image) => image.id === id))
         images.push({
@@ -336,6 +339,7 @@ export default function ImageCyclesPage({
           filename,
           direction,
           prompt,
+          originalPrompt,
         })
     }
     if (panel === 'new') {
@@ -353,6 +357,8 @@ export default function ImageCyclesPage({
               : `${improver ? 'Improvement' : 'Cycle'} ${step.cycle}`,
             'output',
             step.prompt,
+            undefined,
+            distinctPromptTemplate(step.prompt_template, step.prompt),
           )
       }
     }
@@ -1284,9 +1290,20 @@ export default function ImageCyclesPage({
           }}
           promptPanel={
             viewedImage.prompt ? (
-              <p className="whitespace-pre-wrap break-words text-sm">
-                {viewedImage.prompt}
-              </p>
+              <div className="flex flex-col gap-1.5">
+                <p className="whitespace-pre-wrap break-words text-sm">
+                  {viewedImage.prompt}
+                </p>
+                {viewedImage.originalPrompt ? (
+                  <p
+                    className="whitespace-pre-wrap break-words text-xs opacity-75"
+                    data-testid="image-cycles-prompt-original"
+                  >
+                    <span className="font-medium">Original · </span>
+                    {viewedImage.originalPrompt}
+                  </p>
+                ) : null}
+              </div>
             ) : undefined
           }
           actions={{

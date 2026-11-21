@@ -72,6 +72,10 @@ pub struct Step {
     pub quality: Option<u32>,
     #[serde(default)]
     pub improve_prompt: Option<String>,
+    /// `prompt` before placeholder expansion, set when expansion runs; forwarded to
+    /// the child image job as its original prompt. Absent on older steps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_template: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -167,6 +171,7 @@ fn new_step(cycle: u32, kind: Kind, prompt: String) -> Step {
         error: None,
         quality: None,
         improve_prompt: None,
+        prompt_template: None,
     }
 }
 fn plan(p: &Params) -> Vec<Step> {
@@ -523,6 +528,7 @@ fn expand_step_prompt(step: &mut Step, expander: &mut PromptExpander) -> Result<
             "prompt is empty after placeholder substitution".into(),
         ));
     }
+    step.prompt_template = Some(step.prompt.trim().to_owned());
     step.prompt = expanded.trim().to_owned();
     Ok(())
 }
@@ -591,7 +597,7 @@ async fn submit(
                     external_resize: false,
                     high_priority: false,
                     priority: Default::default(),
-                    prompt_template: None,
+                    prompt_template: step.prompt_template.clone(),
                 },
                 true,
             )
