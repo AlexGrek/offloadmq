@@ -689,9 +689,43 @@ ollama pull mistral:7b
 
 Then restart the agent or rescan capabilities via the web UI.
 
-## world.splat ? VR Worlds
+## world.splat — VR Worlds
 
 Converts an input-bucket `input_image` to a Gaussian-splat `scene.ply`,
 `preview.png` and `depth.png` in the required output bucket. Discovery requires
 ComfyUI and an installed img-utils depth workflow. See [VR Worlds](oai-worlds.md)
 for the payload, bounds, file references and operational limits.
+
+## world.sharp — Apple SHARP splats
+
+Converts an input-bucket `input_image` to an [Apple SHARP](https://github.com/apple/ml-sharp)
+Gaussian splat (`scene.ply`, 1,179,648 Gaussians, metric scale, OpenCV frame) plus a
+`preview.png` lean contact sheet in the required output bucket. Perspective pictures
+only (`mode=pano` fails). Optional `hfov` (20–120°) sets the focal length; without it
+SHARP reads the EXIF focal length or assumes a 30 mm lens. Payload and output
+contract: [VR Worlds](oai-worlds.md). Advertised as `world.sharp[ply;preview;metric]`.
+
+**Not installed with the agent.** SHARP needs torch + CUDA (~6 GB venv) and a 2.8 GB
+research-only checkpoint (Apple ML Research Model licence, see
+`agent_v2/third_party/ml-sharp/LICENSE_MODEL`), so it lives in a private uv venv built
+on demand. The source is the `agent_v2/third_party/ml-sharp` git submodule, bundled
+into release binaries; `uv` must be on `PATH` to install.
+
+| CLI | GUI (3D Worlds page) | Does |
+|---|---|---|
+| `omq sharp status` | Status card | Locations, installed revision / torch / device (file checks only) |
+| `omq sharp config --venv-dir D --models-dir D --torch-index I` | Locations card | Change where the venv / model live (`''` = default) and the torch build: `auto` (CUDA 12.8 if `nvidia-smi` exists, CPU otherwise, PyPI on macOS), `cuda`, `cpu`, `pypi` or an index URL |
+| `omq sharp install [--force]` | Install / Reinstall | Create the venv, install pinned torch + SHARP, download the model. `--force` rebuilds the venv; a valid model is kept |
+| `omq sharp doctor [--fix]` | Doctor / Repair | Check source, uv, venv, `sharp` command, torch import + CUDA, model size, installed-vs-bundled version; `--fix` reinstalls only what failed |
+| `omq sharp uninstall [--keep-model] [-y]` | Uninstall | Delete the venv (and the model) — the configured directories themselves stay |
+
+Defaults: venv `~/.offload-agent/sharp/venv`, model `~/.offload-agent/sharp/models`
+(settings `sharp_venv_dir`, `sharp_models_dir`, `sharp_torch_index` in
+`~/.offloadmq-agent.json`). Install, repair and uninstall trigger a capability rescan,
+so `world.sharp` appears or disappears without a restart (the GUI); after the CLI,
+restart or rescan the agent. From a checkout: `task sharp:install`,
+`task sharp:doctor [FIX=1]`, `task sharp:uninstall` in `agent_v2/`.
+
+At run time the agent asks the ComfyUI at `comfyui_url` to unload its models (SHARP
+peaks at ~7 GiB VRAM), then runs SHARP in the venv; cancellation or the task timeout
+kills the process tree. On an RTX 5070 Ti a task takes ~20–30 s end to end.

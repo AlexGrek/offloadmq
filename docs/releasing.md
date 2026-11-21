@@ -45,10 +45,23 @@ existing tag and uploads the Windows binaries under the same version.
 the current platform **without** tagging. Use it for a re-upload; a version released this
 way has no Linux build until its tag is pushed.
 
+### The ml-sharp submodule
+
+`agent_v2/third_party/ml-sharp` (Apple SHARP, no PyPI package or releases) is a git
+submodule bundled into both binaries as PyInstaller data (`ml-sharp/`), so
+`omq sharp install` can build the optional `world.sharp` runtime from a released binary.
+Every build path checks it out first: `scripts/release-agent.{sh,ps1}`,
+`agent_v2/scripts/build-{macos,windows}-installer.*`, the `package:*` tasks (via
+`task submodules`) and CI (`actions/checkout` with `submodules: true`). A missing
+submodule fails PyInstaller loudly. To move SHARP to a newer upstream commit:
+`git -C agent_v2/third_party/ml-sharp pull origin main`, commit the new pointer, and
+agents report "up to date: FAIL" in `omq sharp doctor` until `--fix` reinstalls it.
+
 ## CI
 
 [.github/workflows/build-client.yml](../.github/workflows/build-client.yml) runs only on
-pushed `release*` tags. On `ubuntu-latest` it type-checks agent_v2, builds `omq` and
+pushed `release*` tags. On `ubuntu-latest` it checks out the repo with submodules,
+type-checks agent_v2, builds `omq` and
 `omq-gui` for linux-amd64 with the version stamped from the tag, attaches them to the
 GitHub release, and uploads them to `dl.alexgr.space` via `scripts/release-agent.sh`
 with `SKIP_BUILD=1`. The dl key comes from the `RELEASER_API_KEY` secret in the `base`
