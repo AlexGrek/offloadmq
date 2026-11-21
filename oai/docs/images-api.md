@@ -383,3 +383,18 @@ Upload and metadata routes return errors as:
 | JPEG + thumbnail processing | `oai/backend/src/services/image_processing.rs` |
 | Storage paths | `oai/backend/src/services/image_paths.rs` |
 | Route registration | `oai/backend/src/app.rs` |
+
+## Random Wikipedia article (txt2img "Wiki" drawer)
+
+`GET /api/wiki/random?lang=en` (Bearer token) → the intro of a random Wikipedia article:
+
+```json
+{ "title": "…", "description": "…|null", "extract": "…", "thumbnail": "https://…|null", "url": "https://en.wikipedia.org/wiki/…", "lang": "en" }
+```
+
+The backend proxies Wikipedia's public `page/random/summary` endpoint (no key; descriptive `User-Agent`),
+re-rolling up to 4 times to skip stubs (< 200 chars) and non-article pages. `lang` is a Wikipedia
+language edition (`en`, `uk`, `simple`, `zh-yue`, …); anything else is a `400`. Upstream failure is a
+`502`. The txt2img page's **Wiki** button opens a drawer (full-screen on mobile) with **Randomize**
+and **Use** (puts the `extract` into the prompt). Extracts are CC BY-SA — the drawer links back to
+the source article. Code: `services/wikipedia.rs`, `routes/wiki.rs`, `components/imggen/WikiDrawer.tsx`.

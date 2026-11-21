@@ -201,6 +201,7 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
         )
         .route("/api/progress/running", get(routes::progress::running_jobs))
         .route("/api/names/random", get(routes::names::random_names))
+        .route("/api/wiki/random", get(routes::wiki::random_wiki))
         .route("/api/runners/online", get(routes::runners::list_online))
         .route(
             "/api/tasks/cancel/{cap}/{id}",

@@ -8,6 +8,7 @@ pub mod image_analysis;
 pub mod nude_detect;
 pub mod progress;
 pub mod prompt_usage;
+pub mod wikipedia;
 pub mod prompt_expansion;
 pub mod promptgen;
 pub mod prompt_rewrite;

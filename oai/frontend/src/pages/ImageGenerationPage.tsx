@@ -6,6 +6,7 @@ import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, use
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Archive,
+  BookOpen,
   Braces,
   Inbox,
   Layers,
@@ -45,6 +46,7 @@ import { PromptTextarea } from '../components/PromptTextarea'
 import { PROMPT_STUDIO_PATH, type PromptStudioRouteState } from '../lib/promptStudio'
 import { SavedPromptsDrawer } from '../components/prompts/SavedPromptsDrawer'
 import { RewritePromptDialog } from '../components/imggen/RewritePromptDialog'
+import { WikiDrawer } from '../components/imggen/WikiDrawer'
 import { NudeDetectModal } from '@/components/nudedetect/NudeDetectModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -321,6 +323,7 @@ export default function ImageGenerationPage() {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [starredPromptsOpen, setStarredPromptsOpen] = useState(false)
   const [rewritePromptOpen, setRewritePromptOpen] = useState(false)
+  const [wikiOpen, setWikiOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [slideshowOn, setSlideshowOn] = useState(false)
@@ -2008,6 +2011,19 @@ export default function ImageGenerationPage() {
                       variant="ghost"
                       size="sm"
                       className="h-7 text-xs"
+                      onClick={() => setWikiOpen(true)}
+                      disabled={!token}
+                      title="Use the start of a random Wikipedia article as the prompt"
+                      data-testid="imggen-wiki-open"
+                    >
+                      <BookOpen className="mr-1 size-3.5" />
+                      Wiki
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
                       onClick={() => setStarredPromptsOpen(true)}
                       disabled={!token}
                       data-testid="imggen-starred-prompts-open"
@@ -2925,6 +2941,7 @@ export default function ImageGenerationPage() {
     ) : null}
     <RewritePromptDialog open={rewritePromptOpen} onOpenChange={setRewritePromptOpen}
       prompt={prompt} mode={mode} token={token} onUsePrompt={setPrompt} />
+    <WikiDrawer open={wikiOpen} onOpenChange={setWikiOpen} token={token} onUse={setPrompt} />
 
     <Dialog open={generateMultipleOpen} onOpenChange={setGenerateMultipleOpen}>
       <DialogContent className="sm:max-w-sm" data-testid="imggen-generate-multiple-dialog">

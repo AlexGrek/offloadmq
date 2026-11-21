@@ -23,6 +23,7 @@ pub mod llm_compare;
 pub mod llm_debate;
 pub mod movie;
 pub mod names;
+pub mod wiki;
 pub mod oauth;
 
 pub mod image_cycles;
