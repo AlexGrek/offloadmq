@@ -1,4 +1,7 @@
 import { useResetOnChange } from '@/hooks/useResetOnChange'
+import { useReverseSubstitutions } from '@/hooks/useReverseSubstitutions'
+import { cn } from '@/lib/utils'
+import { ReverseSubstitutionsButton } from './ReverseSubstitutionsButton'
 import { ImageSizePicker } from '@/components/ImageSizePicker'
 import { rememberedImageSize } from '@/lib/imageSizes'
 import { useRef, useState } from 'react'
@@ -66,6 +69,7 @@ export function QuickGenerateDialog({
   const [countInput, setCountInput] = useState(String(DEFAULT_GENERATE_MULTIPLE))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const reverse = useReverseSubstitutions(token, promptInput, setPromptInput)
   const tid = (suffix: string) => `${testIdPrefix}-${suffix}`
   const parseCount = clampGenerateCount
 
@@ -122,13 +126,21 @@ export function QuickGenerateDialog({
         <DialogBody className="space-y-4">
           <>
             <div className="space-y-1.5">
-              <Label htmlFor={tid('prompt')}>Prompt</Label>
+              <div className="flex items-center gap-0.5">
+                <Label htmlFor={tid('prompt')}>Prompt</Label>
+                <ReverseSubstitutionsButton
+                  onClick={() => void reverse.run()}
+                  disabled={!promptInput.trim()}
+                  busy={reverse.busy}
+                  data-testid={tid('reverse-substitutions')}
+                />
+              </div>
               <textarea
                 id={tid('prompt')}
                 value={promptInput}
                 onChange={event => setPromptInput(event.target.value)}
                 rows={5}
-                className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={cn('min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring', reverse.effectClass)}
                 data-testid={tid('prompt')}
               />
             </div>

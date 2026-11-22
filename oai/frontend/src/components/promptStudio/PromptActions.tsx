@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { Highlighter, ImagePlus, Zap } from 'lucide-react'
+import { Highlighter, ImagePlus, Sparkles, Zap } from 'lucide-react'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
+import { useReverseSubstitutions } from '@/hooks/useReverseSubstitutions'
 import { cn } from '@/lib/utils'
 import { QuickGenerateDialog } from '../imggen/QuickGenerateDialog'
 import { PromptEditor } from './PromptEditor'
@@ -11,7 +13,8 @@ import { PromptEditor } from './PromptEditor'
  */
 export function PromptActions({
   token,
-  prompt,
+  prompt: sourcePrompt,
+  allowReverse = false,
   onUse,
   onApply,
   applyLabel,
@@ -21,6 +24,9 @@ export function PromptActions({
 }: {
   token: string
   prompt: string
+  /** Adds the magic "reverse substitutions" toggle: shows the prompt with values like "red"
+   *  turned into `{color}`, and Generate / Edit / Use then act on that version. */
+  allowReverse?: boolean
   onUse: (prompt: string) => void
   /** When set, the editor offers an Apply button that writes the edit back. */
   onApply?: (prompt: string) => void
@@ -32,6 +38,10 @@ export function PromptActions({
 }) {
   const [generateOpen, setGenerateOpen] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
+  const [reversed, setReversed] = useState<string | null>(null)
+  const reverse = useReverseSubstitutions(token, sourcePrompt, setReversed)
+  useResetOnChange(sourcePrompt, () => setReversed(null))
+  const prompt = reversed ?? sourcePrompt
   const disabled = !prompt.trim()
   const buttonClass = cn(
     'flex items-center gap-1.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40',
@@ -41,7 +51,7 @@ export function PromptActions({
   )
 
   return (
-    <div className={cn('flex items-center gap-3', className)}>
+    <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-1', className)}>
       <button
         type="button"
         onClick={() => setGenerateOpen(true)}
@@ -75,6 +85,38 @@ export function PromptActions({
         <ImagePlus className="size-3" />
         Use
       </button>
+      {allowReverse && (
+        <button
+          type="button"
+          onClick={() => (reversed === null ? void reverse.run() : setReversed(null))}
+          disabled={!sourcePrompt.trim() || reverse.busy}
+          aria-pressed={reversed !== null}
+          aria-label={reversed === null ? 'Reverse substitutions' : 'Undo reverse substitutions'}
+          title={
+            reversed === null
+              ? 'Magic: turn values like “red” into placeholders like {color}'
+              : 'Back to the original prompt'
+          }
+          data-testid={`${testIdPrefix}-reverse-substitutions`}
+          className={cn(
+            'flex items-center text-violet-500 transition-colors hover:text-violet-400 disabled:pointer-events-none disabled:opacity-40 dark:text-violet-400',
+            reverse.effect === 'miss' && reverse.effectClass,
+          )}
+        >
+          <Sparkles className={cn('size-3.5', reverse.busy && 'animate-pulse', reversed !== null && 'fill-current')} />
+        </button>
+      )}
+      {reversed !== null && (
+        <p
+          className={cn(
+            'basis-full rounded-md bg-violet-500/10 px-2 py-1.5 text-xs leading-relaxed text-foreground',
+            reverse.effect === 'hit' && reverse.effectClass,
+          )}
+          data-testid={`${testIdPrefix}-reversed-prompt`}
+        >
+          {reversed}
+        </p>
+      )}
 
       {generateOpen && (
         <QuickGenerateDialog

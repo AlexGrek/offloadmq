@@ -205,6 +205,65 @@ function expandLevel(
   return out
 }
 
+/** Reverse substitution only considers dictionary/variant entries up to this many words. */
+export const REVERSE_MAX_WORDS = 2
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Inverse of expansion: replaces literal values that appear in `prompt` with the
+ * `{placeholder}` they could have come from — "red" -> `{color}`. Case-insensitive,
+ * whole-word, longest value first. Covers the builtin categories and the user's
+ * custom placeholders (custom wins when a value is in both); the server-side `{?}`
+ * and `{random}` have no value list, so they never match. Entries longer than
+ * `REVERSE_MAX_WORDS` words, and custom variants that are themselves templates
+ * (contain `{` or `|`), are skipped. Existing `{...}` tokens are left untouched.
+ */
+export function reversePromptSubstitutions(
+  prompt: string,
+  customDefs: Record<string, string[]> = {},
+): { text: string; count: number } {
+  const lookup = new Map<string, string>()
+  const add = (name: string, value: string) => {
+    const v = value.trim().replace(/\s+/g, ' ').toLowerCase()
+    if (!v || /[{}|]/.test(v) || v.split(' ').length > REVERSE_MAX_WORDS) return
+    if (!lookup.has(v)) lookup.set(v, name)
+  }
+  for (const [name, variants] of Object.entries(customDefs)) {
+    if (!TOKEN_RE.test(name) || name === RANDOM_PLACEHOLDER || CATEGORY_DICTIONARIES[name]) continue
+    for (const v of variants) add(name, v)
+  }
+  for (const name of PLACEHOLDER_CATEGORIES) {
+    for (const v of CATEGORY_DICTIONARIES[name]) add(name, v)
+  }
+  if (lookup.size === 0) return { text: prompt, count: 0 }
+
+  const alternation = [...lookup.keys()]
+    .sort((a, b) => b.length - a.length)
+    .map(v => escapeRegExp(v).replace(/ /g, '\\s+'))
+    .join('|')
+  const valueRe = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${alternation})(?![\\p{L}\\p{N}_])`, 'giu')
+
+  let count = 0
+  // Odd indices are existing `{...}` tokens/choices — keep them verbatim.
+  const text = prompt
+    .split(/(\{[^{}]*\})/)
+    .map((part, i) =>
+      i % 2 === 1
+        ? part
+        : part.replace(valueRe, match => {
+            const name = lookup.get(match.trim().replace(/\s+/g, ' ').toLowerCase())
+            if (!name) return match
+            count += 1
+            return `{${name}}`
+          }),
+    )
+    .join('')
+  return { text, count }
+}
+
 /**
  * Expand `{category}`, `{random}`, user-defined `{name}`, and inline `{a|b|c}` choices.
  * Each choice occurrence is an independent random draw, including across a batch;

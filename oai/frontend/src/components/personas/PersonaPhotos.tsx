@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
+import { useReverseSubstitutions } from '@/hooks/useReverseSubstitutions'
+import { ReverseSubstitutionsButton } from '../imggen/ReverseSubstitutionsButton'
 import { Ban, Braces, Camera, Check, Copy, ImagePlus, Library, Loader2, Pencil, RotateCcw, Trash2, UserRound, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -105,6 +107,7 @@ type Props = { token: string; persona: Persona }
  */
 export function PersonaPhotos({ token, persona }: Props) {
   const [prompt, setPrompt] = useState('')
+  const reverse = useReverseSubstitutions(token, prompt, setPrompt)
   const [workflow, setWorkflow] = useState<PhotoWorkflow>('txt2img')
   const existing = workflow === 'existing'
   const [input, setInput] = useState<UploadedImage | null>(null)
@@ -260,7 +263,15 @@ export function PersonaPhotos({ token, persona }: Props) {
     <div className="flex flex-col gap-6" data-testid="persona-photos">
       <section className="flex flex-col gap-4" data-testid="persona-photo-form">
         {!existing && <div className="flex flex-col gap-2">
-          <Label htmlFor="persona-photo-prompt">Prompt</Label>
+          <div className="flex items-center gap-0.5">
+            <Label htmlFor="persona-photo-prompt">Prompt</Label>
+            <ReverseSubstitutionsButton
+              onClick={() => void reverse.run()}
+              disabled={!token || !prompt.trim()}
+              busy={reverse.busy}
+              data-testid="persona-photo-reverse-substitutions"
+            />
+          </div>
           <PromptTextarea
             id="persona-photo-prompt"
             value={prompt}
@@ -269,6 +280,7 @@ export function PersonaPhotos({ token, persona }: Props) {
             token={token}
             previews
             rows={3}
+            textareaClassName={reverse.effectClass}
             placeholder="{p_look}, portrait of {p_name} on a rooftop at dusk"
             data-testid="persona-photo-prompt"
           />

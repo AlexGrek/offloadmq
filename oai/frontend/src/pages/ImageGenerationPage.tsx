@@ -43,6 +43,8 @@ import { ImageLightbox, type ImageLightboxActions } from '@/components/ImageLigh
 import { SlideshowViewer } from '@/components/imggen/SlideshowViewer'
 import { LoadingImage } from '@/components/LoadingImage'
 import { PromptTextarea } from '../components/PromptTextarea'
+import { ReverseSubstitutionsButton } from '../components/imggen/ReverseSubstitutionsButton'
+import { useReverseSubstitutions } from '../hooks/useReverseSubstitutions'
 import { PROMPT_STUDIO_PATH, type PromptStudioRouteState } from '../lib/promptStudio'
 import { SavedPromptsDrawer } from '../components/prompts/SavedPromptsDrawer'
 import { RewritePromptDialog } from '../components/imggen/RewritePromptDialog'
@@ -260,6 +262,7 @@ export default function ImageGenerationPage() {
   const navigate = useNavigate()
   const [mode, setMode] = useState<ImgGenMode>('txt2img')
   const [prompt, setPrompt] = useState(() => randomTxt2imgPrompt())
+  const reverse = useReverseSubstitutions(token, prompt, setPrompt)
   const [negativePrompt, setNegativePrompt] = useState('')
   const [overrideNegative, setOverrideNegative] = useState(false)
   const [capability, setCapability] = useState('')
@@ -1992,6 +1995,12 @@ export default function ImageGenerationPage() {
                         <Shuffle className="size-3.5" />
                       </Button>
                     ) : null}
+                    <ReverseSubstitutionsButton
+                      onClick={() => void reverse.run()}
+                      disabled={!token || !prompt.trim()}
+                      busy={reverse.busy}
+                      data-testid="imggen-reverse-substitutions"
+                    />
                   </div>
                   <div className="flex flex-wrap items-center gap-1">
                     <Button
@@ -2056,6 +2065,7 @@ export default function ImageGenerationPage() {
                   token={token}
                   previews
                   rows={4}
+                  textareaClassName={reverse.effectClass}
                   data-testid="imggen-prompt"
                 />
                 <RecentPlaceholders onInsert={insertRecentPlaceholder} />

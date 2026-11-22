@@ -909,6 +909,7 @@ export function ChatWorkspace({ kind, persona }: { kind: ChatKind; persona?: Per
         <PromptActions
           token={token}
           prompt={extractPrompt(msg.content)}
+          allowReverse={msg.role === 'assistant'}
           onUse={handleUseAsPrompt}
           tone={msg.role === 'user' ? 'muted' : 'default'}
           testIdPrefix={msg.role === 'user' ? 'prompt-studio-user' : 'prompt-studio'}

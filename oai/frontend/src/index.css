@@ -222,3 +222,35 @@
     @apply text-foreground/90;
   }
 }
+/* Reverse-substitutions: "magic" sweep + glow when values were swapped for
+   placeholders, a tiny nudge when nothing matched. Applied to the prompt textarea. */
+@keyframes magic-reverse-sweep {
+  0% {
+    background-position: 100% 0;
+    box-shadow: 0 0 0 0 rgb(168 85 247 / 0);
+  }
+  35% {
+    box-shadow: 0 0 0 3px rgb(168 85 247 / 0.4), 0 0 28px 4px rgb(168 85 247 / 0.4);
+  }
+  100% {
+    background-position: 0 0;
+    box-shadow: 0 0 0 0 rgb(168 85 247 / 0);
+  }
+}
+@keyframes magic-reverse-nudge {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+.magic-reverse-hit {
+  background-image: linear-gradient(110deg, transparent 35%, rgb(192 132 252 / 0.4) 50%, transparent 65%);
+  background-size: 300% 100%;
+  animation: magic-reverse-sweep 1s ease-out;
+}
+.magic-reverse-miss {
+  animation: magic-reverse-nudge 0.3s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .magic-reverse-hit { animation-duration: 0.01s; }
+  .magic-reverse-miss { animation: none; }
+}
