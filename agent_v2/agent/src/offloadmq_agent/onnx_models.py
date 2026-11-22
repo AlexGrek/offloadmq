@@ -5,6 +5,7 @@ Each model is identified by a short name (e.g. 'nudenet') and maps to a known
 download URL (or mirror list) and expected filename.
 """
 
+import hashlib
 import logging
 import os
 from pathlib import Path
@@ -32,6 +33,30 @@ ONNX_MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         "filename": "320n.onnx",
         "capability": "onnx.nudenet",
         "description": "NudeNet v3 detector - NSFW region detection (YOLO-based, 320px)",
+    },
+    # Background removal — executor: exec/bgremove.py (preprocessing in MODEL_SPECS there).
+    # BiRefNet exports re-hosted by rembg; md5s are the ones rembg pins. Chosen by the
+    # examples/bgremove-poc comparison (IS-Net anime and RMBG-1.4 lost on busy scenes).
+    "bgremove-birefnet-general": {
+        "urls": ["https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-epoch_244.onnx"],
+        "filename": "BiRefNet-general-epoch_244.onnx",
+        "md5": "7a35a0141cbbc80de11d9c9a28f52697",
+        "capability": "onnx.bgremove.birefnet-general",
+        "description": "Background removal, best quality — anime and realistic characters incl. held props (BiRefNet Swin-L, 973 MB, MIT)",
+    },
+    "bgremove-birefnet-portrait": {
+        "urls": ["https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-portrait-epoch_150.onnx"],
+        "filename": "BiRefNet-portrait-epoch_150.onnx",
+        "md5": "c3a64a6abf20250d090cd055f12a3b67",
+        "capability": "onnx.bgremove.birefnet-portrait",
+        "description": "Background removal for people only — softer hair, tends to drop held props (BiRefNet Swin-L, 973 MB, MIT)",
+    },
+    "bgremove-birefnet-lite": {
+        "urls": ["https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx"],
+        "filename": "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
+        "md5": "4fab47adc4ff364be1713e97b7e66334",
+        "capability": "onnx.bgremove.birefnet-lite",
+        "description": "Background removal, small download/RAM; misses thin props (BiRefNet Swin-T, 224 MB, MIT)",
     },
 }
 
@@ -151,18 +176,28 @@ def prepare_model(
             resp.raise_for_status()
             total = int(resp.headers.get("content-length", 0))
             downloaded = 0
+            digest = hashlib.md5(usedforsecurity=False)
+            last_pct = -1
 
             with open(tmp, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=256 * 1024):
                     f.write(chunk)
+                    digest.update(chunk)
                     downloaded += len(chunk)
                     if on_progress and total:
                         pct = downloaded * 100 // total
-                        on_progress(f"Downloading '{name}': {pct}% ({downloaded}/{total} bytes)")
+                        if pct != last_pct:  # ~100 updates, not one per chunk
+                            last_pct = pct
+                            on_progress(f"Downloading '{name}': {pct}% ({downloaded}/{total} bytes)")
 
             if downloaded < _MIN_VALID_ONNX_BYTES:
                 raise ValueError(
                     f"Download too small ({downloaded} bytes); expected a multi-MB ONNX file"
+                )
+            expected_md5 = meta.get("md5")
+            if expected_md5 and digest.hexdigest() != expected_md5:
+                raise ValueError(
+                    f"Checksum mismatch: md5 {digest.hexdigest()}, expected {expected_md5}"
                 )
 
             tmp.rename(dest)

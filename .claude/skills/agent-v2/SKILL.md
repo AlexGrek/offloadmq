@@ -137,6 +137,7 @@ worker threads.
 | `img-utils` | `exec/imgutils/` (thin wrapper over `imggen.executor.run_comfy_image_task`) |
 | `image_resize` | `exec/image_resize.py` — bare cap (no sub-name), Pillow only, always available |
 | `txt2music` | `exec/musicgen/` |
+| `onnx.bgremove.*` | `exec/bgremove.py` — background removal (IS-Net anime, BiRefNet); takes `output_bucket`; routed **before** generic `onnx.`; models in `onnx_models.ONNX_MODEL_REGISTRY` as `bgremove-*`, preprocessing in `MODEL_SPECS`. Contract: `docs/bgremove-api.md` |
 | `onnx` | `exec/onnx.py` |
 | `custom` | `exec/custom.py` |
 | `slavemode` | `exec/slavemode.py` |
@@ -176,7 +177,7 @@ def execute_foo(
     payload: dict,
     data: Path,
     job_timeout: int = 600,
-    output_bucket: str | None = None,  # imggen/img-utils/txt2music/image_resize only
+    output_bucket: str | None = None,  # imggen/img-utils/txt2music/image_resize/onnx.bgremove only
                                        # (gated by pipeline._takes_output_bucket)
 ) -> bool: ...
 ```

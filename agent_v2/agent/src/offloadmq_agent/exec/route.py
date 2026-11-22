@@ -57,6 +57,12 @@ def route_executor(cap: str) -> ExecutorFn | None:
 
         return execute_musicgen_comfyui
 
+    # Before the generic onnx. branch: bgremove uploads images to an output bucket.
+    if cap.startswith("onnx.bgremove."):
+        from offloadmq_agent.exec.bgremove import execute_bgremove
+
+        return execute_bgremove
+
     if cap.startswith("onnx."):
         from offloadmq_agent.exec.onnx import execute_onnx
 

@@ -97,6 +97,25 @@ resize every image in the bucket.
 
 Full contract: [image-resize-api.md](image-resize-api.md).
 
+#### `onnx.bgremove.*` — background removal
+
+Cuts the subject out of each input image with an ONNX segmentation model. The output
+is a transparent PNG/WebP, or the subject on a solid colour (PNG/WebP/JPEG), with
+optional crop-to-subject. It is meant for game-character sprites from anime and
+realistic images. There is one capability per installed BiRefNet model:
+`onnx.bgremove.birefnet-general` (the default, for anime and realistic), `-portrait`
+(people only) and `-lite` (small download).
+
+**Availability:** `onnxruntime` plus the model file, downloaded with
+`slavemode.onnx-models-prepare` (name `bgremove-<model>`). This is a regular (opt-out)
+capability. `output_bucket` is required.
+
+```json
+{ "format": "png", "background": "transparent", "crop": true, "padding": 16 }
+```
+
+Full contract and model comparison: [bgremove-api.md](bgremove-api.md).
+
 ---
 
 ### Shell Execution
