@@ -94,6 +94,23 @@ class SharpUninstallPayload(BaseModel):
     remove_models: bool = True
 
 
+class BgRemoveSettingsPayload(BaseModel):
+    # None = leave unchanged; onnx_models_dir "" = back to the default location.
+    onnx_models_dir: str | None = None
+    bgremove_device: str | None = None
+    bgremove_threads: int | None = None
+    bgremove_keep_loaded: bool | None = None
+
+
+class BgRemoveInstallPayload(BaseModel):
+    models: list[str] = []  # registry or short names; empty = birefnet-general
+    force: bool = False
+
+
+class BgRemoveUninstallPayload(BaseModel):
+    models: list[str] = []  # empty = every background-removal model
+
+
 class WorkflowAddPayload(BaseModel):
     workflow_name: str
     task_type: str

@@ -336,7 +336,7 @@ def check_onnx() -> CapResult:
     is handled separately via slavemode or CLI.
     """
     try:
-        import onnxruntime  # noqa: F401
+        import onnxruntime
     except ImportError:
         return CapResult(
             [], False, "onnx.*",
@@ -355,10 +355,23 @@ def check_onnx() -> CapResult:
         )
 
     caps = [m["capability"] for m in installed]
+    note = ""
+    if any(c.startswith("onnx.bgremove.") for c in caps):
+        # A bgremove_device this onnxruntime build lacks would fail every task:
+        # don't advertise those models until `omq bgremove config` fixes it.
+        from offloadmq_agent.exec.bgremove_runtime import BgRemoveConfig, BgRemoveConfigError, resolve_providers
+
+        try:
+            resolve_providers(BgRemoveConfig.from_settings().device, onnxruntime.get_available_providers())
+        except BgRemoveConfigError as exc:
+            caps = [c for c in caps if not c.startswith("onnx.bgremove.")]
+            note = f"; onnx.bgremove.* hidden: {exc}"
+    if not caps:
+        return CapResult([], False, "onnx.*", note.lstrip("; "))
     label = ", ".join(caps)
     return CapResult(
         caps, True, "onnx.*",
-        f"{len(installed)} ONNX model(s) ready: {label}",
+        f"{len(caps)} ONNX model(s) ready: {label}{note}",
     )
 
 

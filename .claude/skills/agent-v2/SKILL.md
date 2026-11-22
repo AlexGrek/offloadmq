@@ -289,6 +289,8 @@ Library only. `create_app(orchestrator)` injects orchestrator into routes.
 | `routes/custom_caps.py` | `/custom/*` — custom capability YAML CRUD |
 | `routes/comfy.py` | `/comfy/*` — ComfyUI workflows + param maps |
 | `routes/kokoro.py` | `/kokoro/*` — Kokoro TTS settings/status |
+| `routes/sharp.py` | `/sharp/*` — SHARP runtime (world.sharp): status/settings/install/doctor/repair/uninstall/cancel |
+| `routes/bgremove.py` | `/bgremove/*` — background-removal models (onnx.bgremove.*): same verbs as `/sharp/*` |
 | `routes/system.py` | `/system/*`, `/update/*` — sysinfo, self-update, OS startup/keep-awake/systemd |
 | `server.py` | SPA mount + startup autostart/background scan |
 
@@ -305,6 +307,9 @@ dependency graph above).
 **Parity:** `/custom/*`, `/comfy/*`, `/system/info`, `/system/win-startup`, `/system/mac-startup`,
 `/system/install-systemd`, `/update/check`, `/update/download`
 
+**Feature runtimes:** `/sharp/*`, `/bgremove/*` — `status`, `settings`, `install`,
+`doctor`, `repair`, `uninstall`, `cancel` (background job, log tail in `status`)
+
 ### React frontend
 
 Stack: React 19 · Vite 6 · react-router 7 · Tailwind v4 · shadcn/ui · TypeScript.
@@ -320,6 +325,8 @@ Stack: React 19 · Vite 6 · react-router 7 · Tailwind v4 · shadcn/ui · TypeS
 | `/slavemode` | Slavemode allow-list |
 | `/custom` | Custom cap YAML editor |
 | `/comfy` | ComfyUI URL + workflow list |
+| `/sharp` | 3D Worlds — SHARP install/doctor/locations |
+| `/bgremove` | Background removal — models, doctor, device/threads |
 | `/system` | Sysinfo, updater, webui port, OS startup |
 | `/logs` | Global agent log tail |
 | `/config` | Raw JSON editor |
@@ -338,6 +345,8 @@ omq register
 omq capabilities
 omq status
 omq comfy list | export <[ns.]name> [-o FILE|-] | import FILE [--name N --namespace NS --overwrite]
+omq sharp status | config | install [--force] | doctor [--fix] | uninstall
+omq bgremove status | config [--device --threads --keep-loaded --models-dir] | install [MODEL…|--all] [--force] | doctor [--fix] | uninstall [MODEL…]
 omq config show | set ...
 omq update [--check|--rollback]
 ```
@@ -369,6 +378,39 @@ Use `fetch('/api/*')` only — not `window.pywebview.api`.
 - shadcn patterns: `data-slot`, `cn()`, cva.
 - Typed API client; poll for live data.
 
+### Feature management parity (MANDATORY for every new agent feature)
+
+Any capability that needs something installed or configured (a model, a venv, a
+runtime, a device choice, …) gets the **same management surface as `world.sharp`**
+— reference implementations: SHARP (`sharp_install.py`, `omq sharp`, `/sharp/*`,
+`SharpPage`) and background removal (`bgremove_install.py`, `omq bgremove`,
+`/bgremove/*`, `BgRemovePage`). Never ship a capability that is only configurable by
+hand-editing JSON or only installable via slavemode.
+
+1. **Settings** — typed fields in `core/settings.py` (`<feature>_*`, blank/0 = default,
+   strip validator for strings). Executors read them via `settings_util`; no
+   hidden keys that `Settings` would drop on save.
+2. **Runtime locator** in `agent` (`exec/<feature>_runtime.py`): paths from settings,
+   `status()` → `{ready, summary, …}` cheap enough for every capability scan. The
+   capability probe advertises only when ready **and** correctly configured.
+3. **Installer** in `core` (`<feature>_install.py`): `install` / `uninstall` /
+   `doctor` (never modifies; returns `{ok, checks[{name,ok,detail}], action}`) /
+   `repair` (doctor → fix), all taking `log` + `cancelled` callbacks; downloads
+   checksum- or size-verified.
+4. **Orchestrator** — `get_<f>_status` (incl. `settings`, defaults, `job`
+   snapshot), `update_<f>_settings` (validate, refuse while a job runs, rescan),
+   `start_<f>_install|repair|uninstall`, `run_<f>_doctor`, `cancel_<f>_job`, backed by
+   an `InstallJob` (`core/install_job.py`); every finished job triggers a rescan.
+   Mirror them in `OrchestratorAPI`.
+5. **REST** — `ui_server/routes/<f>.py`: `GET status`, `POST settings|install|doctor|
+   repair|uninstall|cancel`, errors → 409; payloads in `schemas.py`.
+6. **CLI** — `omq <f> status|config|install|doctor [--fix]|uninstall [--yes]`
+   (status/doctor exit 1 when not ready); Taskfile `<f>:install|doctor|uninstall`.
+7. **GUI page** — status card (Doctor / Repair / Cancel / Uninstall with confirm),
+   streamed job log, doctor checklist, settings form; nav entry in `Layout.tsx`.
+8. **Tests + docs** — installer/doctor/orchestrator/route/CLI tests with fakes (no
+   real downloads); document settings + CLI in the feature's `docs/*-api.md`.
+
 ---
 
 ## Troubleshooting
@@ -393,11 +435,13 @@ includes wherever the runtime actually lives, then rescan
 2. Import in `exec/__init__.py` (before routed registration if prefix could overlap).
 3. Add probe in `capabilities_sync.py` if runtime-detected.
 4. Policy: regular vs sensitive in `cap_policy.py` if needed.
+5. Anything to install/configure → follow **Feature management parity** (Conventions).
 
 ### New routed (sync) executor
 1. Add handler in `exec/mytype.py` (legacy signature + `reporting` helpers).
 2. Register route in `exec/route.py`.
 3. Add prefix to `register_routed_executors()` in `exec/routed.py`.
+4. Anything to install/configure → follow **Feature management parity** (Conventions) — settings, `omq <f>`, `/api/<f>/*`, GUI page.
 
 ### New API route + UI
 1. Method on `Orchestrator` + `OrchestratorAPI`.

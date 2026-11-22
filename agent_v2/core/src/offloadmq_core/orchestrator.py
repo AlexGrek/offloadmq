@@ -26,6 +26,7 @@ import sys
 import threading
 import traceback
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from offloadmq_agent.cap_policy import classify_capabilities, compute_registration_caps
@@ -54,7 +55,7 @@ from offloadmq_core.error_pool import ErrorPool, PendingLog, Severity
 from offloadmq_core.executor_pool import ExecutorPool
 from offloadmq_core.scan_state import ScanState
 from offloadmq_core.sharp_install import SharpInstallJob, SharpInstallError
-from offloadmq_core import sharp_install
+from offloadmq_core import bgremove_install, sharp_install
 from offloadmq_core.settings import SETTINGS_FILE, Settings, load_settings, save_settings
 from offloadmq_core.task_store import TaskRecord, TaskStore
 from offloadmq_core.version import get_app_version
@@ -125,6 +126,7 @@ class Orchestrator:
         self._logs = AgentLogBuffer()
         self._scan = ScanState()
         self._sharp_job = SharpInstallJob()
+        self._bgremove_job = bgremove_install.BgRemoveInstallJob()
         self._errors = ErrorPool()
 
         self._pool: ExecutorPool | None = None
@@ -873,6 +875,93 @@ class Orchestrator:
     def cancel_sharp_job(self) -> dict[str, Any]:
         self._sharp_job.cancel()
         return self.get_sharp_status()
+
+    # ==================================================================
+    # Background removal (onnx.bgremove.*) — models downloaded on demand
+    # ==================================================================
+
+    def get_bgremove_status(self) -> dict[str, Any]:
+        from offloadmq_agent.exec import bgremove_runtime
+        from offloadmq_agent.onnx_models import DEFAULT_MODELS_DIR
+
+        settings = self.get_settings()
+        return {
+            **bgremove_runtime.status(settings.model_dump()),
+            "settings": {
+                "onnx_models_dir": settings.onnx_models_dir,
+                "bgremove_device": settings.bgremove_device,
+                "bgremove_threads": settings.bgremove_threads,
+                "bgremove_keep_loaded": settings.bgremove_keep_loaded,
+            },
+            "default_models_dir": str(DEFAULT_MODELS_DIR),
+            "device_choices": list(bgremove_runtime.DEVICE_CHOICES),
+            "job": self._bgremove_job.snapshot(),
+        }
+
+    def update_bgremove_settings(
+        self,
+        models_dir: str | None = None,
+        device: str | None = None,
+        threads: int | None = None,
+        keep_loaded: bool | None = None,
+    ) -> dict[str, Any]:
+        from offloadmq_agent.exec import bgremove, bgremove_runtime
+
+        if self._bgremove_job.running():
+            raise bgremove_install.BgRemoveInstallError(
+                "wait for the running background-removal job to finish before changing its settings"
+            )
+        if device is not None:
+            device = bgremove_runtime.validate_device(device)  # reject typos up front
+        if threads is not None and threads < 0:
+            raise ValueError("bgremove_threads must be >= 0 (0 = onnxruntime default)")
+        self.apply_settings(
+            onnx_models_dir=models_dir, bgremove_device=device,
+            bgremove_threads=threads, bgremove_keep_loaded=keep_loaded,
+        )
+        bgremove.release_sessions()  # next task loads with the new device/threads
+        self.start_background_scan()  # a new dir or device may (un)advertise onnx.bgremove.*
+        return self.get_bgremove_status()
+
+    def start_bgremove_install(self, models: list[str] | None = None, force: bool = False) -> dict[str, Any]:
+        names = bgremove_install.resolve_models(models)
+        settings = self.get_settings().model_dump()
+        self._bgremove_job.start(
+            "install",
+            lambda log, cancelled: bgremove_install.install(names, settings, log, force, cancelled),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_bgremove_status()
+
+    def run_bgremove_doctor(self) -> dict[str, Any]:
+        """Validate onnxruntime/device/dir and md5 every installed model (seconds per GB)."""
+        return bgremove_install.doctor(self.get_settings().model_dump())
+
+    def start_bgremove_repair(self) -> dict[str, Any]:
+        settings = self.get_settings().model_dump()
+        self._bgremove_job.start(
+            "repair",
+            lambda log, cancelled: bgremove_install.repair(settings, log, cancelled),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_bgremove_status()
+
+    def start_bgremove_uninstall(self, models: list[str] | None = None) -> dict[str, Any]:
+        from offloadmq_agent.exec import bgremove
+
+        names = bgremove_install.resolve_models(models, default_all=True)
+        settings = self.get_settings().model_dump()
+
+        def run(log: Callable[[str], None], _cancelled: Callable[[], bool]) -> None:
+            bgremove.release_sessions()
+            bgremove_install.uninstall(names, settings, log)
+
+        self._bgremove_job.start("uninstall", run, on_done=lambda _ok: self.start_background_scan())
+        return self.get_bgremove_status()
+
+    def cancel_bgremove_job(self) -> dict[str, Any]:
+        self._bgremove_job.cancel()
+        return self.get_bgremove_status()
 
     def check_update(self) -> dict[str, Any]:
         return check_for_update(get_app_version())

@@ -54,16 +54,52 @@ Default to `onnx.bgremove.birefnet-general`. If a result looks wrong, check
 `foreground_ratio`. Near 0 means nothing was detected, and near 1 means the background
 was kept. Retry with `-portrait` for single-person images.
 
-## Installing a model
+## Installing and configuring (agent side)
 
-Models are downloaded on demand. Use one of these:
+Nothing is downloaded with the agent. Models go into `onnx_models_dir`
+(default `~/.offload-agent/onnx-models/`, shared with `onnx.nudenet`), and each one is
+md5-verified against rembg's pinned checksum.
+
+**On the agent machine: CLI** (`agent_v2/`, or the `omq` binary):
+
+```bash
+omq bgremove status                          # models, device, providers (fast)
+omq bgremove install                         # birefnet-general (default)
+omq bgremove install birefnet-lite birefnet-portrait
+omq bgremove install --all | --force         # every model / delete and re-download
+omq bgremove config --device cuda --threads 8 --no-keep-loaded --models-dir E:/onnx
+omq bgremove doctor [--fix]                  # onnxruntime, device, dir, md5 of every model
+omq bgremove uninstall [model…] [--yes]      # default: all bg-removal models; nudenet stays
+```
+
+Taskfile shortcuts: `task bgremove:install MODELS="birefnet-lite"`,
+`task bgremove:doctor FIX=1`, `task bgremove:uninstall`.
+
+**On the agent machine: web UI.** The **Background removal** page has the same controls:
+per-model install, reinstall and remove, Doctor, Repair (re-downloads corrupt models or
+installs the default), Cancel, and a settings form. Its REST API is under
+`/api/bgremove/*`: `status`, `settings`, `install`, `doctor`, `repair`, `uninstall`,
+`cancel`.
+
+**Remotely: slavemode.**
 
 - Management UI: **Agents → ONNX**, name `bgremove-birefnet-general` → Prepare
-- `omqcli agent <id> onnx prepare bgremove-birefnet-general` (slavemode)
+- `omqcli agent <id> onnx prepare bgremove-birefnet-general`
 - the `slavemode.onnx-models-prepare` task with payload `{"name": "bgremove-birefnet-general"}`
 
-Then rescan the agent's capabilities. They are stored in `onnx_models_dir`, which
-defaults to `~/.offload-agent/onnx-models/`.
+Installs, removals and settings changes all trigger a capability rescan.
+
+### Agent settings (`~/.offloadmq-agent.json`)
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `onnx_models_dir` | `""` → `~/.offload-agent/onnx-models` | Where the model files live. Changing it does not move files. |
+| `bgremove_device` | `auto` | `auto` uses CUDA, then DirectML, then CPU, whichever the onnxruntime build has. `cuda`, `directml` and `cpu` force one. If the forced device is missing from the build, `onnx.bgremove.*` is **not advertised** and doctor says why. |
+| `bgremove_threads` | `0` | CPU intra-op threads per inference. `0` means the onnxruntime default (all cores). Lower it to keep the machine responsive. |
+| `bgremove_keep_loaded` | `true` | Keep sessions in RAM between tasks (about 4 GB per BiRefNet, and it saves the ~8 s load). Turn it off on low-RAM agents. |
+
+Device and thread changes apply to the next task, because cached sessions are dropped
+on save.
 
 ---
 
@@ -181,6 +217,13 @@ requests.post(f"{BASE}/api/task/submit", json={
   `MODEL_SPECS` holds each model's preprocessing: square input size, normalisation,
   and whether the output is logits that need a sigmoid.
 - Registry and downloads: [`onnx_models.py`](../agent_v2/agent/src/offloadmq_agent/onnx_models.py).
+- Settings, device resolution and status:
+  [`exec/bgremove_runtime.py`](../agent_v2/agent/src/offloadmq_agent/exec/bgremove_runtime.py).
+  It is cheap enough to run on every capability scan.
+- Install, doctor, repair and uninstall:
+  [`core/bgremove_install.py`](../agent_v2/core/src/offloadmq_core/bgremove_install.py).
+  These are driven by `omq bgremove`, the orchestrator's `*_bgremove_*` methods,
+  `ui_server/routes/bgremove.py` and `BgRemovePage.tsx`.
 - Inference sessions are cached per process, because BiRefNet takes a few seconds to load.
 - Edge colours are fixed with blur-fusion foreground estimation (Forte & Pitié,
   *Approximate Fast Foreground Colour Estimation*, ICIP 2021), implemented in plain
@@ -189,7 +232,8 @@ requests.post(f"{BASE}/api/task/submit", json={
 
 ### Adding a model
 
-1. Add a registry entry (`urls`, `filename`, `md5`, `capability: onnx.bgremove.<x>`) to
-   `ONNX_MODEL_REGISTRY` under the name `bgremove-<x>`.
+1. Add a registry entry (`urls`, `filename`, `md5`, `size_bytes`,
+   `capability: onnx.bgremove.<x>`) to `ONNX_MODEL_REGISTRY` under the name
+   `bgremove-<x>`. The CLI, the GUI and doctor pick it up automatically.
 2. Add its `ModelSpec` to `MODEL_SPECS` in `exec/bgremove.py`.
 3. Check it on real images with `examples/bgremove-poc/poc.py` first.

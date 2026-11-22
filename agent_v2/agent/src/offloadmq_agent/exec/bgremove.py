@@ -2,9 +2,10 @@
 
 One capability per installed model (``onnx.bgremove.birefnet-general``,
 ``-portrait``, ``-lite``); the model files are managed by the shared ONNX
-registry (``offloadmq_agent.onnx_models``), so they are downloaded with
-``slavemode.onnx-models-prepare`` like every other ONNX model and advertised only once
-present on disk.
+registry (``offloadmq_agent.onnx_models``) and advertised only once present on
+disk. Install / configure them with ``omq bgremove …``, the GUI's Background
+removal page, or ``slavemode.onnx-models-prepare``; device, threads and session
+caching come from the agent settings (see ``bgremove_runtime``).
 
 Pipeline per image: model → soft alpha matte (upscaled to the input resolution) →
 foreground colour estimation, so semi-transparent hair stops carrying the old
@@ -32,7 +33,9 @@ from offloadmq_agent.exec.reporting import (
     report_progress,
     report_result,
 )
+from offloadmq_agent.exec.bgremove_runtime import BgRemoveConfig, resolve_providers
 from offloadmq_agent.onnx_models import ONNX_MODEL_REGISTRY, model_path
+from offloadmq_agent.settings_util import load_agent_settings
 from offloadmq_agent.transport_exec import AgentTransport
 from offloadmq_agent.wire import TaskId
 
@@ -198,27 +201,43 @@ def _select_inputs(payload: dict[str, Any], data_path: Path) -> list[Path]:
 # --------------------------------------------------------------------------
 
 _sessions: dict[str, "ort.InferenceSession"] = {}
+# (providers, threads) the cached sessions were built with; a settings change drops them.
+_sessions_signature: tuple[tuple[str, ...], int] | None = None
 _sessions_lock = threading.Lock()
 
-# Preferred execution providers, best first; filtered by what this onnxruntime build has.
-_PROVIDER_PREFERENCE = ("CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider")
+
+def release_sessions() -> int:
+    """Drop every cached session (frees several GB per BiRefNet). Returns how many."""
+    global _sessions_signature
+    with _sessions_lock:
+        count = len(_sessions)
+        _sessions.clear()
+        _sessions_signature = None
+    return count
 
 
-def _session(model_file: Path) -> "ort.InferenceSession":
-    """Load once per process — the BiRefNet graphs take seconds to initialise."""
+def _session(model_file: Path, cfg: BgRemoveConfig) -> "ort.InferenceSession":
+    """Load a session for the configured device; cached when ``keep_loaded`` is on."""
     import onnxruntime as ort
 
+    global _sessions_signature
+    providers = resolve_providers(cfg.device, ort.get_available_providers())
+    signature = (tuple(providers), cfg.threads)
     key = str(model_file)
     with _sessions_lock:
+        if _sessions_signature != signature:
+            _sessions.clear()
+            _sessions_signature = signature
         sess = _sessions.get(key)
         if sess is None:
-            available = set(ort.get_available_providers())
-            providers = [p for p in _PROVIDER_PREFERENCE if p in available] or ["CPUExecutionProvider"]
             opts = ort.SessionOptions()
             opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            if cfg.threads:
+                opts.intra_op_num_threads = cfg.threads
             sess = ort.InferenceSession(key, opts, providers=providers)
             logger.info(f"[bgremove] loaded {model_file.name} with {sess.get_providers()}")
-            _sessions[key] = sess
+            if cfg.keep_loaded:
+                _sessions[key] = sess
         return sess
 
 
@@ -386,22 +405,25 @@ def _run(
     model_spec = MODEL_SPECS.get(name)
     if model_spec is None or name not in ONNX_MODEL_REGISTRY:
         raise ValueError(f"Unknown background-removal model for capability {capability!r}")
-    mfile = model_path(name)
+    settings = load_agent_settings()
+    mfile = model_path(name, settings)
     if mfile is None:
         raise RuntimeError(
-            f"Model '{name}' is not installed. Use slavemode.onnx-models-prepare with name='{name}'"
+            f"Model '{name}' is not installed. Run `omq bgremove install {name}` on the agent "
+            f"or slavemode.onnx-models-prepare with name='{name}'"
         )
 
     spec = BgRemoveSpec.from_payload(payload)
     sources = _select_inputs(payload, data_path)
+    cfg = BgRemoveConfig.from_settings(settings)
 
     report_progress(
         transport,
-        log=f"Removing background from {len(sources)} image(s) with {name}\n",
+        log=f"Removing background from {len(sources)} image(s) with {name} (device {cfg.device})\n",
         stage="loading model",
         task_id=task_id,
     )
-    sess = _session(mfile)
+    sess = _session(mfile, cfg)
 
     images: list[dict[str, Any]] = []
     for index, source in enumerate(sources, start=1):

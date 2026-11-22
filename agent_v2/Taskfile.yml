@@ -49,6 +49,25 @@ tasks:
     cmds:
       - uv run omq sharp uninstall --yes
 
+  # ----------------------------------------------------------------
+  # Background removal (onnx.bgremove.*) — models downloaded on demand only
+  # ----------------------------------------------------------------
+
+  bgremove:install:
+    desc: Download background-removal models; MODELS="birefnet-general birefnet-lite" (default general)
+    cmds:
+      - uv run omq bgremove install {{.MODELS}}
+
+  bgremove:doctor:
+    desc: Validate onnxruntime, device and model checksums; FIX=1 repairs what is broken
+    cmds:
+      - uv run omq bgremove doctor {{if .FIX}}--fix{{end}}
+
+  bgremove:uninstall:
+    desc: Delete every background-removal model (onnx.nudenet stays)
+    cmds:
+      - uv run omq bgremove uninstall --yes
+
   frontend:install:
     desc: Install frontend npm dependencies
     dir: "{{.FRONTEND}}"

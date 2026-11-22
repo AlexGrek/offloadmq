@@ -9,11 +9,11 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ui_server.protocol import OrchestratorAPI
-from ui_server.routes import comfy, core, custom_caps, kokoro, ollama, sharp, system
+from ui_server.routes import bgremove, comfy, core, custom_caps, kokoro, ollama, sharp, system
 
 
 def create_router(orch: OrchestratorAPI) -> APIRouter:
     router = APIRouter(prefix="/api")
-    for module in (core, custom_caps, comfy, kokoro, ollama, sharp, system):
+    for module in (core, custom_caps, comfy, kokoro, ollama, sharp, bgremove, system):
         router.include_router(module.build_router(orch))
     return router

@@ -60,6 +60,13 @@ class Settings(BaseModel):
     sharp_models_dir: str = ""
     sharp_torch_index: str = "auto"  # auto | cuda | cpu | pypi | <index URL>
 
+    # ONNX models (onnx.nudenet, onnx.bgremove.*) — downloaded on demand. Blank = ~/.offload-agent/onnx-models.
+    onnx_models_dir: str = ""
+    # Background removal (onnx.bgremove.*) — omq bgremove config / GUI.
+    bgremove_device: str = "auto"  # auto | cuda | directml | cpu (onnxruntime execution provider)
+    bgremove_threads: int = Field(default=0, ge=0)  # CPU intra-op threads; 0 = onnxruntime default
+    bgremove_keep_loaded: bool = True  # keep model sessions in RAM between tasks (~4 GB per BiRefNet)
+
     # Rescan cadence
     rescan_interval_secs: int = Field(default=180, ge=30)
 
@@ -96,6 +103,8 @@ class Settings(BaseModel):
         "sharp_venv_dir",
         "sharp_models_dir",
         "sharp_torch_index",
+        "onnx_models_dir",
+        "bgremove_device",
         mode="before",
     )
     @classmethod

@@ -21,9 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
-import threading
 import time
-from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -31,7 +29,7 @@ from typing import Any
 from offloadmq_agent.exec.world import sharp_runtime as rt
 from offloadmq_agent.exec.world.sharp_runtime import SharpPaths
 
-LogFn = Callable[[str], None]
+from offloadmq_core.install_job import InstallJob, LogFn
 
 PYTHON_VERSION = "3.13"  # upstream's .python-version
 CUDA_INDEX = "https://download.pytorch.org/whl/cu128"  # cu128: first build with Blackwell (RTX 50xx)
@@ -345,55 +343,8 @@ def repair(paths: SharpPaths, log: LogFn = print, torch_index: str | None = "aut
     return doctor(paths, torch_index)
 
 
-class SharpInstallJob:
+class SharpInstallJob(InstallJob):
     """One install/uninstall at a time, on a daemon thread, with a log tail for the GUI."""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._log: deque[str] = deque(maxlen=500)
-        self._state: dict[str, Any] = {"state": "idle", "action": None, "error": None,
-                                       "started_at": None, "finished_at": None}
-        self._cancel = threading.Event()
-
-    def snapshot(self) -> dict[str, Any]:
-        with self._lock:
-            return {**self._state, "log": list(self._log)}
-
-    def running(self) -> bool:
-        with self._lock:
-            return self._state["state"] == "running"
-
-    def cancel(self) -> None:
-        self._cancel.set()
-
-    def start(self, action: str, fn: Callable[[LogFn, Callable[[], bool]], Any],
-              on_done: Callable[[bool], None] | None = None) -> dict[str, Any]:
-        with self._lock:
-            if self._state["state"] == "running":
-                raise SharpInstallError(f"a SHARP {self._state['action']} is already running")
-            self._log.clear()
-            self._cancel.clear()
-            self._state = {"state": "running", "action": action, "error": None,
-                           "started_at": time.time(), "finished_at": None}
-
-        def log(line: str) -> None:
-            with self._lock:
-                self._log.append(line)
-
-        def run() -> None:
-            ok = False
-            try:
-                fn(log, self._cancel.is_set)
-                ok = True
-            except Exception as exc:  # noqa: BLE001 — surfaced in the GUI
-                log(f"ERROR: {exc}")
-                with self._lock:
-                    self._state["error"] = str(exc)
-            with self._lock:
-                self._state["state"] = "succeeded" if ok else "failed"
-                self._state["finished_at"] = time.time()
-            if on_done is not None:
-                on_done(ok)
-
-        threading.Thread(target=run, name=f"omq-sharp-{action}", daemon=True).start()
-        return self.snapshot()
+        super().__init__("SHARP", SharpInstallError)

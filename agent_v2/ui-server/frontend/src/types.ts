@@ -224,3 +224,46 @@ export type SharpDoctorReport = {
   action: "install" | "reinstall" | null;
   checks: { name: string; ok: boolean; detail: string }[];
 };
+
+export type BgRemoveModel = {
+  name: string;
+  short: string;
+  capability: string;
+  description: string;
+  filename: string;
+  installed: boolean;
+  present: boolean;
+  size_bytes: number;
+  expected_bytes: number | null;
+  default: boolean;
+};
+
+export type BgRemoveStatus = {
+  ready: boolean;
+  summary: string;
+  models_dir: string;
+  models: BgRemoveModel[];
+  device: string;
+  threads: number;
+  keep_loaded: boolean;
+  onnxruntime: string | null;
+  available_providers: string[];
+  providers: string[];
+  device_error: string | null;
+  settings: {
+    onnx_models_dir: string;
+    bgremove_device: string;
+    bgremove_threads: number;
+    bgremove_keep_loaded: boolean;
+  };
+  default_models_dir: string;
+  device_choices: string[];
+  job: Omit<SharpJob, "action"> & { action: "install" | "repair" | "uninstall" | null };
+};
+
+export type BgRemoveDoctorReport = {
+  ok: boolean;
+  action: "install" | "redownload" | null;
+  redownload: string[];
+  checks: { name: string; ok: boolean; detail: string }[];
+};

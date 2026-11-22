@@ -144,7 +144,7 @@ def test_solid_background_jpeg() -> None:
     with Image.open(io.BytesIO(content)) as out:
         assert out.format == "JPEG" and out.mode == "RGB"
         r, g, b = out.getpixel((5, 5))
-        assert g > 240 and r < 15 and b < 15  # JPEG is lossy — near-exact green
+        assert g > 240 and r < 15 and b < 15  # JPEG is lossy â€” near-exact green
     assert meta["content_type"] == "image/jpeg" and meta["transparent"] is False
 
 
@@ -219,8 +219,8 @@ class _FakeTransport:
 def stub_model(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     model_file = tmp_path / "model.onnx"
     model_file.write_bytes(b"stub")
-    monkeypatch.setattr(bgremove, "model_path", lambda name: model_file)
-    monkeypatch.setattr(bgremove, "_session", lambda path: object())
+    monkeypatch.setattr(bgremove, "model_path", lambda name, settings=None: model_file)
+    monkeypatch.setattr(bgremove, "_session", lambda path, cfg: object())
 
     def fake_predict(sess: object, img: Image.Image, spec: object) -> np.ndarray:
         alpha = np.zeros((img.height, img.width), np.float32)
@@ -262,7 +262,7 @@ def test_executor_requires_output_bucket(stub_model: None, tmp_path: Path) -> No
 
 
 def test_executor_reports_missing_model(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(bgremove, "model_path", lambda name: None)
+    monkeypatch.setattr(bgremove, "model_path", lambda name, settings=None: None)
     Image.new("RGB", (10, 10)).save(tmp_path / "a.png")
     transport = _execute(tmp_path, {})
     assert transport.result is not None and transport.result.status.status == "failure"

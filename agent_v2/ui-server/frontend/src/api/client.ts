@@ -1,6 +1,8 @@
 import type {
   AgentStatus,
   AutoUpdateStatus,
+  BgRemoveDoctorReport,
+  BgRemoveStatus,
   CapabilitiesState,
   Settings,
   SharpDoctorReport,
@@ -175,6 +177,27 @@ export const api = {
     }),
   cancelSharp: () => request<SharpStatus>("/sharp/cancel", { method: "POST" }),
   doctorSharp: () => request<SharpDoctorReport>("/sharp/doctor", { method: "POST" }),
+  getBgRemoveStatus: () => request<BgRemoveStatus>("/bgremove/status"),
+  saveBgRemoveSettings: (p: {
+    onnx_models_dir?: string;
+    bgremove_device?: string;
+    bgremove_threads?: number;
+    bgremove_keep_loaded?: boolean;
+  }) =>
+    request<BgRemoveStatus>("/bgremove/settings", { method: "POST", body: JSON.stringify(p) }),
+  installBgRemove: (models: string[], force = false) =>
+    request<BgRemoveStatus>("/bgremove/install", {
+      method: "POST",
+      body: JSON.stringify({ models, force }),
+    }),
+  repairBgRemove: () => request<BgRemoveStatus>("/bgremove/repair", { method: "POST" }),
+  uninstallBgRemove: (models: string[]) =>
+    request<BgRemoveStatus>("/bgremove/uninstall", {
+      method: "POST",
+      body: JSON.stringify({ models }),
+    }),
+  cancelBgRemove: () => request<BgRemoveStatus>("/bgremove/cancel", { method: "POST" }),
+  doctorBgRemove: () => request<BgRemoveDoctorReport>("/bgremove/doctor", { method: "POST" }),
   getKokoroStatus: () =>
     request<{ ok: boolean; capabilities: string[]; reason: string }>(
       "/kokoro/status"

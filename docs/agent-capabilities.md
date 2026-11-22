@@ -106,9 +106,12 @@ realistic images. There is one capability per installed BiRefNet model:
 `onnx.bgremove.birefnet-general` (the default, for anime and realistic), `-portrait`
 (people only) and `-lite` (small download).
 
-**Availability:** `onnxruntime` plus the model file, downloaded with
-`slavemode.onnx-models-prepare` (name `bgremove-<model>`). This is a regular (opt-out)
-capability. `output_bucket` is required.
+**Availability:** `onnxruntime` plus the model file. On the agent, models are installed
+with `omq bgremove install [model…]` or the web UI's **Background removal** page.
+Remotely, use `slavemode.onnx-models-prepare` (name `bgremove-<model>`). Device, CPU
+threads and session caching are agent settings (`omq bgremove config`). If the
+configured device is missing from the agent's onnxruntime build, the capabilities are
+not advertised. This is a regular (opt-out) capability. `output_bucket` is required.
 
 ```json
 { "format": "png", "background": "transparent", "crop": true, "padding": 16 }

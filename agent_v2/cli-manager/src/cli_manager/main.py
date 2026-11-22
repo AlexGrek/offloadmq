@@ -447,6 +447,140 @@ def sharp_uninstall(
 
 
 # ------------------------------------------------------------------
+# bgremove
+# ------------------------------------------------------------------
+
+
+bgremove_app = typer.Typer(
+    help="Background removal (onnx.bgremove.*): models, device and threads. Models download on demand only."
+)
+app.add_typer(bgremove_app, name="bgremove")
+
+_MODELS_ARG_HELP = "birefnet-general | birefnet-portrait | birefnet-lite"
+
+
+def _bgremove_settings() -> dict[str, Any]:
+    return _orch().get_settings().model_dump()
+
+
+@bgremove_app.command("status")
+def bgremove_status() -> None:
+    """Show models, device and where they live (fast; no checksums)."""
+    from offloadmq_agent.exec import bgremove_runtime as rt
+
+    st = rt.status(_bgremove_settings())
+    _plain(st["summary"])
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Model")
+    table.add_column("Capability")
+    table.add_column("Installed")
+    table.add_column("Size", justify="right")
+    for m in st["models"]:
+        size = m["size_bytes"] or m["expected_bytes"] or 0
+        mark = "yes" if m["installed"] else "partial" if m["present"] else "no"
+        table.add_row(m["short"] + (" (default)" if m["default"] else ""), m["capability"], mark,
+                      f"{size / 2**20:.0f} MiB")
+    console.print(table)
+    _plain(f"models dir:  {st['models_dir']}")
+    _plain(f"device:      {st['device']} -> {', '.join(st['providers']) or '-'}")
+    _plain(f"threads:     {st['threads'] or 'onnxruntime default'}")
+    _plain(f"keep loaded: {st['keep_loaded']}")
+    _plain(f"onnxruntime: {st['onnxruntime'] or 'missing'} ({', '.join(st['available_providers'])})")
+    if not st["ready"]:
+        raise typer.Exit(1)
+
+
+@bgremove_app.command("config")
+def bgremove_config(
+    models_dir: Optional[str] = typer.Option(
+        None, "--models-dir", help="ONNX models directory, shared with onnx.nudenet ('' = default)"
+    ),
+    device: Optional[str] = typer.Option(None, "--device", help="auto | cuda | directml | cpu"),
+    threads: Optional[int] = typer.Option(None, "--threads", min=0, help="CPU threads per inference (0 = all cores)"),
+    keep_loaded: Optional[bool] = typer.Option(
+        None, "--keep-loaded/--no-keep-loaded", help="Keep models in RAM between tasks (~4 GB per BiRefNet)"
+    ),
+) -> None:
+    """Change models location, device, threads or session caching. Install again after moving the dir."""
+    from offloadmq_agent.exec.bgremove_runtime import BgRemoveConfigError, validate_device
+
+    if device is not None:
+        try:
+            device = validate_device(device)
+        except BgRemoveConfigError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
+    _orch().update_settings(
+        onnx_models_dir=models_dir, bgremove_device=device,
+        bgremove_threads=threads, bgremove_keep_loaded=keep_loaded,
+    )
+    bgremove_status()
+
+
+@bgremove_app.command("install")
+def bgremove_install(
+    models: Optional[list[str]] = typer.Argument(None, help=f"{_MODELS_ARG_HELP} (default: birefnet-general)"),
+    all_models: bool = typer.Option(False, "--all", help="Install every background-removal model"),
+    force: bool = typer.Option(False, "--force", help="Delete and download again"),
+) -> None:
+    """Download background-removal models (md5-verified; 224-973 MB each)."""
+    from offloadmq_agent.exec import bgremove_runtime as rt
+    from offloadmq_core.bgremove_install import BgRemoveInstallError, install
+
+    try:
+        install(rt.model_names() if all_models else models, _bgremove_settings(), log=_plain, force=force)
+    except (BgRemoveInstallError, RuntimeError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print("[green]Done.[/green] Restart or rescan the agent to advertise onnx.bgremove.*.")
+
+
+@bgremove_app.command("doctor")
+def bgremove_doctor(
+    fix: bool = typer.Option(False, "--fix", help="Re-download corrupt models / install the default one"),
+) -> None:
+    """Validate onnxruntime, device, models dir and every installed model's checksum."""
+    from offloadmq_core.bgremove_install import BgRemoveInstallError, doctor, repair
+
+    settings = _bgremove_settings()
+    try:
+        report = repair(settings, log=_plain) if fix else doctor(settings)
+    except (BgRemoveInstallError, RuntimeError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    if not fix:
+        for c in report["checks"]:
+            mark = "[green]ok[/green]  " if c["ok"] else "[red]FAIL[/red]"
+            console.print(f"{mark} {c['name']}: ", end="")
+            _plain(c["detail"])
+    if report["ok"]:
+        console.print("[green]Background removal is healthy.[/green]")
+        return
+    if not fix and report["action"]:
+        console.print(f"[yellow]Run `omq bgremove doctor --fix` to {report['action']}.[/yellow]")
+    raise typer.Exit(1)
+
+
+@bgremove_app.command("uninstall")
+def bgremove_uninstall(
+    models: Optional[list[str]] = typer.Argument(None, help=f"{_MODELS_ARG_HELP} (default: all of them)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation"),
+) -> None:
+    """Delete background-removal model files (onnx.nudenet is never touched)."""
+    from offloadmq_core.bgremove_install import BgRemoveInstallError, resolve_models, uninstall
+
+    try:
+        names = resolve_models(models, default_all=True)
+    except BgRemoveInstallError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    if not yes and not typer.confirm(f"Delete {', '.join(names)}?"):
+        raise typer.Exit(1)
+    uninstall(names, _bgremove_settings(), log=_plain)
+    console.print("[green]Done.[/green] Restart or rescan the agent to stop advertising removed models.")
+
+
+# ------------------------------------------------------------------
 # config
 # ------------------------------------------------------------------
 
