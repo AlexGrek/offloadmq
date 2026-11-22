@@ -1,4 +1,4 @@
-import { Activity, Bot, Braces, Clapperboard, Eye, Feather, FolderOpen, GalleryVerticalEnd, GitCompareArrows, GitBranch, ImagePlus, MessageCircleMore, Music, Orbit, Repeat2, ShieldAlert, Swords, VenetianMask, Volume2, Wand2 } from 'lucide-react'
+import { Activity, Bot, Braces, Clapperboard, Eraser, Eye, Feather, FolderOpen, GalleryVerticalEnd, GitCompareArrows, GitBranch, ImagePlus, MessageCircleMore, Music, Orbit, Repeat2, ShieldAlert, Swords, VenetianMask, Volume2, Wand2 } from 'lucide-react'
 
 /** Every app tile on the dashboard; also the source for the TopBar's most-used shortcuts. */
 export const apps = [
@@ -51,6 +51,16 @@ export const apps = [
     gradient: 'from-cyan-500/20 to-blue-500/20',
     iconBg: 'bg-cyan-500/20',
     iconColor: 'text-cyan-400',
+  },
+  {
+    id: 'bg-remover',
+    icon: Eraser,
+    title: 'Background Remover',
+    description: 'Cut the subject out of a picture — transparent PNG or a flat colour behind it',
+    href: '/app/bg-remover',
+    gradient: 'from-emerald-500/20 to-lime-500/20',
+    iconBg: 'bg-emerald-500/20',
+    iconColor: 'text-emerald-400',
   },
   {
     id: 'worlds',

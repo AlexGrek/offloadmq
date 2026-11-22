@@ -44,3 +44,5 @@ pub mod langgraph_jobs;
 pub mod world_jobs;
 
 pub mod img_utils_capabilities;
+
+pub mod bg_remover_jobs;

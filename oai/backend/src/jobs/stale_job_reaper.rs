@@ -50,6 +50,8 @@ async fn reap(state: &AppState, max_age_hours: u64) -> Result<(), AppError> {
     // Tables on the offload-job framework.
     total += offload_jobs::fail_stale_jobs::<entities::img_utils_jobs::Entity>(db, cutoff, REASON)
         .await?;
+    total += offload_jobs::fail_stale_jobs::<entities::bg_remover_jobs::Entity>(db, cutoff, REASON)
+        .await?;
     total +=
         offload_jobs::fail_stale_jobs::<entities::image_analysis_jobs::Entity>(db, cutoff, REASON)
             .await?;

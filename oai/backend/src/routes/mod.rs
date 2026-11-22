@@ -16,6 +16,7 @@ pub mod files;
 pub mod health;
 pub mod images;
 pub mod image_stash;
+pub mod bg_remover;
 pub mod img_utils;
 pub mod tts;
 pub mod music_generation;

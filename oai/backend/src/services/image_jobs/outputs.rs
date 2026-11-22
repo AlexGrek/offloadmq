@@ -82,6 +82,76 @@ pub async fn store_offload_output_image(
     .await
 }
 
+/// Persist a background-remover result without the JPEG normalization every other output
+/// gets, which would flatten a transparent cutout. PNG/WebP are stored verbatim (see
+/// [`image_processing::process_cutout`]); a JPEG result (the user asked for a solid
+/// background) takes the ordinary path. Cutouts carry no EXIF to hand on.
+///
+/// `stem` names the stored file (`<stem>.png`, extension from the final format). The agent's
+/// own name is an internal staging name (`input_<id>.png`) and is only the fallback.
+pub async fn store_offload_cutout_image(
+    state: &AppState,
+    user_id: i64,
+    source: &str,
+    output_bucket: &str,
+    image: &Value,
+    stem: Option<&str>,
+) -> Result<image_generation::ImageFile, AppError> {
+    storage::operator(state)?;
+    let file_uid = image["file_uid"].as_str();
+    let agent_filename = image["filename"]
+        .as_str()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("{source}.png"));
+
+    let bytes = if let Some(data_base64) = image["data_base64"].as_str() {
+        base64::engine::general_purpose::STANDARD
+            .decode(data_base64)
+            .map_err(|e| AppError::ExternalService(format!("bad base64 image: {e}")))?
+    } else {
+        let client = offload_factory::image_client_from_settings(
+            state,
+            app_settings::get(&state.db).await?,
+        )?;
+        download_with_retries(&client, output_bucket, file_uid.unwrap_or_default(), 3)
+            .await?
+            .0
+    };
+    let processed = image_processing::process_cutout_async(bytes).await?;
+    let filename = match stem.filter(|s| !s.trim().is_empty()) {
+        Some(stem) => format!(
+            "{}.{}",
+            stem.trim(),
+            match processed.content_type.as_str() {
+                "image/png" => "png",
+                "image/webp" => "webp",
+                _ => "jpg",
+            }
+        ),
+        None => agent_filename,
+    };
+
+    let image_id = state.next_id();
+    let storage_path =
+        image_paths::standalone_cutout_path(user_id, image_id, &processed.content_type);
+    store_image(
+        state,
+        StoredImageSpec {
+            image_id,
+            user_id,
+            job_id: None,
+            direction: "output",
+            source,
+            storage_path: &storage_path,
+            filename: &filename,
+            offload_bucket_uid: Some(output_bucket),
+            offload_file_uid: file_uid,
+        },
+        &processed,
+    )
+    .await
+}
+
 pub(super) async fn fetch_and_store_outputs(
     state: &AppState,
     user_id: i64,

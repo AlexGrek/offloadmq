@@ -30,7 +30,9 @@ pub async fn image_bytes(
         .await?
         .ok_or(AppError::NotFound)?;
     let bytes = storage::read(op, &file.storage_path).await?;
-    if file.content_type.starts_with("video/") {
+    // Videos, and cutouts whose transparency a JPEG transcode would destroy
+    // (background remover), are served exactly as stored.
+    if file.content_type.starts_with("video/") || image_processing::preserves_alpha(&file.content_type) {
         return Ok((bytes, file.content_type));
     }
     let bytes =
@@ -55,10 +57,13 @@ pub async fn image_thumbnail_bytes(
         .filter(|p| p != &file.storage_path)
         .unwrap_or(canonical_thumb.clone());
 
-    if let Ok(bytes) = storage::read(op, &thumb_path).await
-        && image_processing::is_jpeg_blob(&bytes, "image/jpeg")
-    {
-        return Ok(bytes);
+    if let Ok(bytes) = storage::read(op, &thumb_path).await {
+        // A cutout's thumbnail is a PNG (see `process_cutout`); everything else is JPEG.
+        let alpha_png = image_processing::preserves_alpha(&file.content_type)
+            && image_processing::sniff_image_content_type(&bytes) == "image/png";
+        if alpha_png || image_processing::is_jpeg_blob(&bytes, "image/jpeg") {
+            return Ok(bytes);
+        }
     }
 
     let main = storage::read(op, &file.storage_path).await?;

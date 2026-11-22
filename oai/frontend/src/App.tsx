@@ -20,6 +20,7 @@ import GeneratorImproverPage from './pages/GeneratorImproverPage'
 import ImgModelWarsPage from './pages/ImgModelWarsPage'
 import NudeDetectorPage from './pages/NudeDetectorPage'
 import ImgUtilsPage from './pages/ImgUtilsPage'
+import BgRemoverPage from './pages/BgRemoverPage'
 import RunnersPage from './pages/RunnersPage'
 import TtsPage from './pages/TtsPage'
 import { lazy, Suspense } from 'react'
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="img-model-wars" element={<ImgModelWarsPage />} />
             <Route path="nude-detect" element={<NudeDetectorPage />} />
             <Route path="img-utils" element={<ImgUtilsPage />} />
+            <Route path="bg-remover" element={<BgRemoverPage />} />
             <Route path="worlds" element={<Suspense fallback={<p className="p-6">Loading VR Worlds…</p>}><WorldsPage /></Suspense>} />
             <Route path="runners" element={<RunnersPage />} />
             <Route path="tts" element={<TtsPage />} />

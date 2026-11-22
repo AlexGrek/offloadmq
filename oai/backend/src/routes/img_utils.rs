@@ -229,7 +229,7 @@ async fn job_details_with_images(
 
 /// A missing row (image deleted from My Files) is not an error — the slot simply
 /// has no metadata and the page falls back to the bare id.
-async fn load_image_ref(
+pub(crate) async fn load_image_ref(
     state: &AppState,
     user_id: i64,
     image_id: Option<i64>,

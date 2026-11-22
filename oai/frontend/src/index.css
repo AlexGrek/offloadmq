@@ -135,6 +135,22 @@
 }
 
 @layer components {
+  /* Transparency checkerboard behind cut-out images (Background Remover). */
+  .bg-checkerboard {
+    background-color: oklch(0.98 0 0);
+    background-image:
+      linear-gradient(45deg, oklch(0.9 0 0) 25%, transparent 25%, transparent 75%, oklch(0.9 0 0) 75%),
+      linear-gradient(45deg, oklch(0.9 0 0) 25%, transparent 25%, transparent 75%, oklch(0.9 0 0) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+  }
+  .dark .bg-checkerboard {
+    background-color: oklch(0.3 0 0);
+    background-image:
+      linear-gradient(45deg, oklch(0.38 0 0) 25%, transparent 25%, transparent 75%, oklch(0.38 0 0) 75%),
+      linear-gradient(45deg, oklch(0.38 0 0) 25%, transparent 25%, transparent 75%, oklch(0.38 0 0) 75%);
+  }
+
   .markdown-body {
     @apply text-sm leading-relaxed break-words;
   }

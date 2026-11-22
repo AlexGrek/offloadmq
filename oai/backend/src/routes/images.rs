@@ -16,6 +16,7 @@ use crate::{
         external_resize,
         image_jobs::{self, JobDetail, StartJobParams},
         image_pipeline_params::{ImagePipelineParams, UpscaleParams},
+        image_processing,
     },
     state::AppState,
 };
@@ -359,7 +360,9 @@ pub async fn get_image_thumbnail(
 ) -> Result<impl IntoResponse, AppError> {
     let image_id = parse_id(&image_id_str, "image_id")?;
     let bytes = image_jobs::image_thumbnail_bytes(&state, user_id, image_id).await?;
-    Ok(image_jpeg_response(bytes, "image/jpeg"))
+    // JPEG, except a cutout's thumbnail, which is a PNG so it keeps its transparency.
+    let content_type = image_processing::sniff_image_content_type(&bytes);
+    Ok(image_jpeg_response(bytes, content_type))
 }
 
 #[derive(Serialize)]

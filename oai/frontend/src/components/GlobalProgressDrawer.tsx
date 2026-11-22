@@ -9,6 +9,7 @@ import { cancelOffloadTask } from '../api/tasks'
 import { cancelImageJob } from '../api/images'
 import { cancelDescribeJob } from '../api/describe'
 import { cancelImgUtilsJob } from '../api/imgUtils'
+import { cancelBgRemoverJob } from '../api/bgRemover'
 import { cancelWorldJob } from '../api/worlds'
 import type { RunningJobItem } from '../api/progress'
 import type { ChatTaskRecord } from '../contexts/WorkloadContext'
@@ -16,6 +17,7 @@ import {
   ProgressPanel,
 } from './ProgressPanel'
 import {
+  bgRemoverProgressRows,
   chatProgressRows,
   describeProgressRows,
   imageProgressRows,
@@ -29,6 +31,7 @@ export function GlobalProgressDrawer() {
     runningImageJobs: imageJobs,
     runningDescribeJobs: describeJobs,
     runningImgUtilsJobs: imgUtilsJobs,
+    runningBgRemoverJobs: bgRemoverJobs,
     runningWorldJobs: worldJobs,
     runningImageJobsLoading: loadingImages,
     refreshRunningImageJobs: refreshImages,
@@ -88,6 +91,19 @@ export function GlobalProgressDrawer() {
     [token, refreshImages],
   )
 
+  const handleCancelBgRemover = useCallback(
+    async (job: RunningJobItem) => {
+      if (!token) return
+      try {
+        await cancelBgRemoverJob(token, job.job_id)
+        await refreshImages()
+      } catch (e) {
+        console.error('cancel background remover job', e)
+      }
+    },
+    [token, refreshImages],
+  )
+
   const chatRows = useMemo(
     () => chatProgressRows(runningChatTasks, handleCancelChat),
     [runningChatTasks, handleCancelChat],
@@ -104,11 +120,20 @@ export function GlobalProgressDrawer() {
     () => imgUtilsProgressRows(imgUtilsJobs, handleCancelImgUtils),
     [imgUtilsJobs, handleCancelImgUtils],
   )
+  const bgRemoverRows = useMemo(
+    () => bgRemoverProgressRows(bgRemoverJobs, handleCancelBgRemover),
+    [bgRemoverJobs, handleCancelBgRemover],
+  )
   const worldRows = imgUtilsProgressRows(worldJobs, job => {
     if (token) void cancelWorldJob(token, job.job_id).then(refreshImages).catch(console.error)
   })
   const totalRunning =
-    chatRows.length + imageRows.length + describeRows.length + imgUtilsRows.length + worldRows.length
+    chatRows.length +
+    imageRows.length +
+    describeRows.length +
+    imgUtilsRows.length +
+    bgRemoverRows.length +
+    worldRows.length
 
   return (
     <>
@@ -186,6 +211,12 @@ export function GlobalProgressDrawer() {
             loading={loadingImages && imgUtilsRows.length === 0}
             emptyMessage="No image tool jobs in progress."
             rows={imgUtilsRows}
+          />
+          <ProgressPanel
+            title="Background remover"
+            loading={loadingImages && bgRemoverRows.length === 0}
+            emptyMessage="No background removal jobs in progress."
+            rows={bgRemoverRows}
           />
         </div>
       </aside>

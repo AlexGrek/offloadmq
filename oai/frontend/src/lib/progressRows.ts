@@ -70,3 +70,4 @@ export function offloadJobProgressRows(
 
 export const describeProgressRows = offloadJobProgressRows
 export const imgUtilsProgressRows = offloadJobProgressRows
+export const bgRemoverProgressRows = offloadJobProgressRows

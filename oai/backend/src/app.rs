@@ -341,6 +341,30 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/img-utils/jobs/{id}/retry",
             post(routes::img_utils::retry_job),
         )
+        .route(
+            "/api/bg-remover/capabilities",
+            get(routes::bg_remover::list_capabilities),
+        )
+        .route(
+            "/api/bg-remover/jobs",
+            post(routes::bg_remover::start_job).get(routes::bg_remover::list_jobs),
+        )
+        .route(
+            "/api/bg-remover/jobs/{id}",
+            get(routes::bg_remover::get_job).delete(routes::bg_remover::delete_job),
+        )
+        .route(
+            "/api/bg-remover/jobs/{id}/poll",
+            post(routes::bg_remover::poll_job),
+        )
+        .route(
+            "/api/bg-remover/jobs/{id}/cancel",
+            post(routes::bg_remover::cancel_job),
+        )
+        .route(
+            "/api/bg-remover/jobs/{id}/retry",
+            post(routes::bg_remover::retry_job),
+        )
         .route("/api/worlds/capabilities", get(routes::worlds::list_capabilities))
         .route(
             "/api/worlds/jobs",

@@ -171,7 +171,9 @@ pub async fn embed_previews(
         else {
             continue;
         };
-        let jpeg = if thumb.len().div_ceil(3) * 4 <= share {
+        // A cutout's thumbnail is a PNG; `push_jpeg` needs JPEG, so it is always re-encoded.
+        let is_jpeg = image_processing::sniff_image_content_type(&thumb) == "image/jpeg";
+        let jpeg = if is_jpeg && thumb.len().div_ceil(3) * 4 <= share {
             thumb
         } else {
             match image_processing::downscaled_jpeg_async(

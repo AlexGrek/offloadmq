@@ -11,6 +11,7 @@ import { useRunningImageJobs } from '../hooks/useRunningImageJobs'
 import { cancelImageJob, pollImageJob } from '../api/images'
 import { pollDescribeJob } from '../api/describe'
 import { pollImgUtilsJob } from '../api/imgUtils'
+import { pollBgRemoverJob } from '../api/bgRemover'
 import { pollWorldJob } from '../api/worlds'
 import type { RunningJobItem } from '../api/progress'
 import { ProgressContext } from './ProgressContext'
@@ -51,6 +52,11 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     [runningJobs],
   )
 
+  const runningBgRemoverJobs = useMemo(
+    () => runningJobs.filter(j => j.source === 'bg-remover'),
+    [runningJobs],
+  )
+
   const runningWorldJobs = useMemo(() => runningJobs.filter(j => j.source === 'worlds'), [runningJobs])
 
   // Keep a ref so the polling loop always sees the latest job list without
@@ -84,6 +90,10 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         }
         if (job.source === 'img-utils') {
           await pollImgUtilsJob(token, job.job_id)
+          return
+        }
+        if (job.source === 'bg-remover') {
+          await pollBgRemoverJob(token, job.job_id)
           return
         }
         if (job.source === 'worlds') {
@@ -135,6 +145,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       runningImageJobs,
       runningDescribeJobs,
       runningImgUtilsJobs,
+      runningBgRemoverJobs,
       runningWorldJobs,
       runningImageJobsLoading,
       refreshRunningImageJobs: refresh,
@@ -146,6 +157,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       runningImageJobs,
       runningDescribeJobs,
       runningImgUtilsJobs,
+      runningBgRemoverJobs,
       runningWorldJobs,
       runningImageJobsLoading,
       refresh,

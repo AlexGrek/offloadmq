@@ -26,6 +26,18 @@ pub fn standalone_output_path(user_id: i64, image_id: i64) -> String {
     format!("users/{user_id}/images/output/standalone/{image_id}.jpg")
 }
 
+/// Standalone output kept in its own format (background-remover cutouts: `png` / `webp`),
+/// so the blob's extension matches its bytes. Its thumbnail still lives at the canonical
+/// [`thumbnail_path`], which is a PNG for these (see `image_processing::process_cutout`).
+pub fn standalone_cutout_path(user_id: i64, image_id: i64, content_type: &str) -> String {
+    let ext = match content_type {
+        "image/png" => "png",
+        "image/webp" => "webp",
+        _ => "jpg",
+    };
+    format!("users/{user_id}/images/output/standalone/{image_id}.{ext}")
+}
+
 /// Raw video output path — preserves the agent-reported filename extension (e.g. `.mp4`).
 pub fn video_output_path(user_id: i64, job_id: i64, file_id: i64, filename: &str) -> String {
     let ext = filename

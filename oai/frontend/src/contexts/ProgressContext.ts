@@ -8,12 +8,13 @@ export type ProgressContextValue = {
   runningImageJobs: RunningJobItem[]
   runningDescribeJobs: RunningJobItem[]
   runningImgUtilsJobs: RunningJobItem[]
+  runningBgRemoverJobs: RunningJobItem[]
   runningWorldJobs: RunningJobItem[]
   runningImageJobsLoading: boolean
   refreshRunningImageJobs: () => Promise<void>
   /**
    * Marks the job the open page is polling itself (`source` as in the progress
-   * feed: `image`, `describe`, `img-utils`); the background loop skips it. `null` clears.
+   * feed: `image`, `describe`, `img-utils`, `bg-remover`); the background loop skips it. `null` clears.
    */
   setForegroundJob: (source: string, jobId: string | null) => void
 }

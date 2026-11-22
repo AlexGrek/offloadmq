@@ -210,6 +210,77 @@ pub fn process_image_capped(
     })
 }
 
+/// Normalizes a background-removal result. Unlike every other stored image, a cutout is
+/// usually a *transparent* PNG/WebP, and [`process_image`] would flatten that to JPEG and
+/// throw the alpha channel (the whole point of the tool) away. So PNG and WebP bytes are
+/// kept verbatim, with a PNG thumbnail that keeps its transparency; anything else (a
+/// flattened JPEG result) goes through the normal [`process_image`] path.
+///
+/// Verbatim means no resize: the agent returns the input's resolution, and the input was
+/// already capped to [`MAX_IMAGE_EDGE`] when it was staged.
+pub fn process_cutout(bytes: Vec<u8>) -> Result<ProcessedImage, AppError> {
+    let content_type = if is_png_magic(&bytes) {
+        "image/png"
+    } else if is_webp_magic(&bytes) {
+        "image/webp"
+    } else {
+        return process_image(bytes, None);
+    };
+    if bytes.len() > MAX_UPLOAD_BYTES {
+        return Err(AppError::BadRequest("cutout exceeds 32MB limit".into()));
+    }
+
+    let suffix = if content_type == "image/png" { ".png" } else { ".webp" };
+    let input = TempFile::write(&bytes, suffix)?;
+    let width = vips_header_dim(&input.0, "width")?;
+    let height = vips_header_dim(&input.0, "height")?;
+    let thumbnail_bytes = vips_thumbnail_png(&input.0, THUMBNAIL_MAX_EDGE)?;
+    let len = bytes.len() as i64;
+    Ok(ProcessedImage {
+        sha256: sha256_hex(&bytes),
+        bytes,
+        content_type: content_type.to_string(),
+        width: width as i32,
+        height: height as i32,
+        original_width: Some(width as i32),
+        original_height: Some(height as i32),
+        original_bytes: Some(len),
+        rescaled: false,
+        reencoded: false,
+        exif_orientation: None,
+        thumbnail_bytes,
+    })
+}
+
+/// Whether stored images of this content type may carry transparency — i.e. must be
+/// served as stored rather than transcoded to JPEG.
+pub fn preserves_alpha(content_type: &str) -> bool {
+    matches!(
+        content_type.trim().to_ascii_lowercase().as_str(),
+        "image/png" | "image/webp"
+    )
+}
+
+/// The content type of image `bytes`, from magic numbers. Thumbnails are JPEG, except a
+/// cutout's, which is PNG to keep its transparency.
+pub fn sniff_image_content_type(bytes: &[u8]) -> &'static str {
+    if is_png_magic(bytes) {
+        "image/png"
+    } else if is_webp_magic(bytes) {
+        "image/webp"
+    } else {
+        "image/jpeg"
+    }
+}
+
+fn is_png_magic(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A])
+}
+
+fn is_webp_magic(bytes: &[u8]) -> bool {
+    bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP"
+}
+
 /// File extensions of image formats [`process_image`] accepts as input.
 const IMAGE_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif", "avif", "jxl",
@@ -311,6 +382,11 @@ pub async fn process_upload_async(
     blocking(move || process_upload(bytes, content_type_hint)).await
 }
 
+/// Async [`process_cutout`].
+pub async fn process_cutout_async(bytes: Vec<u8>) -> Result<ProcessedImage, AppError> {
+    blocking(move || process_cutout(bytes)).await
+}
+
 /// Async [`process_generated_image`]. `exif_source` is owned because the work outlives
 /// the caller's borrow; callers holding a `&Vec<u8>` pass `.cloned()`.
 pub async fn process_generated_image_async(
@@ -382,6 +458,21 @@ fn vips_thumbnail(input: &Path, max_edge: u32, quality: u8) -> Result<(Vec<u8>, 
     let w = vips_header_dim(&out.0, "width")?;
     let h = vips_header_dim(&out.0, "height")?;
     Ok((bytes, w, h))
+}
+
+/// [`vips_thumbnail`] for images with an alpha channel: encodes PNG instead of JPEG, since
+/// JPEG has no transparency and would flatten the cutout onto black.
+fn vips_thumbnail_png(input: &Path, max_edge: u32) -> Result<Vec<u8>, AppError> {
+    let out = TempFile::new(".png");
+    let size = format!("{max_edge}x{max_edge}>");
+    let out_arg = format!("{}[strip]", out.0.display());
+
+    let mut cmd = Command::new("vipsthumbnail");
+    cmd.arg(input).args(["--size", &size, "-o", &out_arg]);
+    run_gated(cmd)?;
+
+    std::fs::read(&out.0)
+        .map_err(|e| AppError::Internal(format!("read vipsthumbnail output failed: {e}")))
 }
 
 /// Header-only dimension read (`vipsheader -f width|height`) — never decodes pixels.
@@ -559,6 +650,25 @@ mod tests {
             .write_image(img.as_raw(), 8, 8, ExtendedColorType::Rgb8)
             .unwrap();
         buf
+    }
+
+    #[test]
+    fn sniffs_png_webp_and_defaults_to_jpeg() {
+        let webp = [b"RIFF".as_slice(), &[0, 0, 0, 0], b"WEBPVP8 "].concat();
+        assert_eq!(sniff_image_content_type(&tiny_png()), "image/png");
+        assert_eq!(sniff_image_content_type(&webp), "image/webp");
+        assert_eq!(sniff_image_content_type(&[0xFF, 0xD8, 0xFF, 0xE0]), "image/jpeg");
+        // A truncated RIFF header must not index out of bounds.
+        assert_eq!(sniff_image_content_type(b"RIFF"), "image/jpeg");
+        assert_eq!(sniff_image_content_type(&[]), "image/jpeg");
+    }
+
+    #[test]
+    fn only_png_and_webp_preserve_alpha() {
+        assert!(preserves_alpha("image/png"));
+        assert!(preserves_alpha(" IMAGE/WEBP "));
+        assert!(!preserves_alpha("image/jpeg"));
+        assert!(!preserves_alpha("video/mp4"));
     }
 
     #[test]
