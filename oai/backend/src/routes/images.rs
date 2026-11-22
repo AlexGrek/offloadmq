@@ -15,7 +15,7 @@ use crate::{
     services::{
         external_resize,
         image_jobs::{self, JobDetail, StartJobParams},
-        image_pipeline_params::ImagePipelineParams,
+        image_pipeline_params::{ImagePipelineParams, UpscaleParams},
     },
     state::AppState,
 };
@@ -24,6 +24,43 @@ use crate::{
 pub struct StartJobResponse {
     pub job_id: String,
     pub status: String,
+}
+
+#[derive(Deserialize)]
+pub struct StartJobRequest {
+    #[serde(flatten)]
+    params: StartJobParams,
+    upscale: Option<UpscaleParams>,
+}
+
+#[cfg(test)]
+mod start_job_request_tests {
+    use super::StartJobRequest;
+    use serde_json::json;
+
+    #[test]
+    fn start_request_accepts_optional_upscale_alongside_existing_fields() {
+        let mut body = json!({
+            "capability": "imggen.paint",
+            "prompt": "A valley",
+            "width": 1024,
+            "height": 1536,
+            "workflow": "txt2img",
+        });
+        let plain: StartJobRequest = serde_json::from_value(body.clone()).unwrap();
+        assert!(plain.upscale.is_none());
+
+        body["upscale"] = json!({
+            "capability": "img-utils.seedvr2",
+            "workflow": "upscale",
+            "scale": 1.5,
+        });
+        let request: StartJobRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(request.params.capability, "imggen.paint");
+        assert_eq!((request.params.width, request.params.height), (1024, 1536));
+        let upscale = request.upscale.unwrap();
+        assert_eq!((&*upscale.capability, &*upscale.workflow, upscale.scale), ("img-utils.seedvr2", "upscale", 1.5));
+    }
 }
 
 #[derive(Serialize)]
@@ -160,7 +197,7 @@ pub async fn upload_input_image(
 pub async fn start_job(
     State(state): State<Arc<AppState>>,
     AuthenticatedUser(user_id): AuthenticatedUser,
-    Json(req): Json<StartJobParams>,
+    Json(req): Json<StartJobRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     // Recents are no longer recorded here: a "generate multiple" submission
     // calls this endpoint once per job with the placeholders already
@@ -168,7 +205,7 @@ pub async fn start_job(
     // instead of the one template the user typed. The frontend records the
     // unexpanded prompt itself, once per submission, via
     // `POST /api/prompts/{bucket}/recent`.
-    let job_id = image_jobs::start_job(&state, user_id, req).await?;
+    let job_id = image_jobs::start_job_with_upscale(&state, user_id, req.params, req.upscale).await?;
     Ok((
         StatusCode::CREATED,
         Json(StartJobResponse { job_id: job_id.to_string(), status: "submitted".into() }),

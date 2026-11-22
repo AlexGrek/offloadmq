@@ -91,6 +91,11 @@ pub fn create_app(state: Arc<AppState>, static_dir: &str) -> Router {
             get(routes::user_settings::get_prompt_defaults)
                 .put(routes::user_settings::save_prompt_defaults),
         )
+        .route(
+            "/api/me/reverse-exclusions",
+            get(routes::user_settings::get_reverse_exclusions)
+                .put(routes::user_settings::save_reverse_exclusions),
+        )
         .merge(change_password_route)
         .route("/api/admin/am_i_admin", get(routes::admin::am_i_admin))
         .route("/api/ws/chat", get(crate::ws::chat::ws_chat))

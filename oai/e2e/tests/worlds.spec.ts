@@ -54,6 +54,148 @@ test('library input, submission, detail, headset sharing and deletion', async ({
   await expect(page.getByTestId('worlds-item-77')).toHaveCount(0)
 })
 
+test('generates a 2:3 source with a shared starred prompt and builds from the result', async ({ page }) => {
+  const picture = { ...image, image_id: '43', filename: 'generated.png', width: 1280, height: 1920 }
+  const starredPrompt = 'Lumenport, {misty|sunlit}, {color}, {?}'
+  const template = '{.landmark}, {misty|sunlit}, {color}, {?}'
+  let imageRequest: unknown
+  let worldRequest: unknown
+  let recentRequest: unknown
+  let completedPicture = false
+  await page.setViewportSize({ width: 390, height: 820 })
+  await page.addInitScript(() => {
+    localStorage.setItem('oai_token', 'test-token')
+    localStorage.setItem('oai_image_size', '[1536,1024]')
+    localStorage.setItem('oai_world_picture_size', '[1536,1024]')
+  })
+  await page.route('**/api/**', async route => {
+    const { pathname, searchParams } = new URL(route.request().url())
+    if (!pathname.startsWith('/api/')) return route.continue()
+    const method = route.request().method()
+    const json = (body: unknown) => route.fulfill({ json: body })
+    if (pathname === '/api/me') return json({ id: 1, login: 'tester', created_at: now, used_storage_bytes: 0 })
+    if (pathname === '/api/progress/running') return json({ jobs: [] })
+    if (pathname === '/api/worlds/capabilities') return json({ capabilities: [{ base: 'world.splat', tags: ['pano'], raw: 'world.splat[pano]' }] })
+    if (pathname === '/api/worlds/jobs' && method === 'POST') {
+      worldRequest = route.request().postDataJSON()
+      return json({ job_id: '77', status: 'submitted' })
+    }
+    if (pathname === '/api/worlds/jobs') return json([])
+    if (pathname === '/api/worlds/jobs/77') return json({ ...completed, input_image: picture, input_image_id: picture.image_id,
+      result: { ...completed.result, mode: 'perspective' } })
+    if (pathname === '/api/images/capabilities') return json(['paint', 'render', 'video'].map(model => {
+      const base = `imggen.${model}`
+      const tag = model === 'video' ? 'txt2video' : 'txt2img'
+      return { base, raw: `${base}[${tag}]`, tags: [tag], online: true, last_available_at: now, usage_count: 0 }
+    }))
+    if (pathname === '/api/prompts/imggen-prompt/entries' && searchParams.get('kind') === 'starred') return json({
+      items: [{ id: '1', content: starredPrompt, kind: 'starred', created_at: now, updated_at: now, last_used_at: now }],
+      next_cursor: null,
+    })
+    if (pathname === '/api/prompts/imggen-prompt/recent') {
+      recentRequest = route.request().postDataJSON()
+      return json({})
+    }
+    if (pathname === '/api/prompt-placeholders') return json([{ id: '1', name: '.landmark', variants: ['Lumenport'] }])
+    if (pathname === '/api/images/jobs' && method === 'POST') {
+      imageRequest = route.request().postDataJSON()
+      return json({ job_id: '99', status: 'submitted' })
+    }
+    if (pathname === '/api/images/jobs/99/poll') return json({
+      job_id: '99', status: completedPicture ? 'completed' : 'running', stage: null, error: null,
+      output_images: completedPicture ? [picture] : [],
+    })
+    if (pathname === '/api/images/files/43') return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="192"/>' })
+    return route.fulfill({ status: 404 })
+  })
+
+  await page.goto('/app/worlds')
+  await page.getByTestId('worlds-generate-open').click()
+  await expect(page.getByTestId('worlds-generate-submit')).toBeDisabled()
+  await expect(page.getByTestId('worlds-image-upscale')).not.toBeChecked()
+  await expect(page.getByTestId('worlds-upscale-model')).toHaveCount(0)
+  const presets = page.getByTestId('worlds-image-sizes').getByRole('button')
+  await expect(presets).toHaveText(['1024×1536', '1280×1920'])
+  await expect(presets.first()).toHaveAttribute('aria-pressed', 'true')
+  await presets.last().click()
+  await page.getByTestId('worlds-image-model-trigger').click()
+  await expect(page.getByTestId('worlds-image-model-option-imggen.video')).toHaveCount(0)
+  await page.getByTestId('worlds-image-model-option-imggen.render').click()
+  await page.getByTestId('worlds-starred-prompts-open').click()
+  await page.getByTestId('prompt-starred-1').getByText(starredPrompt, { exact: true }).click()
+  await expect(page.getByTestId('worlds-prompt')).toHaveValue(starredPrompt)
+  await page.getByTestId('worlds-reverse-substitutions').click()
+  await expect(page.getByTestId('worlds-prompt')).toHaveValue(template)
+  await page.getByTestId('worlds-generate-submit').click()
+  await expect.poll(() => imageRequest).toMatchObject({
+    capability: 'imggen.render', workflow: 'txt2img', width: 1280, height: 1920,
+    prompt_template: template, prompt: expect.stringMatching(/^Lumenport, (misty|sunlit), [^{}]+, \{\?\}$/),
+  })
+  expect(imageRequest).not.toHaveProperty('upscale')
+  await expect.poll(() => recentRequest).toMatchObject({ content: template })
+  await expect(page.getByTestId('worlds-generate-progress')).toBeVisible()
+  await page.getByRole('button', { name: 'Continue in background' }).click()
+  await expect(page.getByTestId('worlds-submit')).toBeDisabled()
+  completedPicture = true
+  await page.getByTestId('worlds-generate-open').click()
+  await expect(page.getByTestId('worlds-generated-picture')).toHaveAttribute('src', /\/api\/images\/files\/43/)
+  await page.getByTestId('worlds-use-picture').click()
+  await expect(page.getByTestId('worlds-mode-hint')).toContainText('1280×1920')
+  await page.getByTestId('worlds-submit').click()
+  await expect.poll(() => worldRequest).toMatchObject({ capability: 'world.splat', input_image_id: '43', mode: 'auto' })
+})
+
+test('generates a world picture with the selected upscaler and multiplier', async ({ page }) => {
+  let request: unknown
+  const upscaleOutput = { ...image, image_id: '44', width: 3072, height: 4608 }
+  await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (!path.startsWith('/api/')) return route.continue()
+    const json = (body: unknown) => route.fulfill({ json: body })
+    if (path === '/api/me') return json({ id: 1, login: 'tester', created_at: now, used_storage_bytes: 0 })
+    if (path === '/api/progress/running') return json({ jobs: [] })
+    if (path === '/api/worlds/capabilities') return json({ capabilities: [{ base: 'world.splat', tags: ['pano'], raw: 'world.splat[pano]' }] })
+    if (path === '/api/worlds/jobs') return json([])
+    if (path === '/api/images/capabilities') return json([
+      { base: 'imggen.paint', raw: 'imggen.paint[txt2img]', tags: ['txt2img'], online: true, last_available_at: now, usage_count: 0 },
+    ])
+    if (path === '/api/img-utils/capabilities') return json({ capabilities: [
+      { base: 'img-utils.seedvr2', utility: 'seedvr2', workflows: ['upscale'], kind: 'comfy' },
+      { base: 'img-utils.restore', utility: 'restore', workflows: ['upscale_refine', 'face_swap'], kind: 'comfy' },
+      { base: 'img-utils.lotus', utility: 'lotus', workflows: ['depth'], kind: 'comfy' },
+    ] })
+    if (path === '/api/prompt-placeholders') return json([])
+    if (path === '/api/prompts/imggen-prompt/recent') return json({})
+    if (path === '/api/images/jobs' && route.request().method() === 'POST') {
+      request = route.request().postDataJSON()
+      return json({ job_id: '100', status: 'submitted' })
+    }
+    if (path === '/api/images/jobs/100/poll') return json({
+      job_id: '100', status: 'completed', stage: null, error: null, output_images: [upscaleOutput],
+    })
+    if (path === '/api/images/files/44') return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="192"/>' })
+    return route.fulfill({ status: 404 })
+  })
+
+  await page.goto('/app/worlds')
+  await page.getByTestId('worlds-generate-open').click()
+  await page.getByTestId('worlds-prompt').fill('A valley')
+  await page.getByTestId('worlds-image-upscale').check()
+  const models = page.getByTestId('worlds-upscale-model')
+  await expect(models.getByRole('option')).toHaveCount(2)
+  await expect(page.getByTestId('worlds-upscale-scale')).toHaveValue('2')
+  await models.selectOption('img-utils.restore::upscale_refine')
+  await page.getByTestId('worlds-upscale-scale').selectOption('3')
+  await page.getByTestId('worlds-generate-submit').click()
+  await expect.poll(() => request).toMatchObject({
+    width: 1024, height: 1536, upscale: { capability: 'img-utils.restore', workflow: 'upscale_refine', scale: 3 },
+  })
+  await expect(page.getByTestId('worlds-generated-picture')).toHaveAttribute('src', /\/api\/images\/files\/44/)
+  await page.getByTestId('worlds-use-picture').click()
+  await expect(page.getByTestId('worlds-mode-hint')).toContainText('3072×4608')
+})
+
 test('public viewer needs no login and rejects incomplete or expired links', async ({ page }) => {
   await page.goto('/worlds/view/77')
   await expect(page.getByText('This world link is incomplete.', { exact: false })).toBeVisible()

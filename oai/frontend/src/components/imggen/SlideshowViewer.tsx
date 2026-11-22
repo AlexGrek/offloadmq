@@ -37,6 +37,7 @@ export function SlideshowViewer({ image, paused, onTogglePause, onClose }: Slide
 
   async function toggleFullscreen() {
     setError(null)
+    revealControls()
     try {
       if (document.fullscreenElement === surface.current) await document.exitFullscreen()
       else await surface.current?.requestFullscreen()
@@ -51,7 +52,10 @@ export function SlideshowViewer({ image, paused, onTogglePause, onClose }: Slide
         ref={surface}
         showClose={false}
         overlayClassName="bg-black"
-        className="!fixed !inset-0 !left-0 !top-0 !h-dvh !max-h-none !w-dvw !max-w-none !translate-x-0 !translate-y-0 overflow-hidden rounded-none border-0 bg-black p-0 text-white shadow-none data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100"
+        className={cn(
+          '!fixed !inset-0 !left-0 !top-0 !h-dvh !max-h-none !w-dvw !max-w-none !translate-x-0 !translate-y-0 overflow-hidden rounded-none border-0 bg-black p-0 text-white shadow-none data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100',
+          !controlsVisible && 'cursor-none',
+        )}
         onPointerMove={revealControls}
         onPointerDown={revealControls}
         onKeyDown={revealControls}
@@ -70,7 +74,7 @@ export function SlideshowViewer({ image, paused, onTogglePause, onClose }: Slide
         <div
           className={cn(
             'absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-4 bg-gradient-to-t from-black/90 to-transparent px-4 pt-20 pb-[max(1rem,env(safe-area-inset-bottom))] transition-opacity duration-300 sm:px-8 sm:pb-8',
-            controlsVisible || paused || error ? 'opacity-100' : 'pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100',
+            controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
           data-testid="imggen-slideshow-controls"
         >

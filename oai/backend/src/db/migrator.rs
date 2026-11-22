@@ -53,6 +53,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261115_000045_persona_describe_look::Migration),
             Box::new(m20261121_000046_create_world_jobs::Migration),
             Box::new(m20261121_000047_create_img_utils_capabilities::Migration),
+            Box::new(m20261122_000048_user_reverse_exclusions::Migration),
         ]
     }
 }
@@ -181,3 +182,5 @@ mod m20261115_000045_persona_describe_look;
 mod m20261121_000046_create_world_jobs;
 
 mod m20261121_000047_create_img_utils_capabilities;
+
+mod m20261122_000048_user_reverse_exclusions;

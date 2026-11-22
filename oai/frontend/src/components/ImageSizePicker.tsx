@@ -23,8 +23,9 @@ const IMAGE_PRESETS = withOrientation(IMAGE_SIZE_PRESETS)
 interface Props {
   width: number | string
   height: number | string
-  onWidthChange: (value: string) => void | ImageSize
-  onHeightChange: (value: string) => void | ImageSize
+  /** Omit both dimension handlers to offer preset sizes only. */
+  onWidthChange?: (value: string) => void | ImageSize
+  onHeightChange?: (value: string) => void | ImageSize
   onChange: (size: ImageSize) => void
   testIdPrefix: string
   presetId?: (w: number, h: number) => string
@@ -56,7 +57,7 @@ export function ImageSizePicker({ width, height, onWidthChange, onHeightChange, 
   const choose = (size: ImageSize) => { onChange(size); remember(size) }
   return <fieldset disabled={disabled} className="min-w-0 space-y-3" data-testid={`${id}-sizes`}>
     <legend className="sr-only">Image size</legend>
-    <div className="flex items-end gap-2">
+    {onWidthChange && onHeightChange && <div className="flex items-end gap-2">
       <label className="min-w-0 flex-1 space-y-1.5 text-sm" htmlFor={widthId}>{widthLabel}
         <Input id={widthId} type="number" min={min} max={max} value={width} aria-label={widthLabel} data-testid={`${id}-width`} onChange={e => {
           const size = onWidthChange(e.target.value); remember(size ?? [Number(e.target.value), Number(height)])
@@ -69,7 +70,7 @@ export function ImageSizePicker({ width, height, onWidthChange, onHeightChange, 
         }} />
       </label>
       {children}
-    </div>
+    </div>}
     <div className="flex flex-wrap gap-1" role="group" aria-label="Size presets">
       {chips.map(({ w, h, orientation }) => {
         const pressed = Number(width) === w && Number(height) === h

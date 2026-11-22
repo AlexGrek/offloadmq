@@ -10,15 +10,16 @@ interface ImgGenModelPickerProps {
   onRefresh: () => void
   capabilitiesStatus: CapabilitiesStatus
   capabilitiesError: string | null
+  testIdPrefix?: string
 }
 
 /** Form-style model picker for image generation (shared UI with other OAI apps). */
-export function ImgGenModelPicker(props: ImgGenModelPickerProps) {
+export function ImgGenModelPicker({ testIdPrefix = 'imggen-model-picker', ...props }: ImgGenModelPickerProps) {
   return (
     <CapabilityModelPicker
       {...props}
       formatLabel={cap => capabilityBaseLabel(cap.base)}
-      testIdPrefix="imggen-model-picker"
+      testIdPrefix={testIdPrefix}
     />
   )
 }

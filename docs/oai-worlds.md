@@ -1,8 +1,19 @@
 # VR Worlds
 
-VR Worlds at `/app/worlds` turns a library image or upload into a Gaussian splat
+VR Worlds at `/app/worlds` turns a generated, library, or uploaded image into a Gaussian splat
 with an agent `world.*` capability. Open 3D downloads the scene on demand;
 Open in headset creates a signed link to `/worlds/view/{id}` without login.
+
+**Generate picture** opens the OAI txt2img prompt and model picker with 2:3 sizes
+(1024×1536 and 1280×1920). It uses the same saved and starred prompts, prompt
+substitutions, and reverse substitutions as Image Generation. The image job appears
+in Image Generation history and Progress. Choose **Use picture** to place the result
+in the world form, then select **Build world**. For a 360° world, supply a 2:1
+equirectangular panorama for the Lotus generator.
+
+**Upscale** in the picture dialog is off by default. Enable it to pick an Image
+Tools upscaler and a multiplier of ×1.5, ×2, or ×3. The image job runs both steps
+in the background, and the preview and **Use picture** use the upscaled output.
 
 ## Generators
 

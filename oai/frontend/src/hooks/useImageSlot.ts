@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { imageFileUrl, uploadImage, type UploadedImage } from '../api/images'
+import { imageFileUrl, uploadImage, type ImageRef } from '../api/images'
 
 /** One upload slot: local preview while the file uploads, then the stored image. */
 export type Slot = {
   preview: string
-  uploaded: UploadedImage | null
+  uploaded: ImageRef | null
   error: string | null
 }
 
@@ -33,9 +33,10 @@ export function useImageSlot(token: string | null) {
       previewsRef.current.push(preview)
       setSlot({ preview, uploaded: null, error: null })
       try {
-        setSlot({ preview, uploaded: await uploadImage(token, file), error: null })
+        const uploaded = await uploadImage(token, file)
+        if (slotRef.current?.preview === preview) setSlot({ preview, uploaded, error: null })
       } catch (e) {
-        setSlot({ preview, uploaded: null, error: (e as Error).message })
+        if (slotRef.current?.preview === preview) setSlot({ preview, uploaded: null, error: (e as Error).message })
       }
     },
     [token, setSlot],
@@ -44,7 +45,7 @@ export function useImageSlot(token: string | null) {
   /** Adopt an already-stored image (library pick, deep link, previous result).
    *  Creates no object URL, so it is safe to call during render. */
   const pickStored = useCallback(
-    (image: UploadedImage) => {
+    (image: ImageRef) => {
       if (!token) return
       setSlot({ preview: imageFileUrl(image.image_id, token), uploaded: image, error: null })
     },

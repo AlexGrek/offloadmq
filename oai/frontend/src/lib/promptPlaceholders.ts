@@ -208,6 +208,32 @@ function expandLevel(
 /** Reverse substitution only considers dictionary/variant entries up to this many words. */
 export const REVERSE_MAX_WORDS = 2
 
+/**
+ * The user's reverse-substitution registry: `words` are never replaced, and
+ * `placeholders` (names like `color` or `{color}`) are never tried at all.
+ */
+export interface ReverseExclusions {
+  words: string[]
+  placeholders: string[]
+}
+
+export const NO_REVERSE_EXCLUSIONS: ReverseExclusions = { words: [], placeholders: [] }
+
+/** Builtin categories in matching priority: `adjective` is a catch-all of everyday words, so it goes last. */
+const REVERSE_BUILTIN_ORDER = [
+  ...PLACEHOLDER_CATEGORIES.filter(name => name !== 'adjective'),
+  'adjective',
+]
+
+function normalizeWord(word: string): string {
+  return word.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+/** `{Color}`, ` color `, `color` -> `color`. */
+export function normalizePlaceholderName(name: string): string {
+  return name.trim().replace(/^\{|\}$/g, '').trim().toLowerCase()
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -216,26 +242,33 @@ function escapeRegExp(s: string): string {
  * Inverse of expansion: replaces literal values that appear in `prompt` with the
  * `{placeholder}` they could have come from — "red" -> `{color}`. Case-insensitive,
  * whole-word, longest value first. Covers the builtin categories and the user's
- * custom placeholders (custom wins when a value is in both); the server-side `{?}`
- * and `{random}` have no value list, so they never match. Entries longer than
+ * custom placeholders; when a value belongs to several, custom wins, then the
+ * builtins alphabetically, and `{adjective}` last. The server-side `{?}` and
+ * `{random}` have no value list, so they never match. Entries longer than
  * `REVERSE_MAX_WORDS` words, and custom variants that are themselves templates
- * (contain `{` or `|`), are skipped. Existing `{...}` tokens are left untouched.
+ * (contain `{`, `}` or `|`), are skipped, as is anything in `exclusions`.
+ * Existing `{...}` tokens are left untouched.
  */
 export function reversePromptSubstitutions(
   prompt: string,
   customDefs: Record<string, string[]> = {},
+  exclusions: ReverseExclusions = NO_REVERSE_EXCLUSIONS,
 ): { text: string; count: number } {
+  const skipWords = new Set(exclusions.words.map(normalizeWord))
+  const skipNames = new Set(exclusions.placeholders.map(normalizePlaceholderName))
   const lookup = new Map<string, string>()
   const add = (name: string, value: string) => {
-    const v = value.trim().replace(/\s+/g, ' ').toLowerCase()
-    if (!v || /[{}|]/.test(v) || v.split(' ').length > REVERSE_MAX_WORDS) return
+    const v = normalizeWord(value)
+    if (!v || /[{}|]/.test(v) || v.split(' ').length > REVERSE_MAX_WORDS || skipWords.has(v)) return
     if (!lookup.has(v)) lookup.set(v, name)
   }
   for (const [name, variants] of Object.entries(customDefs)) {
     if (!TOKEN_RE.test(name) || name === RANDOM_PLACEHOLDER || CATEGORY_DICTIONARIES[name]) continue
+    if (skipNames.has(name)) continue
     for (const v of variants) add(name, v)
   }
-  for (const name of PLACEHOLDER_CATEGORIES) {
+  for (const name of REVERSE_BUILTIN_ORDER) {
+    if (skipNames.has(name)) continue
     for (const v of CATEGORY_DICTIONARIES[name]) add(name, v)
   }
   if (lookup.size === 0) return { text: prompt, count: 0 }
@@ -254,7 +287,7 @@ export function reversePromptSubstitutions(
       i % 2 === 1
         ? part
         : part.replace(valueRe, match => {
-            const name = lookup.get(match.trim().replace(/\s+/g, ' ').toLowerCase())
+            const name = lookup.get(normalizeWord(match))
             if (!name) return match
             count += 1
             return `{${name}}`

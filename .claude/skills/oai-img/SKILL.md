@@ -243,6 +243,24 @@ Two independent substitution mechanisms can appear in the Prompt textarea, both 
 
 ---
 
+### Reverse substitutions (✨ magic button)
+
+Icon-only sparkles button that turns literal values back into placeholders (`red` → `{color}`).
+`reversePromptSubstitutions` (`lib/promptPlaceholders.ts`) is the pure matcher: builtin dictionaries
++ the user's custom placeholders, whole-word, case-insensitive, longest value first, entries ≤ 2
+words, existing `{…}` left alone; `{?}`/`{random}` never match. A value in several lists goes to
+custom first, then builtins alphabetically, **`{adjective}` last**. Hook `hooks/useReverseSubstitutions.ts`
+(fetches custom placeholders + the registry, drives the sweep/nudge animation classes in `index.css`) and
+`components/imggen/ReverseSubstitutionsButton.tsx` are used on the Prompt row here, in
+`QuickGenerateDialog`, the persona photo prompt, and (as a toggle, `allowReverse`) Prompt Studio
+assistant replies (`PromptActions`).
+
+Registry (per user, Settings → "Reverse substitutions"): words never substituted + placeholder names
+never tried. `GET/PUT /api/me/reverse-exclusions`, table `user_reverse_exclusions`
+(`db/reverse_exclusions.rs`, normalization + limits unit-tested), itest `test_reverse_exclusions.py`.
+
+---
+
 ### Original vs substituted prompt (`prompt_template`)
 
 Every image job stores both the prompt the model got (`job.prompt`, placeholders

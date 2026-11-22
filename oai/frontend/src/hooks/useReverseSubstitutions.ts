@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listPromptPlaceholders } from '@/api/promptPlaceholders'
-import { reversePromptSubstitutions } from '@/lib/promptPlaceholders'
+import { getReverseExclusions } from '@/api/userSettings'
+import { NO_REVERSE_EXCLUSIONS, reversePromptSubstitutions } from '@/lib/promptPlaceholders'
 
 export type ReverseEffect = 'hit' | 'miss' | null
 
@@ -35,14 +36,14 @@ export function useReverseSubstitutions(
   const run = useCallback(async () => {
     if (!token || !value.trim() || busy) return
     setBusy(true)
-    let defs: Record<string, string[]> = {}
-    try {
-      const items = await listPromptPlaceholders(token)
-      defs = Object.fromEntries(items.map(i => [i.name.trim().toLowerCase(), i.variants]))
-    } catch {
-      // Custom placeholders are additive — builtin categories still work.
-    }
-    const { text, count } = reversePromptSubstitutions(value, defs)
+    // Both lookups are optional: without them builtin categories still work, unfiltered.
+    const [defs, exclusions] = await Promise.all([
+      listPromptPlaceholders(token)
+        .then(items => Object.fromEntries(items.map(i => [i.name.trim().toLowerCase(), i.variants])))
+        .catch((): Record<string, string[]> => ({})),
+      getReverseExclusions(token).catch(() => NO_REVERSE_EXCLUSIONS),
+    ])
+    const { text, count } = reversePromptSubstitutions(value, defs, exclusions)
     setBusy(false)
     if (count === 0) {
       play('miss')

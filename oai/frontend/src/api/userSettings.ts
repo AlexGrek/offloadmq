@@ -7,3 +7,20 @@ export function savePromptDefaults(token: string, prompts: PromptDefaults) {
     body: JSON.stringify(prompts),
   })
 }
+
+/** Words never swapped for a placeholder, and placeholder names never tried, by "reverse substitutions". */
+export interface ReverseExclusionsConfig {
+  words: string[]
+  placeholders: string[]
+}
+
+export function getReverseExclusions(token: string, signal?: AbortSignal) {
+  return apiRequest<ReverseExclusionsConfig>('/api/me/reverse-exclusions', token, { signal })
+}
+
+export function saveReverseExclusions(token: string, value: ReverseExclusionsConfig) {
+  return apiRequest<ReverseExclusionsConfig>('/api/me/reverse-exclusions', token, {
+    method: 'PUT',
+    body: JSON.stringify(value),
+  })
+}

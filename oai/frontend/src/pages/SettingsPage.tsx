@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { VersionInfo } from '../components/VersionInfo'
 import { PromptDefaultsSettings } from '../components/PromptDefaultsSettings'
+import { ReverseSubstitutionSettings } from '../components/ReverseSubstitutionSettings'
 
 export default function SettingsPage() {
   const { user, token } = useAuth()
@@ -69,6 +70,7 @@ export default function SettingsPage() {
 
         <div className="flex flex-col gap-5">
           <PromptDefaultsSettings />
+          <ReverseSubstitutionSettings />
           {/* Profile */}
           <Card>
             <CardHeader>

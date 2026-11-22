@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { listImgGenCapabilities, startImageJob, type ImgGenCapability } from '../../api/images'
+import { listImgGenCapabilities, startImageJob, type ImageUpscaleParams, type ImgGenCapability } from '../../api/images'
 import { listPromptPlaceholders } from '../../api/promptPlaceholders'
 import { recordRecentPrompt } from '../../api/prompts'
 import { useProgress } from '../../contexts/ProgressContext'
@@ -73,7 +73,13 @@ export function useQuickTxt2Img(token: string, enabled: boolean) {
 
   /** Starts `count` txt2img jobs; throws on the first failed submit. Returns started job ids. */
   const generate = useCallback(
-    async ({ prompt, width, height, count }: { prompt: string; width: number; height: number; count: number }) => {
+    async ({ prompt, width, height, count, upscale }: {
+      prompt: string
+      width: number
+      height: number
+      count: number
+      upscale?: ImageUpscaleParams
+    }) => {
       const text = prompt.trim()
       const customDefs = await customPlaceholderDefs(token)
       const usage = createPlaceholderUsage()
@@ -87,6 +93,7 @@ export function useQuickTxt2Img(token: string, enabled: boolean) {
           height,
           workflow: 'txt2img',
           override_negative: false,
+          upscale,
         })
         ids.push(started.job_id)
       }

@@ -45,6 +45,7 @@ import { JobErrorBanner } from '../components/JobErrorBanner'
 import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { ImageSlot } from '../components/imgutils/ImageSlot'
+import { WorldImageGenerator } from '../components/worlds/WorldImageGenerator'
 import { WORLDS_NEW_PANEL, WorldsHistorySidebar } from '../components/worlds/WorldsHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
@@ -423,15 +424,18 @@ export default function WorldsPage() {
                     ) : null}
                   </div>
 
-                  <ImageSlot
-                    label="Picture"
-                    hint="A clear view with a level horizon; a 2:1 equirectangular image for 360°"
-                    slot={input.slot}
-                    testId="worlds-input"
-                    onPick={file => void input.pickFile(file)}
-                    onPickFromLibrary={() => setPickerOpen(true)}
-                    onClear={input.clear}
-                  />
+                  <div className="space-y-2">
+                    <ImageSlot
+                      label="Picture"
+                      hint="A clear view with a level horizon; a 2:1 equirectangular image for 360°"
+                      slot={input.slot}
+                      testId="worlds-input"
+                      onPick={file => void input.pickFile(file)}
+                      onPickFromLibrary={() => setPickerOpen(true)}
+                      onClear={input.clear}
+                    />
+                    {token && <WorldImageGenerator token={token} disabled={busy !== null} onPick={pickStored} />}
+                  </div>
 
                   <div className="space-y-1.5">
                     <Label htmlFor="worlds-fov">Field of view</Label>

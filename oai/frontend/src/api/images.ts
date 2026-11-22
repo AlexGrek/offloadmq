@@ -20,8 +20,15 @@ export interface ImagePipelineRescaleParams {
   mp?: number | null
 }
 
+export interface ImageUpscaleParams {
+  capability: string
+  workflow: string
+  scale: number
+}
+
 /** Full pipeline snapshot stored on each job and returned in job details. */
 export interface ImagePipelineParams {
+  upscale?: ImageUpscaleParams
   priority?: 'low' | 'normal' | 'high'
   capability: string
   prompt: string
@@ -46,6 +53,7 @@ export interface ImagePipelineParams {
 }
 
 export interface StartImageJobRequest {
+  upscale?: ImageUpscaleParams
   priority?: 'low' | 'normal' | 'high'
   capability: string
   prompt: string

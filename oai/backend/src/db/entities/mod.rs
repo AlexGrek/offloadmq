@@ -29,6 +29,7 @@ pub mod users;
 pub mod image_cycle_jobs;
 
 pub mod user_prompt_defaults;
+pub mod user_reverse_exclusions;
 
 pub mod img_model_war_jobs;
 

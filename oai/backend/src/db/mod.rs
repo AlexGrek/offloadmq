@@ -36,6 +36,7 @@ pub mod image_cycles;
 pub mod img_model_wars;
 
 pub mod prompt_defaults;
+pub mod reverse_exclusions;
 
 pub mod image_stash;
 
