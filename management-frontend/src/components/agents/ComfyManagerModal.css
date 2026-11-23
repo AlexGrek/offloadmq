@@ -77,6 +77,19 @@
     align-items: center;
 }
 
+.comfy-slavemode-export {
+    width: min(100%, 360px);
+}
+
+.comfy-slavemode-export .comfy-slavemode-field {
+    width: 100%;
+}
+
+.comfy-slavemode-export select,
+.comfy-slavemode-export input {
+    width: 100%;
+}
+
 .comfy-slavemode pre {
     max-height: 180px;
     overflow: auto;

@@ -219,12 +219,22 @@ def _comfy_export(transport: AgentTransport, task_id: TaskId, capability: str, p
     Payload variants:
       {}                               — export every installed workflow
       { "workflow": "[ns.]<name>" }    — export one, e.g. "my-sdxl", "img-utils.depth"
+      { "workflow": {"list": true} }   — list installed workflow metadata
     """
-    from offloadmq_agent.comfy_workflows import export_all_workflows, export_workflow, parse_workflow_ref
+    from offloadmq_agent.comfy_workflows import (
+        export_all_workflows,
+        export_workflow,
+        list_workflows,
+        parse_workflow_ref,
+    )
 
     ref = payload.get("workflow")
     skipped: list[str] = []
     try:
+        # Older agents reject this selector instead of treating it as export-all.
+        if isinstance(ref, dict) and ref.get("list") is True:
+            workflows = [workflow for workflow in list_workflows() if workflow["task_types"]]
+            return report_result(transport, make_success_report(task_id, capability, {"workflows": workflows}))
         if ref is None:
             bundles, skipped = export_all_workflows()
         elif isinstance(ref, str) and ref.strip():

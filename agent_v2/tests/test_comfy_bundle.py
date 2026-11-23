@@ -177,6 +177,22 @@ def test_slavemode_export_all_and_one(wdir: Path, slave) -> None:  # type: ignor
     assert res.status.status == "failure"
 
 
+def test_slavemode_lists_workflow_metadata(wdir: Path, slave) -> None:  # type: ignore[no-untyped-def]
+    (wdir / "empty").mkdir()
+    _install(wdir, "img-utils/depth", "depth", None)
+    _install(wdir, "img-utils.example", "txt2img", None)
+    (wdir / "img-utils.example" / "txt2img.json").write_text("{not json")
+
+    res, _ = slave("slavemode.comfy-export", {"workflow": {"list": True}})
+    assert res.status.status == "success"
+    assert res.output == {
+        "workflows": [
+            {"name": "depth", "namespace": "img-utils", "task_types": ["depth"]},
+            {"name": "img-utils.example", "namespace": "", "task_types": ["txt2img"]},
+        ]
+    }
+
+
 def test_slavemode_import_installs_and_rescans(wdir: Path, slave) -> None:  # type: ignore[no-untyped-def]
     _install(wdir, "src", "txt2img", {"seed": [["3", "seed"]]})
     bundle = cs.export_workflow("src")

@@ -39,11 +39,16 @@ async function mockSlavemode(
 
 test('controls ComfyUI and transfers workflow bundles on the selected agent', async ({ page }) => {
   const capabilities = ['slavemode.comfy-ctrl', 'slavemode.comfy-export', 'slavemode.comfy-import'];
+  const workflows = [
+    { name: bundle.name, namespace: bundle.namespace, task_types: ['depth'] },
+    { name: 'second', namespace: '', task_types: ['txt2img'] },
+  ];
   const submissions = await mockSlavemode(page, capabilities, ({ capability, payload }) => {
     switch (capability) {
       case 'slavemode.comfy-ctrl':
         return { output: { state: ['status', 'stop'].includes(String(payload.action)) ? 'stopped' : 'running' } };
       case 'slavemode.comfy-export':
+        if (typeof payload.workflow === 'object') return { output: { workflows } };
         return {
           output: {
             bundles: payload.workflow ? [bundle] : [bundle, { ...bundle, name: 'second' }],
@@ -52,6 +57,7 @@ test('controls ComfyUI and transfers workflow bundles on the selected agent', as
         };
       case 'slavemode.comfy-import':
         if (!payload.name) return { status: 'failed', output: { error: 'One bundle failed. Imported: img-utils.example' } };
+        workflows.push({ name: String(payload.name), namespace: String(payload.namespace), task_types: ['depth'] });
         return { output: { imported: [{ name: payload.name, namespace: payload.namespace }] } };
       default:
         throw new Error(`Unexpected capability ${capability}`);
@@ -60,12 +66,14 @@ test('controls ComfyUI and transfers workflow bundles on the selected agent', as
   await page.getByRole('button', { name: 'ComfyUI' }).click();
   const dialog = page.getByRole('dialog', { name: 'ComfyUI' });
   await expect(dialog.getByText('stopped', { exact: true })).toBeVisible();
+  const picker = dialog.getByLabel('Workflow', { exact: true });
+  await expect(picker.locator('option')).toHaveText(['All workflows', 'img-utils.example', 'imggen.second']);
   for (const [action, state] of [['Start', 'running'], ['Stop', 'stopped'], ['Restart', 'running']]) {
     await dialog.getByRole('button', { name: action, exact: true }).click();
     await expect(dialog.getByText(state, { exact: true })).toBeVisible();
   }
 
-  await dialog.getByLabel('Workflow reference (optional)').fill('img-utils.example');
+  await picker.selectOption('img-utils.example');
   const downloadEvent = page.waitForEvent('download');
   await dialog.getByRole('button', { name: 'Download bundles' }).click();
   const download = await downloadEvent;
@@ -87,7 +95,8 @@ test('controls ComfyUI and transfers workflow bundles on the selected agent', as
   await dialog.getByRole('button', { name: 'Import bundles' }).click();
   await expect(dialog.getByRole('status')).toHaveText('Imported renamed.');
 
-  await dialog.getByLabel('Workflow reference (optional)').clear();
+  await expect(picker.locator('option')).toHaveText(['All workflows', 'img-utils.example', 'imggen.renamed', 'imggen.second']);
+  await picker.selectOption('');
   const allDownloads = page.waitForEvent('download');
   await dialog.getByRole('button', { name: 'Download bundles' }).click();
   const allBundles = await allDownloads;
@@ -96,8 +105,14 @@ test('controls ComfyUI and transfers workflow bundles on the selected agent', as
   await expect(dialog.getByLabel('Workflow name (optional)')).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Import bundles' }).click();
   await expect(dialog.getByRole('alert')).toHaveText('One bundle failed. Imported: img-utils.example');
+  await expect(dialog.getByRole('button', { name: 'Refresh workflows' })).toBeEnabled();
 
-  expect(submissions.map(task => task.payload)).toEqual([
+  const listRequests = submissions.filter(task => typeof task.payload.workflow === 'object');
+  expect(listRequests.map(task => task.payload)).toEqual(
+    Array(3).fill({ runner: 'selected-agent', workflow: { list: true } }),
+  );
+  const operations = submissions.filter(task => typeof task.payload.workflow !== 'object');
+  expect(operations.map(task => task.payload)).toEqual([
     { runner: 'selected-agent', action: 'status' },
     { runner: 'selected-agent', action: 'start' },
     { runner: 'selected-agent', action: 'stop' },
@@ -107,18 +122,34 @@ test('controls ComfyUI and transfers workflow bundles on the selected agent', as
     { runner: 'selected-agent' },
     { runner: 'selected-agent', bundles: [bundle, { ...bundle, name: 'second' }], overwrite: true },
   ]);
-  expect(submissions[3].timeoutSecs).toBe(360);
+  expect(operations[3].timeoutSecs).toBe(360);
+});
+
+test('lists workflows from older agents that only support export-all', async ({ page }) => {
+  const submissions = await mockSlavemode(page, ['slavemode.comfy-export'], ({ payload }) => {
+    if (payload.workflow) return { status: 'failed', output: { error: "'workflow' must be a non-empty string" } };
+    return { output: { bundles: [bundle] } };
+  });
+  await page.getByRole('button', { name: 'ComfyUI' }).click();
+  const picker = page.getByRole('dialog', { name: 'ComfyUI' }).getByLabel('Workflow', { exact: true });
+  await picker.selectOption('img-utils.example');
+  await expect(picker).toHaveValue('img-utils.example');
+  expect(submissions.map(task => task.payload)).toEqual([
+    { runner: 'selected-agent', workflow: { list: true } },
+    { runner: 'selected-agent' },
+  ]);
 });
 
 test('runs force rescan and delete-only model commands on the selected agent', async ({ page }) => {
   const submissions = await mockSlavemode(
     page,
     ['slavemode.force-rescan', 'slavemode.ollama-delete', 'slavemode.onnx-models-delete', 'slavemode.comfy-export'],
-    () => ({ output: { count: 4 } }),
+    ({ capability }) => ({ output: capability === 'slavemode.comfy-export' ? { workflows: [] } : { count: 4 } }),
   );
   await page.getByRole('button', { name: 'ComfyUI' }).click();
   const dialog = page.getByRole('dialog', { name: 'ComfyUI' });
   await expect(dialog.getByRole('button', { name: 'Download bundles' })).toBeVisible();
+  await expect(dialog.getByText('No workflows installed on this agent.')).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Refresh status' })).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Import bundles' })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close' }).click();
@@ -137,6 +168,7 @@ test('runs force rescan and delete-only model commands on the selected agent', a
   }
 
   expect(submissions.map(({ capability, payload }) => ({ capability, payload }))).toEqual([
+    { capability: 'slavemode.comfy-export', payload: { runner: 'selected-agent', workflow: { list: true } } },
     { capability: 'slavemode.force-rescan', payload: { runner: 'selected-agent' } },
     { capability: 'slavemode.ollama-delete', payload: { runner: 'selected-agent', model: 'qwen3:8b' } },
     { capability: 'slavemode.onnx-models-delete', payload: { runner: 'selected-agent', model: 'nudenet' } },

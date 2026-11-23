@@ -9,8 +9,25 @@ const PROCESS_ACTIONS = [
     ['restart', 'Restart'],
 ];
 
+const EXPORT_CAPABILITY = 'slavemode.comfy-export';
+
 function workflowRef({ name, namespace }) {
     return namespace ? `${namespace}.${name}` : name;
+}
+
+async function getWorkflowChoices(agentUid) {
+    let workflows;
+    try {
+        const result = await runSlavemodeAndPoll(EXPORT_CAPABILITY, agentUid, { workflow: { list: true } });
+        workflows = result?.workflows;
+    } catch (error) {
+        if (!error.message.includes("'workflow' must be a non-empty string")) throw error;
+        // Older agents only support discovering workflows through export-all.
+        const result = await runSlavemodeAndPoll(EXPORT_CAPABILITY, agentUid);
+        workflows = result?.bundles;
+    }
+    if (!Array.isArray(workflows)) throw new Error('Agent returned an invalid workflow list.');
+    return workflows.map(({ name, namespace }) => `${namespace || 'imggen'}.${name}`).sort();
 }
 
 function downloadBundles(bundles) {
@@ -48,11 +65,15 @@ export default function ComfyManagerModal({ agentUid, hasControl, hasExport, has
     const dialog = useRef(null);
     const titleId = useId();
     const namespaceId = useId();
+    const workflowId = useId();
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
     const [process, setProcess] = useState(null);
     const [workflow, setWorkflow] = useState('');
+    const [workflowChoices, setWorkflowChoices] = useState(null);
+    const [loadingWorkflows, setLoadingWorkflows] = useState(false);
+    const [workflowError, setWorkflowError] = useState('');
     const [skipped, setSkipped] = useState([]);
     const [bundles, setBundles] = useState([]);
     const [name, setName] = useState('');
@@ -90,12 +111,27 @@ export default function ComfyManagerModal({ agentUid, hasControl, hasExport, has
         });
     }
 
+    async function refreshWorkflows() {
+        if (loadingWorkflows) return;
+        setLoadingWorkflows(true);
+        setWorkflowError('');
+        try {
+            const choices = await getWorkflowChoices(agentUid);
+            setWorkflowChoices(choices);
+            setWorkflow(current => choices.includes(current) ? current : '');
+        } catch (error) {
+            setWorkflowError(error.message);
+        } finally {
+            setLoadingWorkflows(false);
+        }
+    }
+
     function exportWorkflows(event) {
         event.preventDefault();
         return run('Requesting workflow export…', async () => {
             setSkipped([]);
             const ref = workflow.trim();
-            const result = await runSlavemodeAndPoll('slavemode.comfy-export', agentUid, ref ? { workflow: ref } : {}, {
+            const result = await runSlavemodeAndPoll(EXPORT_CAPABILITY, agentUid, ref ? { workflow: ref } : {}, {
                 onProgress: setMessage,
             });
             if (!Array.isArray(result?.bundles)) throw new Error('Agent returned an invalid workflow export.');
@@ -141,6 +177,7 @@ export default function ComfyManagerModal({ agentUid, hasControl, hasExport, has
             } finally {
                 // Partial imports also change the agent's workflow inventory.
                 onDone?.();
+                if (hasExport) refreshWorkflows();
             }
         });
     }
@@ -150,6 +187,7 @@ export default function ComfyManagerModal({ agentUid, hasControl, hasExport, has
             <button type="button" className="btn comfy-slavemode-trigger" onClick={() => {
                 dialog.current.showModal();
                 if (hasControl && !process) control('status');
+                if (hasExport) refreshWorkflows();
             }}>
                 ComfyUI
             </button>
@@ -188,12 +226,24 @@ export default function ComfyManagerModal({ agentUid, hasControl, hasExport, has
                 {hasExport && (
                     <section>
                         <h3>Export workflows</h3>
-                        <form onSubmit={exportWorkflows}>
-                            <label>
-                                Workflow reference (optional)
-                                <input value={workflow} onChange={e => setWorkflow(e.target.value)} placeholder="All workflows" disabled={busy} />
-                            </label>
-                            <button className="btn" type="submit" disabled={busy}>Download bundles</button>
+                        <form className="comfy-slavemode-export" onSubmit={exportWorkflows}>
+                            <div className="comfy-slavemode-field">
+                                <label htmlFor={workflowId}>Workflow</label>
+                                {workflowError && workflowChoices === null ? (
+                                    <input id={workflowId} value={workflow} onChange={e => setWorkflow(e.target.value)} placeholder="All workflows" disabled={busy || loadingWorkflows} />
+                                ) : (
+                                    <select id={workflowId} value={workflow} onChange={e => setWorkflow(e.target.value)} disabled={busy || loadingWorkflows}>
+                                        <option value="">{loadingWorkflows ? 'Loading workflows…' : 'All workflows'}</option>
+                                        {workflowChoices?.map(ref => <option key={ref} value={ref}>{ref}</option>)}
+                                    </select>
+                                )}
+                            </div>
+                            {workflowError && <div role="alert">Could not load workflows. {workflowError}</div>}
+                            {workflowChoices?.length === 0 && !loadingWorkflows && <div>No workflows installed on this agent.</div>}
+                            <div className="comfy-slavemode-actions">
+                                <button type="submit" className="btn" disabled={busy || loadingWorkflows}>Download bundles</button>
+                                <button type="button" className="btn" onClick={refreshWorkflows} disabled={busy || loadingWorkflows}>Refresh workflows</button>
+                            </div>
                         </form>
                         {skipped.length > 0 && (
                             <div>Skipped workflows
@@ -231,7 +281,7 @@ export default function ComfyManagerModal({ agentUid, hasControl, hasExport, has
                                 <input type="checkbox" checked={overwrite} onChange={e => setOverwrite(e.target.checked)} disabled={busy} />
                                 Overwrite existing task types
                             </label>
-                            <button className="btn primary" type="submit" disabled={busy || !bundles.length}>Import bundles</button>
+                            <button className="btn primary" type="submit" disabled={busy || loadingWorkflows || !bundles.length}>Import bundles</button>
                         </form>
                     </section>
                 )}

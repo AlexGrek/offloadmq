@@ -31,7 +31,7 @@ agent_v2 implements the catalog below (`agent_v2/agent/src/offloadmq_agent/slave
 |---|---|---|
 | `slavemode.agent-update` | `{}` / `{"check": true}` | Self-update the agent binary and restart (Linux CLI under systemd only) |
 | `slavemode.comfy-ctrl` | `{"action": "start" \| "stop" \| "restart" \| "status"}` | Control the agent-managed local ComfyUI server |
-| `slavemode.comfy-export` | `{}` / `{"workflow": "[ns.]<name>"}` | Export all (or one) ComfyUI workflow as a portable bundle: graphs + configured node mappings |
+| `slavemode.comfy-export` | `{}` / `{"workflow": "[ns.]<name>"}` / `{"workflow": {"list": true}}` | Export or list installed ComfyUI workflows |
 | `slavemode.comfy-import` | `{"bundles": [...]}` / `{"bundle": {...}}` + `overwrite`, `name`, `namespace` | Install workflow bundles (and their node mappings) on the agent |
 | `slavemode.force-rescan` | `{}` | Re-detect capabilities and push the new list to the server |
 | `slavemode.special-caps-ctrl` | `{"get": true}` / `{"set": {...}}` / `{"delete": "<name>"}` | List, create/replace, or remove a custom capability definition |
@@ -67,6 +67,9 @@ agent's web UI and `omq comfy export|import` read and write).
   `{"workflow": "img-utils.depth"}` exports one. Result: `{"bundles": [...], "count": N}`.
   Fails if the named workflow has no task types. In export-all mode a workflow that cannot be
   read (e.g. corrupt JSON) is left out and listed under `"skipped"` rather than failing the rest.
+- **List** — payload `{"workflow": {"list": true}}` returns
+  `{"workflows": [{name, namespace, task_types}]}` for installed workflows with task types.
+  The list is available while ComfyUI is stopped and excludes graph contents.
 - **Import** — payload `{"bundles": [bundle, ...]}` (or `{"bundle": bundle}`). Optional:
   `"overwrite": true` to replace task types that already exist (default: refuse),
   `"name"` / `"namespace"` to rename or re-namespace (single bundle only; `""` = imggen).
