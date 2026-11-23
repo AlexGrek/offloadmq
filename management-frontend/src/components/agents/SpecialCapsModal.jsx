@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import * as jsyaml from 'js-yaml';
-import { getMgmtToken, runSlavemodeAndPoll } from "./slavemodeApi";
+import { runSlavemodeAndPoll } from "./slavemodeApi";
 
 const SHELL_TEMPLATE = `name: my-cap
 type: shell
@@ -76,7 +76,7 @@ export default function SpecialCapsModal({ agentUid }) {
     async function fetchCaps() {
         setLoadingCaps(true);
         try {
-            const out = await runSlavemodeAndPoll('slavemode.special-caps-ctrl', { runner: agentUid, get: true }, getMgmtToken());
+            const out = await runSlavemodeAndPoll('slavemode.special-caps-ctrl', agentUid, { get: true });
             setCaps(out?.caps || []);
             setOpStatus({ msg: '', kind: '' });
         } catch (e) {
@@ -110,7 +110,7 @@ export default function SpecialCapsModal({ agentUid }) {
         setSaving(true);
         setOpStatus({ msg: 'Saving…', kind: 'running' });
         try {
-            await runSlavemodeAndPoll('slavemode.special-caps-ctrl', { runner: agentUid, set: parsed }, getMgmtToken());
+            await runSlavemodeAndPoll('slavemode.special-caps-ctrl', agentUid, { set: parsed });
             setYaml('');
             setOpStatus({ msg: 'Saved', kind: 'ok' });
             await fetchCaps();
@@ -125,7 +125,7 @@ export default function SpecialCapsModal({ agentUid }) {
         if (!window.confirm(`Delete custom cap "${name}"?`)) return;
         setOpStatus({ msg: 'Deleting…', kind: 'running' });
         try {
-            await runSlavemodeAndPoll('slavemode.special-caps-ctrl', { runner: agentUid, delete: name }, getMgmtToken());
+            await runSlavemodeAndPoll('slavemode.special-caps-ctrl', agentUid, { delete: name });
             setOpStatus({ msg: `Deleted "${name}"`, kind: 'ok' });
             await fetchCaps();
         } catch (e) {

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { getMgmtToken, runSlavemodeAndPoll, runSlavemodeAndPollWithTimeout } from "./slavemodeApi";
+import { runSlavemodeAndPoll } from "./slavemodeApi";
 
 const BTN = {
     base: {
@@ -44,6 +44,7 @@ export default function OnnxManagerModal({ agentUid, hasList, hasDelete, hasPrep
     const [prepareName, setPrepareName] = useState('');
     const [preparing, setPreparing] = useState(false);
     const [prepareStatus, setPrepareStatus] = useState({ msg: '', kind: '' });
+    const [deleteName, setDeleteName] = useState('');
     const [opStatus, setOpStatus] = useState({ msg: '', kind: '' });
 
     async function fetchModels() {
@@ -52,8 +53,7 @@ export default function OnnxManagerModal({ agentUid, hasList, hasDelete, hasPrep
         try {
             const out = await runSlavemodeAndPoll(
                 'slavemode.onnx-models-list',
-                { runner: agentUid },
-                getMgmtToken(),
+                agentUid,
             );
             setModels(out?.models || []);
         } catch (e) {
@@ -75,15 +75,16 @@ export default function OnnxManagerModal({ agentUid, hasList, hasDelete, hasPrep
     }
 
     async function deleteModel(name) {
-        if (!hasDelete) return;
+        if (!hasDelete || !name || opStatus.kind === 'running') return;
         if (!window.confirm(`Delete ONNX model "${name}" from this agent?`)) return;
         setOpStatus({ msg: `Deleting ${name}…`, kind: 'running' });
         try {
             await runSlavemodeAndPoll(
                 'slavemode.onnx-models-delete',
-                { runner: agentUid, model: name },
-                getMgmtToken(),
+                agentUid,
+                { model: name },
             );
+            setDeleteName('');
             setOpStatus({ msg: `Deleted "${name}"`, kind: 'ok' });
             await fetchModels();
         } catch (e) {
@@ -98,11 +99,14 @@ export default function OnnxManagerModal({ agentUid, hasList, hasDelete, hasPrep
         setPreparing(true);
         setPrepareStatus({ msg: 'Downloading…', kind: 'running' });
         try {
-            await runSlavemodeAndPollWithTimeout(
+            await runSlavemodeAndPoll(
                 'slavemode.onnx-models-prepare',
-                { runner: agentUid, model: name },
-                getMgmtToken(),
-                600,
+                agentUid,
+                { model: name },
+                {
+                    timeoutSeconds: 600,
+                    onProgress: msg => setPrepareStatus({ msg, kind: 'running' }),
+                },
             );
             setPrepareStatus({ msg: `"${name}" ready`, kind: 'ok' });
             setPrepareName('');
@@ -207,6 +211,25 @@ export default function OnnxManagerModal({ agentUid, hasList, hasDelete, hasPrep
                             </div>
                         )}
 
+                        {hasDelete && !hasList && (
+                            <form onSubmit={e => { e.preventDefault(); deleteModel(deleteName.trim()); }}>
+                                <SectionLabel>Delete model</SectionLabel>
+                                <input
+                                    aria-label="Model to delete"
+                                    value={deleteName}
+                                    onChange={e => setDeleteName(e.target.value)}
+                                    disabled={opStatus.kind === 'running'}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!deleteName.trim() || opStatus.kind === 'running'}
+                                    style={btn('danger', !deleteName.trim() || opStatus.kind === 'running')}
+                                >
+                                    Delete
+                                </button>
+                            </form>
+                        )}
+
                         {/* Installed models */}
                         {hasList && (
                             <div>
@@ -264,7 +287,7 @@ export default function OnnxManagerModal({ agentUid, hasList, hasDelete, hasPrep
                                                         </button>
                                                     )}
                                                     {m.installed && hasDelete && (
-                                                        <button onClick={() => deleteModel(m.name)} style={btn('danger')}>
+                                                        <button onClick={() => deleteModel(m.name)} disabled={opStatus.kind === 'running'} style={btn('danger', opStatus.kind === 'running')}>
                                                             Delete
                                                         </button>
                                                     )}

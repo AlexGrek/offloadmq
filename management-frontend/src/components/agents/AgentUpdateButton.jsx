@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { RefreshCw, CheckCircle2, AlertTriangle, Download } from "lucide-react";
-import { getMgmtToken, runSlavemodeAndPoll } from "./slavemodeApi";
+import { runSlavemodeAndPoll } from "./slavemodeApi";
 
 const CAP = 'slavemode.agent-update';
 
@@ -23,12 +23,10 @@ export default function AgentUpdateButton({ agentUid, onDone }) {
     const [message, setMessage] = useState('');
 
     const run = async (checkOnly) => {
-        const mgmtToken = getMgmtToken();
-        if (!mgmtToken) { setState('error'); setMessage('No management token set.'); return; }
         setState('busy');
         setMessage(checkOnly ? 'Checking…' : 'Requesting update…');
         try {
-            const out = await runSlavemodeAndPoll(CAP, { runner: agentUid, check: checkOnly }, mgmtToken);
+            const out = await runSlavemodeAndPoll(CAP, agentUid, { check: checkOnly });
             if (checkOnly) {
                 if (out?.has_update) {
                     setState('offer');

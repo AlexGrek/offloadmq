@@ -1,0 +1,98 @@
+.btn.comfy-slavemode-trigger {
+    padding: 3px 9px;
+    border: 1px solid #92400e;
+    border-radius: 5px;
+    background: #78350f;
+    color: #fef3c7;
+    font-size: 11px;
+    font-weight: 600;
+    box-shadow: none;
+}
+
+.comfy-slavemode {
+    box-sizing: border-box;
+    width: min(560px, calc(100% - 32px));
+    max-height: 85vh;
+    overflow: auto;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--text);
+    box-shadow: var(--shadow);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.comfy-slavemode::backdrop {
+    background: rgba(0, 0, 0, .55);
+}
+
+.comfy-slavemode header,
+.comfy-slavemode-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.comfy-slavemode header {
+    justify-content: space-between;
+}
+
+.comfy-slavemode h2,
+.comfy-slavemode h3 {
+    margin: 0;
+}
+
+.comfy-slavemode section {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
+.comfy-slavemode section,
+.comfy-slavemode form,
+.comfy-slavemode label,
+.comfy-slavemode-field {
+    display: grid;
+    justify-items: start;
+    gap: 8px;
+}
+
+.comfy-slavemode input:not([type="checkbox"]),
+.comfy-slavemode select {
+    box-sizing: border-box;
+    max-width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--input-bg);
+    color: var(--text);
+    font: inherit;
+}
+
+.comfy-slavemode .comfy-slavemode-checkbox {
+    display: flex;
+    align-items: center;
+}
+
+.comfy-slavemode pre {
+    max-height: 180px;
+    overflow: auto;
+    white-space: pre-wrap;
+}
+
+.comfy-slavemode .btn:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+.comfy-slavemode [role="status"]:not(:empty),
+.comfy-slavemode [role="alert"] {
+    margin-top: 12px;
+}
+
+.comfy-slavemode [role="alert"] {
+    color: var(--danger);
+}

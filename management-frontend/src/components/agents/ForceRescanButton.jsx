@@ -1,65 +1,24 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import { RefreshCw, CheckCircle2, AlertTriangle, Zap } from "lucide-react";
-import { getMgmtToken, submitSlavemodeTask, pollTask } from "./slavemodeApi";
+import { runSlavemodeAndPoll } from "./slavemodeApi";
 
-export default function ForceRescanButton({ onDone }) {
+export default function ForceRescanButton({ agentUid, onDone }) {
     const [state, setState] = useState('idle'); // idle | running | done | error
     const [message, setMessage] = useState('');
-    const pollRef = useRef(null);
 
     const handleRescan = async () => {
-        const mgmtToken = getMgmtToken();
-        if (!mgmtToken) { setMessage('No management token set.'); setState('error'); return; }
         setState('running');
         setMessage('Submitting…');
         try {
-            const submitData = await submitSlavemodeTask('slavemode.force-rescan', {}, mgmtToken);
-            const taskId = submitData?.id?.id;
-            const taskCap = submitData?.id?.cap;
-            if (!taskId || !taskCap) throw new Error('Unexpected submit response');
-            setMessage('Waiting for agent…');
-
-            let elapsed = 0;
-            const INTERVAL = 2000;
-            const MAX = 60000;
-            pollRef.current = window.setInterval(async () => {
-                elapsed += INTERVAL;
-                try {
-                    const poll = await pollTask(taskCap, taskId, mgmtToken);
-                    const status = poll?.status || '';
-                    if (poll?.output != null || status === 'completed' || status === 'failed') {
-                        clearInterval(pollRef.current);
-                        if (status === 'failed' || poll?.error) {
-                            setState('error');
-                            const raw = poll?.output;
-                            const msg = typeof raw === 'string' ? raw : raw?.error ?? (raw != null ? JSON.stringify(raw) : null);
-                            setMessage(msg || poll?.error || 'Task failed');
-                        } else {
-                            const count = poll?.output?.count;
-                            setState('done');
-                            setMessage(count != null ? `Rescan complete — ${count} caps detected` : 'Rescan complete');
-                            onDone?.();
-                        }
-                    } else if (elapsed >= MAX) {
-                        clearInterval(pollRef.current);
-                        setState('error');
-                        setMessage('Timed out waiting for agent');
-                    } else {
-                        setMessage(`${status || 'waiting'}…`);
-                    }
-                } catch (e) {
-                    clearInterval(pollRef.current);
-                    setState('error');
-                    setMessage(e.message);
-                }
-            }, INTERVAL);
+            const out = await runSlavemodeAndPoll('slavemode.force-rescan', agentUid, {}, { onProgress: setMessage });
+            setState('done');
+            setMessage(out?.count != null ? `Rescan complete — ${out.count} caps detected` : 'Rescan complete');
+            onDone?.();
         } catch (e) {
             setState('error');
             setMessage(e.message);
         }
     };
-
-    useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
     const reset = (e) => { e.stopPropagation(); setState('idle'); setMessage(''); };
 

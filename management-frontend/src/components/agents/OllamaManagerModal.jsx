@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { getMgmtToken, runSlavemodeAndPoll, runSlavemodeAndPollWithTimeout } from "./slavemodeApi";
+import { runSlavemodeAndPoll } from "./slavemodeApi";
 
 const BTN = {
     base: {
@@ -37,6 +37,7 @@ export default function OllamaManagerModal({ agentUid, hasList, hasDelete, hasPu
     const [pullName, setPullName] = useState('');
     const [pulling, setPulling] = useState(false);
     const [pullStatus, setPullStatus] = useState({ msg: '', kind: '' });
+    const [deleteName, setDeleteName] = useState('');
     const [opStatus, setOpStatus] = useState({ msg: '', kind: '' });
 
     async function fetchModels() {
@@ -45,8 +46,7 @@ export default function OllamaManagerModal({ agentUid, hasList, hasDelete, hasPu
         try {
             const out = await runSlavemodeAndPoll(
                 'slavemode.ollama-list',
-                { runner: agentUid },
-                getMgmtToken(),
+                agentUid,
             );
             setModels(out?.models || []);
         } catch (e) {
@@ -68,15 +68,16 @@ export default function OllamaManagerModal({ agentUid, hasList, hasDelete, hasPu
     }
 
     async function deleteModel(name) {
-        if (!hasDelete) return;
+        if (!hasDelete || !name || opStatus.kind === 'running') return;
         if (!window.confirm(`Delete model "${name}" from this agent?`)) return;
         setOpStatus({ msg: `Deleting ${name}…`, kind: 'running' });
         try {
             await runSlavemodeAndPoll(
                 'slavemode.ollama-delete',
-                { runner: agentUid, model: name },
-                getMgmtToken(),
+                agentUid,
+                { model: name },
             );
+            setDeleteName('');
             setOpStatus({ msg: `Deleted "${name}"`, kind: 'ok' });
             await fetchModels();
         } catch (e) {
@@ -92,11 +93,14 @@ export default function OllamaManagerModal({ agentUid, hasList, hasDelete, hasPu
         setPullStatus({ msg: 'Starting pull…', kind: 'running' });
         try {
             // Large models can take many minutes — allow up to 30 min
-            await runSlavemodeAndPollWithTimeout(
+            await runSlavemodeAndPoll(
                 'slavemode.ollama-pull',
-                { runner: agentUid, model: name },
-                getMgmtToken(),
-                1800,
+                agentUid,
+                { model: name },
+                {
+                    timeoutSeconds: 1800,
+                    onProgress: msg => setPullStatus({ msg, kind: 'running' }),
+                },
             );
             setPullStatus({ msg: `"${name}" pulled successfully`, kind: 'ok' });
             setPullName('');
@@ -201,6 +205,25 @@ export default function OllamaManagerModal({ agentUid, hasList, hasDelete, hasPu
                             </div>
                         )}
 
+                        {hasDelete && !hasList && (
+                            <form onSubmit={e => { e.preventDefault(); deleteModel(deleteName.trim()); }}>
+                                <SectionLabel>Delete model</SectionLabel>
+                                <input
+                                    aria-label="Model to delete"
+                                    value={deleteName}
+                                    onChange={e => setDeleteName(e.target.value)}
+                                    disabled={opStatus.kind === 'running'}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!deleteName.trim() || opStatus.kind === 'running'}
+                                    style={btn('danger', !deleteName.trim() || opStatus.kind === 'running')}
+                                >
+                                    Delete
+                                </button>
+                            </form>
+                        )}
+
                         {/* Installed models */}
                         {hasList && (
                             <div>
@@ -244,7 +267,7 @@ export default function OllamaManagerModal({ agentUid, hasList, hasDelete, hasPu
                                                     )}
                                                 </div>
                                                 {hasDelete && (
-                                                    <button onClick={() => deleteModel(m.name)} style={btn('danger')}>
+                                                    <button onClick={() => deleteModel(m.name)} disabled={opStatus.kind === 'running'} style={btn('danger', opStatus.kind === 'running')}>
                                                         Delete
                                                     </button>
                                                 )}

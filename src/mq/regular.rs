@@ -124,38 +124,39 @@ impl RegularTaskStore {
             if !super::runtime_models::matches(&task.id.cap, &task.data.payload, caps) {
                 continue;
             }
-            if let Some(runner) = task
+            let runner = task
                 .data
                 .payload
                 .get("runner")
                 .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                && runner != agent_uid
-            {
-                continue;
-            }
+                .filter(|s| !s.is_empty());
+            if let Some(runner) = runner {
+                if runner != agent_uid {
+                    continue;
+                }
+            } else {
+                let top_online_tier = agents
+                    .list_all_agents()
+                    .into_iter()
+                    .filter(|agent| {
+                        agent.is_online()
+                            && super::runtime_models::matches(
+                                &task.id.cap,
+                                &task.data.payload,
+                                &agent.capabilities,
+                            )
+                            && agent
+                                .capabilities
+                                .iter()
+                                .any(|cap| base_capability(cap) == task_base)
+                    })
+                    .map(|agent| agent.tier)
+                    .max()
+                    .unwrap_or_default();
 
-            let top_online_tier = agents
-                .list_all_agents()
-                .into_iter()
-                .filter(|agent| {
-                    agent.is_online()
-                        && super::runtime_models::matches(
-                            &task.id.cap,
-                            &task.data.payload,
-                            &agent.capabilities,
-                        )
-                        && agent
-                            .capabilities
-                            .iter()
-                            .any(|cap| base_capability(cap) == task_base)
-                })
-                .map(|agent| agent.tier)
-                .max()
-                .unwrap_or_default();
-
-            if top_online_tier > tier {
-                continue;
+                if top_online_tier > tier {
+                    continue;
+                }
             }
 
             let is_better = match best {
@@ -314,6 +315,40 @@ mod tests {
                 .await
                 .is_some()
         );
+    }
+
+    #[tokio::test]
+    async fn pinned_tasks_can_run_on_a_lower_tier_agent() {
+        let cap = "slavemode.force-rescan";
+        let (agents, _guard) = agent_storage_with_online_agent(cap);
+        let low = agents.list_all_agents().pop().unwrap();
+        let mut high = low.clone();
+        high.uid = "higher-tier".into();
+        high.tier = 10;
+        agents
+            .db
+            .insert(high.uid.as_bytes(), rmp_serde::to_vec_named(&high).unwrap())
+            .unwrap();
+
+        let queue = RegularTaskStore::new();
+        let mut pinned = task(cap, "pinned", Utc::now());
+        pinned.data.payload = serde_json::json!({ "runner": low.uid });
+        queue.add_task(pinned).await;
+        assert!(
+            queue
+                .find_with_capabilities_for_tier(&high.capabilities, high.tier, &agents, &high.uid)
+                .await
+                .is_none()
+        );
+
+        queue
+            .add_task(task(cap, "unpinned", Utc::now() - TimeDelta::seconds(1)))
+            .await;
+        let next = queue
+            .find_with_capabilities_for_tier(&low.capabilities, low.tier, &agents, &low.uid)
+            .await
+            .unwrap();
+        assert_eq!(next.id.id, "pinned");
     }
 
     fn task(cap: &str, id: &str, created_at: chrono::DateTime<Utc>) -> UnassignedTask {
