@@ -751,3 +751,53 @@ restart or rescan the agent. From a checkout: `task sharp:install`,
 At run time the agent asks the ComfyUI at `comfyui_url` to unload its models (SHARP
 peaks at ~7 GiB VRAM), then runs SHARP in the venv; cancellation or the task timeout
 kills the process tree. On an RTX 5070 Ti a task takes ~20–30 s end to end.
+
+## world.pano360 — 360° worlds from one picture (WorldGen recipe)
+
+Extends a perspective `input_image` into a full 360° world, following
+[WorldGen](https://github.com/ZiYang-xie/WorldGen)'s image-to-scene path on the local
+ComfyUI: the picture is projected onto a 2:1 equirectangular canvas (`hfov`, `pitch`),
+FLUX.1-dev + WorldGen's public panorama LoRA outpaints the rest of the sphere
+(masked-latent inpainting + differential diffusion at 1600×800), a second pass rolls
+the panorama 180° and re-inpaints the wrap seam, the original pixels are pasted back
+and the result is splatted like `world.splat` (Lotus depth, pano mode). Uploads
+`scene.ply`, `preview.png`, `depth.png` and `panorama.jpg` to the required output
+bucket. Advertised as `world.pano360[ply;preview;pano;outpaint]`.
+
+Payload (all optional except `input_image`; numbers are clamped):
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `prompt` | `a scene` | ≤ 2000 chars | What surrounds the picture; wrapped in WorldGen's "A high quality 360 panorama photo of … 360 consistent, omnidirectional" |
+| `hfov` | 70 | 30–120° | Horizontal FOV of the picture — wider covers more of the sphere |
+| `pitch` | 0 | −60–60° | Camera tilt; negative = looking down (shots from a hill or balcony) |
+| `seed` | random | 0–2^53 | Outpaint seed (the seam pass uses `seed + 1`) |
+| `steps` / `guidance` | 28 / 4.0 | 8–50 / 1–10 | FLUX sampling |
+| `denoise` | 1.0 | 0.5–1.0 | Outpaint strength — below 1 leaves a diagonal patch-grid pattern |
+| `max_width` | 1536 | 256–2048 | Splat grid width of the panorama (1 splat per pixel) |
+| `near` / `far` / `fill_lean` | 1.2 / 50 / 0.25 | as `world.splat` | Depth mapping and hidden background layer |
+
+`mode=pano` is rejected: a ready panorama goes to `world.splat`. The output adds
+`coverage` (fraction of the sphere the picture covers), `models` (the ComfyUI files
+used), `prompt_ids` and the effective `settings` (incl. `prompt`, `seed`).
+
+**Requirements.** ComfyUI with the img-utils depth workflow (as `world.splat`), a
+FLUX.1-dev UNET (any dev / Krea dev; Fill, Kontext and Schnell are not picked), CLIP-L,
+T5-XXL (fp8 preferred), the FLUX VAE `ae.safetensors`, and WorldGen's
+`worldgen_text2scene.safetensors` LoRA (35 MB, Apache-2.0). Models are auto-picked
+from what ComfyUI lists; only the LoRA is downloaded by the agent, sha256-verified,
+into ComfyUI's first `loras` folder (from `/internal/folder_paths`).
+
+| CLI | GUI (360° Worlds page) | Does |
+|---|---|---|
+| `omq pano360 status` | Status card | Which ComfyUI models it would use and where the LoRA goes (four small ComfyUI requests) |
+| `omq pano360 config --unet U --clip-l C --t5 T --vae V --lora-dir D` | Settings card | Pin a model as ComfyUI lists it, or the LoRA folder (`''` = auto) |
+| `omq pano360 install [--force]` | Install / Reinstall LoRA | Download the LoRA (skips a verified copy; replaces a corrupt one in place) |
+| `omq pano360 doctor [--fix]` | Doctor / Repair | ComfyUI reachable, 16 graph nodes, each model, LoRA listed + sha256, depth workflow; `--fix` re-downloads the LoRA |
+| `omq pano360 uninstall [-y]` | Remove LoRA | Delete the LoRA wherever ComfyUI finds it; shared FLUX models are never touched |
+
+Settings: `pano360_unet`, `pano360_clip_l`, `pano360_t5`, `pano360_vae`,
+`pano360_lora_dir` (blank = auto). From a checkout: `task pano360:install`,
+`task pano360:doctor [FIX=1]`, `task pano360:uninstall` in `agent_v2/`. On an RTX 5070 Ti
+a task takes ~80 s (outpaint ~40 s, seam ~30 s, depth + splat ~6 s) and yields ~1.2 M
+splats / ~78 MiB at `max_width` 1536.

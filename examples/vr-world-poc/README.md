@@ -124,10 +124,16 @@ Findings:
 - **The opening view gets softer.** The picture covers ~8–10% of a 2048-wide panorama, so
   its 1080–2048 px shrink to ~300–400 px. Fix candidates: a 4096 canvas for the paste-back,
   or a hybrid (SHARP of the original picture in front, panorama world for the rest).
-- **Framing objects.** At `--denoise-fill 0.95` FLUX tends to frame the picture with large
-  near objects (a second torii, temple columns). At 1.0 it does not, but the picture's edge
-  shows a colour step instead (`market-wg`). The seed must be the picture's mean colour
-  (an all-black seed produced a dark hut around the picture).
+- **Use denoise 1.0.** At `--denoise-fill 0.95` FLUX frames the picture with large near
+  objects (a second torii, temple columns) *and* leaves a diagonal patch-grid pattern
+  next to the picture, because 5% of the smooth colour seed survives into sampling. At
+  1.0 both go away (FLUX tends to put a natural occluder — a pillar — on the picture
+  edge). The seed must still be the picture's mean colour if denoise is lowered (an
+  all-black seed produced a dark hut around the picture).
+- **Paste back with a narrow ramp.** Differential diffusion leaves the same patch-grid
+  pattern wherever the mask is partial, so the wide generation feather must not be the
+  paste-back alpha: the original is pasted over its whole footprint with a ~4 px inward
+  ramp (`worldgen_poc.py` does this; earlier runs used the wide feather).
 - **Pitch matters.** Pictures shot from above need `--pitch` (market: −25°), otherwise an
   aerial view floats above an eye-level world. The viewer still starts level, so the
   picture is then below the start gaze.
@@ -137,6 +143,12 @@ Findings:
   up/down faces. DA-2 (WorldGen's panoramic depth) would be the real fix.
 
 ## Productized version
+
+`world.pano360` (agent `exec/world/pano360.py`, `omq pano360`, GUI **360° Worlds**) ships
+the WorldGen path with the fixes above as defaults; OAI `/app/worlds` offers it as
+"WorldGen 360°" with a surroundings prompt and camera tilt. The SHARP-per-cube-face
+variant stays a PoC.
+
 
 Use OAI `/app/worlds` and the `world.splat` agent executor for persistent jobs,
 signed headset links and the integrated viewer. See [VR Worlds](../../docs/oai-worlds.md).

@@ -15,7 +15,9 @@ import (
 
 func configureTestServer(t *testing.T, serverURL string) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	if err := saveConfig(&Config{Server: serverURL, Token: "test-token", Login: "tester"}); err != nil {
 		t.Fatalf("save test config: %v", err)
 	}

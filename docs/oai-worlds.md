@@ -17,16 +17,21 @@ in the background, and the preview and **Use picture** use the upscaled output.
 
 ## Generators
 
-OAI lists every online `world.*` capability; the agent ships two. Both write the
+OAI lists every online `world.*` capability; the agent ships three. They write the
 same output contract (below), so OAI treats them alike.
 
 | Capability | Generator | Best for | Needs on the agent |
 |---|---|---|---|
 | `world.splat[ply;preview;pano]` | `lotus-ldi-v1`: Lotus depth → one disc per pixel + stretched background layer | 2:1 panoramas (360°), fast previews | ComfyUI + an img-utils `depth` workflow |
 | `world.sharp[ply;preview;metric]` | `apple-sharp`: Apple SHARP predicts ~1.2 M learned Gaussians at metric scale in one pass | Perspective pictures you lean into — leans and short steps stay solid | The SHARP runtime (`omq sharp install`) |
+| `world.pano360[ply;preview;pano;outpaint]` | `worldgen-flux-pano-v1`: [WorldGen](https://github.com/ZiYang-xie/WorldGen) recipe — FLUX.1-dev + WorldGen's panorama LoRA outpaints the picture into a 360° panorama, then Lotus/LDI splats it | Any perspective picture you want to turn all the way round in | ComfyUI + FLUX.1-dev models + the WorldGen LoRA (`omq pano360 install`) + the img-utils `depth` workflow |
 
 SHARP only covers what the picture shows (turning past the frame edge shows
-nothing) and rejects `mode=pano`. Lotus covers 360° panoramas but tears at depth
+nothing) and rejects `mode=pano`. `world.pano360` keeps the picture straight ahead
+and generates everything else, so turns show a coherent place — but the picture
+covers only ~8–10% of the panorama, so the view straight ahead is softer than
+SHARP's, and FLUX may add large near objects that frame the picture. It also
+rejects `mode=pano` (a ready panorama goes to `world.splat`). Lotus covers 360° panoramas but tears at depth
 edges when leaning. See [VR-WORLD.md](../VR-WORLD.md) and
 `examples/vr-world-poc/` for the comparison that led to SHARP.
 
@@ -52,17 +57,26 @@ The task payload requires `input_image`, a filename in the input bucket. Options
 | `max_width` | 1024 | 256–2048 | splat (sharp works at 1536² internally) |
 | `hfov` | unset | 20–150° (sharp clamps to 120°) | both — unset = splat 70°, sharp EXIF focal or a 30 mm lens |
 | `near` / `far` | 1.2 / 50 | 0.1–20 / 1–1000, far ≥ near + 0.5 | splat |
-| `fill_lean` | 0.25 | 0–1 m | splat |
+| `fill_lean` | 0.25 | 0–1 m | splat, pano360 |
+| `prompt` | the picture's generation prompt, else unset | ≤ 2000 chars | pano360: what surrounds the picture |
+| `pitch` | unset (0°) | −60–60° | pano360: camera tilt, negative = looking down |
+| `seed` | unset (random) | 0–2^53 | pano360: outpaint seed |
 
-OAI rejects invalid parameters and omits `hfov` unless the user picks one; the
-agent clamps numeric values and ignores keys its generator does not use.
+OAI rejects invalid parameters and omits `hfov`, `prompt`, `pitch` and `seed` unless
+set; the agent clamps numeric values and ignores keys its generator does not use.
+For `world.pano360` without a prompt, OAI fills in the prompt of the image job that
+generated the picture (Image Generation library pictures), so the surroundings match
+it. `max_width`, `near`, `far` and `fill_lean` also apply to pano360 (its agent
+default is 1536; OAI sends the page's budget).
 
 Output contains `ply` and `preview` bucket references (filename, file_uid,
 bucket_uid, bytes, sha256), plus `depth` for world.splat; the resolved mode,
 `splat_count` / `splats_fg` / `splats_bg`, `depth_range_m`, `settings` (world.sharp:
 `hfov`, `focal_px`, `focal_source`), `timings`, `generator` and source
 dimensions/hash. world.splat adds `grid` and `prompt_id`; world.sharp adds
-`runtime` (`revision`, `torch`, `device`, `peak_vram_gib`).
+`runtime` (`revision`, `torch`, `device`, `peak_vram_gib`); world.pano360 adds a
+`panorama` JPEG ref (not stored by OAI), `grid`, `coverage`, `models` and `prompt_ids`,
+and its `settings` carry `prompt`, `pitch` and `seed`.
 
 ## OAI API
 
@@ -89,8 +103,11 @@ Deleting an input image clears its job reference; retry then requires a new job.
 Jobs stored before `hfov` became optional keep their explicit 70° on retry.
 
 The page is generator-aware: for `world.sharp` it hides Projection, Splat budget
-and Lean range and submits `mode=perspective`; the Field of view picker (Auto,
-40–90°) applies to both generators.
+and Lean range and submits `mode=perspective`; for `world.pano360` it hides
+Projection, adds **Describe the place** (saved-prompt library) and **Camera tilt**,
+keeps Splat budget and Lean range, and submits `mode=perspective`. The Field of view
+picker (Auto, 40–90°) applies to every generator. Job details show the sphere
+coverage and the surroundings prompt.
 
 Public `GET /api/worlds/public/{id}/scene.ply` (or `preview.png`) requires query
 `u`, `exp`, `sig`. HMAC binds owner, job and expiry; bad/expired signatures return
@@ -112,10 +129,15 @@ unload its models first). Quest render quality/FPS and turn/lean comfort require
 a real headset test. The viewer provides a VR resolution selector and
 FPS/load-time readout.
 
+world.pano360: ~80 s per world on an RTX 5070 Ti (outpaint ~40 s, seam pass ~30 s,
+depth + splat ~6 s); the outpaint loads FLUX (fp8 UNET ~12 GB) in ComfyUI. Pictures
+shot from above need a down tilt or they float over an eye-level world; the viewer
+still starts level, so such a picture sits below the starting gaze.
+
 ## Verification
 
-Agent: `uv run --with pytest pytest tests/test_world_splat.py tests/test_world_sharp.py -q`;
-`uv run omq sharp doctor` checks a real SHARP install.
+Agent: `uv run --with pytest pytest tests/test_world_splat.py tests/test_world_sharp.py tests/test_world_pano360.py -q`;
+`uv run omq sharp doctor` / `uv run omq pano360 doctor` check real installs.
 Backend: `cargo test worlds`, `cargo test range_tests`.
 API: `cd oai/itests` then `uv run pytest tests/test_worlds.py` against a running backend;
 the GPU lifecycle skips when no world agent is online.
@@ -131,3 +153,10 @@ worlds` and the 4 worlds Playwright tests passed. A real task through a local
 OffloadMQ server and an isolated agent (RTX 5070 Ti) completed in 32 s with
 matching download hashes. The full OAI stack, cancellation of a running SHARP
 process and Quest playback were not exercised.
+
+Validation on Windows (2026-11-25), world.pano360: 19 agent tests; the real executor
+against ComfyUI (RTX 5070 Ti, FLUX Krea dev fp8) completed a 1080×1920 picture in
+78–84 s with all four files; `omq pano360 status|doctor`, the agent GUI page,
+`cargo test worlds` and the 7 worlds Playwright tests passed. Not exercised: a task
+through OffloadMQ + OAI end to end, the API itests (no backend running), and Quest
+playback. PoC and comparison: `examples/vr-world-poc/README.md`.

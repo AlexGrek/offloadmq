@@ -37,6 +37,9 @@ class TestWorldsValidation:
         {'input_image_id': 'invalid'}, {'input_image_id': '1'},
         {'mode': 'cubemap'}, {'max_width': 4096}, {'fill_lean': -1},
         {'near': 10, 'far': 10.1}, {'capability': 'imggen.test'},
+        # world.pano360 knobs (and a ready panorama belongs to world.splat).
+        {'pitch': 90}, {'prompt': 'x' * 2001},
+        {'capability': 'world.pano360', 'mode': 'pano'},
     ])
     def test_invalid_input_creates_no_job(self, client: httpx.Client, new_user: dict, changes: dict):
         body = {'capability': 'world.splat', 'input_image_id': '1', **changes}

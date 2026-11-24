@@ -642,6 +642,8 @@ so no finished job leaves an OffloadMQ bucket behind (image generation does the 
 
 ### VR Worlds
 
-`/app/worlds` converts uploads/library images through `world.splat`; `/worlds/view/:jobId`
+`/app/worlds` converts uploads/library images through `world.splat` (Lotus depth),
+`world.sharp` (Apple SHARP) or `world.pano360` (WorldGen recipe: FLUX outpaints the
+picture to 360°); `/worlds/view/:jobId`
 is the public signed headset viewer. Read `.agents/skills/oai-worlds/SKILL.md` before
 editing this feature. API and lifecycle: [docs/oai-worlds.md](docs/oai-worlds.md).

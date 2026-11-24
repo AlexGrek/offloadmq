@@ -165,4 +165,8 @@ See [VR Worlds](docs/oai-worlds.md) for the final API and lifecycle contract.
 OAI copies results into durable storage before releasing temporary buckets and
 serves Range-capable scene downloads. Signed HTTPS headset links open without
 login. Run the headset turn/lean/FPS trials above before assessing visual quality.
-WorldGen remains a possible future generator behind the same capability contract.
+WorldGen's image-to-scene recipe now ships as `world.pano360`: FLUX.1-dev + WorldGen's
+public panorama LoRA outpaints the picture into a 360° panorama on the local ComfyUI
+(no FLUX Fill, Nunchaku or Linux needed), then Lotus/LDI splats it. See
+`examples/vr-world-poc/README.md` for the comparison and
+[agent capabilities](docs/agent-capabilities.md#worldpano360--360-worlds-from-one-picture-worldgen-recipe).
