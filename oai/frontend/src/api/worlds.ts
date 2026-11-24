@@ -4,16 +4,19 @@ import type { UploadedImage } from './images'
 
 /**
  * VR Worlds — a library image turned into a Gaussian-splat world.
- * Generators: `world.splat` (Lotus depth → per-pixel splats, 360° panoramas) and
- * `world.sharp` (Apple SHARP learned splat, perspective only, solid when leaning).
+ * Generators: `world.splat` (Lotus depth → per-pixel splats, 360° panoramas),
+ * `world.sharp` (Apple SHARP learned splat, perspective only, solid when leaning) and
+ * `world.pano360` (WorldGen recipe: FLUX outpaints the picture into a 360° panorama).
  */
 
 export const SHARP_CAPABILITY = 'world.sharp'
+export const PANO360_CAPABILITY = 'world.pano360'
 
 /** One-line description of a world generator for the picker. */
 export function worldGeneratorLabel(base: string): string {
   if (base === 'world.sharp') return 'Apple SHARP — solid, metric (perspective only)'
   if (base === 'world.splat') return 'Lotus depth — fast, 360° panoramas'
+  if (base === 'world.pano360') return 'WorldGen 360° — extends any picture all around you'
   return base
 }
 
@@ -37,6 +40,12 @@ export interface WorldParams {
   hfov?: number
   near: number
   far: number
+  /** `world.pano360`: scene description for the outpaint. Omitted = the picture's generation prompt. */
+  prompt?: string
+  /** `world.pano360`: camera pitch in degrees, negative = looking down. */
+  pitch?: number
+  /** `world.pano360`: outpaint seed. */
+  seed?: number
 }
 
 /** Agent summary stored on completion (see docs/oai-worlds.md). */
@@ -52,6 +61,8 @@ export interface WorldResult {
   settings?: { hfov?: number; focal_source?: string; [key: string]: unknown }
   runtime?: { device?: string; torch?: string; revision?: string; peak_vram_gib?: number }
   source?: { width: number; height: number; sha256: string }
+  /** `world.pano360`: fraction of the sphere the original picture covers. */
+  coverage?: number
   ply_sha256?: string
 }
 

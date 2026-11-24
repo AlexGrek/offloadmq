@@ -41,7 +41,8 @@ pub struct StartJobRequest {
     pub capability: String,
     /// `image_files` id from the image library or `POST /api/images/upload`.
     pub input_image_id: String,
-    /// `mode`, `max_width`, `fill_lean`, `hfov`, `near`, `far` — all optional.
+    /// `mode`, `max_width`, `fill_lean`, `hfov`, `near`, `far` — all optional;
+    /// `prompt`, `pitch`, `seed` are used by `world.pano360` only.
     #[serde(flatten)]
     pub params: service::WorldParamsInput,
 }

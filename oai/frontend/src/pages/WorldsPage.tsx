@@ -25,6 +25,7 @@ import {
   retryWorldJob,
   shareWorldJob,
   startWorldJob,
+  PANO360_CAPABILITY,
   SHARP_CAPABILITY,
   worldGeneratorLabel,
   worldModeLabel,
@@ -37,6 +38,8 @@ import {
   type WorldsRouteState,
 } from '../api/worlds'
 import { imageFileUrl } from '../api/images'
+import { PromptTextarea } from '../components/PromptTextarea'
+import { IMGGEN_PROMPT_BUCKET } from '../lib/promptStudio'
 import { cn } from '../lib/utils'
 import { Button } from '../components/ui/button'
 import { Label } from '../components/ui/label'
@@ -64,6 +67,20 @@ const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 const BUDGETS = [
   { value: 1024, label: 'Quest', hint: '≈0.6 M splats — smooth on the headset' },
   { value: 2048, label: 'Full', hint: '≈2.3 M splats — sharper; PC VR / desktop' },
+]
+
+/** world.pano360 splats a 2:1 panorama, so the grid width spans 360°. */
+const PANO_BUDGETS = [
+  { value: 1024, label: 'Quest', hint: '1024×512 ≈0.55 M splats around you — smooth on the headset' },
+  { value: 2048, label: 'Full', hint: '2048×1024 ≈2.1 M splats — sharper; PC VR / desktop' },
+]
+
+/** Camera tilt of the picture for world.pano360 (where it lands on the sphere). */
+const PITCHES = [
+  { value: 0, label: 'Level — eye-level shot' },
+  { value: -15, label: 'Slightly down' },
+  { value: -30, label: 'Looking down — from a hill or balcony' },
+  { value: 15, label: 'Slightly up' },
 ]
 
 /** Field of view of the picture; `null` = the generator's own default. */
@@ -104,7 +121,11 @@ export default function WorldsPage() {
   const [maxWidth, setMaxWidth] = useState(1024)
   const [fillLean, setFillLean] = useState(0.25)
   const [fov, setFov] = useState<number | null>(null)
+  const [scenePrompt, setScenePrompt] = useState('')
+  const [pitch, setPitch] = useState(0)
   const isSharp = capability === SHARP_CAPABILITY
+  const isPano360 = capability === PANO360_CAPABILITY
+  const budgets = isPano360 ? PANO_BUDGETS : BUDGETS
 
   const [jobs, setJobs] = useState<WorldJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
@@ -229,7 +250,18 @@ export default function WorldsPage() {
         capability,
         input_image_id: inputImage.image_id,
         // SHARP has no projection / budget / lean knobs: it predicts the whole splat.
-        ...(isSharp ? { mode: 'perspective' as const } : { mode, max_width: maxWidth, fill_lean: fillLean }),
+        // pano360 always extends a perspective picture; the agent makes the panorama.
+        ...(isSharp
+          ? { mode: 'perspective' as const }
+          : isPano360
+            ? {
+                mode: 'perspective' as const,
+                max_width: maxWidth,
+                fill_lean: fillLean,
+                ...(scenePrompt.trim() ? { prompt: scenePrompt.trim() } : {}),
+                ...(pitch !== 0 ? { pitch } : {}),
+              }
+            : { mode, max_width: maxWidth, fill_lean: fillLean }),
         ...(fov != null ? { hfov: fov } : {}),
       }),
     )
@@ -378,7 +410,8 @@ export default function WorldsPage() {
                   </h2>
                   <p className="text-sm text-muted-foreground">
                     Turn a picture into a place you can stand in. Open it in a Quest 3 and lean, look around, or
-                    turn — a 2:1 panorama becomes a full 360° world.
+                    turn — a 2:1 panorama becomes a full 360° world, and WorldGen 360° extends any picture all
+                    around you.
                   </p>
                 </header>
 
@@ -421,13 +454,22 @@ export default function WorldsPage() {
                         Learned Gaussians at real-world scale: leaning and short steps stay solid. Covers what the
                         picture shows — no 360°, so panoramas belong to the Lotus generator.
                       </p>
+                    ) : isPano360 ? (
+                      <p className="text-xs text-muted-foreground" data-testid="worlds-generator-hint">
+                        Your picture stays in front of you; FLUX paints the rest of the sphere so you can turn all the
+                        way round. About 80 s on the GPU. Not for pictures that are already 360° panoramas.
+                      </p>
                     ) : null}
                   </div>
 
                   <div className="space-y-2">
                     <ImageSlot
                       label="Picture"
-                      hint="A clear view with a level horizon; a 2:1 equirectangular image for 360°"
+                      hint={
+                        isPano360
+                          ? 'Any picture of a place — it becomes the view straight ahead'
+                          : 'A clear view with a level horizon; a 2:1 equirectangular image for 360°'
+                      }
                       slot={input.slot}
                       testId="worlds-input"
                       onPick={file => void input.pickFile(file)}
@@ -457,13 +499,57 @@ export default function WorldsPage() {
                         ? "How wide the picture's camera was. Wider pushes the scene closer and deeper."
                         : isSharp
                           ? 'Auto: camera EXIF if present, otherwise a 30 mm lens (≈55° on a square image).'
-                          : 'Auto: 70°.'}
+                          : isPano360
+                            ? 'Auto: 70°. Wider makes the picture fill more of the sphere.'
+                            : 'Auto: 70°.'}
                     </p>
                   </div>
+
+                  {isPano360 ? (
+                    <>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="worlds-scene-prompt">Describe the place</Label>
+                        <PromptTextarea
+                          id="worlds-scene-prompt"
+                          value={scenePrompt}
+                          onChange={setScenePrompt}
+                          bucket={IMGGEN_PROMPT_BUCKET}
+                          token={token}
+                          rows={3}
+                          placeholder="A quiet Japanese shrine courtyard, stone lanterns, raked gravel, tall trees…"
+                          data-testid="worlds-scene-prompt"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          What surrounds the picture. Blank = the prompt that generated it (Image Generation
+                          pictures), otherwise a generic scene.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="worlds-pitch">Camera tilt</Label>
+                        <select
+                          id="worlds-pitch"
+                          className={selectClass}
+                          value={pitch}
+                          onChange={e => setPitch(Number(e.target.value))}
+                          data-testid="worlds-pitch"
+                        >
+                          {PITCHES.map(p => (
+                            <option key={p.value} value={p.value}>
+                              {p.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                          A picture taken from above should be tilted down, or it floats over an eye-level world.
+                        </p>
+                      </div>
+                    </>
+                  ) : null}
 
                   {!isSharp ? (
                   <>
                   <div className="grid gap-4 sm:grid-cols-2">
+                    {!isPano360 ? (
                     <div className="space-y-1.5">
                       <Label htmlFor="worlds-mode">Projection</Label>
                       <select
@@ -483,11 +569,12 @@ export default function WorldsPage() {
                         </p>
                       ) : null}
                     </div>
+                    ) : null}
 
                     <div className="space-y-1.5">
                       <Label>Splat budget</Label>
                       <div className="flex gap-2" role="radiogroup" aria-label="Splat budget">
-                        {BUDGETS.map(b => (
+                        {budgets.map(b => (
                           <Button
                             key={b.value}
                             type="button"
@@ -503,7 +590,7 @@ export default function WorldsPage() {
                         ))}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {BUDGETS.find(b => b.value === maxWidth)?.hint}
+                        {budgets.find(b => b.value === maxWidth)?.hint}
                       </p>
                     </div>
                   </div>
@@ -601,6 +688,14 @@ export default function WorldsPage() {
                             ? ` · depth ${result.depth_range_m[0].toFixed(1)}–${result.depth_range_m[1].toFixed(0)} m`
                             : ''}
                           {typeof result.settings?.hfov === 'number' ? ` · ${Math.round(result.settings.hfov)}° FOV` : ''}
+                          {typeof result.coverage === 'number'
+                            ? ` · picture covers ${(result.coverage * 100).toFixed(0)}% of the sphere`
+                            : ''}
+                        </p>
+                      ) : null}
+                      {typeof result?.settings?.prompt === 'string' ? (
+                        <p className="text-xs text-muted-foreground" data-testid="worlds-result-prompt">
+                          Surroundings: {result.settings.prompt}
                         </p>
                       ) : null}
                       {!isRunning ? (

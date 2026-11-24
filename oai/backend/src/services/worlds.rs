@@ -565,6 +565,31 @@ mod tests {
     }
 
     #[test]
+    fn pano360_params_validate_and_round_trip() {
+        let bad = |p: WorldParamsInput| assert!(p.normalize().is_err());
+        let p = WorldParamsInput {
+            prompt: Some("  a quiet
+ shrine  ".into()),
+            pitch: Some(-25.0),
+            seed: Some(42),
+            ..Default::default()
+        }
+        .normalize()
+        .unwrap();
+        assert_eq!((p.prompt.as_deref(), p.pitch, p.seed), (Some("a quiet shrine"), Some(-25.0), Some(42)));
+        let json = serde_json::to_string(&p).unwrap();
+        assert_eq!(parse_params(&json), Some(p));
+        // Unused knobs stay out of world.splat / world.sharp payloads and old rows still parse.
+        let plain = serde_json::to_value(WorldParamsInput::default().normalize().unwrap()).unwrap();
+        assert!(plain.get("prompt").is_none() && plain.get("pitch").is_none() && plain.get("seed").is_none());
+        assert_eq!(WorldParamsInput { prompt: Some("   ".into()), ..Default::default() }.normalize().unwrap().prompt, None);
+        bad(WorldParamsInput { pitch: Some(-75.0), ..Default::default() });
+        bad(WorldParamsInput { pitch: Some(f64::NAN), ..Default::default() });
+        bad(WorldParamsInput { prompt: Some("x".repeat(MAX_PROMPT_CHARS + 1)), ..Default::default() });
+        bad(WorldParamsInput { seed: Some(u64::MAX), ..Default::default() });
+    }
+
+    #[test]
     fn file_refs_must_stay_in_the_job_bucket() {
         let out = serde_json::json!({
             "ply": {"file_uid": "abc-123", "bucket_uid": "b1", "bytes": 42},

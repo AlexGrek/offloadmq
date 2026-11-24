@@ -266,3 +266,64 @@ test('SHARP generator hides depth knobs and submits only the chosen field of vie
   await expect(page.getByTestId('worlds-mode')).toBeVisible()
   await expect(page.getByTestId('worlds-lean')).toBeVisible()
 })
+
+test('WorldGen 360° generator asks for surroundings and camera tilt, not projection', async ({ page }) => {
+  let submitted: unknown
+  const photo = { ...image, filename: 'torii.png', width: 1080, height: 1920 }
+  await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (!path.startsWith('/api/')) return route.continue()
+    const json = (body: unknown, status = 200) => route.fulfill({ status, json: body })
+    if (path === '/api/me') return json({ id: 1, login: 'tester', created_at: now, used_storage_bytes: 0 })
+    if (path === '/api/admin/am_i_admin') return json({ is_admin: false })
+    if (path === '/api/progress/running') return json({ jobs: [] })
+    if (path === '/api/worlds/capabilities') return json({ capabilities: [
+      { base: 'world.pano360', tags: ['ply', 'preview', 'pano', 'outpaint'], raw: 'world.pano360[ply;preview;pano;outpaint]' },
+      { base: 'world.splat', tags: ['pano'], raw: 'world.splat[pano]' },
+    ] })
+    if (path === '/api/files/images') return json({ files: [{ ...photo, id: '42', direction: 'input' }], has_more: false })
+    if (path === '/api/worlds/jobs' && route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON()
+      return json({ job_id: '79', status: 'submitted' }, 201)
+    }
+    if (path === '/api/worlds/jobs') return json([])
+    if (path === '/api/worlds/jobs/79') return json({ ...completed, job_id: '79', capability: 'world.pano360',
+      mode: 'perspective', input_image: photo, result: { mode: 'pano', generator: 'worldgen-flux-pano-v1',
+        splat_count: 1211728, splats_bg: 32080, coverage: 0.0824, depth_range_m: [1.2, 49.2],
+        settings: { hfov: 60, pitch: -15, prompt: 'a quiet shrine courtyard' } } })
+    return route.fulfill({ status: 404 })
+  })
+  await page.goto('/app/worlds')
+  await expect(page.getByTestId('worlds-capability')).toHaveValue('world.pano360')
+  await expect(page.getByTestId('worlds-capability')).toContainText('WorldGen 360°')
+  await expect(page.getByTestId('worlds-generator-hint')).toContainText('rest of the sphere')
+  await expect(page.getByTestId('worlds-mode')).toHaveCount(0)
+  await expect(page.getByTestId('worlds-lean')).toBeVisible()
+  await expect(page.getByTestId('worlds-budget-quest')).toBeVisible()
+  await page.getByTestId('worlds-input-pick-library').click()
+  await page.getByTestId('imggen-picker-file-42').click()
+  await page.getByTestId('imggen-picker-confirm').click()
+  await page.getByTestId('worlds-scene-prompt').fill('  a quiet shrine courtyard  ')
+  await page.getByTestId('worlds-pitch').selectOption('-15')
+  await page.getByTestId('worlds-fov').selectOption('55')
+  await page.getByTestId('worlds-submit').click()
+  await expect.poll(() => submitted).toEqual({
+    capability: 'world.pano360', input_image_id: '42', mode: 'perspective', max_width: 1024, fill_lean: 0.25,
+    prompt: 'a quiet shrine courtyard', pitch: -15, hfov: 55,
+  })
+  await expect(page.getByTestId('worlds-result-summary')).toContainText('covers 8% of the sphere')
+  await expect(page.getByTestId('worlds-result-prompt')).toContainText('a quiet shrine courtyard')
+
+  // A level shot with no description sends neither knob: the server fills the prompt in.
+  await page.getByTestId('worlds-new-panel-btn').click()
+  await page.getByTestId('worlds-scene-prompt').fill('')
+  await page.getByTestId('worlds-pitch').selectOption('0')
+  await page.getByTestId('worlds-input-pick-library').click()
+  await page.getByTestId('imggen-picker-file-42').click()
+  await page.getByTestId('imggen-picker-confirm').click()
+  await page.getByTestId('worlds-submit').click()
+  await expect.poll(() => submitted).toEqual({
+    capability: 'world.pano360', input_image_id: '42', mode: 'perspective', max_width: 1024, fill_lean: 0.25, hfov: 55,
+  })
+})
