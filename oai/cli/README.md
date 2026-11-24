@@ -88,6 +88,8 @@ job_id=$(./oai image generate "a red bicycle" -capability imggen.flux-schnell --
 ./oai img-utils run face_swap target.jpg -source face.jpg
 ./oai img-utils run resize photo.jpg -width 800 -format webp
 ./oai img-utils jobs -active
+./oai bgremove models                   # background-remover models online
+./oai bgremove run photo.jpg            # cut-out -> photo_cutout.png (-crop, -background '#fff', -model ...)
 
 # NSFW detection with NudeNet (tunable confidence threshold)
 ./oai nude availability
@@ -181,6 +183,10 @@ These mirror the Images page's history sidebar and pair with `image job` / `poll
 - `image delete <id> [id …]` — remove jobs from history **together with their stored images**.
 
 Multi-ID commands keep going past a failing ID and report every failure at the end. An empty ID (for example from an empty `$(…)`) is rejected.
+
+### Background remover (`bgremove`)
+
+`bgremove run <image> [image …]` removes the background from each image (the web UI's Background Remover). `-model` picks a model (`bgremove models` lists what is online), `-format png|webp|jpeg`, `-background transparent|#RRGGBB`, `-crop` / `-padding N` trim to the subject, `-refine=false` keeps raw edge colours, `-hard-edges` sets a hard alpha cut-off. Output defaults to `<input>_cutout.<ext>`. `jobs`, `job`, `poll`, `cancel`, `retry`, `delete` and `download` mirror the `img-utils` equivalents; `--no-wait` prints bare job IDs.
 
 ### Image Tools (`img-utils`, `upscale`)
 

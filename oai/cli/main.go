@@ -57,6 +57,11 @@ Usage:
   oai img-utils cancel|delete <job-id> [job-id ...]
   oai img-utils retry <job-id> [-o out.jpg] [--no-wait]
   oai img-utils download <job-id> [-o out.jpg]
+  oai bgremove models [-json]
+  oai bgremove run <image> [image ...] [-o out.png] [-model M] [-format png|webp|jpeg]
+                   [-background transparent|#RRGGBB] [-crop] [-padding N] [-refine=false]
+                   [-hard-edges 0..1] [-quality N] [--no-wait] [--progress=false] [-t|-timeout 5m]
+  oai bgremove jobs|job|poll|cancel|retry|delete|download   (same shape as img-utils; see README)
   oai nude scan <file> [file ...] [-threshold 0.25] [-json] [-o out.json]
                 [--progress=false] [-t|-timeout 5m]
   oai nude availability
@@ -165,6 +170,8 @@ func main() {
 		err = cmdImgUtils(os.Args[2:])
 	case "upscale":
 		err = cmdUpscale(os.Args[2:])
+	case "bgremove", "bg-remove", "bg-remover":
+		err = cmdBgRemove(os.Args[2:])
 	case "langgraph":
 		err = cmdLanggraph(os.Args[2:])
 	case "persona", "personas":

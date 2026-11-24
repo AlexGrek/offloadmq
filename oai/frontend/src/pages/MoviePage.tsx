@@ -1,4 +1,4 @@
-import { rememberedImageSize, validImageSize } from '@/lib/imageSizes'
+import { DEFAULT_VIDEO_SIZE, rememberedImageSize, validImageSize, VIDEO_SIZE_STORAGE_KEY } from '@/lib/imageSizes'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -71,8 +71,8 @@ export default function MoviePage() {
   const capabilitiesError = ws.capabilitiesError
 
   const [idea, setIdea] = useState('')
-  const [width, setWidth] = useState(() => rememberedImageSize([768, 512], 8192, 64)[0])
-  const [height, setHeight] = useState(() => rememberedImageSize([768, 512], 8192, 64)[1])
+  const [width, setWidth] = useState(() => rememberedImageSize(DEFAULT_VIDEO_SIZE, 8192, 64, VIDEO_SIZE_STORAGE_KEY)[0])
+  const [height, setHeight] = useState(() => rememberedImageSize(DEFAULT_VIDEO_SIZE, 8192, 64, VIDEO_SIZE_STORAGE_KEY)[1])
   const [sceneCount, setSceneCount] = useState(4)
   const [sceneLength, setSceneLength] = useState('25')
   const [directorModel, setDirectorModel] = useState('')

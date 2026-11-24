@@ -1,4 +1,5 @@
 import { ImageSizePicker } from '@/components/ImageSizePicker'
+import { VIDEO_SIZE_PRESETS, VIDEO_SIZE_STORAGE_KEY } from '@/lib/imageSizes'
 import { useState, type FormEvent } from 'react'
 import { Clapperboard, FolderOpen, Loader2, Play, Upload, X } from 'lucide-react'
 import { uploadImage, imageFileUrl, type UploadedImage } from '../../api/images'
@@ -158,7 +159,20 @@ export function MovieForm({
           />
         </div>
 
-        <ImageSizePicker width={width} height={height} min={64} testIdPrefix="movie" onWidthChange={v => onWidthChange(Number(v))} onHeightChange={v => onHeightChange(Number(v))} onChange={([w,h]) => { onWidthChange(w); onHeightChange(h) }} />
+        <ImageSizePicker
+          width={width}
+          height={height}
+          min={64}
+          testIdPrefix="movie"
+          presets={VIDEO_SIZE_PRESETS}
+          storageKey={VIDEO_SIZE_STORAGE_KEY}
+          onWidthChange={v => onWidthChange(Number(v))}
+          onHeightChange={v => onHeightChange(Number(v))}
+          onChange={([w, h]) => {
+            onWidthChange(w)
+            onHeightChange(h)
+          }}
+        />
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
