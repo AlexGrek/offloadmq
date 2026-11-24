@@ -291,7 +291,14 @@ export type Pano360Status = {
     pano360_vae: string;
     pano360_lora_dir: string;
   };
-  lora: { name: string; url: string; bytes: number; license: string; target_dir: string | null };
+  lora: {
+    name: string;
+    url: string;
+    bytes: number;
+    license: string;
+    target_dir: string | null;
+    installed_path: string | null;
+  };
   job: Omit<SharpJob, "action"> & { action: "install" | "repair" | "uninstall" | null };
 };
 

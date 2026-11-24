@@ -68,12 +68,14 @@ def comfy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     loras.mkdir()
     workflows = tmp_path / "workflows"
     shutil.copytree(REPO_DEPTH, workflows / "img-utils" / "depth")
-    state: dict[str, Any] = {"up": True, "loras": loras, "nodes": set(rt.REQUIRED_NODES)}
+    other = tmp_path / "other-loras"
+    other.mkdir()
+    state: dict[str, Any] = {"up": True, "loras": loras, "other": other, "nodes": set(rt.REQUIRED_NODES)}
 
     def node_info(node: str) -> dict[str, Any]:
         lists = {"UNETLoader": ("unet_name", UNETS), "DualCLIPLoader": ("clip_name1", CLIPS),
                  "VAELoader": ("vae_name", VAES),
-                 "LoraLoaderModelOnly": ("lora_name", sorted(p.name for p in loras.iterdir()
+                 "LoraLoaderModelOnly": ("lora_name", sorted(p.name for d in (loras, other) for p in d.iterdir()
                                                             if p.suffix == ".safetensors"))}
         if node in lists:
             key, names = lists[node]
@@ -89,7 +91,7 @@ def comfy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             raise requests.ConnectionError("down")
         path = url.removeprefix(URL)
         if path == "/internal/folder_paths":
-            return _Resp({"loras": [str(loras)]})
+            return _Resp({"loras": [str(loras), str(other)]})
         if path == "/object_info":
             return _Resp({n: node_info(n) for n in state["nodes"]})
         if path.startswith("/object_info/"):
@@ -241,6 +243,19 @@ def test_install_rejects_bad_checksum_and_cancel(comfy: dict[str, Any], monkeypa
     assert not any(comfy["loras"].iterdir())  # no partial file left behind
     with pytest.raises(pi.Pano360InstallError, match="cancelled"):
         pi.install(SETTINGS, lambda _l: None, cancelled=lambda: True)
+
+
+def test_lora_found_in_another_comfy_folder(comfy: dict[str, Any]) -> None:
+    copy = comfy["other"] / rt.LORA_NAME
+    copy.write_bytes(LORA_BYTES)
+    assert pi.installed_lora(SETTINGS) == copy and pi.doctor(SETTINGS)["ok"]
+    copy.write_bytes(b"corrupt")
+    report = pi.doctor(SETTINGS)
+    assert report["action"] == "install" and str(copy) in next(
+        c["detail"] for c in report["checks"] if c["name"] == "LoRA file")
+    assert pi.install(SETTINGS, lambda _l: None, force=True) == str(copy)  # replaced in place
+    assert copy.read_bytes() == LORA_BYTES and not (comfy["loras"] / rt.LORA_NAME).exists()
+    assert pi.uninstall(SETTINGS, lambda _l: None) and not copy.exists()
 
 
 def test_doctor_and_repair(comfy: dict[str, Any]) -> None:

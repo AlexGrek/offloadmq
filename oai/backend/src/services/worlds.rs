@@ -30,6 +30,11 @@ pub const CAPABILITY_PREFIX: &str = "world.";
 pub const MODES: [&str; 3] = ["auto", "perspective", "pano"];
 /// Apple SHARP: a learned single-view splat; perspective pictures only.
 pub const SHARP_CAPABILITY: &str = "world.sharp";
+/// WorldGen recipe: FLUX outpaints the picture into a 360° panorama, then splats it.
+/// Perspective pictures only (a ready panorama goes to `world.splat`).
+pub const PANO360_CAPABILITY: &str = "world.pano360";
+/// Longest outpaint prompt accepted (the agent truncates at the same length).
+pub const MAX_PROMPT_CHARS: usize = 2000;
 /// Hard cap on a stored scene. The agent's own budget (`max_width` ≤ 2048) keeps
 /// real scenes far below it; this only guards against a misbehaving agent.
 pub const MAX_PLY_BYTES: i64 = 512 * 1024 * 1024;
@@ -59,6 +64,15 @@ pub struct WorldParams {
     pub hfov: Option<f64>,
     pub near: f64,
     pub far: f64,
+    /// `world.pano360` only: scene description for the outpaint (agent default "a scene").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    /// `world.pano360` only: camera pitch in degrees, negative = looking down.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pitch: Option<f64>,
+    /// `world.pano360` only: outpaint seed (agent picks one when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
 }
 
 /// Raw, optional request knobs — everything defaults.
@@ -70,6 +84,9 @@ pub struct WorldParamsInput {
     pub hfov: Option<f64>,
     pub near: Option<f64>,
     pub far: Option<f64>,
+    pub prompt: Option<String>,
+    pub pitch: Option<f64>,
+    pub seed: Option<u64>,
 }
 
 fn in_range(name: &str, v: f64, lo: f64, hi: f64) -> Result<f64, AppError> {
@@ -96,6 +113,17 @@ impl WorldParamsInput {
         if far < near + 0.5 {
             return Err(AppError::BadRequest("far must be at least 0.5 m beyond near".into()));
         }
+        let prompt = self
+            .prompt
+            .as_deref()
+            .map(|p| p.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|p| !p.is_empty());
+        if prompt.as_ref().is_some_and(|p| p.chars().count() > MAX_PROMPT_CHARS) {
+            return Err(AppError::BadRequest(format!("prompt must be at most {MAX_PROMPT_CHARS} characters")));
+        }
+        if self.seed.is_some_and(|s| s > (1u64 << 53)) {
+            return Err(AppError::BadRequest("seed must be at most 2^53".into()));
+        }
         Ok(WorldParams {
             mode: mode.to_string(),
             max_width,
@@ -103,6 +131,9 @@ impl WorldParamsInput {
             hfov: self.hfov.map(|v| in_range("hfov", v, 20.0, 150.0)).transpose()?,
             near,
             far,
+            prompt,
+            pitch: self.pitch.map(|v| in_range("pitch", v, -60.0, 60.0)).transpose()?,
+            seed: self.seed,
         })
     }
 }
@@ -235,7 +266,7 @@ async fn persist_world(state: &AppState, job: &worlds::WorldJob, poll: &Normaliz
 
     let mut summary = output.clone();
     if let Some(map) = summary.as_object_mut() {
-        for key in ["ply", "preview", "depth", "output_bucket"] {
+        for key in ["ply", "preview", "depth", "panorama", "output_bucket"] {
             map.remove(key);
         }
         if let Some(sha) = output.pointer("/ply/sha256").cloned() {
@@ -274,15 +305,18 @@ pub async fn start_job(state: &AppState, user_id: i64, params: StartJobParams) -
     if !capability.starts_with(CAPABILITY_PREFIX) || capability.len() == CAPABILITY_PREFIX.len() {
         return Err(AppError::BadRequest(format!("capability must start with `{CAPABILITY_PREFIX}`")));
     }
-    let world_params = params.params.normalize()?;
-    if capability == SHARP_CAPABILITY && world_params.mode == "pano" {
+    let mut world_params = params.params.normalize()?;
+    if (capability == SHARP_CAPABILITY || capability == PANO360_CAPABILITY) && world_params.mode == "pano" {
         return Err(AppError::BadRequest(format!(
-            "{SHARP_CAPABILITY} handles perspective pictures only; use world.splat for 360° panoramas"
+            "{capability} handles perspective pictures only; use world.splat for 360° panoramas"
         )));
     }
     let input = image_generation::get_image_file(&state.db, params.input_image_id, user_id)
         .await?
         .ok_or_else(|| AppError::BadRequest("input_image_id must reference an image in your library".into()))?;
+    if capability == PANO360_CAPABILITY && world_params.prompt.is_none() {
+        world_params.prompt = generation_prompt(state, &input, user_id).await;
+    }
     if !list_capabilities(state).await?.iter().any(|c| c.base == capability) {
         return Err(AppError::BadRequest(format!("no online agent provides `{capability}`")));
     }
@@ -343,6 +377,15 @@ pub async fn start_job(state: &AppState, user_id: i64, params: StartJobParams) -
     Ok(job_id)
 }
 
+/// The prompt that generated a library image, if it came from OAI image generation —
+/// the natural scene description for `world.pano360`'s outpaint.
+async fn generation_prompt(state: &AppState, input: &image_generation::ImageFile, user_id: i64) -> Option<String> {
+    let job_id = input.job_id?;
+    let job = image_generation::get_job(&state.db, job_id, user_id).await.log_warn("world prompt lookup").flatten()?;
+    let prompt: String = job.prompt.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!prompt.is_empty()).then(|| prompt.chars().take(MAX_PROMPT_CHARS).collect())
+}
+
 pub fn parse_params(json: &str) -> Option<WorldParams> {
     serde_json::from_str(json).ok()
 }
@@ -372,6 +415,9 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
                 hfov: p.as_ref().and_then(|p| p.hfov),
                 near: p.as_ref().map(|p| p.near),
                 far: p.as_ref().map(|p| p.far),
+                prompt: p.as_ref().and_then(|p| p.prompt.clone()),
+                pitch: p.as_ref().and_then(|p| p.pitch),
+                seed: p.as_ref().and_then(|p| p.seed),
             },
         },
     )
@@ -486,7 +532,17 @@ mod tests {
         let p = WorldParamsInput::default().normalize().unwrap();
         assert_eq!(
             p,
-            WorldParams { mode: "auto".into(), max_width: 1024, fill_lean: 0.25, hfov: None, near: 1.2, far: 50.0 }
+            WorldParams {
+                mode: "auto".into(),
+                max_width: 1024,
+                fill_lean: 0.25,
+                hfov: None,
+                near: 1.2,
+                far: 50.0,
+                prompt: None,
+                pitch: None,
+                seed: None
+            }
         );
         // No hfov in the agent payload unless chosen: each generator has its own default.
         assert!(serde_json::to_value(&p).unwrap().get("hfov").is_none());

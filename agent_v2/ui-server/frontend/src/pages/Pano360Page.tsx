@@ -158,7 +158,7 @@ export function Pano360Page() {
                 </span>
               ))}
               <span>
-                LoRA: {status.models.lora ?? "not installed"} → {status.lora.target_dir ?? "ComfyUI loras folder unknown"}
+                LoRA: {status.lora.installed_path ?? `not installed (installs to ${status.lora.target_dir ?? "ComfyUI's loras folder"})`}
               </span>
             </div>
           )}
@@ -317,7 +317,7 @@ export function Pano360Page() {
           <DialogHeader>
             <DialogTitle>Remove the WorldGen LoRA?</DialogTitle>
             <DialogDescription>
-              Deletes {status?.lora.name} from {status?.lora.target_dir}. The agent stops advertising
+              Deletes {status?.lora.installed_path ?? status?.lora.name}. The agent stops advertising
               world.pano360. The FLUX models are shared with image generation and are not touched.
             </DialogDescription>
           </DialogHeader>

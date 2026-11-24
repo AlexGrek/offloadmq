@@ -47,6 +47,17 @@ def lora_path(settings: Mapping[str, Any]) -> Path:
         raise Pano360InstallError(str(exc)) from exc
 
 
+def installed_lora(settings: Mapping[str, Any]) -> Path | None:
+    """The LoRA file ComfyUI would load: the install folder first, then every ``loras``
+    folder ComfyUI scans (an operator may have copied it elsewhere)."""
+    candidates = [lora_path(settings)]
+    try:
+        candidates += [Path(d) / rt.LORA_NAME for d in rt.comfy_lora_dirs(rt.comfy_url(settings))]
+    except (requests.RequestException, ValueError):
+        pass
+    return next((c for c in candidates if c.is_file()), None)
+
+
 def verify_lora(path: Path, cancelled: Callable[[], bool] = lambda: False) -> tuple[bool, str]:
     if not path.is_file():
         return False, f"{path} missing"
@@ -84,11 +95,14 @@ def install(settings: Mapping[str, Any], log: LogFn = print, force: bool = False
             cancelled: Callable[[], bool] = lambda: False) -> str:
     """Download the WorldGen LoRA unless a verified copy is already there. Returns its path."""
     dest = lora_path(settings)
-    if not force:
-        ok, detail = verify_lora(dest, cancelled)
+    found = installed_lora(settings)
+    if found is not None and not force:
+        ok, detail = verify_lora(found, cancelled)
         if ok:
             log(f"Already installed: {detail}")
-            return str(dest)
+            return str(found)
+    if found is not None and found != dest:
+        dest = found  # replace the copy ComfyUI already sees instead of adding a second one
     log(f"WorldGen panorama LoRA — {rt.LORA_LICENSE}")
     try:
         _download(rt.LORA_URL, dest, log, cancelled)
@@ -99,14 +113,15 @@ def install(settings: Mapping[str, Any], log: LogFn = print, force: bool = False
 
 
 def uninstall(settings: Mapping[str, Any], log: LogFn = print) -> bool:
-    """Delete the LoRA from the install folder. FLUX models are shared and left alone."""
-    dest = lora_path(settings)
-    if dest.is_file():
-        dest.unlink()
-        log(f"Removed {dest}")
-        return True
-    log(f"Nothing to remove ({dest} not found).")
-    return False
+    """Delete the LoRA wherever ComfyUI finds it. FLUX models are shared and left alone."""
+    removed = False
+    while (found := installed_lora(settings)) is not None:
+        found.unlink()
+        log(f"Removed {found}")
+        removed = True
+    if not removed:
+        log(f"Nothing to remove ({rt.LORA_NAME} not found).")
+    return removed
 
 
 # --------------------------------------------------------------------------- doctor
@@ -158,13 +173,10 @@ def doctor(settings: Mapping[str, Any], cancelled: Callable[[], bool] = lambda: 
             action = "install"
 
     try:
-        dest = lora_path(settings)
-        if dest.is_file() or action == "install":
-            ok, detail = verify_lora(dest, cancelled)
-            if not check("LoRA file", ok, detail):
-                action = "install"
-        else:
-            check("LoRA file", True, f"not in {dest.parent}, but ComfyUI lists it elsewhere")
+        found = installed_lora(settings)
+        ok, detail = verify_lora(found or lora_path(settings), cancelled)
+        if not check("LoRA file", ok, detail):
+            action = "install"
     except Pano360InstallError as exc:
         check("LoRA folder", False, str(exc))
 

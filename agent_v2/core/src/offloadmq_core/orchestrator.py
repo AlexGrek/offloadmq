@@ -975,8 +975,9 @@ class Orchestrator:
         dump = settings.model_dump()
         try:
             lora_dir: str | None = str(pano360_runtime.lora_target_dir(dump, timeout=3))
-        except RuntimeError:
-            lora_dir = None
+            found = pano360_install.installed_lora(dump)
+        except (RuntimeError, pano360_install.Pano360InstallError):
+            lora_dir, found = None, None
         return {
             **pano360_runtime.status(dump).to_dict(),
             "settings": {
@@ -990,6 +991,7 @@ class Orchestrator:
                 "name": pano360_runtime.LORA_NAME, "url": pano360_runtime.LORA_URL,
                 "bytes": pano360_runtime.LORA_BYTES, "license": pano360_runtime.LORA_LICENSE,
                 "target_dir": lora_dir,
+                "installed_path": str(found) if found else None,
             },
             "job": self._pano360_job.snapshot(),
         }
