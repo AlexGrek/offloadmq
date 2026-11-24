@@ -68,6 +68,25 @@ tasks:
     cmds:
       - uv run omq bgremove uninstall --yes
 
+  # ----------------------------------------------------------------
+  # world.pano360 (picture -> outpainted 360 world) — FLUX in ComfyUI + WorldGen LoRA
+  # ----------------------------------------------------------------
+
+  pano360:install:
+    desc: Download the WorldGen panorama LoRA (35 MB) into ComfyUI's loras folder
+    cmds:
+      - uv run omq pano360 install
+
+  pano360:doctor:
+    desc: Check ComfyUI nodes, FLUX models, the LoRA checksum and the depth workflow; FIX=1 re-downloads the LoRA
+    cmds:
+      - uv run omq pano360 doctor {{if .FIX}}--fix{{end}}
+
+  pano360:uninstall:
+    desc: Delete the WorldGen LoRA (shared FLUX models stay)
+    cmds:
+      - uv run omq pano360 uninstall --yes
+
   frontend:install:
     desc: Install frontend npm dependencies
     dir: "{{.FRONTEND}}"

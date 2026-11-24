@@ -14,7 +14,8 @@ const base = process.env.POC_URL ?? 'http://localhost:8443/'
 const scenes = process.argv.slice(2)
 const W = 768, H = 512
 // [label, x, y, z (three.js: -z forward), yaw degrees (left positive)]
-const POSES = [
+// POC_POSES='[["turn 180",0,0,0,180]]' overrides the default set (e.g. for 360 worlds).
+const POSES = process.env.POC_POSES ? JSON.parse(process.env.POC_POSES) : [
   ['centre', 0, 0, 0, 0],
   ['lean L 20cm', -0.2, 0, 0, 0],
   ['lean R 20cm', 0.2, 0, 0, 0],

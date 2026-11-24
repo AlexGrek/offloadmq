@@ -47,6 +47,11 @@ def route_executor(cap: str) -> ExecutorFn | None:
 
         return execute_world_sharp
 
+    if cap == "world.pano360":
+        from offloadmq_agent.exec.world.pano360 import execute_world_pano360
+
+        return execute_world_pano360
+
     if cap.startswith("world."):
         from offloadmq_agent.exec.world import execute_world_splat
 

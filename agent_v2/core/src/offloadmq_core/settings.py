@@ -60,6 +60,14 @@ class Settings(BaseModel):
     sharp_models_dir: str = ""
     sharp_torch_index: str = "auto"  # auto | cuda | cpu | pypi | <index URL>
 
+    # world.pano360 (WorldGen-style 360 outpaint) — models ComfyUI lists; blank = auto-pick.
+    # The WorldGen LoRA goes to pano360_lora_dir (blank = ComfyUI's own loras folder).
+    pano360_unet: str = ""
+    pano360_clip_l: str = ""
+    pano360_t5: str = ""
+    pano360_vae: str = ""
+    pano360_lora_dir: str = ""
+
     # ONNX models (onnx.nudenet, onnx.bgremove.*) — downloaded on demand. Blank = ~/.offload-agent/onnx-models.
     onnx_models_dir: str = ""
     # Background removal (onnx.bgremove.*) — omq bgremove config / GUI.
@@ -105,6 +113,11 @@ class Settings(BaseModel):
         "sharp_torch_index",
         "onnx_models_dir",
         "bgremove_device",
+        "pano360_unet",
+        "pano360_clip_l",
+        "pano360_t5",
+        "pano360_vae",
+        "pano360_lora_dir",
         mode="before",
     )
     @classmethod

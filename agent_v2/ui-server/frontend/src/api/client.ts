@@ -4,6 +4,8 @@ import type {
   BgRemoveDoctorReport,
   BgRemoveStatus,
   CapabilitiesState,
+  Pano360DoctorReport,
+  Pano360Status,
   Settings,
   SharpDoctorReport,
   SharpStatus,
@@ -198,6 +200,15 @@ export const api = {
     }),
   cancelBgRemove: () => request<BgRemoveStatus>("/bgremove/cancel", { method: "POST" }),
   doctorBgRemove: () => request<BgRemoveDoctorReport>("/bgremove/doctor", { method: "POST" }),
+  getPano360Status: () => request<Pano360Status>("/pano360/status"),
+  savePano360Settings: (p: Partial<Pano360Status["settings"]>) =>
+    request<Pano360Status>("/pano360/settings", { method: "POST", body: JSON.stringify(p) }),
+  installPano360: (force = false) =>
+    request<Pano360Status>("/pano360/install", { method: "POST", body: JSON.stringify({ force }) }),
+  repairPano360: () => request<Pano360Status>("/pano360/repair", { method: "POST" }),
+  uninstallPano360: () => request<Pano360Status>("/pano360/uninstall", { method: "POST" }),
+  cancelPano360: () => request<Pano360Status>("/pano360/cancel", { method: "POST" }),
+  doctorPano360: () => request<Pano360DoctorReport>("/pano360/doctor", { method: "POST" }),
   getKokoroStatus: () =>
     request<{ ok: boolean; capabilities: string[]; reason: string }>(
       "/kokoro/status"

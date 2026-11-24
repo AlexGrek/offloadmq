@@ -267,3 +267,36 @@ export type BgRemoveDoctorReport = {
   redownload: string[];
   checks: { name: string; ok: boolean; detail: string }[];
 };
+
+export type Pano360Models = {
+  unet: string | null;
+  clip_l: string | null;
+  t5: string | null;
+  vae: string | null;
+  lora: string | null;
+};
+
+export type Pano360Status = {
+  ready: boolean;
+  summary: string;
+  comfyui_url: string;
+  reachable: boolean;
+  models: Pano360Models;
+  problems: string[];
+  choices: { unet: string[]; clip_l: string[]; t5: string[]; vae: string[] };
+  settings: {
+    pano360_unet: string;
+    pano360_clip_l: string;
+    pano360_t5: string;
+    pano360_vae: string;
+    pano360_lora_dir: string;
+  };
+  lora: { name: string; url: string; bytes: number; license: string; target_dir: string | null };
+  job: Omit<SharpJob, "action"> & { action: "install" | "repair" | "uninstall" | null };
+};
+
+export type Pano360DoctorReport = {
+  ok: boolean;
+  action: "install" | null;
+  checks: { name: string; ok: boolean; detail: string }[];
+};

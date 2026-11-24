@@ -55,7 +55,7 @@ from offloadmq_core.error_pool import ErrorPool, PendingLog, Severity
 from offloadmq_core.executor_pool import ExecutorPool
 from offloadmq_core.scan_state import ScanState
 from offloadmq_core.sharp_install import SharpInstallJob, SharpInstallError
-from offloadmq_core import bgremove_install, sharp_install
+from offloadmq_core import bgremove_install, pano360_install, sharp_install
 from offloadmq_core.settings import SETTINGS_FILE, Settings, load_settings, save_settings
 from offloadmq_core.task_store import TaskRecord, TaskStore
 from offloadmq_core.version import get_app_version
@@ -127,6 +127,7 @@ class Orchestrator:
         self._scan = ScanState()
         self._sharp_job = SharpInstallJob()
         self._bgremove_job = bgremove_install.BgRemoveInstallJob()
+        self._pano360_job = pano360_install.Pano360InstallJob()
         self._errors = ErrorPool()
 
         self._pool: ExecutorPool | None = None
@@ -962,6 +963,91 @@ class Orchestrator:
     def cancel_bgremove_job(self) -> dict[str, Any]:
         self._bgremove_job.cancel()
         return self.get_bgremove_status()
+
+    # ==================================================================
+    # world.pano360 — FLUX models in ComfyUI + WorldGen LoRA on demand
+    # ==================================================================
+
+    def get_pano360_status(self) -> dict[str, Any]:
+        from offloadmq_agent.exec.world import pano360_runtime
+
+        settings = self.get_settings()
+        dump = settings.model_dump()
+        try:
+            lora_dir: str | None = str(pano360_runtime.lora_target_dir(dump, timeout=3))
+        except RuntimeError:
+            lora_dir = None
+        return {
+            **pano360_runtime.status(dump).to_dict(),
+            "settings": {
+                "pano360_unet": settings.pano360_unet,
+                "pano360_clip_l": settings.pano360_clip_l,
+                "pano360_t5": settings.pano360_t5,
+                "pano360_vae": settings.pano360_vae,
+                "pano360_lora_dir": settings.pano360_lora_dir,
+            },
+            "lora": {
+                "name": pano360_runtime.LORA_NAME, "url": pano360_runtime.LORA_URL,
+                "bytes": pano360_runtime.LORA_BYTES, "license": pano360_runtime.LORA_LICENSE,
+                "target_dir": lora_dir,
+            },
+            "job": self._pano360_job.snapshot(),
+        }
+
+    def update_pano360_settings(
+        self,
+        unet: str | None = None,
+        clip_l: str | None = None,
+        t5: str | None = None,
+        vae: str | None = None,
+        lora_dir: str | None = None,
+    ) -> dict[str, Any]:
+        """Blank string = auto-pick (or ComfyUI's loras folder); None = leave unchanged."""
+        if self._pano360_job.running():
+            raise pano360_install.Pano360InstallError(
+                "wait for the running pano360 job to finish before changing its settings"
+            )
+        self.apply_settings(
+            pano360_unet=unet, pano360_clip_l=clip_l, pano360_t5=t5,
+            pano360_vae=vae, pano360_lora_dir=lora_dir,
+        )
+        self.start_background_scan()  # a different model may (un)advertise world.pano360
+        return self.get_pano360_status()
+
+    def start_pano360_install(self, force: bool = False) -> dict[str, Any]:
+        settings = self.get_settings().model_dump()
+        self._pano360_job.start(
+            "install",
+            lambda log, cancelled: pano360_install.install(settings, log, force, cancelled),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_pano360_status()
+
+    def run_pano360_doctor(self) -> dict[str, Any]:
+        """ComfyUI nodes/models, LoRA sha256 and the depth workflow (never modifies)."""
+        return pano360_install.doctor(self.get_settings().model_dump())
+
+    def start_pano360_repair(self) -> dict[str, Any]:
+        settings = self.get_settings().model_dump()
+        self._pano360_job.start(
+            "repair",
+            lambda log, cancelled: pano360_install.repair(settings, log, cancelled),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_pano360_status()
+
+    def start_pano360_uninstall(self) -> dict[str, Any]:
+        settings = self.get_settings().model_dump()
+        self._pano360_job.start(
+            "uninstall",
+            lambda log, _cancelled: pano360_install.uninstall(settings, log),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_pano360_status()
+
+    def cancel_pano360_job(self) -> dict[str, Any]:
+        self._pano360_job.cancel()
+        return self.get_pano360_status()
 
     def check_update(self) -> dict[str, Any]:
         return check_for_update(get_app_version())

@@ -218,6 +218,30 @@ def check_world_splat() -> CapResult:
     return CapResult([WORLD_SPLAT_CAP], True, "world.splat", f"depth via img-utils.{pack} at {url}")
 
 
+WORLD_PANO360_CAP = "world.pano360[ply;preview;pano;outpaint]"
+
+
+def check_world_pano360() -> CapResult:
+    """``world.pano360``: perspective picture → outpainted 360° panorama → splat world.
+
+    Needs what ``world.splat`` needs (ComfyUI + img-utils depth workflow) plus the
+    FLUX.1-dev models and WorldGen's panorama LoRA in ComfyUI (``omq pano360
+    install`` fetches the LoRA). Four small ComfyUI requests, no downloads.
+    """
+    from offloadmq_agent.exec.imggen.workflow import _find_workflows_dir
+    from offloadmq_agent.exec.world import find_depth_pack
+    from offloadmq_agent.exec.world.pano360_runtime import status
+
+    st = status()
+    if not st.ready:
+        return CapResult([], False, "world.pano360", st.describe())
+    workflows_dir = _find_workflows_dir()
+    pack = find_depth_pack(workflows_dir)
+    if pack is None:
+        return CapResult([], False, "world.pano360", f"no img-utils depth workflow in {workflows_dir / 'img-utils'}")
+    return CapResult([WORLD_PANO360_CAP], True, "world.pano360", f"{st.describe()}, depth via img-utils.{pack}")
+
+
 WORLD_SHARP_CAP = "world.sharp[ply;preview;metric]"
 
 
@@ -428,6 +452,7 @@ _CHECKS: List[Callable[[], CapResult]] = [
     check_kokoro,
     check_comfyui,
     check_world_splat,
+    check_world_pano360,
     check_world_sharp,
     check_custom_caps,
     check_onnx,

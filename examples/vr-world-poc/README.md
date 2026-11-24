@@ -80,6 +80,62 @@ Observations from the previews:
 3. Replace the stretched background with diffusion inpainting of the masked band.
 4. Wrap as an OffloadMQ capability (`custom.world.splat`) per VR-WORLD.md §OffloadMQ integration.
 
+## WorldGen-style 360 worlds from one picture (2026-11-24)
+
+`worldgen_poc.py` reproduces WorldGen's image-to-scene path
+([ZiYang-xie/WorldGen @ 7ce7b27](https://github.com/ZiYang-xie/WorldGen/tree/7ce7b2767fdf31e2727b69a2e61e2e950e3a017f))
+on the local ComfyUI, without the gated FLUX Fill, the Nunchaku wheel or Linux:
+
+| Stage | WorldGen | `worldgen_poc.py` |
+|---|---|---|
+| Place picture | `map_image_to_pano` (DA-2 rays) | pinhole → equirect at `--hfov`, `--pitch` |
+| Outpaint 360° | FLUX.1 Fill [dev] + `worldgen_img2scene` LoRA | FLUX.1 Krea dev fp8 + public `worldgen_text2scene` LoRA (35 MB, Apache-2.0, in `C:\AI\models\loras`), masked-latent inpaint + DifferentialDiffusion at 1600×800 |
+| Wrap seam | circular latent padding | roll 180° and re-inpaint a 12% band |
+| Keep the art | paste original back | same, at the 2048×1024 canvas, feathered |
+| Depth → splat | DA-2 → 1 Gaussian/pixel | Lotus on the panorama → `pipeline.build_splats` (pano, LDI background layer) |
+| `use_sharp` | SHARP per cube face, scaled to DA-2 | `pano_sharp_poc.py`: SHARP per cube face, scaled to the Lotus depth (SHARP venv) |
+
+```bash
+uv run worldgen_poc.py --name torii-wg --image runs/torii-sharp/source.png --hfov 60 \
+    --denoise-fill 0.95 --blend-frac 0.03 --prompt "a quiet Japanese Shinto shrine courtyard, ..."
+~/.offload-agent/sharp/.venv/Scripts/python.exe pano_sharp_poc.py --name torii-wg
+cd ../../oai/e2e && POC_POSES='[["turn 180",0,0,0,180]]' node ../../examples/vr-world-poc/capture.mjs torii-wg
+```
+
+The prompt defaults to the PNG's embedded ComfyUI prompt and gets WorldGen's
+"A high quality 360 panorama photo of … 360 consistent, omnidirectional" wrapper.
+
+Results (RTX 5070 Ti, warm ComfyUI):
+
+| Run | Picture | Sphere covered | Outpaint + seam | Depth | Splats / PLY |
+|---|---|---|---|---|---|
+| `market-wg3` | 2048×1536 beach from a hill, hfov 90, pitch −25 | 10.5% | 38 s + 32 s | 3.5 s | 1.19 M / 77 MiB |
+| `torii-wg` | 1080×1920 shrine, hfov 60 | 8.2% | 38 s + 31 s | 3.5 s | 1.20 M / 78 MiB |
+| `temple-wg` | 1536² temple interior, hfov 80 | 9.3% | 38 s + 31 s | 3.5 s | 1.22 M / 79 MiB |
+| `torii-wg-sharp360` | `torii-wg` panorama, 6 × 768² faces, keep 35% | — | 35 s SHARP (+8 s load), 7.0 GiB peak | — | 2.45 M / 131 MiB |
+
+`runs/_capture/torii-compare.png` has Spark renders of `torii-sharp` / `torii-wg` /
+`torii-wg-sharp360` at centre, lean 20 cm, turn 90° and turn 180°.
+
+Findings:
+- **Turning works.** world.sharp shows black past the frame; both panorama worlds show a
+  coherent continuation (shrine garden, halls, lanterns; beach, huts, crowd; columned hall).
+  The 180° seam is invisible after the roll-and-inpaint pass.
+- **The opening view gets softer.** The picture covers ~8–10% of a 2048-wide panorama, so
+  its 1080–2048 px shrink to ~300–400 px. Fix candidates: a 4096 canvas for the paste-back,
+  or a hybrid (SHARP of the original picture in front, panorama world for the rest).
+- **Framing objects.** At `--denoise-fill 0.95` FLUX tends to frame the picture with large
+  near objects (a second torii, temple columns). At 1.0 it does not, but the picture's edge
+  shows a colour step instead (`market-wg`). The seed must be the picture's mean colour
+  (an all-black seed produced a dark hut around the picture).
+- **Pitch matters.** Pictures shot from above need `--pitch` (market: −25°), otherwise an
+  aerial view floats above an eye-level world. The viewer still starts level, so the
+  picture is then below the start gaze.
+- **SHARP per cube face** gives crisper geometry and joins cleanly at face edges, but the
+  6 × 1.18 M Gaussians need decimation for Quest/OAI limits; random 35% leaves visible
+  speckle. Per-face scale factors (×2.4–×9.4) show Lotus is a weak anchor, especially for
+  up/down faces. DA-2 (WorldGen's panoramic depth) would be the real fix.
+
 ## Productized version
 
 Use OAI `/app/worlds` and the `world.splat` agent executor for persistent jobs,

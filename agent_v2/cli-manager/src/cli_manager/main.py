@@ -581,6 +581,112 @@ def bgremove_uninstall(
 
 
 # ------------------------------------------------------------------
+# pano360
+# ------------------------------------------------------------------
+
+
+pano360_app = typer.Typer(
+    help="world.pano360 (picture -> outpainted 360 world): FLUX models in ComfyUI + the WorldGen LoRA."
+)
+app.add_typer(pano360_app, name="pano360")
+
+
+@pano360_app.command("status")
+def pano360_status() -> None:
+    """Show which ComfyUI models world.pano360 would use (four small ComfyUI requests)."""
+    from offloadmq_agent.exec.world import pano360_runtime as rt
+
+    settings = _orch().get_settings().model_dump()
+    st = rt.status(settings, timeout=5)
+    _plain(st.describe())
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Role")
+    table.add_column("Model")
+    table.add_column("Setting")
+    for role, value in st.models.to_dict().items():
+        key = rt.SETTING_KEYS.get(role)
+        table.add_row(role, value or "-", (f"{key}={settings.get(key) or 'auto'}") if key else "omq pano360 install")
+    console.print(table)
+    try:
+        _plain(f"LoRA folder: {rt.lora_target_dir(settings)}")
+    except RuntimeError as exc:
+        _plain(f"LoRA folder: {exc}")
+    if not st.ready:
+        raise typer.Exit(1)
+
+
+@pano360_app.command("config")
+def pano360_config(
+    unet: Optional[str] = typer.Option(None, "--unet", help="FLUX.1-dev UNET as ComfyUI lists it ('' = auto)"),
+    clip_l: Optional[str] = typer.Option(None, "--clip-l", help="CLIP-L text encoder ('' = auto)"),
+    t5: Optional[str] = typer.Option(None, "--t5", help="T5-XXL text encoder ('' = auto, fp8 preferred)"),
+    vae: Optional[str] = typer.Option(None, "--vae", help="FLUX VAE ('' = auto, ae.safetensors)"),
+    lora_dir: Optional[str] = typer.Option(
+        None, "--lora-dir", help="Where install puts the LoRA ('' = ComfyUI's own loras folder)"
+    ),
+) -> None:
+    """Pin models or the LoRA folder. Unset options stay as they are."""
+    _orch().update_settings(
+        pano360_unet=unet, pano360_clip_l=clip_l, pano360_t5=t5, pano360_vae=vae, pano360_lora_dir=lora_dir,
+    )
+    pano360_status()
+
+
+@pano360_app.command("install")
+def pano360_install(force: bool = typer.Option(False, "--force", help="Download again")) -> None:
+    """Download WorldGen's panorama LoRA (35 MB, Apache-2.0, sha256-verified) into ComfyUI."""
+    from offloadmq_core.pano360_install import Pano360InstallError, install
+
+    try:
+        install(_orch().get_settings().model_dump(), log=_plain, force=force)
+    except (Pano360InstallError, RuntimeError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print("[green]Done.[/green] Restart or rescan the agent to advertise world.pano360.")
+
+
+@pano360_app.command("doctor")
+def pano360_doctor(fix: bool = typer.Option(False, "--fix", help="(Re)download the LoRA if it is missing or corrupt")) -> None:
+    """Check ComfyUI nodes, FLUX models, the LoRA checksum and the depth workflow."""
+    from offloadmq_core.pano360_install import Pano360InstallError, doctor, repair
+
+    settings = _orch().get_settings().model_dump()
+    try:
+        report = repair(settings, log=_plain) if fix else doctor(settings)
+    except (Pano360InstallError, RuntimeError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    if not fix:
+        for c in report["checks"]:
+            mark = "[green]ok[/green]  " if c["ok"] else "[red]FAIL[/red]"
+            console.print(f"{mark} {c['name']}: ", end="")
+            _plain(c["detail"])
+    if report["ok"]:
+        console.print("[green]world.pano360 is healthy.[/green]")
+        return
+    if not fix and report["action"]:
+        console.print(f"[yellow]Run `omq pano360 doctor --fix` to {report['action']} the LoRA.[/yellow]")
+    raise typer.Exit(1)
+
+
+@pano360_app.command("uninstall")
+def pano360_uninstall(yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation")) -> None:
+    """Delete the WorldGen LoRA (the shared FLUX models are never touched)."""
+    from offloadmq_core.pano360_install import Pano360InstallError, lora_path, uninstall
+
+    settings = _orch().get_settings().model_dump()
+    try:
+        target = lora_path(settings)
+    except Pano360InstallError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    if not yes and not typer.confirm(f"Delete {target}?"):
+        raise typer.Exit(1)
+    uninstall(settings, log=_plain)
+    console.print("[green]Done.[/green] Restart or rescan the agent to stop advertising world.pano360.")
+
+
+# ------------------------------------------------------------------
 # config
 # ------------------------------------------------------------------
 

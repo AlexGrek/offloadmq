@@ -111,6 +111,19 @@ class BgRemoveUninstallPayload(BaseModel):
     models: list[str] = []  # empty = every background-removal model
 
 
+class Pano360SettingsPayload(BaseModel):
+    # None = leave unchanged; "" = auto-pick the model (or ComfyUI's own loras folder).
+    pano360_unet: str | None = None
+    pano360_clip_l: str | None = None
+    pano360_t5: str | None = None
+    pano360_vae: str | None = None
+    pano360_lora_dir: str | None = None
+
+
+class Pano360InstallPayload(BaseModel):
+    force: bool = False
+
+
 class WorkflowAddPayload(BaseModel):
     workflow_name: str
     task_type: str
