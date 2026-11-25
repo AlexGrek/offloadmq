@@ -26,6 +26,11 @@ pub struct Model {
     /// Whether the input was shrunk by an `image_resize` pre-step on an agent
     /// instead of locally. Recorded so retry replays the same choice.
     pub external_resize: bool,
+    /// When the vision task began executing on an agent (set once; never for the
+    /// `image_resize` pre-step). Feeds the queue estimate.
+    pub started_at: Option<DateTimeWithTimeZone>,
+    /// Server-reported typical runtime for the vision capability, in seconds.
+    pub typical_runtime_seconds: Option<f64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -59,6 +59,27 @@ impl JobReconciler for ImageAnalysisReconciler {
         "vision task failed"
     }
 
+    /// Track the vision task's start + typical runtime for the queue estimate. The
+    /// `image_resize` pre-step is skipped: `started_at` is set once, so recording
+    /// the pre-step would pin the vision task's start to the wrong moment.
+    async fn on_poll(
+        &self,
+        state: &AppState,
+        job: &image_analysis::ImageAnalysisJob,
+        poll: &NormalizedPoll,
+    ) -> Result<(), AppError> {
+        if job.offload_cap.as_deref().is_some_and(external_resize::is_pre_step) {
+            return Ok(());
+        }
+        image_analysis::record_progress(
+            &state.db,
+            job.id,
+            task_status::is_executing(&poll.status),
+            poll.typical_runtime_seconds,
+        )
+        .await
+    }
+
     async fn poller(&self, state: &AppState) -> Result<Box<dyn OffloadPoller>, AppError> {
         Ok(Box::new(offload_factory::chat_client(state).await?))
     }

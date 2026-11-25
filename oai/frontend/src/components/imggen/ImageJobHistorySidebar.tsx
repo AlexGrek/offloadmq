@@ -25,7 +25,7 @@ type ImageJobHistorySidebarProps = {
   loading?: boolean
   /** Live status from progress drawer poll cache (`last_poll_status`). */
   statusOverrides?: Record<string, string>
-  /** In-flight jobs from the Progress feed; drives the estimated queue time. */
+  /** In-flight image work from the Progress feed (all image sources); drives the estimated queue time. */
   runningJobs?: RunningJobItem[]
   onSelectNew: () => void
   onSelectJob: (jobId: string) => void

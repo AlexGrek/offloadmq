@@ -4,7 +4,7 @@
 
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect,
+    QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 use crate::{
@@ -104,8 +104,44 @@ pub async fn create_job(
         error: ActiveValue::Set(None),
         data_preparation: ActiveValue::Set(input.data_preparation.map(str::to_string)),
         external_resize: ActiveValue::Set(input.external_resize),
+        started_at: ActiveValue::Set(None),
+        typical_runtime_seconds: ActiveValue::Set(None),
     };
     model.insert(db).await.map_err(AppError::Database)
+}
+
+/// Record queue-estimate inputs observed on a poll of the vision task.
+///
+/// `started_at` is set once (`IS NULL` filter) so it keeps the moment the agent
+/// began work; `typical_runtime_seconds` is refreshed whenever the server reports one.
+pub async fn record_progress(
+    db: &DatabaseConnection,
+    job_id: i64,
+    executing: bool,
+    typical_runtime_seconds: Option<f64>,
+) -> Result<(), AppError> {
+    if executing {
+        let now = chrono::Utc::now().fixed_offset();
+        ImageAnalysisJobEntity::update_many()
+            .col_expr(image_analysis_jobs::Column::StartedAt, Expr::value(now))
+            .filter(image_analysis_jobs::Column::Id.eq(job_id))
+            .filter(image_analysis_jobs::Column::StartedAt.is_null())
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+    }
+    if let Some(secs) = typical_runtime_seconds.filter(|s| *s > 0.0) {
+        ImageAnalysisJobEntity::update_many()
+            .col_expr(
+                image_analysis_jobs::Column::TypicalRuntimeSeconds,
+                Expr::value(secs),
+            )
+            .filter(image_analysis_jobs::Column::Id.eq(job_id))
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+    }
+    Ok(())
 }
 
 pub async fn set_result(

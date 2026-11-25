@@ -68,8 +68,8 @@ pub async fn list_running_jobs(
         job_id: job.id.to_string(),
         offload_cap: job.offload_cap.unwrap_or_default(),
         offload_task_id: job.offload_task_id.unwrap_or_default(),
-        started_at: None,
-        typical_runtime_seconds: None,
+        started_at: job.started_at.map(|d| d.to_rfc3339()),
+        typical_runtime_seconds: job.typical_runtime_seconds.filter(|s| *s > 0.0),
         submitted_at: Some(job.created_at.to_rfc3339()),
     }));
 

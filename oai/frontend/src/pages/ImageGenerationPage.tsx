@@ -255,7 +255,27 @@ const DEFAULT_RESCALE: RescaleState = {
 
 export default function ImageGenerationPage() {
   const { token } = useAuth()
-  const { refreshRunningImageJobs, runningImageJobs, setForegroundJob } = useProgress()
+  const {
+    refreshRunningImageJobs,
+    runningImageJobs,
+    runningDescribeJobs,
+    runningImgUtilsJobs,
+    runningBgRemoverJobs,
+    runningWorldJobs,
+    setForegroundJob,
+  } = useProgress()
+  // Everything that competes for image agents feeds the sidebar's queue estimate:
+  // generation plus Describe image, Image Tools, Background Remover and VR worlds.
+  const queueJobs = useMemo(
+    () => [
+      ...runningImageJobs,
+      ...runningDescribeJobs,
+      ...runningImgUtilsJobs,
+      ...runningBgRemoverJobs,
+      ...runningWorldJobs,
+    ],
+    [runningImageJobs, runningDescribeJobs, runningImgUtilsJobs, runningBgRemoverJobs, runningWorldJobs],
+  )
   const isMobile = useIsMobile()
   const morph = useMorph()
   const location = useLocation()
@@ -1678,7 +1698,7 @@ export default function ImageGenerationPage() {
           mediaRevision={mediaRevision}
           loading={jobsLoading && jobs.length === 0}
           statusOverrides={jobStatusOverrides}
-          runningJobs={runningImageJobs}
+          runningJobs={queueJobs}
           onSelectNew={onSidebarSelectNew}
           onSelectJob={onSidebarSelectJob}
         />

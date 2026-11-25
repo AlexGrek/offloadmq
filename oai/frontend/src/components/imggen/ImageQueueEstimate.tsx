@@ -5,7 +5,10 @@ import type { RunningJobItem } from '../../api/progress'
 import { estimateQueue, formatDuration } from '../../lib/imggen'
 
 type ImageQueueEstimateProps = {
-  /** In-flight image jobs (Progress feed). Renders nothing when empty. */
+  /**
+   * In-flight image work from the Progress feed — generation, Describe image, Image
+   * Tools, Background Remover and VR worlds. Renders nothing when empty.
+   */
   running: RunningJobItem[]
   /** Recent jobs, used as runtime history for jobs with no estimate of their own. */
   history: ImageJobDetails[]
@@ -35,7 +38,7 @@ export function ImageQueueEstimate({ running, history }: ImageQueueEstimateProps
   return (
     <div
       className="mx-1 mt-1 flex shrink-0 items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground"
-      title="Estimated time until every queued and running job has finished, assuming they run one after another"
+      title="Estimated time until every queued and running image job (generation, describe, image tools, VR worlds) has finished, assuming they run one after another"
       data-testid="imggen-queue-estimate"
     >
       <Hourglass className="size-3.5 shrink-0" />

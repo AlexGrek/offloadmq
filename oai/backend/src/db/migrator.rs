@@ -55,6 +55,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261121_000047_create_img_utils_capabilities::Migration),
             Box::new(m20261122_000048_user_reverse_exclusions::Migration),
             Box::new(m20261122_000049_create_bg_remover_jobs::Migration),
+            Box::new(m20261126_000050_image_analysis_progress_timing::Migration),
         ]
     }
 }
@@ -188,3 +189,4 @@ mod m20261122_000048_user_reverse_exclusions;
 
 /// Background Remover: `onnx.bgremove.*` jobs (one image in, one cutout out).
 mod m20261122_000049_create_bg_remover_jobs;
+mod m20261126_000050_image_analysis_progress_timing;
