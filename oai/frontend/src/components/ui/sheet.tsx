@@ -68,6 +68,7 @@ function SheetContent({
         {children}
         {showClose && (
           <SheetPrimitive.Close
+            data-slot="sheet-close-button"
             className="absolute top-3 right-3 rounded-md p-1 text-muted-foreground opacity-70 transition-opacity hover:bg-muted hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Close"
           >

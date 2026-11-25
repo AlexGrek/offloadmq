@@ -3,9 +3,14 @@
  *
  * Adding a theme:
  *   1. Append an entry here (`id` must be a unique kebab-case string).
- *   2. Add a `[data-theme='<id>'] { … }` block in `src/index.css` that overrides the
- *      CSS variables it needs. Unset variables fall back to the base palette of its
- *      `mode` (`:root` for light, `.dark` for dark), so a theme can stay small.
+ *   2. Add its CSS under `src/themes/`:
+ *      - Palette theme: a `:root[data-theme='<id>'] { … }` block in `palettes.css`
+ *        overriding colour variables. Unset variables fall back to the base palette
+ *        of its `mode` (`:root` for light, `.dark` for dark).
+ *      - Styled theme: its own `src/themes/<id>.css` (imported from `index.css`). It
+ *        may also set `--radius`, `--app-font-sans` / `--app-font-display`, and
+ *        restyle elements through their `data-slot` / `data-variant` hooks (see
+ *        `win98.css`, `liquid-glass.css`).
  *
  * Every theme is either light-ish or dark-ish (`mode`). Dark-mode themes get the
  * `.dark` class on <html>, so Tailwind `dark:` variants keep working unchanged.
@@ -28,6 +33,8 @@ export const THEMES = [
   { id: 'tangerine', label: 'Tangerine', emoji: '🍊', mode: 'light', swatch: ['oklch(1 0 0)', 'oklch(0.7 0.18 55)'] },
   { id: 'sky', label: 'Sky', emoji: '🌤️', mode: 'light', swatch: ['oklch(0.97 0.012 230)', 'oklch(0.52 0.14 245)'] },
   { id: 'ukraine', label: 'Ukraine', emoji: '🇺🇦', mode: 'light', swatch: ['oklch(0.985 0.025 95)', 'oklch(0.47 0.14 255)'] },
+  { id: 'win98', label: 'Windows 98', emoji: '🪟', mode: 'light', swatch: ['#c0c0c0', '#000080'] },
+  { id: 'liquid-glass', label: 'Liquid Glass', emoji: '🫧', mode: 'light', swatch: ['oklch(0.86 0.08 230)', 'oklch(0.58 0.2 258)'] },
   { id: 'dark', label: 'Dark', emoji: '🌑', mode: 'dark', swatch: ['oklch(0.145 0 0)', 'oklch(0.922 0 0)'] },
   { id: 'graphite', label: 'Graphite', emoji: '🪨', mode: 'dark', swatch: ['oklch(0.3 0 0)', 'oklch(0.85 0 0)'] },
   { id: 'midnight', label: 'Midnight', emoji: '🌌', mode: 'dark', swatch: ['oklch(0.2 0.04 265)', 'oklch(0.7 0.14 250)'] },

@@ -43,6 +43,8 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     ['ukraine', false],
     ['amethyst', true],
     ['ember', true],
+    ['win98', false],
+    ['liquid-glass', false],
     ['dark', true],
   ] as const) {
     await page.getByTestId('theme-picker').click()
@@ -54,13 +56,49 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     seen.add(state.bg)
   }
   // Every theme paints a different background.
-  expect(seen.size).toBe(9)
+  expect(seen.size).toBe(11)
 
   await page.getByTestId('theme-picker').click()
   await page.getByTestId('theme-option-graphite').click()
   await page.reload()
   expect(await html(page)).toMatchObject({ theme: 'graphite', dark: true })
   expect(await page.evaluate(() => localStorage.getItem('oai_theme'))).toBe('graphite')
+})
+
+test('styled themes change radius, fonts and element looks', async ({ page, request }) => {
+  const account = await register(request)
+  await signIn(page, account.token)
+  await page.goto('/app/dashboard')
+  const look = () =>
+    page.evaluate(() => {
+      const button = document.querySelector('[data-testid="theme-picker"]')!
+      return {
+        radius: getComputedStyle(document.documentElement).getPropertyValue('--radius').trim(),
+        font: getComputedStyle(document.body).fontFamily,
+        buttonRadius: getComputedStyle(button).borderTopLeftRadius,
+      }
+    })
+  await expect(page.getByTestId('theme-picker')).toBeVisible()
+  const base = await look()
+
+  for (const [id, expected] of [
+    ['win98', { radius: '0rem', font: /Tahoma/, buttonRadius: '0px' }],
+    ['liquid-glass', { radius: '1.1rem', font: /apple-system/, buttonRadius: '9999px' }],
+  ] as const) {
+    await page.getByTestId('theme-picker').click()
+    await page.getByTestId(`theme-option-${id}`).click()
+    await expect(page.getByTestId('theme-picker-menu')).toBeHidden()
+    const state = await look()
+    expect(state.radius).toBe(expected.radius)
+    expect(state.font).toMatch(expected.font)
+    expect(state.buttonRadius).toBe(expected.buttonRadius)
+  }
+
+  // Back to a plain palette theme: the styled overrides are gone.
+  await page.getByTestId('theme-picker').click()
+  await page.getByTestId('theme-option-light').click()
+  await expect(page.getByTestId('theme-picker-menu')).toBeHidden()
+  expect(await look()).toEqual(base)
 })
 
 test('unknown stored theme falls back to a valid one', async ({ page, request }) => {

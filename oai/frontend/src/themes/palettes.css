@@ -1,0 +1,238 @@
+/*
+ * Named themes — registered in src/lib/themes.ts. Each block overrides the base
+ * palette of its mode (:root for light themes, .dark for dark themes); anything
+ * not listed falls through to that base. `:root[data-theme]` outranks `.dark`.
+ */
+
+/* Graphite — dark, layered greys; never pure black. */
+:root[data-theme='graphite'] {
+    --background: oklch(0.27 0 0);
+    --foreground: oklch(0.93 0 0);
+    --card: oklch(0.31 0 0);
+    --card-foreground: oklch(0.93 0 0);
+    --popover: oklch(0.32 0 0);
+    --popover-foreground: oklch(0.93 0 0);
+    --primary: oklch(0.88 0 0);
+    --primary-foreground: oklch(0.25 0 0);
+    --secondary: oklch(0.36 0 0);
+    --secondary-foreground: oklch(0.93 0 0);
+    --muted: oklch(0.34 0 0);
+    --muted-foreground: oklch(0.74 0 0);
+    --accent: oklch(0.38 0 0);
+    --accent-foreground: oklch(0.95 0 0);
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 18%);
+    --ring: oklch(0.62 0 0);
+    --sidebar: oklch(0.3 0 0);
+    --sidebar-foreground: oklch(0.93 0 0);
+    --sidebar-primary: oklch(0.85 0 0);
+    --sidebar-primary-foreground: oklch(0.25 0 0);
+    --sidebar-accent: oklch(0.38 0 0);
+    --sidebar-accent-foreground: oklch(0.95 0 0);
+    --sidebar-border: oklch(1 0 0 / 12%);
+    --sidebar-ring: oklch(0.62 0 0);
+}
+
+/* Midnight — deep navy with a cool blue accent. */
+:root[data-theme='midnight'] {
+    --background: oklch(0.2 0.04 265);
+    --foreground: oklch(0.95 0.01 250);
+    --card: oklch(0.24 0.045 265);
+    --card-foreground: oklch(0.95 0.01 250);
+    --popover: oklch(0.25 0.045 265);
+    --popover-foreground: oklch(0.95 0.01 250);
+    --primary: oklch(0.7 0.14 250);
+    --primary-foreground: oklch(0.18 0.04 265);
+    --secondary: oklch(0.3 0.05 265);
+    --secondary-foreground: oklch(0.95 0.01 250);
+    --muted: oklch(0.28 0.045 265);
+    --muted-foreground: oklch(0.72 0.03 255);
+    --accent: oklch(0.32 0.06 265);
+    --accent-foreground: oklch(0.96 0.01 250);
+    --border: oklch(0.8 0.05 255 / 14%);
+    --input: oklch(0.8 0.05 255 / 20%);
+    --ring: oklch(0.6 0.12 250);
+    --sidebar: oklch(0.22 0.045 265);
+    --sidebar-foreground: oklch(0.95 0.01 250);
+    --sidebar-primary: oklch(0.7 0.14 250);
+    --sidebar-primary-foreground: oklch(0.18 0.04 265);
+    --sidebar-accent: oklch(0.32 0.06 265);
+    --sidebar-accent-foreground: oklch(0.96 0.01 250);
+    --sidebar-border: oklch(0.8 0.05 255 / 14%);
+    --sidebar-ring: oklch(0.6 0.12 250);
+}
+
+/* Sepia — warm paper, light. */
+:root[data-theme='sepia'] {
+    --background: oklch(0.96 0.02 85);
+    --foreground: oklch(0.28 0.03 60);
+    --card: oklch(0.98 0.015 85);
+    --card-foreground: oklch(0.28 0.03 60);
+    --popover: oklch(0.98 0.015 85);
+    --popover-foreground: oklch(0.28 0.03 60);
+    --primary: oklch(0.45 0.08 55);
+    --primary-foreground: oklch(0.98 0.015 85);
+    --secondary: oklch(0.92 0.03 80);
+    --secondary-foreground: oklch(0.3 0.04 60);
+    --muted: oklch(0.92 0.03 80);
+    --muted-foreground: oklch(0.5 0.04 65);
+    --accent: oklch(0.9 0.035 78);
+    --accent-foreground: oklch(0.3 0.04 60);
+    --border: oklch(0.86 0.03 75);
+    --input: oklch(0.86 0.03 75);
+    --ring: oklch(0.65 0.06 65);
+    --sidebar: oklch(0.94 0.025 82);
+    --sidebar-foreground: oklch(0.28 0.03 60);
+    --sidebar-primary: oklch(0.45 0.08 55);
+    --sidebar-primary-foreground: oklch(0.98 0.015 85);
+    --sidebar-accent: oklch(0.9 0.035 78);
+    --sidebar-accent-foreground: oklch(0.3 0.04 60);
+    --sidebar-border: oklch(0.86 0.03 75);
+    --sidebar-ring: oklch(0.65 0.06 65);
+}
+
+/* Tangerine — white paper with an orange highlight, light. */
+:root[data-theme='tangerine'] {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.25 0.02 40);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.25 0.02 40);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.25 0.02 40);
+    --primary: oklch(0.7 0.18 55);
+    --primary-foreground: oklch(0.2 0.03 40);
+    --secondary: oklch(0.96 0.02 60);
+    --secondary-foreground: oklch(0.3 0.03 40);
+    --muted: oklch(0.96 0.015 60);
+    --muted-foreground: oklch(0.5 0.03 50);
+    --accent: oklch(0.95 0.04 60);
+    --accent-foreground: oklch(0.35 0.1 50);
+    --border: oklch(0.9 0.02 60);
+    --input: oklch(0.9 0.02 60);
+    --ring: oklch(0.7 0.18 55);
+    --sidebar: oklch(0.985 0.005 60);
+    --sidebar-foreground: oklch(0.25 0.02 40);
+    --sidebar-primary: oklch(0.7 0.18 55);
+    --sidebar-primary-foreground: oklch(0.2 0.03 40);
+    --sidebar-accent: oklch(0.95 0.04 60);
+    --sidebar-accent-foreground: oklch(0.35 0.1 50);
+    --sidebar-border: oklch(0.9 0.02 60);
+    --sidebar-ring: oklch(0.7 0.18 55);
+}
+
+/* Sky — pale blue tones, light. */
+:root[data-theme='sky'] {
+    --background: oklch(0.97 0.012 230);
+    --foreground: oklch(0.27 0.03 250);
+    --card: oklch(0.99 0.006 230);
+    --card-foreground: oklch(0.27 0.03 250);
+    --popover: oklch(0.99 0.006 230);
+    --popover-foreground: oklch(0.27 0.03 250);
+    --primary: oklch(0.52 0.14 245);
+    --primary-foreground: oklch(0.99 0 0);
+    --secondary: oklch(0.93 0.03 230);
+    --secondary-foreground: oklch(0.3 0.04 250);
+    --muted: oklch(0.93 0.025 230);
+    --muted-foreground: oklch(0.5 0.04 245);
+    --accent: oklch(0.9 0.045 230);
+    --accent-foreground: oklch(0.3 0.08 250);
+    --border: oklch(0.88 0.03 235);
+    --input: oklch(0.88 0.03 235);
+    --ring: oklch(0.6 0.12 245);
+    --sidebar: oklch(0.94 0.03 230);
+    --sidebar-foreground: oklch(0.27 0.03 250);
+    --sidebar-primary: oklch(0.52 0.14 245);
+    --sidebar-primary-foreground: oklch(0.99 0 0);
+    --sidebar-accent: oklch(0.9 0.045 230);
+    --sidebar-accent-foreground: oklch(0.3 0.08 250);
+    --sidebar-border: oklch(0.88 0.03 235);
+    --sidebar-ring: oklch(0.6 0.12 245);
+}
+
+/* Ukraine — national blue and yellow, light. Yellow is used for fills and
+   highlights only; text and primary buttons stay blue for contrast. */
+:root[data-theme='ukraine'] {
+    --background: oklch(0.985 0.025 95);
+    --foreground: oklch(0.25 0.06 255);
+    --card: oklch(0.995 0.006 95);
+    --card-foreground: oklch(0.25 0.06 255);
+    --popover: oklch(0.995 0.006 95);
+    --popover-foreground: oklch(0.25 0.06 255);
+    --primary: oklch(0.47 0.14 255);
+    --primary-foreground: oklch(0.99 0.01 95);
+    --secondary: oklch(0.93 0.07 95);
+    --secondary-foreground: oklch(0.28 0.08 255);
+    --muted: oklch(0.94 0.04 95);
+    --muted-foreground: oklch(0.45 0.07 255);
+    --accent: oklch(0.92 0.09 95);
+    --accent-foreground: oklch(0.28 0.08 255);
+    --border: oklch(0.85 0.05 250);
+    --input: oklch(0.85 0.05 250);
+    --ring: oklch(0.47 0.14 255);
+    --sidebar: oklch(0.38 0.12 255);
+    --sidebar-foreground: oklch(0.97 0.01 95);
+    --sidebar-primary: oklch(0.87 0.17 95);
+    --sidebar-primary-foreground: oklch(0.25 0.08 255);
+    --sidebar-accent: oklch(0.45 0.13 255);
+    --sidebar-accent-foreground: oklch(0.97 0.01 95);
+    --sidebar-border: oklch(1 0 0 / 15%);
+    --sidebar-ring: oklch(0.87 0.17 95);
+}
+
+/* Amethyst — deep purple, dark. */
+:root[data-theme='amethyst'] {
+    --background: oklch(0.18 0.05 300);
+    --foreground: oklch(0.95 0.01 300);
+    --card: oklch(0.22 0.055 300);
+    --card-foreground: oklch(0.95 0.01 300);
+    --popover: oklch(0.23 0.055 300);
+    --popover-foreground: oklch(0.95 0.01 300);
+    --primary: oklch(0.8 0.12 310);
+    --primary-foreground: oklch(0.2 0.06 300);
+    --secondary: oklch(0.28 0.065 300);
+    --secondary-foreground: oklch(0.95 0.01 300);
+    --muted: oklch(0.26 0.055 300);
+    --muted-foreground: oklch(0.75 0.04 305);
+    --accent: oklch(0.32 0.08 300);
+    --accent-foreground: oklch(0.96 0.01 300);
+    --border: oklch(0.8 0.06 300 / 14%);
+    --input: oklch(0.8 0.06 300 / 20%);
+    --ring: oklch(0.66 0.16 305);
+    --sidebar: oklch(0.21 0.055 300);
+    --sidebar-foreground: oklch(0.95 0.01 300);
+    --sidebar-primary: oklch(0.8 0.12 310);
+    --sidebar-primary-foreground: oklch(0.2 0.06 300);
+    --sidebar-accent: oklch(0.32 0.08 300);
+    --sidebar-accent-foreground: oklch(0.96 0.01 300);
+    --sidebar-border: oklch(0.8 0.06 300 / 14%);
+    --sidebar-ring: oklch(0.66 0.16 305);
+}
+
+/* Ember — dark navy background with an orange highlight, dark. */
+:root[data-theme='ember'] {
+    --background: oklch(0.21 0.045 262);
+    --foreground: oklch(0.96 0.01 80);
+    --card: oklch(0.25 0.05 262);
+    --card-foreground: oklch(0.96 0.01 80);
+    --popover: oklch(0.26 0.05 262);
+    --popover-foreground: oklch(0.96 0.01 80);
+    --primary: oklch(0.74 0.17 55);
+    --primary-foreground: oklch(0.2 0.04 50);
+    --secondary: oklch(0.3 0.055 262);
+    --secondary-foreground: oklch(0.96 0.01 80);
+    --muted: oklch(0.28 0.05 262);
+    --muted-foreground: oklch(0.74 0.04 60);
+    --accent: oklch(0.33 0.07 262);
+    --accent-foreground: oklch(0.82 0.14 60);
+    --border: oklch(0.85 0.05 250 / 14%);
+    --input: oklch(0.85 0.05 250 / 20%);
+    --ring: oklch(0.72 0.16 55);
+    --sidebar: oklch(0.23 0.05 262);
+    --sidebar-foreground: oklch(0.96 0.01 80);
+    --sidebar-primary: oklch(0.74 0.17 55);
+    --sidebar-primary-foreground: oklch(0.2 0.04 50);
+    --sidebar-accent: oklch(0.33 0.07 262);
+    --sidebar-accent-foreground: oklch(0.82 0.14 60);
+    --sidebar-border: oklch(0.85 0.05 250 / 14%);
+    --sidebar-ring: oklch(0.72 0.16 55);
+}

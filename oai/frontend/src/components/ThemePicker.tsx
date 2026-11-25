@@ -45,7 +45,7 @@ export function ThemePicker() {
           <span aria-hidden className="text-base leading-none">{current?.emoji}</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44" data-testid="theme-picker-menu">
+      <DropdownMenuContent align="end" className="w-52" data-testid="theme-picker-menu">
         <DropdownMenuRadioGroup value={theme} onValueChange={(id) => setTheme(id as ThemeId)}>
           {groups.map((g, i) => (
             <div key={g.mode}>

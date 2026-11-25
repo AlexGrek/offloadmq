@@ -1,0 +1,174 @@
+/*
+ * Windows 98 — silver bevelled chrome, navy selection, square corners. Light.
+ *
+ * Styled theme: besides colours it sets radius + fonts and restyles elements via
+ * their `data-slot` hooks. Rules here are unlayered, so they beat Tailwind
+ * utilities on the same element.
+ */
+:root[data-theme='win98'] {
+    --radius: 0rem;
+    --app-font-sans: Tahoma, 'MS Sans Serif', 'Microsoft Sans Serif', Geneva, Verdana, sans-serif;
+    --app-font-display: Tahoma, 'MS Sans Serif', 'Microsoft Sans Serif', Geneva, Verdana, sans-serif;
+
+    /* Bevels (outer edge first). */
+    --w98-face: #c0c0c0;
+    --w98-raised: inset -1px -1px #000, inset 1px 1px #fff, inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+    --w98-pressed: inset -1px -1px #fff, inset 1px 1px #000, inset -2px -2px #dfdfdf, inset 2px 2px #808080;
+    --w98-window: inset -1px -1px #000, inset 1px 1px #dfdfdf, inset -2px -2px #808080, inset 2px 2px #fff;
+    --w98-field: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #000;
+    --w98-title: linear-gradient(90deg, #000080, #1084d0);
+
+    --background: #c0c0c0;
+    --foreground: #000;
+    --card: #c0c0c0;
+    --card-foreground: #000;
+    --popover: #c0c0c0;
+    --popover-foreground: #000;
+    --primary: #000080;
+    --primary-foreground: #fff;
+    --secondary: #c0c0c0;
+    --secondary-foreground: #000;
+    --muted: #b4b4b4;
+    --muted-foreground: #404040;
+    --accent: #000080;
+    --accent-foreground: #fff;
+    --destructive: #a00000;
+    --border: #808080;
+    --input: #808080;
+    --ring: #000;
+    --sidebar: #c0c0c0;
+    --sidebar-foreground: #000;
+    --sidebar-primary: #000080;
+    --sidebar-primary-foreground: #fff;
+    --sidebar-accent: #000080;
+    --sidebar-accent-foreground: #fff;
+    --sidebar-border: #808080;
+    --sidebar-ring: #000;
+    accent-color: #000080;
+}
+
+:root[data-theme='win98'] ::selection {
+    background: #000080;
+    color: #fff;
+}
+
+/* Top bar → taskbar. */
+:root[data-theme='win98'] [data-slot='topbar'] {
+    background: var(--w98-face);
+    backdrop-filter: none;
+    border-bottom: 1px solid #000;
+    box-shadow: inset 0 1px #fff, inset 0 -1px #808080;
+}
+
+/* Raised windows: cards, dialogs, sheets, menus. */
+:root[data-theme='win98'] :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    background: var(--w98-face);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-window);
+}
+:root[data-theme='win98'] :is([data-slot='dialog-content'], [data-slot='sheet-content']) {
+    padding: 3px;
+}
+
+/* Dialog / sheet headers → navy title bars. */
+:root[data-theme='win98'] :is([data-slot='dialog-header'], [data-slot='sheet-header']) {
+    background: var(--w98-title);
+    color: #fff;
+    border-bottom: 0;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+}
+:root[data-theme='win98'] :is([data-slot='dialog-header'], [data-slot='sheet-header']) :is([data-slot='dialog-title'], [data-slot='sheet-title']) {
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+:root[data-theme='win98'] :is([data-slot='dialog-header'], [data-slot='sheet-header']) :is([data-slot='dialog-description'], [data-slot='sheet-description']) {
+    color: #dfdfdf;
+}
+:root[data-theme='win98'] :is([data-slot='dialog-close-button'], [data-slot='sheet-close-button']) {
+    top: 0.6rem;
+    right: 0.6rem;
+    padding: 1px 2px;
+    color: #000;
+    opacity: 1;
+    background: var(--w98-face);
+    border-radius: 0;
+    box-shadow: var(--w98-raised);
+}
+:root[data-theme='win98'] :is([data-slot='dialog-close-button'], [data-slot='sheet-close-button']):active {
+    box-shadow: var(--w98-pressed);
+}
+
+/* Menus: navy highlight on the focused item. */
+:root[data-theme='win98'] [data-slot='dropdown-menu-radio-item'] {
+    border-radius: 0;
+}
+
+/* Buttons: raised, pressed while active; ghost buttons are flat toolbar buttons. */
+:root[data-theme='win98'] [data-slot='button']:not([data-variant='link']) {
+    border: 0;
+    border-radius: 0;
+    color: #000;
+}
+:root[data-theme='win98'] [data-slot='button']:is([data-variant='default'], [data-variant='outline'], [data-variant='secondary'], [data-variant='destructive']) {
+    background: var(--w98-face);
+    box-shadow: var(--w98-raised);
+}
+:root[data-theme='win98'] [data-slot='button'][data-variant='default'] {
+    font-weight: 700;
+}
+:root[data-theme='win98'] [data-slot='button'][data-variant='destructive'] {
+    color: #a00000;
+}
+:root[data-theme='win98'] [data-slot='button'][data-variant='ghost'] {
+    background: transparent;
+}
+:root[data-theme='win98'] [data-slot='button'][data-variant='ghost']:is(:hover, [aria-expanded='true'], [aria-pressed='true']) {
+    background: var(--w98-face);
+    box-shadow: var(--w98-raised);
+}
+:root[data-theme='win98'] [data-slot='button']:not([data-variant='link']):active:not(:disabled) {
+    box-shadow: var(--w98-pressed);
+    transform: translate(1px, 1px);
+}
+:root[data-theme='win98'] [data-slot='button']:focus-visible {
+    outline: 1px dotted #000;
+    outline-offset: -4px;
+}
+:root[data-theme='win98'] [data-slot='button']:disabled {
+    color: #808080;
+    text-shadow: 1px 1px #fff;
+    opacity: 1;
+}
+
+/* Text fields: white, sunken. */
+:root[data-theme='win98'] :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select) {
+    background-color: #fff;
+    color: #000;
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-field);
+}
+:root[data-theme='win98'] :is([data-slot='input'], input, textarea, select):focus-visible {
+    outline: 1px dotted #000;
+    outline-offset: -4px;
+}
+
+/* Scrollbars: dithered track, raised thumb. */
+:root[data-theme='win98'] ::-webkit-scrollbar {
+    width: 16px;
+    height: 16px;
+}
+:root[data-theme='win98'] ::-webkit-scrollbar-track {
+    background-color: #dfdfdf;
+    background-image: conic-gradient(#c0c0c0 25%, #fff 0 50%, #c0c0c0 0 75%, #fff 0);
+    background-size: 2px 2px;
+}
+:root[data-theme='win98'] ::-webkit-scrollbar-thumb {
+    background: var(--w98-face);
+    box-shadow: var(--w98-raised);
+}
+:root[data-theme='win98'] ::-webkit-scrollbar-corner {
+    background: var(--w98-face);
+}

@@ -1,0 +1,134 @@
+/*
+ * Liquid Glass — translucent frosted panes over a soft colour-field wallpaper,
+ * pill buttons, large radii. Light.
+ *
+ * Styled theme: besides colours it sets radius + fonts and restyles elements via
+ * their `data-slot` hooks. Rules here are unlayered, so they beat Tailwind
+ * utilities on the same element.
+ */
+:root[data-theme='liquid-glass'] {
+    --radius: 1.1rem;
+    --app-font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Geist Variable', 'Segoe UI', sans-serif;
+    --app-font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Geist Variable', 'Segoe UI', sans-serif;
+
+    --glass-blur: blur(22px) saturate(180%);
+    --glass-edge: oklch(1 0 0 / 0.65);
+    --glass-shadow: inset 0 0 0 1px var(--glass-edge), inset 0 1px 0 oklch(1 0 0 / 0.85),
+        0 12px 32px -10px oklch(0.35 0.08 265 / 0.28);
+    --glass-tint: oklch(0.58 0.2 258);
+
+    /* Translucent tokens: surfaces let the wallpaper through. */
+    --background: oklch(1 0 0 / 0.18);
+    --foreground: oklch(0.22 0.03 265);
+    --card: oklch(1 0 0 / 0.45);
+    --card-foreground: oklch(0.22 0.03 265);
+    --popover: oklch(0.99 0.005 265 / 0.72);
+    --popover-foreground: oklch(0.22 0.03 265);
+    --primary: var(--glass-tint);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(1 0 0 / 0.5);
+    --secondary-foreground: oklch(0.22 0.03 265);
+    --muted: oklch(1 0 0 / 0.38);
+    --muted-foreground: oklch(0.42 0.03 265);
+    --accent: oklch(1 0 0 / 0.6);
+    --accent-foreground: oklch(0.22 0.03 265);
+    --border: oklch(1 0 0 / 0.55);
+    --input: oklch(1 0 0 / 0.7);
+    --ring: oklch(0.58 0.2 258 / 0.6);
+    --sidebar: oklch(1 0 0 / 0.35);
+    --sidebar-foreground: oklch(0.22 0.03 265);
+    --sidebar-primary: var(--glass-tint);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(1 0 0 / 0.6);
+    --sidebar-accent-foreground: oklch(0.22 0.03 265);
+    --sidebar-border: oklch(1 0 0 / 0.55);
+    --sidebar-ring: oklch(0.58 0.2 258 / 0.6);
+
+    /* Wallpaper: painted on <html> (propagates to the canvas). */
+    background:
+        radial-gradient(60vmax 60vmax at 8% 8%, oklch(0.82 0.13 230 / 0.9), transparent 60%),
+        radial-gradient(50vmax 50vmax at 92% 18%, oklch(0.8 0.14 330 / 0.85), transparent 60%),
+        radial-gradient(60vmax 60vmax at 72% 92%, oklch(0.86 0.12 165 / 0.8), transparent 60%),
+        radial-gradient(50vmax 50vmax at 12% 88%, oklch(0.88 0.11 75 / 0.75), transparent 60%),
+        oklch(0.95 0.02 260);
+    background-attachment: fixed;
+}
+
+/* Frosted panes. */
+:root[data-theme='liquid-glass'] :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    border-color: transparent;
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--glass-shadow);
+}
+:root[data-theme='liquid-glass'] [data-slot='card'] {
+    background-color: var(--card);
+}
+:root[data-theme='liquid-glass'] :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    background-color: var(--popover);
+}
+:root[data-theme='liquid-glass'] [data-slot='dialog-overlay'] {
+    background: oklch(0.3 0.04 265 / 0.18);
+}
+:root[data-theme='liquid-glass'] :is([data-slot='dialog-header'], [data-slot='dialog-footer'], [data-slot='sheet-header'], [data-slot='sheet-footer']) {
+    border-color: oklch(1 0 0 / 0.5);
+}
+
+/* Top bar and sticky chrome float over scrolling content. */
+:root[data-theme='liquid-glass'] [data-slot='topbar'] {
+    background-color: oklch(1 0 0 / 0.35);
+    border-bottom-color: oklch(1 0 0 / 0.6);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: 0 1px 0 oklch(1 0 0 / 0.5), 0 8px 24px -16px oklch(0.35 0.08 265 / 0.4);
+}
+:root[data-theme='liquid-glass'] .sticky:not([data-slot='topbar']) {
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+}
+
+/* Buttons: pills — tinted glass for primary, clear glass for the rest. */
+:root[data-theme='liquid-glass'] [data-slot='button']:not([data-variant='link']) {
+    border-radius: 9999px;
+}
+:root[data-theme='liquid-glass'] [data-slot='button'][data-variant='default'] {
+    color: oklch(1 0 0);
+    background: linear-gradient(180deg, oklch(0.67 0.18 252 / 0.92), oklch(0.55 0.21 260 / 0.92));
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.55), inset 0 0 0 1px oklch(1 0 0 / 0.25),
+        0 6px 16px -6px oklch(0.55 0.2 260 / 0.6);
+}
+:root[data-theme='liquid-glass'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    filter: brightness(1.08);
+}
+:root[data-theme='liquid-glass'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    border-color: transparent;
+    background-color: oklch(1 0 0 / 0.45);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    backdrop-filter: blur(12px) saturate(160%);
+    box-shadow: inset 0 0 0 1px var(--glass-edge), inset 0 1px 0 oklch(1 0 0 / 0.85),
+        0 4px 12px -6px oklch(0.35 0.08 265 / 0.3);
+}
+:root[data-theme='liquid-glass'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary'], [data-variant='ghost']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: oklch(1 0 0 / 0.65);
+}
+:root[data-theme='liquid-glass'] [data-slot='button']:not([data-variant='link']):active:not(:disabled) {
+    transform: scale(0.97);
+}
+:root[data-theme='liquid-glass'] :is([data-slot='dialog-close-button'], [data-slot='sheet-close-button']) {
+    border-radius: 9999px;
+    background-color: oklch(1 0 0 / 0.45);
+    box-shadow: inset 0 0 0 1px var(--glass-edge);
+}
+
+/* Fields: clear glass wells. */
+:root[data-theme='liquid-glass'] :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select) {
+    background-color: oklch(1 0 0 / 0.5);
+    border-color: var(--glass-edge);
+}
+:root[data-theme='liquid-glass'] :is([data-slot='input'], input, textarea, select):focus-visible {
+    background-color: oklch(1 0 0 / 0.7);
+}
+
+:root[data-theme='liquid-glass'] ::selection {
+    background: oklch(0.58 0.2 258 / 0.3);
+}

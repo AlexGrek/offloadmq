@@ -55,11 +55,13 @@ function Button({
 
   return (
     <Comp
-      data-slot="button"
       data-variant={variant}
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
+      // After the spread: a Radix `asChild` trigger would otherwise overwrite it,
+      // and themes style buttons through this hook.
+      data-slot="button"
     />
   )
 }
