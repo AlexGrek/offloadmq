@@ -1,0 +1,125 @@
+/*
+ * Noir — 1940s detective film: black and white, venetian-blind light across
+ * the wall, a desk-lamp glow, typewriter headings and one drop of red (focus,
+ * selection, destructive). Dark.
+ *
+ * Styled theme. The blinds and lamp are a <body> background (behind content),
+ * never an overlay.
+ */
+:root[data-theme='noir'] {
+    --radius: 0.125rem;
+    --app-font-display: 'Special Elite', 'Courier New', Courier, monospace;
+
+    --nr-red: #c4161c;
+    --nr-paper: #ebe8e1;
+
+    --background: #100f0e;
+    --foreground: var(--nr-paper);
+    --card: #171615;
+    --card-foreground: var(--nr-paper);
+    --popover: #1a1918;
+    --popover-foreground: var(--nr-paper);
+    --primary: var(--nr-paper);
+    --primary-foreground: #100f0e;
+    --secondary: #242321;
+    --secondary-foreground: var(--nr-paper);
+    --muted: #1c1b1a;
+    --muted-foreground: #9a9690;
+    --accent: #2a2927;
+    --accent-foreground: #ffffff;
+    --destructive: var(--nr-red);
+    --border: #2e2d2b;
+    --input: #3d3c39;
+    --ring: var(--nr-red);
+    --chart-1: #ebe8e1;
+    --chart-2: #a8a49d;
+    --chart-3: #6e6b66;
+    --chart-4: #c4161c;
+    --chart-5: #45433f;
+    --sidebar: #131211;
+    --sidebar-foreground: var(--nr-paper);
+    --sidebar-primary: var(--nr-paper);
+    --sidebar-primary-foreground: #100f0e;
+    --sidebar-accent: #2a2927;
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: #2e2d2b;
+    --sidebar-ring: var(--nr-red);
+
+    caret-color: var(--nr-red);
+    accent-color: var(--nr-red);
+    scrollbar-color: #3d3c39 transparent;
+}
+
+/* Lamp in the corner, blinds across the wall, dark edges. */
+:root[data-theme='noir'] body {
+    background-image:
+        radial-gradient(130% 110% at 50% 40%, transparent 50%, rgb(0 0 0 / 0.7) 100%),
+        radial-gradient(55vmax 45vmax at 18% 8%, rgb(255 250 235 / 0.1), transparent 70%),
+        repeating-linear-gradient(-32deg, transparent 0 46px, rgb(255 250 235 / 0.035) 46px 78px);
+    background-attachment: fixed;
+}
+
+:root[data-theme='noir'] .font-display {
+    font-weight: 400;
+    letter-spacing: 0.02em;
+}
+:root[data-theme='noir'] :is([data-slot='dialog-title'], [data-slot='sheet-title']) {
+    font-family: var(--app-font-display);
+    font-weight: 400;
+    letter-spacing: 0.03em;
+}
+
+:root[data-theme='noir'] [data-slot='topbar'] {
+    background: #0a0a09;
+    backdrop-filter: none;
+    border-bottom: 1px solid rgb(235 232 225 / 0.18);
+}
+:root[data-theme='noir'] [data-slot='brand']::after {
+    content: '.';
+    color: var(--nr-red);
+}
+
+:root[data-theme='noir'] [data-slot='card'] {
+    box-shadow: 0 0 0 1px var(--border), 0 18px 40px -18px rgb(0 0 0 / 0.9);
+}
+:root[data-theme='noir'] :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    box-shadow: 0 0 0 1px #3a3936, 0 28px 60px -20px rgb(0 0 0 / 0.95);
+}
+:root[data-theme='noir'] [data-slot='dialog-overlay'] {
+    background: rgb(0 0 0 / 0.7);
+}
+
+/* Buttons: title-card caps. */
+:root[data-theme='noir'] [data-slot='button']:not([data-variant='link']) {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.75rem;
+}
+:root[data-theme='noir'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background-color: #ffffff;
+}
+:root[data-theme='noir'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    background-color: transparent;
+    border-color: rgb(235 232 225 / 0.45);
+}
+:root[data-theme='noir'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: rgb(235 232 225 / 0.1);
+}
+
+:root[data-theme='noir'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)) {
+    background-color: #0c0b0a;
+}
+:root[data-theme='noir'] :is([data-slot='input'], :is(input, textarea, select):not(.bg-transparent)):focus-visible {
+    border-color: var(--nr-red);
+    box-shadow: 0 0 0 2px rgb(196 22 28 / 0.3);
+}
+
+:root[data-theme='noir'] [data-slot='dropdown-menu-radio-item'][data-state='checked'] {
+    background: var(--nr-paper);
+    color: #100f0e;
+}
+
+:root[data-theme='noir'] ::selection {
+    background: var(--nr-red);
+    color: #fff;
+}

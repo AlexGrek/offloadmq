@@ -141,11 +141,11 @@
 }
 
 /* Fields: vellum wells with an ink underline. */
-:root[data-theme='parry-hotter'] :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent) {
+:root[data-theme='parry-hotter'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)) {
     background-color: oklch(0.97 0.025 88);
     border-color: oklch(0.55 0.08 65 / 50%);
 }
-:root[data-theme='parry-hotter'] :is([data-slot='input'], input, textarea, select):not(.bg-transparent):focus-visible {
+:root[data-theme='parry-hotter'] :is([data-slot='input'], :is(input, textarea, select):not(.bg-transparent)):focus-visible {
     border-color: var(--ph-gold-dim);
     box-shadow: 0 0 0 3px oklch(0.7 0.12 80 / 0.3);
 }

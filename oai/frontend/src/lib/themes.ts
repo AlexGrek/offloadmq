@@ -40,6 +40,10 @@ export const THEMES = [
   { id: 'love', label: 'Love', emoji: '❤️', mode: 'light', swatch: ['oklch(0.97 0.02 10)', 'oklch(0.57 0.22 20)'] },
   { id: 'parry-hotter', label: 'Parry Hotter', emoji: '🪄', mode: 'light', swatch: ['oklch(0.92 0.045 85)', 'oklch(0.42 0.15 25)'] },
   { id: 'sherbet', label: 'Sherbet', emoji: '🍧', mode: 'light', swatch: ['oklch(0.88 0.14 85)', 'oklch(0.6 0.2 20)'] },
+  { id: 'minimal-light', label: 'Minimal Light', emoji: '⚪', mode: 'light', swatch: ['#fcfcfc', '#111111'] },
+  { id: 'lgbtq', label: 'LGBTQ+', emoji: '🏳️‍🌈', mode: 'light', swatch: ['#fffdfa', '#750787'] },
+  { id: 'malevich', label: 'Malevich', emoji: '⬛', mode: 'light', swatch: ['#f1ece1', '#d7261e'] },
+  { id: 'fine-art', label: 'Fine Art', emoji: '🖼️', mode: 'light', swatch: ['#f1ece2', '#6e1a2a'] },
   { id: 'lagoon', label: 'Lagoon', emoji: '🏝️', mode: 'light', swatch: ['oklch(0.86 0.12 175)', 'oklch(0.55 0.15 235)'] },
   { id: 'dark', label: 'Dark', emoji: '🌑', mode: 'dark', swatch: ['oklch(0.145 0 0)', 'oklch(0.922 0 0)'] },
   { id: 'graphite', label: 'Graphite', emoji: '🪨', mode: 'dark', swatch: ['oklch(0.3 0 0)', 'oklch(0.85 0 0)'] },
@@ -55,6 +59,13 @@ export const THEMES = [
   { id: 'liquid-glass-dark', label: 'Liquid Glass Dark', emoji: '🫧', mode: 'dark', swatch: ['oklch(0.17 0.025 265)', 'oklch(0.66 0.18 255)'] },
   { id: 'win8-dark', label: 'Windows 8 Dark', emoji: '🟦', mode: 'dark', swatch: ['#1d1d1d', '#2d89ef'] },
   { id: 'crimson', label: 'Crimson', emoji: '🥀', mode: 'dark', swatch: ['oklch(0.11 0.006 20)', 'oklch(0.58 0.22 25)'] },
+  { id: 'monokai', label: 'Monokai', emoji: '🎨', mode: 'dark', swatch: ['#272822', '#f92672'] },
+  { id: 'oai-hub', label: 'OAI Hub', emoji: '🟧', mode: 'dark', swatch: ['#000000', '#ff9000'] },
+  { id: 'cyberpunk', label: 'Cyberpunk', emoji: '🦾', mode: 'dark', swatch: ['#0a0a12', '#fcee0a'] },
+  { id: 'minimal-dark', label: 'Minimal Dark', emoji: '⚫', mode: 'dark', swatch: ['#0e0e0e', '#ededed'] },
+  { id: 'noir', label: 'Noir', emoji: '🕵️', mode: 'dark', swatch: ['#100f0e', '#c4161c'] },
+  { id: 'apple-2', label: 'Apple II', emoji: '🍏', mode: 'dark', swatch: ['#060a05', '#4af626'] },
+  { id: 'oaistation', label: 'OAIStation', emoji: '🎮', mode: 'dark', swatch: ['#16357a', '#ffffff'] },
 ] as const satisfies readonly ThemeDef[]
 
 export type ThemeId = (typeof THEMES)[number]['id']

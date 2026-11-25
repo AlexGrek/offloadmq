@@ -1,0 +1,141 @@
+/*
+ * Apple II — 1977 home computer: green phosphor on black, VT323 pixel
+ * headings in capitals, inverse-video buttons, a `]` prompt with a blinking
+ * block cursor and the six-colour rainbow on the logo. Dark.
+ *
+ * Unlike the Hacker themes there is no glow and no scanlines: crisp, blocky.
+ */
+:root[data-theme='apple-2'] {
+    --radius: 0rem;
+    --app-font-sans: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --app-font-display: 'VT323', 'IBM Plex Mono', ui-monospace, monospace;
+
+    --a2-green: #4af626;
+    --a2-dim: #2fa318;
+    --a2-bg: #060a05;
+    --a2-rainbow: linear-gradient(
+        to bottom,
+        #61bb46 0 17%, #fdb827 17% 33%, #f5821f 33% 50%, #e03a3e 50% 67%, #963d97 67% 83%, #009ddc 83%
+    );
+
+    --background: var(--a2-bg);
+    --foreground: var(--a2-green);
+    --card: #0a1208;
+    --card-foreground: var(--a2-green);
+    --popover: #0b140a;
+    --popover-foreground: var(--a2-green);
+    --primary: var(--a2-green);
+    --primary-foreground: var(--a2-bg);
+    --secondary: #12200e;
+    --secondary-foreground: var(--a2-green);
+    --muted: #0e180c;
+    --muted-foreground: var(--a2-dim);
+    --accent: #163012;
+    --accent-foreground: #8dff6e;
+    --destructive: #f5821f;
+    --border: #1c3a15;
+    --input: #2a5420;
+    --ring: var(--a2-green);
+    --chart-1: #61bb46;
+    --chart-2: #fdb827;
+    --chart-3: #e03a3e;
+    --chart-4: #963d97;
+    --chart-5: #009ddc;
+    --sidebar: #081006;
+    --sidebar-foreground: var(--a2-green);
+    --sidebar-primary: var(--a2-green);
+    --sidebar-primary-foreground: var(--a2-bg);
+    --sidebar-accent: #163012;
+    --sidebar-accent-foreground: #8dff6e;
+    --sidebar-border: #1c3a15;
+    --sidebar-ring: var(--a2-green);
+
+    caret-color: var(--a2-green);
+    caret-shape: block;
+    accent-color: var(--a2-green);
+    scrollbar-color: var(--a2-dim) transparent;
+}
+
+:root[data-theme='apple-2'] :is(.font-display, h1, h2, h3, [data-slot='dialog-title'], [data-slot='sheet-title'], [data-slot='card-title']) {
+    font-family: var(--app-font-display);
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size-adjust: 0.62;
+}
+
+:root[data-theme='apple-2'] [data-slot='topbar'] {
+    background: #000;
+    backdrop-filter: none;
+    border-bottom: 2px solid var(--a2-green);
+}
+/* Logo: `]` prompt, rainbow letters, blinking block cursor. */
+:root[data-theme='apple-2'] [data-slot='brand'] {
+    background: var(--a2-rainbow);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+:root[data-theme='apple-2'] [data-slot='brand']::before {
+    content: ']';
+    -webkit-text-fill-color: var(--a2-green);
+}
+:root[data-theme='apple-2'] [data-slot='brand']::after {
+    content: '\2588';
+    -webkit-text-fill-color: var(--a2-green);
+    animation: a2-blink 1.06s steps(1) infinite;
+}
+@keyframes a2-blink {
+    50% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    :root[data-theme='apple-2'] [data-slot='brand']::after { animation: none; }
+}
+
+:root[data-theme='apple-2'] :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    border: 2px solid var(--a2-dim);
+    box-shadow: none;
+}
+:root[data-theme='apple-2'] [data-slot='dialog-overlay'] {
+    background: rgb(0 0 0 / 0.75);
+}
+
+/* Buttons: inverse video. */
+:root[data-theme='apple-2'] [data-slot='button']:not([data-variant='link']) {
+    text-transform: uppercase;
+    box-shadow: none;
+}
+:root[data-theme='apple-2'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background-color: #8dff6e;
+}
+:root[data-theme='apple-2'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    background-color: transparent;
+    border: 2px solid var(--a2-green);
+    color: var(--a2-green);
+}
+:root[data-theme='apple-2'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary'], [data-variant='ghost']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: var(--a2-green);
+    color: var(--a2-bg);
+}
+
+:root[data-theme='apple-2'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)) {
+    background-color: #000;
+    border: 2px solid var(--a2-dim);
+}
+:root[data-theme='apple-2'] :is([data-slot='input'], :is(input, textarea, select):not(.bg-transparent)):focus-visible {
+    border-color: var(--a2-green);
+    box-shadow: none;
+}
+:root[data-theme='apple-2'] :is(input, textarea)::placeholder {
+    color: var(--a2-dim);
+}
+
+:root[data-theme='apple-2'] [data-slot='dropdown-menu-radio-item'][data-state='checked'] {
+    background: var(--a2-green);
+    color: var(--a2-bg);
+}
+
+:root[data-theme='apple-2'] ::selection {
+    background: var(--a2-green);
+    color: var(--a2-bg);
+}

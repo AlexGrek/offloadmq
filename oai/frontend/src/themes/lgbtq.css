@@ -1,0 +1,142 @@
+/*
+ * LGBTQ+ — pride: a bright light theme with soft rainbow washes, the six-band
+ * flag under the top bar and atop every card, a violet primary edged with the
+ * rainbow, rounded friendly Nunito. Light.
+ *
+ * Styled theme. The washes are a <body> background (behind content), never an
+ * overlay.
+ */
+:root[data-theme='lgbtq'] {
+    --radius: 0.8rem;
+    --app-font-sans: 'Nunito', 'Segoe UI', system-ui, sans-serif;
+    --app-font-display: 'Nunito', 'Segoe UI', system-ui, sans-serif;
+
+    --pr-red: #e40303;
+    --pr-orange: #ff8c00;
+    --pr-yellow: #ffed00;
+    --pr-green: #008026;
+    --pr-blue: #004dff;
+    --pr-violet: #750787;
+    --pr-flag: linear-gradient(90deg, var(--pr-red), var(--pr-orange), var(--pr-yellow), var(--pr-green), var(--pr-blue), var(--pr-violet));
+    --pr-bands: linear-gradient(
+        to bottom,
+        var(--pr-red) 0 16.66%, var(--pr-orange) 16.66% 33.33%, var(--pr-yellow) 33.33% 50%,
+        var(--pr-green) 50% 66.66%, var(--pr-blue) 66.66% 83.33%, var(--pr-violet) 83.33%
+    );
+
+    --background: #fffdfa;
+    --foreground: #1f1530;
+    --card: #ffffff;
+    --card-foreground: #1f1530;
+    --popover: #ffffff;
+    --popover-foreground: #1f1530;
+    --primary: var(--pr-violet);
+    --primary-foreground: #ffffff;
+    --secondary: #f4eefb;
+    --secondary-foreground: #2c1747;
+    --muted: #f6f2fa;
+    --muted-foreground: #6a5d7d;
+    --accent: #f1eafb;
+    --accent-foreground: #2c1747;
+    --destructive: #c4001a;
+    --border: #e7dff0;
+    --input: #d8cde6;
+    --ring: #8a3ffc;
+    --chart-1: #e40303;
+    --chart-2: #ff8c00;
+    --chart-3: #008026;
+    --chart-4: #004dff;
+    --chart-5: #750787;
+    --sidebar: #fcf9ff;
+    --sidebar-foreground: #1f1530;
+    --sidebar-primary: var(--pr-violet);
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #f1eafb;
+    --sidebar-accent-foreground: #2c1747;
+    --sidebar-border: #e7dff0;
+    --sidebar-ring: #8a3ffc;
+
+    accent-color: var(--pr-violet);
+    caret-color: var(--pr-violet);
+}
+
+:root[data-theme='lgbtq'] body {
+    background-image:
+        radial-gradient(40vmax 30vmax at 0% 0%, rgb(228 3 3 / 0.09), transparent 70%),
+        radial-gradient(40vmax 30vmax at 50% 0%, rgb(255 237 0 / 0.1), transparent 70%),
+        radial-gradient(40vmax 30vmax at 100% 10%, rgb(0 128 38 / 0.08), transparent 70%),
+        radial-gradient(45vmax 35vmax at 15% 100%, rgb(0 77 255 / 0.08), transparent 70%),
+        radial-gradient(45vmax 35vmax at 90% 100%, rgb(117 7 135 / 0.09), transparent 70%);
+    background-attachment: fixed;
+}
+
+:root[data-theme='lgbtq'] .font-display {
+    font-weight: 800;
+    letter-spacing: -0.01em;
+}
+
+/* Top bar: the six-band flag as its bottom edge. */
+:root[data-theme='lgbtq'] [data-slot='topbar'] {
+    background-color: rgb(255 253 250 / 0.88);
+    border-bottom: 0;
+    background-image: var(--pr-bands);
+    background-size: 100% 6px;
+    background-position: bottom;
+    background-repeat: no-repeat;
+}
+:root[data-theme='lgbtq'] [data-slot='brand'] {
+    background: var(--pr-flag);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-weight: 900;
+}
+
+/* Cards: a rainbow ribbon across the top. */
+:root[data-theme='lgbtq'] [data-slot='card'] {
+    background-image: var(--pr-flag);
+    background-size: 100% 4px;
+    background-repeat: no-repeat;
+    box-shadow: 0 0 0 1px var(--border), 0 10px 26px -16px rgb(117 7 135 / 0.35);
+}
+:root[data-theme='lgbtq'] :is([data-slot='dialog-content'], [data-slot='sheet-content']) {
+    background-image: var(--pr-flag);
+    background-size: 100% 5px;
+    background-repeat: no-repeat;
+    box-shadow: 0 0 0 1px var(--border), 0 24px 56px -20px rgb(117 7 135 / 0.4);
+}
+:root[data-theme='lgbtq'] [data-slot='dropdown-menu-content'] {
+    box-shadow: 0 0 0 1px var(--border), 0 16px 36px -16px rgb(117 7 135 / 0.35);
+}
+
+/* Buttons: violet fill inside a rainbow edge; outline gets the rainbow on hover. */
+:root[data-theme='lgbtq'] [data-slot='button']:not([data-variant='link']) {
+    font-weight: 700;
+}
+:root[data-theme='lgbtq'] [data-slot='button'][data-variant='default'] {
+    border: 2px solid transparent;
+    background: linear-gradient(var(--pr-violet), var(--pr-violet)) padding-box, var(--pr-flag) border-box;
+    color: #fff;
+}
+:root[data-theme='lgbtq'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background: linear-gradient(#8d1aa3, #8d1aa3) padding-box, var(--pr-flag) border-box;
+    box-shadow: 0 6px 18px -8px rgb(117 7 135 / 0.7);
+}
+:root[data-theme='lgbtq'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    border-color: transparent;
+    background: linear-gradient(#f6f0fd, #f6f0fd) padding-box, var(--pr-flag) border-box;
+}
+
+:root[data-theme='lgbtq'] :is([data-slot='input'], :is(input, textarea, select):not(.bg-transparent)):focus-visible {
+    border-color: #8a3ffc;
+    box-shadow: 0 0 0 3px rgb(138 63 252 / 0.2);
+}
+
+:root[data-theme='lgbtq'] [data-slot='dropdown-menu-radio-item'][data-state='checked'] {
+    background: #f1eafb;
+    color: var(--pr-violet);
+}
+
+:root[data-theme='lgbtq'] ::selection {
+    background: rgb(138 63 252 / 0.25);
+}

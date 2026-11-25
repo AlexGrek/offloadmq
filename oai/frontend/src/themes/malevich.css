@@ -1,0 +1,159 @@
+/*
+ * Malevich — Suprematism: a raw off-white canvas, black squares, red and
+ * yellow bars floating at angles, square corners, Jost (a Futura cousin) in
+ * caps, thick black rules and hard red offset shadows. Light.
+ *
+ * Styled theme. The composition is two small <body> background SVGs pinned to
+ * the corners (behind content, kept faint so text over them stays readable),
+ * never an overlay.
+ */
+:root[data-theme='malevich'] {
+    --radius: 0rem;
+    --app-font-sans: 'Jost', 'Futura', 'Century Gothic', system-ui, sans-serif;
+    --app-font-display: 'Jost', 'Futura', 'Century Gothic', system-ui, sans-serif;
+
+    --mv-black: #111111;
+    --mv-red: #d7261e;
+    --mv-yellow: #e3b505;
+    --mv-blue: #1f4fa3;
+    --mv-canvas: #f1ece1;
+    --mv-comp: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Crect x='170' y='170' width='190' height='190' fill='%23111' fill-opacity='0.13' transform='rotate(-8 265 265)'/%3E%3Crect x='40' y='150' width='300' height='26' fill='%23d7261e' fill-opacity='0.2' transform='rotate(-24 190 163)'/%3E%3Crect x='280' y='110' width='100' height='11' fill='%23e3b505' fill-opacity='0.3' transform='rotate(18 330 115)'/%3E%3Ccircle cx='110' cy='330' r='26' fill='%231f4fa3' fill-opacity='0.16'/%3E%3C/svg%3E");
+    --mv-comp-top: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 160'%3E%3Crect x='20' y='20' width='70' height='70' fill='%23d7261e' fill-opacity='0.14' transform='rotate(12 55 55)'/%3E%3Crect x='10' y='118' width='170' height='8' fill='%23111' fill-opacity='0.14' transform='rotate(-14 95 122)'/%3E%3C/svg%3E");
+
+    --background: var(--mv-canvas);
+    --foreground: var(--mv-black);
+    --card: #f8f5ee;
+    --card-foreground: var(--mv-black);
+    --popover: #f8f5ee;
+    --popover-foreground: var(--mv-black);
+    --primary: var(--mv-black);
+    --primary-foreground: var(--mv-canvas);
+    --secondary: #e7e0d1;
+    --secondary-foreground: var(--mv-black);
+    --muted: #e9e3d6;
+    --muted-foreground: #5e5a52;
+    --accent: #e9e1cf;
+    --accent-foreground: var(--mv-black);
+    --destructive: var(--mv-red);
+    --border: #c9c1b0;
+    --input: #8f887a;
+    --ring: var(--mv-red);
+    --chart-1: var(--mv-black);
+    --chart-2: var(--mv-red);
+    --chart-3: var(--mv-yellow);
+    --chart-4: var(--mv-blue);
+    --chart-5: #8f887a;
+    --sidebar: #ece6d9;
+    --sidebar-foreground: var(--mv-black);
+    --sidebar-primary: var(--mv-black);
+    --sidebar-primary-foreground: var(--mv-canvas);
+    --sidebar-accent: #e9e1cf;
+    --sidebar-accent-foreground: var(--mv-black);
+    --sidebar-border: #c9c1b0;
+    --sidebar-ring: var(--mv-red);
+
+    accent-color: var(--mv-red);
+    caret-color: var(--mv-red);
+}
+
+:root[data-theme='malevich'] body {
+    background-image: var(--mv-comp), var(--mv-comp-top);
+    background-size: min(46vmin, 440px), min(22vmin, 220px);
+    background-position: right 1.5vw bottom 1.5vh, left 1vw top calc(3.5rem + 1vh);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}
+
+:root[data-theme='malevich'] :is(.font-display, h1, h2, h3, [data-slot='dialog-title'], [data-slot='sheet-title']) {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+/* Top bar: canvas with a thick black rule that starts as a red bar. */
+:root[data-theme='malevich'] [data-slot='topbar'] {
+    background-color: var(--mv-canvas);
+    backdrop-filter: none;
+    border-bottom: 0;
+    background-image: linear-gradient(90deg, var(--mv-red) 0 9rem, var(--mv-black) 9rem);
+    background-size: 100% 4px;
+    background-position: bottom;
+    background-repeat: no-repeat;
+}
+/* Logo: a black square before the name. */
+:root[data-theme='malevich'] [data-slot='brand']::before {
+    content: '';
+    display: inline-block;
+    width: 0.7em;
+    height: 0.7em;
+    margin-right: 0.35em;
+    background: var(--mv-black);
+    transform: rotate(-6deg);
+}
+
+:root[data-theme='malevich'] :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='dropdown-menu-content']) {
+    border: 2px solid var(--mv-black);
+    box-shadow: none;
+}
+:root[data-theme='malevich'] [data-slot='card']:hover {
+    box-shadow: 6px 6px 0 var(--mv-red);
+}
+:root[data-theme='malevich'] [data-slot='dialog-content'] {
+    box-shadow: 10px 10px 0 var(--mv-red);
+}
+:root[data-theme='malevich'] [data-slot='sheet-content'] {
+    border-color: var(--mv-black);
+    border-width: 2px;
+}
+:root[data-theme='malevich'] [data-slot='dialog-overlay'] {
+    background: rgb(241 236 225 / 0.75);
+}
+:root[data-theme='malevich'] :is([data-slot='dialog-title'], [data-slot='sheet-title'])::before {
+    content: '';
+    display: inline-block;
+    width: 0.6em;
+    height: 0.6em;
+    margin-right: 0.45em;
+    background: var(--mv-red);
+}
+:root[data-theme='malevich'] :is([data-slot='dialog-header'], [data-slot='dialog-footer']) {
+    border-color: var(--mv-black);
+}
+
+/* Buttons: black blocks, caps; hover throws a red shadow. */
+:root[data-theme='malevich'] [data-slot='button']:not([data-variant='link']) {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    transition: transform 0.12s, box-shadow 0.12s, background-color 0.12s;
+}
+:root[data-theme='malevich'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    transform: translate(-2px, -2px);
+    box-shadow: 4px 4px 0 var(--mv-red);
+}
+:root[data-theme='malevich'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    background-color: transparent;
+    border: 2px solid var(--mv-black);
+}
+:root[data-theme='malevich'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: var(--mv-yellow);
+}
+
+:root[data-theme='malevich'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)) {
+    background-color: #faf8f3;
+    border: 2px solid var(--mv-black);
+}
+:root[data-theme='malevich'] :is([data-slot='input'], :is(input, textarea, select):not(.bg-transparent)):focus-visible {
+    border-color: var(--mv-red);
+    box-shadow: 4px 4px 0 var(--mv-black);
+}
+
+:root[data-theme='malevich'] [data-slot='dropdown-menu-radio-item'][data-state='checked'] {
+    background: var(--mv-black);
+    color: var(--mv-canvas);
+}
+
+:root[data-theme='malevich'] ::selection {
+    background: var(--mv-red);
+    color: #fff;
+}

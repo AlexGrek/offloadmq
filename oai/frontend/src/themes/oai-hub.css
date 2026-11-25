@@ -1,0 +1,133 @@
+/*
+ * OAI Hub — video-site look: pure black, charcoal tiles, bold white type and a
+ * single hot-orange accent; the logo gets an orange "hub" badge. Dark.
+ *
+ * Styled theme: Arial bold display, orange primary with black text, orange
+ * outline on hovered tiles.
+ */
+:root[data-theme='oai-hub'] {
+    --radius: 0.25rem;
+    --app-font-sans: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+    --app-font-display: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+
+    --hub: #ff9000;
+    --hub-hi: #ffa31a;
+    --hub-tile: #1b1b1b;
+    --hub-raise: #2f2f2f;
+
+    --background: #000000;
+    --foreground: #ffffff;
+    --card: var(--hub-tile);
+    --card-foreground: #ffffff;
+    --popover: var(--hub-tile);
+    --popover-foreground: #ffffff;
+    --primary: var(--hub);
+    --primary-foreground: #000000;
+    --secondary: var(--hub-raise);
+    --secondary-foreground: #ffffff;
+    --muted: #151515;
+    --muted-foreground: #a6a6a6;
+    --accent: var(--hub-raise);
+    --accent-foreground: #ffffff;
+    --destructive: #ff3b30;
+    --border: #2f2f2f;
+    --input: #3d3d3d;
+    --ring: var(--hub);
+    --chart-1: #ff9000;
+    --chart-2: #ffffff;
+    --chart-3: #ffc266;
+    --chart-4: #8c8c8c;
+    --chart-5: #b35f00;
+    --sidebar: #0d0d0d;
+    --sidebar-foreground: #ffffff;
+    --sidebar-primary: var(--hub);
+    --sidebar-primary-foreground: #000000;
+    --sidebar-accent: var(--hub-raise);
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: #2f2f2f;
+    --sidebar-ring: var(--hub);
+
+    caret-color: var(--hub);
+    accent-color: var(--hub);
+    scrollbar-color: #3d3d3d transparent;
+}
+
+:root[data-theme='oai-hub'] .font-display {
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+:root[data-theme='oai-hub'] [data-slot='topbar'] {
+    background: #000;
+    backdrop-filter: none;
+    border-bottom: 1px solid var(--hub-raise);
+}
+/* Logo: white "oai" + an orange "hub" badge. */
+:root[data-theme='oai-hub'] [data-slot='brand'] {
+    color: #fff;
+    letter-spacing: -0.03em;
+}
+:root[data-theme='oai-hub'] [data-slot='brand']::after {
+    content: 'hub';
+    margin-left: 0.15em;
+    padding: 0 0.2em 0.05em;
+    border-radius: 0.25em;
+    background: var(--hub);
+    color: #000;
+}
+
+:root[data-theme='oai-hub'] [data-slot='card'] {
+    background: var(--hub-tile);
+    box-shadow: none;
+    transition: box-shadow 0.15s;
+}
+:root[data-theme='oai-hub'] [data-slot='card']:hover {
+    box-shadow: 0 0 0 1px var(--hub);
+}
+:root[data-theme='oai-hub'] :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    box-shadow: 0 0 0 1px var(--hub-raise), 0 20px 50px -16px rgb(0 0 0 / 0.9);
+}
+:root[data-theme='oai-hub'] [data-slot='dialog-overlay'] {
+    background: rgb(0 0 0 / 0.75);
+}
+
+:root[data-theme='oai-hub'] [data-slot='button']:not([data-variant='link']) {
+    font-weight: 700;
+}
+:root[data-theme='oai-hub'] [data-slot='button'][data-variant='default'] {
+    background-color: var(--hub);
+    color: #000;
+}
+:root[data-theme='oai-hub'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background-color: var(--hub-hi);
+}
+:root[data-theme='oai-hub'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    background-color: var(--hub-raise);
+    border-color: transparent;
+    color: #fff;
+}
+:root[data-theme='oai-hub'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: #3d3d3d;
+}
+:root[data-theme='oai-hub'] [data-slot='button'][data-variant='ghost']:is(:hover, [aria-expanded='true']):not(:disabled) {
+    color: var(--hub);
+}
+
+:root[data-theme='oai-hub'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)) {
+    background-color: var(--hub-tile);
+    border-color: var(--hub-raise);
+}
+:root[data-theme='oai-hub'] :is([data-slot='input'], :is(input, textarea, select):not(.bg-transparent)):focus-visible {
+    border-color: var(--hub);
+    box-shadow: 0 0 0 2px rgb(255 144 0 / 0.3);
+}
+
+:root[data-theme='oai-hub'] [data-slot='dropdown-menu-radio-item'][data-state='checked'] {
+    background: var(--hub-raise);
+    color: var(--hub);
+}
+
+:root[data-theme='oai-hub'] ::selection {
+    background: var(--hub);
+    color: #000;
+}

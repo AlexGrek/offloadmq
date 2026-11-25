@@ -64,6 +64,11 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     ['aero', false],
     ['material', false],
     ['love', false],
+    ['monokai', true],
+    ['oai-hub', true],
+    ['cyberpunk', true],
+    ['minimal-light', false],
+    ['minimal-dark', true],
     ['dark', true],
   ] as const) {
     await page.getByTestId('theme-picker').click()
@@ -75,7 +80,7 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     seen.add(state.bg)
   }
   // Every theme paints a different background.
-  expect(seen.size).toBe(26)
+  expect(seen.size).toBe(31)
 
   await page.getByTestId('theme-picker').click()
   await page.getByTestId('theme-option-graphite').click()
@@ -110,6 +115,11 @@ test('styled themes change radius, fonts and element looks', async ({ page, requ
     ['aero', { radius: '0.4rem', font: /Segoe UI/, buttonRadius: '5.12px' }],
     ['material', { radius: '0.25rem', font: /Roboto/, buttonRadius: '3.2px' }],
     ['love', { radius: '1rem', font: /Geist/, buttonRadius: '9999px' }],
+    ['monokai', { radius: '0.25rem', font: /Geist/, buttonRadius: '3.2px' }],
+    ['oai-hub', { radius: '0.25rem', font: /Arial/, buttonRadius: '3.2px' }],
+    ['cyberpunk', { radius: '0rem', font: /Chakra Petch/, buttonRadius: '0px' }],
+    ['minimal-light', { radius: '0.375rem', font: /Inter/, buttonRadius: '4.8px' }],
+    ['minimal-dark', { radius: '0.375rem', font: /Inter/, buttonRadius: '4.8px' }],
   ] as const) {
     await page.getByTestId('theme-picker').click()
     await page.getByTestId(`theme-option-${id}`).click()
@@ -121,7 +131,7 @@ test('styled themes change radius, fonts and element looks', async ({ page, requ
   }
 
   // No theme may lay a full-screen overlay over content: it would tint generated images.
-  for (const id of ['hacker-green', 'hacker-blue', 'hacker-white', 'win98', 'liquid-glass', 'aurora', 'synthwave', 'nebula', 'sherbet', 'lagoon', 'liquid-glass-dark', 'win8-dark', 'crimson', 'parry-hotter', 'aero', 'material', 'love']) {
+  for (const id of ['hacker-green', 'hacker-blue', 'hacker-white', 'win98', 'liquid-glass', 'aurora', 'synthwave', 'nebula', 'sherbet', 'lagoon', 'liquid-glass-dark', 'win8-dark', 'crimson', 'parry-hotter', 'aero', 'material', 'love', 'monokai', 'oai-hub', 'cyberpunk', 'minimal-light', 'minimal-dark']) {
     await page.getByTestId('theme-picker').click()
     await page.getByTestId(`theme-option-${id}`).click()
     await expect(page.getByTestId('theme-picker-menu')).toBeHidden()
@@ -163,11 +173,12 @@ test('theme list stays on screen and scrolls on a short viewport', async ({ page
   expect(box.scrolls).toBe(true)
 
   // The last theme is reachable by scrolling the menu.
-  const last = page.getByTestId('theme-option-crimson')
+  const last = menu.locator('[data-testid^="theme-option-"]').last()
+  const lastId = (await last.getAttribute('data-testid'))!.replace('theme-option-', '')
   await last.scrollIntoViewIfNeeded()
   await last.click()
   await expect(menu).toBeHidden()
-  expect((await html(page)).theme).toBe('crimson')
+  expect((await html(page)).theme).toBe(lastId)
 })
 
 test('unknown stored theme falls back to a valid one', async ({ page, request }) => {

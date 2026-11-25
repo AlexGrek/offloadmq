@@ -1,0 +1,142 @@
+/*
+ * Fine Art — a museum gallery: warm wall with a faint oil-paint haze, cards
+ * hung as framed pictures (gilt frame + white mat), Cormorant Garamond
+ * headings, burgundy-velvet primary, small-caps placards. Light.
+ *
+ * Styled theme. The haze is a <body> background (behind content), never an
+ * overlay. The frame is an outer box-shadow and the mat an inset one, so no
+ * layout shifts.
+ */
+:root[data-theme='fine-art'] {
+    --radius: 0.15rem;
+    --app-font-display: 'Cormorant Garamond', 'Garamond', 'Times New Roman', serif;
+
+    --fa-wall: #f1ece2;
+    --fa-gilt: #b8924f;
+    --fa-gilt-dark: #7a5a2b;
+    --fa-velvet: #6e1a2a;
+    --fa-velvet-hi: #861f33;
+    --fa-frame: 0 0 0 1px var(--fa-gilt-dark), 0 0 0 4px var(--fa-gilt), 0 0 0 5px var(--fa-gilt-dark);
+
+    --background: var(--fa-wall);
+    --foreground: #24201b;
+    --card: #fbf9f4;
+    --card-foreground: #24201b;
+    --popover: #fbf9f4;
+    --popover-foreground: #24201b;
+    --primary: var(--fa-velvet);
+    --primary-foreground: #fbf5ec;
+    --secondary: #e8e1d3;
+    --secondary-foreground: #24201b;
+    --muted: #ebe5d9;
+    --muted-foreground: #6b6256;
+    --accent: #ece3d0;
+    --accent-foreground: #24201b;
+    --destructive: #a3221b;
+    --border: #d9d0bf;
+    --input: #c7bca8;
+    --ring: var(--fa-gilt);
+    /* An old master's palette. */
+    --chart-1: #6e1a2a;
+    --chart-2: #b8924f;
+    --chart-3: #2f4f6f;
+    --chart-4: #5a6b3a;
+    --chart-5: #b0562f;
+    --sidebar: #eee8dc;
+    --sidebar-foreground: #24201b;
+    --sidebar-primary: var(--fa-velvet);
+    --sidebar-primary-foreground: #fbf5ec;
+    --sidebar-accent: #ece3d0;
+    --sidebar-accent-foreground: #24201b;
+    --sidebar-border: #d9d0bf;
+    --sidebar-ring: var(--fa-gilt);
+
+    accent-color: var(--fa-velvet);
+    caret-color: var(--fa-velvet);
+}
+
+/* Gallery wall: soft spotlight from above and a faint painterly haze. */
+:root[data-theme='fine-art'] body {
+    background-image:
+        radial-gradient(70vmax 40vmax at 50% -10%, rgb(255 250 235 / 0.9), transparent 70%),
+        radial-gradient(35vmax 30vmax at 8% 85%, rgb(47 79 111 / 0.1), transparent 70%),
+        radial-gradient(35vmax 30vmax at 92% 80%, rgb(176 86 47 / 0.1), transparent 70%),
+        radial-gradient(30vmax 25vmax at 75% 30%, rgb(184 146 79 / 0.1), transparent 70%);
+    background-attachment: fixed;
+}
+
+:root[data-theme='fine-art'] :is(.font-display, h1, h2, h3, [data-slot='dialog-title'], [data-slot='sheet-title'], [data-slot='card-title']) {
+    font-family: var(--app-font-display);
+    font-weight: 600;
+    letter-spacing: 0.005em;
+}
+:root[data-theme='fine-art'] .font-display {
+    font-size-adjust: 0.5;
+}
+:root[data-theme='fine-art'] [data-slot='brand'] {
+    font-style: italic;
+}
+
+:root[data-theme='fine-art'] [data-slot='topbar'] {
+    background: rgb(241 236 226 / 0.92);
+    border-bottom: 1px solid var(--fa-gilt);
+    box-shadow: 0 1px 0 #fbf9f4, 0 2px 0 var(--fa-gilt-dark);
+}
+
+/* Cards hang as framed pictures: gilt frame outside, white mat inside. */
+:root[data-theme='fine-art'] [data-slot='card'] {
+    border: 0;
+    box-shadow: inset 0 0 0 8px #ffffff, inset 0 0 0 9px #e6dcc8, var(--fa-frame), 0 18px 30px -18px rgb(60 40 15 / 0.55);
+}
+:root[data-theme='fine-art'] [data-slot='dialog-content'] {
+    border: 0;
+    box-shadow: var(--fa-frame), 0 30px 60px -20px rgb(40 25 10 / 0.6);
+}
+:root[data-theme='fine-art'] :is([data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    border: 1px solid var(--fa-gilt);
+    box-shadow: 0 16px 36px -16px rgb(60 40 15 / 0.45);
+}
+:root[data-theme='fine-art'] [data-slot='dialog-overlay'] {
+    background: rgb(36 32 27 / 0.45);
+}
+:root[data-theme='fine-art'] [data-slot='dialog-description'] {
+    font-style: italic;
+}
+
+/* Buttons: museum placards — small caps; primary is burgundy velvet. */
+:root[data-theme='fine-art'] [data-slot='button']:not([data-variant='link']) {
+    font-variant-caps: all-small-caps;
+    letter-spacing: 0.1em;
+    font-size: 0.95rem;
+}
+:root[data-theme='fine-art'] [data-slot='button'][data-variant='default'] {
+    background-color: var(--fa-velvet);
+    box-shadow: inset 0 0 0 1px rgb(184 146 79 / 0.6);
+}
+:root[data-theme='fine-art'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background-color: var(--fa-velvet-hi);
+}
+:root[data-theme='fine-art'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    background-color: transparent;
+    border-color: var(--fa-gilt);
+}
+:root[data-theme='fine-art'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: #efe5d0;
+}
+
+:root[data-theme='fine-art'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)) {
+    background-color: #fdfbf7;
+}
+:root[data-theme='fine-art'] :is([data-slot='input'], :is(input, textarea, select):not(.bg-transparent)):focus-visible {
+    border-color: var(--fa-gilt);
+    box-shadow: 0 0 0 3px rgb(184 146 79 / 0.25);
+}
+
+:root[data-theme='fine-art'] [data-slot='dropdown-menu-radio-item'][data-state='checked'] {
+    background: #efe5d0;
+    color: var(--fa-velvet);
+}
+
+:root[data-theme='fine-art'] ::selection {
+    background: rgb(184 146 79 / 0.4);
+}

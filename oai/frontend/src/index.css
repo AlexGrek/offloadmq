@@ -14,6 +14,16 @@
 @import "./themes/aero.css";
 @import "./themes/material.css";
 @import "./themes/love.css";
+@import "./themes/monokai.css";
+@import "./themes/oai-hub.css";
+@import "./themes/cyberpunk.css";
+@import "./themes/minimal.css";
+@import "./themes/noir.css";
+@import "./themes/apple-2.css";
+@import "./themes/oaistation.css";
+@import "./themes/lgbtq.css";
+@import "./themes/malevich.css";
+@import "./themes/fine-art.css";
 
 @custom-variant dark (&:is(.dark *));
 

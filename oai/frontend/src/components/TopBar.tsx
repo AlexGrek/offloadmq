@@ -44,7 +44,7 @@ export function TopBar() {
   return (
     <header data-slot="topbar" className="sticky top-0 z-40 flex h-14 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 backdrop-blur sm:px-6">
       <div className="flex min-w-0 items-center">
-        <Link to="/app/dashboard" className="font-display select-none text-xl font-bold tracking-tight">
+        <Link to="/app/dashboard" data-slot="brand" className="font-display select-none text-xl font-bold tracking-tight">
           oai
         </Link>
         <TopApps />

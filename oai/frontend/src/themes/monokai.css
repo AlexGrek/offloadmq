@@ -1,0 +1,125 @@
+/*
+ * Monokai — the classic editor palette: warm charcoal, pink keywords, green
+ * functions, orange, yellow strings, purple constants, cyan types. Dark.
+ *
+ * Styled theme: JetBrains Mono display headings, a five-colour rule under the
+ * top bar, `// ` comment prefix on dialog titles, line-highlight hovers.
+ */
+:root[data-theme='monokai'] {
+    --radius: 0.25rem;
+    --app-font-display: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+    --mk-bg: #272822;
+    --mk-deep: #1e1f1c;
+    --mk-line: #3e3d32;
+    --mk-sel: #49483e;
+    --mk-fg: #f8f8f2;
+    --mk-comment: #908f80;
+    --mk-pink: #f92672;
+    --mk-green: #a6e22e;
+    --mk-orange: #fd971f;
+    --mk-yellow: #e6db74;
+    --mk-purple: #ae81ff;
+    --mk-cyan: #66d9ef;
+
+    --background: var(--mk-bg);
+    --foreground: var(--mk-fg);
+    --card: #2d2e27;
+    --card-foreground: var(--mk-fg);
+    --popover: #34352d;
+    --popover-foreground: var(--mk-fg);
+    --primary: var(--mk-pink);
+    --primary-foreground: #ffffff;
+    --secondary: var(--mk-line);
+    --secondary-foreground: var(--mk-fg);
+    --muted: #31322b;
+    --muted-foreground: var(--mk-comment);
+    --accent: var(--mk-sel);
+    --accent-foreground: var(--mk-fg);
+    --destructive: var(--mk-orange);
+    --border: #464539;
+    --input: #57564a;
+    --ring: var(--mk-cyan);
+    --chart-1: var(--mk-pink);
+    --chart-2: var(--mk-green);
+    --chart-3: var(--mk-orange);
+    --chart-4: var(--mk-purple);
+    --chart-5: var(--mk-cyan);
+    --sidebar: #252620;
+    --sidebar-foreground: var(--mk-fg);
+    --sidebar-primary: var(--mk-pink);
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: var(--mk-sel);
+    --sidebar-accent-foreground: var(--mk-fg);
+    --sidebar-border: #464539;
+    --sidebar-ring: var(--mk-cyan);
+
+    caret-color: var(--mk-fg);
+    accent-color: var(--mk-green);
+    scrollbar-color: var(--mk-sel) transparent;
+}
+
+:root[data-theme='monokai'] .font-display {
+    letter-spacing: -0.02em;
+}
+
+/* Top bar: editor tab strip with the five syntax colours as a rule. */
+:root[data-theme='monokai'] [data-slot='topbar'] {
+    background-color: var(--mk-deep);
+    backdrop-filter: none;
+    border-bottom: 0;
+    background-image: linear-gradient(
+        90deg,
+        var(--mk-pink) 0 20%,
+        var(--mk-orange) 20% 40%,
+        var(--mk-yellow) 40% 60%,
+        var(--mk-green) 60% 80%,
+        var(--mk-cyan) 80%
+    );
+    background-size: 100% 2px;
+    background-position: bottom;
+    background-repeat: no-repeat;
+}
+:root[data-theme='monokai'] [data-slot='brand'] {
+    color: var(--mk-green);
+}
+:root[data-theme='monokai'] [data-slot='brand']::after {
+    content: '()';
+    color: var(--mk-fg);
+}
+
+:root[data-theme='monokai'] :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    box-shadow: 0 0 0 1px var(--mk-line), 0 18px 44px -16px rgb(0 0 0 / 0.7);
+}
+:root[data-theme='monokai'] [data-slot='dialog-title']::before {
+    content: '// ';
+    color: var(--mk-comment);
+}
+
+:root[data-theme='monokai'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background-color: #ff4a8a;
+}
+:root[data-theme='monokai'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    border-color: var(--mk-sel);
+}
+
+:root[data-theme='monokai'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)) {
+    background-color: var(--mk-deep);
+}
+:root[data-theme='monokai'] :is([data-slot='input'], :is(input, textarea, select):not(.bg-transparent)):focus-visible {
+    border-color: var(--mk-cyan);
+    box-shadow: 0 0 0 3px rgb(102 217 239 / 0.2);
+}
+:root[data-theme='monokai'] :is(input, textarea)::placeholder {
+    color: var(--mk-comment);
+    font-style: italic;
+}
+
+:root[data-theme='monokai'] [data-slot='dropdown-menu-radio-item'][data-state='checked'] {
+    background: var(--mk-sel);
+    color: var(--mk-yellow);
+}
+
+:root[data-theme='monokai'] ::selection {
+    background: var(--mk-sel);
+}
