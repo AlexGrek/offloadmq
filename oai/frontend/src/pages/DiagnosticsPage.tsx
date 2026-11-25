@@ -130,7 +130,7 @@ export default function DiagnosticsPage() {
       data-testid="diagnostics-page"
     >
       <Link
-        to="/app/settings"
+        to="/app/settings?tab=admin"
         className="mb-4 inline-flex shrink-0 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="h-4 w-4" />

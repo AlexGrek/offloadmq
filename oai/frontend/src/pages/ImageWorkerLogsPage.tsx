@@ -181,7 +181,7 @@ export default function ImageWorkerLogsPage() {
       data-testid="image-worker-logs-page"
     >
       <Link
-        to="/app/settings"
+        to="/app/settings?tab=admin"
         className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="h-4 w-4" />

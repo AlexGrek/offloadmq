@@ -33,6 +33,7 @@ test('user prompt defaults persist, stay independent, reset, and are isolated fr
   await page.setViewportSize({ width: 390, height: 844 })
   await page.evaluate(() => localStorage.setItem('oai_theme', 'dark'))
   await page.goto('/app/settings')
+  await page.getByTestId('settings-tab-prompts').click()
   for (const [key, value] of Object.entries(custom)) {
     await page.getByTestId(`default-prompt-${key}`).fill(value)
   }
@@ -64,6 +65,7 @@ test('user prompt defaults persist, stay independent, reset, and are isolated fr
   expect((await studio.json()).system_prompt).toBe(custom.prompt_studio_system)
 
   await page.goto('/app/settings')
+  await page.getByTestId('settings-tab-prompts').click()
   await page.getByTestId('default-prompt-reset-chat').click()
   await page.getByTestId('default-prompt-describe_image').fill('  \n ')
   await page.getByTestId('prompt-defaults-save').click()
