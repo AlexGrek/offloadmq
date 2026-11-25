@@ -57,6 +57,7 @@ oai/frontend/src/
     RequireAuth.tsx            # redirect to /login if not authenticated
     AppShell.tsx               # h-dvh shell: TopBar + Outlet (overflow-hidden)
     TopBar.tsx                 # logo, Progress drawer, theme, account
+    ThemePicker.tsx            # TopBar theme drop-down (registry: lib/themes.ts)
     GlobalProgressDrawer.tsx   # global running jobs (chat + images)
     ToolDebugModal.tsx         # per-tool OffloadMQ poll debug (modal, icon trigger)
     PromptTextarea.tsx         # textarea + list icon → SavedPromptsDrawer (`previews` prop for image buckets)
@@ -162,9 +163,26 @@ All API clients are in `src/api/`. Add new endpoint groups as new files there.
 | `font-display` | **Syne** | Page titles, hero headings, brand mark |
 | `font-sans` (default) | **Geist Variable** | Body, labels, inputs |
 
-### Dark and Light Modes
+### Themes (light-ish / dark-ish)
 
-`ThemeContext` — `localStorage` key `oai_theme`, `.dark` on `<html>`, toggle in `TopBar`. Use semantic tokens (`text-foreground`, `bg-background`, …). Test both modes.
+OAI has multiple named themes, each with a `mode` of `light` or `dark`. Built in: **Light**, **Sepia** (light); **Dark**, **Graphite** (dark grey, not black), **Midnight** (navy) (dark).
+
+| Piece | Where | Role |
+|-------|-------|------|
+| Registry | `src/lib/themes.ts` | `THEMES` array: `{ id, label, mode, swatch: [bg, accent] }` — the single source of truth |
+| Palettes | `src/index.css` | `:root` = base light, `.dark` = base dark, plus one `:root[data-theme='<id>'] { … }` block per extra theme |
+| State | `contexts/ThemeContext.ts` + `ThemeProvider.tsx` | `useTheme()` → `{ theme, mode, themes, setTheme }`; `localStorage` key `oai_theme` stores the theme **id** |
+| Picker | `components/ThemePicker.tsx` | `TopBar` drop-down (`components/ui/dropdown-menu.tsx`, radix), grouped Light / Dark with swatches |
+
+On `<html>` the provider sets `data-theme="<id>"`, `color-scheme`, and toggles `.dark` for every dark-mode theme, so Tailwind `dark:` variants work in all dark themes unchanged. An unknown stored id falls back to `light`/`dark` by `prefers-color-scheme`.
+
+**Adding a theme:** (1) append an entry to `THEMES` with a unique kebab-case id and the right `mode`; (2) add `:root[data-theme='<id>'] { --background: …; … }` in `index.css`, overriding the shadcn variables (`--background`, `--foreground`, `--card`, `--popover`, `--primary`, `--secondary`, `--muted`, `--accent`, `--border`, `--input`, `--ring`, `--sidebar-*`). Anything you don't override falls back to the base palette of its mode. That's all; the picker picks it up automatically. Add it to `e2e/tests/themes.spec.ts`.
+
+**Rules:**
+- Use semantic tokens (`text-foreground`, `bg-background`, `bg-muted/50`, …). Hard-coded neutrals (`bg-zinc-900`, `text-black`) break non-default themes.
+- For light/dark decisions in code (e.g. CodeMirror `{ dark }`) use `useTheme().mode`, **never** `theme === 'dark'`; that misses Graphite/Midnight.
+- `dark:` colour accents (`dark:text-violet-300`) are fine; they apply to every dark-mode theme.
+- E2E: pick a theme via `getByTestId('theme-picker')` → `theme-option-<id>`, then wait for `theme-picker-menu` to be hidden before clicking the trigger again. Or seed `localStorage.oai_theme` with an id. Test at least one light and one dark theme.
 
 ### Mobile-First (required)
 

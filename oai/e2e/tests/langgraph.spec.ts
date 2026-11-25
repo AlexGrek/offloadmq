@@ -108,9 +108,11 @@ test('cancel, retry, and terminal deletion use the run lifecycle', async ({ page
 test('mobile layout fits the viewport in both themes', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await setup(page)
-  for (let i = 0; i < 2; i++) {
+  for (const theme of ['light', 'dark']) {
+    await page.getByTestId('theme-picker').click()
+    await page.getByTestId(`theme-option-${theme}`).click()
+    await expect(page.getByTestId('theme-picker-menu')).toBeHidden()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await expect(page.getByTestId('langgraph-code-editor')).toBeVisible()
-    await page.getByRole('button', { name: /Switch to .* mode/ }).click()
   }
 })

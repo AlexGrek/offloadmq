@@ -1,12 +1,12 @@
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, LogOut, Moon, Sun, User } from 'lucide-react'
+import { Activity, LogOut, User } from 'lucide-react'
 import { appForPath } from '../lib/appUsage'
 import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
 import { useWorkload } from '../contexts/WorkloadContext'
-import { useTheme } from '../contexts/ThemeContext'
 import { RandomNamesWidget } from './RandomNamesWidget'
+import { ThemePicker } from './ThemePicker'
 import { TopApps } from './TopApps'
 import { Button } from './ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
@@ -14,7 +14,6 @@ import { cn } from '@/lib/utils'
 
 export function TopBar() {
   const { user, logout } = useAuth()
-  const { theme, toggle } = useTheme()
   const { drawerOpen, toggleDrawer, runningImageJobs, runningDescribeJobs, runningImgUtilsJobs, runningBgRemoverJobs, runningWorldJobs } =
     useProgress()
   const { runningChatTasks } = useWorkload()
@@ -67,15 +66,7 @@ export function TopBar() {
             </span>
           )}
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={toggle}
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </Button>
+        <ThemePicker />
         <span className="hidden px-2 text-sm text-muted-foreground sm:block">{user?.login}</span>
         <Button variant="ghost" size="sm" asChild>
           <Link to="/app/settings" aria-label="My Account" title="My Account">

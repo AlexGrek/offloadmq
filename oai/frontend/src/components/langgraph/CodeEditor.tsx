@@ -17,7 +17,7 @@ export function CodeEditor({ value, onChange, language, label, readOnly = false 
   const editor = useRef<EditorView | null>(null)
   const callback = useRef(onChange)
   const initial = useRef(value)
-  const { theme } = useTheme()
+  const { mode } = useTheme()
   useEffect(() => { callback.current = onChange }, [onChange])
   useEffect(() => {
     if (!parent.current) return
@@ -35,7 +35,7 @@ export function CodeEditor({ value, onChange, language, label, readOnly = false 
           '.cm-gutters': { backgroundColor: 'var(--muted)', color: 'var(--muted-foreground)', border: 'none' },
           '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--muted) 35%, transparent)' },
           '&.cm-focused': { outline: '2px solid var(--ring)' },
-        }, { dark: theme === 'dark' }),
+        }, { dark: mode === 'dark' }),
         EditorView.updateListener.of(update => {
           if (update.docChanged) callback.current?.(update.state.doc.toString())
         }),
@@ -43,7 +43,7 @@ export function CodeEditor({ value, onChange, language, label, readOnly = false 
     })
     editor.current = view
     return () => { initial.current = view.state.doc.toString(); view.destroy(); editor.current = null }
-  }, [language, readOnly, theme, label])
+  }, [language, readOnly, mode, label])
   useEffect(() => {
     const view = editor.current
     if (view && view.state.doc.toString() !== value) {
