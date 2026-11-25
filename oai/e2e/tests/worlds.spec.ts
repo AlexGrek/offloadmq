@@ -9,6 +9,9 @@ const completed = { job_id: '77', status: 'completed', capability: 'world.splat'
   ply_bytes: 40 * 2 ** 20, stage: null, error: null, offload_cap: 'world.splat', offload_task_id: 't77',
   started_at: now, typical_runtime_seconds: 30, created_at: now, updated_at: now }
 
+const worldCap = (base: string, tags: string[], raw: string, usage_count = 0) =>
+  ({ base, tags, raw, online: true, last_available_at: now, usage_count })
+
 test('library input, submission, detail, headset sharing and deletion', async ({ page }) => {
   let jobs = [completed]
   let submitted: unknown
@@ -21,7 +24,7 @@ test('library input, submission, detail, headset sharing and deletion', async ({
     if (path === '/api/me') return json({ id: 1, login: 'tester', created_at: now, used_storage_bytes: 0 })
     if (path === '/api/admin/am_i_admin') return json({ is_admin: false })
     if (path === '/api/progress/running') return json({ jobs: [] })
-    if (path === '/api/worlds/capabilities') return json({ capabilities: [{ base: 'world.splat', tags: ['pano'], raw: 'world.splat[pano]' }] })
+    if (path === '/api/worlds/capabilities') return json({ capabilities: [worldCap('world.splat', ['pano'], 'world.splat[pano]')] })
     if (path === '/api/files/images') return json({ files: [{ ...image, id: '42', direction: 'input' }], has_more: false })
     if (path === '/api/worlds/jobs' && method === 'POST') {
       submitted = route.request().postDataJSON()
@@ -75,7 +78,7 @@ test('generates a 2:3 source with a shared starred prompt and builds from the re
     const json = (body: unknown) => route.fulfill({ json: body })
     if (pathname === '/api/me') return json({ id: 1, login: 'tester', created_at: now, used_storage_bytes: 0 })
     if (pathname === '/api/progress/running') return json({ jobs: [] })
-    if (pathname === '/api/worlds/capabilities') return json({ capabilities: [{ base: 'world.splat', tags: ['pano'], raw: 'world.splat[pano]' }] })
+    if (pathname === '/api/worlds/capabilities') return json({ capabilities: [worldCap('world.splat', ['pano'], 'world.splat[pano]')] })
     if (pathname === '/api/worlds/jobs' && method === 'POST') {
       worldRequest = route.request().postDataJSON()
       return json({ job_id: '77', status: 'submitted' })
@@ -155,15 +158,18 @@ test('generates a world picture with the selected upscaler and multiplier', asyn
     const json = (body: unknown) => route.fulfill({ json: body })
     if (path === '/api/me') return json({ id: 1, login: 'tester', created_at: now, used_storage_bytes: 0 })
     if (path === '/api/progress/running') return json({ jobs: [] })
-    if (path === '/api/worlds/capabilities') return json({ capabilities: [{ base: 'world.splat', tags: ['pano'], raw: 'world.splat[pano]' }] })
+    if (path === '/api/worlds/capabilities') return json({ capabilities: [worldCap('world.splat', ['pano'], 'world.splat[pano]')] })
     if (path === '/api/worlds/jobs') return json([])
     if (path === '/api/images/capabilities') return json([
       { base: 'imggen.paint', raw: 'imggen.paint[txt2img]', tags: ['txt2img'], online: true, last_available_at: now, usage_count: 0 },
     ])
     if (path === '/api/img-utils/capabilities') return json({ capabilities: [
-      { base: 'img-utils.seedvr2', utility: 'seedvr2', workflows: ['upscale'], kind: 'comfy' },
-      { base: 'img-utils.restore', utility: 'restore', workflows: ['upscale_refine', 'face_swap'], kind: 'comfy' },
-      { base: 'img-utils.lotus', utility: 'lotus', workflows: ['depth'], kind: 'comfy' },
+      { base: 'img-utils.restore', utility: 'restore', workflows: ['upscale_refine', 'face_swap'], kind: 'comfy',
+        online: true, last_available_at: now, upscale_usage: { upscale_refine: 1 } },
+      { base: 'img-utils.seedvr2', utility: 'seedvr2', workflows: ['upscale'], kind: 'comfy',
+        online: true, last_available_at: now, upscale_usage: { upscale: 5 } },
+      { base: 'img-utils.lotus', utility: 'lotus', workflows: ['depth'], kind: 'comfy',
+        online: true, last_available_at: now, upscale_usage: {} },
     ] })
     if (path === '/api/prompt-placeholders') return json([])
     if (path === '/api/prompts/imggen-prompt/recent') return json({})
@@ -182,10 +188,14 @@ test('generates a world picture with the selected upscaler and multiplier', asyn
   await page.getByTestId('worlds-generate-open').click()
   await page.getByTestId('worlds-prompt').fill('A valley')
   await page.getByTestId('worlds-image-upscale').check()
-  const models = page.getByTestId('worlds-upscale-model')
-  await expect(models.getByRole('option')).toHaveCount(2)
   await expect(page.getByTestId('worlds-upscale-scale')).toHaveValue('2')
-  await models.selectOption('img-utils.restore::upscale_refine')
+  // The most used upscaler comes first and is preselected.
+  const trigger = page.getByTestId('worlds-upscale-model-trigger')
+  await expect(trigger).toContainText('Seedvr2')
+  await trigger.click()
+  const options = page.getByTestId('worlds-upscale-model-list').getByRole('button')
+  await expect(options).toHaveText(['Seedvr2', 'Restore · Upscale refine'])
+  await options.last().click()
   await page.getByTestId('worlds-upscale-scale').selectOption('3')
   await page.getByTestId('worlds-generate-submit').click()
   await expect.poll(() => request).toMatchObject({
@@ -232,8 +242,8 @@ test('SHARP generator hides depth knobs and submits only the chosen field of vie
     if (path === '/api/admin/am_i_admin') return json({ is_admin: false })
     if (path === '/api/progress/running') return json({ jobs: [] })
     if (path === '/api/worlds/capabilities') return json({ capabilities: [
-      { base: 'world.sharp', tags: ['ply', 'preview', 'metric'], raw: 'world.sharp[ply;preview;metric]' },
-      { base: 'world.splat', tags: ['pano'], raw: 'world.splat[pano]' },
+      worldCap('world.sharp', ['ply', 'preview', 'metric'], 'world.sharp[ply;preview;metric]'),
+      worldCap('world.splat', ['pano'], 'world.splat[pano]'),
     ] })
     if (path === '/api/files/images') return json({ files: [{ ...photo, id: '42', direction: 'input' }], has_more: false })
     if (path === '/api/worlds/jobs' && route.request().method() === 'POST') {
@@ -247,8 +257,7 @@ test('SHARP generator hides depth knobs and submits only the chosen field of vie
     return route.fulfill({ status: 404 })
   })
   await page.goto('/app/worlds')
-  await expect(page.getByTestId('worlds-capability')).toHaveValue('world.sharp')
-  await expect(page.getByTestId('worlds-capability')).toContainText('Apple SHARP')
+  await expect(page.getByTestId('worlds-capability-trigger')).toContainText('Apple SHARP')
   await expect(page.getByTestId('worlds-generator-hint')).toContainText('no 360°')
   await expect(page.getByTestId('worlds-mode')).toHaveCount(0)
   await expect(page.getByTestId('worlds-lean')).toHaveCount(0)
@@ -262,7 +271,8 @@ test('SHARP generator hides depth knobs and submits only the chosen field of vie
 
   // Switching back to Lotus restores its knobs.
   await page.getByTestId('worlds-new-panel-btn').click()
-  await page.getByTestId('worlds-capability').selectOption('world.splat')
+  await page.getByTestId('worlds-capability-trigger').click()
+  await page.getByTestId('worlds-capability-option-world.splat').click()
   await expect(page.getByTestId('worlds-mode')).toBeVisible()
   await expect(page.getByTestId('worlds-lean')).toBeVisible()
 })
@@ -279,8 +289,8 @@ test('WorldGen 360° generator asks for surroundings and camera tilt, not projec
     if (path === '/api/admin/am_i_admin') return json({ is_admin: false })
     if (path === '/api/progress/running') return json({ jobs: [] })
     if (path === '/api/worlds/capabilities') return json({ capabilities: [
-      { base: 'world.pano360', tags: ['ply', 'preview', 'pano', 'outpaint'], raw: 'world.pano360[ply;preview;pano;outpaint]' },
-      { base: 'world.splat', tags: ['pano'], raw: 'world.splat[pano]' },
+      worldCap('world.pano360', ['ply', 'preview', 'pano', 'outpaint'], 'world.pano360[ply;preview;pano;outpaint]'),
+      worldCap('world.splat', ['pano'], 'world.splat[pano]'),
     ] })
     if (path === '/api/files/images') return json({ files: [{ ...photo, id: '42', direction: 'input' }], has_more: false })
     if (path === '/api/worlds/jobs' && route.request().method() === 'POST') {
@@ -295,8 +305,7 @@ test('WorldGen 360° generator asks for surroundings and camera tilt, not projec
     return route.fulfill({ status: 404 })
   })
   await page.goto('/app/worlds')
-  await expect(page.getByTestId('worlds-capability')).toHaveValue('world.pano360')
-  await expect(page.getByTestId('worlds-capability')).toContainText('WorldGen 360°')
+  await expect(page.getByTestId('worlds-capability-trigger')).toContainText('WorldGen 360°')
   await expect(page.getByTestId('worlds-generator-hint')).toContainText('rest of the sphere')
   await expect(page.getByTestId('worlds-mode')).toHaveCount(0)
   await expect(page.getByTestId('worlds-lean')).toBeVisible()
@@ -326,4 +335,37 @@ test('WorldGen 360° generator asks for surroundings and camera tilt, not projec
   await expect.poll(() => submitted).toEqual({
     capability: 'world.pano360', input_image_id: '42', mode: 'perspective', max_width: 1024, fill_lean: 0.25, hfov: 55,
   })
+})
+
+test('generator picker lists the most used first and preselects the latest world\'s one', async ({ page }) => {
+  let jobs: unknown[] = []
+  await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (!path.startsWith('/api/')) return route.continue()
+    const json = (body: unknown) => route.fulfill({ json: body })
+    if (path === '/api/me') return json({ id: 1, login: 'tester', created_at: now, used_storage_bytes: 0 })
+    if (path === '/api/progress/running') return json({ jobs: [] })
+    if (path === '/api/worlds/capabilities') return json({ capabilities: [
+      worldCap('world.pano360', [], 'world.pano360', 1),
+      worldCap('world.sharp', [], 'world.sharp', 0),
+      worldCap('world.splat', [], 'world.splat', 7),
+    ] })
+    if (path === '/api/worlds/jobs') return json(jobs)
+    return route.fulfill({ status: 404 })
+  })
+
+  // No history: the most used generator is selected and heads the list.
+  await page.goto('/app/worlds')
+  const trigger = page.getByTestId('worlds-capability-trigger')
+  await expect(trigger).toContainText('Lotus depth')
+  await expect(page.getByTestId('worlds-new-panel').locator('select#worlds-capability')).toHaveCount(0)
+  await trigger.click()
+  await expect(page.getByTestId('worlds-capability-list').getByRole('button'))
+    .toHaveText([/Lotus depth/, /WorldGen 360°/, /Apple SHARP/])
+
+  // The latest world's generator wins over the usage ranking.
+  jobs = [completed].map(job => ({ ...job, capability: 'world.pano360' }))
+  await page.reload()
+  await expect(page.getByTestId('worlds-capability-trigger')).toContainText('WorldGen 360°')
 })

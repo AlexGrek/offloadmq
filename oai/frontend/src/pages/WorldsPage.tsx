@@ -49,13 +49,16 @@ import { JobProgressBar } from '../components/imggen/JobProgressBar'
 import { ImagePickerModal } from '../components/imggen/ImagePickerModal'
 import { ImageSlot } from '../components/imgutils/ImageSlot'
 import { WorldImageGenerator } from '../components/worlds/WorldImageGenerator'
+import { CapabilityModelPicker } from '../components/CapabilityModelPicker'
 import { WORLDS_NEW_PANEL, WorldsHistorySidebar } from '../components/worlds/WorldsHistorySidebar'
 import { useAuth } from '../contexts/AuthContext'
 import { useProgress } from '../contexts/ProgressContext'
 import { useImageSlot } from '../hooks/useImageSlot'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { useToolSidebarOpen } from '../hooks/useToolSidebarOpen'
-import { pickListedCapability } from '../lib/capability-picker'
+import type { CapabilitiesStatus } from '../lib/capabilitiesStatus'
+import { isListedCapability, pickListedCapability } from '../lib/capability-picker'
+import { sortCapabilitiesForPicker } from '../lib/modelAvailability'
 import { formatDuration, imageJobStatusLabel } from '../lib/imggen'
 
 const SplatViewer = lazy(() => import('../components/worlds/SplatViewer'))
@@ -115,7 +118,8 @@ export default function WorldsPage() {
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const [capabilities, setCapabilities] = useState<WorldCapability[]>([])
-  const [capsLoading, setCapsLoading] = useState(true)
+  const [capsStatus, setCapsStatus] = useState<CapabilitiesStatus>('loading')
+  const [capsError, setCapsError] = useState<string | null>(null)
   const [capability, setCapability] = useState('')
   const [mode, setMode] = useState<WorldMode>('auto')
   const [maxWidth, setMaxWidth] = useState(1024)
@@ -155,15 +159,15 @@ export default function WorldsPage() {
 
   const loadCapabilities = useCallback(async () => {
     if (!token) return
-    setCapsLoading(true)
+    setCapsStatus('loading')
+    setCapsError(null)
     try {
       const data = await listWorldCapabilities(token)
-      setCapabilities(data.capabilities)
-      setCapability(prev => pickListedCapability(prev || data.capabilities[0]?.base || '', data.capabilities) ?? '')
+      setCapabilities(sortCapabilitiesForPicker(data.capabilities))
+      setCapsStatus('ready')
     } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setCapsLoading(false)
+      setCapsError((e as Error).message)
+      setCapsStatus('error')
     }
   }, [token])
 
@@ -238,6 +242,14 @@ export default function WorldsPage() {
       setBusy(null)
     }
   }
+
+  // Like Image Generation: start on the generator of the latest world, else the most
+  // used one. Waits for the job list so the first pick doesn't flicker.
+  if (!jobsLoading && capabilities.length > 0 && !isListedCapability(capability, capabilities)) {
+    setCapability(pickListedCapability(jobs[0]?.capability || capabilities[0].base, capabilities) ?? '')
+  }
+  const pickerStatus: CapabilitiesStatus =
+    capsStatus === 'ready' && capabilities.length > 0 && !capability ? 'loading' : capsStatus
 
   const inputImage = input.slot?.uploaded ?? null
   const canSubmit = Boolean(token && capability && inputImage && !input.slot?.error) && busy === null
@@ -417,38 +429,27 @@ export default function WorldsPage() {
 
                 <form onSubmit={e => void onSubmit(e)} className="space-y-5">
                   <div className="space-y-1.5">
-                    <Label htmlFor="worlds-capability">Generator</Label>
-                    <div className="flex gap-2">
-                      <select
-                        id="worlds-capability"
-                        className={selectClass}
-                        value={capability}
-                        onChange={e => setCapability(e.target.value)}
-                        disabled={capsLoading || capabilities.length === 0}
-                        data-testid="worlds-capability"
-                      >
-                        {capabilities.length === 0 ? (
-                          <option value="">{capsLoading ? 'Loading…' : 'No world.* agent online'}</option>
-                        ) : (
-                          capabilities.map(c => (
-                            <option key={c.base} value={c.base}>
-                              {worldGeneratorLabel(c.base)}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="size-11 shrink-0 sm:size-9"
-                        onClick={() => void loadCapabilities()}
-                        title="Refresh generators"
-                        aria-label="Refresh generators"
-                      >
-                        <RefreshCw className={capsLoading ? 'size-4 animate-spin' : 'size-4'} />
-                      </Button>
-                    </div>
+                    <Label>Generator</Label>
+                    <CapabilityModelPicker
+                      capabilities={capabilities}
+                      selected={capability}
+                      onSelect={setCapability}
+                      onRefresh={() => void loadCapabilities()}
+                      capabilitiesStatus={pickerStatus}
+                      capabilitiesError={capsError}
+                      formatLabel={cap => worldGeneratorLabel(cap.base)}
+                      filterTags={() => []}
+                      testIdPrefix="worlds-capability"
+                    />
+                    {capsStatus === 'ready' && capabilities.length === 0 ? (
+                      // The picker can't open with nothing listed, so refresh lives here.
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>No world.* agent online.</span>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => void loadCapabilities()}>
+                          <RefreshCw className="size-3.5" /> Refresh generators
+                        </Button>
+                      </div>
+                    ) : null}
                     {isSharp ? (
                       <p className="text-xs text-muted-foreground" data-testid="worlds-generator-hint">
                         Learned Gaussians at real-world scale: leaning and short steps stay solid. Covers what the

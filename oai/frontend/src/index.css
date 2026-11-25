@@ -7,6 +7,13 @@
 @import "./themes/win98.css";
 @import "./themes/liquid-glass.css";
 @import "./themes/hacker.css";
+@import "./themes/gradients.css";
+@import "./themes/win8-dark.css";
+@import "./themes/crimson.css";
+@import "./themes/parry-hotter.css";
+@import "./themes/aero.css";
+@import "./themes/material.css";
+@import "./themes/love.css";
 
 @custom-variant dark (&:is(.dark *));
 

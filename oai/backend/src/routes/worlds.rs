@@ -16,6 +16,7 @@ use crate::{
     db::{image_generation, worlds},
     error::AppError,
     middleware::{AuthenticatedUser, cache},
+    offload::LlmCapabilityInfo,
     routes::{
         img_utils::JobImageRef,
         job_common::{CancelJobResponse, StartJobResponse, parse_id},
@@ -26,18 +27,22 @@ use crate::{
 
 #[derive(Serialize)]
 pub struct CapabilitiesResponse {
-    pub capabilities: Vec<service::WorldCapability>,
+    /// Online generators, most used by this user first.
+    pub capabilities: Vec<LlmCapabilityInfo>,
 }
 
 pub async fn list_capabilities(
     State(state): State<Arc<AppState>>,
-    AuthenticatedUser(_): AuthenticatedUser,
+    AuthenticatedUser(user_id): AuthenticatedUser,
 ) -> Result<Json<CapabilitiesResponse>, AppError> {
-    Ok(Json(CapabilitiesResponse { capabilities: service::list_capabilities(&state).await? }))
+    Ok(Json(CapabilitiesResponse { capabilities: service::list_capabilities(&state, user_id).await? }))
 }
 
 #[derive(Deserialize)]
 pub struct StartJobRequest {
+    /// `world.*` (or its short name). Omitted = picked by the server: the most used
+    /// online generator that fits the knobs and the picture.
+    #[serde(default)]
     pub capability: String,
     /// `image_files` id from the image library or `POST /api/images/upload`.
     pub input_image_id: String,
@@ -52,7 +57,7 @@ pub async fn start_job(
     AuthenticatedUser(user_id): AuthenticatedUser,
     Json(req): Json<StartJobRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let job_id = service::start_job(
+    let job_id = service::submit_job(
         &state,
         user_id,
         service::StartJobParams {

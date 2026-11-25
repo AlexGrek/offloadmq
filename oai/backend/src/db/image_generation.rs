@@ -196,6 +196,27 @@ pub async fn recent_job_capabilities(
         .map_err(AppError::Database)
 }
 
+/// `(created_at, pipeline_params_json)` of the user's last `limit` generation jobs
+/// that had an upscale stage.
+pub async fn recent_upscaled_job_params(
+    db: &DatabaseConnection,
+    user_id: i64,
+    limit: u64,
+) -> Result<Vec<(chrono::DateTime<chrono::FixedOffset>, String)>, AppError> {
+    ImageGenerationJobEntity::find()
+        .select_only()
+        .column(image_generation_jobs::Column::CreatedAt)
+        .column(image_generation_jobs::Column::PipelineParamsJson)
+        .filter(image_generation_jobs::Column::UserId.eq(user_id))
+        .filter(image_generation_jobs::Column::PipelineParamsJson.contains("\"upscale\":{"))
+        .order_by_desc(image_generation_jobs::Column::CreatedAt)
+        .limit(limit)
+        .into_tuple()
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
 pub async fn delete_job(
     db: &DatabaseConnection,
     job_id: i64,

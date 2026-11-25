@@ -1,6 +1,8 @@
 /*
  * Liquid Glass — translucent frosted panes over a soft colour-field wallpaper,
- * pill buttons, large radii. Light.
+ * pill buttons, large radii. Light (`liquid-glass`) and dark (`liquid-glass-dark`):
+ * the dark variant only overrides tokens and the `--lg-*` / `--glass-*` knobs; every
+ * slot rule below is shared.
  *
  * Styled theme: besides colours it sets radius + fonts and restyles elements via
  * their `data-slot` hooks. Rules here are unlayered, so they beat Tailwind
@@ -16,6 +18,14 @@
     --glass-shadow: inset 0 0 0 1px var(--glass-edge), inset 0 1px 0 oklch(1 0 0 / 0.85),
         0 12px 32px -10px oklch(0.35 0.08 265 / 0.28);
     --glass-tint: oklch(0.58 0.2 258);
+    --lg-overlay: oklch(0.3 0.04 265 / 0.18);
+    --lg-hairline: oklch(1 0 0 / 0.5);
+    --lg-bar: oklch(1 0 0 / 0.35);
+    --lg-drop: oklch(0.35 0.08 265 / 0.4);
+    --lg-clear: oklch(1 0 0 / 0.24);
+    --lg-clear-hover: oklch(1 0 0 / 0.4);
+    --lg-field: oklch(1 0 0 / 0.5);
+    --lg-field-focus: oklch(1 0 0 / 0.7);
 
     /* `--background` and `--popover` stay opaque: many components use them as
        covers (`bg-background/80` badges, image-tile overlays, popover lists). The
@@ -57,46 +67,103 @@
     background-attachment: fixed;
 }
 
+
+:root[data-theme='liquid-glass-dark'] {
+    --radius: 1.1rem;
+    --app-font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Geist Variable', 'Segoe UI', sans-serif;
+    --app-font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Geist Variable', 'Segoe UI', sans-serif;
+
+    --glass-blur: blur(24px) saturate(170%);
+    --glass-edge: oklch(1 0 0 / 0.16);
+    --glass-shadow: inset 0 0 0 1px var(--glass-edge), inset 0 1px 0 oklch(1 0 0 / 0.22),
+        0 16px 40px -12px oklch(0 0 0 / 0.6);
+    --glass-tint: oklch(0.66 0.18 255);
+    --lg-overlay: oklch(0.08 0.02 265 / 0.45);
+    --lg-hairline: oklch(1 0 0 / 0.12);
+    --lg-bar: oklch(0.2 0.03 265 / 0.45);
+    --lg-drop: oklch(0 0 0 / 0.55);
+    --lg-clear: oklch(1 0 0 / 0.08);
+    --lg-clear-hover: oklch(1 0 0 / 0.16);
+    --lg-field: oklch(0.12 0.02 265 / 0.45);
+    --lg-field-focus: oklch(0.12 0.02 265 / 0.65);
+
+    /* Opaque cover tokens, as in the light variant. */
+    --background: oklch(0.17 0.025 265);
+    --foreground: oklch(0.96 0.01 260);
+    --card: oklch(0.24 0.03 265 / 0.42);
+    --card-foreground: oklch(0.96 0.01 260);
+    --popover: oklch(0.22 0.03 265 / 0.94);
+    --popover-foreground: oklch(0.96 0.01 260);
+    --primary: var(--glass-tint);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(1 0 0 / 0.1);
+    --secondary-foreground: oklch(0.96 0.01 260);
+    --muted: oklch(1 0 0 / 0.07);
+    --muted-foreground: oklch(0.74 0.02 260);
+    --accent: oklch(1 0 0 / 0.12);
+    --accent-foreground: oklch(0.96 0.01 260);
+    --border: oklch(1 0 0 / 0.14);
+    --input: oklch(1 0 0 / 0.18);
+    --ring: oklch(0.66 0.18 255 / 0.6);
+    --sidebar: oklch(0.2 0.03 265);
+    --sidebar-foreground: oklch(0.96 0.01 260);
+    --sidebar-primary: var(--glass-tint);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(0.28 0.035 265);
+    --sidebar-accent-foreground: oklch(0.96 0.01 260);
+    --sidebar-border: oklch(1 0 0 / 0.12);
+    --sidebar-ring: oklch(0.66 0.18 255 / 0.6);
+
+    /* Night wallpaper: deep jewel tones. */
+    background:
+        radial-gradient(60vmax 60vmax at 8% 8%, oklch(0.42 0.14 255 / 0.9), transparent 60%),
+        radial-gradient(50vmax 50vmax at 92% 18%, oklch(0.4 0.16 320 / 0.8), transparent 60%),
+        radial-gradient(60vmax 60vmax at 72% 92%, oklch(0.42 0.1 190 / 0.75), transparent 60%),
+        radial-gradient(50vmax 50vmax at 12% 88%, oklch(0.38 0.12 285 / 0.7), transparent 60%),
+        oklch(0.14 0.03 265);
+    background-attachment: fixed;
+}
+
 /* Let the wallpaper on <html> show behind the app. */
-:root[data-theme='liquid-glass'] body {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) body {
     background-color: transparent;
 }
 
 /* Frosted panes. */
-:root[data-theme='liquid-glass'] :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
     border-color: transparent;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
     box-shadow: var(--glass-shadow);
 }
-:root[data-theme='liquid-glass'] [data-slot='card'] {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='card'] {
     background-color: var(--card);
 }
-:root[data-theme='liquid-glass'] :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
     background-color: var(--popover);
 }
-:root[data-theme='liquid-glass'] [data-slot='dialog-overlay'] {
-    background: oklch(0.3 0.04 265 / 0.18);
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='dialog-overlay'] {
+    background: var(--lg-overlay);
 }
-:root[data-theme='liquid-glass'] :is([data-slot='dialog-header'], [data-slot='dialog-footer'], [data-slot='sheet-header'], [data-slot='sheet-footer']) {
-    border-color: oklch(1 0 0 / 0.5);
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) :is([data-slot='dialog-header'], [data-slot='dialog-footer'], [data-slot='sheet-header'], [data-slot='sheet-footer']) {
+    border-color: var(--lg-hairline);
 }
 
 /* Any popover-coloured floating list (custom pickers, not just Radix menus). */
-:root[data-theme='liquid-glass'] .bg-popover {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) .bg-popover {
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
 }
 
 /* Top bar and sticky chrome float over scrolling content. */
-:root[data-theme='liquid-glass'] [data-slot='topbar'] {
-    background-color: oklch(1 0 0 / 0.35);
-    border-bottom-color: oklch(1 0 0 / 0.6);
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='topbar'] {
+    background-color: var(--lg-bar);
+    border-bottom-color: var(--lg-hairline);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
-    box-shadow: 0 1px 0 oklch(1 0 0 / 0.5), 0 8px 24px -16px oklch(0.35 0.08 265 / 0.4);
+    box-shadow: 0 1px 0 var(--lg-hairline), 0 8px 24px -16px var(--lg-drop);
 }
-:root[data-theme='liquid-glass'] .sticky:not([data-slot='topbar']) {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) .sticky:not([data-slot='topbar']) {
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
 }
@@ -107,16 +174,16 @@
  * depth. Primary is the same glass tinted blue rather than a solid fill, and no
  * button gets a coloured glow.
  */
-:root[data-theme='liquid-glass'] {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) {
     --lg-rim: inset 0 0 0 1px oklch(1 0 0 / 0.55), inset 0 1px 0.5px oklch(1 0 0 / 0.95),
         inset 0 -1px 1px oklch(1 0 0 / 0.35), inset 0 0 14px oklch(1 0 0 / 0.22);
     --lg-lift: 0 1px 2px oklch(0.2 0.03 265 / 0.08), 0 8px 20px -8px oklch(0.2 0.03 265 / 0.22);
     --lg-sheen: linear-gradient(180deg, oklch(1 0 0 / 0.38), oklch(1 0 0 / 0.06) 48%, oklch(1 0 0 / 0) 52%, oklch(1 0 0 / 0.14));
 }
-:root[data-theme='liquid-glass'] [data-slot='button']:not([data-variant='link']) {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='button']:not([data-variant='link']) {
     border-radius: 9999px;
 }
-:root[data-theme='liquid-glass'] [data-slot='button']:is([data-variant='default'], [data-variant='outline'], [data-variant='secondary']) {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='button']:is([data-variant='default'], [data-variant='outline'], [data-variant='secondary']) {
     border-color: transparent;
     background-image: var(--lg-sheen);
     -webkit-backdrop-filter: blur(14px) saturate(190%);
@@ -125,33 +192,33 @@
     transition: background-color 0.2s, box-shadow 0.2s, transform 0.15s;
 }
 /* Tinted glass. */
-:root[data-theme='liquid-glass'] [data-slot='button'][data-variant='default'] {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='button'][data-variant='default'] {
     color: oklch(1 0 0);
     background-color: oklch(0.54 0.2 258 / 0.8);
     text-shadow: 0 1px 1px oklch(0.3 0.1 260 / 0.3);
 }
-:root[data-theme='liquid-glass'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='button'][data-variant='default']:hover:not(:disabled) {
     background-color: oklch(0.54 0.2 258 / 0.9);
 }
 /* Clear glass. */
-:root[data-theme='liquid-glass'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
     color: var(--foreground);
-    background-color: oklch(1 0 0 / 0.24);
+    background-color: var(--lg-clear);
 }
-:root[data-theme='liquid-glass'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
-    background-color: oklch(1 0 0 / 0.4);
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: var(--lg-clear-hover);
 }
 /* Ghost: no glass until hovered. */
-:root[data-theme='liquid-glass'] [data-slot='button'][data-variant='ghost']:is(:hover, [aria-expanded='true']):not(:disabled) {
-    background-color: oklch(1 0 0 / 0.35);
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='button'][data-variant='ghost']:is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: var(--lg-clear-hover);
     box-shadow: var(--lg-rim);
 }
-:root[data-theme='liquid-glass'] [data-slot='button']:not([data-variant='link']):active:not(:disabled) {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) [data-slot='button']:not([data-variant='link']):active:not(:disabled) {
     transform: scale(0.96);
 }
-:root[data-theme='liquid-glass'] :is([data-slot='dialog-close-button'], [data-slot='sheet-close-button']) {
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) :is([data-slot='dialog-close-button'], [data-slot='sheet-close-button']) {
     border-radius: 9999px;
-    background-color: oklch(1 0 0 / 0.3);
+    background-color: var(--lg-clear);
     box-shadow: var(--lg-rim);
 }
 
@@ -160,14 +227,23 @@
  * chat composer textarea inside its own rounded frame) are left alone, or their
  * square fill would poke out of the frame.
  */
-:root[data-theme='liquid-glass'] :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent) {
-    background-color: oklch(1 0 0 / 0.5);
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent) {
+    background-color: var(--lg-field);
     border-color: var(--glass-edge);
 }
-:root[data-theme='liquid-glass'] :is([data-slot='input'], input, textarea, select):not(.bg-transparent):focus-visible {
-    background-color: oklch(1 0 0 / 0.7);
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) :is([data-slot='input'], input, textarea, select):not(.bg-transparent):focus-visible {
+    background-color: var(--lg-field-focus);
 }
 
-:root[data-theme='liquid-glass'] ::selection {
-    background: oklch(0.58 0.2 258 / 0.3);
+:root:is([data-theme='liquid-glass'], [data-theme='liquid-glass-dark']) ::selection {
+    background: color-mix(in oklch, var(--glass-tint) 30%, transparent);
+}
+
+/* Dark variant: dimmer specular rim and sheen, deeper lift. Declared after the
+   shared knobs above so it wins at equal specificity. */
+:root[data-theme='liquid-glass-dark'] {
+    --lg-rim: inset 0 0 0 1px oklch(1 0 0 / 0.14), inset 0 1px 0.5px oklch(1 0 0 / 0.35),
+        inset 0 -1px 1px oklch(1 0 0 / 0.08), inset 0 0 14px oklch(1 0 0 / 0.06);
+    --lg-lift: 0 1px 2px oklch(0 0 0 / 0.3), 0 8px 20px -8px oklch(0 0 0 / 0.55);
+    --lg-sheen: linear-gradient(180deg, oklch(1 0 0 / 0.14), oklch(1 0 0 / 0.03) 48%, oklch(1 0 0 / 0) 52%, oklch(1 0 0 / 0.05));
 }

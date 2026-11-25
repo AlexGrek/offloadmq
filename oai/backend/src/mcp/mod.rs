@@ -78,7 +78,9 @@ repeats the exact same prompt. Personas (list_personas) are characters with face
 look description and a system prompt: generate_persona_photos makes photos of one (txt2img → \
 face swap → upscale ×2 by default; prompts may use {p_name}, {p_look} and {p_system}; \
 workflow=existing puts the persona's face on an existing library photo instead), and \
-persona_chat talks to one using its system prompt.";
+persona_chat talks to one using its system prompt. 3D / VR worlds: generate_world turns an \
+image_id into a Gaussian-splat world and returns a login-free viewer link; get_world_job \
+checks it and refreshes the links.";
 
 fn server_info() -> Value {
     json!({ "name": "oai-images", "title": "OAI image generation", "version": version::build_version() })

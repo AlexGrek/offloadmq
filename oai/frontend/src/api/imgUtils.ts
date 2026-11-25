@@ -25,6 +25,12 @@ export interface ImgUtilCapability {
   kind: ImgUtilKind
   /** Resampling filters the agent offers — `resize` only, empty otherwise. */
   methods: string[]
+  /** False when no agent reports the tool now, only within the last 48 h. */
+  online: boolean
+  /** RFC3339 time an agent last reported the capability. */
+  last_available_at: string
+  /** Upscale operation → how many of the user's recent upscales ran it. */
+  upscale_usage: Record<string, number>
 }
 
 /** A pack/operation pair — what the user actually picks. */

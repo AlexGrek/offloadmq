@@ -38,15 +38,18 @@ export function TopBar() {
     navigate('/login', { replace: true })
   }
 
+  // Space priority on narrow screens: the right-side buttons drop their labels
+  // first (below `xl`), so the recent-app shortcuts keep their room; those lose
+  // their titles below `lg` and stay as icons on every width.
   return (
-    <header data-slot="topbar" className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur">
+    <header data-slot="topbar" className="sticky top-0 z-40 flex h-14 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 backdrop-blur sm:px-6">
       <div className="flex min-w-0 items-center">
         <Link to="/app/dashboard" className="font-display select-none text-xl font-bold tracking-tight">
           oai
         </Link>
         <TopApps />
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         <RandomNamesWidget />
         <Button
           variant="ghost"
@@ -59,7 +62,7 @@ export function TopBar() {
           className={cn(drawerOpen && 'text-violet-600 dark:text-violet-400')}
         >
           <Activity className="h-4 w-4" />
-          <span className="ml-1.5 hidden sm:inline">Progress</span>
+          <span className="ml-1.5 hidden xl:inline">Progress</span>
           {runningCount > 0 && (
             <span className="ml-1.5 rounded-full bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-violet-700 dark:text-violet-300">
               {runningCount}
@@ -67,18 +70,18 @@ export function TopBar() {
           )}
         </Button>
         <ThemePicker />
-        <span className="hidden px-2 text-sm text-muted-foreground sm:block">{user?.login}</span>
+        <span className="hidden px-2 text-sm text-muted-foreground xl:block">{user?.login}</span>
         <Button variant="ghost" size="sm" asChild>
           <Link to="/app/settings" aria-label="My Account" title="My Account">
             <User className="h-4 w-4" />
-            <span className="ml-1.5 hidden sm:inline">My Account</span>
+            <span className="ml-1.5 hidden xl:inline">My Account</span>
           </Link>
         </Button>
         <Dialog>
           <DialogTrigger asChild>
             <Button variant="ghost" size="sm" aria-label="Sign out" title="Sign out" data-testid="sign-out-button">
               <LogOut className="h-4 w-4" />
-              <span className="ml-1.5 hidden sm:inline">Sign out</span>
+              <span className="ml-1.5 hidden xl:inline">Sign out</span>
             </Button>
           </DialogTrigger>
           <DialogContent data-testid="sign-out-dialog">

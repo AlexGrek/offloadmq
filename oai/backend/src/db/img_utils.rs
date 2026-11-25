@@ -187,6 +187,27 @@ pub async fn set_output_image(
     Ok(())
 }
 
+/// `(created_at, capability, workflow)` of the user's last `limit` upscale jobs.
+pub async fn recent_upscale_runs(
+    db: &DatabaseConnection,
+    user_id: i64,
+    limit: u64,
+) -> Result<Vec<(chrono::DateTime<chrono::FixedOffset>, String, String)>, AppError> {
+    ImgUtilsJobEntity::find()
+        .filter(img_utils_jobs::Column::UserId.eq(user_id))
+        .filter(img_utils_jobs::Column::Workflow.starts_with("upscale"))
+        .order_by_desc(img_utils_jobs::Column::CreatedAt)
+        .limit(limit)
+        .select_only()
+        .column(img_utils_jobs::Column::CreatedAt)
+        .column(img_utils_jobs::Column::Capability)
+        .column(img_utils_jobs::Column::Workflow)
+        .into_tuple()
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
 /// How often each Image Tools capability ran an operation starting with
 /// `workflow_prefix` (e.g. `face_swap`) in the user's last `limit` such jobs —
 /// the "most used" ranking for picking a default tool (Personas).

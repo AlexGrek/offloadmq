@@ -1,4 +1,4 @@
-//! MCP tool registry. Each tool mirrors an `oai image …` CLI command (see the table in
+//! MCP tool registry. Each tool mirrors an `oai …` CLI command (see the table in
 //! `docs/mcp.md`); keep the two in step when either changes.
 
 mod bg_remover;
@@ -8,6 +8,7 @@ mod model_wars;
 mod personas;
 mod placeholders;
 mod prompts;
+mod worlds;
 
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -25,6 +26,7 @@ pub fn definitions() -> Vec<Value> {
     defs.extend(prompts::definitions());
     defs.extend(placeholders::definitions());
     defs.extend(personas::definitions());
+    defs.extend(worlds::definitions());
     defs
 }
 
@@ -38,6 +40,7 @@ pub async fn call(ctx: &ToolContext, name: &str, args: Value) -> Option<ToolOutp
         n if prompts::handles(n) => prompts::call(ctx, n, args).await,
         n if placeholders::handles(n) => placeholders::call(ctx, n, args).await,
         n if personas::handles(n) => personas::call(ctx, n, args).await,
+        n if worlds::handles(n) => worlds::call(ctx, n, args).await,
         _ => return None,
     };
     Some(result.unwrap_or_else(ToolOutput::from))
@@ -171,7 +174,8 @@ mod tests {
                     || model_wars::handles(name)
                     || prompts::handles(name)
                     || placeholders::handles(name)
-                    || personas::handles(name),
+                    || personas::handles(name)
+                    || worlds::handles(name),
                 "{name}"
             );
         }

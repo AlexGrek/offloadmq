@@ -1,3 +1,4 @@
+import type { LlmCapabilityInfo } from '../types/ws'
 import { apiRequest as request } from './http'
 import type { JobImageRef } from './imgUtils'
 import type { UploadedImage } from './images'
@@ -24,11 +25,8 @@ export type WorldMode = 'auto' | 'perspective' | 'pano'
 
 export type WorldsRouteState = { worldImage?: UploadedImage }
 
-export interface WorldCapability {
-  base: string
-  tags: string[]
-  raw: string
-}
+/** An online generator; `usage_count` ranks the picker (the user's last 20 worlds). */
+export type WorldCapability = LlmCapabilityInfo
 
 export interface WorldParams {
   mode: WorldMode

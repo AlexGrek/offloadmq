@@ -23,7 +23,11 @@ const html = (page: Page) =>
   page.evaluate(() => ({
     theme: document.documentElement.dataset.theme,
     dark: document.documentElement.classList.contains('dark'),
-    bg: getComputedStyle(document.body).backgroundColor,
+    // A transparent <body> (glass themes) shows the wallpaper painted on <html>.
+    bg: ((body, root) => (body === 'rgba(0, 0, 0, 0)' ? root : body))(
+      getComputedStyle(document.body).backgroundColor,
+      getComputedStyle(document.documentElement).backgroundColor,
+    ),
   }))
 
 test('theme drop-down switches named themes, keeps .dark in sync and persists', async ({ page, request }) => {
@@ -48,6 +52,18 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     ['hacker-green', true],
     ['hacker-blue', true],
     ['hacker-white', true],
+    ['aurora', true],
+    ['synthwave', true],
+    ['nebula', true],
+    ['sherbet', false],
+    ['lagoon', false],
+    ['liquid-glass-dark', true],
+    ['win8-dark', true],
+    ['crimson', true],
+    ['parry-hotter', false],
+    ['aero', false],
+    ['material', false],
+    ['love', false],
     ['dark', true],
   ] as const) {
     await page.getByTestId('theme-picker').click()
@@ -59,7 +75,7 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     seen.add(state.bg)
   }
   // Every theme paints a different background.
-  expect(seen.size).toBe(14)
+  expect(seen.size).toBe(26)
 
   await page.getByTestId('theme-picker').click()
   await page.getByTestId('theme-option-graphite').click()
@@ -88,6 +104,12 @@ test('styled themes change radius, fonts and element looks', async ({ page, requ
     ['win98', { radius: '0rem', font: /Tahoma/, buttonRadius: '0px' }],
     ['liquid-glass', { radius: '1.1rem', font: /apple-system/, buttonRadius: '9999px' }],
     ['hacker-green', { radius: '0rem', font: /monospace/, buttonRadius: '0px' }],
+    ['liquid-glass-dark', { radius: '1.1rem', font: /apple-system/, buttonRadius: '9999px' }],
+    ['win8-dark', { radius: '0rem', font: /Segoe UI/, buttonRadius: '0px' }],
+    ['parry-hotter', { radius: '0.3rem', font: /EB Garamond/, buttonRadius: '3.84px' }],
+    ['aero', { radius: '0.4rem', font: /Segoe UI/, buttonRadius: '5.12px' }],
+    ['material', { radius: '0.25rem', font: /Roboto/, buttonRadius: '3.2px' }],
+    ['love', { radius: '1rem', font: /Geist/, buttonRadius: '9999px' }],
   ] as const) {
     await page.getByTestId('theme-picker').click()
     await page.getByTestId(`theme-option-${id}`).click()
@@ -96,6 +118,22 @@ test('styled themes change radius, fonts and element looks', async ({ page, requ
     expect(state.radius).toBe(expected.radius)
     expect(state.font).toMatch(expected.font)
     expect(state.buttonRadius).toBe(expected.buttonRadius)
+  }
+
+  // No theme may lay a full-screen overlay over content: it would tint generated images.
+  for (const id of ['hacker-green', 'hacker-blue', 'hacker-white', 'win98', 'liquid-glass', 'aurora', 'synthwave', 'nebula', 'sherbet', 'lagoon', 'liquid-glass-dark', 'win8-dark', 'crimson', 'parry-hotter', 'aero', 'material', 'love']) {
+    await page.getByTestId('theme-picker').click()
+    await page.getByTestId(`theme-option-${id}`).click()
+    await expect(page.getByTestId('theme-picker-menu')).toBeHidden()
+    const overlays = await page.evaluate(() =>
+      [document.documentElement, document.body].flatMap(el =>
+        (['::before', '::after'] as const).filter(pseudo => {
+          const s = getComputedStyle(el, pseudo)
+          return s.content !== 'none' && s.content !== 'normal' && s.position === 'fixed'
+        }),
+      ),
+    )
+    expect(overlays, `${id} overlays content`).toEqual([])
   }
 
   // Back to a plain palette theme: the styled overrides are gone.

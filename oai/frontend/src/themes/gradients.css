@@ -1,0 +1,169 @@
+/*
+ * Gradient themes — vivid multi-colour wallpapers with frosted panes and
+ * gradient accents. Dark: Aurora, Synthwave, Nebula. Light: Sherbet, Lagoon.
+ *
+ * One shared structure; each variant sets only its colours:
+ *   --g1        main accent (primary actions, focus ring)
+ *   --g2, --g3  wallpaper / accent companions
+ *   --g-bg      opaque base, --g-fg text, --g-on text on --g1
+ *   --g-wash    wallpaper colour strength
+ *
+ * The wallpaper is a background *of <body>* (it propagates to the canvas), so
+ * it sits behind content and never tints images. Surface tokens that act as
+ * covers (`--background`, `--popover`, `--sidebar`) stay opaque.
+ */
+:root[data-theme='aurora'] {
+    --g1: oklch(0.8 0.16 170);
+    --g2: oklch(0.7 0.16 225);
+    --g3: oklch(0.62 0.22 300);
+    --g-bg: oklch(0.17 0.04 250);
+    --g-fg: oklch(0.96 0.02 200);
+    --g-on: oklch(0.17 0.04 250);
+    --g-wash: 42%;
+}
+:root[data-theme='synthwave'] {
+    --g1: oklch(0.7 0.26 350);
+    --g2: oklch(0.78 0.17 55);
+    --g3: oklch(0.58 0.24 290);
+    --g-bg: oklch(0.16 0.06 300);
+    --g-fg: oklch(0.96 0.03 330);
+    --g-on: oklch(0.16 0.06 300);
+    --g-wash: 45%;
+}
+:root[data-theme='nebula'] {
+    --g1: oklch(0.74 0.17 285);
+    --g2: oklch(0.7 0.2 350);
+    --g3: oklch(0.7 0.15 225);
+    --g-bg: oklch(0.15 0.05 275);
+    --g-fg: oklch(0.96 0.02 280);
+    --g-on: oklch(0.15 0.05 275);
+    --g-wash: 40%;
+}
+:root[data-theme='sherbet'] {
+    --g1: oklch(0.6 0.2 20);
+    --g2: oklch(0.88 0.14 85);
+    --g3: oklch(0.8 0.13 330);
+    --g-bg: oklch(0.985 0.012 60);
+    --g-fg: oklch(0.26 0.05 20);
+    --g-on: oklch(0.99 0 0);
+    --g-wash: 55%;
+}
+:root[data-theme='lagoon'] {
+    --g1: oklch(0.55 0.15 235);
+    --g2: oklch(0.86 0.12 175);
+    --g3: oklch(0.82 0.1 285);
+    --g-bg: oklch(0.985 0.01 200);
+    --g-fg: oklch(0.24 0.05 240);
+    --g-on: oklch(0.99 0 0);
+    --g-wash: 55%;
+}
+
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) {
+    --radius: 0.9rem;
+
+    --g-tint: color-mix(in oklch, var(--g1) 12%, var(--g-bg));
+    --g-sweep: linear-gradient(120deg, var(--g1), color-mix(in oklch, var(--g1) 50%, var(--g3)), var(--g1));
+    --g-line: linear-gradient(90deg, var(--g1), var(--g2), var(--g3));
+    --g-pane-blur: blur(18px) saturate(150%);
+
+    --background: var(--g-bg);
+    --foreground: var(--g-fg);
+    --card: color-mix(in oklch, var(--g-bg) 72%, transparent);
+    --card-foreground: var(--g-fg);
+    --popover: color-mix(in oklch, var(--g1) 5%, var(--g-bg));
+    --popover-foreground: var(--g-fg);
+    --primary: var(--g1);
+    --primary-foreground: var(--g-on);
+    --secondary: var(--g-tint);
+    --secondary-foreground: var(--g-fg);
+    --muted: var(--g-tint);
+    --muted-foreground: color-mix(in oklch, var(--g-fg) 65%, var(--g-bg));
+    --accent: color-mix(in oklch, var(--g1) 16%, var(--g-bg));
+    --accent-foreground: var(--g-fg);
+    --border: color-mix(in oklch, var(--g-fg) 14%, transparent);
+    --input: color-mix(in oklch, var(--g-fg) 22%, transparent);
+    --ring: var(--g1);
+    --chart-1: var(--g1);
+    --chart-2: var(--g2);
+    --chart-3: var(--g3);
+    --chart-4: color-mix(in oklch, var(--g1) 50%, var(--g2));
+    --chart-5: color-mix(in oklch, var(--g2) 50%, var(--g3));
+    --sidebar: color-mix(in oklch, var(--g1) 6%, var(--g-bg));
+    --sidebar-foreground: var(--g-fg);
+    --sidebar-primary: var(--g1);
+    --sidebar-primary-foreground: var(--g-on);
+    --sidebar-accent: color-mix(in oklch, var(--g1) 16%, var(--g-bg));
+    --sidebar-accent-foreground: var(--g-fg);
+    --sidebar-border: color-mix(in oklch, var(--g-fg) 14%, transparent);
+    --sidebar-ring: var(--g1);
+
+    caret-color: var(--g1);
+    scrollbar-color: color-mix(in oklch, var(--g1) 60%, transparent) transparent;
+}
+
+/* Wallpaper: colour blobs over the opaque base, fixed to the viewport. */
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) body {
+    background-image:
+        radial-gradient(55vmax 55vmax at 6% 4%, color-mix(in oklch, var(--g1) var(--g-wash), transparent), transparent 62%),
+        radial-gradient(50vmax 50vmax at 96% 14%, color-mix(in oklch, var(--g3) var(--g-wash), transparent), transparent 62%),
+        radial-gradient(60vmax 60vmax at 70% 100%, color-mix(in oklch, var(--g2) var(--g-wash), transparent), transparent 62%),
+        radial-gradient(40vmax 40vmax at 8% 96%, color-mix(in oklch, var(--g3) calc(var(--g-wash) * 0.7), transparent), transparent 62%);
+    background-attachment: fixed;
+}
+
+/* Top bar: frosted strip with a gradient hairline. */
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='topbar'] {
+    background-color: color-mix(in oklch, var(--g-bg) 65%, transparent);
+    -webkit-backdrop-filter: var(--g-pane-blur);
+    backdrop-filter: var(--g-pane-blur);
+    border-bottom: 2px solid transparent;
+    border-image: var(--g-line) 1;
+}
+
+/* Frosted panes; floating ones get a gradient edge glow. */
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='card'] {
+    background-color: var(--card);
+    -webkit-backdrop-filter: var(--g-pane-blur);
+    backdrop-filter: var(--g-pane-blur);
+}
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    box-shadow:
+        0 0 0 1px color-mix(in oklch, var(--g1) 35%, transparent),
+        -12px -8px 40px -18px color-mix(in oklch, var(--g1) 55%, transparent),
+        12px 10px 40px -18px color-mix(in oklch, var(--g3) 55%, transparent);
+}
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='dialog-overlay'] {
+    background: color-mix(in oklch, var(--g-bg) 45%, transparent);
+}
+
+/* Primary buttons: a gradient sweep that glides on hover. */
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='button'][data-variant='default'] {
+    border-color: transparent;
+    background-image: var(--g-sweep);
+    background-size: 200% 100%;
+    background-position: 0% 50%;
+    box-shadow: 0 6px 18px -8px color-mix(in oklch, var(--g1) 70%, transparent);
+    transition: background-position 0.5s ease, box-shadow 0.2s;
+}
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background-position: 100% 50%;
+    box-shadow: 0 8px 24px -8px color-mix(in oklch, var(--g3) 75%, transparent);
+}
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    background-color: color-mix(in oklch, var(--g-bg) 60%, transparent);
+    border-color: color-mix(in oklch, var(--g1) 35%, transparent);
+}
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: var(--accent);
+    border-color: color-mix(in oklch, var(--g1) 60%, transparent);
+}
+
+/* Fields: focus lights up in the accent. */
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) :is([data-slot='input'], input, textarea, select):not(.bg-transparent):focus-visible {
+    border-color: var(--g1);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--g1) 25%, transparent);
+}
+
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) ::selection {
+    background: color-mix(in oklch, var(--g1) 40%, transparent);
+}

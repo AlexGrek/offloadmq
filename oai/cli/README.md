@@ -217,6 +217,38 @@ Common flags: `-capability`, `-o`, `--no-wait`, `--progress=false`, `-t` / `-tim
 
 Job management mirrors the Image Tools history sidebar: `img-utils jobs` (`-status`, `-active`, `-ids`, `-json`), `img-utils job <id>` (stored state, including options and the input/output images) / `img-utils poll <id>` (one forced refresh), `img-utils download <id> [-o file]` (completed jobs only, never polls; default name `<tool>_<job-id>.<ext>`), `img-utils cancel <id> …`, `img-utils retry <id>` (**failed or canceled** jobs only; it replays the stored images and options, then waits and saves, or `--no-wait` prints the new ID), and `img-utils delete <id> …` (removes the job and its output image; the input upload stays).
 
+### 3D worlds (`world`)
+
+`world generate` turns a picture into a Gaussian-splat world (the web UI's `/app/worlds`). Each argument is an image file (uploaded first) or the ID of an image already in your library, e.g. from `image job <id>`; each one becomes its own job. The command waits and saves the scene as `<input>_world.ply` (`world_<job-id>.ply` for an image ID), or `-o name.ply`.
+
+`world models` lists the online generators, the ones you use most first. Without `-model` the server picks the most used one that fits the picture and the options:
+
+| `-model` | What it does |
+|---|---|
+| `sharp` | Apple SHARP: solid, real-world scale, perspective pictures only |
+| `splat` | Lotus depth: fast; the only one that takes a 2:1 360° panorama |
+| `pano360` | Paints any picture out to a full 360° world (about 80 s on the GPU) |
+
+| Option | Applies to | Meaning |
+|---|---|---|
+| `-mode auto\|perspective\|pano` | splat (`sharp` and `pano360` are always perspective) | Projection |
+| `-fov 20..150` | all | Horizontal field of view of the picture, in degrees |
+| `-max-width 256..2048` | splat, pano360 | Splat budget: 1024 (default) suits a Quest, 2048 is full detail |
+| `-lean 0..1` | splat, pano360 | Head movement in metres covered by the background layer (default 0.25) |
+| `-near`, `-far` | splat, pano360 | Depth range in metres (default 1.2 and 50) |
+| `-prompt TEXT` | pano360 | What surrounds the picture (default: the prompt that generated it) |
+| `-pitch -60..60` | pano360 | Camera tilt; negative = looking down |
+| `-seed N` | pano360 | Seed for the painted surroundings |
+
+An option the chosen generator would ignore is rejected by the server. `-share` also prints a viewer link for each finished world. `--no-wait` prints bare job IDs (`-o` and `-share` are rejected with it).
+
+Job management: `world jobs` (`-status`, `-active`, `-ids`, `-json`), `world job <id>` / `world poll <id>`, `world download <id> [-o file.ply] [-preview file.png]` (completed jobs only, never polls), `world share <id>` (prints a login-free viewer URL with an Enter VR button; it expires, by default after 24 h; `-json` also gives the scene and preview URLs), `world cancel <id> …`, `world retry <id>` (**failed or canceled** jobs only) and `world delete <id> …` (finished jobs; removes the scene and kills shared links, keeps the input picture).
+
+```bash
+oai world generate temple.jpg -share
+oai world generate 7312345678901 -model pano360 -pitch -15 -prompt "a quiet shrine courtyard"
+```
+
 ### Nude detector (NudeNet)
 
 `nude scan` uploads one or more images and runs NSFW detection (`onnx.nudenet`) with a tunable confidence threshold, mirroring the web UI's Nude Detector page — one job per image. Flags: `-threshold` (default `0.25`, must be `0.05`-`0.95`, same range as the UI slider), `-json` (print the raw result JSON instead of a label/confidence summary), `-o` (also save the raw JSON result; multiple inputs get `_2`, `_3`, ... suffixes), `--progress=false`, `-t` / `-timeout` (default `5m`).

@@ -1,0 +1,176 @@
+/*
+ * Windows 8 (dark) — Metro / Modern UI: flat charcoal, one bold accent, square
+ * corners, Segoe UI with light display headings, 2px-outlined buttons, white
+ * text boxes and accent-filled dialogs. Dark.
+ *
+ * Styled theme: besides colours it sets radius + fonts and restyles elements via
+ * their `data-slot` hooks. Rules here are unlayered, so they beat Tailwind
+ * utilities on the same element.
+ */
+:root[data-theme='win8-dark'] {
+    --radius: 0rem;
+    --app-font-sans: 'Segoe UI', 'Selawik', 'Open Sans', system-ui, sans-serif;
+    --app-font-display: 'Segoe UI Light', 'Segoe UI', 'Selawik', 'Open Sans', system-ui, sans-serif;
+
+    --w8-accent: #2d89ef;
+    --w8-accent-hi: #4a9cf5;
+    --w8-bg: #1d1d1d;
+    --w8-surface: #262626;
+    --w8-raise: #333333;
+
+    --background: var(--w8-bg);
+    --foreground: #ffffff;
+    --card: var(--w8-surface);
+    --card-foreground: #ffffff;
+    --popover: #2b2b2b;
+    --popover-foreground: #ffffff;
+    --primary: var(--w8-accent);
+    --primary-foreground: #ffffff;
+    --secondary: var(--w8-raise);
+    --secondary-foreground: #ffffff;
+    --muted: #2e2e2e;
+    --muted-foreground: #a6a6a6;
+    --accent: #3a3a3a;
+    --accent-foreground: #ffffff;
+    --destructive: #e51400;
+    --border: #3f3f3f;
+    --input: #5a5a5a;
+    --ring: #ffffff;
+    --chart-1: #2d89ef;
+    --chart-2: #00a300;
+    --chart-3: #ff0097;
+    --chart-4: #ffc40d;
+    --chart-5: #9f00a7;
+    --sidebar: #222222;
+    --sidebar-foreground: #ffffff;
+    --sidebar-primary: var(--w8-accent);
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #3a3a3a;
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: #3f3f3f;
+    --sidebar-ring: #ffffff;
+    accent-color: var(--w8-accent);
+}
+
+:root[data-theme='win8-dark'] ::selection {
+    background: var(--w8-accent);
+    color: #fff;
+}
+
+/* Light, airy display headings — the Metro signature. */
+:root[data-theme='win8-dark'] .font-display {
+    font-weight: 300;
+    letter-spacing: 0;
+}
+
+/* Top bar: flat black app bar with an accent rule. */
+:root[data-theme='win8-dark'] [data-slot='topbar'] {
+    background: #111111;
+    backdrop-filter: none;
+    border-bottom: 2px solid var(--w8-accent);
+}
+
+/* Flat tiles: no rings, no shadows, no rounding. */
+:root[data-theme='win8-dark'] :is([data-slot='card'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    border-radius: 0;
+    box-shadow: none;
+    border: 0;
+}
+:root[data-theme='win8-dark'] [data-slot='card'] {
+    background: var(--w8-surface);
+}
+:root[data-theme='win8-dark'] [data-slot='dropdown-menu-content'] {
+    background: #2b2b2b;
+    border: 2px solid #4d4d4d;
+}
+
+/* Dialogs: an accent band across the screen, like Metro message dialogs. */
+:root[data-theme='win8-dark'] [data-slot='dialog-overlay'] {
+    background: oklch(0 0 0 / 0.6);
+}
+:root[data-theme='win8-dark'] [data-slot='dialog-content'] {
+    background: var(--w8-accent);
+    color: #fff;
+    border: 0;
+    border-radius: 0;
+    box-shadow: 0 0 0 100vmax var(--w8-accent);
+    clip-path: inset(0 -100vmax);
+}
+:root[data-theme='win8-dark'] [data-slot='dialog-content'] :is([data-slot='dialog-description'], .text-muted-foreground) {
+    color: oklch(1 0 0 / 0.85);
+}
+:root[data-theme='win8-dark'] [data-slot='dialog-title'] {
+    font-family: var(--app-font-display);
+    font-weight: 300;
+    font-size: 1.5rem;
+}
+:root[data-theme='win8-dark'] :is([data-slot='dialog-header'], [data-slot='dialog-footer']) {
+    background: transparent;
+    border-color: oklch(1 0 0 / 0.25);
+}
+
+/* Buttons: flat, square, 2px white outline; primary is a solid accent block. */
+:root[data-theme='win8-dark'] [data-slot='button']:not([data-variant='link']) {
+    border-radius: 0;
+    box-shadow: none;
+}
+:root[data-theme='win8-dark'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    background: transparent;
+    color: #fff;
+    border: 2px solid #fff;
+}
+:root[data-theme='win8-dark'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background: oklch(1 0 0 / 0.15);
+}
+:root[data-theme='win8-dark'] [data-slot='button'][data-variant='default'] {
+    background: var(--w8-accent);
+    color: #fff;
+    border: 2px solid var(--w8-accent);
+}
+:root[data-theme='win8-dark'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background: var(--w8-accent-hi);
+    border-color: var(--w8-accent-hi);
+}
+:root[data-theme='win8-dark'] [data-slot='button']:not([data-variant='link']):active:not(:disabled) {
+    transform: scale(0.97);
+}
+/* Inside the accent dialog band the primary button turns white-on-accent. */
+:root[data-theme='win8-dark'] [data-slot='dialog-content'] [data-slot='button'][data-variant='default'] {
+    background: #fff;
+    color: var(--w8-accent);
+    border-color: #fff;
+}
+:root[data-theme='win8-dark'] [data-slot='button']:focus-visible {
+    outline: 1px dotted #fff;
+    outline-offset: 2px;
+}
+
+/*
+ * Fields: Metro text boxes are white with black text even in the dark theme.
+ * shadcn inputs carry `bg-transparent` themselves, so they are matched by slot;
+ * raw fields transparent by design (chat composer) are left alone.
+ */
+:root[data-theme='win8-dark'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)) {
+    background-color: #fff;
+    color: #000;
+    border: 2px solid #fff;
+    border-radius: 0;
+    color-scheme: light;
+}
+:root[data-theme='win8-dark'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent))::placeholder {
+    color: #6d6d6d;
+}
+:root[data-theme='win8-dark'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)):focus-visible {
+    border-color: var(--w8-accent);
+    box-shadow: none;
+    outline: none;
+}
+:root[data-theme='win8-dark'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)):hover:not(:focus-visible) {
+    background-color: #f0f0f0;
+}
+
+/* Menu items: solid accent selection. */
+:root[data-theme='win8-dark'] [data-slot='dropdown-menu-radio-item'][data-state='checked'] {
+    background: var(--w8-accent);
+    color: #fff;
+}

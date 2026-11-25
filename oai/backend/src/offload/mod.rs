@@ -17,7 +17,7 @@ pub struct LlmCapabilityInfo {
     /// RFC3339 timestamp of the last time this model was seen online.
     pub last_available_at: String,
     /// Times this capability was used in the requesting user's last 20 runs.
-    /// Only populated for imggen capabilities today; 0 elsewhere.
+    /// Populated for imggen, vision and world capabilities; 0 elsewhere.
     #[serde(default)]
     pub usage_count: u32,
 }

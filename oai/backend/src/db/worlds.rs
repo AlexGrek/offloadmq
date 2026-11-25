@@ -106,6 +106,21 @@ pub async fn create_job(db: &DatabaseConnection, input: NewJobInput<'_>) -> Resu
     .map_err(AppError::Database)
 }
 
+/// Capabilities of the user's last `limit` worlds, newest first — the "most used"
+/// ranking of the generator picker.
+pub async fn recent_job_capabilities(db: &DatabaseConnection, user_id: i64, limit: u64) -> Result<Vec<String>, AppError> {
+    WorldJobEntity::find()
+        .select_only()
+        .column(world_jobs::Column::Capability)
+        .filter(world_jobs::Column::UserId.eq(user_id))
+        .order_by_desc(world_jobs::Column::CreatedAt)
+        .limit(limit)
+        .into_tuple::<String>()
+        .all(db)
+        .await
+        .map_err(AppError::Database)
+}
+
 /// The user's in-flight jobs, newest first — the Progress drawer's feed.
 pub async fn list_user_active(db: &DatabaseConnection, user_id: i64) -> Result<Vec<WorldJob>, AppError> {
     WorldJobEntity::find()

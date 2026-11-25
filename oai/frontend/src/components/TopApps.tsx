@@ -4,10 +4,11 @@ import { appForPath, recordAppVisit, topApps, useAppUsageCounts } from '../lib/a
 import { cn } from '@/lib/utils'
 
 /**
- * The (up to 3) most-used apps as shortcuts beside the logo — large screens only
- * (icon-only at `lg`, with labels from `xl`).
- * Also owns the visit counting: it is always mounted in the TopBar, so a visit is
- * recorded on every viewport even though the shortcuts themselves are `lg:` only.
+ * The (up to 3) most-used apps as shortcuts beside the logo, on every screen
+ * size: icon-only below `lg`, with labels from `lg`. On the narrowest phones
+ * (< 400px) only the top two fit. The TopBar's right-side buttons collapse to
+ * icons first (below `xl`) so these keep their room.
+ * Also owns the visit counting: it is always mounted in the TopBar.
  */
 export function TopApps() {
   const { pathname } = useLocation()
@@ -29,8 +30,8 @@ export function TopApps() {
   if (shortcuts.length === 0) return null
 
   return (
-    <nav className="ml-4 hidden items-center gap-1 lg:flex" aria-label="Most used apps" data-testid="top-apps">
-      {shortcuts.map(app => {
+    <nav className="ml-2 flex min-w-0 items-center gap-1 overflow-hidden sm:ml-4" aria-label="Most used apps" data-testid="top-apps">
+      {shortcuts.map((app, i) => {
         const active = appForPath(pathname)?.id === app.id
         return (
           <Link
@@ -41,14 +42,15 @@ export function TopApps() {
             aria-current={active ? 'page' : undefined}
             data-testid={`top-app-${app.id}`}
             className={cn(
-              'flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium transition-colors',
+              'flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-sm font-medium transition-colors lg:px-2.5',
+              i >= 2 && 'hidden min-[400px]:flex',
               active
                 ? 'bg-muted text-foreground'
                 : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
             )}
           >
             <app.icon className={cn('size-4', app.iconColor)} />
-            <span className="hidden xl:inline">{app.title}</span>
+            <span className="hidden lg:inline">{app.title}</span>
           </Link>
         )
       })}

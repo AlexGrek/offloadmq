@@ -165,6 +165,8 @@ export function CapabilityModelPicker({
               dropdownPosition,
               'z-50 min-w-full overflow-hidden rounded-xl border border-border bg-popover shadow-md text-sm',
               !isForm && 'min-w-45',
+              // Long labels truncate instead of running off a phone screen.
+              isForm && 'max-w-[calc(100vw-1.5rem)]',
             )}
             data-testid={`${testIdPrefix}-dropdown`}
             initial={{ opacity: 0, y: placement === 'above' ? 6 : -6, scale: 0.96 }}

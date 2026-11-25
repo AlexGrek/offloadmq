@@ -886,6 +886,9 @@ mod tests {
             } else {
                 Vec::new()
             },
+            online: true,
+            last_available_at: String::new(),
+            upscale_usage: Default::default(),
         }
     }
 

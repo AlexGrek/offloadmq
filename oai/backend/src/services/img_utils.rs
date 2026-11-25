@@ -17,6 +17,8 @@
 //! pieces. Output arrives as bucket files, so — like music generation — it
 //! polls with the image client.
 
+use std::collections::{BTreeMap, HashMap, HashSet};
+
 use async_trait::async_trait;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, Set, sea_query::OnConflict};
 use serde::Serialize;
@@ -29,7 +31,7 @@ use crate::{
     error::AppError,
     offload::task_status::{self, NormalizedPoll, OffloadPoller},
     services::{
-        image_jobs, image_processing,
+        image_jobs, image_pipeline_params::ImagePipelineParams, image_processing,
         image_resize::ResizeOptions,
         offload_factory,
         offload_job::{self, CancelOutcome, JobReconciler},
@@ -79,7 +81,17 @@ pub struct ImgUtilCapability {
     pub kind: &'static str,
     /// Resampling filters this agent offers — resize only, empty otherwise.
     pub methods: Vec<String>,
+    /// False for a tool no agent reports now but one did in the last 48 h.
+    pub online: bool,
+    /// RFC3339 time an agent last reported this capability.
+    pub last_available_at: String,
+    /// Upscale operation → its share of the user's recent upscales. Filled by
+    /// [`list_capabilities_for_user`] only; empty otherwise.
+    pub upscale_usage: BTreeMap<String, u32>,
 }
+
+/// Number of the user's most recent upscales considered when ranking upscalers.
+const USAGE_HISTORY_RUNS: u64 = 20;
 
 pub struct StartJobParams {
     pub priority: crate::offload::image_tasks::ImageTaskPriority,
@@ -351,13 +363,18 @@ pub async fn list_capabilities(state: &AppState) -> Result<Vec<ImgUtilCapability
             .exec(&state.db)
             .await?;
     }
-    let raw: Vec<String> = Entity::find()
+    let rows = Entity::find()
         .filter(Column::LastAvailableAt.gte(now - chrono::Duration::hours(48)))
         .all(&state.db)
-        .await?
-        .into_iter()
-        .map(|row| row.raw)
+        .await?;
+    // (online now, last seen) per base capability.
+    let live: HashSet<&str> = online.iter().map(|s| crate::offload::base_capability(s)).collect();
+    let seen: HashMap<String, (bool, String)> = rows
+        .iter()
+        .map(|r| (r.base.clone(), (live.contains(r.base.as_str()), r.last_available_at.to_rfc3339())))
         .collect();
+    let availability = |base: &str| seen.get(base).cloned().unwrap_or_default();
+    let raw: Vec<String> = rows.into_iter().map(|row| row.raw).collect();
 
     let mut caps: Vec<ImgUtilCapability> =
         crate::offload::parse_capabilities_with_prefix(&raw, CAPABILITY_PREFIX)
@@ -368,7 +385,11 @@ pub async fn list_capabilities(state: &AppState) -> Result<Vec<ImgUtilCapability
                     .strip_prefix(CAPABILITY_PREFIX)
                     .unwrap_or(&c.base)
                     .to_string();
+                let (online, last_available_at) = availability(&c.base);
                 ImgUtilCapability {
+                    online,
+                    last_available_at,
+                    upscale_usage: BTreeMap::new(),
                     needs_source_image: c.tags.iter().any(|t| workflow_needs_source_image(t)),
                     utility,
                     base: c.base,
@@ -386,7 +407,11 @@ pub async fn list_capabilities(state: &AppState) -> Result<Vec<ImgUtilCapability
         crate::offload::parse_capabilities_with_prefix(&raw, RESIZE_CAPABILITY)
             .into_iter()
             .filter(|c| is_resize_capability(&c.base))
-            .map(|c| ImgUtilCapability {
+            .map(|c| (availability(&c.base), c))
+            .map(|((online, last_available_at), c)| ImgUtilCapability {
+                online,
+                last_available_at,
+                upscale_usage: BTreeMap::new(),
                 base: c.base,
                 utility: RESIZE_CAPABILITY.to_string(),
                 workflows: vec![RESIZE_WORKFLOW.to_string()],
@@ -399,6 +424,36 @@ pub async fn list_capabilities(state: &AppState) -> Result<Vec<ImgUtilCapability
     );
 
     Ok(caps)
+}
+
+/// [`list_capabilities`] plus how often this user ran each upscaler lately — as an
+/// Image Tools job or as the upscale stage of an image generation — for the picker's
+/// "most used first" order.
+pub async fn list_capabilities_for_user(state: &AppState, user_id: i64) -> Result<Vec<ImgUtilCapability>, AppError> {
+    let mut caps = list_capabilities(state).await?;
+    let mut runs = img_utils::recent_upscale_runs(&state.db, user_id, USAGE_HISTORY_RUNS).await?;
+    for (at, json) in
+        image_generation::recent_upscaled_job_params(&state.db, user_id, USAGE_HISTORY_RUNS).await?
+    {
+        if let Some(u) = ImagePipelineParams::from_json(&json).ok().and_then(|p| p.upscale) {
+            runs.push((at, u.capability, u.workflow));
+        }
+    }
+    stamp_upscale_usage(&mut caps, runs);
+    Ok(caps)
+}
+
+/// Counts the newest [`USAGE_HISTORY_RUNS`] of `runs` onto their capabilities.
+fn stamp_upscale_usage(
+    caps: &mut [ImgUtilCapability],
+    mut runs: Vec<(chrono::DateTime<chrono::FixedOffset>, String, String)>,
+) {
+    runs.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, capability, workflow) in runs.into_iter().take(USAGE_HISTORY_RUNS as usize) {
+        if let Some(cap) = caps.iter_mut().find(|c| c.base == capability) {
+            *cap.upscale_usage.entry(workflow).or_insert(0) += 1;
+        }
+    }
 }
 
 /// The resampling filters the online `image_resize` agents advertise. Empty when
@@ -759,4 +814,32 @@ pub async fn run_background_reconcile_pass(
     batch_size: u64,
 ) -> Result<(), AppError> {
     offload_job::reconcile_pass(&ImgUtilsReconciler, state, batch_size).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upscale_usage_counts_only_the_newest_runs() {
+        let mut caps = vec![ImgUtilCapability {
+            base: "img-utils.a".into(),
+            utility: "a".into(),
+            workflows: vec!["upscale".into()],
+            raw: "img-utils.a".into(),
+            needs_source_image: false,
+            kind: KIND_COMFY,
+            methods: Vec::new(),
+            online: true,
+            last_available_at: String::new(),
+            upscale_usage: BTreeMap::new(),
+        }];
+        let start = chrono::Utc::now().fixed_offset();
+        let run = |minutes, cap: &str| (start + chrono::Duration::minutes(minutes), cap.to_string(), "upscale".to_string());
+        // 15 old runs listed first, then 10 newer ones from the other source.
+        let mut runs: Vec<_> = (0..15).map(|i| run(i, "img-utils.a")).collect();
+        runs.extend((100..110).map(|i| run(i, "img-utils.gone")));
+        stamp_upscale_usage(&mut caps, runs);
+        assert_eq!(caps[0].upscale_usage.get("upscale"), Some(&10));
+    }
 }

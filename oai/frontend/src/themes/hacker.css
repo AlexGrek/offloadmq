@@ -62,17 +62,14 @@
     scrollbar-color: var(--hk-dim) transparent;
 }
 
-/* Phosphor glow on text; scanlines over everything (never intercept input). */
+/*
+ * Phosphor glow on text. CRT scanlines are part of the page background only —
+ * never an overlay — so they cannot tint content, above all generated images.
+ */
 :root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) body {
     text-shadow: var(--hk-glow);
-}
-:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) body::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: 2147483647;
-    pointer-events: none;
-    background: repeating-linear-gradient(to bottom, transparent 0 2px, oklch(0 0 0 / 0.16) 2px 3px);
+    background-image: repeating-linear-gradient(to bottom, transparent 0 2px, oklch(0 0 0 / 0.16) 2px 3px);
+    background-attachment: fixed;
 }
 :root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) ::selection {
     background: var(--hk);

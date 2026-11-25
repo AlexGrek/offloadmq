@@ -1,0 +1,165 @@
+/*
+ * Parry Hotter — a wizarding-school look: ink on aged parchment, scarlet and
+ * gold, engraved Cinzel headings over EB Garamond text, gold double-ruled
+ * panes and a ✦ ornament on dialog titles. Light.
+ *
+ * Styled theme: besides colours it sets radius + fonts and restyles elements via
+ * their `data-slot` hooks. Rules here are unlayered, so they beat Tailwind
+ * utilities on the same element. The parchment vignette is a <body> background
+ * (behind content), never an overlay.
+ */
+:root[data-theme='parry-hotter'] {
+    --radius: 0.3rem;
+    --app-font-sans: 'EB Garamond', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+    --app-font-display: 'Cinzel Decorative', 'Cinzel', 'Trajan Pro', 'Palatino Linotype', Georgia, serif;
+
+    --ph-parchment: oklch(0.92 0.045 85);
+    --ph-vellum: oklch(0.95 0.035 88);
+    --ph-ink: oklch(0.24 0.04 45);
+    --ph-scarlet: oklch(0.42 0.15 25);
+    --ph-scarlet-hi: oklch(0.48 0.16 25);
+    --ph-gold: oklch(0.7 0.12 80);
+    --ph-gold-dim: oklch(0.58 0.1 75);
+    --ph-engrave: 'Cinzel', 'Trajan Pro', 'Palatino Linotype', Georgia, serif;
+
+    --background: var(--ph-parchment);
+    --foreground: var(--ph-ink);
+    --card: var(--ph-vellum);
+    --card-foreground: var(--ph-ink);
+    --popover: var(--ph-vellum);
+    --popover-foreground: var(--ph-ink);
+    --primary: var(--ph-scarlet);
+    --primary-foreground: oklch(0.95 0.06 88);
+    --secondary: oklch(0.88 0.05 82);
+    --secondary-foreground: var(--ph-ink);
+    --muted: oklch(0.89 0.045 84);
+    --muted-foreground: oklch(0.45 0.05 55);
+    --accent: oklch(0.87 0.07 82);
+    --accent-foreground: var(--ph-ink);
+    --destructive: oklch(0.5 0.19 28);
+    --border: oklch(0.6 0.08 70 / 45%);
+    --input: oklch(0.55 0.08 65 / 50%);
+    --ring: var(--ph-gold-dim);
+    /* House colours. */
+    --chart-1: oklch(0.45 0.16 25);
+    --chart-2: oklch(0.45 0.11 155);
+    --chart-3: oklch(0.42 0.12 260);
+    --chart-4: oklch(0.72 0.13 85);
+    --chart-5: oklch(0.55 0.02 250);
+    --sidebar: oklch(0.9 0.045 84);
+    --sidebar-foreground: var(--ph-ink);
+    --sidebar-primary: var(--ph-scarlet);
+    --sidebar-primary-foreground: oklch(0.95 0.06 88);
+    --sidebar-accent: oklch(0.87 0.07 82);
+    --sidebar-accent-foreground: var(--ph-ink);
+    --sidebar-border: oklch(0.6 0.08 70 / 45%);
+    --sidebar-ring: var(--ph-gold-dim);
+
+    caret-color: var(--ph-scarlet);
+    accent-color: var(--ph-scarlet);
+    scrollbar-color: var(--ph-gold-dim) transparent;
+}
+
+/* Aged parchment: darkened edges and faint stains, behind everything. */
+:root[data-theme='parry-hotter'] body {
+    background-image:
+        radial-gradient(120% 90% at 50% 45%, transparent 55%, oklch(0.62 0.08 65 / 0.45) 100%),
+        radial-gradient(28vmax 22vmax at 82% 22%, oklch(0.8 0.07 75 / 0.35), transparent 70%),
+        radial-gradient(24vmax 30vmax at 14% 78%, oklch(0.8 0.07 70 / 0.3), transparent 70%);
+    background-attachment: fixed;
+}
+
+/* Engraved titles. */
+:root[data-theme='parry-hotter'] :is(h1, h2, h3, [data-slot='dialog-title'], [data-slot='sheet-title'], [data-slot='card-title']) {
+    font-family: var(--ph-engrave);
+    letter-spacing: 0.02em;
+}
+:root[data-theme='parry-hotter'] .font-display {
+    font-family: var(--app-font-display);
+    letter-spacing: 0.01em;
+}
+:root[data-theme='parry-hotter'] :is([data-slot='dialog-title'], [data-slot='sheet-title'])::before {
+    content: '✦ ';
+    color: var(--ph-gold-dim);
+}
+:root[data-theme='parry-hotter'] :is([data-slot='dialog-title'], [data-slot='sheet-title'])::after {
+    content: ' ✦';
+    color: var(--ph-gold-dim);
+}
+
+/* Top bar: a darker parchment band with a scarlet-over-gold rule. */
+:root[data-theme='parry-hotter'] [data-slot='topbar'] {
+    background-color: oklch(0.88 0.05 82);
+    backdrop-filter: none;
+    border-bottom: 0;
+    background-image: linear-gradient(
+        to bottom,
+        transparent calc(100% - 5px),
+        var(--ph-scarlet) calc(100% - 5px) calc(100% - 2px),
+        var(--ph-gold) calc(100% - 2px)
+    );
+}
+
+/* Panes: vellum with a gold double rule. */
+:root[data-theme='parry-hotter'] :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='dropdown-menu-content']) {
+    background-color: var(--ph-vellum);
+    border: 3px double var(--ph-gold-dim);
+    box-shadow: 0 10px 28px -14px oklch(0.35 0.06 50 / 0.55);
+}
+:root[data-theme='parry-hotter'] [data-slot='sheet-content'] {
+    background-color: var(--ph-vellum);
+    border-color: var(--ph-gold-dim);
+}
+:root[data-theme='parry-hotter'] [data-slot='dialog-overlay'] {
+    background: oklch(0.2 0.04 45 / 0.45);
+}
+:root[data-theme='parry-hotter'] :is([data-slot='dialog-header'], [data-slot='dialog-footer'], [data-slot='sheet-header'], [data-slot='sheet-footer']) {
+    border-color: oklch(0.6 0.08 70 / 45%);
+}
+
+/* Buttons: engraved small caps; primary is a scarlet seal with a gold edge. */
+:root[data-theme='parry-hotter'] [data-slot='button']:not([data-variant='link']) {
+    font-family: var(--ph-engrave);
+    letter-spacing: 0.04em;
+}
+:root[data-theme='parry-hotter'] [data-slot='button'][data-variant='default'] {
+    background-color: var(--ph-scarlet);
+    color: oklch(0.95 0.06 88);
+    border: 1px solid var(--ph-gold);
+    box-shadow: inset 0 0 0 1px oklch(0.3 0.1 25), 0 2px 6px -2px oklch(0.3 0.08 30 / 0.6);
+}
+:root[data-theme='parry-hotter'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background-color: var(--ph-scarlet-hi);
+}
+:root[data-theme='parry-hotter'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    background-color: oklch(0.95 0.035 88 / 0.6);
+    border: 1px solid var(--ph-gold-dim);
+    color: var(--ph-ink);
+}
+:root[data-theme='parry-hotter'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: oklch(0.87 0.07 82);
+}
+
+/* Fields: vellum wells with an ink underline. */
+:root[data-theme='parry-hotter'] :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent) {
+    background-color: oklch(0.97 0.025 88);
+    border-color: oklch(0.55 0.08 65 / 50%);
+}
+:root[data-theme='parry-hotter'] :is([data-slot='input'], input, textarea, select):not(.bg-transparent):focus-visible {
+    border-color: var(--ph-gold-dim);
+    box-shadow: 0 0 0 3px oklch(0.7 0.12 80 / 0.3);
+}
+:root[data-theme='parry-hotter'] :is(input, textarea)::placeholder {
+    color: oklch(0.55 0.05 60);
+    font-style: italic;
+}
+
+:root[data-theme='parry-hotter'] [data-slot='dropdown-menu-radio-item'][data-state='checked'] {
+    background: var(--ph-scarlet);
+    color: oklch(0.95 0.06 88);
+}
+
+:root[data-theme='parry-hotter'] ::selection {
+    background: oklch(0.7 0.12 80 / 0.55);
+    color: var(--ph-ink);
+}

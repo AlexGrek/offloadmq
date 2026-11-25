@@ -1,0 +1,79 @@
+/*
+ * Crimson — red on near-black. Dark.
+ *
+ * Pure black chrome, blood-red primary actions and focus, deep-red hover fills,
+ * and a glowing red rule under the top bar. Colours plus a few slot rules.
+ */
+:root[data-theme='crimson'] {
+    --cr-red: oklch(0.58 0.22 25);
+    --cr-red-hi: oklch(0.64 0.23 25);
+    --cr-deep: oklch(0.26 0.09 22);
+
+    --background: oklch(0.11 0.006 20);
+    --foreground: oklch(0.95 0.01 20);
+    --card: oklch(0.15 0.012 20);
+    --card-foreground: oklch(0.95 0.01 20);
+    --popover: oklch(0.16 0.014 20);
+    --popover-foreground: oklch(0.95 0.01 20);
+    --primary: var(--cr-red);
+    --primary-foreground: oklch(0.99 0 0);
+    --secondary: oklch(0.2 0.03 20);
+    --secondary-foreground: oklch(0.95 0.01 20);
+    --muted: oklch(0.18 0.02 20);
+    --muted-foreground: oklch(0.7 0.04 20);
+    --accent: var(--cr-deep);
+    --accent-foreground: oklch(0.97 0.01 20);
+    --destructive: oklch(0.7 0.19 40);
+    --border: oklch(0.6 0.15 25 / 22%);
+    --input: oklch(0.6 0.15 25 / 30%);
+    --ring: var(--cr-red);
+    --chart-1: oklch(0.58 0.22 25);
+    --chart-2: oklch(0.72 0.18 35);
+    --chart-3: oklch(0.45 0.17 20);
+    --chart-4: oklch(0.82 0.08 25);
+    --chart-5: oklch(0.35 0.12 15);
+    --sidebar: oklch(0.13 0.01 20);
+    --sidebar-foreground: oklch(0.95 0.01 20);
+    --sidebar-primary: var(--cr-red);
+    --sidebar-primary-foreground: oklch(0.99 0 0);
+    --sidebar-accent: var(--cr-deep);
+    --sidebar-accent-foreground: oklch(0.97 0.01 20);
+    --sidebar-border: oklch(0.6 0.15 25 / 22%);
+    --sidebar-ring: var(--cr-red);
+
+    caret-color: var(--cr-red);
+    accent-color: var(--cr-red);
+    scrollbar-color: oklch(0.45 0.15 25) transparent;
+}
+
+:root[data-theme='crimson'] [data-slot='topbar'] {
+    background: oklch(0.08 0.004 20);
+    backdrop-filter: none;
+    border-bottom: 1px solid var(--cr-red);
+    box-shadow: 0 1px 14px -2px oklch(0.58 0.22 25 / 0.55);
+}
+
+:root[data-theme='crimson'] :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    box-shadow: 0 0 0 1px oklch(0.58 0.22 25 / 0.45), 0 18px 48px -16px oklch(0.5 0.2 25 / 0.45);
+}
+
+:root[data-theme='crimson'] [data-slot='button'][data-variant='default'] {
+    background-color: var(--cr-red);
+    box-shadow: 0 0 16px -6px oklch(0.6 0.22 25 / 0.8);
+}
+:root[data-theme='crimson'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background-color: var(--cr-red-hi);
+}
+:root[data-theme='crimson'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    border-color: oklch(0.58 0.22 25 / 0.45);
+}
+
+:root[data-theme='crimson'] :is([data-slot='input'], input, textarea, select):not(.bg-transparent):focus-visible {
+    border-color: var(--cr-red);
+    box-shadow: 0 0 0 3px oklch(0.58 0.22 25 / 0.25);
+}
+
+:root[data-theme='crimson'] ::selection {
+    background: var(--cr-red);
+    color: #fff;
+}

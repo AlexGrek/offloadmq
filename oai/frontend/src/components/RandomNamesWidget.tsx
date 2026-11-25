@@ -39,7 +39,7 @@ export function RandomNamesWidget() {
         className={cn(open && 'text-violet-600 dark:text-violet-400')}
       >
         <Tags className="h-4 w-4" />
-        <span className="ml-1.5 hidden sm:inline">Names</span>
+        <span className="ml-1.5 hidden xl:inline">Names</span>
       </Button>
 
       {createPortal(

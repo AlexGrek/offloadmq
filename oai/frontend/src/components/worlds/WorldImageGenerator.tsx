@@ -7,13 +7,17 @@ import {
   prettyLabel,
   toolKey,
   toolsFromCapabilities,
+  type ImgUtilCapability,
   type ImgUtilTool,
 } from '../../api/imgUtils'
 import { useProgress } from '../../contexts/ProgressContext'
 import { useReverseSubstitutions } from '../../hooks/useReverseSubstitutions'
 import { IMAGE_SIZE_PRESETS, rememberedImageSize, type ImageSize } from '../../lib/imageSizes'
 import { imageJobStatusLabel } from '../../lib/imggen'
+import { pickListedCapability } from '../../lib/capability-picker'
+import { sortCapabilitiesForPicker } from '../../lib/modelAvailability'
 import { IMGGEN_PROMPT_BUCKET } from '../../lib/promptStudio'
+import { CapabilityModelPicker, type PickerCapability } from '../CapabilityModelPicker'
 import { ImageSizePicker } from '../ImageSizePicker'
 import { JobErrorBanner } from '../JobErrorBanner'
 import { PromptTextarea } from '../PromptTextarea'
@@ -43,6 +47,33 @@ const POLL_MS = 5000
 const UPSCALE_SCALES = [1.5, 2, 3] as const
 const selectClass = 'min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm'
 
+/** An upscale tool as a picker entry, keyed by pack + operation. */
+type UpscalerOption = PickerCapability & { tool: ImgUtilTool }
+
+/** Picker entries for the upscalers, the user's most used first. */
+function upscalerOptions(capabilities: ImgUtilCapability[]): UpscalerOption[] {
+  const options = toolsFromCapabilities(capabilities).filter(tool => tool.takesScale).map(tool => {
+    const cap = capabilities.find(c => c.base === tool.capability)!
+    return {
+      tool,
+      base: toolKey(tool),
+      raw: toolKey(tool),
+      tags: [],
+      online: cap.online,
+      last_available_at: cap.last_available_at,
+      usage_count: cap.upscale_usage[tool.workflow] ?? 0,
+    }
+  })
+  return sortCapabilitiesForPicker(options) as UpscalerOption[]
+}
+
+function upscalerLabel(key: string, options: UpscalerOption[]): string {
+  const tool = options.find(option => option.base === key)?.tool
+  if (!tool) return key
+  const pack = prettyLabel(tool.pack)
+  return tool.workflow === 'upscale' ? pack : `${pack} · ${prettyLabel(tool.workflow)}`
+}
+
 export function WorldImageGenerator({ token, disabled, onPick }: {
   token: string
   disabled: boolean
@@ -57,7 +88,7 @@ export function WorldImageGenerator({ token, disabled, onPick }: {
   })
   const [upscaleEnabled, setUpscaleEnabled] = useState(false)
   const [scale, setScale] = useState(DEFAULT_SCALE_MULTIPLIER)
-  const [upscalers, setUpscalers] = useState<ImgUtilTool[]>([])
+  const [upscalers, setUpscalers] = useState<UpscalerOption[]>([])
   const [upscalerKey, setUpscalerKey] = useState('')
   const [loadingUpscalers, setLoadingUpscalers] = useState(false)
   const [upscalerError, setUpscalerError] = useState<string | null>(null)
@@ -69,7 +100,7 @@ export function WorldImageGenerator({ token, disabled, onPick }: {
   const { setForegroundJob } = useProgress()
   const models = useQuickTxt2Img(token, open && !jobId && !picture)
   const reverse = useReverseSubstitutions(token, prompt, setPrompt)
-  const upscaler = upscalers.find(tool => toolKey(tool) === upscalerKey)
+  const upscaler = upscalers.find(option => option.base === upscalerKey)?.tool
   const upscale = upscaleEnabled && upscaler
     ? { capability: upscaler.capability, workflow: upscaler.workflow, scale }
     : undefined
@@ -82,11 +113,9 @@ export function WorldImageGenerator({ token, disabled, onPick }: {
     setUpscalerError(null)
     try {
       const { capabilities } = await listImgUtilsCapabilities(token)
-      const tools = toolsFromCapabilities(capabilities).filter(tool => tool.takesScale)
-      setUpscalers(tools)
-      setUpscalerKey(previous => tools.some(tool => toolKey(tool) === previous)
-        ? previous
-        : tools[0] ? toolKey(tools[0]) : '')
+      const options = upscalerOptions(capabilities)
+      setUpscalers(options)
+      setUpscalerKey(previous => pickListedCapability(previous || options[0]?.base || '', options) ?? '')
     } catch (e) {
       setUpscalerError((e as Error).message)
     } finally {
@@ -286,24 +315,18 @@ export function WorldImageGenerator({ token, disabled, onPick }: {
                   <>
                     <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
                       <div className="min-w-0 space-y-1.5">
-                        <Label htmlFor="worlds-upscale-model">Upscaler model</Label>
-                        <select
-                          id="worlds-upscale-model"
-                          className={selectClass}
-                          value={upscalerKey}
-                          onChange={event => setUpscalerKey(event.target.value)}
-                          disabled={loadingUpscalers || !!upscalerError || upscalers.length === 0}
-                          data-testid="worlds-upscale-model"
-                        >
-                          {upscalers.length === 0 && (
-                            <option value="">{loadingUpscalers ? 'Loading models…' : 'No upscaler models'}</option>
-                          )}
-                          {upscalers.map(tool => (
-                            <option key={toolKey(tool)} value={toolKey(tool)}>
-                              {prettyLabel(tool.pack)}{tool.workflow !== 'upscale' && ` · ${prettyLabel(tool.workflow)}`}
-                            </option>
-                          ))}
-                        </select>
+                        <Label>Upscaler model</Label>
+                        <CapabilityModelPicker
+                          capabilities={upscalers}
+                          selected={upscalerKey}
+                          onSelect={setUpscalerKey}
+                          onRefresh={() => void loadUpscalers()}
+                          capabilitiesStatus={loadingUpscalers ? 'loading' : upscalerError ? 'error' : 'ready'}
+                          capabilitiesError={upscalerError}
+                          formatLabel={option => upscalerLabel(option.base, upscalers)}
+                          placement="above"
+                          testIdPrefix="worlds-upscale-model"
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="worlds-upscale-scale">Scale multiplier</Label>

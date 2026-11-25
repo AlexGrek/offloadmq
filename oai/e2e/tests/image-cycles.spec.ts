@@ -26,7 +26,8 @@ test('lightbox sends the selected image to VR Worlds', async ({ page }) => {
   let submission: unknown
   await page.route('**/api/worlds/**', route => {
     const path = new URL(route.request().url()).pathname
-    if (path === '/api/worlds/capabilities') return route.fulfill({ json: { capabilities: [{ base: 'world.splat', tags: [], raw: 'world.splat' }] } })
+    if (path === '/api/worlds/capabilities') return route.fulfill({ json: { capabilities: [{ base: 'world.splat', tags: [], raw: 'world.splat', online: true,
+      last_available_at: '2026-11-26T00:00:00Z', usage_count: 0 }] } })
     if (path === '/api/worlds/jobs' && route.request().method() === 'POST') {
       submission = route.request().postDataJSON()
       return route.fulfill({ json: { job_id: '77', status: 'submitted' } })

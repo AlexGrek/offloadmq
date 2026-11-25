@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     db::{entities::world_jobs::Entity as WorldJobEntity, image_generation, offload_jobs, worlds},
     error::{AppError, ResultExt},
-    offload::task_status::{self, NormalizedPoll, OffloadPoller},
+    offload::{LlmCapabilityInfo, task_status::{self, NormalizedPoll, OffloadPoller}},
     services::{
         image_paths, offload_factory,
         offload_job::{self, CancelOutcome, JobReconciler},
@@ -43,13 +43,10 @@ const MAX_PREVIEW_BYTES: i64 = 32 * 1024 * 1024;
 static DOWNLOAD_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 const LINK_PREFIX: &str = "vr-world";
 
-/// One `world.*` capability advertised by an online agent.
-#[derive(Debug, Serialize)]
-pub struct WorldCapability {
-    pub base: String,
-    pub tags: Vec<String>,
-    pub raw: String,
-}
+/// Number of the user's most recent worlds considered when ranking generators.
+const USAGE_HISTORY_RUNS: u64 = 20;
+/// The depth-based generator: the only one that takes a ready 360° panorama.
+pub const SPLAT_CAPABILITY: &str = "world.splat";
 
 /// Normalized generation knobs. Stored as `params_json` and replayed by retry;
 /// field names match the agent payload (docs/agent-capabilities.md).
@@ -76,7 +73,7 @@ pub struct WorldParams {
 }
 
 /// Raw, optional request knobs — everything defaults.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 pub struct WorldParamsInput {
     pub mode: Option<String>,
     pub max_width: Option<u32>,
@@ -282,13 +279,124 @@ async fn persist_world(state: &AppState, job: &worlds::WorldJob, poll: &Normaliz
     .await
 }
 
-/// Every `world.*` capability online right now.
-pub async fn list_capabilities(state: &AppState) -> Result<Vec<WorldCapability>, AppError> {
+/// Every `world.*` capability online right now, in no particular order.
+async fn online_capabilities(state: &AppState) -> Result<Vec<LlmCapabilityInfo>, AppError> {
     let raw = offload_factory::chat_client(state).await?.list_capabilities_raw().await?;
+    let now = chrono::Utc::now().to_rfc3339();
     Ok(crate::offload::parse_capabilities_with_prefix(&raw, CAPABILITY_PREFIX)
         .into_iter()
-        .map(|c| WorldCapability { base: c.base, tags: c.tags, raw: c.raw })
+        .map(|c| LlmCapabilityInfo {
+            base: c.base,
+            tags: c.tags,
+            raw: c.raw,
+            online: true,
+            last_available_at: now.clone(),
+            usage_count: 0,
+        })
         .collect())
+}
+
+/// The online generators, the ones this user ran most in their recent worlds first.
+pub async fn list_capabilities(state: &AppState, user_id: i64) -> Result<Vec<LlmCapabilityInfo>, AppError> {
+    let online = online_capabilities(state).await?;
+    let recent = worlds::recent_job_capabilities(&state.db, user_id, USAGE_HISTORY_RUNS).await?;
+    Ok(rank_by_usage(online, &recent))
+}
+
+/// Stamps `usage_count` from the recent runs and sorts most used first, then by name.
+fn rank_by_usage(mut caps: Vec<LlmCapabilityInfo>, recent: &[String]) -> Vec<LlmCapabilityInfo> {
+    for cap in &mut caps {
+        cap.usage_count = recent.iter().filter(|r| **r == cap.base).count() as u32;
+    }
+    caps.sort_by(|a, b| b.usage_count.cmp(&a.usage_count).then_with(|| a.base.cmp(&b.base)));
+    caps
+}
+
+/// Knobs only `world.pano360` reads.
+fn has_outpaint_knobs(p: &WorldParamsInput) -> bool {
+    p.prompt.as_deref().is_some_and(|s| !s.trim().is_empty()) || p.pitch.is_some() || p.seed.is_some()
+}
+
+/// Knobs of the depth splat, which `world.sharp` has no use for.
+fn has_depth_knobs(p: &WorldParamsInput) -> bool {
+    p.max_width.is_some() || p.fill_lean.is_some() || p.near.is_some() || p.far.is_some()
+}
+
+/// A 2:1 picture is an equirectangular panorama (the agent's `auto` rule).
+fn is_panorama(width: i32, height: i32) -> bool {
+    height > 0 && (1.9..=2.1).contains(&(f64::from(width) / f64::from(height)))
+}
+
+/// The generator for a request that names none: the first of `caps` (most used first)
+/// that can honour the knobs and the picture's shape.
+fn pick_default<'a>(
+    caps: &'a [LlmCapabilityInfo],
+    params: &WorldParamsInput,
+    width: i32,
+    height: i32,
+) -> Result<&'a str, AppError> {
+    let find = |base: &str| caps.iter().find(|c| c.base == base).map(|c| c.base.as_str());
+    let require = |base: &str, why: &str| {
+        find(base).ok_or_else(|| AppError::BadRequest(format!("{why} needs {base}, which is not online")))
+    };
+    let mode = params.mode.as_deref().map(str::trim).unwrap_or("");
+    if has_outpaint_knobs(params) {
+        return require(PANO360_CAPABILITY, "prompt/pitch/seed");
+    }
+    if mode == "pano" {
+        return require(SPLAT_CAPABILITY, "mode=pano");
+    }
+    if matches!(mode, "" | "auto")
+        && is_panorama(width, height)
+        && let Some(splat) = find(SPLAT_CAPABILITY)
+    {
+        return Ok(splat);
+    }
+    caps.iter()
+        .find(|c| !(has_depth_knobs(params) && c.base == SHARP_CAPABILITY))
+        .map(|c| c.base.as_str())
+        .ok_or_else(|| AppError::BadRequest("no online agent can build this world".into()))
+}
+
+/// Rejects knobs the chosen generator would silently ignore, and fills in the only
+/// projection `world.sharp` and `world.pano360` support.
+fn fit_params(capability: &str, mut params: WorldParamsInput) -> Result<WorldParamsInput, AppError> {
+    let perspective_only = capability == SHARP_CAPABILITY || capability == PANO360_CAPABILITY;
+    if has_outpaint_knobs(&params) && (capability == SHARP_CAPABILITY || capability == SPLAT_CAPABILITY) {
+        return Err(AppError::BadRequest(format!("prompt, pitch and seed apply to {PANO360_CAPABILITY} only")));
+    }
+    if capability == SHARP_CAPABILITY && has_depth_knobs(&params) {
+        return Err(AppError::BadRequest(format!(
+            "max_width, fill_lean, near and far do not apply to {SHARP_CAPABILITY}"
+        )));
+    }
+    if perspective_only && params.mode.as_deref().is_none_or(|m| matches!(m.trim(), "" | "auto")) {
+        params.mode = Some("perspective".into());
+    }
+    Ok(params)
+}
+
+/// A new request from a client (web, CLI, MCP): picks the generator when `capability` is
+/// empty, accepts short names (`sharp`), checks the knobs fit it, then starts the job.
+/// [`retry_job`] skips this: stored jobs carry every default knob.
+pub async fn submit_job(state: &AppState, user_id: i64, mut request: StartJobParams) -> Result<i64, AppError> {
+    let mut capability = request.capability.trim().to_string();
+    if capability.is_empty() {
+        let input = input_image(state, user_id, request.input_image_id).await?;
+        let caps = list_capabilities(state, user_id).await?;
+        capability = pick_default(&caps, &request.params, input.stored_width, input.stored_height)?.to_string();
+    } else if !capability.contains('.') {
+        capability = format!("{CAPABILITY_PREFIX}{capability}");
+    }
+    request.params = fit_params(crate::offload::base_capability(&capability), request.params)?;
+    request.capability = capability;
+    start_job(state, user_id, request).await
+}
+
+async fn input_image(state: &AppState, user_id: i64, id: i64) -> Result<image_generation::ImageFile, AppError> {
+    image_generation::get_image_file(&state.db, id, user_id)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("input_image_id must reference an image in your library".into()))
 }
 
 fn input_extension(content_type: &str) -> &'static str {
@@ -311,13 +419,11 @@ pub async fn start_job(state: &AppState, user_id: i64, params: StartJobParams) -
             "{capability} handles perspective pictures only; use world.splat for 360° panoramas"
         )));
     }
-    let input = image_generation::get_image_file(&state.db, params.input_image_id, user_id)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("input_image_id must reference an image in your library".into()))?;
+    let input = input_image(state, user_id, params.input_image_id).await?;
     if capability == PANO360_CAPABILITY && world_params.prompt.is_none() {
         world_params.prompt = generation_prompt(state, &input, user_id).await;
     }
-    if !list_capabilities(state).await?.iter().any(|c| c.base == capability) {
+    if !online_capabilities(state).await?.iter().any(|c| c.base == capability) {
         return Err(AppError::BadRequest(format!("no online agent provides `{capability}`")));
     }
 
@@ -614,5 +720,57 @@ mod tests {
         for message in [link_message(6, 7, 99), link_message(5, 8, 99), link_message(5, 7, 100)] {
             assert!(!auth.verify_link(&message, &sig));
         }
+    }
+
+    fn caps(bases: &[&str]) -> Vec<LlmCapabilityInfo> {
+        bases
+            .iter()
+            .map(|b| LlmCapabilityInfo {
+                base: b.to_string(),
+                tags: Vec::new(),
+                raw: b.to_string(),
+                online: true,
+                last_available_at: String::new(),
+                usage_count: 0,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn most_used_generator_comes_first() {
+        let recent = ["world.splat", "world.pano360", "world.splat", "world.gone"].map(String::from);
+        let ranked = rank_by_usage(caps(&["world.sharp", "world.pano360", "world.splat"]), &recent);
+        let got: Vec<(&str, u32)> = ranked.iter().map(|c| (c.base.as_str(), c.usage_count)).collect();
+        assert_eq!(got, [("world.splat", 2), ("world.pano360", 1), ("world.sharp", 0)]);
+    }
+
+    #[test]
+    fn default_generator_respects_knobs_and_picture_shape() {
+        let all = caps(&["world.sharp", "world.pano360", "world.splat"]);
+        let pick = |p: WorldParamsInput, w, h| pick_default(&all, &p, w, h).map(str::to_string);
+        assert_eq!(pick(Default::default(), 1024, 1536).unwrap(), "world.sharp");
+        assert_eq!(pick(Default::default(), 2048, 1024).unwrap(), "world.splat");
+        let perspective = WorldParamsInput { mode: Some("perspective".into()), ..Default::default() };
+        assert_eq!(pick(perspective, 2048, 1024).unwrap(), "world.sharp");
+        let outpaint = WorldParamsInput { pitch: Some(-15.0), ..Default::default() };
+        assert_eq!(pick(outpaint, 1024, 1024).unwrap(), "world.pano360");
+        let depth = WorldParamsInput { max_width: Some(2048), ..Default::default() };
+        assert_eq!(pick(depth, 1024, 1024).unwrap(), "world.pano360");
+        let pano = WorldParamsInput { mode: Some("pano".into()), ..Default::default() };
+        assert!(pick_default(&caps(&["world.sharp"]), &pano, 100, 100).is_err());
+        assert!(pick_default(&[], &Default::default(), 100, 100).is_err());
+    }
+
+    #[test]
+    fn knobs_must_fit_the_generator() {
+        let fitted = fit_params(SHARP_CAPABILITY, Default::default()).unwrap();
+        assert_eq!(fitted.mode.as_deref(), Some("perspective"));
+        assert_eq!(fit_params(SPLAT_CAPABILITY, Default::default()).unwrap().mode, None);
+        let seed = WorldParamsInput { seed: Some(1), ..Default::default() };
+        assert!(fit_params(SPLAT_CAPABILITY, seed.clone()).is_err());
+        assert!(fit_params(PANO360_CAPABILITY, seed).is_ok());
+        let width = WorldParamsInput { max_width: Some(1024), ..Default::default() };
+        assert!(fit_params(SHARP_CAPABILITY, width.clone()).is_err());
+        assert!(fit_params(PANO360_CAPABILITY, width).is_ok());
     }
 }

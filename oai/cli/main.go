@@ -66,6 +66,17 @@ Usage:
                    [-background transparent|#RRGGBB] [-crop] [-padding N] [-refine=false]
                    [-hard-edges 0..1] [-quality N] [--no-wait] [--progress=false] [-t|-timeout 5m]
   oai bgremove jobs|job|poll|cancel|retry|delete|download   (same shape as img-utils; see README)
+  oai world models [-json]
+  oai world generate <image|image-id> [...] [-o out.ply] [-model sharp|splat|pano360]
+                   [-mode auto|perspective|pano] [-fov DEG] [-max-width N] [-lean M] [-near M]
+                   [-far M] [-prompt TEXT] [-pitch DEG] [-seed N] [-share] [--no-wait]
+                   [--progress=false] [-t|-timeout 5m]
+  oai world jobs [-status S[,S]] [-active] [-ids] [-json]
+  oai world job|poll <job-id> [-json]
+  oai world cancel|delete <job-id> [job-id ...]
+  oai world retry <job-id> [-o out.ply] [--no-wait]
+  oai world download <job-id> [-o out.ply] [-preview preview.png]
+  oai world share <job-id> [-json]               (login-free headset viewer link)
   oai nude scan <file> [file ...] [-threshold 0.25] [-json] [-o out.json]
                 [--progress=false] [-t|-timeout 5m]
   oai nude availability
@@ -185,6 +196,8 @@ func main() {
 		err = cmdBgRemove(os.Args[2:])
 	case "langgraph":
 		err = cmdLanggraph(os.Args[2:])
+	case "world", "worlds":
+		err = cmdWorld(os.Args[2:])
 	case "persona", "personas":
 		err = cmdPersona(os.Args[2:])
 	case "help":
