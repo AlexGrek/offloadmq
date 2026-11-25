@@ -17,12 +17,15 @@
         0 12px 32px -10px oklch(0.35 0.08 265 / 0.28);
     --glass-tint: oklch(0.58 0.2 258);
 
-    /* Translucent tokens: surfaces let the wallpaper through. */
-    --background: oklch(1 0 0 / 0.18);
+    /* `--background` and `--popover` stay opaque: many components use them as
+       covers (`bg-background/80` badges, image-tile overlays, popover lists). The
+       wallpaper shows through because <body> is transparent, and the glass
+       look comes from the surface rules below. */
+    --background: oklch(0.985 0.008 260);
     --foreground: oklch(0.22 0.03 265);
     --card: oklch(1 0 0 / 0.45);
     --card-foreground: oklch(0.22 0.03 265);
-    --popover: oklch(0.99 0.005 265 / 0.72);
+    --popover: oklch(0.99 0.005 265 / 0.94);
     --popover-foreground: oklch(0.22 0.03 265);
     --primary: var(--glass-tint);
     --primary-foreground: oklch(1 0 0);
@@ -54,6 +57,11 @@
     background-attachment: fixed;
 }
 
+/* Let the wallpaper on <html> show behind the app. */
+:root[data-theme='liquid-glass'] body {
+    background-color: transparent;
+}
+
 /* Frosted panes. */
 :root[data-theme='liquid-glass'] :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
     border-color: transparent;
@@ -74,6 +82,12 @@
     border-color: oklch(1 0 0 / 0.5);
 }
 
+/* Any popover-coloured floating list (custom pickers, not just Radix menus). */
+:root[data-theme='liquid-glass'] .bg-popover {
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+}
+
 /* Top bar and sticky chrome float over scrolling content. */
 :root[data-theme='liquid-glass'] [data-slot='topbar'] {
     background-color: oklch(1 0 0 / 0.35);
@@ -87,45 +101,70 @@
     backdrop-filter: var(--glass-blur);
 }
 
-/* Buttons: pills — tinted glass for primary, clear glass for the rest. */
+/*
+ * Buttons: pills of real glass. The wallpaper shows through (blur + saturate);
+ * a bright specular rim, a soft top sheen and a neutral lift shadow give the
+ * depth. Primary is the same glass tinted blue rather than a solid fill, and no
+ * button gets a coloured glow.
+ */
+:root[data-theme='liquid-glass'] {
+    --lg-rim: inset 0 0 0 1px oklch(1 0 0 / 0.55), inset 0 1px 0.5px oklch(1 0 0 / 0.95),
+        inset 0 -1px 1px oklch(1 0 0 / 0.35), inset 0 0 14px oklch(1 0 0 / 0.22);
+    --lg-lift: 0 1px 2px oklch(0.2 0.03 265 / 0.08), 0 8px 20px -8px oklch(0.2 0.03 265 / 0.22);
+    --lg-sheen: linear-gradient(180deg, oklch(1 0 0 / 0.38), oklch(1 0 0 / 0.06) 48%, oklch(1 0 0 / 0) 52%, oklch(1 0 0 / 0.14));
+}
 :root[data-theme='liquid-glass'] [data-slot='button']:not([data-variant='link']) {
     border-radius: 9999px;
 }
+:root[data-theme='liquid-glass'] [data-slot='button']:is([data-variant='default'], [data-variant='outline'], [data-variant='secondary']) {
+    border-color: transparent;
+    background-image: var(--lg-sheen);
+    -webkit-backdrop-filter: blur(14px) saturate(190%);
+    backdrop-filter: blur(14px) saturate(190%);
+    box-shadow: var(--lg-rim), var(--lg-lift);
+    transition: background-color 0.2s, box-shadow 0.2s, transform 0.15s;
+}
+/* Tinted glass. */
 :root[data-theme='liquid-glass'] [data-slot='button'][data-variant='default'] {
     color: oklch(1 0 0);
-    background: linear-gradient(180deg, oklch(0.67 0.18 252 / 0.92), oklch(0.55 0.21 260 / 0.92));
-    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.55), inset 0 0 0 1px oklch(1 0 0 / 0.25),
-        0 6px 16px -6px oklch(0.55 0.2 260 / 0.6);
+    background-color: oklch(0.54 0.2 258 / 0.8);
+    text-shadow: 0 1px 1px oklch(0.3 0.1 260 / 0.3);
 }
 :root[data-theme='liquid-glass'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
-    filter: brightness(1.08);
+    background-color: oklch(0.54 0.2 258 / 0.9);
 }
+/* Clear glass. */
 :root[data-theme='liquid-glass'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
-    border-color: transparent;
-    background-color: oklch(1 0 0 / 0.45);
-    -webkit-backdrop-filter: blur(12px) saturate(160%);
-    backdrop-filter: blur(12px) saturate(160%);
-    box-shadow: inset 0 0 0 1px var(--glass-edge), inset 0 1px 0 oklch(1 0 0 / 0.85),
-        0 4px 12px -6px oklch(0.35 0.08 265 / 0.3);
+    color: var(--foreground);
+    background-color: oklch(1 0 0 / 0.24);
 }
-:root[data-theme='liquid-glass'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary'], [data-variant='ghost']):is(:hover, [aria-expanded='true']):not(:disabled) {
-    background-color: oklch(1 0 0 / 0.65);
+:root[data-theme='liquid-glass'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: oklch(1 0 0 / 0.4);
+}
+/* Ghost: no glass until hovered. */
+:root[data-theme='liquid-glass'] [data-slot='button'][data-variant='ghost']:is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: oklch(1 0 0 / 0.35);
+    box-shadow: var(--lg-rim);
 }
 :root[data-theme='liquid-glass'] [data-slot='button']:not([data-variant='link']):active:not(:disabled) {
-    transform: scale(0.97);
+    transform: scale(0.96);
 }
 :root[data-theme='liquid-glass'] :is([data-slot='dialog-close-button'], [data-slot='sheet-close-button']) {
     border-radius: 9999px;
-    background-color: oklch(1 0 0 / 0.45);
-    box-shadow: inset 0 0 0 1px var(--glass-edge);
+    background-color: oklch(1 0 0 / 0.3);
+    box-shadow: var(--lg-rim);
 }
 
-/* Fields: clear glass wells. */
-:root[data-theme='liquid-glass'] :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select) {
+/*
+ * Fields: clear glass wells. Fields that are transparent by design (e.g. the
+ * chat composer textarea inside its own rounded frame) are left alone, or their
+ * square fill would poke out of the frame.
+ */
+:root[data-theme='liquid-glass'] :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent) {
     background-color: oklch(1 0 0 / 0.5);
     border-color: var(--glass-edge);
 }
-:root[data-theme='liquid-glass'] :is([data-slot='input'], input, textarea, select):focus-visible {
+:root[data-theme='liquid-glass'] :is([data-slot='input'], input, textarea, select):not(.bg-transparent):focus-visible {
     background-color: oklch(1 0 0 / 0.7);
 }
 

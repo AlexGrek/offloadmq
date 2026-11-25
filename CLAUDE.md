@@ -514,7 +514,7 @@ Paths are relative to `oai/`.
 
 #### Skill summaries
 
-- **oai-frontend** — React 19 + TypeScript SPA, shadcn/ui, Tailwind v4, routing, API clients, dark/light mode, AppShell layout.
+- **oai-frontend** — React 19 + TypeScript SPA, shadcn/ui, Tailwind v4, routing, API clients, themes (palette + styled, `src/themes/`), AppShell layout.
 - **oai-chat** — LLM chat at `/app/chat`: WebSocket protocol, WorkloadContext, system prompts, cancel, ToolDebug, OffloadMQ submit/poll.
 - **oai-img** — Image generation at `/app/images`: txt2img/img2img, buckets, dataPreparation, job poll/cancel, pipeline worker, Progress drawer.
 - **oai-img-tools** — Image Tools at `/app/img-utils`: one-shot transforms (image in, one out, no prompt). Two families sharing the page/table/endpoints — `img-utils.*` ComfyUI tools (depth, face swap, SeedVR2 upscale) and built-in `image_resize` "Basic resize". Spans the agent workflow install/autowiring, the OAI offload-job backend, and `ImgUtilsPage`. Pack=model / operation=file convention; scalar knobs via `secondary_prompts`.

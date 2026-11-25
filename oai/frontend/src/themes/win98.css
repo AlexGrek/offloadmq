@@ -30,8 +30,10 @@
     --secondary-foreground: #000;
     --muted: #b4b4b4;
     --muted-foreground: #404040;
-    --accent: #000080;
-    --accent-foreground: #fff;
+    /* Light hover/selection fill: components pair accents with plain foreground
+       text, so the classic navy highlight is applied only to menu items below. */
+    --accent: #dcdcdc;
+    --accent-foreground: #000;
     --destructive: #a00000;
     --border: #808080;
     --input: #808080;
@@ -40,8 +42,8 @@
     --sidebar-foreground: #000;
     --sidebar-primary: #000080;
     --sidebar-primary-foreground: #fff;
-    --sidebar-accent: #000080;
-    --sidebar-accent-foreground: #fff;
+    --sidebar-accent: #e8e8e8;
+    --sidebar-accent-foreground: #000;
     --sidebar-border: #808080;
     --sidebar-ring: #000;
     accent-color: #000080;
@@ -103,6 +105,10 @@
 /* Menus: navy highlight on the focused item. */
 :root[data-theme='win98'] [data-slot='dropdown-menu-radio-item'] {
     border-radius: 0;
+}
+:root[data-theme='win98'] [data-slot='dropdown-menu-radio-item']:is([data-highlighted], :focus) {
+    background: #000080;
+    color: #fff;
 }
 
 /* Buttons: raised, pressed while active; ghost buttons are flat toolbar buttons. */

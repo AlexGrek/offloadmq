@@ -165,24 +165,54 @@ All API clients are in `src/api/`. Add new endpoint groups as new files there.
 
 ### Themes (light-ish / dark-ish)
 
-OAI has multiple named themes, each with a `mode` of `light` or `dark`. Built in: **Light**, **Sepia** (light); **Dark**, **Graphite** (dark grey, not black), **Midnight** (navy) (dark).
+OAI has multiple named themes, each with a `mode` of `light` or `dark`. There are two kinds:
+
+- **Palette themes** only recolour: Light, Sepia, Tangerine, Sky (light); Dark, Graphite, Midnight, Amethyst, Ember (dark).
+- **Styled themes** also change radius, fonts and how elements look: **Windows 98** (`win98`: bevels, title-bar dialogs, square corners, Tahoma) and **Liquid Glass** (`liquid-glass`: frosted translucent panes over a wallpaper, pill buttons) and **Ukraine** (`ukraine`: blue/yellow palette with a flag stripe under the top bar).
 
 | Piece | Where | Role |
 |-------|-------|------|
-| Registry | `src/lib/themes.ts` | `THEMES` array: `{ id, label, emoji, mode, swatch: [bg, accent] }` — the single source of truth; `emoji` is required (shown in the picker) |
-| Palettes | `src/index.css` | `:root` = base light, `.dark` = base dark, plus one `:root[data-theme='<id>'] { … }` block per extra theme |
-| State | `contexts/ThemeContext.ts` + `ThemeProvider.tsx` | `useTheme()` → `{ theme, mode, themes, setTheme }`; `localStorage` key `oai_theme` stores the theme **id** |
+| Registry | `src/lib/themes.ts` | `THEMES` array: `{ id, label, emoji, mode, swatch: [bg, accent] }` is the single source of truth. `emoji` is required (shown in the picker) |
+| Base tokens | `src/index.css` | `:root` = base light, `.dark` = base dark. Also `--radius`, `--app-font-sans`, `--app-font-display` |
+| Theme CSS | `src/themes/` | `palettes.css` holds one `:root[data-theme='<id>']` block per palette theme. Each styled theme has its own `<id>.css`. All are imported at the top of `index.css` |
+| State | `contexts/ThemeContext.ts` + `ThemeProvider.tsx` | `useTheme()` returns `{ theme, mode, themes, setTheme }`. `localStorage` key `oai_theme` stores the theme **id** |
 | Picker | `components/ThemePicker.tsx` | `TopBar` drop-down (`components/ui/dropdown-menu.tsx`, radix), grouped Light / Dark, each item with its emoji and swatch |
 
-On `<html>` the provider sets `data-theme="<id>"`, `color-scheme`, and toggles `.dark` for every dark-mode theme, so Tailwind `dark:` variants work in all dark themes unchanged. An unknown stored id falls back to `light`/`dark` by `prefers-color-scheme`.
+On `<html>` the provider sets `data-theme="<id>"` and `color-scheme`, and toggles `.dark` for every dark-mode theme, so Tailwind `dark:` variants work unchanged in all dark themes. An unknown stored id falls back to `light` or `dark` according to `prefers-color-scheme`.
 
-**Adding a theme:** (1) append an entry to `THEMES` with a unique kebab-case id and the right `mode`; (2) add `:root[data-theme='<id>'] { --background: …; … }` in `index.css`, overriding the shadcn variables (`--background`, `--foreground`, `--card`, `--popover`, `--primary`, `--secondary`, `--muted`, `--accent`, `--border`, `--input`, `--ring`, `--sidebar-*`). Anything you don't override falls back to the base palette of its mode. That's all; the picker picks it up automatically. Add it to `e2e/tests/themes.spec.ts`.
+**What a theme can change**, everything scoped under `:root[data-theme='<id>']`:
+
+1. **Colours**: the shadcn variables (`--background`, `--foreground`, `--card`, `--popover`, `--primary`, `--secondary`, `--muted`, `--accent`, `--border`, `--input`, `--ring`, `--sidebar-*`). Anything not overridden falls back to the base palette of the theme's mode. Keep `--background`, `--popover` and `--sidebar*` **opaque**: components use them as covers (`bg-background/80` badges, image-tile overlays like `from-background/72`, custom `bg-popover` pickers), and a translucent token turns those see-through. Put translucency on surfaces via slot rules instead (Liquid Glass makes `<body>` transparent and frosts cards, dialogs and `.bg-popover`). Keep `--sidebar` the same lightness as the mode: a dark sidebar in a light theme puts dark text on dark tiles.
+2. **Radius**: `--radius`. Every `rounded-sm` through `rounded-4xl` utility derives from it, so `0rem` squares the whole app.
+3. **Fonts**: `--app-font-sans` (body, `font-sans`) and `--app-font-display` (`font-display` headings).
+4. **Element looks**: rules on `data-slot` hooks. Theme files are **unlayered**, so they beat Tailwind utilities on the same element; that is how a theme replaces the shadcn look.
+
+| Hook | Element |
+|------|---------|
+| `[data-slot='button']` + `[data-variant='default'\|'outline'\|'secondary'\|'ghost'\|'destructive'\|'link']`, `[data-size]` | `ui/button` (kept even when wrapped by a Radix `asChild` trigger) |
+| `[data-slot='card']` | `ui/card` |
+| `dialog-content`, `dialog-header`, `dialog-title`, `dialog-description`, `dialog-footer`, `dialog-overlay`, `dialog-close-button` | `ui/dialog` |
+| `sheet-content`, `sheet-header`, `sheet-footer`, `sheet-close-button` | `ui/sheet` |
+| `dropdown-menu-content`, `dropdown-menu-radio-item` | `ui/dropdown-menu` |
+| `[data-slot='input']`, plus raw `input` / `textarea` / `select` | form fields; many pages use raw elements, so target both |
+| `[data-slot='topbar']` | the `TopBar` header |
+
+**Adding a theme:**
+1. Append an entry to `THEMES` with a unique kebab-case id, the right `mode`, an `emoji` and a `swatch`.
+2. For a palette theme, add a `:root[data-theme='<id>'] { … }` block to `src/themes/palettes.css`. For a styled theme, create `src/themes/<id>.css` and `@import` it at the top of `index.css`. Copy `win98.css` or `liquid-glass.css` as a template.
+3. Add it to `e2e/tests/themes.spec.ts`.
+
+The picker shows new themes automatically.
 
 **Rules:**
 - Use semantic tokens (`text-foreground`, `bg-background`, `bg-muted/50`, …). Hard-coded neutrals (`bg-zinc-900`, `text-black`) break non-default themes.
-- For light/dark decisions in code (e.g. CodeMirror `{ dark }`) use `useTheme().mode`, **never** `theme === 'dark'`; that misses Graphite/Midnight.
+- For light/dark decisions in code (e.g. CodeMirror `{ dark }`), use `useTheme().mode`, **never** `theme === 'dark'`; that misses every other dark theme.
 - `dark:` colour accents (`dark:text-violet-300`) are fine; they apply to every dark-mode theme.
-- E2E: pick a theme via `getByTestId('theme-picker')` → `theme-option-<id>`, then wait for `theme-picker-menu` to be hidden before clicking the trigger again. Or seed `localStorage.oai_theme` with an id. Test at least one light and one dark theme.
+- New shared UI primitives get a `data-slot` (and `data-variant` if they have variants) so themes can reach them. Don't style pages by theme id; keep theme-specific CSS in `src/themes/`.
+- Don't give raw fields that are transparent by design a fill; exclude them with `:not(.bg-transparent)` (e.g. the chat composer textarea sits inside its own rounded frame).
+- `--accent` / `--sidebar-accent` are paired with plain foreground text all over the app (selected rows, hovers), so keep them light in light themes; put strong highlight colours on specific slots instead (Win98 navy menu items).
+- In theme CSS, override `background-color` (not the `background` shorthand) on `select` so the native arrow survives. Remember that `backdrop-filter` makes an element the containing block for `position: fixed` descendants.
+- E2E: pick a theme via `getByTestId('theme-picker')` → `theme-option-<id>`, then wait for `theme-picker-menu` to be hidden before clicking the trigger again. Or seed `localStorage.oai_theme` with an id. Test at least one light and one dark theme, and a styled theme when touching shared primitives.
 
 ### Mobile-First (required)
 
