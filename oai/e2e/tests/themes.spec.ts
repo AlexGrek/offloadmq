@@ -38,6 +38,11 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     ['graphite', true],
     ['midnight', true],
     ['sepia', false],
+    ['tangerine', false],
+    ['sky', false],
+    ['ukraine', false],
+    ['amethyst', true],
+    ['ember', true],
     ['dark', true],
   ] as const) {
     await page.getByTestId('theme-picker').click()
@@ -49,7 +54,7 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     seen.add(state.bg)
   }
   // Every theme paints a different background.
-  expect(seen.size).toBe(4)
+  expect(seen.size).toBe(9)
 
   await page.getByTestId('theme-picker').click()
   await page.getByTestId('theme-option-graphite').click()

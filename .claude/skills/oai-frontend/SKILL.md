@@ -169,10 +169,10 @@ OAI has multiple named themes, each with a `mode` of `light` or `dark`. Built in
 
 | Piece | Where | Role |
 |-------|-------|------|
-| Registry | `src/lib/themes.ts` | `THEMES` array: `{ id, label, mode, swatch: [bg, accent] }` — the single source of truth |
+| Registry | `src/lib/themes.ts` | `THEMES` array: `{ id, label, emoji, mode, swatch: [bg, accent] }` — the single source of truth; `emoji` is required (shown in the picker) |
 | Palettes | `src/index.css` | `:root` = base light, `.dark` = base dark, plus one `:root[data-theme='<id>'] { … }` block per extra theme |
 | State | `contexts/ThemeContext.ts` + `ThemeProvider.tsx` | `useTheme()` → `{ theme, mode, themes, setTheme }`; `localStorage` key `oai_theme` stores the theme **id** |
-| Picker | `components/ThemePicker.tsx` | `TopBar` drop-down (`components/ui/dropdown-menu.tsx`, radix), grouped Light / Dark with swatches |
+| Picker | `components/ThemePicker.tsx` | `TopBar` drop-down (`components/ui/dropdown-menu.tsx`, radix), grouped Light / Dark, each item with its emoji and swatch |
 
 On `<html>` the provider sets `data-theme="<id>"`, `color-scheme`, and toggles `.dark` for every dark-mode theme, so Tailwind `dark:` variants work in all dark themes unchanged. An unknown stored id falls back to `light`/`dark` by `prefers-color-scheme`.
 

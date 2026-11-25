@@ -1,4 +1,3 @@
-import { Moon, Sun } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { findTheme, type ThemeDef, type ThemeId } from '@/lib/themes'
 import { Button } from './ui/button'
@@ -25,8 +24,9 @@ function Swatch({ theme }: { theme: ThemeDef }) {
 
 /** TopBar theme drop-down: themes grouped into light-ish and dark-ish. */
 export function ThemePicker() {
-  const { theme, mode, themes, setTheme } = useTheme()
-  const label = findTheme(theme)?.label ?? theme
+  const { theme, themes, setTheme } = useTheme()
+  const current = findTheme(theme)
+  const label = current?.label ?? theme
   const groups = [
     { mode: 'light', title: 'Light' },
     { mode: 'dark', title: 'Dark' },
@@ -42,7 +42,7 @@ export function ThemePicker() {
           title={`Theme: ${label}`}
           data-testid="theme-picker"
         >
-          {mode === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+          <span aria-hidden className="text-base leading-none">{current?.emoji}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44" data-testid="theme-picker-menu">
@@ -55,6 +55,7 @@ export function ThemePicker() {
                 .filter((t) => t.mode === g.mode)
                 .map((t) => (
                   <DropdownMenuRadioItem key={t.id} value={t.id} data-testid={`theme-option-${t.id}`}>
+                    <span aria-hidden className="w-5 text-center text-base leading-none">{t.emoji}</span>
                     <Swatch theme={t} />
                     {t.label}
                   </DropdownMenuRadioItem>
