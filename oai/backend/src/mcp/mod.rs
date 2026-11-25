@@ -67,8 +67,11 @@ full-resolution files. If a job is still running when the wait ends, call get_im
 its job_id (optionally with wait_seconds) instead of submitting again. Prompts may contain \
 placeholders: {color} {animal} {adjective} {country} {language} {name} {starwars}, the user's \
 custom placeholders (list_placeholders, edit with save_placeholder), {?} for a random \
-two-word name, and {random} for any one of those placeholders picked at random. Keep placeholders in the prompt as written — the server substitutes them per \
-job, exactly like the web UI; preview with expand_prompt. Saved prompts \
+two-word name, and {random} for any one of those placeholders picked at random. The first \
+{color} and {color:1} share one value in either order. Additional bare {color} tokens draw \
+again. Repeated {color:2} tokens reuse a separate draw within the prompt. These references work \
+with custom placeholders. Keep templates as written for per-job substitution. Preview with \
+expand_prompt. Saved prompts \
 (list_saved_prompts) often contain placeholders and can be passed to generate_images as-is. \
 To regenerate a job with new random values, use its prompt_template; retry_image_job \
 repeats the exact same prompt. Personas (list_personas) are characters with face images, a \
@@ -390,6 +393,8 @@ mod tests {
         assert_eq!(resp["result"]["protocolVersion"], "2025-06-18");
         assert!(resp["result"]["capabilities"]["tools"].is_object());
         assert_eq!(resp["result"]["serverInfo"]["name"], "oai-images");
+        let instructions = resp["result"]["instructions"].as_str().unwrap();
+        assert!(instructions.contains("{color:1}") && instructions.contains("{color:2}"));
 
         let (_, resp) = call(&[], json!({
             "jsonrpc": "2.0", "id": "x", "method": "initialize", "params": { "protocolVersion": "1999-01-01" },
@@ -423,7 +428,13 @@ mod tests {
         .await
         .unwrap();
         let tools = resp["result"]["tools"].as_array().unwrap();
-        assert!(tools.iter().any(|t| t["name"] == "generate_images"));
+        for name in ["generate_images", "expand_prompt"] {
+            let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
+            let prompt_doc = tool["inputSchema"]["properties"]["prompt"]["description"]
+                .as_str()
+                .unwrap();
+            assert!(prompt_doc.contains("{color:1}"));
+        }
         assert_eq!(resp["result"]["resultType"], "complete");
         let (_, resp) = call(&[], json!({ "jsonrpc": "2.0", "id": 3, "method": "ping" }))
             .await

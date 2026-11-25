@@ -61,7 +61,7 @@ pub fn definitions() -> Vec<Value> {
             json!({
                 "type": "object",
                 "properties": {
-                    "prompt": { "type": "string", "description": "What to draw. May contain {placeholders}." },
+                    "prompt": { "type": "string", "description": "What to draw. Supports {placeholders} and numbered references such as {color:1}." },
                     "models": {
                         "type": "array", "items": { "type": "string" },
                         "minItems": MIN_MODELS, "maxItems": MAX_MODELS,

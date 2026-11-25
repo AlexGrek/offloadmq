@@ -38,7 +38,7 @@ test('inline choices use independent draws and preserve existing placeholders', 
   ])
 })
 
-test('image submission expands choices while retaining the raw template', async ({ page }) => {
+test('image submission expands choices and references while retaining the raw template', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
   await page.route('**/api/**', route => {
     const { pathname } = new URL(route.request().url())
@@ -54,14 +54,38 @@ test('image submission expands choices while retaining the raw template', async 
     return route.fulfill({ status: 404, json: { error: 'Not mocked' } })
   })
   await page.goto('/app/images')
-  const template = 'a {Red fox|Blue whale|Green bird} at {?}'
+  const template = 'a {Red fox|Blue whale|Green bird} at {?} / {color:1} / {COLOR} / {color:2} / {color} / {color:2}'
   await page.getByTestId('imggen-prompt').fill(template)
   const submitted = page.waitForRequest(request => request.url().endsWith('/api/images/jobs') && request.method() === 'POST')
   await page.getByTestId('imggen-submit-job').click()
   const body = (await submitted).postDataJSON()
-  expect(body.prompt).toMatch(/^a (Red fox|Blue whale|Green bird) at \{\?\}$/)
+  const [scene, firstRef, firstBare, secondRef, secondBare, repeatedRef] = body.prompt.split(' / ')
+  expect(scene).toMatch(/^a (Red fox|Blue whale|Green bird) at \{\?\}$/)
+  for (const value of [firstRef, secondRef, secondBare]) expect(value).toMatch(/^[^{}]+$/)
+  expect(firstBare).toBe(firstRef)
+  expect(repeatedRef).toBe(secondRef)
+  expect(new Set([firstRef, secondRef, secondBare]).size).toBe(3)
   expect(body.prompt_template).toBe(template)
   await expect(page.getByTestId('imggen-prompt')).toHaveValue(template)
+})
+
+test('numbered references reuse nested values and reset between prompts', async ({ page }) => {
+  await page.goto('/login')
+  const results = await page.evaluate(async () => {
+    const modulePath = '/src/lib/promptPlaceholders.ts'
+    const { expandPromptPlaceholders, createPlaceholderUsage } = await import(modulePath)
+    const usage = createPlaceholderUsage()
+    const defs = { scene: ['a {pet}'], pet: ['cat', 'dog'] }
+    return [
+      expandPromptPlaceholders('{scene}/{scene:1}/{pet:1}', usage, defs),
+      expandPromptPlaceholders('{pet:1}/{PET}/{pet:0}/{missing:2}', usage, defs),
+    ]
+  })
+  const [scene, reference, pet] = results[0].split('/')
+  expect(scene).toBe(`a ${pet}`)
+  expect(reference).toBe(scene)
+  const other = pet === 'cat' ? 'dog' : 'cat'
+  expect(results[1]).toBe(`${other}/${other}/{pet:0}/{missing:2}`)
 })
 
 test('{random} expands into another placeholder', async ({ page }) => {

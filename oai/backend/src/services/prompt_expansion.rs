@@ -12,6 +12,8 @@
 //! - Any other `{name}` is one of the user's custom placeholders
 //!   (`db::prompt_placeholders`); a picked variant is expanded again, up to
 //!   [`MAX_PLACEHOLDER_DEPTH`] levels (which also stops cycles).
+//! - `{name:1}` reuses the first bare `{name}` draw. Other positive reference
+//!   numbers draw and cache their own values for this prompt.
 //! - `{?}` and unknown names are left untouched — `{?}` is expanded later, at job
 //!   creation (`image_job_names::expand_prompt_placeholders`).
 //!
@@ -84,6 +86,20 @@ fn is_token_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')
 }
 
+fn parse_token(token: &str) -> Option<(&str, Option<&str>)> {
+    let (name, slot) = match token.split_once(':') {
+        Some((name, slot)) => {
+            if slot.is_empty() || slot.starts_with('0') || !slot.bytes().all(|b| b.is_ascii_digit())
+            {
+                return None;
+            }
+            (name, Some(slot))
+        }
+        None => (token, None),
+    };
+    (!name.is_empty() && name.chars().all(is_token_char)).then_some((name, slot))
+}
+
 /// Matches a `{...}` block starting at the beginning of `text` (`text` starts with `{`),
 /// balancing nested `{...}` pairs. Returns `(close_offset, top_level_choices)` where
 /// `close_offset` is the byte index of the matching `}` in `text` and `top_level_choices`
@@ -128,6 +144,24 @@ pub struct PromptExpander {
     depth_capped: bool,
 }
 
+struct PromptExpansion {
+    out: String,
+    remaining: usize,
+    bare_names: HashSet<String>,
+    references: HashMap<String, String>,
+}
+
+impl PromptExpansion {
+    fn consume_substitution(&mut self) -> Result<(), AppError> {
+        self.remaining = self.remaining.checked_sub(1).ok_or_else(|| {
+            AppError::BadRequest(format!(
+                "prompt expansion exceeds {MAX_PLACEHOLDER_SUBSTITUTIONS} substitutions"
+            ))
+        })?;
+        Ok(())
+    }
+}
+
 impl PromptExpander {
     pub fn new(custom: impl IntoIterator<Item = (String, Vec<String>)>) -> Self {
         Self {
@@ -166,10 +200,14 @@ impl PromptExpander {
         if text.len() > MAX_EXPANDED_PROMPT_BYTES {
             return Err(prompt_size_error());
         }
-        let mut out = String::with_capacity(text.len());
-        let mut remaining = MAX_PLACEHOLDER_SUBSTITUTIONS;
-        self.expand_level(text, 0, &mut out, &mut remaining)?;
-        Ok(out)
+        let mut expansion = PromptExpansion {
+            out: String::with_capacity(text.len()),
+            remaining: MAX_PLACEHOLDER_SUBSTITUTIONS,
+            bare_names: HashSet::new(),
+            references: HashMap::new(),
+        };
+        self.expand_level(text, 0, &mut expansion)?;
+        Ok(expansion.out)
     }
 
     // All recursion writes into one bounded buffer, so intermediate replacements
@@ -178,73 +216,80 @@ impl PromptExpander {
         &mut self,
         text: &str,
         depth: usize,
-        out: &mut String,
-        remaining: &mut usize,
+        expansion: &mut PromptExpansion,
     ) -> Result<(), AppError> {
         if !text.contains('{') {
-            return push_bounded(out, text);
+            return push_bounded(&mut expansion.out, text);
         }
         if depth >= MAX_PLACEHOLDER_DEPTH {
             self.depth_capped = true;
-            return push_bounded(out, text);
+            return push_bounded(&mut expansion.out, text);
         }
         let mut rest = text;
         while let Some(open) = rest.find('{') {
-            push_bounded(out, &rest[..open])?;
+            push_bounded(&mut expansion.out, &rest[..open])?;
             let braced = &rest[open..];
             let Some((close, choices)) = match_braced(braced) else {
-                push_bounded(out, "{")?;
+                push_bounded(&mut expansion.out, "{")?;
                 rest = &braced[1..];
                 continue;
             };
             if let Some(choices) = choices {
-                *remaining = remaining.checked_sub(1).ok_or_else(|| {
-                    AppError::BadRequest(format!(
-                        "prompt expansion exceeds {MAX_PLACEHOLDER_SUBSTITUTIONS} substitutions"
-                    ))
-                })?;
+                expansion.consume_substitution()?;
                 let picked = choices[rand::rng().random_range(0..choices.len())].trim();
-                self.expand_level(picked, depth + 1, out, remaining)?;
+                self.expand_level(picked, depth + 1, expansion)?;
                 rest = &braced[close + 1..];
                 continue;
             }
-            let token = &braced[1..close];
-            if !token.is_empty() && token.chars().all(is_token_char) {
-                *remaining = remaining.checked_sub(1).ok_or_else(|| {
-                    AppError::BadRequest(format!(
-                        "prompt expansion exceeds {MAX_PLACEHOLDER_SUBSTITUTIONS} substitutions"
-                    ))
-                })?;
-                if let Some(replacement) = self.resolve(token) {
-                    self.expand_level(&replacement, depth + 1, out, remaining)?;
+            if let Some((name, slot)) = parse_token(&braced[1..close]) {
+                expansion.consume_substitution()?;
+                let name = name.to_ascii_lowercase();
+                let slot =
+                    slot.or_else(|| expansion.bare_names.insert(name.clone()).then_some("1"));
+                let key = slot.map(|slot| format!("{name}:{slot}"));
+                if let Some(value) = key.as_ref().and_then(|key| expansion.references.get(key)) {
+                    push_bounded(&mut expansion.out, value)?;
+                } else if let Some(replacement) = self.resolve(&name) {
+                    let start = expansion.out.len();
+                    self.expand_level(&replacement, depth + 1, expansion)?;
+                    if let Some(key) = key {
+                        expansion
+                            .references
+                            .insert(key, expansion.out[start..].to_owned());
+                    }
                 } else {
                     let literal = &braced[..=close];
                     if !self.unknown.iter().any(|u| u.eq_ignore_ascii_case(literal)) {
                         self.unknown.push(literal.to_string());
                     }
-                    push_bounded(out, literal)?;
+                    push_bounded(&mut expansion.out, literal)?;
                 }
                 rest = &braced[close + 1..];
             } else {
-                push_bounded(out, "{")?;
+                push_bounded(&mut expansion.out, "{")?;
                 rest = &braced[1..];
             }
         }
-        push_bounded(out, rest)
+        push_bounded(&mut expansion.out, rest)
     }
 
-    /// The replacement for `{token}`, or `None` to leave it as written.
-    fn resolve(&mut self, token: &str) -> Option<String> {
-        let key = token.to_lowercase();
+    /// The replacement for a lowercased name, or `None` to leave it as written.
+    fn resolve(&mut self, key: &str) -> Option<String> {
         if key == RANDOM_PLACEHOLDER {
             return Some(self.random_placeholder());
         }
-        if let Some(dict) = builtin_dictionary(&key) {
+        if let Some(dict) = builtin_dictionary(key) {
             // Dictionary words contain no braces — no need to expand them again.
-            return Some(pick_unique(dict, self.used.entry(key).or_default()));
+            return Some(pick_unique(
+                dict,
+                self.used.entry(key.to_owned()).or_default(),
+            ));
         }
-        let variants = self.custom.get(&key).filter(|v| !v.is_empty())?;
-        Some(pick_unique(variants, self.used.entry(key).or_default()))
+        let variants = self.custom.get(key).filter(|v| !v.is_empty())?;
+        Some(pick_unique(
+            variants,
+            self.used.entry(key.to_owned()).or_default(),
+        ))
     }
 
     /// `{name}` of a random builtin, `{?}`, or non-empty custom placeholder. `{?}`
@@ -292,6 +337,17 @@ fn pick_unique<S: AsRef<str>>(pool: &[S], used: &mut HashSet<String>) -> String 
     while used.contains(value) && guard < pool.len().saturating_mul(4).min(64) {
         value = pool[rng.random_range(0..pool.len())].as_ref();
         guard += 1;
+    }
+    if used.contains(value) {
+        if let Some(available) = pool
+            .iter()
+            .map(AsRef::as_ref)
+            .find(|entry| !used.contains(*entry))
+        {
+            value = available;
+        } else {
+            used.clear();
+        }
     }
     used.insert(value.to_string());
     value.to_string()
@@ -426,6 +482,41 @@ mod tests {
         let mut e = expander(&[("pet", &["cat", "dog"])]);
         let out = e.expand("{pet}+{pet}").unwrap();
         assert!(out == "cat+dog" || out == "dog+cat", "{out}");
+    }
+
+    #[test]
+    fn numbered_references_replay_one_draw_per_prompt() {
+        let mut e = expander(&[("pet", &["cat", "dog", "fox", "owl"])]);
+        let out = e.expand("{pet}/{PET:1}/{pet:2}/{pet}/{Pet:2}").unwrap();
+        let parts: Vec<_> = out.split('/').collect();
+        assert_eq!(parts[0], parts[1]);
+        assert_eq!(parts[2], parts[4]);
+        assert_eq!(
+            [parts[0], parts[2], parts[3]]
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .len(),
+            3
+        );
+
+        let next = e.expand("{pet:1}/{Pet}").unwrap();
+        let (first, bare) = next.split_once('/').unwrap();
+        assert_eq!(first, bare);
+        assert!(!parts.contains(&first));
+    }
+
+    #[test]
+    fn numbered_references_replay_nested_expansion_and_keep_malformed_tokens_literal() {
+        let mut e = expander(&[("scene", &["a {pet}"]), ("pet", &["cat", "dog"])]);
+        let out = e
+            .expand("{scene}/{scene:1}/{pet:1}/{pet}/{pet:0}/{missing:2}")
+            .unwrap();
+        let parts: Vec<_> = out.split('/').collect();
+        assert_eq!(parts[0], parts[1]);
+        assert_eq!(parts[0], format!("a {}", parts[2]));
+        assert_ne!(parts[2], parts[3]);
+        assert_eq!(parts[4..], ["{pet:0}", "{missing:2}"]);
+        assert_eq!(e.unknown_tokens(), ["{missing:2}"]);
     }
 
     /// Pinned from the web UI's own `expandPromptPlaceholders`

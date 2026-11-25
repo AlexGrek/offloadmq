@@ -34,6 +34,9 @@ func cmdImagePlaceholders(args []string) error {
 		return errors.New(placeholdersUsage)
 	}
 	switch args[0] {
+	case "help", "-h", "-help", "--help":
+		fmt.Printf("%s\n\n%s\n", placeholdersUsage, placeholderReferenceHelp)
+		return nil
 	case "list", "ls":
 		return cmdPlaceholdersList(args[1:])
 	case "show":
@@ -572,6 +575,7 @@ func cmdPlaceholdersDelete(args []string) error {
 // value until a pool is exhausted). {?} stays literal: the server fills it.
 func cmdPlaceholdersExpand(args []string) error {
 	fs := flag.NewFlagSet("image placeholders expand", flag.ContinueOnError)
+	setPromptUsage(fs, `oai image placeholders expand "prompt" [-n COUNT] (or - for stdin)`)
 	count := fs.Int("n", 1, "number of expansions to print")
 	rest, err := parseInterleaved(fs, args)
 	if err != nil {

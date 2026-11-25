@@ -37,8 +37,9 @@ rendering and upscaling.
 
 Each iteration expands built-in and custom prompt placeholders again, chooses a
 new random seed, and submits one txt2img task through the existing Image Generation
-API. `{?}` uses the generator's existing server-side substitution. There is no
-negative-prompt control. An explicit empty override clears the workflow negative
+API. Within each prompt, `{color:1}` shares the first `{color}` draw and each
+`{color:2}` shares a separate draw. `{?}` uses the generator's server-side substitution.
+There is no negative-prompt control. An explicit empty override clears the workflow negative
 prompt. Custom substitution pools are fetched once at start; restart after editing placeholder definitions.
 
 Priority defaults to **Normal**. **Low** queues behind normal work; admins can

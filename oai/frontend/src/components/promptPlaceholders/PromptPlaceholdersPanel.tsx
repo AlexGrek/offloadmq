@@ -70,6 +70,13 @@ export function PromptPlaceholdersPanel({ onClose, className }: PromptPlaceholde
             including inside custom variants. Options are literal text; surrounding spaces are trimmed,
             and an empty option such as <span className="font-mono">{'{hat|}'}</span> is allowed.
           </p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Use <span className="font-mono">{'{color:1}'}</span> to reuse the first{' '}
+            <span className="font-mono">{'{color}'}</span> in the prompt.{' '}
+            <span className="font-mono">{'{color:2}'}</span> starts a separate draw and reuses it
+            wherever that reference appears. Each extra bare <span className="font-mono">{'{color}'}</span>{' '}
+            draws a fresh value.
+          </p>
           {onClose ? (
             <Link
               to="/app/prompt-placeholders"

@@ -67,6 +67,12 @@ export function createPlaceholderUsage(): PlaceholderUsage {
 export const MAX_PLACEHOLDER_DEPTH = 5
 
 const TOKEN_RE = /^[A-Za-z0-9._-]+$/
+const REFERENCE_TOKEN_RE = /^([A-Za-z0-9._-]+)(?::([1-9][0-9]*))?$/
+
+type PlaceholderReferences = {
+  bareNames: Set<string>
+  values: Map<string, string>
+}
 
 /**
  * Matches a `{...}` block starting at `start` (where `text[start] === '{'`),
@@ -110,7 +116,15 @@ function pickUnique(dict: string[], used: Set<string>): string {
   do {
     value = uniqueNamesGenerator({ dictionaries: [dict] })
     guard += 1
-  } while (used.has(value) && guard < dict.length * 4)
+  } while (used.has(value) && guard < Math.min(dict.length * 4, 64))
+  if (used.has(value)) {
+    const available = dict.filter(entry => !used.has(entry))
+    if (available.length > 0) {
+      value = uniqueNamesGenerator({ dictionaries: [available] })
+    } else {
+      used.clear()
+    }
+  }
   used.add(value)
   return value
 }
@@ -128,6 +142,7 @@ function expandLevel(
   text: string,
   usage: PlaceholderUsage,
   customDefs: Record<string, string[]>,
+  references: PlaceholderReferences,
   depth: number,
 ): string {
   if (!text.includes('{')) return text
@@ -151,55 +166,45 @@ function expandLevel(
     const { close, choices } = matched
     if (choices !== null) {
       const picked = choices[Math.floor(Math.random() * choices.length)].trim()
-      out += expandLevel(picked, usage, customDefs, depth + 1)
+      out += expandLevel(picked, usage, customDefs, references, depth + 1)
       i = close + 1
       continue
     }
-    const rawToken = text.slice(open + 1, close)
-    if (!TOKEN_RE.test(rawToken)) {
+    const matchedToken = REFERENCE_TOKEN_RE.exec(text.slice(open + 1, close))
+    if (!matchedToken) {
       out += '{'
       i = open + 1
       continue
     }
-    const token = rawToken.toLowerCase()
-
-    const builtin = CATEGORY_DICTIONARIES[token]
-    if (builtin) {
-      // Builtin dictionary entries are plain words with no braces, so they never
-      // need recursive re-expansion.
-      out += pickUnique(builtin, usedSetFor(usage, token))
-      i = close + 1
-      continue
+    const token = matchedToken[1].toLowerCase()
+    let slot = matchedToken[2]
+    if (slot === undefined && !references.bareNames.has(token)) {
+      references.bareNames.add(token)
+      slot = '1'
     }
+    const key = slot === undefined ? undefined : `${token}:${slot}`
+    let value = key === undefined ? undefined : references.values.get(key)
 
-    if (token === RANDOM_PLACEHOLDER) {
-      const pool = [
-        ...PLACEHOLDER_CATEGORIES,
-        '?',
-        ...Object.keys(customDefs).filter(name => name !== RANDOM_PLACEHOLDER && customDefs[name]?.length),
-      ]
-      const name = pool[Math.floor(Math.random() * pool.length)]
-      // `{?}` is expanded server-side, so hand it back literally.
-      if (name === '?') {
-        out += '{?}'
-      } else {
-        out += expandLevel(`{${name}}`, usage, customDefs, depth + 1)
+    if (value === undefined) {
+      const builtin = Object.hasOwn(CATEGORY_DICTIONARIES, token) ? CATEGORY_DICTIONARIES[token] : undefined
+      const custom = Object.hasOwn(customDefs, token) ? customDefs[token] : undefined
+      const variants = builtin ?? custom
+      if (token === RANDOM_PLACEHOLDER) {
+        const pool = [
+          ...PLACEHOLDER_CATEGORIES,
+          '?',
+          ...Object.keys(customDefs).filter(name => name !== RANDOM_PLACEHOLDER && customDefs[name]?.length),
+        ]
+        const name = pool[Math.floor(Math.random() * pool.length)]
+        value = expandLevel(`{${name}}`, usage, customDefs, references, depth + 1)
+      } else if (variants?.length) {
+        const picked = pickUnique(variants, usedSetFor(usage, token))
+        value = expandLevel(picked, usage, customDefs, references, depth + 1)
       }
-      i = close + 1
-      continue
+      if (key !== undefined && value !== undefined) references.values.set(key, value)
     }
 
-    const variants = customDefs[token]
-    if (variants && variants.length > 0) {
-      const picked = pickUnique(variants, usedSetFor(usage, token))
-      out += expandLevel(picked, usage, customDefs, depth + 1)
-      i = close + 1
-      continue
-    }
-
-    // Unknown placeholder name (including `{?}`, expanded server-side at submit
-    // time) — leave it untouched.
-    out += text.slice(open, close + 1)
+    out += value ?? text.slice(open, close + 1)
     i = close + 1
   }
   return out
@@ -307,11 +312,13 @@ export function reversePromptSubstitutions(
  * tracks values already picked per placeholder name (at any recursion depth) so
  * repeated calls with the same map — e.g. across a "Generate multiple" batch —
  * avoid repeats until a dictionary/variant list is exhausted.
+ * Numbered references replay a value within this prompt. The first bare occurrence
+ * shares slot 1, and subsequent bare occurrences draw independently.
  */
 export function expandPromptPlaceholders(
   prompt: string,
   usage: PlaceholderUsage,
   customDefs: Record<string, string[]> = {},
 ): string {
-  return expandLevel(prompt, usage, customDefs, 0)
+  return expandLevel(prompt, usage, customDefs, { bareNames: new Set(), values: new Map() }, 0)
 }

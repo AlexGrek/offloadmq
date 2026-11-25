@@ -19,8 +19,9 @@ vision result, and workflow negative prompts/seeds use their defaults.
 
 Both apps support built-in placeholders (`{color}`, `{animal}`, `{adjective}`,
 `{country}`, `{language}`, `{name}`, `{starwars}`), recursive custom placeholders,
-and `{?}` random names in every prompt. The server expands each fresh step just
-before reserving its child job, including vision instructions, text seeds and
+and `{?}` random names in every prompt. Use `{color:1}` to share the first `{color}`
+draw in a prompt, and repeat `{color:2}` to share a separate draw. The server expands
+each fresh step just before reserving its child job, including vision instructions, text seeds and
 vision-generated descriptions / improvement prompts. Unknown tokens and JSON
 examples remain literal. Parameters retain the original templates; each step's
 `prompt` records the expanded text actually sent, while vision `result` and

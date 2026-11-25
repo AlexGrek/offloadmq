@@ -428,6 +428,7 @@ func fetchCustomPlaceholders(cfg *Config, prompt string) []promptPlaceholder {
 
 func cmdImageGenerate(args []string) error {
 	fs := flag.NewFlagSet("image generate", flag.ContinueOnError)
+	setPromptUsage(fs, `oai image generate "prompt" [flags]`)
 	out := fs.String("o", "output.jpg", "output file (extra images get _2, _3, ... suffixes)")
 	capability := fs.String("capability", "", "imggen.* capability (default: first online)")
 	negative := fs.String("negative", "", "negative prompt")

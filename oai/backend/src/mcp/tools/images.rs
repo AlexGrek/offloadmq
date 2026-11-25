@@ -84,7 +84,10 @@ pub fn definitions() -> Vec<Value> {
              workflow img2img + input_image_id). Submits one job per image, waits for them, and \
              returns preview thumbnails plus signed links to the full-resolution files. Prompt \
              placeholders like {color}, {animal}, the user's custom {placeholders} and {?} are \
-             expanded per job, avoiding repeats within a batch. Inline {a|b|c} choices pick one literal \
+             expanded per job, avoiding repeats within a batch. {color:1} shares the first \
+             {color} draw in either order. Additional bare {color} tokens draw again. Repeated \
+             {color:2} tokens reuse a separate draw within the prompt. Custom placeholders accept \
+             numbered references. Inline {a|b|c} choices pick one literal \
              option independently each time (repeats allowed); pass templates through as \
              the user wrote them (don't pre-fill them yourself). Unknown {tokens} are reported. \
              Results show each job's final prompt and keep the raw text as prompt_template. \
@@ -96,7 +99,7 @@ pub fn definitions() -> Vec<Value> {
             json!({
                 "type": "object",
                 "properties": {
-                    "prompt": { "type": "string", "description": "What to draw. May contain {placeholders} and inline {a|b|c} choices." },
+                    "prompt": { "type": "string", "description": "What to draw. Supports {placeholders}, numbered references such as {color:1}, and inline {a|b|c} choices." },
                     "negative_prompt": { "type": "string", "description": "Things to avoid; overrides the workflow's default negative prompt." },
                     "model": { "type": "string", "description": "imggen.* capability from list_image_models. Default: an online model supporting the workflow." },
                     "workflow": { "type": "string", "description": "txt2img (default) or img2img (default when input_image_id is given). Must be a tag of the model." },

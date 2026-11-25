@@ -114,6 +114,7 @@ Pass `--no-wait` to submit detached work and return immediately. For one job, st
 
 - `{color}` `{animal}` `{adjective}` `{country}` `{language}` `{name}` — random words. The web UI draws them from unique-names-generator; the CLI uses [gofakeit](https://github.com/brianvoe/gofakeit), so the word pools differ. `{starwars}` has no Go equivalent: it is sent literally (with a warning).
 - `{item}`, `{.cinematic}`, … — your **custom placeholders**, loaded from the same server-side definitions as the web UI (`GET /api/prompt-placeholders`; manage them with [`image placeholders`](#managing-custom-placeholders) or in the web app). A random variant is picked per job, and variants may contain further placeholders (depth-capped). If they cannot be loaded, the CLI warns and sends those tokens literally.
+- `{color:1}` shares the first `{color}` value in either order. Each additional bare `{color}` draws again. `{color:2}` draws a separate value and reuses it at every `{color:2}` in the prompt. Custom placeholders support the same syntax.
 - `{a|b|c}` — inline choices: pick one literal option independently per occurrence and per job (repeats allowed). Options preserve case and internal spacing; surrounding whitespace is trimmed. Empty options are allowed (`{hat|}`). Choices also work inside custom placeholder variants; alternatives do not contain nested braces.
 - `{random}` — any other placeholder (built-in except `{starwars}`, `{?}`, or one of your custom ones), picked at random and expanded as that.
 - `{?}` — random two-word name, expanded by the server; the CLI leaves it alone.
@@ -124,6 +125,13 @@ Each job is polled every 5s, like the web UI. A failed poll caused by a network 
 
 For example: `oai image generate "a {red|blue|green} bird" -n 4` or preview with
 `oai image placeholders expand "a {red|blue|green} bird" -n 4`.
+
+Preview numbered references with two draws per prompt. The coat and hat share a
+color, and the gloves and scarf share a second color.
+
+```sh
+oai image placeholders expand 'A {color} coat, a {color:1} hat, {color:2} gloves, and a {color:2} scarf' -n 2
+```
 
 ### Managing custom placeholders
 

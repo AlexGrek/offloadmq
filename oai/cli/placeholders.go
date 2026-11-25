@@ -43,6 +43,14 @@ func isToken(s string) bool {
 	return true
 }
 
+func parsePlaceholderToken(raw string) (name, slot string, ok bool) {
+	name, slot, hasSlot := strings.Cut(raw, ":")
+	if hasSlot && (slot == "" || slot[0] == '0' || strings.Trim(slot, "0123456789") != "") {
+		return "", "", false
+	}
+	return strings.ToLower(name), slot, isToken(name)
+}
+
 // matchBraced matches a {...} block starting at text[0] == '{', balancing nested
 // {...} pairs. It returns the byte index of the matching '}', any top-level '|'
 // choices (at brace depth 1), and whether a closing '}' was found.
@@ -115,6 +123,11 @@ type placeholderExpander struct {
 	unsupported map[string]bool // unsupported tokens seen, for a single warning
 }
 
+type placeholderReferences struct {
+	bareNames map[string]bool
+	values    map[string]string
+}
+
 func newPlaceholderExpander(custom []promptPlaceholder) *placeholderExpander {
 	defs := make(map[string][]string, len(custom))
 	for _, c := range custom {
@@ -151,14 +164,34 @@ func pick(next func() string, used map[string]bool) string {
 	return v
 }
 
-// Expand resolves {category}, custom {name}, and {a|b|c} choices.
+func pickVariant(variants []string, used map[string]bool) string {
+	value := variants[rand.IntN(len(variants))]
+	if used[value] {
+		available := make([]string, 0, len(variants))
+		for _, variant := range variants {
+			if !used[variant] {
+				available = append(available, variant)
+			}
+		}
+		if len(available) == 0 {
+			clear(used)
+		} else {
+			value = available[rand.IntN(len(available))]
+		}
+	}
+	used[value] = true
+	return value
+}
+
+// Expand resolves {category}, custom {name}, numbered references, and {a|b|c} choices.
 // Each choice occurrence is picked independently, preserving case; empty options are allowed
 // and the chosen option is expanded for nested placeholders.
 func (e *placeholderExpander) Expand(prompt string) string {
-	return e.expandLevel(prompt, 0)
+	references := &placeholderReferences{bareNames: map[string]bool{}, values: map[string]string{}}
+	return e.expandLevel(prompt, 0, references)
 }
 
-func (e *placeholderExpander) expandLevel(text string, depth int) string {
+func (e *placeholderExpander) expandLevel(text string, depth int, references *placeholderReferences) string {
 	if !strings.Contains(text, "{") || depth >= maxPlaceholderDepth {
 		return text
 	}
@@ -181,47 +214,54 @@ func (e *placeholderExpander) expandLevel(text string, depth int) string {
 		}
 		if choices != nil {
 			picked := strings.TrimSpace(choices[rand.IntN(len(choices))])
-			out.WriteString(e.expandLevel(picked, depth+1))
+			out.WriteString(e.expandLevel(picked, depth+1, references))
 			rest = braced[closeIdx+1:]
 			continue
 		}
-		raw := braced[1:closeIdx]
-		if !isToken(raw) {
+		name, slot, ok := parsePlaceholderToken(braced[1:closeIdx])
+		if !ok {
 			out.WriteByte('{')
 			rest = braced[1:]
 			continue
 		}
-		token := strings.ToLower(raw)
-
-		if token == randomPlaceholder {
-			name := e.randomName()
-			if name == "?" {
-				out.WriteString("{?}")
-			} else {
-				out.WriteString(e.expandLevel("{"+name+"}", depth+1))
+		if slot == "" && !references.bareNames[name] {
+			references.bareNames[name] = true
+			slot = "1"
+		}
+		key := name + ":" + slot
+		value, found := references.values[key]
+		if !found {
+			value, found = e.resolve(name)
+			if found {
+				value = e.expandLevel(value, depth+1, references)
+				if slot != "" {
+					references.values[key] = value
+				}
 			}
-			rest = braced[closeIdx+1:]
-			continue
 		}
-		if gen, ok := builtinPlaceholders[token]; ok {
-			out.WriteString(strings.ToLower(pick(gen, e.usedSet(token))))
-			rest = braced[closeIdx+1:]
-			continue
+		if !found {
+			value = braced[:closeIdx+1]
 		}
-		if variants := e.custom[token]; len(variants) > 0 {
-			v := pick(func() string { return variants[rand.IntN(len(variants))] }, e.usedSet(token))
-			out.WriteString(e.expandLevel(v, depth+1))
-			rest = braced[closeIdx+1:]
-			continue
-		}
-		if unsupportedPlaceholders[token] {
-			e.unsupported[token] = true
-		}
-		// Unknown name (including {?}, expanded server-side) — leave untouched.
-		out.WriteString(braced[:closeIdx+1])
+		out.WriteString(value)
 		rest = braced[closeIdx+1:]
 	}
 	return out.String()
+}
+
+func (e *placeholderExpander) resolve(name string) (string, bool) {
+	if name == randomPlaceholder {
+		return "{" + e.randomName() + "}", true
+	}
+	if gen, ok := builtinPlaceholders[name]; ok {
+		return strings.ToLower(pick(gen, e.usedSet(name))), true
+	}
+	if variants := e.custom[name]; len(variants) > 0 {
+		return pickVariant(variants, e.usedSet(name)), true
+	}
+	if unsupportedPlaceholders[name] {
+		e.unsupported[name] = true
+	}
+	return "", false
 }
 
 // randomName picks a builtin, "?", or a non-empty custom placeholder name.

@@ -158,7 +158,8 @@ pub fn definitions() -> Vec<Value> {
              with the primary face → upscale ×2. workflow=existing skips generation: the \
              persona's face is swapped into an existing library photo (input_image_id), then \
              optionally upscaled; prompt is not needed. The prompt may use {p_name}, {p_look}, \
-             {p_system} plus the usual placeholders; pass it unexpanded. Waits and returns \
+             {p_system} plus the usual placeholders and numbered references such as {color:1}. \
+             Pass it unexpanded. Waits and returns \
              previews of the final images. A run still going when the wait ends is normal — \
              call get_persona_photo; don't submit again.",
             json!({ "type": "object", "properties": {

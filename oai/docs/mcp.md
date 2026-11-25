@@ -136,10 +136,13 @@ under Node.
 - `{a|b|c}` — inline choices: pick one literal option independently per occurrence and per job (repeats allowed). Options preserve case and internal spacing; surrounding whitespace is trimmed. Empty options are allowed (`{hat|}`). Choices also work inside custom placeholder variants; alternatives do not contain nested braces.
 - **Custom placeholders.** Names are matched case-insensitively. A variant may contain more
   placeholders, which are expanded up to 5 levels deep; that limit also stops cycles.
+- **Numbered references.** `{color:1}` and the first `{color}` share one value in either order.
+  Each additional bare `{color}` draws again. `{color:2}` draws a separate value and reuses it
+  at every `{color:2}`. References also work with custom placeholders and reset for each prompt.
 - **`{random}`** becomes another placeholder picked at random — a built-in, `{?}`, or one of
   the user's non-empty custom placeholders — and expands as that one. `random` is reserved.
 - **`{?}`** becomes a random two-word name at job creation (`image_job_names`), as everywhere
-  else.
+  else. Each occurrence draws a name, including inside a reused custom variant.
 - **Named placeholders avoid repeats.** One expander per call means a batch (`count`) avoids repeats until a
   word list or variant list runs out.
 - **Unknown `{tokens}`.** A typo or deleted placeholder is left in the prompt, like the web
@@ -152,6 +155,14 @@ under Node.
 - **History and starring** store the unexpanded template, as the web UI does.
 - **`expand_prompt`** resolves `{?}` by default, so the preview is the prompt a job would
   actually get. Pass `resolve_names: false` to keep it literal.
+
+Pass this template as the `prompt` argument to `expand_prompt` or `generate_images`.
+
+```json
+{"prompt": "A {color} coat, a {color:1} hat, {color:2} gloves, and a {color:2} scarf"}
+```
+
+One possible result is “A red coat, a red hat, blue gloves, and a blue scarf.”
 
 Not covered: the web UI's "recent placeholders" chips live only in browser localStorage, so
 MCP use doesn't add to them.

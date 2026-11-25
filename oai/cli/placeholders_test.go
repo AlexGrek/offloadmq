@@ -94,6 +94,25 @@ func TestExpandCustomDoesNotRepeatWithinBatch(t *testing.T) {
 	}
 }
 
+func TestExpandNumberedReferences(t *testing.T) {
+	e := newPlaceholderExpander([]promptPlaceholder{
+		{Name: "scene", Variants: []string{"a {pet:1}"}},
+		{Name: "pet", Variants: []string{"cat", "dog", "fox", "owl"}},
+	})
+	got := strings.Split(e.Expand("{scene}/{SCENE:1}/{PET:1}/{pet:2}/{pet}/{pet}/{Pet:2}"), "/")
+	if got[0] != got[1] || got[0] != "a "+got[2] || got[2] != got[4] || got[3] != got[6] {
+		t.Fatalf("references were not reused: %q", got)
+	}
+	if got[2] == got[3] || got[2] == got[5] || got[3] == got[5] {
+		t.Fatalf("separate draws reused values: %q", got)
+	}
+	next := strings.Split(e.Expand("{pet:1}/{pet}/{pet:0}/{missing:2}"), "/")
+	if next[0] != next[1] || next[0] == got[2] || next[0] == got[3] || next[0] == got[5] ||
+		next[2] != "{pet:0}" || next[3] != "{missing:2}" {
+		t.Fatalf("unexpected next prompt: %q", next)
+	}
+}
+
 func TestImageGenerateExpandsPlaceholders(t *testing.T) {
 	var mu sync.Mutex
 	var requests []startJobRequest

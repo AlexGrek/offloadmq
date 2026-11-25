@@ -38,7 +38,8 @@ pub fn definitions() -> Vec<Value> {
             "List prompt placeholders",
             "List the user's custom prompt placeholders ({name} → one random variant per use) \
              and the built-in ones, including {?} (random two-word name) and {random} (any \
-             other placeholder, picked at random per use). Same as `oai image placeholders list`.",
+             other placeholder, picked at random per use). Numbered references such as {color:1} \
+             reuse a value within a prompt. Same as `oai image placeholders list`.",
             json!({ "type": "object", "properties": {} }),
             READ_ONLY,
         ),
@@ -47,7 +48,8 @@ pub fn definitions() -> Vec<Value> {
             "Create or update a placeholder",
             "Create a custom placeholder, or change an existing one: replace its variants, \
              add or remove individual variants, or rename it. Variants may themselves contain \
-             placeholders. Same as `oai image placeholders create|set|add|remove|rename`.",
+             placeholders and numbered references such as {color:1}. Same as \
+             `oai image placeholders create|set|add|remove|rename`.",
             json!({
                 "type": "object",
                 "properties": {
@@ -76,7 +78,10 @@ pub fn definitions() -> Vec<Value> {
             "expand_prompt",
             "Preview prompt expansion",
             "Show what a prompt with placeholders expands to, exactly as generate_images would \
-             expand it. Named placeholders avoid repeats within a batch; inline {a|b|c} choices \
+             expand it. The first {color} and {color:1} share a draw in either order. \
+             Additional bare {color} tokens draw again. Repeated {color:2} tokens reuse a separate draw. \
+             Numbered references work with custom placeholders and reset for each expansion. \
+             Named placeholders avoid repeats within a batch; inline {a|b|c} choices \
              pick one literal option independently (repeats allowed, spaces trimmed, empty options \
              allowed). {random} becomes another placeholder picked at random and expands as \
              that. Includes {?} random names unless \
@@ -85,7 +90,7 @@ pub fn definitions() -> Vec<Value> {
             json!({
                 "type": "object",
                 "properties": {
-                    "prompt": { "type": "string" },
+                    "prompt": { "type": "string", "description": "Prompt template. Supports {placeholders}, numbered references such as {color:1}, and inline {a|b|c} choices." },
                     "count": { "type": "integer", "minimum": 1, "maximum": MAX_EXPANSIONS, "default": 1 },
                     "resolve_names": { "type": "boolean", "default": true, "description": "Also replace {?} with random names, as job creation does." },
                 },

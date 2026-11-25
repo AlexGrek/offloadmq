@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+const placeholderReferenceHelp = `Numbered references work with built-in and custom placeholders. The first {color}
+and {color:1} share one value in either order. Additional bare {color} tokens draw
+again. Repeated {color:2} tokens reuse a separate draw. References reset per prompt.`
+
 const usage = `oai — command-line client for OAI
 
 Usage:
@@ -106,12 +110,20 @@ Usage:
 
 Prompts may use {color} {animal} {adjective} {country} {language} {name}, your custom
 {placeholders} (manage with oai image placeholders), {random}, and {?} (expanded by the server).
+` + placeholderReferenceHelp + `
 Inline {a|b|c} choices pick one literal option independently per occurrence (repeats allowed).
 LangGraph prompts also take {tools} (expanded at run time by the default main.py).
 Persona prompts also take {p_name}, {p_look} and {p_system} (substituted by the server).
 
 Config is stored in ~/.oai-cli.json. Set OAI_PASSWORD for non-interactive login.
 `
+
+func setPromptUsage(fs *flag.FlagSet, synopsis string) {
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "Usage: %s\n\n%s\n\n", synopsis, placeholderReferenceHelp)
+		fs.PrintDefaults()
+	}
+}
 
 // parseInterleaved parses flags that may appear before or after positional
 // arguments (flag.Parse alone stops at the first positional), returning the
@@ -122,9 +134,8 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 	for {
 		if err := fs.Parse(args); err != nil {
 			if errors.Is(err, flag.ErrHelp) {
-				fmt.Fprintf(os.Stderr, "Usage of %s:\n", fs.Name())
 				fs.SetOutput(os.Stderr)
-				fs.PrintDefaults()
+				fs.Usage()
 				os.Exit(0)
 			}
 			return nil, err
