@@ -6,6 +6,7 @@
 @import "./themes/ukraine.css";
 @import "./themes/win98.css";
 @import "./themes/liquid-glass.css";
+@import "./themes/hacker.css";
 
 @custom-variant dark (&:is(.dark *));
 

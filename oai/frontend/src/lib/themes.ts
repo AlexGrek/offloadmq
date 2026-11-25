@@ -40,6 +40,9 @@ export const THEMES = [
   { id: 'midnight', label: 'Midnight', emoji: '🌌', mode: 'dark', swatch: ['oklch(0.2 0.04 265)', 'oklch(0.7 0.14 250)'] },
   { id: 'amethyst', label: 'Amethyst', emoji: '🔮', mode: 'dark', swatch: ['oklch(0.18 0.05 300)', 'oklch(0.8 0.12 310)'] },
   { id: 'ember', label: 'Ember', emoji: '🔥', mode: 'dark', swatch: ['oklch(0.21 0.045 262)', 'oklch(0.74 0.17 55)'] },
+  { id: 'hacker-green', label: 'Hacker Green', emoji: '📟', mode: 'dark', swatch: ['oklch(0.14 0.02 150)', 'oklch(0.87 0.22 145)'] },
+  { id: 'hacker-blue', label: 'Hacker Blue', emoji: '💠', mode: 'dark', swatch: ['oklch(0.14 0.035 255)', 'oklch(0.8 0.14 232)'] },
+  { id: 'hacker-white', label: 'Hacker White', emoji: '💀', mode: 'dark', swatch: ['oklch(0.12 0 0)', 'oklch(0.96 0 0)'] },
 ] as const satisfies readonly ThemeDef[]
 
 export type ThemeId = (typeof THEMES)[number]['id']

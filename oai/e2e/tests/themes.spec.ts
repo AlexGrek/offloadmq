@@ -45,6 +45,9 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     ['ember', true],
     ['win98', false],
     ['liquid-glass', false],
+    ['hacker-green', true],
+    ['hacker-blue', true],
+    ['hacker-white', true],
     ['dark', true],
   ] as const) {
     await page.getByTestId('theme-picker').click()
@@ -56,7 +59,7 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     seen.add(state.bg)
   }
   // Every theme paints a different background.
-  expect(seen.size).toBe(11)
+  expect(seen.size).toBe(14)
 
   await page.getByTestId('theme-picker').click()
   await page.getByTestId('theme-option-graphite').click()
@@ -84,6 +87,7 @@ test('styled themes change radius, fonts and element looks', async ({ page, requ
   for (const [id, expected] of [
     ['win98', { radius: '0rem', font: /Tahoma/, buttonRadius: '0px' }],
     ['liquid-glass', { radius: '1.1rem', font: /apple-system/, buttonRadius: '9999px' }],
+    ['hacker-green', { radius: '0rem', font: /monospace/, buttonRadius: '0px' }],
   ] as const) {
     await page.getByTestId('theme-picker').click()
     await page.getByTestId(`theme-option-${id}`).click()

@@ -1,0 +1,138 @@
+/*
+ * Hacker — terminal look in three phosphor colours (green, blue, white). Dark.
+ *
+ * One shared structure; each variant only sets the phosphor (`--hk`), its dim
+ * shade and the background hue. Monospace everywhere, square corners, glowing
+ * text, faint CRT scanlines. Surface tokens are opaque mixes (they are used as
+ * covers); only borders are translucent.
+ */
+:root[data-theme='hacker-green'] {
+    --hk: oklch(0.87 0.22 145);
+    --hk-dim: oklch(0.68 0.14 145);
+    --hk-bg: oklch(0.14 0.02 150);
+}
+:root[data-theme='hacker-blue'] {
+    --hk: oklch(0.8 0.14 232);
+    --hk-dim: oklch(0.64 0.1 235);
+    --hk-bg: oklch(0.14 0.035 255);
+}
+:root[data-theme='hacker-white'] {
+    --hk: oklch(0.96 0 0);
+    --hk-dim: oklch(0.7 0 0);
+    --hk-bg: oklch(0.12 0 0);
+}
+
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) {
+    --radius: 0rem;
+    --app-font-sans: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --app-font-display: var(--app-font-sans);
+
+    --hk-surface: color-mix(in oklch, var(--hk) 5%, var(--hk-bg));
+    --hk-raise: color-mix(in oklch, var(--hk) 12%, var(--hk-bg));
+    --hk-line: color-mix(in oklch, var(--hk) 32%, transparent);
+    --hk-glow: 0 0 6px color-mix(in oklch, var(--hk) 45%, transparent);
+
+    --background: var(--hk-bg);
+    --foreground: var(--hk);
+    --card: var(--hk-surface);
+    --card-foreground: var(--hk);
+    --popover: var(--hk-surface);
+    --popover-foreground: var(--hk);
+    --primary: var(--hk);
+    --primary-foreground: var(--hk-bg);
+    --secondary: var(--hk-raise);
+    --secondary-foreground: var(--hk);
+    --muted: var(--hk-raise);
+    --muted-foreground: var(--hk-dim);
+    --accent: var(--hk-raise);
+    --accent-foreground: var(--hk);
+    --border: var(--hk-line);
+    --input: color-mix(in oklch, var(--hk) 45%, transparent);
+    --ring: var(--hk);
+    --sidebar: var(--hk-surface);
+    --sidebar-foreground: var(--hk);
+    --sidebar-primary: var(--hk);
+    --sidebar-primary-foreground: var(--hk-bg);
+    --sidebar-accent: var(--hk-raise);
+    --sidebar-accent-foreground: var(--hk);
+    --sidebar-border: var(--hk-line);
+    --sidebar-ring: var(--hk);
+
+    caret-color: var(--hk);
+    scrollbar-color: var(--hk-dim) transparent;
+}
+
+/* Phosphor glow on text; scanlines over everything (never intercept input). */
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) body {
+    text-shadow: var(--hk-glow);
+}
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    pointer-events: none;
+    background: repeating-linear-gradient(to bottom, transparent 0 2px, oklch(0 0 0 / 0.16) 2px 3px);
+}
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) ::selection {
+    background: var(--hk);
+    color: var(--hk-bg);
+    text-shadow: none;
+}
+
+/* Chrome: flat black panes with a phosphor hairline, no shadows. */
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) [data-slot='topbar'] {
+    background: var(--hk-bg);
+    backdrop-filter: none;
+    border-bottom-color: var(--hk-line);
+}
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    border-radius: 0;
+    box-shadow: 0 0 0 1px var(--hk-line), 0 0 24px -8px color-mix(in oklch, var(--hk) 35%, transparent);
+}
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) :is([data-slot='dialog-title'], [data-slot='sheet-title'])::before {
+    content: '> ';
+    color: var(--hk-dim);
+}
+
+/* Buttons: bracketed terminal commands; hover inverts. */
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) [data-slot='button']:not([data-variant='link']) {
+    border-radius: 0;
+}
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    background: transparent;
+    color: var(--hk);
+    border: 1px solid var(--hk-line);
+}
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) [data-slot='button'][data-variant='default'],
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) [data-slot='button']:is([data-variant='outline'], [data-variant='secondary'], [data-variant='ghost']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background: var(--hk);
+    color: var(--hk-bg);
+    border-color: var(--hk);
+    text-shadow: none;
+    box-shadow: var(--hk-glow);
+}
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background: var(--hk-bg);
+    color: var(--hk);
+    text-shadow: var(--hk-glow);
+}
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) [data-slot='button']:focus-visible {
+    outline: 1px dashed var(--hk);
+    outline-offset: 2px;
+}
+
+/* Fields: black wells with a phosphor rule; transparent-by-design fields untouched. */
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent) {
+    background-color: var(--hk-bg);
+    color: var(--hk);
+    border-radius: 0;
+}
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) :is(input, textarea)::placeholder {
+    color: var(--hk-dim);
+    opacity: 0.7;
+}
+:root:is([data-theme='hacker-green'], [data-theme='hacker-blue'], [data-theme='hacker-white']) :is(input, textarea, select):focus-visible {
+    outline: 1px dashed var(--hk);
+    outline-offset: 1px;
+}

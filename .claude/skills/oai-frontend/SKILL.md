@@ -168,7 +168,7 @@ All API clients are in `src/api/`. Add new endpoint groups as new files there.
 OAI has multiple named themes, each with a `mode` of `light` or `dark`. There are two kinds:
 
 - **Palette themes** only recolour: Light, Sepia, Tangerine, Sky (light); Dark, Graphite, Midnight, Amethyst, Ember (dark).
-- **Styled themes** also change radius, fonts and how elements look: **Windows 98** (`win98`: bevels, title-bar dialogs, square corners, Tahoma) and **Liquid Glass** (`liquid-glass`: frosted translucent panes over a wallpaper, pill buttons) and **Ukraine** (`ukraine`: blue/yellow palette with a flag stripe under the top bar).
+- **Styled themes** also change radius, fonts and how elements look: **Windows 98** (`win98`: bevels, title-bar dialogs, square corners, Tahoma) and **Liquid Glass** (`liquid-glass`: frosted translucent panes over a wallpaper, pill buttons) **Ukraine** (`ukraine`: blue/yellow palette with a flag stripe under the top bar), and **Hacker Green / Blue / White** (`hacker-*`, dark: monospace, phosphor glow, scanlines; one shared `hacker.css` where each variant sets only `--hk`, `--hk-dim`, `--hk-bg`, so a new colour is three lines plus a registry entry).
 
 | Piece | Where | Role |
 |-------|-------|------|
