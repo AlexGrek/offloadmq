@@ -69,6 +69,12 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     ['cyberpunk', true],
     ['minimal-light', false],
     ['minimal-dark', true],
+    ['noir', true],
+    ['apple-2', true],
+    ['oaistation', true],
+    ['lgbtq', false],
+    ['malevich', false],
+    ['fine-art', false],
     ['dark', true],
   ] as const) {
     await page.getByTestId('theme-picker').click()
@@ -80,7 +86,7 @@ test('theme drop-down switches named themes, keeps .dark in sync and persists', 
     seen.add(state.bg)
   }
   // Every theme paints a different background.
-  expect(seen.size).toBe(31)
+  expect(seen.size).toBe(37)
 
   await page.getByTestId('theme-picker').click()
   await page.getByTestId('theme-option-graphite').click()
@@ -120,6 +126,12 @@ test('styled themes change radius, fonts and element looks', async ({ page, requ
     ['cyberpunk', { radius: '0rem', font: /Chakra Petch/, buttonRadius: '0px' }],
     ['minimal-light', { radius: '0.375rem', font: /Inter/, buttonRadius: '4.8px' }],
     ['minimal-dark', { radius: '0.375rem', font: /Inter/, buttonRadius: '4.8px' }],
+    ['noir', { radius: '0.125rem', font: /Geist/, buttonRadius: '1.6px' }],
+    ['apple-2', { radius: '0rem', font: /IBM Plex Mono/, buttonRadius: '0px' }],
+    ['oaistation', { radius: '0.5rem', font: /M PLUS 1p/, buttonRadius: '6.4px' }],
+    ['lgbtq', { radius: '0.8rem', font: /Nunito/, buttonRadius: '10.24px' }],
+    ['malevich', { radius: '0rem', font: /Jost/, buttonRadius: '0px' }],
+    ['fine-art', { radius: '0.15rem', font: /Geist/, buttonRadius: '1.92px' }],
   ] as const) {
     await page.getByTestId('theme-picker').click()
     await page.getByTestId(`theme-option-${id}`).click()
@@ -131,7 +143,7 @@ test('styled themes change radius, fonts and element looks', async ({ page, requ
   }
 
   // No theme may lay a full-screen overlay over content: it would tint generated images.
-  for (const id of ['hacker-green', 'hacker-blue', 'hacker-white', 'win98', 'liquid-glass', 'aurora', 'synthwave', 'nebula', 'sherbet', 'lagoon', 'liquid-glass-dark', 'win8-dark', 'crimson', 'parry-hotter', 'aero', 'material', 'love', 'monokai', 'oai-hub', 'cyberpunk', 'minimal-light', 'minimal-dark']) {
+  for (const id of ['hacker-green', 'hacker-blue', 'hacker-white', 'win98', 'liquid-glass', 'aurora', 'synthwave', 'nebula', 'sherbet', 'lagoon', 'liquid-glass-dark', 'win8-dark', 'crimson', 'parry-hotter', 'aero', 'material', 'love', 'monokai', 'oai-hub', 'cyberpunk', 'minimal-light', 'minimal-dark', 'noir', 'apple-2', 'oaistation', 'lgbtq', 'malevich', 'fine-art']) {
     await page.getByTestId('theme-picker').click()
     await page.getByTestId(`theme-option-${id}`).click()
     await expect(page.getByTestId('theme-picker-menu')).toBeHidden()
