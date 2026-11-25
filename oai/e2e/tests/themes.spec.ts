@@ -143,6 +143,33 @@ test('styled themes change radius, fonts and element looks', async ({ page, requ
   expect(await look()).toEqual(base)
 })
 
+test('theme list stays on screen and scrolls on a short viewport', async ({ page, request }) => {
+  const account = await register(request)
+  await signIn(page, account.token)
+  await page.setViewportSize({ width: 390, height: 500 })
+  await page.goto('/app/dashboard')
+
+  await page.getByTestId('theme-picker').click()
+  const menu = page.getByTestId('theme-picker-menu')
+  await expect(menu).toBeVisible()
+  const box = await menu.evaluate(el => {
+    const r = el.getBoundingClientRect()
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, scrolls: el.scrollHeight > el.clientHeight }
+  })
+  expect(box.top).toBeGreaterThanOrEqual(0)
+  expect(box.left).toBeGreaterThanOrEqual(0)
+  expect(box.bottom).toBeLessThanOrEqual(500)
+  expect(box.right).toBeLessThanOrEqual(390)
+  expect(box.scrolls).toBe(true)
+
+  // The last theme is reachable by scrolling the menu.
+  const last = page.getByTestId('theme-option-crimson')
+  await last.scrollIntoViewIfNeeded()
+  await last.click()
+  await expect(menu).toBeHidden()
+  expect((await html(page)).theme).toBe('crimson')
+})
+
 test('unknown stored theme falls back to a valid one', async ({ page, request }) => {
   const account = await register(request)
   await signIn(page, account.token)
