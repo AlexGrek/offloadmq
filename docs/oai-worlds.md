@@ -33,7 +33,9 @@ covers only ~8–10% of the panorama, so the view straight ahead is softer than
 SHARP's, and FLUX may add large near objects that frame the picture. It also
 rejects `mode=pano` (a ready panorama goes to `world.splat`). Lotus covers 360° panoramas but tears at depth
 edges when leaning. See [VR-WORLD.md](../VR-WORLD.md) and
-`examples/vr-world-poc/` for the comparison that led to SHARP.
+`examples/vr-world-poc/` for the comparison that led to SHARP. The plan for going
+beyond SHARP (HY-World 2.0, SHARP hole filling) is in
+[worlds-quality-plan.md](worlds-quality-plan.md).
 
 ## Agent and input
 

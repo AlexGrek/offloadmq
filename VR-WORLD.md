@@ -170,3 +170,5 @@ public panorama LoRA outpaints the picture into a 360° panorama on the local Co
 (no FLUX Fill, Nunchaku or Linux needed), then Lotus/LDI splats it. See
 `examples/vr-world-poc/README.md` for the comparison and
 [agent capabilities](docs/agent-capabilities.md#worldpano360--360-worlds-from-one-picture-worldgen-recipe).
+Next steps for quality beyond `world.sharp` are in
+[docs/worlds-quality-plan.md](docs/worlds-quality-plan.md).
