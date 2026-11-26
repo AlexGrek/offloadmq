@@ -1,6 +1,6 @@
 # VR Worlds: quality plan
 
-Status: proposal, 2026-11-26. A0 (WorldMirror part) and [A1](#a1-result-2026-11-26) done (and available for headset comparison as the experimental [`world.mirror`](oai-worlds.md#worldmirror-experimental)). Builds on [VR Worlds](oai-worlds.md), [VR-WORLD.md](../VR-WORLD.md)
+Status: proposal, 2026-11-26. A0 (WorldMirror part) and [A1](#a1-result-2026-11-26) done (and available for headset comparison as the experimental [`world.mirror`](oai-worlds.md#worldmirror-experimental)). Plan B is expanded in [worlds-fill-plan.md](worlds-fill-plan.md) and is next. Builds on [VR Worlds](oai-worlds.md), [VR-WORLD.md](../VR-WORLD.md)
 and the PoC in [`examples/vr-world-poc/`](../examples/vr-world-poc/README.md).
 
 ## Goal
@@ -107,6 +107,9 @@ Run on all five scenes; numbers and method in the
   market) after a global scale; 12% on torii; 34% on the foliage scene.
 - As a world on its own it loses to SHARP on all five: one surface layer (black holes on
   every lean), not metric, smeared foreground on the foliage scene.
+- Headset check (2026-11-26, `world.mirror`): confirmed. It renders nothing where the
+  picture has no information and guesses worse than SHARP. A reconstructor cannot invent
+  unseen content; that has to come from A2 (WorldStereo) or Plan B.
 
 What this means for the next steps:
 
@@ -196,6 +199,9 @@ WorldStereo/WorldMirror pipeline with a `pano` preset. This would replace the
 `world.pano360` outpaint and its Lotus depth.
 
 ## Plan B — SHARP with generative hole filling
+
+The detailed plan (masks that also catch SHARP's smears, incremental view filling, scale
+fit, phases B0–B4) is in [worlds-fill-plan.md](worlds-fill-plan.md).
 
 Runs in parallel with Plan A because it only needs installed components. It widens the
 usable lean and step range while keeping SHARP's front view.
