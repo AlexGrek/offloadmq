@@ -369,3 +369,57 @@ test('generator picker lists the most used first and preselects the latest world
   await page.reload()
   await expect(page.getByTestId('worlds-capability-trigger')).toContainText('WorldGen 360°')
 })
+
+test('experimental WorldMirror is never preselected and offers only its clean-up filters', async ({ page }) => {
+  let submitted: unknown
+  const photo = { ...image, filename: 'torii.png', width: 1080, height: 1920 }
+  await page.addInitScript(() => localStorage.setItem('oai_token', 'test-token'))
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (!path.startsWith('/api/')) return route.continue()
+    const json = (body: unknown, status = 200) => route.fulfill({ status, json: body })
+    if (path === '/api/me') return json({ id: 1, login: 'tester', created_at: now, used_storage_bytes: 0 })
+    if (path === '/api/admin/am_i_admin') return json({ is_admin: false })
+    if (path === '/api/progress/running') return json({ jobs: [] })
+    if (path === '/api/worlds/capabilities') return json({ capabilities: [
+      worldCap('world.mirror', ['ply', 'preview', 'experimental'], 'world.mirror[ply;preview;experimental]'),
+      worldCap('world.sharp', ['ply', 'preview', 'metric'], 'world.sharp[ply;preview;metric]'),
+    ] })
+    if (path === '/api/files/images') return json({ files: [{ ...photo, id: '42', direction: 'input' }], has_more: false })
+    if (path === '/api/worlds/jobs' && route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON()
+      return json({ job_id: '80', status: 'submitted' }, 201)
+    }
+    if (path === '/api/worlds/jobs') return json([])
+    if (path === '/api/worlds/jobs/80') return json({ ...completed, job_id: '80', capability: 'world.mirror',
+      mode: 'perspective', input_image: photo, result: { mode: 'perspective', generator: 'hy-worldmirror-2.0',
+        splat_count: 496334, depth_range_m: [3.4, 26.6], settings: { hfov: 31.8, scale_source: 'median' } } })
+    return route.fulfill({ status: 404 })
+  })
+  await page.goto('/app/worlds')
+  await expect(page.getByTestId('worlds-capability-trigger')).toContainText('Apple SHARP')
+  await page.getByTestId('worlds-capability-trigger').click()
+  await page.getByTestId('worlds-capability-option-world.mirror').click()
+  await expect(page.getByTestId('worlds-generator-hint')).toContainText('does not cover the EU')
+  for (const id of ['worlds-fov', 'worlds-mode', 'worlds-lean', 'worlds-budget-quest']) {
+    await expect(page.getByTestId(id)).toHaveCount(0)
+  }
+  await page.getByTestId('worlds-input-pick-library').click()
+  await page.getByTestId('imggen-picker-file-42').click()
+  await page.getByTestId('imggen-picker-confirm').click()
+  await page.getByTestId('worlds-submit').click()
+  await expect.poll(() => submitted).toEqual({ capability: 'world.mirror', input_image_id: '42', mode: 'perspective' })
+  await expect(page.getByTestId('worlds-result-summary')).toContainText('scale estimated')
+
+  await page.getByTestId('worlds-new-panel-btn').click()
+  await page.getByTestId('worlds-capability-trigger').click()
+  await page.getByTestId('worlds-capability-option-world.mirror').click()
+  await page.getByTestId('worlds-cleanup').check()
+  await page.getByTestId('worlds-input-pick-library').click()
+  await page.getByTestId('imggen-picker-file-42').click()
+  await page.getByTestId('imggen-picker-confirm').click()
+  await page.getByTestId('worlds-submit').click()
+  await expect.poll(() => submitted).toEqual({
+    capability: 'world.mirror', input_image_id: '42', mode: 'perspective', cleanup: true,
+  })
+})

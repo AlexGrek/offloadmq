@@ -87,6 +87,25 @@ tasks:
     cmds:
       - uv run omq pano360 uninstall --yes
 
+  # ----------------------------------------------------------------
+  # world.mirror (WorldMirror 2.0, experimental) — licence excludes the EU, UK and South Korea
+  # ----------------------------------------------------------------
+
+  mirror:install:
+    desc: Install WorldMirror; ACCEPT=1 accepts the HY-World 2.0 licence (not for EU/UK/South Korea)
+    cmds:
+      - uv run omq mirror install {{if .ACCEPT}}--accept-license{{end}}
+
+  mirror:doctor:
+    desc: Verify the WorldMirror runtime; FIX=1 repairs what is broken
+    cmds:
+      - uv run omq mirror doctor {{if .FIX}}--fix{{end}}
+
+  mirror:uninstall:
+    desc: Delete the WorldMirror venv, code and weights
+    cmds:
+      - uv run omq mirror uninstall --yes
+
   frontend:install:
     desc: Install frontend npm dependencies
     dir: "{{.FRONTEND}}"

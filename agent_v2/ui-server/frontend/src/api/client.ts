@@ -4,6 +4,8 @@ import type {
   BgRemoveDoctorReport,
   BgRemoveStatus,
   CapabilitiesState,
+  MirrorDoctorReport,
+  MirrorStatus,
   Pano360DoctorReport,
   Pano360Status,
   Settings,
@@ -209,6 +211,19 @@ export const api = {
   uninstallPano360: () => request<Pano360Status>("/pano360/uninstall", { method: "POST" }),
   cancelPano360: () => request<Pano360Status>("/pano360/cancel", { method: "POST" }),
   doctorPano360: () => request<Pano360DoctorReport>("/pano360/doctor", { method: "POST" }),
+  getMirrorStatus: () => request<MirrorStatus>("/mirror/status"),
+  saveMirrorSettings: (p: Partial<MirrorStatus["settings"]>) =>
+    request<MirrorStatus>("/mirror/settings", { method: "POST", body: JSON.stringify(p) }),
+  installMirror: (force = false) =>
+    request<MirrorStatus>("/mirror/install", { method: "POST", body: JSON.stringify({ force }) }),
+  repairMirror: () => request<MirrorStatus>("/mirror/repair", { method: "POST" }),
+  uninstallMirror: (removeModels: boolean) =>
+    request<MirrorStatus>("/mirror/uninstall", {
+      method: "POST",
+      body: JSON.stringify({ remove_models: removeModels }),
+    }),
+  cancelMirror: () => request<MirrorStatus>("/mirror/cancel", { method: "POST" }),
+  doctorMirror: () => request<MirrorDoctorReport>("/mirror/doctor", { method: "POST" }),
   getKokoroStatus: () =>
     request<{ ok: boolean; capabilities: string[]; reason: string }>(
       "/kokoro/status"

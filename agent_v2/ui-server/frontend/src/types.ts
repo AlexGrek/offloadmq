@@ -307,3 +307,29 @@ export type Pano360DoctorReport = {
   action: "install" | null;
   checks: { name: string; ok: boolean; detail: string }[];
 };
+
+export type MirrorStatus = {
+  ready: boolean;
+  installed: boolean;
+  license_accepted: boolean;
+  summary: string;
+  dir: string;
+  default_dir: string;
+  has_venv: boolean;
+  has_code: boolean;
+  has_model: boolean;
+  model_bytes: number;
+  download_bytes: number;
+  manifest: { revision?: string; torch?: string; device?: string };
+  settings: { mirror_dir: string; mirror_license_accepted: boolean; mirror_free_ollama: boolean };
+  license: { notice: string; url: string };
+  uv_available: boolean;
+  git_available: boolean;
+  job: Omit<SharpJob, "action"> & { action: "install" | "repair" | "uninstall" | null };
+};
+
+export type MirrorDoctorReport = {
+  ok: boolean;
+  action: "install" | "reinstall" | null;
+  checks: { name: string; ok: boolean; detail: string }[];
+};

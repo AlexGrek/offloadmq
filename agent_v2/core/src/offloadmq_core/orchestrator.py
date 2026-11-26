@@ -55,7 +55,7 @@ from offloadmq_core.error_pool import ErrorPool, PendingLog, Severity
 from offloadmq_core.executor_pool import ExecutorPool
 from offloadmq_core.scan_state import ScanState
 from offloadmq_core.sharp_install import SharpInstallJob, SharpInstallError
-from offloadmq_core import bgremove_install, pano360_install, sharp_install
+from offloadmq_core import bgremove_install, mirror_install, pano360_install, sharp_install
 from offloadmq_core.settings import SETTINGS_FILE, Settings, load_settings, save_settings
 from offloadmq_core.task_store import TaskRecord, TaskStore
 from offloadmq_core.version import get_app_version
@@ -128,6 +128,7 @@ class Orchestrator:
         self._sharp_job = SharpInstallJob()
         self._bgremove_job = bgremove_install.BgRemoveInstallJob()
         self._pano360_job = pano360_install.Pano360InstallJob()
+        self._mirror_job = mirror_install.MirrorInstallJob()
         self._errors = ErrorPool()
 
         self._pool: ExecutorPool | None = None
@@ -1050,6 +1051,90 @@ class Orchestrator:
     def cancel_pano360_job(self) -> dict[str, Any]:
         self._pano360_job.cancel()
         return self.get_pano360_status()
+
+    # ==================================================================
+    # world.mirror — WorldMirror 2.0 runtime, off until its licence is accepted
+    # ==================================================================
+
+    def _mirror_paths(self) -> mirror_install.MirrorPaths:
+        return mirror_install.MirrorPaths.from_settings(self.get_settings().model_dump())
+
+    def get_mirror_status(self) -> dict[str, Any]:
+        import shutil
+
+        settings = self.get_settings()
+        runtime = mirror_install.rt
+        return {
+            **runtime.status(settings.model_dump()).to_dict(),
+            "settings": {
+                "mirror_dir": settings.mirror_dir,
+                "mirror_license_accepted": settings.mirror_license_accepted,
+                "mirror_free_ollama": settings.mirror_free_ollama,
+            },
+            "default_dir": str(runtime.DEFAULT_ROOT),
+            "license": {"notice": runtime.LICENSE_NOTICE, "url": runtime.LICENSE_URL},
+            "download_bytes": sum(f.bytes for f in runtime.MODEL_FILES),
+            "uv_available": shutil.which("uv") is not None,
+            "git_available": shutil.which("git") is not None,
+            "job": self._mirror_job.snapshot(),
+        }
+
+    def update_mirror_settings(
+        self, directory: str | None = None, license_accepted: bool | None = None,
+        free_ollama: bool | None = None,
+    ) -> dict[str, Any]:
+        """Blank directory = default; None = leave unchanged."""
+        if self._mirror_job.running():
+            raise mirror_install.MirrorInstallError(
+                "wait for the running WorldMirror job to finish before changing its settings"
+            )
+        self.apply_settings(mirror_dir=directory, mirror_license_accepted=license_accepted,
+                            mirror_free_ollama=free_ollama)
+        self.start_background_scan()  # (un)advertises world.mirror
+        return self.get_mirror_status()
+
+    def _accepted_mirror_licence(self) -> None:
+        if not self.get_settings().mirror_license_accepted:
+            raise mirror_install.MirrorInstallError("accept the HY-World 2.0 licence first")
+
+    def start_mirror_install(self, force: bool = False) -> dict[str, Any]:
+        self._accepted_mirror_licence()
+        paths = self._mirror_paths()
+        self._mirror_job.start(
+            "install",
+            lambda log, cancelled: mirror_install.install(paths, True, log, force, cancelled),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_mirror_status()
+
+    def run_mirror_doctor(self) -> dict[str, Any]:
+        """Checksums every model file and imports the pipeline: tens of seconds."""
+        if self._mirror_job.running():
+            raise mirror_install.MirrorInstallError("wait for the running WorldMirror job to finish")
+        return mirror_install.doctor(self._mirror_paths(), self.get_settings().mirror_license_accepted)
+
+    def start_mirror_repair(self) -> dict[str, Any]:
+        self._accepted_mirror_licence()
+        paths = self._mirror_paths()
+        self._mirror_job.start(
+            "repair",
+            lambda log, cancelled: mirror_install.repair(paths, True, log, cancelled),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_mirror_status()
+
+    def start_mirror_uninstall(self, remove_models: bool = True) -> dict[str, Any]:
+        paths = self._mirror_paths()
+        self._mirror_job.start(
+            "uninstall",
+            lambda log, _cancelled: mirror_install.uninstall(paths, remove_models, log),
+            on_done=lambda _ok: self.start_background_scan(),
+        )
+        return self.get_mirror_status()
+
+    def cancel_mirror_job(self) -> dict[str, Any]:
+        self._mirror_job.cancel()
+        return self.get_mirror_status()
 
     def check_update(self) -> dict[str, Any]:
         return check_for_update(get_app_version())

@@ -34,6 +34,7 @@ type worldStartRequest struct {
 	Prompt       string   `json:"prompt,omitempty"`
 	Pitch        *float64 `json:"pitch,omitempty"`
 	Seed         *uint64  `json:"seed,omitempty"`
+	Cleanup      *bool    `json:"cleanup,omitempty"`
 }
 
 // worldJob mirrors JobDetailsResponse in routes/worlds.rs. The list endpoint leaves
@@ -197,16 +198,17 @@ type worldRun struct {
 func cmdWorldGenerate(args []string) error {
 	fs := flag.NewFlagSet("world generate", flag.ContinueOnError)
 	out := fs.String("o", "", "output scene (default <input>_world.ply; _2, _3, ... for several inputs)")
-	model := fs.String("model", "", "generator, e.g. sharp, splat or pano360 (default: your most used one that fits)")
+	model := fs.String("model", "", "generator, e.g. sharp, splat, pano360 or mirror (default: your most used one that fits; mirror only by name)")
 	mode := fs.String("mode", "", "projection: auto, perspective or pano (360° input, splat only)")
-	maxWidth := fs.Int("max-width", 0, "splat budget as grid width 256-2048: 1024 suits a Quest, 2048 is full (not sharp)")
-	lean := fs.Float64("lean", 0, "head movement in metres the background layer covers, 0-1 (not sharp)")
-	fov := fs.Float64("fov", 0, "horizontal field of view of the picture in degrees, 20-150")
-	near := fs.Float64("near", 0, "nearest depth in metres, 0.1-20 (not sharp)")
-	far := fs.Float64("far", 0, "farthest depth in metres, 1-1000 (not sharp)")
+	maxWidth := fs.Int("max-width", 0, "splat budget as grid width 256-2048: 1024 suits a Quest, 2048 is full (splat, pano360)")
+	lean := fs.Float64("lean", 0, "head movement in metres the background layer covers, 0-1 (splat, pano360)")
+	fov := fs.Float64("fov", 0, "horizontal field of view of the picture in degrees, 20-150 (not mirror)")
+	near := fs.Float64("near", 0, "nearest depth in metres, 0.1-20 (splat, pano360)")
+	far := fs.Float64("far", 0, "farthest depth in metres, 1-1000 (splat, pano360)")
 	prompt := fs.String("prompt", "", "pano360: what surrounds the picture (default: the prompt that generated it)")
 	pitch := fs.Float64("pitch", 0, "pano360: camera tilt in degrees, -60..60, negative looks down")
 	seed := fs.Uint64("seed", 0, "pano360: seed for the painted surroundings")
+	cleanup := fs.Bool("cleanup", false, "mirror: apply its sky and depth-edge filters")
 	share := fs.Bool("share", false, "also print a login-free viewer link for each finished world")
 	noWait := fs.Bool("no-wait", false, "submit without waiting; print job IDs to stdout")
 	timeout := timeoutFlag(fs)
@@ -243,6 +245,8 @@ func cmdWorldGenerate(args []string) error {
 			options.Pitch = pitch
 		case "seed":
 			options.Seed = seed
+		case "cleanup":
+			options.Cleanup = cleanup
 		}
 	})
 

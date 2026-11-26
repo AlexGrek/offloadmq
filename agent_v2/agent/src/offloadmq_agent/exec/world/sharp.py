@@ -98,6 +98,54 @@ def _tail(text: str, n: int = 12) -> str:
     return "\n".join(text.strip().splitlines()[-n:])
 
 
+def run_runtime(
+    transport: AgentTransport,
+    task_id: TaskId,
+    cmd: list[str],
+    cwd: Path,
+    job_timeout: int | None,
+    label: str,
+) -> None:
+    """Run a model runner in its own venv: heartbeats, cancellation, timeout (None = none), stderr tail."""
+    started = time.monotonic()
+    last = [started]
+
+    def tick() -> None:
+        now = time.monotonic()
+        if job_timeout is not None and now - started > job_timeout:
+            raise TimeoutError(f"{label} exceeded {job_timeout}s")
+        if now - last[0] >= PROGRESS_EVERY_S:  # also the cancellation check (499 → TaskCancelled)
+            last[0] = now
+            report_progress(transport, None, "predicting", task_id)
+
+    proc: dict[str, Any] = {}
+    code = run_process(cmd, cwd, _clean_env(), b"", tick, proc)
+    if code != 0:
+        raise RuntimeError(f"{label} exited with {code}:\n{_tail(proc.get('stderr') or proc.get('stdout', ''))}")
+
+
+def run_sharp(
+    transport: AgentTransport,
+    task_id: TaskId,
+    paths: rt.SharpPaths,
+    image: Path,
+    data_path: Path,
+    job_timeout: int | None,
+    hfov: float = 0.0,
+) -> tuple[dict[str, Any], bytes]:
+    """One SHARP prediction: ``(meta.json, scene PLY)``. ``hfov`` 0 = EXIF / 30 mm."""
+    runner = data_path / "omq_sharp_runner.py"
+    runner.write_text(RUNNER_SOURCE, encoding="utf-8")
+    out_dir = data_path / "sharp_out"
+    cmd = [str(paths.python), str(runner), "--image", str(image), "--out-dir", str(out_dir),
+           "--checkpoint", str(paths.checkpoint)]
+    if hfov:
+        cmd += ["--hfov", f"{hfov:g}"]
+    run_runtime(transport, task_id, cmd, data_path, job_timeout, "SHARP")
+    meta: dict[str, Any] = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+    return meta, (out_dir / "scene.ply").read_bytes()
+
+
 def execute_world_sharp(
     transport: AgentTransport,
     task_id: TaskId,
@@ -131,33 +179,9 @@ def execute_world_sharp(
         hfov = _num(payload, "hfov", 0.0, 20.0, 120.0) if payload.get("hfov") not in (None, "") else 0.0
 
         _free_comfy_vram(transport, task_id)
-        runner = data_path / "omq_sharp_runner.py"
-        runner.write_text(RUNNER_SOURCE, encoding="utf-8")
-        out_dir = data_path / "sharp_out"
-        cmd = [str(paths.python), str(runner), "--image", str(src_path), "--out-dir", str(out_dir),
-               "--checkpoint", str(paths.checkpoint)]
-        if hfov:
-            cmd += ["--hfov", f"{hfov:g}"]
         report_progress(transport, f"SHARP on {sw}x{sh} ({'hfov %g°' % hfov if hfov else 'focal from EXIF / 30 mm'})",
                         "predicting", task_id)
-
-        started = time.monotonic()
-        last = [started]
-
-        def tick() -> None:
-            now = time.monotonic()
-            if now - started > job_timeout:
-                raise TimeoutError(f"SHARP exceeded {job_timeout}s")
-            if now - last[0] >= PROGRESS_EVERY_S:  # also the cancellation check (499 → TaskCancelled)
-                last[0] = now
-                report_progress(transport, None, "predicting", task_id)
-
-        proc: dict[str, Any] = {}
-        code = run_process(cmd, data_path, _clean_env(), b"", tick, proc)
-        if code != 0:
-            raise RuntimeError(f"SHARP exited with {code}:\n{_tail(proc.get('stderr') or proc.get('stdout', ''))}")
-        meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-        ply = (out_dir / "scene.ply").read_bytes()
+        meta, ply = run_sharp(transport, task_id, paths, src_path, data_path, job_timeout, hfov)
 
         t0 = time.monotonic()
         cols = read_vertex_ply(ply)

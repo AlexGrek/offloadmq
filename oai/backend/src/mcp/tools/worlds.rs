@@ -14,7 +14,7 @@ use crate::{
     offload::{LlmCapabilityInfo, task_status::is_terminal},
     services::{
         image_processing, storage,
-        worlds::{self, PANO360_CAPABILITY, SHARP_CAPABILITY, SPLAT_CAPABILITY, ShareLink},
+        worlds::{self, MIRROR_CAPABILITY, PANO360_CAPABILITY, SHARP_CAPABILITY, SPLAT_CAPABILITY, ShareLink},
     },
 };
 
@@ -79,16 +79,17 @@ pub fn definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "image_id": { "type": "string", "description": "An image_id from an earlier result in this account." },
-                    "model": { "type": "string", "description": format!("A generator from list_world_models: {SHARP_CAPABILITY} (solid, perspective pictures), {SPLAT_CAPABILITY} (fast, the only one for 2:1 360° panoramas) or {PANO360_CAPABILITY} (paints any picture out to 360°). Short names (sharp) work.") },
-                    "mode": { "type": "string", "enum": worlds::MODES, "description": "Projection. auto treats a 2:1 picture as a panorama (world.splat only); sharp and pano360 are always perspective." },
-                    "max_width": { "type": "integer", "minimum": 256, "maximum": 2048, "description": "Splat budget as grid width: 1024 (default) suits a Quest headset, 2048 is full detail. Not for world.sharp." },
-                    "fill_lean": { "type": "number", "minimum": 0, "maximum": 1, "description": "Head movement in metres the hidden background layer covers (default 0.25). Not for world.sharp." },
-                    "hfov": { "type": "number", "minimum": 20, "maximum": 150, "description": "Horizontal field of view of the picture in degrees. Default: chosen by the generator." },
-                    "near": { "type": "number", "minimum": 0.1, "maximum": 20, "description": "Nearest depth in metres (default 1.2). Not for world.sharp." },
-                    "far": { "type": "number", "minimum": 1, "maximum": 1000, "description": "Farthest depth in metres (default 50). Not for world.sharp." },
+                    "model": { "type": "string", "description": format!("A generator from list_world_models: {SHARP_CAPABILITY} (solid, perspective pictures), {SPLAT_CAPABILITY} (fast, the only one for 2:1 360° panoramas) or {PANO360_CAPABILITY} (paints any picture out to 360°). {MIRROR_CAPABILITY} is an experimental, licence-restricted comparison generator: use it only when the user asks for it. Short names (sharp) work.") },
+                    "mode": { "type": "string", "enum": worlds::MODES, "description": "Projection. auto treats a 2:1 picture as a panorama (world.splat only); sharp, pano360 and mirror are always perspective." },
+                    "max_width": { "type": "integer", "minimum": 256, "maximum": 2048, "description": "Splat budget as grid width: 1024 (default) suits a Quest headset, 2048 is full detail. Not for world.sharp or world.mirror." },
+                    "fill_lean": { "type": "number", "minimum": 0, "maximum": 1, "description": "Head movement in metres the hidden background layer covers (default 0.25). Not for world.sharp or world.mirror." },
+                    "hfov": { "type": "number", "minimum": 20, "maximum": 150, "description": "Horizontal field of view of the picture in degrees. Default: chosen by the generator. Not for world.mirror." },
+                    "near": { "type": "number", "minimum": 0.1, "maximum": 20, "description": "Nearest depth in metres (default 1.2). Not for world.sharp or world.mirror." },
+                    "far": { "type": "number", "minimum": 1, "maximum": 1000, "description": "Farthest depth in metres (default 50). Not for world.sharp or world.mirror." },
                     "prompt": { "type": "string", "maxLength": worlds::MAX_PROMPT_CHARS, "description": format!("{PANO360_CAPABILITY} only: what surrounds the picture. Default: the prompt that generated the image.") },
                     "pitch": { "type": "number", "minimum": -60, "maximum": 60, "description": format!("{PANO360_CAPABILITY} only: camera tilt in degrees, negative = looking down.") },
                     "seed": { "type": "integer", "minimum": 0, "description": format!("{PANO360_CAPABILITY} only: seed for the painted surroundings.") },
+                    "cleanup": { "type": "boolean", "description": format!("{MIRROR_CAPABILITY} only: its sky and depth-edge filters (default off; they cut out the sky).") },
                     "wait_seconds": wait_schema(DEFAULT_WAIT_SECS),
                 },
                 "required": ["image_id"],
@@ -189,6 +190,7 @@ fn about(base: &str) -> &'static str {
         SHARP_CAPABILITY => "Apple SHARP: solid and metric, perspective pictures only",
         SPLAT_CAPABILITY => "Lotus depth: fast, handles 2:1 360° panoramas",
         PANO360_CAPABILITY => "WorldGen: paints any picture out to a full 360° world (slowest)",
+        MIRROR_CAPABILITY => "WorldMirror 2.0 (experimental): gaps open behind objects when leaning; not licensed in the EU, UK or South Korea",
         _ => "3D world generator",
     }
 }

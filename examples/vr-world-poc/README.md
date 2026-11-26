@@ -142,7 +142,94 @@ Findings:
   speckle. Per-face scale factors (×2.4–×9.4) show Lotus is a weak anchor, especially for
   up/down faces. DA-2 (WorldGen's panoramic depth) would be the real fix.
 
+## WorldMirror 2.0 on a single picture — plan A1 (2026-11-26)
+
+`worldmirror_poc.py` is step A1 of [the quality plan](../../docs/worlds-quality-plan.md):
+Tencent HY-World 2.0's feed-forward model (`HY-WorldMirror-2.0`, 1.2 B) run alone on
+each test picture, compared with the SHARP run of the same `source.png`.
+
+> **Licence.** HY-World 2.0's Community License does **not** apply in the EU, UK or South
+> Korea; using the code, weights *or outputs* there is unlicensed. The operator confirmed
+> this machine is in the licensed territory. Nothing of Tencent's is vendored in the repo.
+
+### Setup (outside the repo, ~11 GB)
+
+```bash
+mkdir -p E:/hyworld-poc && cd E:/hyworld-poc
+git clone --depth 1 --filter=blob:none --sparse https://github.com/Tencent-Hunyuan/HY-World-2.0.git src
+(cd src && git fetch --depth 1 origin df9988efb87bfc0f4947eb3889411cf957478b06 &&
+   git checkout df9988efb87bfc0f4947eb3889411cf957478b06 && git sparse-checkout set hyworld2/worldrecon)
+export UV_CACHE_DIR='E:\hyworld-poc\uv-cache'
+uv venv --python 3.11 venv
+uv pip install --python venv/Scripts/python.exe torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu128
+uv pip install --python venv/Scripts/python.exe numpy==1.26.4 einops safetensors omegaconf \
+    opencv-python-headless==4.10.0.84 pillow plyfile onnxruntime huggingface_hub scipy gsplat==1.5.3 trimesh requests matplotlib tqdm
+venv/Scripts/python.exe -c "from huggingface_hub import snapshot_download as d; d('tencent/HY-World-2.0', allow_patterns=['HY-WorldMirror-2.0/*'], revision='d78a16c91c7a56488894a1c8de4f5c7cc28aa8b0', local_dir=r'E:\hyworld-poc\weights')"
+```
+
+No WSL, ComfyUI nodes or FlashAttention build needed: the only blocker was a hard
+`flash_attn` import, which the script satisfies with a shim over torch's SDPA. The
+official sky mask downloads `skyseg.onnx` (third party, `JianyuanWang/skyseg`) on first use.
+
+### Run
+
+```bash
+cd examples/vr-world-poc
+PY=E:/hyworld-poc/venv/Scripts/python.exe
+$PY worldmirror_poc.py                                            # runs/<scene>-wm (official post-processing)
+$PY worldmirror_poc.py --suffix wm-full --no-sky-mask --no-edge-mask --no-voxel-prune
+uv run serve.py    # then, from oai/e2e, capture.mjs with POC_POSES for each run
+$PY a1_sheets.py   # runs/_capture/a1-<scene>-{a,b}.png (needs the sharp, wm, wm-dense, wm-nosky, wm-noedge, wm-full captures)
+```
+
+Each run keeps the untouched `gaussians.ply` and writes a viewer `scene.ply`: camera-0
+frame, one global scale to SHARP's depth, opacity re-encoded as a 3DGS logit.
+
+### Results (RTX 5070 Ti, official post-processing)
+
+| Scene | Inference / total | Peak VRAM | Splats / PLY (SHARP: 1.18 M / 63 MiB) | HFOV, WM vs SHARP | Scale to SHARP | Depth error, median / p90 | Log-depth corr. |
+|---|---|---|---|---|---|---|---|
+| torii | 0.40 / 1.9 s | 7.8 GiB | 210 k / 11 MiB | 32° / 39° | ×10.7 | 12.0% / 40% | 0.97 |
+| temple | 0.74 / 2.6 s | 9.3 GiB | 288 k / 15 MiB | 47° / 54° | ×6.1 | 3.5% / 8% | 0.89 |
+| courtyard | 0.42 / 1.7 s | 7.8 GiB | 116 k / 6 MiB | 63° / 64° | ×13.5 | 1.7% / 25% | 0.99 |
+| market | 0.54 / 2.2 s | 8.5 GiB | 248 k / 13 MiB | 46° / 60° | ×15.5 | 4.6% / 28% | 0.99 |
+| forest | 0.47 / 1.8 s | 8.1 GiB | 104 k / 6 MiB | 28° / 62° | ×5.3 | **34% / 155%** | 0.90 |
+
+Model load 12–17 s. Depth error compares near-surface depth on a 96×96 image grid after
+one scale factor; SHARP is the reference, not ground truth (neither has EXIF here, so
+SHARP assumed a 30 mm lens).
+
+Findings (Spark renders at the plan's poses):
+
+- **WorldMirror alone does not beat SHARP on any of the five scenes.** It predicts one
+  Gaussian per pixel and nothing behind it, so every lean opens a black silhouette behind
+  foreground objects where SHARP shows plausible (if smeared) background. At 40 cm the
+  silhouettes dominate the temple and forest views.
+- **Geometry inside the frame is close to SHARP** (courtyard, temple, market), weaker on
+  torii, and fails on the foliage/portrait scene.
+- **Not metric.** Depth needs a ×5–15 scale taken from another source.
+- **Specific failures:** forest's face and chainsaw are smeared (90th-percentile splat
+  sigma ~9 px of the 952 px input, several times SHARP's relative to the frame); temple's glowing sun disc sits at 0.76 m instead of ~3 m, in
+  front of the statue.
+- **The official post-processing hurts a single view.** The sky mask deletes the sky
+  (black arch in courtyard); the edge mask draws dark outlines round every depth edge.
+  With both off (`wm-full`) the centre view of torii and market is close to SHARP's.
+- **Upstream quirks:** the PLY stores opacity as a probability, not the 3DGS logit; the
+  voxel merge (and the model's own `prune_gs`) uses the confidence *weight* as opacity and
+  ignores the opacity head (median ~0.18 raw); predicted fx and fy differ by 2–8%, which a
+  square-pixel viewer shows as a slight stretch.
+- **VRAM contention matters.** With a 6 GiB Ollama model also loaded, one inference took
+  98 s instead of 0.4 s (spill to system memory).
+
+Not tested: headset playback and FPS; WorldMirror with several views (its intended use,
+A3.1) or with SHARP's intrinsics as a prior.
+
 ## Productized version
+
+`world.mirror` (agent `exec/world/mirror*.py`, `omq mirror`, GUI **WorldMirror**) runs
+WorldMirror with both masks and the voxel merge off by default (`cleanup` turns them
+on) and takes its scale from SHARP; `omq mirror install` can adopt the directory built
+above (`omq mirror config --dir E:/hyworld-poc`). It is there for headset comparison.
 
 `world.pano360` (agent `exec/world/pano360.py`, `omq pano360`, GUI **360° Worlds**) ships
 the WorldGen path with the fixes above as defaults; OAI `/app/worlds` offers it as

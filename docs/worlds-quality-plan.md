@@ -1,6 +1,6 @@
 # VR Worlds: quality plan
 
-Status: proposal, 2026-11-26. Builds on [VR Worlds](oai-worlds.md), [VR-WORLD.md](../VR-WORLD.md)
+Status: proposal, 2026-11-26. A0 (WorldMirror part) and [A1](#a1-result-2026-11-26) done (and available for headset comparison as the experimental [`world.mirror`](oai-worlds.md#worldmirror-experimental)). Builds on [VR Worlds](oai-worlds.md), [VR-WORLD.md](../VR-WORLD.md)
 and the PoC in [`examples/vr-world-poc/`](../examples/vr-world-poc/README.md).
 
 ## Goal
@@ -73,8 +73,13 @@ signed OAI link: useful lean radius, useful step distance, visible defects, FPS.
 
 ### A0. Environment
 
-1. Read the HY-World 2.0 Community License (the repository LICENSE link returned 404 on
-   2026-11-26). Confirm territory and use terms before downloading weights.
+1. Read the HY-World 2.0 Community License
+   ([License.txt](https://github.com/Tencent-Hunyuan/HY-World-2.0/blob/main/License.txt)).
+   Confirm territory and use terms before downloading weights. **Done:** it excludes the
+   EU, UK and South Korea for the code, weights *and outputs*; elsewhere it is royalty-free
+   under an acceptable-use policy, bars using outputs to improve other models, and needs a
+   separate licence above 1 M monthly users. The operator confirmed this machine is in the
+   licensed territory. Re-check before any deployment or sharing of generated worlds.
 2. Choose the runtime:
    - **ComfyUI route**: install `ComfyUI_HYWorld2` (AHEKOT) into the agent's ComfyUI. It is
      the fastest way to a first result and reuses the GPU the agent already shares.
@@ -89,6 +94,28 @@ signed OAI link: useful lean radius, useful step distance, visible defects, FPS.
 Run WorldMirror 2.0 alone on each test picture and write `gaussians.ply`. This is a cheap
 feed-forward baseline: it shows whether WorldMirror's geometry and Gaussians match SHARP
 inside the frame, which decides how the final composition is built (A3).
+
+#### A1 result (2026-11-26)
+
+Run on all five scenes; numbers and method in the
+[PoC README](../examples/vr-world-poc/README.md#worldmirror-20-on-a-single-picture--plan-a1-2026-11-26).
+
+- Runtime chosen for A1: a private uv venv with the official code (Windows, no WSL, no
+  FlashAttention build). The ComfyUI route is still open for A2's WorldStereo.
+- 0.4–0.7 s inference, 7.8–9.3 GiB peak, provided no other model holds the GPU.
+- Inside the frame, depth matches SHARP within 1.7–4.6% median (courtyard, temple,
+  market) after a global scale; 12% on torii; 34% on the foliage scene.
+- As a world on its own it loses to SHARP on all five: one surface layer (black holes on
+  every lean), not metric, smeared foreground on the foliage scene.
+
+What this means for the next steps:
+
+- **A3:** keep SHARP inside the original frustum (option 3, hybrid). WorldMirror's role is
+  fusing generated views, which A1 did not test.
+- **A2 conditioning:** use SHARP's metric depth for the point cloud, not WorldMirror's.
+- **Composition:** turn the sky and edge masks off or tune them; convert opacity to a
+  logit; check WorldMirror's fx/fy when mixing its cameras with SHARP's.
+- **A5:** the agent must free Ollama as well as ComfyUI memory before a run.
 
 ### A2. WorldStereo 2.0 views on fixed trajectories
 
@@ -196,8 +223,9 @@ good; here the anchor is SHARP itself.
   come from community node documentation, not Tencent. Host RAM matters too: sequential
   offload keeps the weights in system memory.
 - **Windows support.** HY-World 2.0 documents Linux only. WSL2 is the fallback.
-- **Licences.** HY-World 2.0 uses its own community licence (unread). SHARP's checkpoint is
-  already research-only, so this may not change the project's position, but check it.
+- **Licences.** HY-World 2.0's community licence excludes the EU, UK and South Korea,
+  including outputs (see A0). A `world.hyworld` capability would have to state this and
+  stay off by default. SHARP's checkpoint is research-only.
 - **Quest budget.** HY-World composition can emit up to 5 M Gaussians by default. SHARP's
   SH0 PLY is ~56 bytes per splat (63 MiB for 1.18 M), so 2 M ≈ 107 MiB. Measure FPS
   before raising the default.

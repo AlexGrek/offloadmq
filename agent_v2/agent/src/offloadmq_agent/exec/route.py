@@ -52,6 +52,11 @@ def route_executor(cap: str) -> ExecutorFn | None:
 
         return execute_world_pano360
 
+    if cap == "world.mirror":
+        from offloadmq_agent.exec.world.mirror import execute_world_mirror
+
+        return execute_world_mirror
+
     if cap.startswith("world."):
         from offloadmq_agent.exec.world import execute_world_splat
 

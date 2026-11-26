@@ -17,7 +17,7 @@ in the background, and the preview and **Use picture** use the upscaled output.
 
 ## Generators
 
-OAI lists every online `world.*` capability; the agent ships three. They write the
+OAI lists every online `world.*` capability; the agent ships four. They write the
 same output contract (below), so OAI treats them alike.
 
 | Capability | Generator | Best for | Needs on the agent |
@@ -25,6 +25,7 @@ same output contract (below), so OAI treats them alike.
 | `world.splat[ply;preview;pano]` | `lotus-ldi-v1`: Lotus depth → one disc per pixel + stretched background layer | 2:1 panoramas (360°), fast previews | ComfyUI + an img-utils `depth` workflow |
 | `world.sharp[ply;preview;metric]` | `apple-sharp`: Apple SHARP predicts ~1.2 M learned Gaussians at metric scale in one pass | Perspective pictures you lean into — leans and short steps stay solid | The SHARP runtime (`omq sharp install`) |
 | `world.pano360[ply;preview;pano;outpaint]` | `worldgen-flux-pano-v1`: [WorldGen](https://github.com/ZiYang-xie/WorldGen) recipe — FLUX.1-dev + WorldGen's panorama LoRA outpaints the picture into a 360° panorama, then Lotus/LDI splats it | Any perspective picture you want to turn all the way round in | ComfyUI + FLUX.1-dev models + the WorldGen LoRA (`omq pano360 install`) + the img-utils `depth` workflow |
+| `world.mirror[ply;preview;experimental]` | `hy-worldmirror-2.0`: Tencent WorldMirror 2.0, one Gaussian per pixel in a feed-forward pass | Comparing against SHARP in the headset — it did not win on the test pictures | The WorldMirror runtime (`omq mirror install --accept-license`); SHARP for real-world scale |
 
 SHARP only covers what the picture shows (turning past the frame edge shows
 nothing) and rejects `mode=pano`. `world.pano360` keeps the picture straight ahead
@@ -36,6 +37,27 @@ edges when leaning. See [VR-WORLD.md](../VR-WORLD.md) and
 `examples/vr-world-poc/` for the comparison that led to SHARP. The plan for going
 beyond SHARP (HY-World 2.0, SHARP hole filling) is in
 [worlds-quality-plan.md](worlds-quality-plan.md).
+
+### WorldMirror (experimental)
+
+**Licence.** Tencent's HY-World 2.0 Community License does not apply in the European
+Union, the United Kingdom or South Korea: using the code, the weights **or the
+generated worlds** there is unlicensed. That covers where the agent runs, where OAI
+stores the scene and who opens a share link. The capability is off until the operator
+accepts the licence on the agent, and OAI never picks it unless a request names it
+(or sets `cleanup`); it is listed after the other generators.
+
+It runs the picture once (about 2 s of inference after a ~11 s model load, 7.8–9.3 GiB
+of VRAM; the agent first asks ComfyUI and, unless the operator turned it off, Ollama to
+unload; no time limit). It covers only what the
+picture shows, and **nothing exists behind foreground objects**, so leaning opens
+black gaps where SHARP shows a smeared background. Its world is not metric: with the
+SHARP runtime installed the agent also runs SHARP (~20 s) and copies its depth scale
+(`settings.scale_source: "sharp"`); without it the median surface is placed 5 m away
+(`"median"`, and the page says the scale is estimated). The only knob is `cleanup`
+(default off): Tencent's sky and depth-edge masks and voxel merge, which give fewer
+splats but delete the sky and draw dark outlines. Comparison:
+[worlds-quality-plan.md](worlds-quality-plan.md) (A1).
 
 ## Agent and input
 
@@ -63,6 +85,7 @@ The task payload requires `input_image`, a filename in the input bucket. Options
 | `prompt` | the picture's generation prompt, else unset | ≤ 2000 chars | pano360: what surrounds the picture |
 | `pitch` | unset (0°) | −60–60° | pano360: camera tilt, negative = looking down |
 | `seed` | unset (random) | 0–2^53 | pano360: outpaint seed |
+| `cleanup` | unset (off) | bool | mirror: sky / depth-edge masks and voxel merge. mirror rejects `hfov` and the depth knobs |
 
 OAI rejects invalid parameters and omits `hfov`, `prompt`, `pitch` and `seed` unless
 set; the agent clamps numeric values and ignores keys its generator does not use.
@@ -155,6 +178,14 @@ worlds` and the 4 worlds Playwright tests passed. A real task through a local
 OffloadMQ server and an isolated agent (RTX 5070 Ti) completed in 32 s with
 matching download hashes. The full OAI stack, cancellation of a running SHARP
 process and Quest playback were not exercised.
+
+Validation on Windows (2026-11-26), world.mirror: 28 agent tests; the real installer
+and doctor over the A1 download plus a fresh code fetch; the real executor on the five
+A1 pictures (RTX 5070 Ti) reproduced the PoC's splat counts and SHARP scale factors in
+38–44 s each (model load 9–12 s, WorldMirror 2–3 s, SHARP scale ~20 s), and two scenes
+rendered correctly in Spark; `cargo test worlds` and the 9 worlds Playwright tests
+passed. Not exercised: a task through OffloadMQ + OAI end to end, the API itests,
+the agent GUI page in a browser, and headset playback.
 
 Validation on Windows (2026-11-25), world.pano360: 19 agent tests; the real executor
 against ComfyUI (RTX 5070 Ti, FLUX Krea dev fp8) completed a 1080×1920 picture in

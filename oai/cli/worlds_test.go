@@ -119,6 +119,26 @@ func TestWorldGenerateFromImageIDWithOptions(t *testing.T) {
 	}
 }
 
+func TestWorldGenerateMirrorCleanup(t *testing.T) {
+	f := &fakeWorlds{}
+	f.server(t)
+	t.Chdir(t.TempDir())
+	if err := cmdWorld([]string{"generate", "12345", "-model", "mirror", "-cleanup", "--no-wait"}); err != nil {
+		t.Fatal(err)
+	}
+	// Unset, the knob must stay out of the request: the server rejects it for other generators.
+	if err := cmdWorld([]string{"generate", "12345", "-model", "sharp", "--no-wait"}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"capability": "mirror", "input_image_id": "12345", "cleanup": true}
+	if got := f.requests[0]; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("request = %v, want %v", got, want)
+	}
+	if _, sent := f.requests[1]["cleanup"]; sent {
+		t.Fatalf("cleanup sent without the flag: %v", f.requests[1])
+	}
+}
+
 func TestWorldGenerateRejectsBadInputBeforeUploading(t *testing.T) {
 	f := &fakeWorlds{}
 	f.server(t)

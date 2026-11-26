@@ -67,9 +67,9 @@ Usage:
                    [-hard-edges 0..1] [-quality N] [--no-wait] [--progress=false] [-t|-timeout 5m]
   oai bgremove jobs|job|poll|cancel|retry|delete|download   (same shape as img-utils; see README)
   oai world models [-json]
-  oai world generate <image|image-id> [...] [-o out.ply] [-model sharp|splat|pano360]
+  oai world generate <image|image-id> [...] [-o out.ply] [-model sharp|splat|pano360|mirror]
                    [-mode auto|perspective|pano] [-fov DEG] [-max-width N] [-lean M] [-near M]
-                   [-far M] [-prompt TEXT] [-pitch DEG] [-seed N] [-share] [--no-wait]
+                   [-far M] [-prompt TEXT] [-pitch DEG] [-seed N] [-cleanup] [-share] [--no-wait]
                    [--progress=false] [-t|-timeout 5m]
   oai world jobs [-status S[,S]] [-active] [-ids] [-json]
   oai world job|poll <job-id> [-json]

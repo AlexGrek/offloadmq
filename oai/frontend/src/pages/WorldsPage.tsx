@@ -25,6 +25,7 @@ import {
   retryWorldJob,
   shareWorldJob,
   startWorldJob,
+  MIRROR_CAPABILITY,
   PANO360_CAPABILITY,
   SHARP_CAPABILITY,
   worldGeneratorLabel,
@@ -127,6 +128,8 @@ export default function WorldsPage() {
   const [fov, setFov] = useState<number | null>(null)
   const [scenePrompt, setScenePrompt] = useState('')
   const [pitch, setPitch] = useState(0)
+  const [cleanup, setCleanup] = useState(false)
+  const isMirror = capability === MIRROR_CAPABILITY
   const isSharp = capability === SHARP_CAPABILITY
   const isPano360 = capability === PANO360_CAPABILITY
   const budgets = isPano360 ? PANO_BUDGETS : BUDGETS
@@ -163,7 +166,12 @@ export default function WorldsPage() {
     setCapsError(null)
     try {
       const data = await listWorldCapabilities(token)
-      setCapabilities(sortCapabilitiesForPicker(data.capabilities))
+      // The experimental generator goes last so the page never starts on it by itself.
+      setCapabilities(
+        sortCapabilitiesForPicker(data.capabilities).sort(
+          (a, b) => Number(a.base === MIRROR_CAPABILITY) - Number(b.base === MIRROR_CAPABILITY),
+        ),
+      )
       setCapsStatus('ready')
     } catch (e) {
       setCapsError((e as Error).message)
@@ -263,7 +271,9 @@ export default function WorldsPage() {
         input_image_id: inputImage.image_id,
         // SHARP has no projection / budget / lean knobs: it predicts the whole splat.
         // pano360 always extends a perspective picture; the agent makes the panorama.
-        ...(isSharp
+        ...(isMirror
+          ? { mode: 'perspective' as const, ...(cleanup ? { cleanup: true } : {}) }
+          : isSharp
           ? { mode: 'perspective' as const }
           : isPano360
             ? {
@@ -274,7 +284,7 @@ export default function WorldsPage() {
                 ...(pitch !== 0 ? { pitch } : {}),
               }
             : { mode, max_width: maxWidth, fill_lean: fillLean }),
-        ...(fov != null ? { hfov: fov } : {}),
+        ...(fov != null && !isMirror ? { hfov: fov } : {}),
       }),
     )
     if (!res) return
@@ -460,6 +470,12 @@ export default function WorldsPage() {
                         Your picture stays in front of you; FLUX paints the rest of the sphere so you can turn all the
                         way round. About 80 s on the GPU. Not for pictures that are already 360° panoramas.
                       </p>
+                    ) : isMirror ? (
+                      <p className="text-xs text-muted-foreground" data-testid="worlds-generator-hint">
+                        Experimental, for comparison with SHARP: in our tests gaps opened behind objects when
+                        leaning. About 40 s. Tencent&apos;s licence does not cover the EU, the UK or South Korea —
+                        do not use it or its worlds there.
+                      </p>
                     ) : null}
                   </div>
 
@@ -480,6 +496,23 @@ export default function WorldsPage() {
                     {token && <WorldImageGenerator token={token} disabled={busy !== null} onPick={pickStored} />}
                   </div>
 
+                  {isMirror ? (
+                    <label className="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-1 accent-primary"
+                        checked={cleanup}
+                        onChange={e => setCleanup(e.target.checked)}
+                        data-testid="worlds-cleanup"
+                      />
+                      <span>
+                        Clean-up filters
+                        <span className="block text-xs text-muted-foreground">
+                          Tencent&apos;s defaults: fewer splats, but they cut out the sky and outline depth edges.
+                        </span>
+                      </span>
+                    </label>
+                  ) : (
                   <div className="space-y-1.5">
                     <Label htmlFor="worlds-fov">Field of view</Label>
                     <select
@@ -505,6 +538,7 @@ export default function WorldsPage() {
                             : 'Auto: 70°.'}
                     </p>
                   </div>
+                  )}
 
                   {isPano360 ? (
                     <>
@@ -547,7 +581,7 @@ export default function WorldsPage() {
                     </>
                   ) : null}
 
-                  {!isSharp ? (
+                  {!isSharp && !isMirror ? (
                   <>
                   <div className="grid gap-4 sm:grid-cols-2">
                     {!isPano360 ? (
@@ -689,6 +723,7 @@ export default function WorldsPage() {
                             ? ` · depth ${result.depth_range_m[0].toFixed(1)}–${result.depth_range_m[1].toFixed(0)} m`
                             : ''}
                           {typeof result.settings?.hfov === 'number' ? ` · ${Math.round(result.settings.hfov)}° FOV` : ''}
+                          {result.settings?.scale_source === 'median' ? ' · scale estimated (not metric)' : ''}
                           {typeof result.coverage === 'number'
                             ? ` · picture covers ${(result.coverage * 100).toFixed(0)}% of the sphere`
                             : ''}

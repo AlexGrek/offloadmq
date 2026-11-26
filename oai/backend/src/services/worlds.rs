@@ -33,6 +33,9 @@ pub const SHARP_CAPABILITY: &str = "world.sharp";
 /// WorldGen recipe: FLUX outpaints the picture into a 360° panorama, then splats it.
 /// Perspective pictures only (a ready panorama goes to `world.splat`).
 pub const PANO360_CAPABILITY: &str = "world.pano360";
+/// Tencent WorldMirror 2.0 (experimental, licence-restricted): perspective only, predicts its
+/// own camera. Never chosen by the server on its own — a request has to name it.
+pub const MIRROR_CAPABILITY: &str = "world.mirror";
 /// Longest outpaint prompt accepted (the agent truncates at the same length).
 pub const MAX_PROMPT_CHARS: usize = 2000;
 /// Hard cap on a stored scene. The agent's own budget (`max_width` ≤ 2048) keeps
@@ -70,6 +73,9 @@ pub struct WorldParams {
     /// `world.pano360` only: outpaint seed (agent picks one when unset).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
+    /// `world.mirror` only: Tencent's sky / depth-edge masks and voxel merge (agent default off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup: Option<bool>,
 }
 
 /// Raw, optional request knobs — everything defaults.
@@ -84,6 +90,7 @@ pub struct WorldParamsInput {
     pub prompt: Option<String>,
     pub pitch: Option<f64>,
     pub seed: Option<u64>,
+    pub cleanup: Option<bool>,
 }
 
 fn in_range(name: &str, v: f64, lo: f64, hi: f64) -> Result<f64, AppError> {
@@ -131,6 +138,7 @@ impl WorldParamsInput {
             prompt,
             pitch: self.pitch.map(|v| in_range("pitch", v, -60.0, 60.0)).transpose()?,
             seed: self.seed,
+            cleanup: self.cleanup,
         })
     }
 }
@@ -304,11 +312,17 @@ pub async fn list_capabilities(state: &AppState, user_id: i64) -> Result<Vec<Llm
 }
 
 /// Stamps `usage_count` from the recent runs and sorts most used first, then by name.
+/// The experimental `world.mirror` is always listed last, so no client defaults to it.
 fn rank_by_usage(mut caps: Vec<LlmCapabilityInfo>, recent: &[String]) -> Vec<LlmCapabilityInfo> {
     for cap in &mut caps {
         cap.usage_count = recent.iter().filter(|r| **r == cap.base).count() as u32;
     }
-    caps.sort_by(|a, b| b.usage_count.cmp(&a.usage_count).then_with(|| a.base.cmp(&b.base)));
+    caps.sort_by(|a, b| {
+        (a.base == MIRROR_CAPABILITY)
+            .cmp(&(b.base == MIRROR_CAPABILITY))
+            .then_with(|| b.usage_count.cmp(&a.usage_count))
+            .then_with(|| a.base.cmp(&b.base))
+    });
     caps
 }
 
@@ -317,7 +331,7 @@ fn has_outpaint_knobs(p: &WorldParamsInput) -> bool {
     p.prompt.as_deref().is_some_and(|s| !s.trim().is_empty()) || p.pitch.is_some() || p.seed.is_some()
 }
 
-/// Knobs of the depth splat, which `world.sharp` has no use for.
+/// Knobs of the depth splat, which `world.sharp` and `world.mirror` have no use for.
 fn has_depth_knobs(p: &WorldParamsInput) -> bool {
     p.max_width.is_some() || p.fill_lean.is_some() || p.near.is_some() || p.far.is_some()
 }
@@ -328,7 +342,8 @@ fn is_panorama(width: i32, height: i32) -> bool {
 }
 
 /// The generator for a request that names none: the first of `caps` (most used first)
-/// that can honour the knobs and the picture's shape.
+/// that can honour the knobs and the picture's shape. `world.mirror` is picked only for
+/// its own knob.
 fn pick_default<'a>(
     caps: &'a [LlmCapabilityInfo],
     params: &WorldParamsInput,
@@ -340,6 +355,9 @@ fn pick_default<'a>(
         find(base).ok_or_else(|| AppError::BadRequest(format!("{why} needs {base}, which is not online")))
     };
     let mode = params.mode.as_deref().map(str::trim).unwrap_or("");
+    if params.cleanup.is_some() {
+        return require(MIRROR_CAPABILITY, "cleanup");
+    }
     if has_outpaint_knobs(params) {
         return require(PANO360_CAPABILITY, "prompt/pitch/seed");
     }
@@ -353,21 +371,38 @@ fn pick_default<'a>(
         return Ok(splat);
     }
     caps.iter()
-        .find(|c| !(has_depth_knobs(params) && c.base == SHARP_CAPABILITY))
+        .find(|c| c.base != MIRROR_CAPABILITY && !(has_depth_knobs(params) && c.base == SHARP_CAPABILITY))
         .map(|c| c.base.as_str())
         .ok_or_else(|| AppError::BadRequest("no online agent can build this world".into()))
 }
 
+/// Generators that cannot take a ready 360° panorama.
+fn is_perspective_only(capability: &str) -> bool {
+    [SHARP_CAPABILITY, PANO360_CAPABILITY, MIRROR_CAPABILITY].contains(&capability)
+}
+
 /// Rejects knobs the chosen generator would silently ignore, and fills in the only
-/// projection `world.sharp` and `world.pano360` support.
+/// projection the perspective-only generators support.
 fn fit_params(capability: &str, mut params: WorldParamsInput) -> Result<WorldParamsInput, AppError> {
-    let perspective_only = capability == SHARP_CAPABILITY || capability == PANO360_CAPABILITY;
-    if has_outpaint_knobs(&params) && (capability == SHARP_CAPABILITY || capability == SPLAT_CAPABILITY) {
+    let perspective_only = is_perspective_only(capability);
+    if has_outpaint_knobs(&params)
+        && [SHARP_CAPABILITY, SPLAT_CAPABILITY, MIRROR_CAPABILITY].contains(&capability)
+    {
         return Err(AppError::BadRequest(format!("prompt, pitch and seed apply to {PANO360_CAPABILITY} only")));
     }
-    if capability == SHARP_CAPABILITY && has_depth_knobs(&params) {
+    if params.cleanup.is_some()
+        && [SHARP_CAPABILITY, SPLAT_CAPABILITY, PANO360_CAPABILITY].contains(&capability)
+    {
+        return Err(AppError::BadRequest(format!("cleanup applies to {MIRROR_CAPABILITY} only")));
+    }
+    if (capability == SHARP_CAPABILITY || capability == MIRROR_CAPABILITY) && has_depth_knobs(&params) {
         return Err(AppError::BadRequest(format!(
-            "max_width, fill_lean, near and far do not apply to {SHARP_CAPABILITY}"
+            "max_width, fill_lean, near and far do not apply to {capability}"
+        )));
+    }
+    if capability == MIRROR_CAPABILITY && params.hfov.is_some() {
+        return Err(AppError::BadRequest(format!(
+            "hfov does not apply to {MIRROR_CAPABILITY}: it predicts the camera itself"
         )));
     }
     if perspective_only && params.mode.as_deref().is_none_or(|m| matches!(m.trim(), "" | "auto")) {
@@ -414,7 +449,7 @@ pub async fn start_job(state: &AppState, user_id: i64, params: StartJobParams) -
         return Err(AppError::BadRequest(format!("capability must start with `{CAPABILITY_PREFIX}`")));
     }
     let mut world_params = params.params.normalize()?;
-    if (capability == SHARP_CAPABILITY || capability == PANO360_CAPABILITY) && world_params.mode == "pano" {
+    if is_perspective_only(&capability) && world_params.mode == "pano" {
         return Err(AppError::BadRequest(format!(
             "{capability} handles perspective pictures only; use world.splat for 360° panoramas"
         )));
@@ -524,6 +559,7 @@ pub async fn retry_job(state: &AppState, user_id: i64, job_id: i64) -> Result<i6
                 prompt: p.as_ref().and_then(|p| p.prompt.clone()),
                 pitch: p.as_ref().and_then(|p| p.pitch),
                 seed: p.as_ref().and_then(|p| p.seed),
+                cleanup: p.as_ref().and_then(|p| p.cleanup),
             },
         },
     )
@@ -647,7 +683,8 @@ mod tests {
                 far: 50.0,
                 prompt: None,
                 pitch: None,
-                seed: None
+                seed: None,
+                cleanup: None
             }
         );
         // No hfov in the agent payload unless chosen: each generator has its own default.
@@ -759,6 +796,33 @@ mod tests {
         let pano = WorldParamsInput { mode: Some("pano".into()), ..Default::default() };
         assert!(pick_default(&caps(&["world.sharp"]), &pano, 100, 100).is_err());
         assert!(pick_default(&[], &Default::default(), 100, 100).is_err());
+    }
+
+    #[test]
+    fn mirror_is_explicit_only_and_takes_its_own_knob() {
+        let recent = ["world.mirror", "world.mirror", "world.splat"].map(String::from);
+        let ranked = rank_by_usage(caps(&["world.mirror", "world.sharp", "world.splat"]), &recent);
+        let got: Vec<&str> = ranked.iter().map(|c| c.base.as_str()).collect();
+        assert_eq!(got, ["world.splat", "world.sharp", "world.mirror"]);
+
+        let all = caps(&["world.mirror", "world.sharp"]);
+        let pick = |p: WorldParamsInput| pick_default(&all, &p, 1024, 1024).map(str::to_string);
+        assert_eq!(pick(Default::default()).unwrap(), "world.sharp");
+        let cleanup = WorldParamsInput { cleanup: Some(true), ..Default::default() };
+        assert_eq!(pick(cleanup.clone()).unwrap(), "world.mirror");
+        assert!(pick_default(&caps(&["world.mirror"]), &Default::default(), 100, 100).is_err());
+
+        let fitted = fit_params(MIRROR_CAPABILITY, cleanup.clone()).unwrap();
+        assert_eq!(fitted.mode.as_deref(), Some("perspective"));
+        assert_eq!(serde_json::to_value(fitted.normalize().unwrap()).unwrap()["cleanup"], true);
+        assert!(fit_params(SHARP_CAPABILITY, cleanup).is_err());
+        for knob in [
+            WorldParamsInput { hfov: Some(60.0), ..Default::default() },
+            WorldParamsInput { max_width: Some(1024), ..Default::default() },
+            WorldParamsInput { seed: Some(1), ..Default::default() },
+        ] {
+            assert!(fit_params(MIRROR_CAPABILITY, knob).is_err());
+        }
     }
 
     #[test]

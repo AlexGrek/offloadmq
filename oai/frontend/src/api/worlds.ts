@@ -6,18 +6,21 @@ import type { UploadedImage } from './images'
 /**
  * VR Worlds — a library image turned into a Gaussian-splat world.
  * Generators: `world.splat` (Lotus depth → per-pixel splats, 360° panoramas),
- * `world.sharp` (Apple SHARP learned splat, perspective only, solid when leaning) and
- * `world.pano360` (WorldGen recipe: FLUX outpaints the picture into a 360° panorama).
+ * `world.sharp` (Apple SHARP learned splat, perspective only, solid when leaning),
+ * `world.pano360` (WorldGen recipe: FLUX outpaints the picture into a 360° panorama) and
+ * `world.mirror` (experimental Tencent WorldMirror 2.0, perspective only).
  */
 
 export const SHARP_CAPABILITY = 'world.sharp'
 export const PANO360_CAPABILITY = 'world.pano360'
+export const MIRROR_CAPABILITY = 'world.mirror'
 
 /** One-line description of a world generator for the picker. */
 export function worldGeneratorLabel(base: string): string {
   if (base === 'world.sharp') return 'Apple SHARP — solid, metric (perspective only)'
   if (base === 'world.splat') return 'Lotus depth — fast, 360° panoramas'
   if (base === 'world.pano360') return 'WorldGen 360° — extends any picture all around you'
+  if (base === 'world.mirror') return 'WorldMirror 2.0 — experimental, for comparison'
   return base
 }
 
@@ -44,6 +47,8 @@ export interface WorldParams {
   pitch?: number
   /** `world.pano360`: outpaint seed. */
   seed?: number
+  /** `world.mirror`: apply its sky and depth-edge filters. */
+  cleanup?: boolean
 }
 
 /** Agent summary stored on completion (see docs/oai-worlds.md). */

@@ -260,6 +260,23 @@ def check_world_sharp() -> CapResult:
     return CapResult([WORLD_SHARP_CAP], True, "world.sharp", st.describe())
 
 
+WORLD_MIRROR_CAP = "world.mirror[ply;preview;experimental]"
+
+
+def check_world_mirror() -> CapResult:
+    """``world.mirror``: image → Tencent WorldMirror 2.0 splat (experimental).
+
+    Off until the HY-World 2.0 licence is accepted *and* ``omq mirror install``
+    (or the GUI) has built the runtime. File checks only.
+    """
+    from offloadmq_agent.exec.world.mirror_runtime import status
+
+    st = status()
+    if not st.ready:
+        return CapResult([], False, "world.mirror", st.describe())
+    return CapResult([WORLD_MIRROR_CAP], True, "world.mirror", st.describe())
+
+
 # Namespaced capability prefixes that live in a subdirectory of workflows/.
 _NAMESPACED_CAP_PREFIXES = ("txt2music", "img-utils")
 
@@ -454,6 +471,7 @@ _CHECKS: List[Callable[[], CapResult]] = [
     check_world_splat,
     check_world_pano360,
     check_world_sharp,
+    check_world_mirror,
     check_custom_caps,
     check_onnx,
     check_ollama,

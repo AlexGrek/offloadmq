@@ -7,6 +7,7 @@ import { KokoroPage } from "@/pages/KokoroPage";
 import { SharpPage } from "@/pages/SharpPage";
 import { BgRemovePage } from "@/pages/BgRemovePage";
 import { Pano360Page } from "@/pages/Pano360Page";
+import { MirrorPage } from "@/pages/MirrorPage";
 import { OllamaPage } from "@/pages/OllamaPage";
 import { ConfigPage } from "@/pages/ConfigPage";
 import { ConnectionPage } from "@/pages/ConnectionPage";
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="kokoro" element={<KokoroPage />} />
         <Route path="sharp" element={<SharpPage />} />
         <Route path="pano360" element={<Pano360Page />} />
+        <Route path="mirror" element={<MirrorPage />} />
         <Route path="bgremove" element={<BgRemovePage />} />
         <Route path="system" element={<SystemPage />} />
         <Route path="logs" element={<LogsPage />} />

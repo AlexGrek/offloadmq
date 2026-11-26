@@ -228,6 +228,7 @@ Job management mirrors the Image Tools history sidebar: `img-utils jobs` (`-stat
 | `sharp` | Apple SHARP: solid, real-world scale, perspective pictures only |
 | `splat` | Lotus depth: fast; the only one that takes a 2:1 360° panorama |
 | `pano360` | Paints any picture out to a full 360° world (about 80 s on the GPU) |
+| `mirror` | Experimental WorldMirror 2.0: only used when named. `-cleanup` applies its sky/edge filters. Not licensed in the EU, UK or South Korea |
 
 | Option | Applies to | Meaning |
 |---|---|---|

@@ -687,6 +687,134 @@ def pano360_uninstall(yes: bool = typer.Option(False, "--yes", "-y", help="Do no
 
 
 # ------------------------------------------------------------------
+# mirror
+# ------------------------------------------------------------------
+
+
+mirror_app = typer.Typer(
+    help="world.mirror (Tencent WorldMirror 2.0, experimental). Off until its licence is accepted."
+)
+app.add_typer(mirror_app, name="mirror")
+
+
+@mirror_app.command("status")
+def mirror_status() -> None:
+    """Show where WorldMirror lives and whether it is installed (fast; no imports)."""
+    from offloadmq_core.mirror_install import rt
+
+    st = rt.status(_orch().get_settings().model_dump())
+    _plain(st.describe())
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Item")
+    table.add_column("State")
+    table.add_row("directory", str(st.paths.root))
+    table.add_row("licence", "accepted" if st.license_accepted else "not accepted")
+    table.add_row("unload Ollama", "yes" if rt.free_ollama(_orch().get_settings().model_dump()) else "no")
+    table.add_row("venv", "present" if st.has_venv else "missing")
+    table.add_row("code", "present" if st.has_code else "missing")
+    table.add_row("model", f"{st.model_bytes / 2**30:.2f} GiB" + ("" if st.has_model else " (incomplete)"))
+    console.print(table)
+    if not st.ready:
+        raise typer.Exit(1)
+
+
+@mirror_app.command("config")
+def mirror_config(
+    directory: Optional[str] = typer.Option(None, "--dir", help="Runtime directory ('' = default)"),
+    accept: Optional[bool] = typer.Option(
+        None, "--accept-license/--revoke-license", help="Accept or withdraw the HY-World 2.0 licence"
+    ),
+    free_ollama: Optional[bool] = typer.Option(
+        None, "--free-ollama/--keep-ollama",
+        help="Unload Ollama's models before each run (default on; off keeps chat models loaded)",
+    ),
+) -> None:
+    """Set the directory, the licence acceptance or Ollama unloading. Unset options stay as they are."""
+    from offloadmq_core.mirror_install import rt
+
+    if accept:
+        _plain(f"{rt.LICENSE_NOTICE} {rt.LICENSE_URL}")
+    _orch().update_settings(mirror_dir=directory, mirror_license_accepted=accept, mirror_free_ollama=free_ollama)
+    mirror_status()
+
+
+@mirror_app.command("install")
+def mirror_install(
+    accept: bool = typer.Option(
+        False, "--accept-license",
+        help="Confirm you may use HY-World 2.0 where you are (not the EU, UK or South Korea) and accept its licence",
+    ),
+    force: bool = typer.Option(False, "--force", help="Rebuild the venv from scratch"),
+) -> None:
+    """Build the venv, fetch the pinned code and download the 4.9 GiB of models."""
+    from offloadmq_core.mirror_install import MirrorInstallError, MirrorPaths, install, rt
+
+    orch = _orch()
+    if accept:
+        orch.update_settings(mirror_license_accepted=True)
+    settings = orch.get_settings()
+    if not settings.mirror_license_accepted:
+        _plain(f"{rt.LICENSE_NOTICE} {rt.LICENSE_URL}")
+        console.print("[yellow]Re-run with --accept-license if that applies to you.[/yellow]")
+        raise typer.Exit(1)
+    try:
+        install(MirrorPaths.from_settings(settings.model_dump()), True, log=_plain, force=force)
+    except (MirrorInstallError, OSError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print("[green]Done.[/green] Restart or rescan the agent to advertise world.mirror.")
+
+
+@mirror_app.command("doctor")
+def mirror_doctor(fix: bool = typer.Option(False, "--fix", help="Install whatever is missing or broken")) -> None:
+    """Verify checksums, the code revision, torch/CUDA and the pipeline import."""
+    from offloadmq_core.mirror_install import MirrorInstallError, MirrorPaths, doctor, repair
+
+    settings = _orch().get_settings()
+    paths = MirrorPaths.from_settings(settings.model_dump())
+    accepted = settings.mirror_license_accepted
+    if fix and not accepted:
+        console.print("[red]Accept the licence first: omq mirror install --accept-license[/red]")
+        raise typer.Exit(1)
+    try:
+        report = repair(paths, accepted, log=_plain) if fix else doctor(paths, accepted)
+    except (MirrorInstallError, OSError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    if not fix:
+        for c in report["checks"]:
+            mark = "[green]ok[/green]  " if c["ok"] else "[red]FAIL[/red]"
+            console.print(f"{mark} {c['name']}: ", end="")
+            _plain(c["detail"])
+    if report["ok"]:
+        console.print("[green]world.mirror is healthy.[/green]")
+        return
+    if not fix and report["action"] and accepted:
+        console.print(f"[yellow]Run `omq mirror doctor --fix` to {report['action']}.[/yellow]")
+    raise typer.Exit(1)
+
+
+@mirror_app.command("uninstall")
+def mirror_uninstall(
+    keep_models: bool = typer.Option(False, "--keep-models", help="Keep the downloaded weights"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation"),
+) -> None:
+    """Delete the venv, the code and (unless --keep-models) the weights."""
+    from offloadmq_core.mirror_install import MirrorInstallError, MirrorPaths, uninstall
+
+    paths = MirrorPaths.from_settings(_orch().get_settings().model_dump())
+    what = "venv and code" if keep_models else "venv, code and models"
+    if not yes and not typer.confirm(f"Delete the WorldMirror {what} in {paths.root}?"):
+        raise typer.Exit(1)
+    try:
+        uninstall(paths, not keep_models, log=_plain)
+    except (MirrorInstallError, OSError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print("[green]Done.[/green] Restart or rescan the agent to stop advertising world.mirror.")
+
+
+# ------------------------------------------------------------------
 # config
 # ------------------------------------------------------------------
 

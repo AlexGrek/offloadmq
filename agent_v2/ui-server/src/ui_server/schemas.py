@@ -124,6 +124,21 @@ class Pano360InstallPayload(BaseModel):
     force: bool = False
 
 
+class MirrorSettingsPayload(BaseModel):
+    # None = leave unchanged; "" = default directory.
+    mirror_dir: str | None = None
+    mirror_license_accepted: bool | None = None
+    mirror_free_ollama: bool | None = None
+
+
+class MirrorInstallPayload(BaseModel):
+    force: bool = False
+
+
+class MirrorUninstallPayload(BaseModel):
+    remove_models: bool = True
+
+
 class WorkflowAddPayload(BaseModel):
     workflow_name: str
     task_type: str

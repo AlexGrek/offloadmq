@@ -801,3 +801,35 @@ Settings: `pano360_unet`, `pano360_clip_l`, `pano360_t5`, `pano360_vae`,
 `task pano360:doctor [FIX=1]`, `task pano360:uninstall` in `agent_v2/`. On an RTX 5070 Ti
 a task takes ~80 s (outpaint ~40 s, seam ~30 s, depth + splat ~6 s) and yields ~1.2 M
 splats / ~78 MiB at `max_width` 1536.
+
+## world.mirror — WorldMirror 2.0 splats (experimental)
+
+Tencent HY-World 2.0's feed-forward model turns one perspective picture into a splat
+world. Advertised as `world.mirror[ply;preview;experimental]`. Behaviour, payload and
+how it compares with SHARP: [VR Worlds](oai-worlds.md#worldmirror-experimental).
+
+**Off by default.** The [HY-World 2.0 Community License](https://github.com/Tencent-Hunyuan/HY-World-2.0/blob/main/License.txt)
+does not apply in the European Union, the United Kingdom or South Korea, so using the
+code, the weights or the generated worlds there is unlicensed. Nothing is installed or
+advertised until the operator accepts it (`mirror_license_accepted`). Nothing of
+Tencent's ships with the agent: the install fetches it from the publishers.
+
+Needs an NVIDIA GPU (7.8–9.3 GiB VRAM), `uv`, `git`, ~6 GB for the venv and 4.9 GiB of
+models. Before each run the agent asks ComfyUI to unload, and Ollama too unless
+`mirror_free_ollama` is off (a loaded LLM pushes WorldMirror out of VRAM; turn it off
+when the agent also serves chat). Runs have no time limit; cancelling the task stops
+them. Install SHARP too: without it the world's scale is only estimated.
+
+| CLI | GUI (**WorldMirror**) | Does |
+|---|---|---|
+| `omq mirror status` | Status card | Directory, licence, venv, code, model (no imports) |
+| `omq mirror config --dir D --accept-license/--revoke-license --free-ollama/--keep-ollama` | Licence, GPU memory + Location cards | Set the directory (`''` = default), the licence acceptance or Ollama unloading |
+| `omq mirror install --accept-license [--force]` | Install / Reinstall | venv with CUDA torch, sparse checkout at a pinned commit, sha256-verified downloads |
+| `omq mirror doctor [--fix]` | Doctor / Repair | Licence, tools, code digest, model checksums, torch + CUDA, pipeline import |
+| `omq mirror uninstall [--keep-models] [-y]` | Uninstall | Delete the venv, code and models; other files in the directory stay |
+
+Settings: `mirror_dir` (blank = `~/.offload-agent/mirror`; holds `venv/`, `src/`,
+`weights/`, `skyseg.onnx`, `uv-cache/`), `mirror_license_accepted`, `mirror_free_ollama`
+(default on). From a checkout:
+`task mirror:install ACCEPT=1`, `task mirror:doctor [FIX=1]`, `task mirror:uninstall`
+in `agent_v2/`.

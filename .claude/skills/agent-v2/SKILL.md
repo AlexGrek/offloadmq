@@ -139,7 +139,7 @@ worker threads.
 | `txt2music` | `exec/musicgen/` |
 | `onnx.bgremove.*` | `exec/bgremove.py` — background removal (IS-Net anime, BiRefNet); takes `output_bucket`; routed **before** generic `onnx.`; models in `onnx_models.ONNX_MODEL_REGISTRY` as `bgremove-*`, preprocessing in `MODEL_SPECS`. Contract: `docs/bgremove-api.md` |
 | `onnx` | `exec/onnx.py` |
-| `world.splat` / `world.sharp` / `world.pano360` | `exec/world/` — `executor.py` + `splat.py` (Lotus/LDI), `sharp*.py` (Apple SHARP venv), `pano360*.py` (FLUX + WorldGen LoRA outpaint → 360°). Contract: `docs/oai-worlds.md` |
+| `world.splat` / `world.sharp` / `world.pano360` / `world.mirror` | `exec/world/` — `executor.py` + `splat.py` (Lotus/LDI), `sharp*.py` (Apple SHARP venv), `pano360*.py` (FLUX + WorldGen LoRA outpaint → 360°), `mirror*.py` (WorldMirror 2.0, licence-gated). Contract: `docs/oai-worlds.md` |
 | `custom` | `exec/custom.py` |
 | `slavemode` | `exec/slavemode.py` |
 | `tts` | `exec/tts.py` (`tts.kokoro`) |
@@ -293,6 +293,7 @@ Library only. `create_app(orchestrator)` injects orchestrator into routes.
 | `routes/sharp.py` | `/sharp/*` — SHARP runtime (world.sharp): status/settings/install/doctor/repair/uninstall/cancel |
 | `routes/bgremove.py` | `/bgremove/*` — background-removal models (onnx.bgremove.*): same verbs as `/sharp/*` |
 | `routes/pano360.py` | `/pano360/*` — world.pano360 (FLUX models in ComfyUI + WorldGen LoRA): same verbs |
+| `routes/mirror.py` | `/mirror/*` — world.mirror (WorldMirror 2.0 runtime, licence-gated): same verbs |
 | `routes/system.py` | `/system/*`, `/update/*` — sysinfo, self-update, OS startup/keep-awake/systemd |
 | `server.py` | SPA mount + startup autostart/background scan |
 
@@ -309,7 +310,7 @@ dependency graph above).
 **Parity:** `/custom/*`, `/comfy/*`, `/system/info`, `/system/win-startup`, `/system/mac-startup`,
 `/system/install-systemd`, `/update/check`, `/update/download`
 
-**Feature runtimes:** `/sharp/*`, `/bgremove/*`, `/pano360/*` — `status`, `settings`, `install`,
+**Feature runtimes:** `/sharp/*`, `/bgremove/*`, `/pano360/*`, `/mirror/*` — `status`, `settings`, `install`,
 `doctor`, `repair`, `uninstall`, `cancel` (background job, log tail in `status`)
 
 ### React frontend
@@ -330,6 +331,7 @@ Stack: React 19 · Vite 6 · react-router 7 · Tailwind v4 · shadcn/ui · TypeS
 | `/sharp` | 3D Worlds — SHARP install/doctor/locations |
 | `/bgremove` | Background removal — models, doctor, device/threads |
 | `/pano360` | 360° Worlds — FLUX model picks, WorldGen LoRA install/doctor |
+| `/mirror` | WorldMirror — licence acceptance, install/doctor, directory |
 | `/system` | Sysinfo, updater, webui port, OS startup |
 | `/logs` | Global agent log tail |
 | `/config` | Raw JSON editor |
@@ -351,6 +353,7 @@ omq comfy list | export <[ns.]name> [-o FILE|-] | import FILE [--name N --namesp
 omq sharp status | config | install [--force] | doctor [--fix] | uninstall
 omq bgremove status | config [--device --threads --keep-loaded --models-dir] | install [MODEL…|--all] [--force] | doctor [--fix] | uninstall [MODEL…]
 omq pano360 status | config [--unet --clip-l --t5 --vae --lora-dir] | install [--force] | doctor [--fix] | uninstall
+omq mirror status | config [--dir --accept-license/--revoke-license --free-ollama/--keep-ollama] | install [--accept-license --force] | doctor [--fix] | uninstall
 omq config show | set ...
 omq update [--check|--rollback]
 ```

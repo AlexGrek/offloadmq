@@ -68,6 +68,15 @@ class Settings(BaseModel):
     pano360_vae: str = ""
     pano360_lora_dir: str = ""
 
+    # world.mirror (Tencent WorldMirror 2.0, experimental) — installed on demand (omq mirror
+    # install / GUI). Blank dir = ~/.offload-agent/mirror. The HY-World 2.0 licence excludes
+    # the EU, UK and South Korea, so nothing is installed or advertised until it is accepted.
+    mirror_dir: str = ""
+    mirror_license_accepted: bool = False
+    # Unload every Ollama model before a run: a loaded LLM pushes WorldMirror out of VRAM
+    # (98 s instead of 0.4 s in A1). Turn off when the agent also serves chat.
+    mirror_free_ollama: bool = True
+
     # ONNX models (onnx.nudenet, onnx.bgremove.*) — downloaded on demand. Blank = ~/.offload-agent/onnx-models.
     onnx_models_dir: str = ""
     # Background removal (onnx.bgremove.*) — omq bgremove config / GUI.
@@ -118,6 +127,7 @@ class Settings(BaseModel):
         "pano360_t5",
         "pano360_vae",
         "pano360_lora_dir",
+        "mirror_dir",
         mode="before",
     )
     @classmethod
