@@ -252,3 +252,37 @@ test('background removal jobs show in the progress drawer', async ({ page }) => 
     'Remove background',
   )
 })
+
+for (const [status, phase] of [['running', 'determinate'], ['pending', 'indeterminate']] as const) {
+  test(`win98 theme draws a ${phase} progress bar as navy blocks in a sunken well`, async ({ page }) => {
+    await mockApi(page, { status })
+    await page.addInitScript(() => localStorage.setItem('oai_theme', 'win98'))
+    await page.goto('/app/bg-remover')
+
+    await page.getByTestId('bgremover-input-file-input').setInputFiles([file('hero.png')])
+    await page.getByTestId('bgremover-submit').click()
+
+    const bar = page.getByTestId('imggen-progress-bar')
+    await expect(bar).toHaveAttribute('data-progress-phase', phase)
+    const look = await bar.evaluate(el => {
+      const track = el.querySelector<HTMLElement>('[data-slot="job-progress-track"]')!
+      const blocks = el.querySelector<HTMLElement>('[data-slot="job-progress-fill"], [data-slot="job-progress-sweep"]')!
+      const t = getComputedStyle(track)
+      return {
+        height: t.height,
+        radius: t.borderTopLeftRadius,
+        bevel: getComputedStyle(track, '::after').boxShadow,
+        background: getComputedStyle(blocks).backgroundImage,
+        width: blocks.getBoundingClientRect().width,
+      }
+    })
+    expect(look.height).toBe('20px')
+    expect(look.radius).toBe('0px')
+    expect(look.bevel).toContain('inset')
+    expect(look.background).toContain('repeating-linear-gradient')
+    // Blocks are 10px + 2px gap: the run is always a whole number of them.
+    expect(look.width % 12).toBe(0)
+    expect(look.width).toBeGreaterThan(0)
+    await bar.screenshot({ path: `/tmp/win98-progress-${phase}.png` })
+  })
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { imageJobIsExecuting, imageJobStatusLabel } from '@/lib/imggen'
@@ -14,6 +14,10 @@ import { imageJobIsExecuting, imageJobStatusLabel } from '@/lib/imggen'
  * server first sees `starting`/`running`). While the task is still queued or
  * waiting for an agent, it shows an indeterminate "waiting" shimmer instead of
  * a misleading filling bar.
+ *
+ * Styled themes restyle it through `data-slot` hooks: `job-progress` (root, carries
+ * `data-overrun`), `job-progress-readout`, `job-progress-track`, `job-progress-fill`
+ * (exposes `--job-progress`, the visible fill as a percentage) and `job-progress-sweep`.
  */
 
 const STATUS_LABEL: Record<string, string> = {
@@ -117,6 +121,8 @@ export function JobProgressBar({
     <div
       className={cn('w-full max-w-md space-y-1.5', className)}
       data-testid="imggen-progress-bar"
+      data-slot="job-progress"
+      data-overrun={overrun || undefined}
       data-progress-phase={determinate ? 'determinate' : 'indeterminate'}
       role="progressbar"
       aria-valuemin={0}
@@ -135,6 +141,7 @@ export function JobProgressBar({
         </span>
         {readout ? (
           <span
+            data-slot="job-progress-readout"
             className={cn(
               'shrink-0 tabular-nums font-medium',
               overrun ? 'text-amber-500' : 'text-muted-foreground',
@@ -145,20 +152,31 @@ export function JobProgressBar({
         ) : null}
       </div>
 
-      <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
+      <div
+        data-slot="job-progress-track"
+        className="relative h-2 w-full overflow-hidden rounded-full bg-muted"
+      >
         {determinate ? (
           <div
+            data-slot="job-progress-fill"
             className={cn(
               'h-full rounded-full bg-gradient-to-r transition-[width] duration-500 ease-linear',
               overrun
                 ? 'from-amber-400 to-amber-500'
                 : 'from-primary/70 to-primary',
             )}
-            style={{ width: `${overrun ? 100 : displayPct}%` }}
+            // `--job-progress` lets styled themes re-derive the width (win98 snaps it to whole blocks).
+            style={
+              {
+                width: `${overrun ? 100 : displayPct}%`,
+                '--job-progress': `${overrun ? 100 : displayPct}%`,
+              } as CSSProperties
+            }
           />
         ) : (
           // Indeterminate: a soft sweep that reads as "working, no estimate".
           <motion.div
+            data-slot="job-progress-sweep"
             className="absolute inset-y-0 w-1/3 rounded-full bg-gradient-to-r from-transparent via-primary to-transparent"
             animate={{ x: ['-120%', '360%'] }}
             transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}

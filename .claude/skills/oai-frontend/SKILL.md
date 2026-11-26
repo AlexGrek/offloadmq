@@ -196,6 +196,7 @@ On `<html>` the provider sets `data-theme="<id>"` and `color-scheme`, and toggle
 | `dropdown-menu-content`, `dropdown-menu-radio-item` | `ui/dropdown-menu` |
 | `[data-slot='input']`, plus raw `input` / `textarea` / `select` | form fields; many pages use raw elements, so target both |
 | `[data-slot='topbar']` | the `TopBar` header |
+| `[data-slot='job-progress']` (+ `[data-overrun]`), `job-progress-readout`, `job-progress-track`, `job-progress-fill` (inline `--job-progress` = fill %), `job-progress-sweep` | `imggen/JobProgressBar` — every in-flight job bar (images, Image Tools, bg remover, worlds, model wars, movie). Win98 snaps the fill to whole blocks with `round(down, var(--job-progress), 12px)` behind `@supports` |
 | `[data-slot='brand']` | the `oai` logo link in the top bar (themes decorate it with `::after`, e.g. OAI Hub's badge) |
 
 **Adding a theme:**

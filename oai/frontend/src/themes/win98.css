@@ -178,3 +178,50 @@
 :root[data-theme='win98'] ::-webkit-scrollbar-corner {
     background: var(--w98-face);
 }
+
+/*
+ * Progress bars: a sunken white well filled with chunky navy blocks. The fill
+ * snaps to whole blocks (`--job-progress` re-derived via `round()`) and never
+ * animates its width, so blocks pop in one at a time like the real thing. The
+ * bevel is drawn by `::after` above the bar, so the indeterminate block run
+ * slides *under* the frame instead of across it.
+ */
+:root[data-theme='win98'] [data-slot='job-progress-track'] {
+    --w98-blocks: repeating-linear-gradient(90deg, #000080 0 10px, transparent 10px 12px);
+    height: 20px;
+    padding: 3px;
+    background: #fff;
+    border-radius: 0;
+}
+:root[data-theme='win98'] [data-slot='job-progress-track']::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    /* Bevel on top, then a white mat that hides blocks inside the 3px gutter. */
+    box-shadow: var(--w98-field), inset 0 0 0 3px #fff;
+}
+:root[data-theme='win98'] [data-slot='job-progress-fill'] {
+    border-radius: 0;
+    background: var(--w98-blocks);
+    transition: none;
+}
+@supports (width: round(down, 50%, 12px)) {
+    :root[data-theme='win98'] [data-slot='job-progress-fill'] {
+        width: round(down, var(--job-progress, 0%), 12px) !important;
+    }
+    :root[data-theme='win98'] [data-slot='job-progress-sweep'] {
+        width: round(down, 33%, 12px);
+    }
+}
+:root[data-theme='win98'] [data-slot='job-progress-sweep'] {
+    border-radius: 0;
+    background: var(--w98-blocks);
+}
+:root[data-theme='win98'] [data-slot='job-progress-readout'] {
+    color: #000;
+}
+:root[data-theme='win98'] [data-slot='job-progress'][data-overrun] [data-slot='job-progress-readout'] {
+    color: #800000;
+}
