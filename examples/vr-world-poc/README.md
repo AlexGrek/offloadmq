@@ -224,6 +224,20 @@ Findings (Spark renders at the plan's poses):
 Not tested: headset playback and FPS; WorldMirror with several views (its intended use,
 A3.1) or with SHARP's intrinsics as a prior.
 
+## Filling hidden areas — Plan B, phase B0 (2026-11-26)
+
+Renders a SHARP scene from offset head poses and marks what the picture never showed, the
+input for generative filling. No generation yet. Results and how to reproduce:
+[docs/worlds-fill-plan.md](../../docs/worlds-fill-plan.md#b0-renderer-and-masks-no-generation).
+
+| Script (SHARP venv's python) | Does |
+|---|---|
+| `sharp_fill_poc.py <scene>...` | SHARP prediction, renders, hole / unseen masks, `runs/_fill/<scene>/sheet.png` |
+| `torch_splat.py` | Pure-PyTorch splat renderer (no compiled extension), culls like Spark |
+| `torch_splat_check.py` | Renderer self-check on two synthetic planes |
+| `sharp_fill_compare.py <scene>...` | Side by side with Spark captures of the same poses |
+| `gpu_guard.py` | Refuses to start with under 10 GiB of free RAM or commit |
+
 ## Productized version
 
 `world.mirror` (agent `exec/world/mirror*.py`, `omq mirror`, GUI **WorldMirror**) runs

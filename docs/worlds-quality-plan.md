@@ -1,6 +1,6 @@
 # VR Worlds: quality plan
 
-Status: proposal, 2026-11-26. A0 (WorldMirror part) and [A1](#a1-result-2026-11-26) done (and available for headset comparison as the experimental [`world.mirror`](oai-worlds.md#worldmirror-experimental)). Plan B is expanded in [worlds-fill-plan.md](worlds-fill-plan.md) and is next. Builds on [VR Worlds](oai-worlds.md), [VR-WORLD.md](../VR-WORLD.md)
+Status: proposal, 2026-11-26. A0 (WorldMirror part) and [A1](#a1-result-2026-11-26) done (and available for headset comparison as the experimental [`world.mirror`](oai-worlds.md#worldmirror-experimental)). Plan B is expanded in [worlds-fill-plan.md](worlds-fill-plan.md); its first phase (B0, masks) is done. Builds on [VR Worlds](oai-worlds.md), [VR-WORLD.md](../VR-WORLD.md)
 and the PoC in [`examples/vr-world-poc/`](../examples/vr-world-poc/README.md).
 
 ## Goal

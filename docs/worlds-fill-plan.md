@@ -1,7 +1,7 @@
 # VR Worlds: SHARP with generative hole filling (Plan B)
 
-Status: proposal, 2026-11-26. Expands Plan B of the [quality plan](worlds-quality-plan.md#plan-b--sharp-with-generative-hole-filling).
-Nothing is implemented yet.
+Status, 2026-11-26: [B0](#b0-renderer-and-masks-no-generation) done (**go**); nothing generative or
+productized yet. Expands Plan B of the [quality plan](worlds-quality-plan.md#plan-b--sharp-with-generative-hole-filling).
 
 ## Why now
 
@@ -9,8 +9,8 @@ The headset test of the experimental [`world.mirror`](oai-worlds.md#worldmirror-
 confirmed the A1 result: WorldMirror 2.0 on a single picture renders nothing where the
 picture has no information, and it guesses worse than SHARP. That is by design. Both are
 feed-forward *reconstructors*: they predict Gaussians for the pixels they are given and
-do not invent anything else. SHARP looks better only because its second Gaussian layer
-smears background behind foreground edges.
+do not invent anything else. SHARP looks better only because its Gaussians stretch the
+background behind foreground edges.
 
 Content the picture does not show has to come from a generative model. Plan B adds that
 step with components the agent already has: SHARP for geometry and FLUX inpainting in
@@ -38,10 +38,10 @@ Success is judged with the quality plan's [evaluation protocol](worlds-quality-p
 - **Frame.** SHARP writes Gaussians in the OpenCV camera frame of the input picture
   (camera at the origin, +z forward, metric). Every offset view below is a rigid pose
   in that frame.
-- **Renderer.** The SHARP venv already depends on `gsplat==1.5.3`, and
-  `sharp.utils.gsplat.GSplatRenderer` returns color, depth and alpha. SHARP's own CLI
-  renders only on CUDA. It has not yet been run on the Windows agent. The RTX 5070 Ti is
-  Blackwell (sm_120), which probably means a JIT compile rather than a prebuilt wheel.
+- **Renderer.** `gsplat` would need to compile CUDA kernels and the agent has no CUDA
+  toolkit, so B0 uses its own pure-PyTorch renderer,
+  [`torch_splat.py`](../examples/vr-world-poc/torch_splat.py) (colour, alpha, median
+  depth). It culls like Spark, the headset viewer, and matches it to 36–41 dB.
 - **Inpainting.** FLUX.1 Fill [dev] is gated and not available. The working recipe on
   this machine is FLUX.1 Krea dev fp8 with masked-latent inpainting, DifferentialDiffusion
   and denoise 1.0, from `world.pano360`
@@ -57,8 +57,8 @@ Success is judged with the quality plan's [evaluation protocol](worlds-quality-p
 ```
 picture ──SHARP──▶ base scene S₀ (metric, OpenCV frame)
 for each pose Pₖ in the preset (in order):
-    render Sₖ₋₁ from Pₖ          → color, depth, alpha, front-layer alpha
-    hole mask Mₖ                 → disoccluded ∪ uncovered, dilated
+    render Sₖ₋₁ from Pₖ          → color, alpha, median depth
+    hole mask Mₖ                 → holes ∪ unseen, dilated
     FLUX inpaint color in Mₖ     → filled view Iₖ (known pixels pasted back)
     SHARP on Iₖ (same focal)     → Gaussians Gₖ in Pₖ's frame
     fit scale sₖ on known pixels → Gₖ scaled, transformed to the base frame
@@ -75,16 +75,22 @@ inventing two different walls behind the same pillar).
 ### Hole mask: smears count as holes
 
 Low accumulated alpha only catches black holes (frame edges, turns). The worst defect
-when leaning is SHARP's second layer smearing background behind foreground edges. Those
-pixels are opaque, so an alpha test misses them. The mask is therefore:
+when leaning is background stretched behind foreground edges. Those pixels are opaque, so
+an alpha test misses them. The mask (B0, `sharp_fill_poc.py`) is:
 
-- **disoccluded**: render only the *front* layer of S₀. Pixels where it has low alpha
-  show surface the picture never saw, even where the back layer covers them with a smear;
-- **uncovered**: the full scene's alpha < 0.5 (outside the original frustum);
-- union, dilated by ~8 px at 1536² so the fill overlaps the known surface it continues.
+- **hole**: accumulated alpha < 0.5;
+- **unseen**: drawn, but the 3D point at its median depth is not on a surface visible from
+  the origin. It reprojects outside the original frame, or no origin-view depth within a
+  5 px window is within 5% of it;
+- union after dropping 1 px specks, dilated by 8 px at 1536 px on the long side so the
+  fill overlaps the surface it continues.
 
-Which of SHARP's two layers is the front surface must be checked in B0 by rendering
-each layer alone. Gaussians added by earlier fill views count as front layer.
+The first design (alpha of the "front" SHARP layer alone) does not work: each of the two
+layers covers the whole picture on its own, and their depths differ by more than 5% on
+only 2–16% of pixels.
+
+For incremental filling (B2) a point must count as known if the origin **or any earlier
+filled view** saw it, so each filled view adds its depth map to the test (not yet written).
 
 ### Selecting and merging new Gaussians
 
@@ -101,6 +107,12 @@ each layer alone. Gaussians added by earlier fill views count as front layer.
 4. **Seams.** Gaussians in the outer dilation ring get their opacity ramped down
    linearly, so the overlap with the known surface does not double-draw.
 
+**Open problem for B1.** Unseen pixels are opaque: base Gaussians already draw the smear
+there, so new Gaussians added at or behind that depth would be hidden or fight with it.
+Proposed fix: delete base Gaussians that draw masked pixels but contribute (almost)
+nothing to the origin view. The centre view stays unchanged, but the base scene is no
+longer untouched. Untested.
+
 ### Pose presets
 
 | Preset | Poses (in order) | Covers |
@@ -109,9 +121,11 @@ each layer alone. Gaussians added by earlier fill views count as front layer.
 | `room` (default) | `lean` + step fwd 60 cm, yaw L 30°, yaw R 30° | the quality plan's protocol poses |
 | `wide` | `room` + yaw L 60°, yaw R 60°, strafe ±1 m | turning further, at a higher risk of drift |
 
-Yaw views reuse the base FOV. A yaw of 30° keeps about half the frame known, which is
-what makes the scale fit and the inpaint context reliable. 60° is only reached through
-the 30° view that comes before it.
+Yaw views reuse the base FOV. A yaw of 30° keeps about half the frame known at a 54–64°
+horizontal FOV, which the scale fit and the inpaint context need. On a narrow portrait
+(torii, 39°) only 22% stays known, so the yaw step should scale with the FOV (about 0.4 ×
+hfov). 60° is only reached through an earlier, smaller turn: from S₀ alone it is 93–100%
+masked.
 
 ### Prompt
 
@@ -126,21 +140,37 @@ go / no-go note in this file.
 
 ### B0. Renderer and masks (no generation)
 
-1. Make `GSplatRenderer` run in the SHARP venv on the agent. If gsplat will not build
-   (MSVC + CUDA 12.8 with `TORCH_CUDA_ARCH_LIST=12.0`), fall back in this order:
-   - WSL2 with the same venv recipe;
-   - **Spark in headless Chromium** (what `capture.mjs` already drives): render twice on
-     black and on white backgrounds, alpha = 1 − (white − black); depth from a z-buffer
-     of the Gaussian means (`pipeline.render_preview`). Good enough for masks and the
-     scale fit; slow but runtime is not the constraint.
-2. Script `examples/vr-world-poc/sharp_fill_poc.py` (runs with the SHARP venv's python,
-   like `pano_sharp_poc.py`): predict S₀, render every `wide` pose, write color / alpha /
-   front-layer alpha / mask PNGs and a contact sheet.
-3. Measure the mask fraction per pose on the five protocol scenes.
+**Result (2026-11-26): go.** The masks fall on the smears and holes the headset viewer
+draws (compared with Spark on `forest` and `courtyard-01`), and the origin view has an
+empty mask on all five scenes.
 
-**Go** if the masks line up with the smears and holes seen in the headset (check against
-`capture.mjs` renders of the same poses). This phase alone tells us how much each pose
-really needs filling.
+Share of the view to be filled (dilated mask), each pose rendered from S₀:
+
+| Scene | lean L / R 30 cm | lean up 15 cm | step fwd 60 cm | yaw ±30° | strafe L / R 1 m |
+|---|---|---|---|---|---|
+| torii | 14 / 14% | 5% | 5% | 78% | 32 / 31% |
+| temple | 23 / 22% | 10% | 13% | 57% | 41 / 53% |
+| courtyard-01 | 12 / 12% | 8% | 12% | 50% | 34 / 34% |
+| market | 12 / 12% | 4% | 8% | 52% | 21 / 25% |
+| forest | 31 / 31% | 18% | 8% | 51% | 57 / 54% |
+
+- `room` averages 23–32% per view from S₀, above the 10–25% assumed under
+  [cost](#cost-estimate). That is an upper bound for later views, which see earlier fills.
+- Origin-view PSNR against the picture: 29–38 dB. A view renders in at most 1.2 s at
+  1536 px; the script peaks at 6.9 GiB of video memory (SHARP prediction).
+- It needs about 15 GiB of free Windows commit. A starved machine fails GPU allocations
+  and takes other programs down, so the scripts refuse to start under 10 GiB free
+  (`gpu_guard.py`).
+
+Reproduce, in `examples/vr-world-poc/`, with the SHARP venv's python (`$PY`):
+
+```bash
+$PY torch_splat_check.py
+$PY sharp_fill_poc.py torii temple courtyard-01 market forest   # runs/_fill/<scene>/sheet.png
+# Spark comparison: `uv run serve.py` here, then from oai/e2e
+POC_OUT=<abs path>/runs/_fill/_spark POC_POSES='[["centre",0,0,0,0],["lean_L_30cm",-0.3,0,0,0],["step_fwd_60cm",0,0,-0.6,0],["yaw_L_30",0,0,0,30],["strafe_L_1m",-1,0,0,0]]'   node ../../examples/vr-world-poc/capture.mjs forest-sharp courtyard-01-sharp
+$PY sharp_fill_compare.py forest courtyard-01                    # runs/_fill/<scene>/spark.png
+```
 
 ### B1. One view, end to end
 
@@ -223,8 +253,8 @@ adds ~0.6–1.8 M, so the merged scene may exceed the 2 M budget before decimati
 
 ## Risks
 
-- **gsplat on Windows/Blackwell.** Unknown until B0. The Spark fallback keeps the plan
-  alive, but it is slower and only approximates depth.
+- **Smears in the base scene** can hide the fill (see the open problem under selecting
+  and merging).
 - **Inpaint drift.** FLUX may continue a surface with the wrong material or perspective,
   especially on yaw views where the mask is a large band. Incremental filling and the
   dilation overlap reduce this but do not prevent it.

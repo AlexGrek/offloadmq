@@ -24,7 +24,8 @@ const POSES = process.env.POC_POSES ? JSON.parse(process.env.POC_POSES) : [
   ['turn L 35deg', 0, 0, 0, 35],
 ]
 
-const outDir = join(here, 'runs', '_capture')
+// POC_OUT=<dir> keeps a set of renders apart from the default captures.
+const outDir = process.env.POC_OUT ?? join(here, 'runs', '_capture')
 mkdirSync(outDir, { recursive: true })
 const browser = await chromium.launch({
   headless: true,
