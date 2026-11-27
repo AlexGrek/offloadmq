@@ -45,25 +45,32 @@ def check_image_resize() -> CapResult:
     )
 
 
-def check_bash() -> CapResult:
+def check_shells() -> CapResult:
+    """shell.* family: bash, zsh, posix, pwsh, cmd and the shell.any default."""
+    from offloadmq_agent.exec.shell.shells import detect_shells, shell_capabilities
+
+    shells = detect_shells()
+    caps = shell_capabilities(shells)
+    label = "shell.*"
+    if not caps:
+        return CapResult([], False, label, "no supported shell found")
+    detail = ", ".join(
+        f"{name}={spec.path}" for name, spec in shells.items() if name != "any"
+    )
+    any_spec = shells.get("any")
+    if any_spec is not None:
+        detail += f"; any→{any_spec.kind}"
+    return CapResult(caps, True, label, detail)
+
+
+def check_shellcmd() -> CapResult:
+    """Legacy shellcmd.bash (routed, cwd = task dir) — Unix bash only."""
     if sys.platform == "win32":
-        return CapResult(
-            [], False,
-            "shell.bash, shellcmd.bash",
-            "Windows detected — bash is not available on this platform",
-        )
+        return CapResult([], False, "shellcmd.bash", "not available on Windows")
     path = shutil.which("bash")
     if path:
-        return CapResult(
-            ["shell.bash", "shellcmd.bash"], True,
-            "shell.bash, shellcmd.bash",
-            f"bash found at {path}",
-        )
-    return CapResult(
-        [], False,
-        "shell.bash, shellcmd.bash",
-        "bash not found in PATH",
-    )
+        return CapResult(["shellcmd.bash"], True, "shellcmd.bash", f"bash found at {path}")
+    return CapResult([], False, "shellcmd.bash", "bash not found in PATH")
 
 
 def check_docker() -> CapResult:
@@ -464,7 +471,8 @@ def check_ollama() -> CapResult:
 _CHECKS: List[Callable[[], CapResult]] = [
     check_debug,
     check_image_resize,
-    check_bash,
+    check_shells,
+    check_shellcmd,
     check_docker,
     check_kokoro,
     check_comfyui,

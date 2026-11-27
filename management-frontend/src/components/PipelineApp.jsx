@@ -52,8 +52,6 @@ const PipelineApp = ({ apiKey, addDevEntry }) => {
         onStatus: (status) => setPollingStatus("Status: " + status),
     });
 
-    const escapeCommand = (cmd) => cmd.replace(/'/g, "'\"'\"'");
-
     const handleCancel = async () => {
         if (!currentTask) return;
         const { id, capability } = currentTask;
@@ -76,13 +74,10 @@ const PipelineApp = ({ apiKey, addDevEntry }) => {
             localStorage.setItem('pipelineAppHistory', JSON.stringify(newHistory));
         }
 
-        const escapedCommand = escapeCommand(command);
-        const bashCommand = `bash -c '${escapedCommand}'`;
-
         const payload = {
             capability: "shell.bash",
             urgent: false,
-            payload: bashCommand,
+            payload: { command },
             apiKey: apiKey,
         };
 

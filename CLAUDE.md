@@ -198,6 +198,15 @@ Attributes are semicolon-separated strings inside brackets. Examples:
 
 **Custom Capabilities:** Agents can register arbitrary capabilities with extended attributes that declare the payload schema (field names and types). See [docs/custom-capabilities.md](docs/custom-capabilities.md) for the full convention.
 
+### Shell Jobs (`shell.*`)
+
+`shell.bash|zsh|posix|pwsh|cmd|any` run a command in a substitutable workspace
+(`${rand}`, `${env:X:-d}`, …) with an env map, credentials (inline `value`/`map`/
+`login_password` or agent-side `agent_env`/`agent_file`/`agent_cmd`, masked in output)
+and bucket-backed input files / output artifacts. Sensitive, opt-in per capability.
+Contract: [docs/shell-api.md](docs/shell-api.md); executor: `agent_v2/.../exec/shell/`;
+sandbox: Shell Jobs app.
+
 ### ComfyUI Capability Families
 
 Three capability prefixes are backed by ComfyUI workflow templates on the agent. Reference
@@ -299,7 +308,7 @@ Clients can create temporary buckets to stage files alongside task submissions.
 - Max buckets: 256 (configurable via `STORAGE_MAX_BUCKETS_PER_KEY`)
 - Max size per bucket: 1 GiB (configurable via `STORAGE_BUCKET_SIZE_BYTES`)
 - Bucket TTL: 24 hours (configurable via `STORAGE_BUCKET_TTL_MINUTES`)
-- No file download endpoint — this is intentional to prevent use as a file exchange service
+- Clients upload inputs and download task outputs (`GET /api/storage/bucket/{uid}/file/{file_uid}`, meant for files an agent put in an `output_bucket`); buckets expire after the TTL so they are not a long-term file store
 - SHA-256 digest is computed at upload time and stored in bucket metadata
 
 **Bucket metadata** (`BucketMeta` / `FileMeta` in [src/db/bucket_storage.rs](src/db/bucket_storage.rs)):

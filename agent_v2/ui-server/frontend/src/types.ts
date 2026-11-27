@@ -81,6 +81,8 @@ export interface Settings {
   pause_on_battery: boolean;
   auto_update_enabled: boolean;
   auto_update_interval_hours: number;
+  shell_workspace_root: string;
+  shell_restrict_workspace: boolean;
   agent_id: string;
   key: string;
   jwt_token: string;

@@ -84,6 +84,11 @@ class Settings(BaseModel):
     bgremove_threads: int = Field(default=0, ge=0)  # CPU intra-op threads; 0 = onnxruntime default
     bgremove_keep_loaded: bool = True  # keep model sessions in RAM between tasks (~4 GB per BiRefNet)
 
+    # shell.* jobs — relative workspaces resolve under the root (blank =
+    # ~/.offload-agent/shell-workspaces); restrict = refuse anything outside it.
+    shell_workspace_root: str = ""
+    shell_restrict_workspace: bool = False
+
     # Rescan cadence
     rescan_interval_secs: int = Field(default=180, ge=30)
 
@@ -128,6 +133,7 @@ class Settings(BaseModel):
         "pano360_vae",
         "pano360_lora_dir",
         "mirror_dir",
+        "shell_workspace_root",
         mode="before",
     )
     @classmethod

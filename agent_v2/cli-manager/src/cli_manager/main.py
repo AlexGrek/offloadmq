@@ -835,6 +835,14 @@ def config_set(
     api_key: Optional[str] = typer.Option(None, "--api-key", "-k"),
     max_concurrent: Optional[int] = typer.Option(None, "--max-concurrent"),
     autostart: Optional[bool] = typer.Option(None, "--autostart/--no-autostart"),
+    shell_workspace_root: Optional[str] = typer.Option(
+        None, "--shell-workspace-root",
+        help="Base dir for relative shell.* workspaces ('' = ~/.offload-agent/shell-workspaces)",
+    ),
+    shell_restrict_workspace: Optional[bool] = typer.Option(
+        None, "--shell-restrict-workspace/--no-shell-restrict-workspace",
+        help="Reject shell.* workspaces outside the workspace root",
+    ),
 ) -> None:
     """Update settings fields."""
     fields = {
@@ -842,6 +850,8 @@ def config_set(
         "api_key": api_key,
         "max_concurrent": max_concurrent,
         "autostart": autostart,
+        "shell_workspace_root": shell_workspace_root,
+        "shell_restrict_workspace": shell_restrict_workspace,
     }
     _orch().update_settings(**{k: v for k, v in fields.items() if v is not None})
     console.print("[green]Settings saved.[/green]")

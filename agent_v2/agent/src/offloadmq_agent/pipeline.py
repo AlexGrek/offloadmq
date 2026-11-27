@@ -41,6 +41,7 @@ _OUTPUT_BUCKET_PREFIXES = (
     "llm-runtime.",
     "world.",
     "onnx.bgremove.",
+    "shell.",
 )
 _OUTPUT_BUCKET_CAPS = ("image_resize",)
 
@@ -63,7 +64,13 @@ def _download_buckets(
     capability: str,
     file_buckets: list[Any],
     data_path: Path,
+    overwrite: bool = False,
 ) -> bool:
+    """Download every bucket file into ``data_path``.
+
+    Existing files are kept unless ``overwrite`` — shell workspaces can persist
+    between tasks, where a stale copy would silently shadow the new input.
+    """
     for bucket_uid in file_buckets:
         try:
             resp = transport.get(
@@ -75,7 +82,7 @@ def _download_buckets(
                 file_uid = file_info["file_uid"]
                 original_name = file_info.get("original_name", file_uid)
                 save_path = resolve_bucket_file_path(data_path, original_name)
-                if save_path.exists():
+                if save_path.exists() and not overwrite:
                     continue
                 save_path.parent.mkdir(parents=True, exist_ok=True)
                 dl = transport.get(
@@ -153,8 +160,6 @@ def _run_sync_pipeline(
             error=f"No routed executor for '{capability}'",
         )
 
-    data_path = data_path_override or pick_directory(task_id)
-
     try:
         report_starting(transport, task_id)
     except ReportingCancelled:
@@ -163,8 +168,53 @@ def _run_sync_pipeline(
             task_id=task.id, status=TaskStatus.CANCELLED, error="Cancelled by user"
         )
 
+    # shell.* resolves its workspace first so input files are staged into it;
+    # this function then owns the workspace cleanup.
+    prepared: Any = None
+    if capability.startswith("shell."):
+        from offloadmq_agent.exec.shell.executor import ShellJobError, prepare_shell_job
+
+        try:
+            prepared = prepare_shell_job(task_id, capability, payload, output_bucket)
+        except ShellJobError as exc:
+            report_result(transport, make_failure_report(task_id, capability, str(exc)))
+            if transport.captured_report:
+                return report_to_task_result(transport.captured_report)
+            return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=str(exc))
+        data_path = prepared.workspace.path
+    else:
+        data_path = data_path_override or pick_directory(task_id)
+
+    try:
+        return _run_staged(
+            task, transport, executor, task_id, capability, payload, data_path,
+            fetch_files, file_buckets, output_bucket, data_preparation, job_timeout,
+            prepared,
+        )
+    finally:
+        if prepared is not None:
+            prepared.cleanup()
+
+
+def _run_staged(
+    task: Task,
+    transport: CaptureTransport,
+    executor: Callable[..., bool],
+    task_id: TaskId,
+    capability: str,
+    payload: Any,
+    data_path: Path,
+    fetch_files: list[Any],
+    file_buckets: list[Any],
+    output_bucket: str | None,
+    data_preparation: dict[str, str],
+    job_timeout: int,
+    prepared: Any,
+) -> TaskResult:
+
     if file_buckets and not _download_buckets(
-        transport, task_id, capability, file_buckets, data_path
+        transport, task_id, capability, file_buckets, data_path,
+        overwrite=prepared is not None,
     ):
         if transport.captured_report:
             return report_to_task_result(transport.captured_report)
@@ -194,7 +244,18 @@ def _run_sync_pipeline(
             return TaskResult(task_id=task.id, status=TaskStatus.FAILED, error=describe_exception(exc))
 
     try:
-        if _takes_output_bucket(capability):
+        if prepared is not None:
+            executor(
+                transport,
+                task_id,
+                capability,
+                payload,
+                data_path,
+                output_bucket=output_bucket,
+                job_timeout=job_timeout,
+                prepared=prepared,
+            )
+        elif _takes_output_bucket(capability):
             executor(
                 transport,
                 task_id,

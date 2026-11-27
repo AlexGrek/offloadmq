@@ -33,6 +33,8 @@ class SettingsPayload(BaseModel):
     pause_on_battery: bool | None = None
     auto_update_enabled: bool | None = None
     auto_update_interval_hours: int | None = None
+    shell_workspace_root: str | None = None
+    shell_restrict_workspace: bool | None = None
 
 
 class CapabilityPolicyPayload(BaseModel):

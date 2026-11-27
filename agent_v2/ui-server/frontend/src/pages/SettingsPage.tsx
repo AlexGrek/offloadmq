@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LlmRuntimeSettings } from "@/components/LlmRuntimeSettings";
 import { SaveIndicator } from "@/components/SaveIndicator";
+import { ShellJobSettings } from "@/components/ShellJobSettings";
 import { useEditableSettings } from "@/hooks/useEditableSettings";
 import type { Settings } from "@/types";
 
@@ -47,6 +48,8 @@ const EMPTY: Settings = {
   pause_on_battery: false,
   auto_update_enabled: true,
   auto_update_interval_hours: 6,
+  shell_workspace_root: "",
+  shell_restrict_workspace: false,
   agent_id: "",
   key: "",
   jwt_token: "",
@@ -57,6 +60,7 @@ export function SettingsPage() {
   return (
     <div className="space-y-6">
       <LlmRuntimeSettings />
+      <ShellJobSettings />
       <GeneralSettings />
     </div>
   );
@@ -74,6 +78,8 @@ function GeneralSettings() {
       ...next,
       llm_runtime_enabled: undefined,
       llm_runtime_cache_limit: undefined,
+      shell_workspace_root: undefined,
+      shell_restrict_workspace: undefined,
     })
   );
 
@@ -180,7 +186,7 @@ function GeneralSettings() {
               })
             }
             onBlur={flush}
-            placeholder="debug.echo, llm.mistral, shell.bash"
+            placeholder="debug.echo, llm.mistral, shell.any"
           />
         </div>
 

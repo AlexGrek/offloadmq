@@ -28,5 +28,6 @@ def register_routed_executors() -> None:
         "slavemode",
         "tts",
         "shellcmd",
+        "shell",
     ):
         executor_mod._registry[prefix] = _run_routed

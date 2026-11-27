@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 const DevPanel = React.lazy(() => import('./DevPanel'));
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch, MessageCircleMore, GitCompareArrows, ShieldAlert, Languages, AudioWaveform, Music2 } from 'lucide-react';
+import { BrainCircuit, Construction, FileText, FolderOpen, MessagesSquare, Pipette, SaveAll, Speech, X, Image, ImagePlus, Blocks, Copy, Check, ScanSearch, MessageCircleMore, GitCompareArrows, ShieldAlert, Languages, AudioWaveform, Music2, SquareTerminal } from 'lucide-react';
 import { fetchOnlineCapabilities, stripCapabilityAttrs } from '../utils';
 
 // Define the content for each app as a functional component.
@@ -58,6 +58,7 @@ const ProfileApp = ({ apiKey }) => (
 const LlmApp = React.lazy(() => import('./LlmApp'))
 const BashApp = React.lazy(() => import('./BashApp'))
 const PipelineApp = React.lazy(() => import('./PipelineApp'))
+const ShellJobApp = React.lazy(() => import('./ShellJobApp'))
 const StreamingLLMApp = React.lazy(() => import('./StreamingLLMApp'))
 const LlmChatApp = React.lazy(() => import('./LlmChatApp'))
 const StorageBucketApp = React.lazy(() => import('./StorageBucketApp'))
@@ -79,6 +80,7 @@ const apps = [
   { id: 'bash', name: 'Bash', logo: Construction, app: BashApp },
   { id: 'llm', name: 'LLM', logo: BrainCircuit, app: LlmApp },
   { id: 'pipeline', name: 'Pipeline', logo: Pipette, app: PipelineApp },
+  { id: 'shelljobs', name: 'Shell Jobs', logo: SquareTerminal, app: ShellJobApp },
   { id: 'streamingllm', name: 'Streaming LLM', logo: Speech, app: StreamingLLMApp },
   { id: 'llmchat', name: 'LLM Chat', logo: MessagesSquare, app: LlmChatApp },
   { id: 'txt2img', name: 'Txt2Img', logo: ImagePlus, app: Txt2ImgApp },

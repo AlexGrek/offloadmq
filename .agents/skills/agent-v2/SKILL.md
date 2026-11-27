@@ -124,7 +124,6 @@ worker threads.
 | Prefix | Module |
 |---|---|
 | `debug` | `exec/debug.py` |
-| `shell` | `exec/shell.py` |
 | `llm` | `exec/llm.py` |
 
 **Routed pipeline** (sync legacy-style handlers on worker thread via `exec/routed.py`):
@@ -142,8 +141,10 @@ worker threads.
 | `slavemode` | `exec/slavemode.py` |
 | `tts` | `exec/tts.py` (`tts.kokoro`) |
 | `shellcmd` | `exec/shellcmd.py` (`shellcmd.bash`) |
+| `shell` | `exec/shell/` — `shell.bash/zsh/posix/pwsh/cmd/any`: `shells.py` (interpreter table, shared with the probe), `subst.py` (`${…}` + env map), `workspace.py`, `credentials.py`, `masking.py`, `artifacts.py`, `executor.py`. The pipeline calls `prepare_shell_job` **before** downloads (workspace = data dir) and owns cleanup. Contract: `docs/shell-api.md` |
 
 Registration: `exec/__init__.py` imports native modules + calls `register_routed_executors()`.
+`CaptureTransport.is_cancelled()` lets a routed executor check cancel without a progress round-trip; stage-only progress (no `log_update`) never appends text to the task log.
 Routing table: `exec/route.py`. Shared reporting: `exec/reporting.py`.
 
 ### Executor contract (native async)

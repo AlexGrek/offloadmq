@@ -49,6 +49,7 @@ won't render real output. Use the real server for end-to-end result testing.
 | `BashApp.jsx` | Execute bash commands (urgent/blocking) |
 | `LlmApp.jsx` | Non-streaming LLM prompts (urgent/blocking) |
 | `PipelineApp.jsx` | Async bash tasks with polling |
+| `ShellJobApp.jsx` | `shell.*` jobs: shell + agent pin, workspace tokens, env, credentials, input files → workspace, artifact globs → output bucket → download, presets (no inline secrets) |
 | `StreamingLLMApp.jsx` | Async LLM with streaming output |
 | `LlmChatApp.jsx` | Multi-turn LLM chat, supports image attachments |
 | `StorageBucketApp.jsx` | File bucket CRUD (client storage API) |
@@ -297,7 +298,7 @@ const res = await fetch('/api/task/submit_blocking', {
   body: JSON.stringify({
     capability: 'shell.bash',
     urgent: true,
-    payload: commandString,
+    payload: { command: commandString },
     apiKey,
   }),
 });
@@ -376,7 +377,7 @@ For tasks that return files (images, processed PDFs) rather than inline text:
 ```js
 // 1. Create an output bucket
 const bucketRes = await clientFetch('/api/storage/bucket/create', { method: 'POST' });
-const { uid: outputBucketId } = await bucketRes.json();
+const { bucket_uid: outputBucketId } = await bucketRes.json();
 
 // 2. Include in the task payload
 const payload = {
@@ -398,7 +399,7 @@ const bucketRes = await clientFetch(
   '/api/storage/bucket/create?rm_after_task=true', // auto-delete after task
   { method: 'POST' }
 );
-const { uid: inputBucketId } = await bucketRes.json();
+const { bucket_uid: inputBucketId } = await bucketRes.json();
 
 const form = new FormData();
 form.append('file', fileBlob, filename);

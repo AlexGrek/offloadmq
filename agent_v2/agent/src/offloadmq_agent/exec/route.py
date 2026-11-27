@@ -83,6 +83,11 @@ def route_executor(cap: str) -> ExecutorFn | None:
 
         return execute_custom_cap
 
+    if cap.startswith("shell."):
+        from offloadmq_agent.exec.shell.executor import execute_shell_job
+
+        return execute_shell_job
+
     if cap.startswith("slavemode."):
         from offloadmq_agent.exec.slavemode import execute_slavemode
 
@@ -90,7 +95,6 @@ def route_executor(cap: str) -> ExecutorFn | None:
 
     return {
         "debug.echo": None,
-        "shell.bash": None,
         "shellcmd.bash": _shellcmd,
         "tts.kokoro": _tts,
     }.get(cap)

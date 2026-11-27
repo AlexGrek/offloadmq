@@ -12,20 +12,15 @@ const BashApp = ({ apiKey, addDevEntry }) => {
 
     const [capabilities] = useCapabilities('shell', { setError });
 
-    const escapeCommand = (cmd) => cmd.replace(/'/g, "'\"'\"'");
-
     const handleSubmit = async () => {
         setIsLoading(true);
         setResponse(null);
         setError(null);
 
-        const escapedCommand = escapeCommand(command);
-        const bashCommand = `bash -c '${escapedCommand}'`;
-
         const payload = {
             capability: "shell.bash",
             urgent: true,
-            payload: bashCommand,
+            payload: { command },
             apiKey: apiKey,
         };
 

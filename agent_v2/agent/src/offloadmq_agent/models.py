@@ -58,10 +58,18 @@ class Task(BaseModel):
         data = raw.get("data") or {}
         cap = str(tid.get("cap", data.get("capability", "")))
         task_id = str(tid.get("id", ""))
+        raw_payload = data.get("payload")
+        if isinstance(raw_payload, str):
+            # Command-style capabilities (shell.*) accept a bare string payload.
+            payload: dict[str, Any] = {"command": raw_payload}
+        elif isinstance(raw_payload, dict):
+            payload = dict(raw_payload)
+        else:
+            payload = {}
         return cls(
             id=task_id,
             capability=cap,
-            payload=dict(data.get("payload") or {}),
+            payload=payload,
             server_task=raw,
         )
 

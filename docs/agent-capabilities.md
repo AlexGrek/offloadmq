@@ -123,36 +123,42 @@ Full contract and model comparison: [bgremove-api.md](bgremove-api.md).
 
 ### Shell Execution
 
-#### `shell.bash`
+#### `shell.*` — `shell.bash`, `shell.zsh`, `shell.posix`, `shell.pwsh`, `shell.cmd`, `shell.any`
 
-Execute bash scripts with streaming output. Each line of stdout/stderr is sent to the server in real-time.
+Run a command in a workspace with an env map, credentials, input files and output
+artifacts. Output streams live to the task log; non-zero exit = failed task.
 
-**Availability:** Linux/macOS (requires `bash` in PATH)
+**Availability:** per interpreter (bash/zsh/sh on Linux/macOS; Git Bash, pwsh, cmd on
+Windows). `shell.any` = the agent's default shell. Sensitive — opt in per capability.
 
-**Payload:**
-```json
-"#!/bin/bash\necho 'Hello'\nls -la"
-```
-or
+**Payload:** a bare command string, or
 ```json
 {
-  "command": "echo 'Hello'\nls -la"
+  "command": "echo \"$GREETING\" && make dist",
+  "workspace": "builds/${rand}",
+  "env": {"GREETING": "hi"},
+  "credentials": [{"name": "TOKEN", "type": "agent_env", "from": "CI_TOKEN"}],
+  "artifacts": ["dist/**"]
 }
 ```
 
 **Response:**
 ```json
 {
-  "stdout": "Hello\n...",
-  "stderr": "..."
+  "exit_code": 0, "stdout": "hi\n…", "stderr": "", "shell": "bash",
+  "workspace": "/…/builds/3fa1c2d4e5b6", "duration_ms": 812,
+  "artifacts": [{"path": "dist/app.tgz", "file_uid": "…", "bucket_uid": "…", "size": 1024, "sha256": "…"}]
 }
 ```
+
+Full contract (substitution grammar, credential types, masking, cleanup, artifacts):
+[shell-api.md](shell-api.md).
 
 ---
 
 #### `shellcmd.bash`
 
-Execute a single shell command and return results. Like `shell.bash` but blocks until completion before streaming.
+Legacy: execute a single bash command in the task data directory and return results (no live log, workspace, env, credentials or artifacts — use `shell.*` for those).
 
 **Availability:** Linux/macOS (requires `bash` in PATH)
 

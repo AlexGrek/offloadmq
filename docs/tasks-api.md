@@ -559,7 +559,7 @@ When the agent sends a progress update or resolves a task that is in `cancelRequ
 
 1. **Detection**: Any `report_progress` or `report_starting` call that receives 499 raises `TaskCancelled` inside the executor.
 2. **Graceful stop**: The executor catches `TaskCancelled` and performs cleanup:
-   - **Shell tasks** (`shell.bash`, `custom.shell`): The running process is killed (`SIGKILL`), remaining stdout/stderr is collected, and a final resolve is sent with partial output. No file uploads are performed.
+   - **Shell tasks** (`shell.*`, `custom.shell`): The whole process tree is killed (SIGTERM, then SIGKILL after 5 s for `shell.*`; Windows job object), remaining stdout/stderr is collected, and a final resolve is sent with partial output. No artifacts are uploaded. See [shell-api.md](shell-api.md).
    - **Docker tasks**: The container is killed via `docker kill`, remaining output is collected and reported.
    - **LLM tasks** (`llm.*`, `custom.llm`): The streaming connection is closed and partial response text is reported.
    - **Image generation** (`imggen.*`): Generation is abandoned and partial output (if any) is reported.

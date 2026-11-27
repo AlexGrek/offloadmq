@@ -6,8 +6,9 @@ them end-to-end. The payloads here are realistic enough that the V2 agent's
 executors accept them (see ``agent_v2/.../exec/*``):
 
 * ``debug.echo``      → ``{"message", "delay"}``
-* ``shell.bash`` /
-  ``shellcmd.bash``   → ``{"command"}``
+* ``shell.*`` /
+  ``shellcmd.bash``   → ``{"command"}`` (shell.* also takes workspace/env/
+                        credentials/artifacts — docs/shell-api.md)
 * ``llm.*``           → ``{"prompt"}`` (executor wraps it into chat messages)
 * ``imggen.*``        → ``{"prompt", "width", "height", "steps", "seed"}``
 * ``txt2music.*``     → ``{"prompt", "duration"}``
@@ -207,6 +208,11 @@ def known_capabilities() -> List[str]:
     return [
         "debug.echo",
         "shell.bash",
+        "shell.zsh",
+        "shell.posix",
+        "shell.pwsh",
+        "shell.cmd",
+        "shell.any",
         "shellcmd.bash",
         "llm.qwen3:8b",
         "imggen.sdxl",

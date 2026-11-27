@@ -65,7 +65,7 @@ stop-server:
 	fi
 
 # Start the agent (agent_v2 `omq`) in background, registering first.
-# shell.bash is a sensitive capability, so it is opted in explicitly.
+# shell.* capabilities are sensitive, so they are opted in explicitly.
 start-agent: start-server
 	@echo "Starting OffloadMQ agent..."
 	@if [ -f $(AGENT_PID_FILE) ] && kill -0 $$(cat $(AGENT_PID_FILE)) 2>/dev/null; then \
@@ -73,7 +73,7 @@ start-agent: start-server
 	else \
 		cd $(AGENT_DIR) && uv sync -q && \
 		mkdir -p $(AGENT_HOME) && \
-		printf '{"server": "http://localhost:3069", "api_key": "%s", "sensitive_allowed_caps": ["shell.bash"]}\n' \
+		printf '{"server": "http://localhost:3069", "api_key": "%s", "sensitive_allowed_caps": ["shell.bash", "shell.posix", "shell.any"]}\n' \
 			"$(AGENT_API_KEY)" > $(AGENT_HOME)/.offloadmq-agent.json && \
 		cd $(AGENT_HOME) && \
 		HOME=$(AGENT_HOME) $(OMQ) register > /tmp/offloadmq-agent.log 2>&1 && \

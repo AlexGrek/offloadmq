@@ -60,6 +60,10 @@ class CaptureTransport:
         self._progress_hook = progress_hook
         self.captured_report: TaskResultReport | None = None
 
+    def is_cancelled(self) -> bool:
+        """Cancel check without a progress round-trip (long quiet commands)."""
+        return self._ctx.cancelled
+
     def get(self, *segments: str, timeout: int = 60) -> requests.Response:
         return self._inner.get(*segments, timeout=timeout)
 
@@ -75,7 +79,9 @@ class CaptureTransport:
 
         # Forward the progress upstream. The hook routes it to the orchestrator,
         # which sends it to the server over the WebSocket (no HTTP progress call).
-        msg = report.log_update or report.stage or ""
+        # Only real log text goes into the task log; a stage-only update (e.g.
+        # report_starting) must not append the stage name to it.
+        msg = report.log_update or ""
         if self._progress_hook:
             self._progress_hook(report.stage or "", msg)
         # Cancellation now arrives as a server WS push that sets the ctx cancel
