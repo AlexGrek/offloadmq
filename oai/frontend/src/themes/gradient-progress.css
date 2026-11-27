@@ -1,0 +1,101 @@
+/*
+ * Custom job progress bars for the Magma, Abyss and Prism gradient themes.
+ *
+ *   Magma — a thick molten channel: lava flows through the fill, white-hot at
+ *           the leading edge.
+ *   Abyss — a tall tube of water: bubbles drift through the fill under a
+ *           surface highlight.
+ *   Prism — a segmented neon strip: the full spectrum is revealed as it fills.
+ *
+ * Hooks: `job-progress-track|fill|sweep` and `data-overrun` (JobProgressBar).
+ * All motion stops under `prefers-reduced-motion`.
+ */
+
+:root:is([data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) :is([data-slot='input'], :is(input, textarea, select):not(.bg-transparent)):focus-visible {
+    border-color: var(--g1);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--g1) 25%, transparent);
+}
+
+/* ---- Magma ---- */
+:root[data-theme='magma'] [data-slot='job-progress-track'] {
+    height: 14px;
+    border-radius: 9999px;
+    background: oklch(0.2 0.04 30);
+    box-shadow: inset 0 2px 5px oklch(0 0 0 / 0.75), 0 0 0 1px oklch(0.55 0.15 35 / 0.45);
+}
+:root[data-theme='magma'] :is([data-slot='job-progress-fill'], [data-slot='job-progress-sweep']) {
+    border-radius: 9999px;
+    background-image:
+        linear-gradient(180deg, oklch(1 0 0 / 0.3), transparent 45%, oklch(0 0 0 / 0.25)),
+        repeating-linear-gradient(100deg, #7a0b12 0, #e0330f 22px, #ff8a00 42px, #ffd23f 52px, #ff6a00 66px, #7a0b12 90px);
+    background-size: 100% 100%, 400px 100%;
+    animation: magma-flow 4s linear infinite;
+}
+/* White-hot leading edge. */
+:root[data-theme='magma'] [data-slot='job-progress-fill'] {
+    box-shadow: inset -6px 0 8px -2px #fff3b0, 0 0 14px oklch(0.7 0.2 45 / 0.8);
+}
+@keyframes magma-flow {
+    /* One horizontal period of the 100deg stripe: 90px / sin(100deg). */
+    to { background-position: 0 0, 91.4px 0; }
+}
+
+/* ---- Abyss ---- */
+:root[data-theme='abyss'] [data-slot='job-progress-track'] {
+    height: 18px;
+    border-radius: 9999px;
+    background: oklch(0.19 0.05 235);
+    box-shadow: inset 0 3px 7px oklch(0 0 0 / 0.65), 0 0 0 1px oklch(0.82 0.13 200 / 0.35);
+}
+:root[data-theme='abyss'] :is([data-slot='job-progress-fill'], [data-slot='job-progress-sweep']) {
+    border-radius: 9999px;
+    background-image:
+        linear-gradient(180deg, oklch(1 0 0 / 0.45), transparent 35%),
+        radial-gradient(circle 3px at 12px 11px, oklch(1 0 0 / 0.75), transparent 100%),
+        radial-gradient(circle 2px at 34px 6px, oklch(1 0 0 / 0.6), transparent 100%),
+        radial-gradient(circle 1.5px at 52px 13px, oklch(1 0 0 / 0.6), transparent 100%),
+        linear-gradient(90deg, oklch(0.5 0.15 260), oklch(0.68 0.14 220), oklch(0.82 0.13 190));
+    background-size: 100% 100%, 64px 18px, 64px 18px, 64px 18px, 100% 100%;
+    animation: abyss-bubbles 2.4s linear infinite;
+    box-shadow: 0 0 14px oklch(0.75 0.14 205 / 0.65);
+}
+@keyframes abyss-bubbles {
+    to { background-position: 0 0, 64px 0, 128px 0, 64px 0, 0 0; }
+}
+
+/* ---- Prism ---- */
+:root[data-theme='prism'] [data-slot='job-progress-track'] {
+    --prism-slots: repeating-linear-gradient(90deg, #000 0 8px, transparent 8px 11px);
+    height: 12px;
+    border-radius: 3px;
+    background: oklch(0.24 0.02 285);
+    /* The mask cuts well and fill alike into segments. */
+    -webkit-mask-image: var(--prism-slots);
+    mask-image: var(--prism-slots);
+}
+:root[data-theme='prism'] :is([data-slot='job-progress-fill'], [data-slot='job-progress-sweep']) {
+    border-radius: 0;
+    /* Sized to the viewport so the spectrum stays put and is revealed. */
+    background: linear-gradient(90deg, #ff3d7f, #ff9f1c, #f9f871, #2ee6a6, #29b6ff, #a066ff, #ff3d7f) 0 0 / 28rem 100% repeat-x;
+    animation: prism-shift 6s linear infinite;
+}
+@keyframes prism-shift {
+    to { background-position: 28rem 0; }
+}
+
+/* Past the estimate: the bar pulses instead of sitting still at 100%. */
+:root:is([data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) [data-slot='job-progress'][data-overrun] [data-slot='job-progress-track'] {
+    animation: gradient-overrun 1.2s ease-in-out infinite alternate;
+}
+@keyframes gradient-overrun {
+    to { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root:is([data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) :is([data-slot='job-progress-track'], [data-slot='job-progress-fill'], [data-slot='job-progress-sweep']) {
+        animation: none;
+    }
+    :root:is([data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) [data-slot='job-progress'][data-overrun] [data-slot='job-progress-track'] {
+        animation: none;
+    }
+}

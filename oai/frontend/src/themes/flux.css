@@ -1,0 +1,129 @@
+/*
+ * Flux — an abstract pattern of flowing ribbons behind smoked-glass panes:
+ * midnight indigo, teal, violet, coral and fine gold lines. Dark.
+ *
+ * Styled theme. The pattern (`assets/flux-pattern.webp`, generated with OAI) is
+ * a <body> background (behind content), never an overlay; it is only
+ * downloaded while this theme is active. Pages other than the dashboard get a
+ * smoked-glass fill (`app-main`) so text stays readable over it.
+ */
+:root[data-theme='flux'] {
+    --radius: 0.75rem;
+    --app-font-display: 'Syne', system-ui, sans-serif;
+
+    --fx-teal: #3fd0c9;
+    --fx-violet: #9a7bff;
+    --fx-coral: #ff8a75;
+    --fx-gold: #e0bd78;
+    --fx-line: linear-gradient(90deg, var(--fx-teal), var(--fx-violet), var(--fx-coral), var(--fx-gold));
+
+    --background: #0d1030;
+    --foreground: #f2f1fb;
+    --card: rgb(15 18 52 / 0.78);
+    --card-foreground: #f2f1fb;
+    --popover: #141843;
+    --popover-foreground: #f2f1fb;
+    --primary: var(--fx-coral);
+    --primary-foreground: #1b0d1c;
+    --secondary: #1e2358;
+    --secondary-foreground: #f2f1fb;
+    --muted: #191d4c;
+    --muted-foreground: #b3b4d6;
+    --accent: #262c6b;
+    --accent-foreground: #ffffff;
+    --destructive: #ff5c6c;
+    --border: rgb(224 189 120 / 0.22);
+    --input: rgb(224 189 120 / 0.34);
+    --ring: var(--fx-teal);
+    --chart-1: #ff8a75;
+    --chart-2: #3fd0c9;
+    --chart-3: #9a7bff;
+    --chart-4: #e0bd78;
+    --chart-5: #5b6ee1;
+    --sidebar: #101338;
+    --sidebar-foreground: #f2f1fb;
+    --sidebar-primary: var(--fx-coral);
+    --sidebar-primary-foreground: #1b0d1c;
+    --sidebar-accent: #262c6b;
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: rgb(224 189 120 / 0.22);
+    --sidebar-ring: var(--fx-teal);
+
+    caret-color: var(--fx-coral);
+    accent-color: var(--fx-teal);
+    scrollbar-color: rgb(154 123 255 / 0.6) transparent;
+}
+
+:root[data-theme='flux'] body {
+    background-image: url('./assets/flux-pattern.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+}
+
+/* Smoked glass behind every page except the dashboard. */
+:root[data-theme='flux'] [data-slot='app-main'] > :not([data-testid='dashboard-page']) {
+    background-color: rgb(13 16 48 / 0.86);
+}
+:root[data-theme='flux'] [data-testid='dashboard-page'] > div:first-child {
+    text-shadow: 0 1px 8px rgb(5 6 25 / 0.9);
+}
+:root[data-theme='flux'] [data-slot='app-tile'] {
+    background-color: rgb(13 16 48 / 0.74);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+
+:root[data-theme='flux'] [data-slot='topbar'] {
+    background-color: rgb(10 12 38 / 0.72);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(140%);
+    border-bottom: 2px solid transparent;
+    border-image: var(--fx-line) 1;
+}
+
+:root[data-theme='flux'] [data-slot='card'] {
+    background-color: var(--card);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 0 0 1px var(--border), 0 16px 36px -18px rgb(0 0 0 / 0.75);
+}
+:root[data-theme='flux'] :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+    box-shadow: 0 0 0 1px rgb(224 189 120 / 0.4), 0 24px 56px -20px rgb(0 0 0 / 0.85);
+}
+:root[data-theme='flux'] [data-slot='dialog-overlay'] {
+    background: rgb(6 7 24 / 0.6);
+}
+
+:root[data-theme='flux'] [data-slot='button'][data-variant='default'] {
+    border-color: transparent;
+    background-image: linear-gradient(115deg, var(--fx-coral), #ffb08a);
+    box-shadow: 0 6px 18px -8px rgb(255 138 117 / 0.8);
+}
+:root[data-theme='flux'] [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+    background-image: linear-gradient(115deg, #ff9f8d, var(--fx-gold));
+}
+:root[data-theme='flux'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+    background-color: rgb(13 16 48 / 0.6);
+    border-color: rgb(224 189 120 / 0.4);
+}
+:root[data-theme='flux'] [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+    background-color: var(--accent);
+    border-color: var(--fx-teal);
+}
+
+:root[data-theme='flux'] :is([data-slot='input'], :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select):not(.bg-transparent)) {
+    background-color: rgb(8 10 32 / 0.75);
+}
+:root[data-theme='flux'] :is([data-slot='input'], :is(input, textarea, select):not(.bg-transparent)):focus-visible {
+    border-color: var(--fx-teal);
+    box-shadow: 0 0 0 3px rgb(63 208 201 / 0.25);
+}
+
+:root[data-theme='flux'] [data-slot='job-progress-fill'] {
+    background: var(--fx-line);
+}
+
+:root[data-theme='flux'] ::selection {
+    background: rgb(154 123 255 / 0.5);
+}

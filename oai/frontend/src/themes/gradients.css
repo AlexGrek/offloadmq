@@ -1,6 +1,8 @@
 /*
  * Gradient themes — vivid multi-colour wallpapers with frosted panes and
- * gradient accents. Dark: Aurora, Synthwave, Nebula. Light: Sherbet, Lagoon.
+ * gradient accents. Dark: Aurora, Synthwave, Nebula, Magma, Abyss, Prism.
+ * Light: Sherbet, Lagoon. Custom progress bars for the last three dark ones
+ * live in `gradient-progress.css`.
  *
  * One shared structure; each variant sets only its colours:
  *   --g1        main accent (primary actions, focus ring)
@@ -39,6 +41,33 @@
     --g-on: oklch(0.15 0.05 275);
     --g-wash: 40%;
 }
+:root[data-theme='magma'] {
+    --g1: oklch(0.72 0.2 40);
+    --g2: oklch(0.82 0.17 80);
+    --g3: oklch(0.55 0.22 12);
+    --g-bg: oklch(0.14 0.03 30);
+    --g-fg: oklch(0.96 0.025 60);
+    --g-on: oklch(0.15 0.04 30);
+    --g-wash: 42%;
+}
+:root[data-theme='abyss'] {
+    --g1: oklch(0.82 0.13 200);
+    --g2: oklch(0.55 0.17 260);
+    --g3: oklch(0.65 0.13 170);
+    --g-bg: oklch(0.14 0.045 235);
+    --g-fg: oklch(0.96 0.02 210);
+    --g-on: oklch(0.15 0.05 235);
+    --g-wash: 40%;
+}
+:root[data-theme='prism'] {
+    --g1: oklch(0.8 0.15 320);
+    --g2: oklch(0.82 0.16 145);
+    --g3: oklch(0.7 0.17 245);
+    --g-bg: oklch(0.13 0.015 285);
+    --g-fg: oklch(0.97 0.008 285);
+    --g-on: oklch(0.14 0.02 285);
+    --g-wash: 34%;
+}
 :root[data-theme='sherbet'] {
     --g1: oklch(0.6 0.2 20);
     --g2: oklch(0.88 0.14 85);
@@ -58,7 +87,7 @@
     --g-wash: 55%;
 }
 
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) {
     --radius: 0.9rem;
 
     --g-tint: color-mix(in oklch, var(--g1) 12%, var(--g-bg));
@@ -102,7 +131,7 @@
 }
 
 /* Wallpaper: colour blobs over the opaque base, fixed to the viewport. */
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) body {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) body {
     background-image:
         radial-gradient(55vmax 55vmax at 6% 4%, color-mix(in oklch, var(--g1) var(--g-wash), transparent), transparent 62%),
         radial-gradient(50vmax 50vmax at 96% 14%, color-mix(in oklch, var(--g3) var(--g-wash), transparent), transparent 62%),
@@ -112,7 +141,7 @@
 }
 
 /* Top bar: frosted strip with a gradient hairline. */
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='topbar'] {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) [data-slot='topbar'] {
     background-color: color-mix(in oklch, var(--g-bg) 65%, transparent);
     -webkit-backdrop-filter: var(--g-pane-blur);
     backdrop-filter: var(--g-pane-blur);
@@ -121,23 +150,23 @@
 }
 
 /* Frosted panes; floating ones get a gradient edge glow. */
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='card'] {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) [data-slot='card'] {
     background-color: var(--card);
     -webkit-backdrop-filter: var(--g-pane-blur);
     backdrop-filter: var(--g-pane-blur);
 }
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) :is([data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
     box-shadow:
         0 0 0 1px color-mix(in oklch, var(--g1) 35%, transparent),
         -12px -8px 40px -18px color-mix(in oklch, var(--g1) 55%, transparent),
         12px 10px 40px -18px color-mix(in oklch, var(--g3) 55%, transparent);
 }
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='dialog-overlay'] {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) [data-slot='dialog-overlay'] {
     background: color-mix(in oklch, var(--g-bg) 45%, transparent);
 }
 
 /* Primary buttons: a gradient sweep that glides on hover. */
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='button'][data-variant='default'] {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) [data-slot='button'][data-variant='default'] {
     border-color: transparent;
     background-image: var(--g-sweep);
     background-size: 200% 100%;
@@ -145,25 +174,25 @@
     box-shadow: 0 6px 18px -8px color-mix(in oklch, var(--g1) 70%, transparent);
     transition: background-position 0.5s ease, box-shadow 0.2s;
 }
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) [data-slot='button'][data-variant='default']:hover:not(:disabled) {
     background-position: 100% 50%;
     box-shadow: 0 8px 24px -8px color-mix(in oklch, var(--g3) 75%, transparent);
 }
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']) {
     background-color: color-mix(in oklch, var(--g-bg) 60%, transparent);
     border-color: color-mix(in oklch, var(--g1) 35%, transparent);
 }
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']):is(:hover, [aria-expanded='true']):not(:disabled) {
     background-color: var(--accent);
     border-color: color-mix(in oklch, var(--g1) 60%, transparent);
 }
 
 /* Fields: focus lights up in the accent. */
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) :is([data-slot='input'], input, textarea, select):not(.bg-transparent):focus-visible {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) :is([data-slot='input'], input, textarea, select):not(.bg-transparent):focus-visible {
     border-color: var(--g1);
     box-shadow: 0 0 0 3px color-mix(in oklch, var(--g1) 25%, transparent);
 }
 
-:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon']) ::selection {
+:root:is([data-theme='aurora'], [data-theme='synthwave'], [data-theme='nebula'], [data-theme='sherbet'], [data-theme='lagoon'], [data-theme='magma'], [data-theme='abyss'], [data-theme='prism']) ::selection {
     background: color-mix(in oklch, var(--g1) 40%, transparent);
 }

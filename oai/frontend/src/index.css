@@ -24,6 +24,9 @@
 @import "./themes/lgbtq.css";
 @import "./themes/malevich.css";
 @import "./themes/fine-art.css";
+@import "./themes/gradient-progress.css";
+@import "./themes/winxp.css";
+@import "./themes/flux.css";
 
 @custom-variant dark (&:is(.dark *));
 

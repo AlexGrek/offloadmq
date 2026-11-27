@@ -34,6 +34,7 @@ export const THEMES = [
   { id: 'sky', label: 'Sky', emoji: '🌤️', mode: 'light', swatch: ['oklch(0.97 0.012 230)', 'oklch(0.52 0.14 245)'] },
   { id: 'ukraine', label: 'Ukraine', emoji: '🇺🇦', mode: 'light', swatch: ['oklch(0.47 0.14 255)', 'oklch(0.87 0.17 95)'] },
   { id: 'win98', label: 'Windows 98', emoji: '🪟', mode: 'light', swatch: ['#c0c0c0', '#000080'] },
+  { id: 'winxp', label: 'Windows XP', emoji: '🏞️', mode: 'light', swatch: ['#3a8be8', '#4bb43a'] },
   { id: 'liquid-glass', label: 'Liquid Glass', emoji: '🫧', mode: 'light', swatch: ['oklch(0.86 0.08 230)', 'oklch(0.58 0.2 258)'] },
   { id: 'aero', label: 'Windows Aero', emoji: '🪟', mode: 'light', swatch: ['oklch(0.72 0.11 240)', 'oklch(0.55 0.15 250)'] },
   { id: 'material', label: 'Material', emoji: '📐', mode: 'light', swatch: ['#fafafa', '#3f51b5'] },
@@ -66,6 +67,11 @@ export const THEMES = [
   { id: 'noir', label: 'Noir', emoji: '🕵️', mode: 'dark', swatch: ['#100f0e', '#c4161c'] },
   { id: 'apple-2', label: 'Apple II', emoji: '🍏', mode: 'dark', swatch: ['#060a05', '#4af626'] },
   { id: 'oaistation', label: 'OAIStation', emoji: '🎮', mode: 'dark', swatch: ['#16357a', '#ffffff'] },
+  { id: 'win98-dark', label: 'Windows 98 Dark', emoji: '💾', mode: 'dark', swatch: ['#3a3a3d', '#0e68a8'] },
+  { id: 'magma', label: 'Magma', emoji: '🌋', mode: 'dark', swatch: ['oklch(0.55 0.22 12)', 'oklch(0.82 0.17 80)'] },
+  { id: 'abyss', label: 'Abyss', emoji: '🐙', mode: 'dark', swatch: ['oklch(0.45 0.15 260)', 'oklch(0.82 0.13 200)'] },
+  { id: 'prism', label: 'Prism', emoji: '🔺', mode: 'dark', swatch: ['oklch(0.8 0.15 320)', 'oklch(0.82 0.16 145)'] },
+  { id: 'flux', label: 'Flux', emoji: '🌀', mode: 'dark', swatch: ['#0d1030', '#ff8a75'] },
 ] as const satisfies readonly ThemeDef[]
 
 export type ThemeId = (typeof THEMES)[number]['id']

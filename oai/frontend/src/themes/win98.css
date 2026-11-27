@@ -1,227 +1,278 @@
 /*
- * Windows 98 — silver bevelled chrome, navy selection, square corners. Light.
+ * Windows 98 — bevelled chrome, title-bar dialogs, square corners, Tahoma.
+ * Two variants: `win98` (silver, light) and `win98-dark` (charcoal, dark).
  *
  * Styled theme: besides colours it sets radius + fonts and restyles elements via
  * their `data-slot` hooks. Rules here are unlayered, so they beat Tailwind
- * utilities on the same element.
+ * utilities on the same element. One shared structure: each variant sets only
+ * the `--w98-*` knobs and the colour tokens.
  */
-:root[data-theme='win98'] {
+/* Shared by both variants. */
+:root:is([data-theme='win98'], [data-theme='win98-dark']) {
     --radius: 0rem;
     --app-font-sans: Tahoma, 'MS Sans Serif', 'Microsoft Sans Serif', Geneva, Verdana, sans-serif;
     --app-font-display: Tahoma, 'MS Sans Serif', 'Microsoft Sans Serif', Geneva, Verdana, sans-serif;
 
     /* Bevels (outer edge first). */
-    --w98-face: #c0c0c0;
-    --w98-raised: inset -1px -1px #000, inset 1px 1px #fff, inset -2px -2px #808080, inset 2px 2px #dfdfdf;
-    --w98-pressed: inset -1px -1px #fff, inset 1px 1px #000, inset -2px -2px #dfdfdf, inset 2px 2px #808080;
-    --w98-window: inset -1px -1px #000, inset 1px 1px #dfdfdf, inset -2px -2px #808080, inset 2px 2px #fff;
-    --w98-field: inset -1px -1px #fff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #000;
-    --w98-title: linear-gradient(90deg, #000080, #1084d0);
+    --w98-raised: inset -1px -1px var(--w98-darkest), inset 1px 1px var(--w98-hi), inset -2px -2px var(--w98-shadow), inset 2px 2px var(--w98-light);
+    --w98-pressed: inset -1px -1px var(--w98-hi), inset 1px 1px var(--w98-darkest), inset -2px -2px var(--w98-light), inset 2px 2px var(--w98-shadow);
+    --w98-window: inset -1px -1px var(--w98-darkest), inset 1px 1px var(--w98-light), inset -2px -2px var(--w98-shadow), inset 2px 2px var(--w98-hi);
+    --w98-field: inset -1px -1px var(--w98-hi), inset 1px 1px var(--w98-shadow), inset -2px -2px var(--w98-light), inset 2px 2px var(--w98-darkest);
 
-    --background: #c0c0c0;
-    --foreground: #000;
-    --card: #c0c0c0;
-    --card-foreground: #000;
-    --popover: #c0c0c0;
-    --popover-foreground: #000;
+    --background: var(--w98-face);
+    --foreground: var(--w98-text);
+    --card: var(--w98-face);
+    --card-foreground: var(--w98-text);
+    --popover: var(--w98-face);
+    --popover-foreground: var(--w98-text);
+    --secondary: var(--w98-face);
+    --secondary-foreground: var(--w98-text);
+    --accent-foreground: var(--w98-text);
+    --border: var(--w98-shadow);
+    --input: var(--w98-shadow);
+    --ring: var(--w98-text);
+    --sidebar: var(--w98-face);
+    --sidebar-foreground: var(--w98-text);
+    --sidebar-accent-foreground: var(--w98-text);
+    --sidebar-border: var(--w98-shadow);
+    --sidebar-ring: var(--w98-text);
+}
+
+:root[data-theme='win98'] {
+    --w98-face: #c0c0c0;
+    --w98-text: #000;
+    --w98-hi: #fff;
+    --w98-light: #dfdfdf;
+    --w98-shadow: #808080;
+    --w98-darkest: #000;
+    --w98-title: linear-gradient(90deg, #000080, #1084d0);
+    --w98-field-bg: #fff;
+    --w98-select: #000080;
+    --w98-blocks-color: #000080;
+    --w98-disabled: #808080;
+    --w98-disabled-shadow: #fff;
+    --w98-danger: #a00000;
+    --w98-overrun: #800000;
+    --w98-track-a: #c0c0c0;
+    --w98-track-b: #fff;
+
     --primary: #000080;
     --primary-foreground: #fff;
-    --secondary: #c0c0c0;
-    --secondary-foreground: #000;
     --muted: #b4b4b4;
     --muted-foreground: #404040;
     /* Light hover/selection fill: components pair accents with plain foreground
        text, so the classic navy highlight is applied only to menu items below. */
     --accent: #dcdcdc;
-    --accent-foreground: #000;
     --destructive: #a00000;
-    --border: #808080;
-    --input: #808080;
-    --ring: #000;
-    --sidebar: #c0c0c0;
-    --sidebar-foreground: #000;
     --sidebar-primary: #000080;
     --sidebar-primary-foreground: #fff;
     --sidebar-accent: #e8e8e8;
-    --sidebar-accent-foreground: #000;
-    --sidebar-border: #808080;
-    --sidebar-ring: #000;
     accent-color: #000080;
 }
 
-:root[data-theme='win98'] ::selection {
-    background: #000080;
+:root[data-theme='win98-dark'] {
+    --w98-face: #3a3a3d;
+    --w98-text: #e6e6e6;
+    --w98-hi: #7c7c82;
+    --w98-light: #55555a;
+    --w98-shadow: #222224;
+    --w98-darkest: #000;
+    --w98-title: linear-gradient(90deg, #05054a, #0e68a8);
+    --w98-field-bg: #161618;
+    --w98-select: #1a4fa0;
+    --w98-blocks-color: #3b8eea;
+    --w98-disabled: #8a8a8f;
+    --w98-disabled-shadow: #111;
+    --w98-danger: #ff8080;
+    --w98-overrun: #ffb454;
+    --w98-track-a: #29292b;
+    --w98-track-b: #3a3a3d;
+
+    --primary: #6fb1ff;
+    --primary-foreground: #05122b;
+    --muted: #323235;
+    --muted-foreground: #b0b0b6;
+    --accent: #4a4a50;
+    --destructive: #ff6b6b;
+    --sidebar-primary: #6fb1ff;
+    --sidebar-primary-foreground: #05122b;
+    --sidebar-accent: #4a4a50;
+    accent-color: #3b8eea;
+}
+
+:root:is([data-theme='win98'], [data-theme='win98-dark']) ::selection {
+    background: var(--w98-select);
     color: #fff;
 }
 
 /* Top bar → taskbar. */
-:root[data-theme='win98'] [data-slot='topbar'] {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='topbar'] {
     background: var(--w98-face);
     backdrop-filter: none;
-    border-bottom: 1px solid #000;
-    box-shadow: inset 0 1px #fff, inset 0 -1px #808080;
+    border-bottom: 1px solid var(--w98-darkest);
+    box-shadow: inset 0 1px var(--w98-hi), inset 0 -1px var(--w98-shadow);
 }
 
 /* Raised windows: cards, dialogs, sheets, menus. */
-:root[data-theme='win98'] :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) :is([data-slot='card'], [data-slot='dialog-content'], [data-slot='sheet-content'], [data-slot='dropdown-menu-content']) {
     background: var(--w98-face);
     border: 0;
     border-radius: 0;
     box-shadow: var(--w98-window);
 }
-:root[data-theme='win98'] :is([data-slot='dialog-content'], [data-slot='sheet-content']) {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) :is([data-slot='dialog-content'], [data-slot='sheet-content']) {
     padding: 3px;
 }
 
 /* Dialog / sheet headers → navy title bars. */
-:root[data-theme='win98'] :is([data-slot='dialog-header'], [data-slot='sheet-header']) {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) :is([data-slot='dialog-header'], [data-slot='sheet-header']) {
     background: var(--w98-title);
     color: #fff;
     border-bottom: 0;
     padding-top: 0.5rem;
     padding-bottom: 0.5rem;
 }
-:root[data-theme='win98'] :is([data-slot='dialog-header'], [data-slot='sheet-header']) :is([data-slot='dialog-title'], [data-slot='sheet-title']) {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) :is([data-slot='dialog-header'], [data-slot='sheet-header']) :is([data-slot='dialog-title'], [data-slot='sheet-title']) {
     font-size: 0.85rem;
     font-weight: 700;
 }
-:root[data-theme='win98'] :is([data-slot='dialog-header'], [data-slot='sheet-header']) :is([data-slot='dialog-description'], [data-slot='sheet-description']) {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) :is([data-slot='dialog-header'], [data-slot='sheet-header']) :is([data-slot='dialog-description'], [data-slot='sheet-description']) {
     color: #dfdfdf;
 }
-:root[data-theme='win98'] :is([data-slot='dialog-close-button'], [data-slot='sheet-close-button']) {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) :is([data-slot='dialog-close-button'], [data-slot='sheet-close-button']) {
     top: 0.6rem;
     right: 0.6rem;
     padding: 1px 2px;
-    color: #000;
+    color: var(--w98-text);
     opacity: 1;
     background: var(--w98-face);
     border-radius: 0;
     box-shadow: var(--w98-raised);
 }
-:root[data-theme='win98'] :is([data-slot='dialog-close-button'], [data-slot='sheet-close-button']):active {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) :is([data-slot='dialog-close-button'], [data-slot='sheet-close-button']):active {
     box-shadow: var(--w98-pressed);
 }
 
 /* Menus: navy highlight on the focused item. */
-:root[data-theme='win98'] [data-slot='dropdown-menu-radio-item'] {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='dropdown-menu-radio-item'] {
     border-radius: 0;
 }
-:root[data-theme='win98'] [data-slot='dropdown-menu-radio-item']:is([data-highlighted], :focus) {
-    background: #000080;
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='dropdown-menu-radio-item']:is([data-highlighted], :focus) {
+    background: var(--w98-select);
     color: #fff;
 }
 
 /* Buttons: raised, pressed while active; ghost buttons are flat toolbar buttons. */
-:root[data-theme='win98'] [data-slot='button']:not([data-variant='link']) {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='button']:not([data-variant='link']) {
     border: 0;
     border-radius: 0;
-    color: #000;
+    color: var(--w98-text);
 }
-:root[data-theme='win98'] [data-slot='button']:is([data-variant='default'], [data-variant='outline'], [data-variant='secondary'], [data-variant='destructive']) {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='button']:is([data-variant='default'], [data-variant='outline'], [data-variant='secondary'], [data-variant='destructive']) {
     background: var(--w98-face);
     box-shadow: var(--w98-raised);
 }
-:root[data-theme='win98'] [data-slot='button'][data-variant='default'] {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='button'][data-variant='default'] {
     font-weight: 700;
 }
-:root[data-theme='win98'] [data-slot='button'][data-variant='destructive'] {
-    color: #a00000;
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='button'][data-variant='destructive'] {
+    color: var(--w98-danger);
 }
-:root[data-theme='win98'] [data-slot='button'][data-variant='ghost'] {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='button'][data-variant='ghost'] {
     background: transparent;
 }
-:root[data-theme='win98'] [data-slot='button'][data-variant='ghost']:is(:hover, [aria-expanded='true'], [aria-pressed='true']) {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='button'][data-variant='ghost']:is(:hover, [aria-expanded='true'], [aria-pressed='true']) {
     background: var(--w98-face);
     box-shadow: var(--w98-raised);
 }
-:root[data-theme='win98'] [data-slot='button']:not([data-variant='link']):active:not(:disabled) {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='button']:not([data-variant='link']):active:not(:disabled) {
     box-shadow: var(--w98-pressed);
     transform: translate(1px, 1px);
 }
-:root[data-theme='win98'] [data-slot='button']:focus-visible {
-    outline: 1px dotted #000;
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='button']:focus-visible {
+    outline: 1px dotted var(--w98-text);
     outline-offset: -4px;
 }
-:root[data-theme='win98'] [data-slot='button']:disabled {
-    color: #808080;
-    text-shadow: 1px 1px #fff;
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='button']:disabled {
+    color: var(--w98-disabled);
+    text-shadow: 1px 1px var(--w98-disabled-shadow);
     opacity: 1;
 }
 
-/* Text fields: white, sunken. */
-:root[data-theme='win98'] :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select) {
-    background-color: #fff;
-    color: #000;
+/* Text fields: sunken wells. */
+:root:is([data-theme='win98'], [data-theme='win98-dark']) :is([data-slot='input'], input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select) {
+    background-color: var(--w98-field-bg);
+    color: var(--w98-text);
     border: 0;
     border-radius: 0;
     box-shadow: var(--w98-field);
 }
-:root[data-theme='win98'] :is([data-slot='input'], input, textarea, select):focus-visible {
-    outline: 1px dotted #000;
+:root:is([data-theme='win98'], [data-theme='win98-dark']) :is([data-slot='input'], input, textarea, select):focus-visible {
+    outline: 1px dotted var(--w98-text);
     outline-offset: -4px;
 }
 
 /* Scrollbars: dithered track, raised thumb. */
-:root[data-theme='win98'] ::-webkit-scrollbar {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) ::-webkit-scrollbar {
     width: 16px;
     height: 16px;
 }
-:root[data-theme='win98'] ::-webkit-scrollbar-track {
-    background-color: #dfdfdf;
-    background-image: conic-gradient(#c0c0c0 25%, #fff 0 50%, #c0c0c0 0 75%, #fff 0);
+:root:is([data-theme='win98'], [data-theme='win98-dark']) ::-webkit-scrollbar-track {
+    background-color: var(--w98-light);
+    background-image: conic-gradient(var(--w98-track-a) 25%, var(--w98-track-b) 0 50%, var(--w98-track-a) 0 75%, var(--w98-track-b) 0);
     background-size: 2px 2px;
 }
-:root[data-theme='win98'] ::-webkit-scrollbar-thumb {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) ::-webkit-scrollbar-thumb {
     background: var(--w98-face);
     box-shadow: var(--w98-raised);
 }
-:root[data-theme='win98'] ::-webkit-scrollbar-corner {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) ::-webkit-scrollbar-corner {
     background: var(--w98-face);
 }
 
 /*
- * Progress bars: a sunken white well filled with chunky navy blocks. The fill
+ * Progress bars: a sunken well filled with chunky blue blocks. The fill
  * snaps to whole blocks (`--job-progress` re-derived via `round()`) and never
  * animates its width, so blocks pop in one at a time like the real thing. The
  * bevel is drawn by `::after` above the bar, so the indeterminate block run
  * slides *under* the frame instead of across it.
  */
-:root[data-theme='win98'] [data-slot='job-progress-track'] {
-    --w98-blocks: repeating-linear-gradient(90deg, #000080 0 10px, transparent 10px 12px);
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='job-progress-track'] {
+    --w98-blocks: repeating-linear-gradient(90deg, var(--w98-blocks-color) 0 10px, transparent 10px 12px);
     height: 20px;
     padding: 3px;
-    background: #fff;
+    background: var(--w98-field-bg);
     border-radius: 0;
 }
-:root[data-theme='win98'] [data-slot='job-progress-track']::after {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='job-progress-track']::after {
     content: '';
     position: absolute;
     inset: 0;
     z-index: 1;
     pointer-events: none;
-    /* Bevel on top, then a white mat that hides blocks inside the 3px gutter. */
-    box-shadow: var(--w98-field), inset 0 0 0 3px #fff;
+    /* Bevel on top, then a mat in the well colour that hides blocks inside the 3px gutter. */
+    box-shadow: var(--w98-field), inset 0 0 0 3px var(--w98-field-bg);
 }
-:root[data-theme='win98'] [data-slot='job-progress-fill'] {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='job-progress-fill'] {
     border-radius: 0;
     background: var(--w98-blocks);
     transition: none;
 }
 @supports (width: round(down, 50%, 12px)) {
-    :root[data-theme='win98'] [data-slot='job-progress-fill'] {
+    :root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='job-progress-fill'] {
         width: round(down, var(--job-progress, 0%), 12px) !important;
     }
-    :root[data-theme='win98'] [data-slot='job-progress-sweep'] {
+    :root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='job-progress-sweep'] {
         width: round(down, 33%, 12px);
     }
 }
-:root[data-theme='win98'] [data-slot='job-progress-sweep'] {
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='job-progress-sweep'] {
     border-radius: 0;
     background: var(--w98-blocks);
 }
-:root[data-theme='win98'] [data-slot='job-progress-readout'] {
-    color: #000;
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='job-progress-readout'] {
+    color: var(--w98-text);
 }
-:root[data-theme='win98'] [data-slot='job-progress'][data-overrun] [data-slot='job-progress-readout'] {
-    color: #800000;
+:root:is([data-theme='win98'], [data-theme='win98-dark']) [data-slot='job-progress'][data-overrun] [data-slot='job-progress-readout'] {
+    color: var(--w98-overrun);
 }

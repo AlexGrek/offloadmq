@@ -28,6 +28,7 @@ export default function DashboardPage() {
           {apps.map((app, i) => (
             <MotionLink
               key={app.id}
+              data-slot="app-tile"
               to={app.href}
               initial={{ opacity: 0, y: 12, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}

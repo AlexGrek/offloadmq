@@ -13,7 +13,7 @@ export function AppShell() {
         <div className="flex h-dvh min-h-0 flex-col overflow-hidden" data-testid="app-shell">
           <TopBar />
           <GlobalProgressDrawer />
-          <div className="flex min-h-0 flex-1 basis-0 flex-col overflow-hidden">
+          <div data-slot="app-main" className="flex min-h-0 flex-1 basis-0 flex-col overflow-hidden">
             <Outlet />
           </div>
           <UpdateBanner />
