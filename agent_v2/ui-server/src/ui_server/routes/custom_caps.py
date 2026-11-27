@@ -24,13 +24,11 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
     @router.post("/custom/save")
     def custom_save(payload: CustomSavePayload) -> dict[str, bool]:
         orch.save_custom_cap(payload.name, payload.yaml)
-        orch.start_background_scan()
         return {"ok": True}
 
     @router.post("/custom/delete")
     def custom_delete(payload: CustomDeletePayload) -> dict[str, bool]:
         orch.delete_custom_cap(payload.name)
-        orch.start_background_scan()
         return {"ok": True}
 
     @router.post("/custom/upload")
@@ -38,7 +36,6 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
         content = (await file.read()).decode("utf-8", errors="replace")
         name = (file.filename or "custom").replace(".yaml", "").replace(".yml", "")
         orch.save_custom_cap(name, content)
-        orch.start_background_scan()
         return {"ok": True}
 
     return router

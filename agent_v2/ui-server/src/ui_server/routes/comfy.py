@@ -67,7 +67,6 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
             orch.add_comfy_workflow(
                 payload.workflow_name, payload.task_type, payload.namespace, payload.graph_json
             )
-            orch.start_background_scan()
             return {"ok": True}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -104,7 +103,6 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
             result = orch.import_comfy_workflow(
                 payload.bundle, payload.name, payload.namespace, payload.overwrite
             )
-            orch.start_background_scan()
             return {"ok": True, **result}
         except FileExistsError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -119,7 +117,6 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
             orch.delete_comfy_workflow(payload.workflow_name, payload.namespace)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        orch.start_background_scan()
         return {"ok": True}
 
     @router.post("/comfy/workflows/rename")
@@ -131,7 +128,6 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
                 payload.new_workflow_name,
                 payload.new_namespace,
             )
-            orch.start_background_scan()
             return {"ok": True}
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -147,7 +143,6 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
                 payload.new_workflow_name,
                 payload.new_namespace,
             )
-            orch.start_background_scan()
             return {"ok": True}
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -173,7 +168,6 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
             orch.save_comfy_param_map(
                 payload.workflow_name, payload.task_type, payload.namespace, payload.params
             )
-            orch.start_background_scan()
             return {"ok": True}
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -186,7 +180,6 @@ def build_router(orch: OrchestratorAPI) -> APIRouter:
             result = orch.autodetect_comfy_param_map(
                 payload.workflow_name, payload.task_type, payload.namespace
             )
-            orch.start_background_scan()
             return {"ok": True, **result}
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

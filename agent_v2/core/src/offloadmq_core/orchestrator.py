@@ -31,7 +31,6 @@ from typing import Any
 
 from offloadmq_agent.cap_policy import classify_capabilities, compute_registration_caps
 from offloadmq_agent.capabilities import detect_capabilities
-from offloadmq_agent.capabilities_sync import detect_capabilities as detect_capabilities_sync
 from offloadmq_agent.client import OffloadMQClient, OffloadMQError
 from offloadmq_agent.executor import find as find_executor
 from offloadmq_agent.models import (
@@ -117,6 +116,17 @@ class Orchestrator:
     }
     # Fields that require a full re-registration when changed while running.
     _CONNECTION_FIELDS = {"server", "api_key"}
+    # Settings that change what capability detection finds: a change needs a
+    # fresh scan before the push, not a push of the previous scan's result.
+    _DETECTION_FIELDS = {
+        "capabilities",
+        "custom_caps",
+        "comfyui_url",
+        "ollama_base_url",
+        "kokoro_api_url",
+        "kokoro_api_key",
+        "onnx_models_dir",
+    }
 
     def __init__(self, settings_path: Path = SETTINGS_FILE) -> None:
         self._settings_path = settings_path
@@ -145,6 +155,11 @@ class Orchestrator:
         self._last_detected: list[str] = []
         self._skipped_rescans: int = 0
         self._rescan_guard = threading.Lock()
+        # request_capability_refresh(): a request made while a refresh runs is
+        # remembered and served by one more pass, never dropped.
+        self._refresh_lock = threading.Lock()
+        self._refresh_pending = False
+        self._refresh_running = False
         # Results the server has not acknowledged yet, task id -> (capability,
         # result). A resolve that never lands leaves the server holding the
         # agent's capacity slot, so results are kept here and retried on every
@@ -361,7 +376,9 @@ class Orchestrator:
             )
             self._cycle_session()
             return
-        if changed & self._SERVER_FACING and self._online:
+        if changed & self._DETECTION_FIELDS:
+            self.request_capability_refresh()
+        elif changed & self._SERVER_FACING and self._online:
             self.push_capabilities_to_server()
         if "pause_on_battery" in changed and self.is_running():
             self._check_power()
@@ -417,26 +434,40 @@ class Orchestrator:
         }
 
     def start_background_scan(self) -> None:
-        if self._scan.snapshot()["scanning"]:
-            return
-        self._scan.set_scanning(True)
+        """Rescan in the background and push the result if online (see request_capability_refresh)."""
+        self.request_capability_refresh()
 
-        def _run() -> None:
-            try:
-                caps = detect_capabilities_sync(self._log)
-                info = collect_system_info()
-            except Exception as exc:  # noqa: BLE001
-                self._record_error("ERROR", "[scan] background scan failed", exc=exc)
-                caps, info = [], {}
-            self._scan.set_result(caps, info)
-            with self._lock:
-                self._last_detected = caps
-            # Push to server if already online — covers the startup race where
-            # _connect() ran before ComfyUI / other runtimes were fully ready.
-            if self._online:
-                self.push_capabilities_to_server()
+    def request_capability_refresh(self) -> None:
+        """Rescan capabilities and report them to the server, soon and in the background.
 
-        threading.Thread(target=_run, name="omq-scan", daemon=True).start()
+        Every GUI / API change that can alter the advertised capabilities calls
+        this. Requests are coalesced, never dropped: one arriving while a
+        refresh runs triggers exactly one more pass afterwards, so the server
+        always ends up with the state after the *last* change.
+        """
+        with self._refresh_lock:
+            self._refresh_pending = True
+            if self._refresh_running:
+                return
+            self._refresh_running = True
+        threading.Thread(target=self._refresh_loop, name="omq-scan", daemon=True).start()
+
+    def _refresh_loop(self) -> None:
+        while True:
+            with self._refresh_lock:
+                if not self._refresh_pending:
+                    self._refresh_running = False
+                    return
+                self._refresh_pending = False
+            # Wait out a periodic rescan instead of skipping: it may have
+            # scanned before this request's change was made.
+            with self._rescan_guard:
+                self._scan.set_scanning(True)
+                try:
+                    self.rescan(restart_if_changed=False)
+                except Exception as exc:  # noqa: BLE001
+                    self._record_error("ERROR", "[scan] capability refresh failed", exc=exc)
+                    self._scan.set_scanning(False)
 
     def rescan(self, *, restart_if_changed: bool = False) -> dict[str, Any]:
         was_running = self.is_running()
@@ -701,9 +732,11 @@ class Orchestrator:
 
     def save_custom_cap(self, name: str, yaml_text: str) -> None:
         custom_caps_service.save_custom_cap(name, yaml_text)
+        self.request_capability_refresh()
 
     def delete_custom_cap(self, name: str) -> None:
         custom_caps_service.delete_custom_cap(name)
+        self.request_capability_refresh()
 
     def list_comfy_workflows(self) -> dict[str, Any]:
         return {
@@ -715,19 +748,23 @@ class Orchestrator:
         self, workflow_name: str, task_type: str, namespace: str, graph_json: str
     ) -> None:
         comfy_service.add_workflow(workflow_name, task_type, namespace, graph_json)
+        self.request_capability_refresh()
 
     def delete_comfy_workflow(self, workflow_name: str, namespace: str = "") -> None:
         comfy_service.delete_workflow(workflow_name, namespace)
+        self.request_capability_refresh()
 
     def rename_comfy_workflow(
         self, workflow_name: str, namespace: str, new_workflow_name: str, new_namespace: str
     ) -> None:
         comfy_service.rename_workflow(workflow_name, namespace, new_workflow_name, new_namespace)
+        self.request_capability_refresh()
 
     def duplicate_comfy_workflow(
         self, workflow_name: str, namespace: str, new_workflow_name: str, new_namespace: str
     ) -> None:
         comfy_service.duplicate_workflow(workflow_name, namespace, new_workflow_name, new_namespace)
+        self.request_capability_refresh()
     def export_comfy_workflow(self, workflow_name: str, namespace: str = "") -> dict[str, Any]:
         return comfy_service.export_workflow(workflow_name, namespace)
 
@@ -738,7 +775,9 @@ class Orchestrator:
         namespace: str | None = None,
         overwrite: bool = False,
     ) -> dict[str, Any]:
-        return comfy_service.import_workflow(bundle, name, namespace, overwrite)
+        result = comfy_service.import_workflow(bundle, name, namespace, overwrite)
+        self.request_capability_refresh()
+        return result
 
     def get_comfy_workflow_graph(
         self, workflow_name: str, task_type: str, namespace: str = ""
@@ -754,11 +793,13 @@ class Orchestrator:
         self, workflow_name: str, task_type: str, namespace: str, params: Any
     ) -> None:
         comfy_service.save_param_map(workflow_name, task_type, namespace, params)
+        self.request_capability_refresh()
 
     def autodetect_comfy_param_map(
         self, workflow_name: str, task_type: str, namespace: str
     ) -> dict[str, Any]:
         params, notes = comfy_service.autodetect_param_map(workflow_name, task_type, namespace)
+        self.request_capability_refresh()  # the param map was written
         return {"paramMap": params, "notes": notes}
 
     # ---- Agent-managed ComfyUI server ----
@@ -1639,10 +1680,8 @@ class Orchestrator:
             self._rescan_guard.release()
 
     def _trigger_rescan_async(self) -> None:
-        """Spawn a background rescan thread; no-op if one is already running."""
-        if self._rescan_guard.locked():
-            return
-        threading.Thread(target=self._execute_rescan, name="omq-rescan-bg", daemon=True).start()
+        """ComfyUI state change → rescan + push (coalesced, never dropped)."""
+        self.request_capability_refresh()
 
     def _scheduler_maybe_rescan(self) -> None:
         """Called by the scheduler on each tick; tracks skipped cycles while busy."""
