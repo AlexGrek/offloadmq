@@ -13,6 +13,7 @@ import OnnxManagerModal from "./OnnxManagerModal";
 import ComfyManagerModal from "./ComfyManagerModal";
 import SpecialCapsModal from "./SpecialCapsModal";
 import AgentStatsDrawer from "./AgentStatsDrawer";
+import AgentLogsPanel from "./AgentLogsPanel";
 
 function relativeTime(iso) {
     if (!iso) return 'Never';
@@ -242,6 +243,8 @@ export default function AgentCard({ a, onDelete, onRescanDone }) {
                                     </div>
                                 </div>
                             )}
+
+                            <AgentLogsPanel agentUid={a.uid} />
 
                             <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
                                 <ExpandableDeleteButton onDelete={() => onDelete(a.uid)} itemName={a.uid} />
