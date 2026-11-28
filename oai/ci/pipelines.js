@@ -42,7 +42,7 @@ if command -v npm >/dev/null 2>&1 && node -v 2>/dev/null | grep -qE '^v2[0-9]'; 
   (cd oai/frontend && VITE_APP_VERSION="$TAG" npm ci --no-audit --no-fund && VITE_APP_VERSION="$TAG" npm run build)
 else
   docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e VITE_APP_VERSION="$TAG" \\
-    -v "$PWD/oai/frontend:/w" -w /w node:22-alpine sh -c "npm ci --no-audit --no-fund && npm run build"
+    -v "$PWD:/w" -w /w/oai/frontend node:22-alpine sh -c "npm ci --no-audit --no-fund && npm run build"
 fi
 
 export DOCKER_CONFIG="$PWD/.docker"
